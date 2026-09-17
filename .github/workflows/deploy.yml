@@ -164,7 +164,7 @@ jobs:
           # `up -d` returns as soon as the container is created, so every check
           # below used to run against a stack that might never have served a
           # request. That was survivable while a bad boot was unlikely; it is
-          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # not now that the deploy pins CURIO_ISOLATION=fork, which is fail-closed:
           # a sandbox that cannot confine exits rather than serve, and without
           # this gate the deploy would go green over a dead stack.
           #
@@ -305,7 +305,7 @@ jobs:
           # `up -d` returns as soon as the container is created, so every check
           # below used to run against a stack that might never have served a
           # request. That was survivable while a bad boot was unlikely; it is
-          # not now that the deploy runs --isolation=fork, which is fail-closed:
+          # not now that the deploy pins CURIO_ISOLATION=fork, which is fail-closed:
           # a sandbox that cannot confine exits rather than serve, and without
           # this gate the deploy would go green over a dead stack.
           #

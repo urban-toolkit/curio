@@ -106,7 +106,55 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+#: The unprivileged account isolated node code runs as. The Docker image
+#: creates it (see the Dockerfile's curio-exec note), which is what lets a
+#: deployment isolate without anyone naming it on the command line.
+DEFAULT_EXEC_USER = "curio-exec"
+
+
+def _discover_exec_user():
+    """The account isolated node code runs as, or None.
+
+    ``CURIO_EXEC_USER`` when the environment already names one - an empty value
+    means "none, deliberately", which is how a test stack asks for the
+    no-execution-user shape on a host that has the account. Otherwise the
+    conventional account the image creates.
+
+    Only meaningful as root: setuid is how the boundary is applied, so an
+    unprivileged launch has nothing to drop to. ``pwd`` is POSIX-only, which is
+    also what makes this return None on Windows.
+    """
+    if "CURIO_EXEC_USER" in os.environ:
+        return os.environ["CURIO_EXEC_USER"].strip() or None
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+
+        pwd.getpwnam(DEFAULT_EXEC_USER)
+    except (ImportError, KeyError):
+        return None
+    return DEFAULT_EXEC_USER
+
+
+def _why_not_isolated(exec_user, blockers):
+    """Why a --deploy launch is running node code in-process after all."""
+    if blockers:
+        reason = "this host is missing " + ", ".join(blockers)
+    else:
+        reason = (
+            f"no execution user is configured (no {DEFAULT_EXEC_USER!r} account, "
+            "or Curio is not running as root)"
+        )
+    return (
+        "Node execution is NOT isolated on this deployment: "
+        f"{reason}. Node code runs in-process with the sandbox's full "
+        "privileges, so treat node-authoring rights as shell access. The "
+        "version badge in the UI reports this too."
+    )
+
+
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -166,22 +214,52 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         )
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
-    # Follows the --allow-publish precedent: permissive for a local single-user
-    # install, locked down once the instance is multi-user. On a local launch
-    # the endpoint grants nothing the user's own shell does not already have;
-    # on a shared one it is an unrecorded 'pip install' into the interpreter
-    # that executes node code. An explicit flag wins over both defaults.
     hosted = os.environ["CURIO_NO_AUTH"] == "0"
-    if allow_runtime_install is None:
-        allow_runtime_install = not hosted
-    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
 
-    # Node-execution isolation (utk_curio/sandbox/isolation/). Opt-in: 'auto'
-    # resolves to off, so nothing changes for an existing deployment until an
-    # operator asks for it with --isolation=fork.
-    os.environ["CURIO_ISOLATION"] = isolation or "auto"
-    if exec_user:
-        os.environ["CURIO_EXEC_USER"] = str(exec_user)
+    # Node-execution isolation (utk_curio/sandbox/isolation/).
+    #
+    # A deployment is the multi-tenant shape, so it isolates by default: node
+    # libraries then land in the caller's own overlay instead of the one
+    # interpreter every user's nodes import from. Anything else is a local
+    # launch, where one user owns the interpreter already.
+    #
+    # Conditional on actually being able to, because a DEFAULT must never be
+    # the reason an instance will not boot: --deploy has to work on Windows and
+    # macOS too, where there is no fork isolation to be had. A pre-set
+    # CURIO_ISOLATION is a request rather than a default, so `fork` there still
+    # fails closed. The version badge reports whichever way this went, so a
+    # deployment that quietly declined is visible rather than assumed.
+    #
+    # RESOLVED here, not passed through. 'auto' is a request, not an answer,
+    # and it used to be decided inside the sandbox - which left every other
+    # reader holding a value that does not say what will actually happen.
+    # ``resolve_mode`` is pure and ``capabilities()`` reads only sys.platform
+    # plus importable modules, so the launcher and the sandbox it spawns reach
+    # the same verdict.
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    exec_user = _discover_exec_user()
+    requested = os.environ.get("CURIO_ISOLATION", "").strip()
+    if not requested:
+        blockers = isolation_mode.missing_requirements(
+            isolation_mode.capabilities(), hosted=hosted,
+        )
+        if deploy and exec_user and not blockers:
+            requested = isolation_mode.FORK
+        else:
+            requested = isolation_mode.AUTO
+            if deploy:
+                log_warning(_why_not_isolated(exec_user, blockers))
+
+    isolation_resolved, isolation_reason = isolation_mode.resolve_mode(
+        requested, hosted=hosted,
+    )
+    os.environ["CURIO_ISOLATION"] = isolation_resolved
+    if isolation_reason:
+        log_warning(isolation_reason)
+    # Always exported, including empty: a discovered account has to reach the
+    # sandbox, and an explicit empty value has to survive as "none, deliberately".
+    os.environ["CURIO_EXEC_USER"] = exec_user or ""
     if exec_memory_mb:
         os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
     if exec_parallelism:
@@ -235,7 +313,6 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
     log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
-    log_always(f"CURIO_ALLOW_RUNTIME_INSTALL={os.environ['CURIO_ALLOW_RUNTIME_INSTALL']}")
     log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
     # The token itself is deliberately not logged.
     log_always("CURIO_SANDBOX_TOKEN=<set>")
@@ -849,6 +926,44 @@ def install_framework_requirements() -> None:
     )
 
 
+def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
+    """Provision one user's node libraries into their own tree (#332).
+
+    Best-effort per user, unlike the host install below, which exits non-zero.
+    One account's unsatisfiable manifest must not stop an instance booting for
+    everybody else - the failure belongs to whoever installed that package, and
+    they get a plain ImportError naming it the first time a node runs.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.resolver import merge_python_deps
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps_to_target,
+    )
+
+    merged, conflicts = merge_python_deps(entries)
+    for c in conflicts:
+        log_warning(
+            f"Dependency range conflict for {c.package} (user {user_key}): "
+            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
+        )
+    if not merged:
+        return
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    log_info(
+        f"[Setup] Installing node deps for user {user_key}: "
+        + ", ".join(sorted(merged)),
+        COLOR_BACKEND, 0,
+    )
+    try:
+        install_python_deps_to_target(
+            merged, str(overlay),
+            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+        )
+    except PipInstallError as exc:
+        log_error(f"[Setup] Node dep install failed for user {user_key}: {exc}")
+
+
 def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
@@ -885,6 +1000,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
         install_python_deps,
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages import backend_runtime
     from utk_curio.backend.app.packages.backend_runtime import dep_destinations
     from utk_curio.backend.app.common.user_storage import users_base
 
@@ -942,13 +1058,22 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # The glob is narrowed to the package-store layout for the same reason it is
     # walked at all: rglob would also match manifests nested inside a package's
     # own payload, which are not installed packages.
+    #
+    # #332: under fork isolation a node's libraries live in the calling
+    # user's own tree, so this walk stops being one merged host install and
+    # becomes one install per user. The dedupe below has to go with it: two
+    # users who both installed curio.weather each need rasterio, in two
+    # different directories, and ``seen`` would have given it to whichever of
+    # them the glob reached first.
+    per_user: dict[str, list[tuple[str, dict]]] = {}
+    scoped = backend_runtime.per_user_node_envs()
     if users.is_dir():
         for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
                 m = load_packageage_manifest(mf.parent)
             except ManifestError:
                 continue
-            if m.dir_name in seen:
+            if not scoped and m.dir_name in seen:
                 continue
             seen.add(m.dir_name)
             destination, why = dep_destinations(m)
@@ -958,8 +1083,18 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
                     COLOR_BACKEND, 2,
                 )
                 continue
-            if m.python_deps:
+            if not m.python_deps:
+                continue
+            if scoped:
+                user_key = mf.parent.parent.parent.name
+                per_user.setdefault(user_key, []).append(
+                    (m.dir_name, dict(m.python_deps))
+                )
+            else:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
+
+    for user_key, entries in sorted(per_user.items()):
+        _install_user_node_deps_at_boot(user_key, entries)
 
     if not per_pkg:
         return
@@ -1244,37 +1379,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--allow-runtime-install", action=argparse.BooleanOptionalAction, default=None,
-        help=(
-            "Allow the sandbox's POST /install endpoint (sets "
-            "CURIO_ALLOW_RUNTIME_INSTALL=1). Defaults to on for a local "
-            "single-user launch and off once user auth is enabled (--auth / "
-            "--deploy), where it would be a second, unrecorded path to "
-            "'pip install' inside the interpreter that executes node code. "
-            "Pass either form to override the default explicitly."
-        ),
-    )
-    parser.add_argument(
-        "--isolation", choices=["auto", "fork", "off"], default=None,
-        help=(
-            "Run each node's Python in an isolated child process instead of "
-            "in-process (sets CURIO_ISOLATION). 'fork' opts in; 'off' forces "
-            "the in-process path; 'auto' (the default) currently resolves to "
-            "off. Requires Linux: elsewhere a local launch falls back to "
-            "in-process with a warning and your nodes are NOT isolated. On a "
-            "hosted instance (--auth / --deploy) 'fork' is fail-closed instead "
-            "- the sandbox refuses to start rather than run unisolated."
-        ),
-    )
-    parser.add_argument(
-        "--exec-user", default=None,
-        help=(
-            "Unprivileged OS user to run isolated node code as (sets "
-            "CURIO_EXEC_USER). Only takes effect when the sandbox runs as "
-            "root, i.e. inside the Docker image."
-        ),
-    )
-    parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
             "Memory ceiling per isolated node, in MB (sets "
@@ -1408,9 +1512,6 @@ def main():
         collab=args.collab,
         save_node_outputs=args.save_node_outputs,
         catalog_root=args.catalog_root,
-        allow_runtime_install=args.allow_runtime_install,
-        isolation=args.isolation,
-        exec_user=args.exec_user,
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,
         exec_parallelism=args.exec_parallelism,

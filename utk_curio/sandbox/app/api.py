@@ -1,6 +1,5 @@
 from flask import request, abort, jsonify, Response
 import json
-import re
 import sys
 import geopandas as gpd
 import pandas as pd
@@ -21,8 +20,6 @@ from utk_curio.sandbox.util.parsers import (
 )
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
-
-_VALID_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-]*(\[[\w,\s]+\])?(===?|~=|!=|>=?|<=?[a-zA-Z0-9._\-*]+)?$')
 
 # Pre-load heavy libraries once at sandbox startup so every /exec call is fast.
 _worker_init()
@@ -281,60 +278,6 @@ def _isolated_runner():
         _isolation_state = (runner.execute_isolated, config)
         return _isolation_state
 
-
-def _runtime_install_enabled() -> bool:
-    """Whether ``POST /install`` is permitted at all.
-
-    Off by default. Nothing in Curio calls this route: library installs go
-    through the backend (``packages/pip_runner.py``), which is auth-gated and
-    records what it installed per user. This endpoint is a second, unrecorded
-    path to ``pip install`` inside the interpreter that executes node code, so
-    it stays disabled unless an operator explicitly asks for it with
-    ``--allow-runtime-install``.
-    """
-    return os.environ.get("CURIO_ALLOW_RUNTIME_INSTALL", "0").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
-
-
-@app.route('/install', methods=['POST'])
-@require_sandbox_token
-def install_packages():
-    import subprocess
-    if not _runtime_install_enabled():
-        return jsonify({
-            "error": "runtime_install_disabled",
-            "message": (
-                "Sandbox runtime package installation is disabled. Install "
-                "libraries through the Library Manager, which goes through the "
-                "backend. To re-enable this endpoint, launch with "
-                "--allow-runtime-install."
-            ),
-        }), 403
-    packages = request.json.get('packages', [])
-    if not packages:
-        abort(400, "No packages specified")
-
-    results = []
-    for package in packages:
-        package = package.strip()
-        if not package:
-            continue
-        if not _VALID_PACKAGE_RE.match(package):
-            results.append({"package": package, "success": False, "stdout": "", "stderr": f"Invalid package name: {package}"})
-            continue
-        result = subprocess.run(
-            [sys.executable, '-m', 'pip', 'install', package],
-            capture_output=True, text=True
-        )
-        results.append({
-            "package": package,
-            "success": result.returncode == 0,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        })
-
-    return jsonify({"results": results})
 
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token

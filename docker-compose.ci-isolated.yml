@@ -1,7 +1,7 @@
 # Compose override for the isolated-execution CI job
 # (.github/workflows/docker-compose.yml, job `test-gpu-isolated`).
 #
-# Boots the same image with `--isolation=fork`, so a real workload runs through
+# Boots the same image with CURIO_ISOLATION=fork, so a real workload runs through
 # the confined path instead of in-process. The unit suite proves the boundary
 # holds (test_isolation_linux.py); this proves ordinary nodes still produce the
 # right answers on the other side of it, which no unit test can show.
@@ -9,13 +9,13 @@
 # Three deliberate differences from docker-compose.ci.yml. Each is forced.
 #
 # 1. NO --auth. `--auth` makes the instance "hosted", and a hosted instance
-#    that asks for fork isolation without an --exec-user is fatal by design
+#    that asks for fork isolation without an execution user is fatal by design
 #    (isolation/hardening.py::apply_and_report): it refuses to start rather
 #    than claim a filesystem boundary it does not have. See 2 for why the
 #    exec user cannot be set here. Losing auth costs the ~26 owner-gated e2e
 #    tests, which docker-compose.ci.yml already covers on the in-process path.
 #
-# 2. NO --exec-user. Setting it makes the sandbox chmod ./instance and
+# 2. NO execution user (CURIO_EXEC_USER is empty). Setting one makes the sandbox chmod ./instance and
 #    ./.curio/data to 0700/0600 root-owned. The e2e harness computes its
 #    ground truth by executing every code node IN THE HOST TEST PROCESS
 #    (test_frontend/utils.py::execute_workflow_programmatically) and writing
@@ -45,6 +45,17 @@ services:
       # and a compose-owned stack has nothing to set it for them.
       - CURIO_TESTING=1
       - CURIO_LAUNCH_CWD=/app
+      # Fork isolation without --deploy, which no flag can express any more:
+      # this stack exists to run a real workload through the fork path on an
+      # instance that is NOT hosted. An explicit value is also fail-closed, so
+      # a runner that cannot confine fails the job instead of quietly running
+      # in-process and reporting green.
+      - CURIO_ISOLATION=fork
+      # Empty, deliberately. This image contains curio-exec and the container
+      # runs as root, so the launcher would otherwise discover it -- and this
+      # job is the one that covers isolation WITHOUT a filesystem boundary.
+      # test-gpu-exec-user covers the other half.
+      - CURIO_EXEC_USER=
     ports:
       - "127.0.0.1:${CURIO_PORT_2000:-2030}:2000"
     command:
@@ -56,4 +67,3 @@ services:
         umask 000 && exec python curio.py start all --with-examples
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000
-        --isolation fork

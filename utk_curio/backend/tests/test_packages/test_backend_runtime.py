@@ -491,6 +491,44 @@ class TestQuarantineBreaker:
         assert exc_again.value.status == 503
 
 
+class TestDependencyRouting:
+    """``_dep_route`` is THE rule deciding where a package's python deps land,
+    and until now it had no direct test: only the launcher's manifest walk
+    exercised it, and ``test_build_promotion.py`` patches it out entirely.
+
+    The table is the contract. A package with no backend serves the warm
+    sandbox, so its deps go to the shared interpreter; handlers read a private
+    overlay; a manifest with both needs both.
+    """
+
+    @pytest.mark.parametrize(
+        "has_backend, has_warm_python, expected",
+        [
+            (False, False, "host"),
+            (False, True, "host"),    # warm python alone never means overlay
+            (True, False, "overlay"),
+            (True, True, "both"),
+        ],
+    )
+    def test_the_routing_table(self, has_backend, has_warm_python, expected):
+        destination, reason = rt._dep_route(has_backend, has_warm_python)
+        assert destination == expected
+        assert reason  # every branch explains itself; the launcher logs it
+
+    def test_the_typed_and_raw_adapters_agree(self):
+        """Two adapters over one core (the A15 one-spelling rule): the draft
+        card must never disagree with what the promote actually does."""
+        for has_backend in (False, True):
+            for has_warm in (False, True):
+                raw = {
+                    "backend": {"entry": "h.py"} if has_backend else None,
+                    "templates": [{"engine": "python", "hasCode": has_warm}],
+                }
+                typed_destination, _ = rt._dep_route(has_backend, has_warm)
+                raw_destination, _ = rt.dep_destinations_raw(raw)
+                assert raw_destination == typed_destination, (has_backend, has_warm)
+
+
 class TestDependencyOverlay:
     """dev/97 (§0.1 Option 2 delivered): handler deps live in a per-package
     overlay built by REAL pip --target (the A9 real-toolchain rule — a

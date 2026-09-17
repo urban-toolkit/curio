@@ -302,3 +302,47 @@ describe("LibraryManagerWindow - the JavaScript kind", () => {
     await waitFor(() => expect(mockAdd).toHaveBeenCalledWith("python", "numpy"));
   });
 });
+
+describe("LibraryManagerWindow - when the caller may not install (#309)", () => {
+  // The shared guest is every anonymous visitor at once, so it never installs
+  // on an instance with accounts. The controls then have to go: a click could
+  // only ever produce a red row for an operation the dialog itself invited.
+  const offListing = () => ({
+    ...listing({ python: ["numpy"] }),
+    installAllowed: false,
+    installDisabledReason:
+      "Installing libraries is not available for guest users. Sign in with an "
+      + "account to install one.",
+  });
+
+  it("says why, instead of offering an Add that would fail", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText(/not available for guest users/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("offers no Remove either - it uninstalls from that same interpreter", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText("numpy")).toBeTruthy();
+    expect(screen.queryByTitle("Remove from your library list")).toBeNull();
+  });
+
+  it("still lists what is installed", async () => {
+    mockList.mockResolvedValue(offListing());
+    open();
+    expect(await screen.findByText("numpy")).toBeTruthy();
+  });
+
+  it("keeps both controls when installs are allowed", async () => {
+    mockList.mockResolvedValue({
+      ...listing({ python: ["numpy"] }),
+      installAllowed: true,
+      installDisabledReason: null,
+    });
+    open();
+    expect(await screen.findByTitle("Remove from your library list")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
+  });
+});

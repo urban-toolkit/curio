@@ -457,7 +457,17 @@ def process_python_code():
     missing_module = None
     if isinstance(output, dict) and not output.get('path'):
         from utk_curio.backend.app.packages import missing_import
+        from utk_curio.backend.app.users.capabilities import library_install_refusal
         missing_module = missing_import.detect(stderr)
+        # Never offer an install the libraries route would refuse (#309).
+        refusal = library_install_refusal(g.user)
+        if missing_module and missing_module.get("installable") and refusal:
+            missing_module = {
+                **missing_module,
+                "installable": False,
+                "reason": "install-disabled",
+                "detail": refusal,
+            }
 
     return {
         'stdout': stdout,

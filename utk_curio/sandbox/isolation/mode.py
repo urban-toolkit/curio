@@ -141,11 +141,11 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
         if missing:
             if hosted:
                 raise IsolationUnavailable(
-                    "Isolation was requested (--isolation=fork) on an instance "
+                    "Isolation was requested (CURIO_ISOLATION=fork) on an instance "
                     "with user auth enabled, but this platform is missing: "
                     + ", ".join(missing)
                     + ". Refusing to start unisolated. Run the Docker image, or "
-                    "pass --isolation=off to accept the risk explicitly."
+                    "set CURIO_ISOLATION=off to accept the risk explicitly."
                 )
             return OFF, (
                 "Isolation was requested but is unavailable here ("
@@ -155,24 +155,27 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
             )
         return FORK, None
 
-    # AUTO resolves to OFF, deliberately, and will keep doing so until the
-    # fork path has actually run somewhere.
+    # AUTO resolves to OFF: it means "nobody asked", and the answer to that is
+    # the in-process path.
     #
-    # The tempting behaviour is "isolate wherever it is possible", which would
-    # switch every hosted Linux instance over the moment this ships. That is
-    # the wrong default for code whose confinement step (child.confine) has
-    # never executed: a silent switch would move every hosted deployment onto
-    # an untested execution path, and CI (Linux, --auth) would be the first
-    # thing to discover it.
+    # This used to be a stronger claim -- that isolating wherever possible was
+    # the WRONG default, because child.confine had never executed anywhere.
+    # That is no longer true: docker-compose.ci-isolated.yml and
+    # docker-compose.ci-exec-user.yml boot the fork path on every CI run, the
+    # workflow asserts the mode /version reports, and test-gpu-exec-user runs a
+    # real workload through it with an unprivileged execution account.
     #
-    # Isolation is therefore opt-in via --isolation=fork. When the fork path is
-    # verified, this branch becomes `return FORK` for hosted instances and the
-    # decision table in test_isolation_fallback.py changes with it.
+    # So the decision moved up rather than changing here. The launcher defaults
+    # --deploy to FORK when the host can deliver it (utk_curio/main.py), which
+    # is the "isolate wherever it is possible" behaviour, scoped to the
+    # instances that have more than one user to separate. AUTO stays OFF so
+    # that a local launch, and anything that never went through the launcher,
+    # keeps its existing behaviour.
     if hosted and not missing:
         return OFF, (
             "Node execution is NOT isolated: it runs in-process with the "
             "sandbox's full privileges. This platform supports isolation, so "
-            "consider --isolation=fork. Until then, treat node-authoring "
+            "consider CURIO_ISOLATION=fork. Until then, treat node-authoring "
             "rights on this instance as equivalent to shell access."
         )
     return OFF, None

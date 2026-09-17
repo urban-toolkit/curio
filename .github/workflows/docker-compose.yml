@@ -204,19 +204,33 @@ jobs:
           echo "OK: the deploy configuration does not publish the sandbox port."
 
           # Isolation is what stops a node author reading every password hash.
-          # Dropping either flag would silently return the live instances to
-          # in-process execution, and nothing at runtime would complain --
-          # `off` is a valid mode. Read from `compose config` rather than the
-          # file so an override that removes the command is caught too.
-          for flag in -- --isolation fork --exec-user curio-exec; do
-            [ "$flag" = "--" ] && continue
-            if ! echo "$config" | grep -qF -- "$flag"; then
-              echo "::error::the deploy command no longer carries '$flag'; the live instances would run node code in-process" >&2
-              echo "$config" | grep -A 30 'command:' >&2
-              exit 1
-            fi
-          done
-          echo "OK: the deploy configuration runs node execution isolated."
+          # Losing it would silently return the live instances to in-process
+          # execution, and nothing at runtime would complain -- `off` is a
+          # valid mode. Read from `compose config` rather than the file so an
+          # override that drops the setting is caught too.
+          #
+          # --deploy turns isolation on by itself, but only BEST-EFFORT: it
+          # declines rather than refusing to boot when the host cannot confine,
+          # which is what lets `curio.py start --deploy` work on a laptop. A
+          # deployment wants the opposite, so deploy.yml pins CURIO_ISOLATION
+          # explicitly and that pin is what this asserts.
+          if ! echo "$config" | grep -qE '^ +CURIO_ISOLATION: "?fork"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer pins CURIO_ISOLATION=fork; the live instances could degrade to in-process execution instead of refusing to start" >&2
+            echo "$config" | grep -A 30 'environment:' >&2
+            exit 1
+          fi
+          echo "OK: the deploy configuration pins isolation fail-closed."
+
+          # The execution account is DISCOVERED by name rather than passed as a
+          # flag, so the command line can no longer be the thing that proves it
+          # exists. The image is. Without it the sandbox still refuses to serve
+          # (fork + no exec user is fatal when hosted), so this is a clearer
+          # error, not a second boundary.
+          if ! grep -qE '^RUN groupadd .*curio-exec' Dockerfile; then
+            echo "::error::the Dockerfile no longer creates the curio-exec account; --deploy would find no execution user and the sandbox would refuse to start" >&2
+            exit 1
+          fi
+          echo "OK: the image still carries the execution account isolation discovers."
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
@@ -473,11 +487,11 @@ jobs:
           # safety net for the next run.
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
-  # Second stack, same runner, booted with --isolation=fork so a real workload
+  # Second stack, same runner, booted with CURIO_ISOLATION=fork so a real workload
   # runs through the confined path. Runs after test-gpu rather than beside it:
   # the runner takes one job at a time, and both want the GPU and the bind
   # mounts. See docker-compose.ci-isolated.yml for why this stack drops --auth
-  # and --exec-user, and what that does and does not cover.
+  # and leaves CURIO_EXEC_USER empty, and what that does and does not cover.
   #
   # Scoped to the workflows whose nodes are Python, because isolation wraps
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py). Running
@@ -676,12 +690,12 @@ jobs:
           docker compose -p curio-ci-iso down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
-  # The only job that boots what the deploy actually ships: --isolation fork
-  # WITH --exec-user, so node code runs as an unprivileged account instead of
+  # The only job that boots what the deploy actually ships: isolation
+  # WITH an execution account, so node code runs unprivileged instead of
   # as root.
   #
   # Why this is a third job rather than a flag on test-gpu-isolated: setting
-  # --exec-user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
+  # an execution user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
   # boot, and the e2e harness computes its ground truth by executing every code
   # node in the HOST test process and writing artifacts into .curio/data as the
   # runner user. The two cannot coexist -- the comparison dies with EACCES
@@ -761,7 +775,7 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio-ci-exec-user up -d
 
-      # The boot is itself an assertion. --isolation fork on an instance with
+      # The boot is itself an assertion. CURIO_ISOLATION=fork on an instance with
       # auth on is FAIL-CLOSED (isolation/hardening.py::apply_and_report): a
       # sandbox that cannot confine, or that finds a sensitive path still
       # readable by curio-exec after hardening, exits rather than serve. So a
@@ -808,7 +822,7 @@ jobs:
       # Deliberately not "no skips": test_the_deployment_secret_cannot_be_read
       # skips by design when the stack has no .env, which is the case here, and
       # a rule that forbade that would just get deleted the first time it fired.
-      - name: 🔒 Assert the isolation boundary holds under --exec-user
+      - name: 🔒 Assert the isolation boundary holds under an execution user
         shell: bash
         run: |
           set -euo pipefail

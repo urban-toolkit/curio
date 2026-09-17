@@ -137,7 +137,7 @@ if __name__ == '__main__':
     require_startup_token()
 
     # Same idea for execution isolation: resolve it now so a hosted instance
-    # that asked for --isolation=fork and cannot have it dies here, with a
+    # that asked for fork isolation and cannot have it dies here, with a
     # readable message, instead of quietly serving every node in-process. A
     # local launch degrades and warns instead (see isolation/mode.py).
     from utk_curio.sandbox.isolation import mode as _isolation_mode
@@ -173,9 +173,9 @@ if __name__ == '__main__':
             raise SystemExit(
                 "[isolation] refusing to start: this instance has user auth "
                 "enabled and asked for isolated execution, but the paths listed "
-                "above are still reachable by the execution user. Configure "
-                "--exec-user with an unprivileged account, or pass "
-                "--isolation=off to accept the risk explicitly."
+                "above are still reachable by the execution user. Set "
+                "CURIO_EXEC_USER to an unprivileged account, or set "
+                "CURIO_ISOLATION=off to accept the risk explicitly."
             )
 
     app.run(

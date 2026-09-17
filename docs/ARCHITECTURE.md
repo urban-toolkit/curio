@@ -465,7 +465,7 @@ The sandbox runs as a separate Flask process. It:
 - Binds `127.0.0.1` by default and is not published by the Docker image, so
   only the backend on the same host can reach it.
 - Requires a shared secret on every route that can run code or read artifacts
-  (`/exec`, `/execJs`, `/get`, `/install`). The secret is minted per launch by
+  (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
   instance started with `--auth` or `--deploy` refuses to boot without one.
@@ -474,7 +474,7 @@ The sandbox runs as a separate Flask process. It:
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
-> `--isolation=fork` is passed, node code runs with `exec()` inside the sandbox
+> isolation is on, node code runs with `exec()` inside the sandbox
 > process itself (`worker.py::execute_code`), with unrestricted builtins, as the
 > same OS user, with no memory cap and no timeout. Anyone who can author or edit
 > a node can read and write everything that process can, including
@@ -483,7 +483,7 @@ The sandbox runs as a separate Flask process. It:
 
 ### Isolated node execution (opt-in, Linux only)
 
-`--isolation=fork` runs each node's Python in a short-lived child process
+Isolation runs each node's Python in a short-lived child process
 instead of in-process. `utk_curio/sandbox/isolation/`:
 
 | Module | Role |
@@ -504,7 +504,7 @@ calls `prctl(PR_SET_NO_NEW_PRIVS)` through `libc.so.6`, and hosting needs
 seccomp on top of that. macOS has neither, Windows has none of it. Curio is
 developed on both, so the rule is deliberately asymmetric:
 
-- **Local launch** (no `--auth` / `--deploy`): `--isolation=fork` off Linux
+- **Local launch** (no `--auth` / `--deploy`): `CURIO_ISOLATION=fork` off Linux
   degrades to the in-process path and logs one warning naming what is missing.
   Your nodes run **unisolated**. That is the trade, because breaking a
   developer's laptop to enforce a boundary that only matters on a shared
@@ -522,7 +522,7 @@ Five design points worth knowing:
   sees only a scratch directory of staged files. Frames are already stored as
   parquet files, so staging an input is a hardlink and persisting an output is a
   rename: the parent never parses bytes a child produced.
-- **One execution account, not one per Curio user.** `--exec-user` names a
+- **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
   single OS account that every user's nodes run as. The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
   keeps two users apart is session scoping in the parent, which the child cannot
@@ -537,7 +537,7 @@ Five design points worth knowing:
   path is child, then scratch directory, then the parent's validated
   `persist_output`, then the backend's `auto_install_node_output`. Because the
   child never writes into an indexed store, it cannot forge a manifest or a
-  catalog entry. Under `--exec-user` the child's cwd is a per-user work
+  catalog entry. With an execution account the child's cwd is a per-user work
   directory (`.curio/exec-scratch/users/<key>/`), which is the one place it may
   write: it is `0700` and owned by the execution account, it persists between
   runs, and a `docs` symlink is dropped in so the bundled examples' relative
@@ -556,7 +556,7 @@ Five design points worth knowing:
 world-readable `instance/urban_workflow.db` is readable by node code with no
 escape required. `hardening.py` tightens those paths to owner-only at startup
 and then audits them; a hosted instance that is still exposed refuses to serve
-rather than pretend. This is also why `--exec-user` matters: without an
+rather than pretend. This is also why the execution account matters: without an
 unprivileged execution account the child shares the sandbox's own filesystem
 access, and only the resource limits and syscall filter apply.
 
@@ -575,12 +575,12 @@ default.
 >   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
 >   the deadline kill, session scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
-> - `test-gpu-isolated` boots a second stack with `--isolation=fork` and runs
+> - `test-gpu-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
 >   the Python-node workflows against it. This is where *ordinary nodes still
 >   work* is demonstrated. It asserts the stack actually came up isolated
 >   before trusting the result.
-> - `test-gpu-exec-user` boots a third stack with `--isolation=fork
->   --exec-user curio-exec`, the same pair `docker-compose.deploy.yml` ships,
+> - `test-gpu-exec-user` boots a third stack with isolation and the
+>   `curio-exec` account, the same shape `docker-compose.deploy.yml` ships,
 >   and asserts the **filesystem** half over the sandbox's HTTP API
 >   (`tests/live/test_exec_user_boundary.py`). This is the only job whose
 >   children are unprivileged: everywhere else they run as root, and root reads
@@ -590,21 +590,56 @@ default.
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
 >   file named by absolute path are all denied.
 >
-> It is a separate job because `--exec-user` and the e2e harness cannot
+> It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
 > executes every code node in the test process and writes artifacts there as the
 > runner user. So that job drops the workflow comparison and asserts over the
 > API instead (see `docker-compose.ci-exec-user.yml`).
 >
-> One gap remains, deliberately: `--isolation` still defaults to `auto`, which
-> still resolves to `off`, so a local `curio start` changes nothing. The
-> deployed instances pass `--isolation=fork --exec-user curio-exec` explicitly,
-> via `docker-compose.deploy.yml`.
+> `--deploy` now turns isolation on wherever the host can provide it, so the
+> deployed instances need no flag for it. A local `curio start` still changes
+> nothing: isolation separates users from each other, and locally there is one.
 
-`POST /install` (`pip install` into the sandbox's interpreter) is off unless
-`--allow-runtime-install` is passed. It defaults on for a local single-user
-launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
-it; library installs go through the backend's `packages/pip_runner.py`.
+**Where an install lands.** There is no switch for whether `pip install` may
+run; there is only the question of *whose* environment it changes, and that is
+decided by isolation.
+
+Without isolation the backend and the sandbox are launched from one
+interpreter, so a library installed by anyone is importable by every user's
+nodes. Under isolation it goes to the caller's own tree instead. A guest is
+refused either way (`users/capabilities.py::library_install_refusal`): the
+shared guest is every anonymous visitor at once, so one visitor's install still
+changes what the next one's nodes import, and the disk it costs has no owner.
+Without auth the one local user *is* the shared guest, so that rule applies
+only when auth is on and the everyday single-user install keeps working.
+
+The sandbox's own `POST /install` route is gone. Nothing in Curio called it,
+and it was a second, unrecorded path to `pip install` inside the interpreter
+that executes node code. Library installs go through the backend's
+`packages/pip_runner.py`, which is auth-gated and records what it installed per
+user.
+
+**Per-user node libraries.** Under isolation, a package's declared
+python deps and anything installed through the Installed-libraries dialog go to
+`.curio/exec-overlays/users/<key>/`, which the child prepends to `sys.path`
+after the fork. Three things follow, and none of them is a mode bit:
+
+- It needs the fork. The in-process worker is one process with one
+  `sys.modules`; whoever imports a library first makes it importable by
+  everybody, whatever the path says. So a local or Windows launch keeps the
+  shared interpreter, unchanged.
+- It scopes imports, not files. The execution account is still shared
+  (see above), so one user's node can read another's tree by path. What it
+  cannot do is have it on its own `sys.path`.
+- It cannot give two users different versions of the same library. pandas,
+  geopandas, shapely and duckdb are resident in the zygote before the fork;
+  additions are what this serves. Per-user versions would need a zygote each.
+
+The tree is deliberately not under `.curio/users/<key>/`, which is 0700
+root-owned so a node cannot reach another user's datasets, and unlike the
+per-user work directory it is **not** owned by the execution account: it is an
+import path, so node code writing there could shadow a later import. The
+startup audit reports it if it ever becomes writable.
 
 ### Portable dataset paths
 
@@ -975,7 +1010,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 | File | Purpose |
 |---|---|
-| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/get`) |
+| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/get`) |
 | `sandbox/python_wrapper.txt` | Execution wrapper template for user code |
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb`, `detect_kind`, and type validation |

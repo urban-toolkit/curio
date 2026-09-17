@@ -81,8 +81,8 @@ ENV CURIO_DEV=0
 # Unprivileged account for isolated node execution
 # (utk_curio/sandbox/isolation/). Creating it changes nothing on its own: the
 # container still runs as root and no process uses this account unless a launch
-# passes --isolation=fork --exec-user curio-exec. It exists here because the
-# account has to be in the image for that flag to work at all.
+# turns isolation on, which --deploy does by discovering this very account. It exists here because the
+# account has to be in the image for isolation to have anything to drop to.
 #
 # Deliberately NOT adding a `USER` directive or chowning anything. CI depends on
 # the container running as root and works around bind-mount ownership with

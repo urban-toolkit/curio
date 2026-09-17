@@ -90,7 +90,7 @@ class TestAutoIsOptInOnly(unittest.TestCase):
         resolved, reason = mode.resolve_mode("auto", hosted=True, caps=LINUX_FULL)
         self.assertEqual(resolved, mode.OFF)
         self.assertIsNotNone(reason, "a hosted instance must be told it is exposed")
-        self.assertIn("--isolation=fork", reason)
+        self.assertIn("CURIO_ISOLATION=fork", reason)
 
     def test_hosted_auto_does_not_raise_where_it_could_not_isolate(self):
         """CI runs Linux with --auth and no pyseccomp; it must still boot."""
@@ -136,7 +136,7 @@ class TestExplicitForkFailsClosedWhenHosted(unittest.TestCase):
         with self.assertRaises(IsolationUnavailable) as caught:
             mode.resolve_mode("fork", hosted=True, caps=WINDOWS)
         message = str(caught.exception)
-        self.assertIn("--isolation=off", message)
+        self.assertIn("CURIO_ISOLATION=off", message)
         self.assertIn("Docker", message)
 
 

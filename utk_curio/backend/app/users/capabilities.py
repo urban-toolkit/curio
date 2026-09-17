@@ -53,3 +53,27 @@ def can_manage_shared_catalog(user) -> bool:
     account is behind the call.
     """
     return not is_shared_guest(user)
+
+
+def library_install_refusal(user) -> str | None:
+    """Why *user* may not install or remove a library, or ``None`` if they may.
+
+    The shared guest is every anonymous visitor at once, so one visitor's
+    install changes what every other visitor's nodes import, and the disk it
+    costs has no owner to account it to. Without auth the one local user IS
+    the shared guest, so this applies only when auth is on.
+
+    Not conditional on isolation. Under ``--deploy`` an install lands in the
+    caller's own overlay, which scopes it away from signed-in accounts but
+    not from the next anonymous visitor: they share the one guest key.
+
+    Read at call time so tests (and a reloaded config) are honoured.
+    """
+    from utk_curio.backend import config
+
+    if not config.CURIO_NO_AUTH and getattr(user, "is_guest", False):
+        return (
+            "Installing libraries is not available for guest users. Sign in "
+            "with an account to install one."
+        )
+    return None

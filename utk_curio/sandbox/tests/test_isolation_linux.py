@@ -129,7 +129,7 @@ def isolated_dropped(tmp_path_factory, monkeypatch):
 
     The default ``isolated`` fixture configures no execution user, so inside the
     container the child runs as root, exactly as a launch without
-    ``--exec-user`` would. That is the right default to test, but it means the
+    an execution user would. That is the right default to test, but it means the
     filesystem half of the boundary is not exercised: root ignores mode bits.
 
     This fixture drops to ``curio-exec`` (created by the Dockerfile) so the
@@ -365,7 +365,7 @@ def test_one_user_does_not_land_in_anothers_directory(isolated, workspace):
 def test_the_user_database_is_unreachable(isolated_dropped, tmp_path):
     """instance/urban_workflow.db holds every password hash and session token.
 
-    Uses the dropped-privilege fixture deliberately. Without an ``--exec-user``
+    Uses the dropped-privilege fixture deliberately. Without an execution user
     the child runs as the sandbox's own user, and inside the container that is
     root, which ignores mode bits: the test would pass or fail for reasons that
     have nothing to do with the boundary.
@@ -461,7 +461,7 @@ def test_the_child_actually_runs_as_the_execution_user(isolated_dropped):
 def test_regaining_privilege_is_denied(isolated_dropped):
     """setuid back to root must fail once privileges are dropped.
 
-    Needs the dropped fixture: with no --exec-user the child runs as the
+    Needs the dropped fixture: with no execution user the child runs as the
     sandbox's own user, which inside the container is root, and setuid(0)
     trivially succeeds. That is correct behaviour for that configuration, not a
     boundary failure, so asserting it there tested nothing.
@@ -615,7 +615,7 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
     reason=(
         "fork bomb: opt in with CURIO_ISOLATION_DESTRUCTIVE_TESTS=1. "
         "RLIMIT_NPROC is per-uid and root bypasses it, and inside the container "
-        "these run as root, so without --exec-user this forks until the "
+        "these run as root, so without an execution user this forks until the "
         "container's pids_limit. docker-compose.ci.yml caps that, but the "
         "self-hosted runner shares a host with the live instances and the limit "
         "being configured is already covered by "

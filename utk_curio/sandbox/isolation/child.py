@@ -95,7 +95,7 @@ def _install_seccomp_filter(*, required):
             raise ChildSetupError(
                 "pyseccomp is not installed, so the child cannot be prevented "
                 "from opening sockets. Install it (pip install pyseccomp) or "
-                "run with --isolation=off."
+                "run with CURIO_ISOLATION=off."
             ) from exc
         return False
 
@@ -223,7 +223,7 @@ def _apply_rlimits(limits):
 
 
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
-            work_dir=None, keep_fds=()):
+            work_dir=None, overlay_dir=None, keep_fds=()):
     """Apply every confinement step, in the order the module docstring sets out.
 
     Raises :class:`ChildSetupError` if any step fails. The caller must treat
@@ -270,7 +270,34 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
     # user by the time it gets here. Falls back to the scratch directory when
     # no work_dir was sent, so an older parent still lands somewhere it owns.
     os.chdir(work_dir or scratch_dir)
+    _add_overlay_to_path(overlay_dir)
     return {"seccomp": seccomp_active}
+
+
+def _add_overlay_to_path(overlay_dir):
+    """Put the calling user's node libraries on ``sys.path`` (#332).
+
+    Here, in the child, and never in the zygote: the zygote is forked once per
+    execution for whoever asks next, so a path installed there would be every
+    user's path. After the fork it is this execution's alone and dies with it.
+
+    Prepended, so a user's own copy of a library wins over one that happens to
+    be in the shared interpreter. That only affects what has not been imported
+    yet -- pandas, geopandas, shapely and duckdb are already resident from the
+    zygote's warm-up, and a per-user VERSION of those would need a zygote per
+    user. Additions are the case this serves, and the common one.
+    """
+    if not overlay_dir:
+        return
+    try:
+        if os.path.isdir(overlay_dir) and overlay_dir not in sys.path:
+            sys.path.insert(0, overlay_dir)
+    except OSError:
+        # A missing or unreadable overlay is a user with nothing installed, or
+        # a permissions problem the operator has to fix. Neither is a reason to
+        # refuse to run the node: it fails later with a plain ImportError
+        # naming the library, which is the message that helps.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +631,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             scratch_dir=scratch_dir,
             require_seccomp=require_seccomp,
             work_dir=request.get("work_dir"),
+            overlay_dir=request.get("overlay_dir"),
         )
     except BaseException:
         import traceback

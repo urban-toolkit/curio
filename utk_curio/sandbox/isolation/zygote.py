@@ -1,7 +1,10 @@
 """A warm, single-threaded process that forks one child per node execution.
 
-NOT VERIFIED ON ANY MACHINE. Linux-only (fork, AF_UNIX, waitpid) and never
-executed: written on a Windows host with no container runtime available.
+Linux-only (fork, AF_UNIX, waitpid). Exercised on every CI run by
+docker-compose.ci-isolated.yml and docker-compose.ci-exec-user.yml, the second
+with an unprivileged execution account; the workflow asserts the mode the
+sandbox reports on /version. This docstring used to say the file had never
+executed anywhere, which is what mode.py's OFF default rested on.
 
 Why a separate process rather than forking from Flask
 -----------------------------------------------------
@@ -159,7 +162,7 @@ def _unavailable_under_isolation(name):
             f"{name}() is not available when node execution is isolated. "
             "Nodes exchange data through their inputs and return value rather "
             "than by reaching into the artifact store directly. If you need "
-            "this, run with --isolation=off and accept that node code then has "
+            "this, run with CURIO_ISOLATION=off and accept that node code then has "
             "the sandbox's full privileges."
         )
 
@@ -493,7 +496,7 @@ def _resolve_execution_identity(user):
     except KeyError:
         raise SystemExit(
             f"[zygote] execution user {user!r} does not exist. Create it in the "
-            "image, or launch without --exec-user."
+            "image, or launch with CURIO_EXEC_USER empty."
         )
     return entry.pw_uid, entry.pw_gid
 

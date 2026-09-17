@@ -41,10 +41,192 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_NO_PROJECT",
         "ENABLE_COLLAB",
         "BACKEND_URL",
+        "CURIO_ISOLATION",
+        "CURIO_EXEC_USER",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
+
+
+@pytest.fixture
+def linux_host(monkeypatch):
+    """Make the launcher resolve isolation as a complete Linux host would.
+
+    ``resolve_mode`` is exercised for real; only the capability probe is
+    replaced, so these tests answer "what does the launcher decide", not "what
+    can this laptop do". Without it the whole fork half of the table is
+    unreachable from macOS and Windows, which is where Curio is developed.
+    """
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "linux", "fork": True, "rlimit": True,
+        "seccomp": True, "linux": True,
+    })
+
+
+# ── Isolation is resolved by the launcher, not passed through ───────────────
+
+
+def test_auto_is_exported_as_the_decision_it_resolves_to(linux_host):
+    """'auto' is a request. Every reader downstream needs the answer.
+
+    It used to be exported verbatim and decided later inside the sandbox, so
+    the backend and the launcher's own runtime-install default were both
+    holding a value that did not say what would actually happen.
+    """
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_preset_isolation_is_a_request_and_is_honoured(linux_host, monkeypatch):
+    """The CLI flag is gone; CURIO_ISOLATION is how a test stack still asks."""
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    monkeypatch.setenv("CURIO_EXEC_USER", "somebody")
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+
+
+def test_fork_that_the_platform_cannot_give_is_exported_as_off(monkeypatch):
+    """A local launch degrades rather than breaking the developer's laptop,
+    and the exported value says so, instead of claiming an isolation that is
+    not happening."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
+    """Fail-closed, and now one process earlier: the launcher raises instead of
+    the sandbox refusing to start after everything else is already up.
+
+    Only for an EXPLICIT request. The --deploy default degrades instead, which
+    is what keeps `curio.py start --deploy` working on Windows and macOS.
+    """
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    with pytest.raises(isolation_mode.IsolationUnavailable):
+        set_environment_variables(**BASE, deploy=True)
+
+
+# ── A deployment isolates by default, where it can ──────────────────────────
+
+
+@pytest.fixture
+def has_exec_account(monkeypatch):
+    """A root launch on a host carrying the conventional execution account."""
+    import utk_curio.main as main_mod
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(main_mod, "_discover_exec_user",
+                        lambda: main_mod.DEFAULT_EXEC_USER)
+
+
+def test_a_deployment_that_can_isolate_does(linux_host, has_exec_account):
+    """The point of the change, and the configuration the image ships."""
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+    assert os.environ["CURIO_EXEC_USER"] == "curio-exec"
+
+
+def test_a_local_launch_does_not_isolate_even_where_it_could(
+    linux_host, has_exec_account,
+):
+    """Isolation separates users from each other; locally there is one."""
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_deployment_not_running_as_root_still_boots(linux_host, monkeypatch):
+    """setuid is how the boundary is applied, so an unprivileged launch has
+    nothing to drop to and the default must decline rather than hand the
+    sandbox a mode it will refuse to serve."""
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_deployment_without_the_account_still_boots(linux_host, monkeypatch):
+    """Same decline, the other way to get there: root, but no such account.
+
+    BOTH halves are forced, because the answer otherwise depends on the host
+    this suite runs on. CI runs as root inside an image that HAS curio-exec,
+    a developer laptop is neither, and a test that reads the real environment
+    passes in one and fails in the other.
+    """
+    import pwd
+
+    def _no_such_account(name):
+        raise KeyError(name)
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(pwd, "getpwnam", _no_such_account)
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_deployment_on_a_platform_that_cannot_isolate_still_boots(
+    monkeypatch, has_exec_account,
+):
+    """--deploy has to work on Windows. A DEFAULT never refuses to boot."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_an_empty_exec_user_forces_none_even_as_root(linux_host, monkeypatch):
+    """How a test stack asks for the no-execution-user shape on a host that
+    has the account: docker-compose.ci-isolated.yml runs as root in an image
+    containing curio-exec and exists to exercise exactly that."""
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_USER", "")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_preset_exec_user_beats_discovery(linux_host, monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_USER", "someone-else")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_EXEC_USER"] == "someone-else"
+
+
+def test_isolation_off_beats_the_deploy_default(linux_host, has_exec_account,
+                                                monkeypatch):
+    monkeypatch.setenv("CURIO_ISOLATION", "off")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
 
 
 def test_auth_and_examples_together_is_the_combination_200_needed():

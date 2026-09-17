@@ -76,6 +76,7 @@ from utk_curio.backend.app.packages.storage import (
 from utk_curio.backend.app.packages import services as packages_services
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.app.users.capabilities import library_install_refusal
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.config import CURIO_ALLOW_FACTORY_CATALOG_PUBLISH
 
@@ -1316,6 +1317,7 @@ def list_libraries_route():
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
     agg = libs.aggregate(user_key)
+    refusal = library_install_refusal(g.user)
     return jsonify({
         "standalone": agg.standalone,
         "fromPackages": [
@@ -1323,7 +1325,19 @@ def list_libraries_route():
              "installed": e.installed}
             for e in agg.from_packages
         ],
+        # Whether POST/DELETE would be refused, so the modal can hide controls
+        # that could only fail and say why instead (#309).
+        "installAllowed": refusal is None,
+        "installDisabledReason": refusal,
     }), 200
+
+
+def _library_install_refused():
+    """The 403 for a caller who may not change a node environment, or None."""
+    refusal = library_install_refusal(g.user)
+    if refusal is None:
+        return None
+    return jsonify({"error": refusal, "code": "library_install_disabled"}), 403
 
 
 # ---------------------------------------------------------------------------
@@ -1384,7 +1398,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, PipSpecError, import_failures, install_python_deps,
+        PipInstallError, PipSpecError,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1400,12 +1414,16 @@ def add_library_route():
         # keeps the data path consistent for a future js_runner module.
         return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
 
+    refused = _library_install_refused()
+    if refused:
+        return refused
+
     user_key = _user_dir_key(g.user)
     # Spec parsing: split "<name><version>" → {name: version}. We let the
     # pip_runner re-canonicalize the version spec.
     name, version = _split_lib_spec(spec)
     try:
-        report = install_python_deps({name: version})
+        report = packages_services.install_user_library(user_key, name, version)
     except PipSpecError as exc:
         # A malformed requirement is the caller's mistake, not pip's failure:
         # answer 400 rather than letting it read as an upstream 502.
@@ -1419,7 +1437,7 @@ def add_library_route():
     # case - reports a good version, so pip declines to do anything and this
     # route used to answer "Already installed" for a library that raises
     # ImportError the moment a node touches it. Say so instead.
-    import_error = import_failures([name]).get(name)
+    import_error = packages_services.user_library_import_failure(user_key, name)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
         # ``skipped`` is non-empty when pip found the requirement already
@@ -1442,9 +1460,9 @@ def remove_library_route(kind: str, spec: str):
     to be uninstalled, which triggers the ref-counted prune in
     ``prune_unreferenced_packages``.
     """
-    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages import backend_runtime, libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, uninstall_python_deps,
+        PipInstallError, PipSpecError, validate_python_requirement,
     )
 
     if kind not in ("python", "js"):
@@ -1452,13 +1470,34 @@ def remove_library_route(kind: str, spec: str):
     if kind == "js":
         return _error("JS library uninstall is not yet supported", 501)
 
+    refused = _library_install_refused()
+    if refused:
+        return refused
+
     user_key = _user_dir_key(g.user)
     name, _ = _split_lib_spec(spec)
-    # Only uninstall via pip if no installed package still declares this
-    # library - same ref-counting contract as the package prune path.
-    if not _any_package_declares(user_key, name, "python"):
+    try:
+        validate_python_requirement(name)
+    except PipSpecError as exc:
+        # Escaped the except below and read as a 500 before #309.
+        return _error(str(exc), 400)
+    # Only uninstall if nothing else still needs this library: no installed
+    # package declares it (the package prune path's contract), and - when one
+    # interpreter serves everyone - no other user lists it either. Under
+    # per-user node environments that second question is meaningless: another
+    # user's list describes another user's tree, so asking it would refuse to
+    # remove a library from yours because someone else installed it in theirs.
+    if not (
+        _any_package_declares(user_key, name, "python")
+        or (
+            not backend_runtime.per_user_node_envs()
+            and libs.listed_by_others(
+                user_key, "python", name, lambda s: _split_lib_spec(s)[0],
+            )
+        )
+    ):
         try:
-            uninstall_python_deps([name])
+            packages_services.uninstall_user_library(user_key, name)
         except PipInstallError as exc:
             log.warning("library remove: pip uninstall %s failed: %s", name, exc)
     libs.remove_library(user_key, kind, spec)
