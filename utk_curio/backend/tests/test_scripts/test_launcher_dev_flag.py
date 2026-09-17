@@ -12,6 +12,7 @@ stale ``dist/``. So an inherited value has to survive a launch without the flag.
 """
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -63,15 +64,85 @@ def test_flags_exist_regardless_of_dev_mode(flag, monkeypatch, capsys):
     assert flag in capsys.readouterr().out
 
 
-def test_needs_build_only_when_nothing_is_built(monkeypatch, tmp_path):
-    """A pip install and the container ship dist/; only a fresh checkout builds."""
+@pytest.fixture
+def checkout(monkeypatch, tmp_path):
+    """A frontend tree at tmp_path, with the build script this repo ships."""
     monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
-    assert main._frontend_needs_build() is False  # no dist, no source either
+    monkeypatch.delenv("BACKEND_URL", raising=False)
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"build": "webpack --mode production && npm run x"}}),
+        encoding="utf-8",
+    )
+    return tmp_path
 
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    assert main._frontend_needs_build() is True  # source, nothing built
 
-    (tmp_path / "dist").mkdir()
-    (tmp_path / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
+def _build(root, stamp: str | None):
+    (root / "dist").mkdir(exist_ok=True)
+    (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
+    if stamp is not None:
+        (root / "dist" / ".curio-backend-url").write_text(stamp, encoding="utf-8")
+
+
+def test_no_source_means_no_build(monkeypatch, tmp_path):
+    """The container ships dist/ and no package.json; it must never run npm."""
+    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
     assert main._frontend_needs_build() is False
-    assert main._frontend_is_built() is True
+
+
+def test_fresh_checkout_builds(checkout):
+    assert main._frontend_needs_build() is True
+    assert "not found" in main._build_stamp_reason()
+
+
+def test_current_build_is_reused(checkout):
+    _build(checkout, "production\n\n")
+    assert main._build_stamp_reason() is None
+    assert main._frontend_needs_build() is False
+
+
+def test_old_single_line_stamp_rebuilds(checkout):
+    """The pre-existing format, which only a development build ever wrote.
+
+    This is the upgrade case: a checkout that predates the production build
+    carries a 28 MB development bundle and would otherwise keep serving it
+    forever, because nothing about it looks out of date.
+    """
+    _build(checkout, "")  # what an unset BACKEND_URL used to write
+    assert "mode" in main._build_stamp_reason()
+    assert main._frontend_needs_build() is True
+
+
+def test_development_bundle_rebuilds(checkout):
+    _build(checkout, "development\n\n")
+    assert main._build_stamp_reason() == "built in development mode, need production"
+
+
+def test_backend_url_change_still_rebuilds(checkout, monkeypatch):
+    """BACKEND_URL is baked into the bundle, so --backend-port must rebuild.
+
+    This check used to live where only --dev reached it. Now that the default
+    serves dist/, a port change with no rebuild would leave the UI calling the
+    previous backend, which another Curio may well own.
+    """
+    _build(checkout, "production\nhttp://127.0.0.1:5002\n")
+    monkeypatch.setenv("BACKEND_URL", "http://127.0.0.1:5002")
+    assert main._build_stamp_reason() is None
+
+    monkeypatch.setenv("BACKEND_URL", "http://127.0.0.1:5999")
+    assert "built for http://127.0.0.1:5002" in main._build_stamp_reason()
+    assert main._frontend_needs_build() is True
+
+
+def test_mode_is_read_from_the_build_script(checkout):
+    assert main._frontend_build_mode() == "production"
+    (checkout / "package.json").write_text(
+        json.dumps({"scripts": {"build": "webpack --mode development"}}),
+        encoding="utf-8",
+    )
+    assert main._frontend_build_mode() == "development"
+
+
+def test_written_stamp_reads_back_as_current(checkout):
+    _build(checkout, None)
+    main._write_build_stamp()
+    assert main._build_stamp_reason() is None

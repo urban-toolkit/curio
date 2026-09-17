@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import subprocess
+import json
 import os
+import re
 import sys
 import time
 import threading
@@ -545,32 +547,9 @@ def check_install_build(dir, force_rebuild=False):
     # name. A ``"dist" if exists else "build"`` fallback used to stamp a build/
     # this function created itself, which then stood in for a deleted dist and
     # skipped the build (test_leftover_build_dir_does_not_suppress_the_build).
-    build_dir = "dist"
-    # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
-    # existing build is only reusable if it was built for the backend we are
-    # about to start. Without this, changing --backend-port reused the old
-    # bundle and the UI kept calling the previous port -- which, when another
-    # Curio owns it, means a session quietly driving someone else's backend.
-    # The stamp records what the current build was made for.
-    stamp_path = os.path.join(build_dir, ".curio-backend-url")
-    wanted_url = os.environ.get("BACKEND_URL", "")
-    built_url = None
-    if os.path.exists(stamp_path):
-        try:
-            with open(stamp_path, encoding="utf-8") as fh:
-                built_url = fh.read().strip()
-        except OSError:
-            built_url = None
-
-    if not os.path.exists(build_dir):
-        reason = f"{build_dir} directory not found"
-    elif built_url != wanted_url:
-        reason = (
-            f"built for {built_url or 'an unrecorded backend'}, "
-            f"need {wanted_url or 'the .env default'}"
-        )
-    else:
-        reason = None
+    # Same check start_frontend gates on, so the two never disagree about
+    # whether the existing build is reusable.
+    reason = _build_stamp_reason(abs_dir)
 
     if reason is not None:
         log_info(f"[Frontend] Running npm run build ({reason})...", COLOR_FRONTEND, 0)
@@ -585,19 +564,14 @@ def check_install_build(dir, force_rebuild=False):
         else:
             # Written after a successful build only, so a failed one does not
             # leave a stamp claiming the bundle matches.
-            try:
-                os.makedirs(build_dir, exist_ok=True)
-                with open(stamp_path, "w", encoding="utf-8") as fh:
-                    fh.write(wanted_url)
-            except OSError as exc:
-                log_info(
-                    f"[Frontend] Could not record the built backend URL ({exc}); "
-                    f"the next start will rebuild.",
-                    COLOR_FRONTEND,
-                    0,
-                )
+            _write_build_stamp(abs_dir)
     else:
-        log_info(f"[Frontend] {build_dir} is current for {wanted_url}. Skipping npm run build.", COLOR_FRONTEND, 0)
+        log_info(
+            f"[Frontend] dist is current for "
+            f"{os.environ.get('BACKEND_URL', '') or 'the .env default'}. "
+            f"Skipping npm run build.",
+            COLOR_FRONTEND, 0,
+        )
 
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
@@ -610,18 +584,88 @@ def _frontend_dir() -> str:
     )
 
 
-def _frontend_is_built() -> bool:
-    return os.path.isfile(os.path.join(_frontend_dir(), "dist", "index.html"))
+def _frontend_is_built(root: str = "") -> bool:
+    return os.path.isfile(os.path.join(root or _frontend_dir(), "dist", "index.html"))
+
+
+def _frontend_build_mode(root: str = "") -> str:
+    """The webpack mode ``npm run build`` uses, read from package.json.
+
+    Read rather than pinned so the stamp follows the script: flip the script
+    between development and production and the next start rebuilds by itself.
+    """
+    try:
+        pkg = os.path.join(root or _frontend_dir(), "package.json")
+        with open(pkg, encoding="utf-8") as fh:
+            script = json.load(fh).get("scripts", {}).get("build", "")
+    except (OSError, ValueError):
+        return "unknown"
+    found = re.search(r"--mode\s+(\S+)", script)
+    return found.group(1) if found else "unknown"
+
+
+def _build_stamp_reason(root: str = "") -> str | None:
+    """Why the built frontend cannot be reused, or None when it can.
+
+    ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an existing
+    build is only reusable if it was built for the backend we are about to
+    start. Without this, changing --backend-port reused the old bundle and the
+    UI kept calling the previous port -- which, when another Curio owns it,
+    means a session quietly driving someone else's backend. The webpack mode is
+    stamped beside it: every checkout built before the move to a production
+    build carries a development bundle, three times the size, and nothing else
+    would ever notice.
+    """
+    dist = os.path.join(root or _frontend_dir(), "dist")
+    if not _frontend_is_built(root):
+        return "dist directory not found"
+
+    wanted_url = os.environ.get("BACKEND_URL", "")
+    wanted_mode = _frontend_build_mode(root)
+    built_mode = built_url = None
+    try:
+        with open(os.path.join(dist, ".curio-backend-url"), encoding="utf-8") as fh:
+            # Two lines: mode, then URL. A one-line stamp is the old format,
+            # which only a development-mode build ever wrote, so it rebuilds.
+            lines = fh.read().splitlines()
+        if len(lines) >= 2:
+            built_mode, built_url = lines[0].strip(), lines[1].strip()
+    except OSError:
+        pass
+
+    if built_mode != wanted_mode:
+        return f"built in {built_mode or 'an unrecorded'} mode, need {wanted_mode}"
+    if built_url != wanted_url:
+        return (
+            f"built for {built_url or 'an unrecorded backend'}, "
+            f"need {wanted_url or 'the .env default'}"
+        )
+    return None
+
+
+def _write_build_stamp(root: str = "") -> None:
+    dist = os.path.join(root or _frontend_dir(), "dist")
+    try:
+        os.makedirs(dist, exist_ok=True)
+        with open(os.path.join(dist, ".curio-backend-url"), "w", encoding="utf-8") as fh:
+            fh.write(f"{_frontend_build_mode(root)}\n{os.environ.get('BACKEND_URL', '')}\n")
+    except OSError as exc:
+        log_info(
+            f"[Frontend] Could not record what the build was made for ({exc}); "
+            f"the next start will rebuild.",
+            COLOR_FRONTEND, 0,
+        )
 
 
 def _frontend_needs_build() -> bool:
-    """Nothing built yet, but the source to build it is here.
+    """The built frontend is missing or stale, and the source to fix it is here.
 
-    Only a fresh checkout answers True, and only until the first build.
+    Checked before npm is: a checkout whose dist/ is current must start without
+    needing a toolchain, and only the build itself requires one.
     """
-    return not _frontend_is_built() and os.path.isfile(
-        os.path.join(_frontend_dir(), "package.json")
-    )
+    if not os.path.isfile(os.path.join(_frontend_dir(), "package.json")):
+        return False
+    return _build_stamp_reason() is not None
 
 
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
