@@ -52,6 +52,7 @@ from .usertest import (
     write_report,
 )
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     REPO_ROOT,
     accept_confirm_dialog,
     activate_header_icon,
@@ -1862,7 +1863,7 @@ class TestSessionExtending:
                          .first.text_content() or "").split()
                     )[:300]
                 )
-            with page.expect_download(timeout=60000) as download:
+            with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
                 s.tour.click(candidates.first)
             path = download.value.path()
             saved = os.path.join(out_dir(), "exported-dataflow.ipynb")

@@ -2361,6 +2361,23 @@ def connect_nodes(page, source_id: str, target_id: str, *,
     return edge_id
 
 
+#: How long to wait for a browser download of an archive the server builds
+#: on click (#334).
+#:
+#: Exporting a package or a dataset is not "save a file the browser already
+#: has": the click makes the backend assemble a zip, and only then does
+#: Chromium fire ``download``. On a shared runner under other jobs that took
+#: longer than the 60 s these waits used to allow, so
+#: ``test_save_export_import_and_run_package_nodes`` failed with
+#: ``TimeoutError: ... waiting for event "download"`` on a branch that touched
+#: neither export nor packaging.
+#:
+#: Raising the ceiling costs nothing when the machine is idle - the wait ends
+#: when the event arrives, which is ~2 s locally - and it is the difference
+#: between a red build and a slow one when it is not. A hang still fails,
+#: two minutes later.
+EXPORT_DOWNLOAD_TIMEOUT_MS = 120000
+
 _HEAVY_NODE_TYPES = {
     "AUTK_GRAMMAR",
     "DATA_LOADING",

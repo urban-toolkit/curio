@@ -87,6 +87,7 @@ from .stress import (
     write_report,
 )
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     _wait_for_reactflow_ready,
     accept_confirm_dialog,
     activate_header_icon,
@@ -1112,14 +1113,14 @@ def chapter_canvas(run: StressRun) -> None:
         page.wait_for_timeout(2500)
         dismiss_toasts(page)
         tour.click(menu(page, "File"), force=True)
-        with page.expect_download(timeout=45000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             page.get_by_role("button", name="Save dataflow as", exact=True).click()
         path = download.value.suggested_filename
         assert path.endswith(".json"), f"Save-as produced {path!r}, not a .json"
 
     with run.step("Export the dataflow as a notebook"):
         tour.click(menu(page, "File"), force=True)
-        with page.expect_download(timeout=60000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             page.get_by_role("button", name="Export as notebook", exact=True).click()
         name = download.value.suggested_filename
         assert name.endswith(".ipynb"), f"notebook export produced {name!r}"
@@ -1478,7 +1479,7 @@ def chapter_nodes(run: StressRun) -> None:
         )
         assert export.count(), "the packages palette offers no Export control"
         export.first.scroll_into_view_if_needed()
-        with page.expect_download(timeout=120000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             export.first.click()
         archive = os.path.join(out_dir(), download.value.suggested_filename)
         download.value.save_as(archive)
