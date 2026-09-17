@@ -502,16 +502,49 @@ def test_package_metadata_survives_export_and_reimport(
     )
     expect(drawer).to_be_visible(timeout=10000)
 
+    # Importing is two requests, and the palette below depends on the SECOND:
+    # the upload writes the user store, then installToProject writes this
+    # dataflow's lockfile, and only once THAT answers does ``importArchive``
+    # refresh the package registry the palette renders from. The palette is
+    # dataflow-scoped, so the registry refresh is what puts the row on it.
+    #
+    # Waiting on the upload alone let the test run ahead of an import that was
+    # still in flight: with the install route held artificially, the palette
+    # assertion below began 73ms after that request was sent and the whole test
+    # finished while it was still unanswered. It passed anyway only because the
+    # coordinate was still in the lockfile from the package built at the top of
+    # this test (deleting the store copy does not rewrite lockfiles), so the
+    # scope happened to carry it. That is incidental, and when it does not hold
+    # the palette stays empty for the full 30s wait (#340).
+    #
+    # ``test_package_roundtrip_e2e`` waits for both requests for the same reason.
     with page.expect_response(
-        lambda r: "/api/packages/upload" in r.url and r.request.method == "POST",
-        timeout=60000,
-    ) as uploaded:
-        with page.expect_file_chooser() as chooser:
-            drawer.get_by_role("button", name="Import package").click()
-        chooser.value.set_files(str(archive_path))
+        lambda r: f"/api/packages/projects/{project_id}/install" in r.url
+        and r.request.method == "POST",
+        timeout=120000,
+    ) as installed_to_project:
+        with page.expect_response(
+            lambda r: "/api/packages/upload" in r.url and r.request.method == "POST",
+            timeout=60000,
+        ) as uploaded:
+            with page.expect_file_chooser() as chooser:
+                drawer.get_by_role("button", name="Import package").click()
+            chooser.value.set_files(str(archive_path))
     assert uploaded.value.ok, (
         f"import failed ({uploaded.value.status}): {uploaded.value.text()[:500]}"
     )
+    assert installed_to_project.value.ok, (
+        f"the import did not reach the dataflow's lockfile "
+        f"({installed_to_project.value.status}): "
+        f"{installed_to_project.value.text()[:500]}"
+    )
+    # ...and the client-side half has landed too. The footer button reads
+    # "Importing…" and stays disabled until ``importArchive`` has refreshed the
+    # package registry AND re-read the lockfile, which is the last thing between
+    # the response above and a palette that can render the package.
+    expect(
+        drawer.get_by_role("button", name="Import package")
+    ).to_be_enabled(timeout=60000)
     # A second store copy now exists, so it needs registering again.
     uninstall_packages(token, dir_name, project_id)
     assert uploaded.value.json()["package"]["dirName"] == dir_name
