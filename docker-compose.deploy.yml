@@ -45,6 +45,9 @@ services:
       - start
       - all
       - --deploy
+      # No longer implied by --deploy: the e2e harness boots --deploy to get the
+      # login page and must NOT seed, so seeding is asked for explicitly now.
+      - --with-examples
       - --no-allow-publish
       - --backend-host
       - 0.0.0.0

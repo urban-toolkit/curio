@@ -29,10 +29,10 @@ When two or more users open the same project (`/dataflow/<UUID>`) on a host that
 
 ```bash
 # Backend + frontend, opt-in to collaboration:
-python curio.py start --auth --collab
+python curio.py start --deploy --collab
 
 # CORS for non-default frontend origins:
-COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --auth --collab
+COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --deploy --collab
 ```
 
 Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public`, so **no frontend rebuild is required** to flip the flag.

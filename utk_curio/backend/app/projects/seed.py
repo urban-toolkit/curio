@@ -125,7 +125,7 @@ def seed_example_projects(
     (overwrite semantics) without ever colliding with user-created
     projects (which use random uuid4s).
     """
-    # Registered accounts get their own copies (#200). Under ``--auth`` the
+    # Registered accounts get their own copies (#200). Under ``--deploy`` the
     # signed-in user is not the guest that owned the seeded rows, so the
     # gallery came up empty for everyone with an account; ``--deploy`` carried
     # the identical defect. The dataset half of this was already fixed in
@@ -306,7 +306,7 @@ def ensure_user_examples_seeded(user) -> int:
 def _prune_non_example_projects(user, ukey: str, keep_ids: set[str]) -> int:
     """Delete every guest project that isn't part of the seeded set.
 
-    Mirrors the overwrite posture: ``--with-examples`` / ``--deploy`` always
+    Mirrors the overwrite posture: ``--with-examples`` always
     lands on exactly the curated examples, with leftover scratch projects
     (e.g. "DefaultDataflow", auto-generated test fixtures) cleaned up.
     """

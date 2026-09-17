@@ -14,7 +14,7 @@ The rule that matters is asymmetric, and deliberately so:
   in-process path with one loud warning. Breaking a developer's laptop to
   enforce a boundary that only matters for shared instances would be the wrong
   trade.
-- On a **hosted launch** (``--auth`` / ``--deploy``), the same missing
+- On a **hosted launch** (``--deploy``), the same missing
   capability is fatal. A production instance that silently ran unisolated
   would be the exact failure this work exists to prevent, and it would be
   invisible: everything would appear to work.

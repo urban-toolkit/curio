@@ -2067,7 +2067,7 @@ class TestSessionAbuse:
                 )
 
         with s.step("Import a library nobody installed",
-                    "Runtime install is off under --auth, so this must explain "
+                    "Library install is refused for guests, so this must explain "
                     "itself.", quiet_console=True):
             probe = grid_drop(s, "computation-analysis", 0, 2)
             set_node_code(

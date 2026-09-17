@@ -8,7 +8,7 @@
 #
 # Three deliberate differences from docker-compose.ci.yml. Each is forced.
 #
-# 1. NO --auth. `--auth` makes the instance "hosted", and a hosted instance
+# 1. NO --deploy. `--deploy` makes the instance "hosted", and a hosted instance
 #    that asks for fork isolation without an execution user is fatal by design
 #    (isolation/hardening.py::apply_and_report): it refuses to start rather
 #    than claim a filesystem boundary it does not have. See 2 for why the

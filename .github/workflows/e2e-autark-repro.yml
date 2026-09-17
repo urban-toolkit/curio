@@ -142,7 +142,8 @@ jobs:
                           python -m utk_curio.backend.tests.shards "$k")"
               mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
-              python curio.py start backend --auth --with-examples \
+              export CURIO_ISOLATION=off
+              python curio.py start backend --deploy --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &

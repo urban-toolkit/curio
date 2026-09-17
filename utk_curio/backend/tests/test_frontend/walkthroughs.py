@@ -1113,7 +1113,7 @@ EXAMPLE_TITLES = [
     title="A new account arrives to a gallery of examples",
     premise="Create an account and read what is waiting on the projects page.",
     note="The examples were seeded to exactly one user - the shared guest - "
-         "and project listing is a plain owner filter, so under `--auth` every "
+         "and project listing is a plain owner filter, so under `--deploy` every "
          "account signed in to an empty gallery; `--deploy` carried the same "
          "defect. Each account now gets its own copies, seeded at sign-up and "
          "back-filled on first listing for anyone who registered earlier.",

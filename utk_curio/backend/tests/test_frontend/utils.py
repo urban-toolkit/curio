@@ -1471,12 +1471,12 @@ def require_owner_view(page, *, timeout: float = 4000) -> None:
     them, so a browser that lands as the shared guest sees empty catalogs -
     which means every test guarded by this is testing nothing. Skipping made
     that invisible: ``scripts/test.sh`` booted its shared stack without
-    ``--auth``, and 43 tests across 22 files - the whole agent-catalog suite
+    ``--deploy``, and 43 tests across 22 files - the whole agent-catalog suite
     among them - quietly skipped while the run reported green.
 
     The environment being wrong is a setup bug, and a setup bug should be loud.
     Detection is unchanged; only the consequence is. The fix when this fires is
-    to boot with ``--auth`` (which ``scripts/test.sh`` and the
+    to boot with ``--deploy`` (which ``scripts/test.sh`` and the
     ``curio_servers`` fixture both now do), never to tolerate the state.
     """
     banner = page.get_by_test_id("shared-view-banner")
@@ -1487,9 +1487,9 @@ def require_owner_view(page, *, timeout: float = 4000) -> None:
     raise AssertionError(
         "Dataflow opened read-only as the shared guest, so this test would "
         "assert against empty catalogs. The stack is running without user "
-        "auth: boot it with `--auth` (scripts/test.sh does, and so does the "
+        "auth: boot it with `--deploy` (scripts/test.sh does, and so does the "
         "curio_servers fixture), or unset CURIO_NO_AUTH in the pytest "
-        "environment so the fixture passes --auth for you."
+        "environment so the fixture passes --deploy for you."
     )
 
 

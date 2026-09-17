@@ -3,12 +3,12 @@
 #
 # Two CI-specific adjustments to the image's default CMD:
 #
-# 1. --auth. The default CMD carries no auth flag, which resolves to
+# 1. --deploy. The default CMD carries no auth flag, which resolves to
 #    CURIO_NO_AUTH=1 (see utk_curio/main.py). The e2e suite then skips every
 #    test that needs a real logged-in owner via require_user_auth() -- around
 #    26 of them, including the whole package roundtrip, data catalog and node
 #    catalog suites. This matches what the pytest-owned harness already does
-#    for itself (fixtures.py appends --auth for exactly this reason); only the
+#    for itself (fixtures.py appends --deploy for exactly this reason); only the
 #    --use-existing CI path was missing it.
 #
 # 2. umask 000. The e2e suite runs Playwright on the HOST (as the runner user
@@ -57,6 +57,13 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # This is the UNISOLATED baseline stack. --deploy now turns isolation on
+      # wherever the host can deliver it, and this container runs as root in an
+      # image that carries curio-exec, so the launcher would otherwise discover
+      # it and quietly switch the main e2e suite onto the fork path.
+      # docker-compose.ci-isolated.yml and docker-compose.ci-exec-user.yml are
+      # the stacks that cover isolation; this one must stay in-process.
+      - CURIO_ISOLATION=off
       # The host-side e2e suite drives this stack through /api/testing/*
       # (stub-login, stub-project, reset-db) and through the scripted LLM
       # provider. Both are gated on CURIO_TESTING as well as a dev env
@@ -77,6 +84,6 @@ services:
       - sh
       - -c
       - >-
-        umask 000 && exec python curio.py start all --auth --with-examples
+        umask 000 && exec python curio.py start all --deploy --with-examples
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000
