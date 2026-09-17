@@ -1260,9 +1260,10 @@ def main():
             "Run each node's Python in an isolated child process instead of "
             "in-process (sets CURIO_ISOLATION). 'fork' opts in; 'off' forces "
             "the in-process path; 'auto' (the default) currently resolves to "
-            "off. Requires Linux. On a hosted instance (--auth / --deploy) "
-            "'fork' is fail-closed: the sandbox refuses to start rather than "
-            "run unisolated."
+            "off. Requires Linux: elsewhere a local launch falls back to "
+            "in-process with a warning and your nodes are NOT isolated. On a "
+            "hosted instance (--auth / --deploy) 'fork' is fail-closed instead "
+            "- the sandbox refuses to start rather than run unisolated."
         ),
     )
     parser.add_argument(
