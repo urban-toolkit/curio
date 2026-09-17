@@ -10,7 +10,8 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
-import { runAndAlwaysSettle } from './autkRunSettlement';
+import { describeError, runAndAlwaysSettle } from './autkRunSettlement';
+import { withExtensionRetry } from './duckdbExtensionRetry';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
@@ -338,8 +339,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 }
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
-                const grammar = new AutkGrammar(targets);
-                await grammar.run(spec);
+                // A fresh grammar per attempt: it builds its own AutkDb, and a
+                // DuckDB worker that failed to fetch the spatial extension keeps
+                // that state, so only a new one can succeed (#318).
+                const grammar = await withExtensionRetry(async () => {
+                    const g = new AutkGrammar(targets);
+                    await g.run(spec);
+                    return g;
+                });
 
                 // Store for interaction effects
                 grammarRef.current = grammar;
@@ -462,7 +469,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             setRunSummary(summary);
             emit({ code: 'success', content: summary ?? '' });
         } catch (err: any) {
-            const msg = err?.message ?? String(err);
+            const msg = describeError(err);
             // The toast is transient and the node UI has no error tab, so
             // also log to console — it's the only durable place tooling
             // (and the e2e browser-log dump) can read the failure from.
@@ -1337,8 +1344,13 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     }
     // Old AutkSpatialDb does not export this; fall back to the workspace default.
     const DEFAULT_WORKSPACE_COORDINATE_FORMAT = mod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
-    const db: any = new AutkDbCtor();
-    await db.init();
+    // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
+    // another instance rather than a failed node (#318).
+    const db: any = await withExtensionRetry(async () => {
+        const instance: any = new AutkDbCtor();
+        await instance.init();
+        return instance;
+    });
     // Reasons individual sources / reads failed, surfaced below when the load
     // produced no usable layer at all — so a total failure reports WHY instead
     // of crashing later with an opaque "Cannot read properties of null".
