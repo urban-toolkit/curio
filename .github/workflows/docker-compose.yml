@@ -127,6 +127,11 @@ jobs:
       # Screenshot, node states and browser log of every failed e2e test
       # (tests/test_frontend/diagnostics.py), uploaded as e2e-failures.
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      # Trace every test and keep the failing ones, so a rare browser-side
+      # failure (#318) is diagnosable from its first recurrence. "1" records DOM
+      # snapshots and the action log; per-action screenshots ("full") cost far
+      # more and the failure screenshot above already covers that.
+      CURIO_E2E_TRACE: "1"
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + remapped host ports so the CI stack never
       # collides with prod `curio` (2000/5002/8080) or `curio-dev`
@@ -510,6 +515,7 @@ jobs:
       # Python nodes only; see the note above the job.
       ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_TRACE: "1"
 
     steps:
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
