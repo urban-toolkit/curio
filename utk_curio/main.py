@@ -604,14 +604,37 @@ def force_rebuild_frontend():
     check_install_build("frontend/urban-workflows/", force_rebuild=True)
     log_info(f"[Frontend] Force rebuild complete.", COLOR_FRONTEND, 0)
 
+def _frontend_dir() -> str:
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "frontend", "urban-workflows"
+    )
+
+
+def _frontend_is_built() -> bool:
+    return os.path.isfile(os.path.join(_frontend_dir(), "dist", "index.html"))
+
+
+def _frontend_needs_build() -> bool:
+    """Nothing built yet, but the source to build it is here.
+
+    Only a fresh checkout answers True, and only until the first build.
+    """
+    return not _frontend_is_built() and os.path.isfile(
+        os.path.join(_frontend_dir(), "package.json")
+    )
+
+
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
     log_info(f"Starting frontend on {host}:{port}...", COLOR_FRONTEND, 0)
 
     _kill_port(int(port))
 
-    # Only check if running dev mode
+    # Build from source when something needs it: --dev compiles through
+    # webpack-dev-server, --force-rebuild was asked for, and a checkout with no
+    # dist/ has nothing for the static server to serve. A pip install and the
+    # shipped container both arrive with dist/ already built, so neither runs npm.
     original_dir = os.getcwd()
-    if os.getenv("CURIO_DEV") == "1":
+    if os.getenv("CURIO_DEV") == "1" or force_rebuild or _frontend_needs_build():
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
 
@@ -653,6 +676,18 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                 clean_shutdown()
 
         else:
+            if not _frontend_is_built():
+                # Without this the static server answers 404 to every request
+                # and the browser shows a blank page with no explanation.
+                log_error(
+                    "[Frontend] Nothing built to serve at "
+                    f"{os.path.join(_frontend_dir(), 'dist')}. Build it with "
+                    "'python curio.py --force-rebuild', or run with --dev to "
+                    "compile through the webpack dev server."
+                )
+                clean_shutdown()
+                return None
+
             env = os.environ.copy()
             env = {
                 **env,
@@ -1612,15 +1647,22 @@ def main():
             "Experimental, LAN-only. Default: off"
         ),
     )
-    if os.getenv("CURIO_DEV") == "1":
-        parser.add_argument(
-            "--force-rebuild", action="store_true",
-            help="Force rebuild of the frontend"
-        )
-        parser.add_argument(
-            "--force-db-init", action="store_true",
-            help="Force re-initialization of the backend database"
-        )
+    parser.add_argument(
+        "--dev", action="store_true", default=False,
+        help=(
+            "Serve the frontend from the webpack dev server, with hot reload "
+            "and a development bundle (sets CURIO_DEV=1). Default: off -- the "
+            "built bundle in dist/ is served instead, which loads far faster."
+        ),
+    )
+    parser.add_argument(
+        "--force-rebuild", action="store_true",
+        help="Force rebuild of the frontend"
+    )
+    parser.add_argument(
+        "--force-db-init", action="store_true",
+        help="Force re-initialization of the backend database"
+    )
 
     # Display help if no arguments are given
     if len(sys.argv) == 1:
@@ -1628,6 +1670,14 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    # CURIO_DEV stays the mechanism every other launcher already sets -- the
+    # Dockerfile pins it to 0, scripts/test.sh and the e2e fixtures to 1 -- so an
+    # inherited value still applies when the flag is absent. The flag wins.
+    if args.dev:
+        os.environ["CURIO_DEV"] = "1"
+    else:
+        os.environ.setdefault("CURIO_DEV", "0")
 
     setup_logging(args.server)
     verbosity = int(args.verbose)
@@ -1656,23 +1706,17 @@ def main():
         huggingface_token=args.huggingface_token,
     )
 
-    # if os.getenv("CURIO_DEV") != "1":
-        # if args.force_rebuild or args.force_db_init:
-            # print("Error: --force-rebuild and --force-db-init are not available when running Curio from pip. If you really need it, refer to the documentation to run Curio from curio.py.")
-            # sys.exit(1)
-    if os.getenv("CURIO_DEV") == "1":
-        # Handle standalone rebuild or db init without starting servers
-        if not args.command:
-            if args.force_rebuild:
-                log_info("Rebuilding frontend...", COLOR_FRONTEND, 0)
-                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
-            if args.force_db_init:
-                log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
-                start_backend(args.backend_host, args.backend_port, no_server=True)
-            sys.exit(0)
-    else:
-        args.force_rebuild = False
-        args.force_db_init = False
+    # Handle standalone rebuild or db init without starting servers. Neither
+    # depends on --dev: --force-rebuild rebuilds the dist/ the default mode
+    # serves, so it matters most when --dev is off.
+    if not args.command:
+        if args.force_rebuild:
+            log_info("Rebuilding frontend...", COLOR_FRONTEND, 0)
+            start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
+        if args.force_db_init:
+            log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
+            start_backend(args.backend_host, args.backend_port, no_server=True)
+        sys.exit(0)
 
     if args.command == "setup":
         install_framework_requirements()

@@ -334,7 +334,9 @@ or
 python curio.py start
 ```
 
-is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
+is taking a long time, this is normal. From a git clone, the first run has no built frontend, so Curio installs the Node.js dependencies and runs a production webpack build of the whole UI. Expect a few minutes. Later runs reuse the result and start in seconds, until you pass `--force-rebuild`.
+
+A pip install and the Docker image skip this entirely: both ship a frontend that is already built.
 
 ### I am getting a "No such file or directory" error when loading a file
 

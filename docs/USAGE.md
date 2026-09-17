@@ -52,6 +52,14 @@ curio setup                  # install deps and exit
 | `--deploy` | Auth **and** projects on, and isolated node execution where the host supports it. The only way to turn auth on, so use it locally too when you need the login page |
 | `--collab` | Real-time collaborative editing. Experimental, LAN-only |
 
+**Frontend**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--dev` | off | Serve the frontend from the webpack dev server, with hot reload and a development bundle. Use it when you are editing frontend source |
+
+Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything. A fresh git clone has none, so the first `python curio.py start` builds it once, which takes a few minutes; after that it is reused until you pass `--force-rebuild`.
+
 **Catalogs**
 
 | Flag | Default | Effect |
@@ -73,7 +81,7 @@ Node-execution isolation has no flag of its own: `--deploy` turns it on wherever
 > Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it now requires a shared secret, there is no reason to offer that surface to the network.
 
 > [!NOTE]
-> `--force-rebuild` and `--force-db-init` exist only in dev mode, which `curio.py` sets and the pip entry point does not. From a pip install or inside Docker they are rejected as unknown arguments; rebuild by other means there.
+> `--force-rebuild` and `--force-db-init` are always available, including from a pip install and inside Docker. `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
 Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 

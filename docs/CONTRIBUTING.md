@@ -96,8 +96,11 @@ This installs the CLI and a pre-built version of the frontend. You won’t be ab
 ```bash
 git clone https://github.com/urban-toolkit/curio.git
 cd curio
-python curio.py start
+python curio.py start           # serves the built bundle; builds it once on a fresh clone
+python curio.py start --dev     # webpack dev server instead, with hot reload
 ```
+
+Add `--dev` whenever you are editing anything under `utk_curio/frontend/`, or your changes will not show up until you rebuild. Without it Curio serves the production bundle from `dist/`, which loads much faster but is a build artifact.
 
 Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 
@@ -162,8 +165,11 @@ After forking:
 4. **Run the system**
 
    ```bash
-   python curio.py start
+   python curio.py start --dev
    ```
+
+   `--dev` serves the frontend through the webpack dev server so source edits
+   reload. Drop it to serve the built bundle instead.
 
 5. **Create a feature branch**
 
