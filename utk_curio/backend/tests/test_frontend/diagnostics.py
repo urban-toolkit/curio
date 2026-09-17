@@ -8,14 +8,16 @@ every test, and on failure this writes, per test, into
 ``$CURIO_E2E_FAILURE_DIR/<test id>/``:
 
 - ``screenshot.png``   the whole page at the moment of failure
-- ``nodes.txt``        every canvas node's id, ``data-curio-node-status`` and
+- ``nodes.txt``        every canvas node's id, ``data-curio-node-status``,
+                      its ``data-curio-node-error`` when it failed, and
                        visible text, which is what shows *which* node was
                        stuck and what it displayed
 - ``browser-log.txt``  console and pageerror events, when the page captured
                        them (``workflow_page`` does)
-- ``trace.zip``        a Playwright trace of the test, only with
-                       ``CURIO_E2E_TRACE=1``: recording costs time on every
-                       test, failing or not, so it is opt-in
+- ``trace.zip``        a Playwright trace of the test, with ``CURIO_E2E_TRACE``
+                       set. ``1`` records DOM snapshots and the action log,
+                       which is cheap enough to leave on in CI; ``full`` adds a
+                       screenshot per action, for the manual repro job
 
 Each file is also attached to the Allure report. Everything here is best
 effort: a diagnostic that fails must never replace the test's own failure.
@@ -44,13 +46,19 @@ _NODE_STATES_JS = """() => [...document.querySelectorAll('.react-flow__node')].m
         id: el.getAttribute('data-id'),
         type: [...el.classList].find(c => c.startsWith('react-flow__node-')) || '',
         status: status ? status.getAttribute('data-curio-node-status') : null,
+        error: status ? status.getAttribute('data-curio-node-error') : null,
         text: (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 800),
     };
 })"""
 
 
 def tracing_enabled(environ=os.environ):
-    return environ.get(TRACE_ENV) == "1"
+    return (environ.get(TRACE_ENV) or "").strip().lower() in ("1", "full")
+
+
+def tracing_screenshots(environ=os.environ):
+    """Per-action screenshots: the expensive half of a trace, so ``full`` only."""
+    return (environ.get(TRACE_ENV) or "").strip().lower() == "full"
 
 
 def failure_dir(nodeid, environ=os.environ):
@@ -64,7 +72,7 @@ def start_tracing(context):
     if not tracing_enabled():
         return
     try:
-        context.tracing.start(screenshots=True, snapshots=True)
+        context.tracing.start(screenshots=tracing_screenshots(), snapshots=True)
         context._curio_tracing = True
     except Exception as exc:
         print(f"[e2e-diagnostics] could not start tracing: {exc}")
@@ -184,6 +192,10 @@ def format_nodes(nodes, *, url="", title=""):
     for node in nodes:
         lines.append(f"{node.get('id') or '?'}  status={node.get('status') or '-'}  "
                      f"{node.get('type') or ''}")
+        # An Autark node shows its failure nowhere on screen, so the attribute
+        # is the only account of it in this dump (#318).
+        if node.get("error"):
+            lines.append(f"    error: {node['error']}")
         lines.append(f"    {node.get('text') or '(no visible text)'}")
     return "\n".join(lines) + "\n"
 

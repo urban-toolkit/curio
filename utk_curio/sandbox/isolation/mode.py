@@ -1,10 +1,12 @@
 """Deciding whether node execution runs isolated, and what to do if it cannot.
 
-Isolation needs primitives that only exist on POSIX: ``os.fork`` to get a warm
-child cheaply, ``resource.setrlimit`` to cap it, and ``os.killpg`` to reap it.
-Windows has none of them, and Curio is developed on Windows, so the in-process
-path has to remain a first-class supported configuration rather than a broken
-leftover.
+Isolation needs primitives that only exist on Linux. Three are POSIX --
+``os.fork`` to get a warm child cheaply, ``resource.setrlimit`` to cap it, and
+``os.killpg`` to reap it -- but confinement also calls
+``prctl(PR_SET_NO_NEW_PRIVS)`` through ``libc.so.6``, which macOS does not have.
+Windows has none of them, and Curio is developed on Windows and macOS, so the
+in-process path has to remain a first-class supported configuration rather than
+a broken leftover.
 
 The rule that matters is asymmetric, and deliberately so:
 
@@ -78,21 +80,27 @@ def capabilities(platform=None, module_probe=None):
 def missing_requirements(caps, *, hosted):
     """Return the capabilities needed but absent, most fundamental first.
 
-    Hosting additionally requires Linux and seccomp, because without a syscall
-    filter the child keeps unrestricted network access, and an isolated child
-    that can still open sockets is not isolated in the sense a hosted instance
-    needs.
+    Linux is required outright, not only for hosting. ``child.confine`` opens
+    ``libc.so.6`` to call ``prctl(PR_SET_NO_NEW_PRIVS)`` on every child it
+    confines, hosted or not. fork and setrlimit are POSIX and macOS has both,
+    which is why this used to read as "macOS can isolate locally" - it resolved
+    to FORK and then every node died at confinement with "the sandbox could not
+    confine this execution", which is the opposite of the local-launch degrade
+    this module exists to guarantee.
+
+    Hosting additionally requires seccomp: without a syscall filter the child
+    keeps unrestricted network access, and an isolated child that can still
+    open sockets is not isolated in the sense a hosted instance needs.
     """
     missing = []
+    if not caps["linux"]:
+        missing.append("Linux (prctl and seccomp have no equivalent elsewhere)")
     if not caps["fork"]:
         missing.append("os.fork")
     if not caps["rlimit"]:
         missing.append("the resource module (setrlimit)")
-    if hosted:
-        if not caps["linux"]:
-            missing.append("Linux (seccomp has no equivalent elsewhere)")
-        elif not caps["seccomp"]:
-            missing.append("pyseccomp (pip install pyseccomp)")
+    if hosted and caps["linux"] and not caps["seccomp"]:
+        missing.append("pyseccomp (pip install pyseccomp)")
     return missing
 
 

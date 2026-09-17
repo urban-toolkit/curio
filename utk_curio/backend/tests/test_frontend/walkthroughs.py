@@ -177,6 +177,15 @@ class Ctx:
         self.narrator.beat(ms)
 
 
+#: Smallest diff budget a FULL-PAGE capture is compared at (#333).
+#:
+#: 2x the worst cross-platform cost measured over this file's captures (7.66%),
+#: so a developer on a machine that is not the baseline's does not read a
+#: platform difference as a regression. Clipped captures keep their own,
+#: tighter budgets. See ``Walkthrough.effective_max_diff_ratio``.
+FULL_PAGE_DIFF_FLOOR = 0.15
+
+
 @dataclass
 class Walkthrough:
     """One journey through the app, plus how to capture it."""
@@ -208,6 +217,10 @@ class Walkthrough:
     #: Fraction of pixels allowed to differ. The helper's 0.20 default is blind
     #: to a restored 1.5px border or a button that grew one line, so the small
     #: visual fixes tighten it hard.
+    #:
+    #: A tight value only means something on a CLIPPED capture, where the
+    #: subject fills the frame. On a full page it is raised to
+    #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
     max_diff_ratio: float = 0.20
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
@@ -227,6 +240,33 @@ class Walkthrough:
     @property
     def stem(self) -> str:
         return self.slug
+
+    @property
+    def effective_max_diff_ratio(self) -> float:
+        """The budget to compare with, floored for a full-page capture (#333).
+
+        The committed baselines are captured by CI, on Linux. Everywhere else
+        the same page renders text slightly differently, and on a full 1280x720
+        viewport that alone costs **4.5-7.7% of pixels** (measured across all 86
+        captures in this file on macOS, 2026-09-15: `catalog-tag-chips-are-plain`
+        4.85% against its 5% budget, `project-drawer-offers-delete` 7.66%
+        against 8%). Seven captures sat above 90% of budget, so any local run
+        was one restyle away from a red that looks exactly like a regression --
+        the attribution cost #308 was filed about.
+
+        Tightening below that floor buys nothing on a full page anyway: 3% of
+        1280x720 is 27,600 pixels, and a button is ~3,000. A full-page budget
+        cannot see a missing control at ANY setting a cross-platform run could
+        pass; what it catches is a page that changed wholesale, which 15% still
+        catches. A claim that needs finer resolution needs ``clip_selector``
+        (which keeps the subject filling the frame, where a tight budget bites)
+        or an assertion in code, which every one of these scenes already has.
+
+        Clipped captures are left exactly as declared.
+        """
+        if self.clip_selector is not None:
+            return self.max_diff_ratio
+        return max(self.max_diff_ratio, FULL_PAGE_DIFF_FLOOR)
 
 
 # ---------------------------------------------------------------------------

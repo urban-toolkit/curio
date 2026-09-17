@@ -134,13 +134,14 @@ describe("useAgentCatalogDrawer", () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  it("publish calls the endpoint then reloads", async () => {
+  it("offers no publish action - publishing is the account page's (#305)", () => {
+    // The drawer installs an agent into ONE dataflow; publishing is a decision
+    // about the item, so it lives on /catalog/agents. These two were left over
+    // from the UI 29a4e902 removed, and nothing but this test ever called them.
     const { result } = renderHook(() => useAgentCatalogDrawer(true, "p1"));
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    await act(async () => {
-      await result.current.publish("agent.my-custom@1.0.0");
-    });
-    expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0");
+    const api = result.current as unknown as Record<string, unknown>;
+    expect(api.publish).toBeUndefined();
+    expect(api.unpublish).toBeUndefined();
   });
 
   it("surfaces errors without throwing", async () => {
