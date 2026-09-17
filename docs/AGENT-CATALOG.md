@@ -77,8 +77,8 @@ identifiable at a glance.
 Alongside its category, every agent has an **origin**, which is provenance
 rather than function. It is backend metadata: the browse page counts it in its
 facets but does not currently offer it as a filter, and no card renders it as a
-chip. What the page's left rail offers is a **status** rail (All agents / In my
-account / Published) and a **category** rail.
+chip. What the page's left rail offers is a **status** rail (All agents / In all
+projects) and a **category** rail.
 
 | Origin | Meaning |
 |---|---|
@@ -135,7 +135,10 @@ There are three places you interact with agents, and as with the Data Catalog
 they are **not** interchangeable:
 
 - **The `/catalog/agents` page** is the account-level library view. Reach it from
-  `/projects` and the **Agent Catalog** tab in the section nav. You can browse,
+  `/projects` and the **Agent Catalog** tab in the section nav. It lists the
+  built-in roster, every published definition, and the definitions this account
+  imported itself, which is what makes **Publish** reachable for an agent you
+  wrote. You can browse,
   filter by status and category, search, read an agent's full detail, and add an
   agent to your account. You **cannot add an agent to a dataflow from here**,
   because adding is relative to a dataflow and this page has none.
@@ -143,17 +146,17 @@ they are **not** interchangeable:
   it from the top menu **Data** then **Agent Catalog**, or from the left Tools
   panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Everything
   scoped to the open dataflow happens here: Add to dataflow, Remove from
-  dataflow, Import agent, Publish, Unpublish, and the per-dataflow settings cog.
+  dataflow, and Import agent. Publishing is not: it is a decision about the
+  item rather than about one dataflow, so it lives on `/catalog/agents`.
 - **The Agent palette** (left Tools panel, the **Agent Catalog** dropdown) holds
   the agents already added to this dataflow, ready to drag onto a node or the
   canvas to attach. It sits in the left rail below the **Node Catalog** and
   **Data Catalog** dropdowns, mirroring both.
 
-The drawer has three tabs: **Browse all** (the default), **My imports**, and
-**In dataflow**. There is no Featured tab. The two peers declare one, but the
-Node drawer maps it onto Browse all as a dead member, and agents have nothing to
-feature; a tab that renders the same rows under a second name is worse than
-three honest ones.
+The drawer has two tabs: **Browse all** (the default) and **In project**. There
+is no Featured tab. The two peers declare one, but the Node drawer maps it onto
+Browse all as a dead member, and agents have nothing to feature; a tab that
+renders the same rows under a second name is worse than two honest ones.
 
 ### Action matrix
 
@@ -162,10 +165,10 @@ three honest ones.
 | **Add to dataflow** | Drawer | `POST /api/agents/projects/<id>/install` | per-dataflow lockfile + defaults record | The agent appears in this dataflow's **Agent Catalog** palette, ready to drag. Any agent it requires is added with it. |
 | **Remove from dataflow** | Drawer, or the **In dataflow** tab | `DELETE /api/agents/projects/<id>/<coord>` | per-dataflow lockfile + defaults record | Confirms first. It leaves this dataflow's palette; the definition and the account-level import are **kept**. Refused if another added agent requires it. |
 | **Add to my account** | `/catalog/agents` detail drawer | `POST /api/agents/imports` | My imports | The agent is available to add to any of your dataflows. It is **not** added to any of them. |
-| **Remove from my account** | Drawer (**My imports** tab), or the `/catalog/agents` detail drawer | `DELETE /api/agents/imports/<coord>` | My imports | It leaves your account list. The definition stays on disk and dataflows that already added it are untouched. |
+| **Remove from my account** | The `/catalog/agents` detail drawer | `DELETE /api/agents/imports/<coord>` | My imports | It leaves your account list. The definition stays on disk and dataflows that already added it are untouched. |
 | **Import agent** | Drawer footer | `POST /api/agents/imports/upload` | definition store + My imports | Your own `manifest.json` and prompt files are registered as a definition. Never adds to a dataflow and never publishes. |
-| **Publish** | Drawer (owned imports only) | `POST /api/agents/publications` | shared catalog | The definition becomes browsable by every user on this install. |
-| **Unpublish** | Drawer | `DELETE /api/agents/publications/<coord>` | shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
+| **Publish** | `/catalog/agents` detail drawer (your own imports only) | `POST /api/agents/publications` | shared catalog | The definition becomes browsable by every user on this install. |
+| **Unpublish** | `/catalog/agents` detail drawer | `DELETE /api/agents/publications/<coord>` | shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
 | **Attach** | Drag a palette row onto a node or the canvas | `POST /api/agents/projects/<id>/attachments` | attachments | A private instance with its own chat panel. Requires the agent already added. |
 | **Detach** | The attachment's own control | `DELETE /api/agents/projects/<id>/attachments/<aid>` | attachments | The instance and its transcript are deleted. The agent stays added. |
 
@@ -188,8 +191,10 @@ account** to keep it. Open a dataflow afterwards to add it there.
 
 **I want to write my own agent.** Author a `manifest.json` and its prompt files
 ([part 6](#6-writing-your-own-agent)), then use the drawer's
-**Import agent** footer button. It lands in **My imports** as your own
-definition. Adding it to a dataflow and publishing it are separate actions.
+**Import agent** footer button. It is registered as your own definition and
+listed on `/catalog/agents` alongside the built-in and published agents, where
+**Publish** offers it to everyone on the install. Adding it to a dataflow and
+publishing it are separate actions.
 
 ---
 
