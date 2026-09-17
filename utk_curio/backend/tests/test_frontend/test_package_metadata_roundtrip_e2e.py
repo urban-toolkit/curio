@@ -59,6 +59,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     _wait_for_reactflow_ready,
     activate_header_icon,
     api_json,
@@ -443,7 +444,7 @@ def test_package_metadata_survives_export_and_reimport(
     # ------------------------------------------------------------------
     anchor = _package_anchor(page, dir_name)
     expect(anchor).to_have_count(1, timeout=20000)
-    with page.expect_download(timeout=60000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         anchor.locator('button[title="Export package"]').click(force=True)
     archive_path = tmp_path / f"{dir_name}.curio.zip"
     download.value.save_as(str(archive_path))

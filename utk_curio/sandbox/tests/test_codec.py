@@ -12,6 +12,8 @@ things:
 """
 
 import json
+
+import duckdb
 import math
 import sys
 import unittest
@@ -203,6 +205,63 @@ class TestParquetWriting(unittest.TestCase):
             path = Path(tmp) / "empty.parquet"
             codec._write_dataframe_parquet(frame, path)
             self.assertEqual(len(pd.read_parquet(path)), 0)
+
+
+class TestParquetWriterFootprint(unittest.TestCase):
+    """The writer runs inside an address-space-capped child (#334).
+
+    ``child._apply_rlimits`` caps RLIMIT_AS at the interpreter's footprint plus
+    the operator's budget, and serialization happens inside that cap. DuckDB's
+    defaults are sized for owning the machine: ``threads`` follows the host's
+    core count and ``memory_limit`` is ~80% of system RAM, so writing three
+    integers on a 64-core runner reserved enough address space to fail with
+    ``OutOfMemoryException: Failed to allocate block of 32768 bytes``. Measured
+    locally on 8 cores: default 7040 KB of peak RSS for one write, against
+    496 KB constrained — and a runner has far more cores than that.
+
+    Nothing here needs parallelism: it is one COPY of one frame.
+    """
+
+    def _captured_config(self, frame=None):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        seen = {}
+        real_connect = duckdb.connect
+
+        def spy(*args, **kwargs):
+            seen.update(kwargs.get("config") or {})
+            return real_connect(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.parquet"
+            with mock.patch.object(duckdb, "connect", spy):
+                codec._write_dataframe_parquet(
+                    frame if frame is not None else pd.DataFrame({"a": [1, 2, 3]}), path
+                )
+            self.assertTrue(path.exists())
+        return seen
+
+    def test_the_writer_runs_single_threaded(self):
+        self.assertEqual(self._captured_config().get("threads"), 1)
+
+    def test_the_writer_declares_a_bounded_memory_limit(self):
+        limit = self._captured_config().get("memory_limit")
+        self.assertIsNotNone(limit, "no memory_limit: DuckDB would size itself from host RAM")
+        # A number plus a unit, and not gigabytes of it.
+        self.assertRegex(str(limit), r"^\d+\s*(MB|MiB)$")
+
+    def test_a_large_frame_still_writes_under_that_limit(self):
+        # The bound must not turn a big output into a failure: `register` is
+        # zero-copy and COPY streams row groups, so the limit is not a ceiling
+        # on the frame. 150 MB of frame through a 256 MB limit, locally 0.5 s.
+        import numpy as np
+
+        rows = 2_000_000
+        frame = pd.DataFrame({"a": np.arange(rows), "b": np.random.rand(rows)})
+        config = self._captured_config(frame)
+        self.assertEqual(config.get("threads"), 1)
 
 
 class TestStoreIndependence(unittest.TestCase):
