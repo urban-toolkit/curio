@@ -95,7 +95,7 @@ def _install_seccomp_filter(*, required):
             raise ChildSetupError(
                 "pyseccomp is not installed, so the child cannot be prevented "
                 "from opening sockets. Install it (pip install pyseccomp) or "
-                "run with --isolation=off."
+                "run with CURIO_ISOLATION=off."
             ) from exc
         return False
 

@@ -6,7 +6,8 @@ makes an install work at all, and what makes it global. #309 gated the
 libraries route on that basis; this scopes the install instead, so the
 question stops being instance-wide.
 
-Only reachable under ``--isolation=fork``: a forked child can be handed its own
+Only reachable under fork isolation (``CURIO_ISOLATION=fork``, which ``--deploy``
+turns on): a forked child can be handed its own
 ``sys.path``, the warm in-process worker cannot. Every test here therefore says
 which world it is in, because "unchanged without isolation" is half the
 contract.
@@ -267,3 +268,78 @@ class TestTheLibrariesDialog:
         )
 
         assert resp.get_json()["importError"] is None
+
+
+@pytest.fixture
+def uninstall_calls(monkeypatch):
+    """Record which uninstaller was reached, without removing anything."""
+    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.pip_runner import UninstallReport
+
+    calls: list[tuple[str, list[str], str | None]] = []
+
+    def _from_target(names, target_dir):
+        calls.append(("target", list(names), str(target_dir)))
+        return UninstallReport(removed=list(names), kept=[])
+
+    def _from_host(names):
+        calls.append(("host", list(names), None))
+        return UninstallReport(removed=list(names), kept=[])
+
+    monkeypatch.setattr(
+        pip_runner, "uninstall_python_deps_from_target", _from_target)
+    monkeypatch.setattr(pip_runner, "uninstall_python_deps", _from_host)
+    return calls
+
+
+class TestWhereTheUninstallLands:
+    """Remove has to follow install. Under isolation the library lives in the
+    caller's overlay, so uninstalling from the shared interpreter would both
+    miss their copy and risk taking a host-level package with it."""
+
+    def test_without_isolation_it_uses_the_shared_interpreter(
+        self, in_process, uninstall_calls, launch_tree,
+    ):
+        services.uninstall_user_library("alice", "humanize")
+
+        assert uninstall_calls == [("host", ["humanize"], None)]
+
+    def test_under_isolation_it_uses_the_callers_own_tree(
+        self, isolated, uninstall_calls, launch_tree,
+    ):
+        overlay = rt.user_node_overlay_dir("alice")
+        overlay.mkdir(parents=True, exist_ok=True)
+
+        services.uninstall_user_library("alice", "humanize")
+
+        assert uninstall_calls == [("target", ["humanize"], str(overlay))]
+
+    def test_under_isolation_it_never_reaches_the_shared_interpreter(
+        self, isolated, uninstall_calls, launch_tree,
+    ):
+        rt.user_node_overlay_dir("alice").mkdir(parents=True)
+
+        services.uninstall_user_library("alice", "humanize")
+
+        assert [kind for kind, _, _ in uninstall_calls] == ["target"]
+
+    def test_one_users_removal_leaves_another_users_copy_alone(
+        self, isolated, uninstall_calls, launch_tree,
+    ):
+        for who in ("alice", "bob"):
+            rt.user_node_overlay_dir(who).mkdir(parents=True)
+
+        services.uninstall_user_library("alice", "humanize")
+
+        target = uninstall_calls[0][2]
+        assert target == str(rt.user_node_overlay_dir("alice"))
+        assert str(rt.user_node_overlay_dir("bob")) != target
+
+    def test_a_user_with_no_tree_is_a_clean_no_op(
+        self, isolated, uninstall_calls, launch_tree,
+    ):
+        report = services.uninstall_user_library("nobody", "humanize")
+
+        assert uninstall_calls == []
+        assert report.removed == []
+        assert report.kept == ["humanize"]

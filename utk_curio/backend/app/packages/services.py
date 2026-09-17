@@ -29,6 +29,7 @@ from typing import Iterable
 
 from utk_curio.backend.app.packages import defaults as defaults_io
 from utk_curio.backend.app.packages.locks import package_seed_lock
+from utk_curio.backend.app.packages.target_locks import target_lock
 from utk_curio.backend.app.packages.installer import (
     InstallerError,
     install_packageage_from_directory,
@@ -51,6 +52,10 @@ from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
+
+#: ``target_locks`` name for a user's node overlay. An install and a delete
+#: both rewrite one tree, so they take the same lock rather than racing.
+_NODE_OVERLAY_LOCK = "_node-overlay"
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +286,32 @@ def install_user_library(user_key: str, name: str, version: str):
         return install_python_deps(deps)
     overlay = backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
-    return install_python_deps_to_target(deps, str(overlay))
+    with target_lock(user_key, _NODE_OVERLAY_LOCK):
+        return install_python_deps_to_target(deps, str(overlay))
+
+
+def uninstall_user_library(user_key: str, name: str):
+    """Remove one standalone library from wherever *user_key*'s nodes import it.
+
+    The mirror of :func:`install_user_library`, and it has to be: under
+    isolation the library lives in that user's own overlay, so running
+    ``pip uninstall`` against the shared interpreter would both fail to remove
+    their copy and risk removing a host-level package something else needs.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        UninstallReport, uninstall_python_deps,
+        uninstall_python_deps_from_target,
+    )
+
+    if not backend_runtime.per_user_node_envs():
+        return uninstall_python_deps([name])
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    if not overlay.is_dir():
+        # Nothing was ever installed for this user; saying so beats raising.
+        return UninstallReport(removed=[], kept=[name])
+    with target_lock(user_key, _NODE_OVERLAY_LOCK):
+        return uninstall_python_deps_from_target([name], str(overlay))
 
 
 def user_library_import_failure(user_key: str, name: str):
@@ -398,7 +428,7 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
         failures.update(verdict)
     if destination in ("host", "both"):
         # "host" names the environment NODE code runs in, and #332 moved where
-        # that is. Under --isolation=fork a node runs in a forked child that
+        # that is. Under fork isolation a node runs in a forked child that
         # can be given its own sys.path, so the deps go to the calling user's
         # own tree and stop being importable by everybody. Without isolation
         # there is one warm worker with one sys.modules and nothing to scope

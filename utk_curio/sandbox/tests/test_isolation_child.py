@@ -402,7 +402,7 @@ class TestStoreHelpersAreNotReachable(unittest.TestCase):
             stub("some-artifact-id")
         message = str(caught.exception)
         self.assertIn("load_from_duckdb", message)
-        self.assertIn("--isolation=off", message)
+        self.assertIn("CURIO_ISOLATION=off", message)
 
 
 class TestDeathDescriptions(unittest.TestCase):

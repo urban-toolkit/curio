@@ -32,9 +32,11 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
 
@@ -740,3 +742,127 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
     return UninstallReport(removed=list(names), kept=[])
+
+
+def _target_dist_infos(target_dir: Path, name: str) -> list[Path]:
+    """Every ``*.dist-info`` in *target_dir* whose distribution is *name*.
+
+    Plural deliberately. ``pip install --target`` over an existing tree
+    overwrites files but can leave the previous version's dist-info behind, and
+    a surviving stale one makes :func:`import_failures_in` report a library as
+    installed after it has been removed.
+    """
+    import importlib.metadata as md
+
+    wanted = _canonical_dist_name(name)
+    found: list[Path] = []
+    for dist in md.distributions(path=[str(target_dir)]):
+        try:
+            dist_name = dist.metadata["Name"]
+        except Exception:
+            dist_name = None
+        if not dist_name:
+            # No parseable METADATA: fall back to the directory's own name,
+            # which pip writes as "<name>-<version>.dist-info".
+            base = getattr(dist, "_path", None)
+            dist_name = base.name.split("-")[0] if base is not None else None
+        if dist_name and _canonical_dist_name(dist_name) == wanted:
+            base = getattr(dist, "_path", None)
+            if base is not None:
+                found.append(Path(base))
+    return found
+
+
+def uninstall_python_deps_from_target(
+    names: Iterable[str], target_dir: str,
+) -> UninstallReport:
+    """Remove *names* from a ``--target`` tree, the way pip does it internally.
+
+    ``pip uninstall`` has no ``--target``. Pointed at one through PYTHONPATH it
+    either refuses with "outside environment" and exits 0 - a silent no-op the
+    caller reads as success - or, outside a venv, removes the HOST copy. So the
+    files come from each distribution's own ``RECORD``, which is the only thing
+    that knows which paths belong to which distribution in a target tree
+    (``pip._internal.req.req_uninstall`` does the same).
+
+    ``removed`` names distributions whose RECORD was walked; ``kept`` names
+    those not found, or found without a readable RECORD, so the caller can log
+    rather than claim something it did not do. Transitive dependencies stay, as
+    they do for ``pip uninstall``.
+    """
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    root = Path(target_dir).resolve()
+    removed: list[str] = []
+    kept: list[str] = []
+    for name in names:
+        validate_python_requirement(name)
+        dist_infos = _target_dist_infos(root, name)
+        if not dist_infos:
+            kept.append(name)
+            continue
+        complete = False
+        for dist_info in dist_infos:
+            if _remove_one_distribution(dist_info, root, is_within):
+                complete = True
+        (removed if complete else kept).append(name)
+    _prune_empty_dirs(root)
+    return UninstallReport(removed=removed, kept=kept)
+
+
+def _remove_one_distribution(dist_info: Path, root: Path, is_within) -> bool:
+    """Unlink one distribution's files, then its dist-info. True if RECORD was read.
+
+    A dist-info with no RECORD (pip killed mid-install) still gets removed, so
+    the metadata stops claiming an install, but its files are left alone: there
+    is no safe way to guess them. Deleting ``<root>/<name>/`` would take a
+    namespace sibling with it.
+    """
+    import csv
+
+    record = dist_info / "RECORD"
+    read_record = False
+    if record.is_file():
+        read_record = True
+        try:
+            rows = list(csv.reader(record.read_text(
+                encoding="utf-8", errors="replace").splitlines()))
+        except OSError:
+            rows = []
+            read_record = False
+        for row in rows:
+            if not row or not row[0]:
+                continue           # a truncated final line has no path
+            rel = row[0]
+            if os.path.isabs(rel):
+                continue
+            target = (dist_info.parent / rel)
+            try:
+                resolved = target.resolve()
+            except OSError:
+                continue
+            if not is_within(resolved, root):
+                continue           # a "../../" row never escapes the tree
+            try:
+                resolved.unlink()
+            except (OSError, IsADirectoryError):
+                pass
+    shutil.rmtree(dist_info, ignore_errors=True)
+    return read_record
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    """Drop ``__pycache__`` leftovers and any directory left empty, bottom-up.
+
+    Only ever removes a directory that is already empty, so a namespace package
+    shared with a distribution that is still installed survives.
+    """
+    for path in sorted(root.rglob("__pycache__"), key=lambda p: -len(p.parts)):
+        shutil.rmtree(path, ignore_errors=True)
+    for path in sorted(
+        (p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)
+    ):
+        try:
+            path.rmdir()
+        except OSError:
+            pass               # not empty, which is the common case

@@ -58,7 +58,7 @@ SENSITIVE_PATHS = (
 # meant to read. ``.curio/data/artifacts/<id>.parquet`` is hardlinked into the
 # scratch directory by ``staging.stage_input``; at 0600 root-owned the child
 # could not read its own input, and every dataframe node would have failed
-# under an --exec-user. (CI never saw it: the isolated job runs without one, so
+# under an execution user. (CI never saw it: the isolated job runs without one, so
 # its children are root and root ignores mode bits.)
 #
 # So the *directory* is the control. At 0700 root-owned, nothing under it can
@@ -102,7 +102,7 @@ def describe_exposure(path, path_stat, *, uid, gid, reason):
     if uid == 0:
         return (
             f"the execution user is root, so it can read {path} ({reason}) "
-            "regardless of permissions. Configure --exec-user with an "
+            "regardless of permissions. Set CURIO_EXEC_USER to an "
             "unprivileged account."
         )
     if can_access(path_stat, uid=uid, gid=gid):
@@ -268,11 +268,11 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
         # user and shares all its access. Isolation still bounds resources and
         # syscalls, but not the filesystem, and that should be said plainly.
         return ([
-            "No --exec-user is configured, so isolated node code runs as the "
+            "No execution user is configured, so isolated node code runs as the "
             "same OS user as the sandbox and can read whatever the sandbox can, "
             "including the artifact store and the user database. Resource "
-            "limits and syscall filtering still apply. Configure --exec-user "
-            "with an unprivileged account for a filesystem boundary."
+            "limits and syscall filtering still apply. Set CURIO_EXEC_USER "
+            "to an unprivileged account for a filesystem boundary."
         ], hosted)
 
     # Order matters: harden first, then prepare. `harden_paths` skips the

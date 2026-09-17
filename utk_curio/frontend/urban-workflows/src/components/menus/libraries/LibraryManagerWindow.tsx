@@ -78,6 +78,10 @@ export default function LibraryManagerWindow({
   const [error, setError] = useState<string | null>(null);
   const [newSpec, setNewSpec] = useState("");
   const [newKind, setNewKind] = useState<Kind>("python");
+  // Why this instance refuses installs for this caller, or null if it does not
+  // (#309). The controls are hidden rather than left to fail: the route is the
+  // authority, and a click it would 403 is an invitation to a red row.
+  const [installRefusal, setInstallRefusal] = useState<string | null>(null);
   // Per-row status. Keyed by `${kind}::${spec}` so the install/remove of
   // one row doesn't lock out actions on every other row simultaneously.
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
@@ -99,6 +103,13 @@ export default function LibraryManagerWindow({
       const data = await packagesApi.listLibraries();
       setStandalone(data.standalone);
       setFromPackages(data.fromPackages);
+      // An older backend sends neither field; absent means allowed, which is
+      // what that backend does.
+      setInstallRefusal(
+        data.installAllowed === false
+          ? (data.installDisabledReason ?? "Installing libraries is turned off on this instance.")
+          : null,
+      );
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -278,7 +289,11 @@ export default function LibraryManagerWindow({
           packages that declare them.
         </p>
 
-        <div className={styles.addRow}>
+        {installRefusal && (
+          <p className={styles.kindNote}>{installRefusal}</p>
+        )}
+
+        {!installRefusal && <div className={styles.addRow}>
           <select
             className={styles.input}
             style={{ width: 110, flex: "0 0 auto" }}
@@ -309,7 +324,7 @@ export default function LibraryManagerWindow({
           >
             Add
           </button>
-        </div>
+        </div>}
 
         {jsSelected && (
           <p id={JS_NOTE_ID} className={styles.kindNote}>
@@ -403,7 +418,7 @@ export default function LibraryManagerWindow({
                       </td>
                       <td>{renderStatusCell(r.kind, fullSpec)}</td>
                       <td>
-                        {r.source === "standalone" ? (
+                        {r.source === "standalone" && !installRefusal ? (
                           <button
                             className={styles.removeButton}
                             disabled={status?.kind === "installing" || status?.kind === "removing"}

@@ -396,6 +396,29 @@ class TestMissingModuleReporting(unittest.TestCase):
         self.assertIn("ModuleNotFoundError", body["stderr"])
 
     @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_install_is_offered_to_a_caller_who_may_not_install(
+        self, mock_session,
+    ):
+        # An Install button the libraries route would refuse is a dead end
+        # (#309): name the library, and say why it cannot be installed here.
+        from utk_curio.backend import config
+
+        guest = patch(
+            "utk_curio.backend.app.users.dependencies.get_current_user",
+            return_value=MagicMock(is_guest=True),
+        )
+        with guest, patch.object(config, "CURIO_NO_AUTH", False):
+            body = self._run(
+                mock_session,
+                stderr="ModuleNotFoundError: No module named 'sklearn'",
+                path="",
+            )
+        self.assertEqual(body["missingModule"]["distribution"], "scikit-learn")
+        self.assertFalse(body["missingModule"]["installable"])
+        self.assertEqual(body["missingModule"]["reason"], "install-disabled")
+        self.assertIn("guest", body["missingModule"]["detail"].lower())
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
     def test_a_successful_run_reports_nothing_even_with_that_text_on_stderr(
         self, mock_session
     ):

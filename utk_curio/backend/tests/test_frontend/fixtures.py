@@ -303,16 +303,25 @@ def curio_servers(session_app, request):
     if request.config.getoption("examples", default=False):
         extra_args.append("--with-examples")
     # Replay the whole e2e suite against isolated node execution by setting
-    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
-    # confinement path is not yet verified anywhere, so turning it on for every
-    # run would make an unrelated failure look like an isolation bug. Pair it
-    # with CURIO_E2E_EXEC_USER on a host that has an unprivileged account.
+    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: turning it
+    # on for every run would make an unrelated failure look like an isolation
+    # bug. Pair it with CURIO_E2E_EXEC_USER on a host that has an unprivileged
+    # account.
+    #
+    # Passed through the child's environment rather than as flags: isolation
+    # has no CLI flag any more. It is CURIO_ISOLATION/CURIO_EXEC_USER that the
+    # launcher reads, and a separate CURIO_E2E_* name keeps a developer's own
+    # CURIO_ISOLATION from silently steering the harness.
     _e2e_isolation = os.environ.get("CURIO_E2E_ISOLATION", "").strip()
     if _e2e_isolation:
-        extra_args += ["--isolation", _e2e_isolation]
-        _exec_user = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
-        if _exec_user:
-            extra_args += ["--exec-user", _exec_user]
+        env["CURIO_ISOLATION"] = _e2e_isolation
+        env["CURIO_EXEC_USER"] = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
+    else:
+        # env is a copy of the developer's shell, and the launcher honours a
+        # pre-set CURIO_ISOLATION. Clear it so the harness boots the same way
+        # for everyone rather than inheriting whatever is exported locally.
+        env.pop("CURIO_ISOLATION", None)
+        env.pop("CURIO_EXEC_USER", None)
 
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's

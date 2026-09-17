@@ -1,7 +1,7 @@
 """Shared-secret authentication for the sandbox HTTP API.
 
-The sandbox executes arbitrary user code. Every route that can run code, install
-packages, or read artifacts must therefore prove the caller is Curio's own
+The sandbox executes arbitrary user code. Every route that can run code or
+read artifacts must therefore prove the caller is Curio's own
 backend and not something else that reached the port.
 
 The secret is generated once per launch by ``utk_curio/main.py``

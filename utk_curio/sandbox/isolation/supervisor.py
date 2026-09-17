@@ -43,7 +43,7 @@ from utk_curio.sandbox.isolation.protocol import ProtocolError
 # one where an artifact whose name it can guess is one open() away. Beside the
 # store, `.curio/data` can be 0700 with nothing to reach through it.
 #
-# That is also what makes hardlinking safe under an --exec-user. A hardlink
+# That is also what makes hardlinking safe under an execution user. A hardlink
 # shares its source's inode, so the staged copy cannot have permissions of its
 # own: whatever the child may read here, it may read at the source. Access is
 # denied by the *path* instead -- the store is unreachable, the scratch

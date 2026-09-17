@@ -1,8 +1,8 @@
 """The sandbox refuses code execution to callers without the shared secret.
 
-The sandbox runs arbitrary user code. Before this suite existed, POST /exec and
-POST /install were reachable by anyone who could open the port, and the Docker
-image published that port. These tests pin the guard so it cannot regress:
+The sandbox runs arbitrary user code. Before this suite existed, POST /exec was
+reachable by anyone who could open the port, and the Docker image published that
+port. These tests pin the guard so it cannot regress:
 which routes require the token, which stay open for health checks, what a
 hosted instance does when the token is missing, and that no CORS header invites
 a browser to call any of it.
@@ -28,7 +28,6 @@ GUARDED = (
     ("post", "/execJs", {"json": {"code": "return 1;", "file_path": "",
                                   "nodeType": "curio.builtin/computation-analysis",
                                   "dataType": ""}}),
-    ("post", "/install", {"json": {"packages": ["inflection"]}}),
     ("get", "/get", {"query_string": {"fileName": "does-not-exist"}}),
 )
 
@@ -89,8 +88,8 @@ class TestGuardedRoutes(SandboxAuthTestCase):
         """A correct token gets past the decorator and into the handler.
 
         Asserted as 'not 401' rather than 200: /get on a missing artifact is a
-        legitimate 500, and /install is 403 unless runtime install is enabled.
-        Either way the request was authenticated, which is what this pins.
+        legitimate 500. Either way the request was authenticated, which is
+        what this pins.
         """
         with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             for method, path, kwargs in GUARDED:
@@ -156,45 +155,6 @@ class TestStartupGuard(SandboxAuthTestCase):
             with self.subTest(value=value):
                 with mock.patch.dict(os.environ, {"CURIO_NO_AUTH": value}):
                     self.assertEqual(auth.hosted_mode(), expected)
-
-
-class TestRuntimeInstallGate(SandboxAuthTestCase):
-    """POST /install is opt-in even for an authenticated caller."""
-
-    def _post_install(self):
-        return self.client.post(
-            "/install",
-            headers={auth.TOKEN_HEADER: TOKEN},
-            json={"packages": ["inflection"]},
-        )
-
-    def test_disabled_when_unset(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
-            os.environ.pop("CURIO_ALLOW_RUNTIME_INSTALL", None)
-            response = self._post_install()
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json()["error"], "runtime_install_disabled")
-
-    def test_explicitly_disabled(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN,
-                                          "CURIO_ALLOW_RUNTIME_INSTALL": "0"}):
-            self.assertEqual(self._post_install().status_code, 403)
-
-    def test_enabled_reaches_the_handler(self):
-        """With the gate open the request is validated, not refused.
-
-        pip is not actually invoked: an empty package list short-circuits at
-        the handler's own 400, which proves we got past the gate without
-        installing anything.
-        """
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN,
-                                          "CURIO_ALLOW_RUNTIME_INSTALL": "1"}):
-            response = self.client.post(
-                "/install",
-                headers={auth.TOKEN_HEADER: TOKEN},
-                json={"packages": []},
-            )
-        self.assertEqual(response.status_code, 400)
 
 
 class TestNoCorsHeaders(SandboxAuthTestCase):

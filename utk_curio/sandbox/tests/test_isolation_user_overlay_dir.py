@@ -2,7 +2,7 @@
 
 A library installed through the backend used to land in the one interpreter
 the sandbox runs every user's nodes from, so whatever one user installed,
-everybody imported. Under ``--isolation=fork`` a node runs in a forked child,
+everybody imported. Under fork isolation a node runs in a forked child,
 and a child can be handed its own ``sys.path`` -- so the install can be scoped
 to the user who asked for it.
 

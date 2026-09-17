@@ -14,6 +14,31 @@ services:
     # Bring the container back up automatically after a host reboot or daemon
     # restart, but respect a manual `docker stop`.
     restart: unless-stopped
+    environment:
+      # Each node's Python runs in a confined child process instead of
+      # in-process: memory and CPU capped, a seccomp denylist, and -- because
+      # an execution account is found -- as an unprivileged user that cannot
+      # read instance/ (password hashes, session tokens) or .curio/data (every
+      # session's artifacts). --deploy turns this on by itself and discovers
+      # the curio-exec account the image creates; see the Dockerfile's note.
+      #
+      # Setting it explicitly here makes it FAIL-CLOSED, which the default is
+      # not. The default degrades so that `curio.py start --deploy` still boots
+      # on a laptop or on Windows; a real deployment wants the opposite. If the
+      # sandbox cannot confine (no Linux, no pyseccomp, or those paths are
+      # still reachable by curio-exec after hardening) it refuses to start
+      # rather than serve while claiming a boundary it does not have. That
+      # makes a misconfiguration an unhealthy container, which the deploy
+      # workflow waits for and fails on -- and the workflow separately asserts
+      # /version reports "fork" -- instead of a silent regression to
+      # in-process execution.
+      #
+      # Two side effects on the host, both permanent and both on the
+      # bind-mounted workspace: ./instance and ./.curio/data are chmod'd to
+      # 0700/0600 owned by root at every boot (isolation/hardening.py). Any
+      # other process on the host that reads them -- a backup job, an operator
+      # shell as a non-root user -- loses access. Check that before deploying.
+      CURIO_ISOLATION: "fork"
     command:
       - python
       - curio.py
@@ -30,27 +55,3 @@ services:
       # same container.
       - --sandbox-port
       - "2000"
-      # Each node's Python runs in a confined child process instead of
-      # in-process: memory and CPU capped, a seccomp denylist, and -- because
-      # --exec-user is set -- as an unprivileged account that cannot read
-      # instance/ (password hashes, session tokens) or .curio/data (every
-      # session's artifacts). The account is created in the image; see the
-      # Dockerfile's curio-exec note.
-      #
-      # This is FAIL-CLOSED, deliberately. A deployment has auth on, so if the
-      # sandbox cannot confine (no Linux, no pyseccomp, or those paths are
-      # still reachable by curio-exec after hardening) it refuses to start
-      # rather than serve while claiming a boundary it does not have. That
-      # makes a misconfiguration an unhealthy container, which the deploy
-      # workflow now waits for and fails on, instead of a silent regression to
-      # in-process execution.
-      #
-      # Two side effects on the host, both permanent and both on the
-      # bind-mounted workspace: ./instance and ./.curio/data are chmod'd to
-      # 0700/0600 owned by root at every boot (isolation/hardening.py). Any
-      # other process on the host that reads them -- a backup job, an operator
-      # shell as a non-root user -- loses access. Check that before deploying.
-      - --isolation
-      - fork
-      - --exec-user
-      - curio-exec
