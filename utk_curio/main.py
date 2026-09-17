@@ -459,6 +459,41 @@ def _node_tree_is_stale(root, major):
         return True
 
 
+def _read_node_stamp(root):
+    """The Node major recorded in ``root``'s node_modules, or None."""
+    try:
+        with open(
+            os.path.join(root, "node_modules", NODE_STAMP), encoding="utf-8"
+        ) as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def _stale_frontend_tree_error():
+    """Why an unbuilt start must stop, or None when it may proceed.
+
+    Only reached when nothing is being rebuilt: the served bundle is fine, but
+    the frontend toolchain beside it belongs to another Node major, and
+    ``npm test``, ``npm run lint`` and ``npm run typecheck`` would fail against
+    it in ways that read as broken code rather than a stale install. Nothing to
+    check when there is no node_modules (the container, a pip install) or no
+    Node on PATH (nothing would run those commands either).
+    """
+    if shutil.which("node") is None:
+        return None
+    _, major = _read_node_version()
+    if not major or not _node_tree_is_stale(_frontend_dir(), major):
+        return None
+    installed_by = _read_node_stamp(_frontend_dir()) or "an older Node.js"
+    return (
+        f"[Frontend] {os.path.join(_frontend_dir(), 'node_modules')} was "
+        f"installed by Node.js {installed_by}, but Node.js {major} is on PATH. "
+        f"Rebuild it with 'python curio.py --force-rebuild', or delete that "
+        f"directory if you do not need the frontend toolchain."
+    )
+
+
 def _write_node_stamp(root, major):
     """Record the Node major that installed ``root``'s node_modules.
 
@@ -681,6 +716,14 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
     if os.getenv("CURIO_DEV") == "1" or force_rebuild or _frontend_needs_build():
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
+    else:
+        # Nothing is being built, so check_install_build's Node gate never runs
+        # and a tree from another Node major would sit there unnoticed.
+        stale = _stale_frontend_tree_error()
+        if stale:
+            log_error(stale)
+            clean_shutdown()
+            return None
 
     # If we're not starting the server, just exit here
     if no_server:

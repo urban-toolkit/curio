@@ -62,6 +62,8 @@ Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-work
 
 A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout whose `dist/` predates the move to production builds, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
+`node_modules/` beside that build is stamped with the Node.js major that installed it. When a start is not rebuilding anything and finds a tree from a different major, Curio stops with a message rather than starting: the bundle it would serve is fine, but `npm test`, `npm run lint` and `npm run typecheck` all run against that tree and fail there in ways that look like broken code. Clear it with `--force-rebuild`, or by deleting `node_modules/` if you never run the frontend toolchain. Nothing to clear means nothing to check, so a pip install and the Docker image are unaffected.
+
 **Catalogs**
 
 | Flag | Default | Effect |

@@ -146,3 +146,42 @@ def test_written_stamp_reads_back_as_current(checkout):
     _build(checkout, None)
     main._write_build_stamp()
     assert main._build_stamp_reason() is None
+
+
+def test_stale_tree_stops_a_start_that_is_not_rebuilding(checkout, monkeypatch):
+    """The Node gate lives in check_install_build, which an unbuilt start skips.
+
+    Serving would work: the bundle is prebuilt and a browser does not care which
+    Node produced it. But npm test, npm run lint and npm run typecheck all run
+    against this tree and fail in ways that read as broken code, so the launcher
+    refuses rather than leaving it to be discovered later.
+    """
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
+    (checkout / "node_modules").mkdir()
+    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+
+    message = main._stale_frontend_tree_error()
+    assert "installed by Node.js 24" in message
+    assert "--force-rebuild" in message
+
+
+def test_matching_tree_does_not_stop_a_start(checkout, monkeypatch):
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
+    (checkout / "node_modules").mkdir()
+    (checkout / "node_modules" / main.NODE_STAMP).write_text("26", encoding="utf-8")
+
+    assert main._stale_frontend_tree_error() is None
+
+
+def test_no_tree_and_no_node_are_both_fine(checkout, monkeypatch):
+    """A pip install and the container have neither, and must still start."""
+    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert main._stale_frontend_tree_error() is None  # no node_modules at all
+
+    (checkout / "node_modules").mkdir()
+    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    assert main._stale_frontend_tree_error() is None  # stale, but no Node to care
