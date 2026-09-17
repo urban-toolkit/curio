@@ -1,11 +1,11 @@
 """Playwright E2E: a signed-up account's gallery lists the example dataflows (#200).
 
 The examples were seeded to exactly one user - the shared guest - and project
-listing is a plain owner filter, so under ``--auth`` every account signed in to
+listing is a plain owner filter, so under ``--deploy`` every account signed in to
 an empty gallery. ``--deploy`` carried the identical defect.
 
 The reason nothing caught it is visible in ``fixtures.py``: the harness launched
-with ``--auth`` but never ``--with-examples``, so the one configuration where
+with ``--deploy`` but never ``--with-examples``, so the one configuration where
 the gallery is empty was the one configuration never exercised. This module
 turns the flag on (``--with-examples``) and walks the reporter's path -
 create an account, land on /projects, read what is there.
@@ -17,7 +17,7 @@ Cheaper coverage that already exists, and what this adds on top of it:
   prune), idempotence and the marker that stops a deleted example coming back.
 * ``tests/test_projects/test_routes.py`` covers ``GET /api/projects`` answering
   with the examples for a registered user's token.
-* ``test_scripts/test_launcher_env.py`` pins ``--auth --with-examples`` to the
+* ``test_scripts/test_launcher_env.py`` pins ``--deploy --with-examples`` to the
   two env vars.
 
 None of those boot a browser against a real ``curio.py start``, which is where

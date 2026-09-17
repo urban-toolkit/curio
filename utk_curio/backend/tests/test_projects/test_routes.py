@@ -60,7 +60,7 @@ def test_list_projects(client, user_and_token, tmp_curio):
 def test_list_projects_serves_a_registered_users_examples(
     client, user_and_token, tmp_curio, monkeypatch
 ):
-    """#200 end to end at the route: the gallery is not empty under --auth.
+    """#200 end to end at the route: the gallery is not empty under --deploy.
 
     Examples were seeded to the shared guest alone and listing is a plain owner
     filter, so a signed-in account got `[]` here however the stack was started.

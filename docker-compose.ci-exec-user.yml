@@ -23,7 +23,7 @@
 #    (utk_curio/sandbox/tests/live/test_exec_user_boundary.py), which runs
 #    nothing on the host that touches the hardened paths.
 #
-# 2. --auth, which ci-isolated.yml had to drop. A hosted instance asking for
+# 2. --deploy, which ci-isolated.yml had to drop. A hosted instance asking for
 #    fork isolation without an exec user is fatal by design
 #    (isolation/hardening.py::apply_and_report). With one, that combination is
 #    the supported deployment shape, so this job can run it -- and the boot
@@ -49,7 +49,7 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
-      # What this whole job exists to exercise. --auth makes the instance
+      # What this whole job exists to exercise. --deploy makes the instance
       # hosted, and the launcher discovers the curio-exec account the image
       # creates, so isolation and the execution user both come from that --
       # the same way docker-compose.deploy.yml gets them. Pinned explicitly
@@ -66,7 +66,7 @@ services:
       - curio.py
       - start
       - all
-      - --auth
+      - --deploy
       - --with-examples
       - --backend-host
       - 0.0.0.0

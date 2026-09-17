@@ -271,13 +271,13 @@ def curio_servers(session_app, request):
     # ``CURIO_NO_AUTH=1`` (auto-guest mode, no login UI), which would send the
     # browser straight to ``/projects`` and make every auth-gated test time
     # out looking for ``Sign in`` / ``Create an account`` / ``Continue as
-    # Guest``. ``--auth`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
+    # Guest``. ``--deploy`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
     # tests that opt out (e.g. ``test_frontend_server``) branch on
     # ``auth_enabled_env()`` and will follow the no-auth path only when the
     # caller sets ``CURIO_NO_AUTH=1`` in the pytest process env as well.
     extra_args: list[str] = []
     if env.get("CURIO_NO_AUTH", "0") not in ("1", "true", "yes", "on"):
-        extra_args.append("--auth")
+        extra_args.append("--deploy")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
     # Saving a node's output to the Data Catalog is opt-in per node by default
@@ -291,7 +291,7 @@ def curio_servers(session_app, request):
     # scenario #180 reports.
     extra_args.append("--save-node-outputs")
     # The examples are what #200 was about, and the gap that let it through:
-    # this harness launched with ``--auth`` but never ``--with-examples``, so
+    # this harness launched with ``--deploy`` but never ``--with-examples``, so
     # the one configuration where the gallery came up empty was the one
     # configuration never tested. Opt-in rather than always-on because seeding
     # eleven dataflows (and provisioning the datasets they reference) costs

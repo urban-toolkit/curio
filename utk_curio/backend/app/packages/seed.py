@@ -8,7 +8,7 @@ guest user's package store at backend startup.
 Besides ``curio.builtin`` (always seeded), the packages the bundled examples
 declare as dependencies (see :func:`example_dep_package_ids`) are seeded too
 when example projects are being seeded (``CURIO_SEED_EXAMPLES=1``, i.e.
-``--with-examples`` / ``--deploy``). Once they land in the user store, the
+``--with-examples``; ``docker-compose.deploy.yml`` passes it explicitly). Once they land in the user store, the
 launcher's per-user manifest walk re-installs their python deps on every
 subsequent start — so seeded examples keep working across plain
 ``curio start`` runs.

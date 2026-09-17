@@ -48,9 +48,8 @@ curio setup                  # install deps and exit
 | Flag | Effect |
 |---|---|
 | *(none)* | Auto sign-in as shared guest, projects page shown |
-| `--auth` | Require login (`CURIO_NO_AUTH=0`) |
 | `--no-project` | Skip both login and projects; open the canvas directly |
-| `--deploy` | Auth **and** projects on, and isolated node execution where the host supports it. Use for anything reachable by others |
+| `--deploy` | Auth **and** projects on, and isolated node execution where the host supports it. The only way to turn auth on, so use it locally too when you need the login page |
 | `--collab` | Real-time collaborative editing. Experimental, LAN-only |
 
 **Catalogs**
@@ -83,9 +82,9 @@ The three startup modes control which pages are shown when a user first opens Cu
 | Mode | Login page | Project page | Typical use |
 |------|-----------|--------------|-------------|
 | *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
-| `--auth` / `--deploy` | Yes | Yes | Multi-user or production deployment |
+| `--deploy` | Yes | Yes | Multi-user instance, locally or on a server |
 | `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
+| `--collab` | Stackable with other modes (pairs naturally with `--deploy`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.

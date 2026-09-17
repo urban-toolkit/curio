@@ -31,7 +31,7 @@ Several packages ship with Curio:
 | Package | What it provides |
 |---|---|
 | `curio.builtin@1` | The default 12 node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
-| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. Both are plain Python nodes (`behavior: "code"`). `curio.weather@1` is also auto-seeded (still uninstallable) when Curio starts with `--with-examples` / `--deploy`, because the seeded example workflows need its Python deps (rasterio, pythermalcomfort, rasterstats). |
+| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. Both are plain Python nodes (`behavior: "code"`). `curio.weather@1` is also auto-seeded (still uninstallable) when Curio starts with `--with-examples`, because the seeded example workflows need its Python deps (rasterio, pythermalcomfort, rasterstats). |
 | `curio.example-ui@1` | A minimal worked example of a node with its **own React interface** rather than a code editor, with no API keys, no Python deps, and about 150 lines. The reference to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `curio.streetvision@1` | A substantial custom-UI package (Street View fetch + HuggingFace inference). Its results are inspected with the built-in Simple View. Not auto-installed, `readOnly`, and needs a Google Maps API key plus torch/transformers. Read it for the advanced patterns, not as a starting point. |
 

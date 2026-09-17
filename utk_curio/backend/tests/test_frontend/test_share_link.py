@@ -53,7 +53,7 @@ def test_share_link_opens_read_only(
     """Visiting another user's /dataflow/<id> URL renders a read-only canvas.
 
     The "Save dataflow" fork path is intentionally not exercised here: the e2e
-    harness boots the backend with ``--auth`` (``CURIO_NO_AUTH=0``), which
+    harness boots the backend with ``--deploy`` (``CURIO_NO_AUTH=0``), which
     means ``blockGuestSaves=true`` for the auto-signed-in shared guest. The
     fork only works in deploy mode (``CURIO_NO_AUTH=1``); see
     ``test_share_link_save_fork`` below.

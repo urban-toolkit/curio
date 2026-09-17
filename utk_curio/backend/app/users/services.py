@@ -99,7 +99,7 @@ def signup(data: SignUpIn) -> AuthOut:
     )
     # A new account lands on an empty gallery otherwise: the examples were
     # seeded to the shared guest only, and listing is a plain owner filter, so
-    # under ``--auth`` nobody with an account ever saw them (#200). Best-effort
+    # under ``--deploy`` nobody with an account ever saw them (#200). Best-effort
     # - a failed seed must never cost the user their sign-up, and
     # ``list_projects`` back-fills on the next listing anyway.
     from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded

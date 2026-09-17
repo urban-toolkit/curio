@@ -313,7 +313,7 @@ def test_the_user_database_cannot_be_opened():
     outcome = printed(result).strip()
     assert outcome != "missing", (
         "%s does not exist, so this proved nothing; the stack boots with "
-        "--auth, which creates it." % target
+        "--deploy, which creates it." % target
     )
     assert outcome == "denied", "an isolated node could read " + target
 

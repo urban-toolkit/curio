@@ -71,7 +71,7 @@ class TestAutoIsOptInOnly(unittest.TestCase):
 
     Isolation is opt-in. Making `auto` isolate would silently move every hosted
     Linux instance onto the fork path the moment this shipped, and CI (Linux,
-    --auth) would be the first to run it. When child.confine() has actually
+    --deploy) would be the first to run it. When child.confine() has actually
     been exercised, these expectations change deliberately, together with the
     AUTO branch in mode.resolve_mode.
     """
@@ -83,7 +83,7 @@ class TestAutoIsOptInOnly(unittest.TestCase):
         self.assertIn("CURIO_ISOLATION=fork", reason)
 
     def test_hosted_auto_does_not_raise_where_it_could_not_isolate(self):
-        """CI runs Linux with --auth and no pyseccomp; it must still boot."""
+        """CI runs Linux with --deploy and no pyseccomp; it must still boot."""
         for capabilities in (WINDOWS, MACOS, LINUX_NO_SECCOMP):
             with self.subTest(platform=capabilities["platform"]):
                 resolved, _reason = mode.resolve_mode(

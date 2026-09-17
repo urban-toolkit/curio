@@ -8,7 +8,7 @@ on:
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
@@ -35,7 +35,7 @@ on:
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
@@ -366,7 +366,12 @@ jobs:
                           python -m utk_curio.backend.tests.shards "$k")"
               mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
-              python curio.py start backend --auth --with-examples \
+              # CURIO_ISOLATION=off for the same reason docker-compose.ci.yml
+              # sets it: these shards run as root in an image carrying
+              # curio-exec, so --deploy would discover it and isolate. The
+              # isolated stacks are test-gpu-isolated and test-gpu-exec-user.
+              export CURIO_ISOLATION=off
+              python curio.py start backend --deploy --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
@@ -485,7 +490,7 @@ jobs:
   # Second stack, same runner, booted with CURIO_ISOLATION=fork so a real workload
   # runs through the confined path. Runs after test-gpu rather than beside it:
   # the runner takes one job at a time, and both want the GPU and the bind
-  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --auth
+  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --deploy
   # and leaves CURIO_EXEC_USER empty, and what that does and does not cover.
   #
   # Scoped to the workflows whose nodes are Python, because isolation wraps

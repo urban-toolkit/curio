@@ -230,30 +230,50 @@ def test_isolation_off_beats_the_deploy_default(linux_host, has_exec_account,
 
 
 def test_auth_and_examples_together_is_the_combination_200_needed():
-    """`--auth --with-examples` must turn both on at once.
+    """`--deploy --with-examples` must turn both on at once.
 
     This pair is the reported configuration for #200: a signed-in account with
-    the examples seeded. The e2e harness launched with ``--auth`` but never
+    the examples seeded. The e2e harness booted multi-user but never
     ``--with-examples``, which is why nothing caught the empty gallery.
     """
-    set_environment_variables(**BASE, auth=True, with_examples=True)
+    set_environment_variables(**BASE, deploy=True, with_examples=True)
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
     assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
 
 
 def test_examples_are_off_unless_asked_for():
-    set_environment_variables(**BASE, auth=True)
+    set_environment_variables(**BASE, deploy=True)
 
     assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
 
-def test_deploy_seeds_examples_without_the_flag():
-    # --deploy is the "give me a working install" switch, so it implies both.
+def test_deploy_alone_does_not_seed_examples():
+    """It used to, and that is now the harness's configuration.
+
+    The e2e stack boots --deploy because that is the only way to get a login
+    page, and two suites exist to cover multi-user WITHOUT examples. Seeding
+    has to be asked for; docker-compose.deploy.yml asks.
+    """
     set_environment_variables(**BASE, deploy=True)
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
-    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
+
+
+def test_deploy_is_the_only_way_to_turn_auth_on():
+    set_environment_variables(**BASE)
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+
+    set_environment_variables(**BASE, deploy=True)
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+
+
+def test_no_project_still_skips_both_pages():
+    set_environment_variables(**BASE, no_project=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+    assert os.environ["CURIO_NO_PROJECT"] == "1"
 
 
 def test_save_node_outputs_defaults_off_and_can_be_turned_on():
@@ -314,7 +334,7 @@ def test_a_plain_start_skips_auth():
 
 
 def test_auth_flag_requires_login_without_deploy():
-    set_environment_variables(**BASE, auth=True)
+    set_environment_variables(**BASE, deploy=True)
     assert os.environ["CURIO_NO_AUTH"] == "0"
     assert os.environ["CURIO_NO_PROJECT"] == "0"
 
@@ -325,15 +345,17 @@ def test_no_project_implies_no_auth():
     assert os.environ["CURIO_NO_AUTH"] == "1"
 
 
-def test_deploy_seeds_examples_like_with_examples():
+def test_only_with_examples_seeds_examples():
     set_environment_variables(**BASE)
     assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
     set_environment_variables(**BASE, with_examples=True)
     assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
 
+    # --deploy used to imply this. It cannot any more: the e2e harness boots
+    # --deploy for the login page and must not seed.
     set_environment_variables(**BASE, deploy=True)
-    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
 
 # --------------------------------------------------------------------------- #

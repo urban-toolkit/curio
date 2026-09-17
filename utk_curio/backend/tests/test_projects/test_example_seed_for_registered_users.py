@@ -1,7 +1,7 @@
 """Example dataflows reach registered accounts, not just the shared guest (#200).
 
 Examples were seeded to exactly one user - the shared guest - and project
-listing is a plain owner filter, so under ``--auth`` (and ``--deploy``, which
+listing is a plain owner filter, so under ``--deploy`` (which
 carries the identical defect) every account signed in to an empty gallery. The
 repo had already fixed the *dataset* half of this and never the project half.
 

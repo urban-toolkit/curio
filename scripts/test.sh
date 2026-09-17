@@ -183,7 +183,7 @@ start_extra_shards() {
       # A COPY, not an empty dir: the catalog tests assert the shipped datasets exist.
       cp -r "$REPO_ROOT/datasets/." "$CURIO_CATALOG_ROOT/"
       export CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1
-      python "$REPO_ROOT/curio.py" start backend --auth --with-examples \
+      python "$REPO_ROOT/curio.py" start backend --deploy --with-examples \
         --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
         > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
       echo $! > "$CURIO_STATE_DIR/backend.pid"
@@ -341,16 +341,16 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # then read. Two e2e tests call the sandbox directly. main.py honours a
   # pre-set value.
   export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
-  # --auth is REQUIRED, not optional. The E2E suite exercises the real signup /
+  # --deploy is REQUIRED, not optional. The E2E suite exercises the real signup /
   # signin / guest flows and most of it acts as an authenticated OWNER: a
   # dataflow's own packages, datasets and agents are visible only to the user
   # who installed them. Booted without it, 'curio.py start' sets
   # CURIO_NO_AUTH=1, the browser is the read-only shared guest, every catalog
   # fetch comes back empty, and 43 tests - the whole agent-catalog suite among
   # them - skipped instead of running, so a green run proved far less than it
-  # appeared to. The curio_servers fixture already passes --auth when it boots
+  # appeared to. The curio_servers fixture already passes --deploy when it boots
   # its own stack; this is the CURIO_E2E_USE_EXISTING=1 path catching up.
-  # CURIO_TESTING is REQUIRED here for the same reason --auth is. The E2E
+  # CURIO_TESTING is REQUIRED here for the same reason --deploy is. The E2E
   # suite seeds users and projects through /api/testing/* and resets the DB
   # between tests through /api/testing/reset-db, and that blueprint refuses
   # with 404 unless the server is BOTH a dev env and a declared test rig
@@ -362,7 +362,7 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --auth --with-examples \
+    python "$REPO_ROOT/curio.py" start --deploy --with-examples \
       --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
       --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!

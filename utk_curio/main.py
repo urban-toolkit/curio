@@ -154,7 +154,7 @@ def _why_not_isolated(exec_user, blockers):
     )
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -189,7 +189,11 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SANDBOX_TOKEN"] = (
         os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
     )
-    os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
+    # NOT implied by --deploy. The e2e harness boots --deploy to get the login
+    # page, and two suites exist to cover multi-user WITHOUT examples
+    # (test_examples_for_registered_users_e2e.py), so seeding has to be asked
+    # for. docker-compose.deploy.yml passes --with-examples explicitly.
+    os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
     os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
@@ -209,9 +213,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_NO_AUTH"] = "0"
         os.environ["CURIO_NO_PROJECT"] = "0"
     else:
-        os.environ["CURIO_NO_AUTH"] = (
-            "1" if no_project else ("0" if auth else "1")
-        )
+        os.environ["CURIO_NO_AUTH"] = "1"
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
     hosted = os.environ["CURIO_NO_AUTH"] == "0"
@@ -1021,7 +1023,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
     # per-user-store walk below. When example seeding is on
-    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk the
+    # (--with-examples => CURIO_SEED_EXAMPLES=1), also walk the
     # packages the bundled examples declare as dependencies — derived from
     # their dataflow.packages lockfiles (see example_dep_package_ids in
     # backend/app/packages/seed.py), NOT a full catalog walk. This
@@ -1344,10 +1346,6 @@ def main():
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
-        "--auth", action="store_true", default=False,
-        help="Enable authentication (sets CURIO_NO_AUTH=0). Default: off (CURIO_NO_AUTH=1)"
-    )
-    parser.add_argument(
         "--no-project", action="store_true", default=False,
         help=(
             "Skip login and projects pages "
@@ -1357,7 +1355,12 @@ def main():
     )
     parser.add_argument(
         "--deploy", action="store_true", default=False,
-        help="Enable authentication and projects (sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0)"
+        help=(
+            "Run as a multi-user instance: enable authentication and projects "
+            "(sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0). This is the only way "
+            "to turn auth on, so use it locally too when you need the login "
+            "page. Also isolates node execution where the host supports it."
+        ),
     )
     parser.add_argument(
         "--with-examples", action="store_true", default=False,
@@ -1503,7 +1506,6 @@ def main():
         backend_port=args.backend_port,
         sandbox_host=args.sandbox_host,
         sandbox_port=args.sandbox_port,
-        auth=args.auth,
         no_project=args.no_project,
         deploy=args.deploy,
         with_examples=args.with_examples,

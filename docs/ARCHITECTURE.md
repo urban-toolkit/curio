@@ -468,7 +468,7 @@ The sandbox runs as a separate Flask process. It:
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
-  instance started with `--auth` or `--deploy` refuses to boot without one.
+  instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 

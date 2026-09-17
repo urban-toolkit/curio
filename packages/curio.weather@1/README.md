@@ -6,7 +6,7 @@ zonal statistics via `rasterstats`, and census/polygon reprojection.
 
 This package backs the [Heterogeneous data + linked views](../../docs/examples/09-heterogeneous-data-linked-views.md)
 example (Milan urban heat exposure). It is auto-seeded when Curio starts with
-`--with-examples` / `--deploy`, because that seeded workflow needs its Python
+`--with-examples`, because that seeded workflow needs its Python
 dependencies.
 
 ## Kinds
