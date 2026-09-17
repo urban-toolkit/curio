@@ -543,8 +543,16 @@ def check_install_build(dir, force_rebuild=False):
     else:
         _write_node_stamp(abs_dir, node_major)
 
-    # Check if dist/build directory exists (depending on your setup)
-    build_dir = "dist" if os.path.exists("dist") else "build"
+    # ``dist`` is the only output there is: webpack writes it (webpack.config.js
+    # ``output.path``) and start_frontend serves it by name. The old
+    # ``"dist" if exists else "build"`` fallback was Create-React-App habit, and
+    # it broke twice: the stamp below landed in a ``build/`` this function
+    # created itself, so the next start found no stamp in ``dist`` and rebuilt
+    # for nothing -- and worse, that leftover ``build/`` kept a matching stamp,
+    # so once ``dist`` was deleted (the documented first step before an e2e run)
+    # the launcher reported "build is current", skipped the build, and served a
+    # directory that did not exist.
+    build_dir = "dist"
     # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
     # existing build is only reusable if it was built for the backend we are
     # about to start. Without this, changing --backend-port reused the old
