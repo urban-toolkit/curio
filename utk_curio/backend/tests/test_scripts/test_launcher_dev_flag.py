@@ -18,6 +18,7 @@ import os
 import pytest
 
 import utk_curio.main as main
+from utk_curio.main import NODE_MAJOR
 
 
 def _resolve(dev_flag: bool, inherited: str | None, monkeypatch):
@@ -148,40 +149,105 @@ def test_written_stamp_reads_back_as_current(checkout):
     assert main._build_stamp_reason() is None
 
 
-def test_stale_tree_stops_a_start_that_is_not_rebuilding(checkout, monkeypatch):
-    """The Node gate lives in check_install_build, which an unbuilt start skips.
+def test_stale_tree_is_reinstalled_and_the_bundle_survives(checkout, monkeypatch):
+    """A Node major change invalidates the install, not the emitted bundle.
 
-    Serving would work: the bundle is prebuilt and a browser does not care which
-    Node produced it. But npm test, npm run lint and npm run typecheck all run
-    against this tree and fail in ways that read as broken code, so the launcher
-    refuses rather than leaving it to be discovered later.
+    check_install_build is the one place that repairs the tree, so an unbuilt
+    start routes through it too (``_frontend_tree_is_stale`` in the gate). It
+    must reinstall without dropping a current dist/: which Node ran webpack
+    does not change the JavaScript it emitted, and rebuilding costs minutes.
     """
     monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
+    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    ran = []
+    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    _build(checkout, "production\n\n")
+    (checkout / "dist" / "bundle.js").write_text("the bundle", encoding="utf-8")
     (checkout / "node_modules").mkdir()
     (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+    (checkout / "node_modules" / "marker").write_text("x", encoding="utf-8")
 
-    message = main._stale_frontend_tree_error()
-    assert "installed by Node.js 24" in message
-    assert "--force-rebuild" in message
+    assert main._frontend_tree_is_stale() is True
+    cwd = os.getcwd()
+    try:
+        main.check_install_build(str(checkout))
+    finally:
+        os.chdir(cwd)
+
+    assert not (checkout / "node_modules" / "marker").exists()   # tree reinstalled
+    assert ["npm", "install"] in ran
+    assert ["npm", "run", "build"] not in ran                    # bundle kept
+    assert (checkout / "dist" / "bundle.js").read_text() == "the bundle"
+    assert (checkout / "node_modules" / main.NODE_STAMP).read_text() == str(NODE_MAJOR)
 
 
-def test_matching_tree_does_not_stop_a_start(checkout, monkeypatch):
+def test_force_rebuild_still_drops_the_bundle(checkout, monkeypatch):
+    """--force-rebuild is an explicit ask to redo everything, bundle included."""
     monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
-    (checkout / "node_modules").mkdir()
-    (checkout / "node_modules" / main.NODE_STAMP).write_text("26", encoding="utf-8")
+    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    ran = []
+    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    _build(checkout, "production\n\n")
 
-    assert main._stale_frontend_tree_error() is None
+    cwd = os.getcwd()
+    try:
+        main.check_install_build(str(checkout), force_rebuild=True)
+    finally:
+        os.chdir(cwd)
+
+    assert ["npm", "run", "build"] in ran
+    assert not (checkout / "dist" / "index.html").exists() or ran.count(["npm", "install"]) == 1
 
 
-def test_no_tree_and_no_node_are_both_fine(checkout, monkeypatch):
-    """A pip install and the container have neither, and must still start."""
-    monkeypatch.setattr(main, "_read_node_version", lambda: ("v26.0.0", 26))
+def test_matching_tree_is_not_stale(checkout, monkeypatch):
     monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    assert main._stale_frontend_tree_error() is None  # no node_modules at all
-
+    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     (checkout / "node_modules").mkdir()
-    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+    (checkout / "node_modules" / main.NODE_STAMP).write_text(str(NODE_MAJOR), encoding="utf-8")
+    assert main._frontend_tree_is_stale() is False
+
+
+def test_missing_tree_is_not_stale(checkout, monkeypatch):
+    """Absent is deliberate: obvious when it bites, and 1.6 GB to undo.
+
+    It is also what the container and pip look like, and neither may run npm.
+    """
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    assert main._frontend_tree_is_stale() is False
+
+
+def test_without_node_nothing_is_stale(checkout, monkeypatch):
     monkeypatch.setattr(main.shutil, "which", lambda name: None)
-    assert main._stale_frontend_tree_error() is None  # stale, but no Node to care
+    (checkout / "node_modules").mkdir()
+    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+    assert main._frontend_tree_is_stale() is False
+
+
+def test_old_node_refuses_to_start(monkeypatch, capsys):
+    """An out-of-date Node is a broken install, not a degraded one.
+
+    The sandbox runs autk-db in it (Autark data nodes die mid-download on 24)
+    and every npm script fails against it, so nothing starts.
+    """
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main, "_read_node_version", lambda: ("v24.9.0", 24))
+
+    with pytest.raises(SystemExit) as exit_info:
+        main._require_supported_node()
+
+    # Non-zero: clean_shutdown's 0 would tell a script the stack came up.
+    assert exit_info.value.code == 1
+    assert f"requires Node.js {NODE_MAJOR} or newer" in capsys.readouterr().err
+
+
+def test_supported_node_starts(monkeypatch):
+    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    main._require_supported_node()
+
+
+def test_no_node_at_all_starts(monkeypatch):
+    """A Python-only session is fine; there is no wrong version to object to."""
+    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    main._require_supported_node()

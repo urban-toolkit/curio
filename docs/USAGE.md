@@ -62,7 +62,7 @@ Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-work
 
 A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout whose `dist/` predates the move to production builds, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
-`node_modules/` is stamped with the Node.js major that installed it, and a start that is not rebuilding stops when it finds a tree from another major, since `npm test` and the other npm scripts would fail against it. Clear it with `--force-rebuild`, or by deleting the directory.
+Curio refuses to start on a Node.js older than 26 and names the upgrade. On a supported Node nothing is refused, it is refreshed: `node_modules/` carries the major that installed it and is reinstalled when that changes, while the bundle beside it is kept unless its own stamp calls for a rebuild.
 
 **Catalogs**
 

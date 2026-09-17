@@ -459,39 +459,46 @@ def _node_tree_is_stale(root, major):
         return True
 
 
-def _read_node_stamp(root):
-    """The Node major recorded in ``root``'s node_modules, or None."""
-    try:
-        with open(
-            os.path.join(root, "node_modules", NODE_STAMP), encoding="utf-8"
-        ) as fh:
-            return fh.read().strip() or None
-    except OSError:
-        return None
+def _require_supported_node():
+    """Refuse to start on a Node older than the project targets.
 
+    Serving a prebuilt bundle would survive it, but the sandbox runs autk-db in
+    this Node, where Autark data nodes die mid-download (the undici regression
+    nodejs/undici#5360), and every npm script fails against it. That is a broken
+    install rather than a degraded one, and the failures it produces read as
+    bugs in Curio. No Node at all is a different case: nothing to be wrong, and
+    a Python-only session still works.
 
-def _stale_frontend_tree_error():
-    """Why an unbuilt start must stop, or None when it may proceed.
-
-    Only reached when nothing is being rebuilt: the served bundle is fine, but
-    the frontend toolchain beside it belongs to another Node major, and
-    ``npm test``, ``npm run lint`` and ``npm run typecheck`` would fail against
-    it in ways that read as broken code rather than a stale install. Nothing to
-    check when there is no node_modules (the container, a pip install) or no
-    Node on PATH (nothing would run those commands either).
+    Exits non-zero rather than through clean_shutdown, whose 0 would tell a
+    script that the stack came up. Nothing is running yet to shut down.
     """
     if shutil.which("node") is None:
-        return None
-    _, major = _read_node_version()
-    if not major or not _node_tree_is_stale(_frontend_dir(), major):
-        return None
-    installed_by = _read_node_stamp(_frontend_dir()) or "an older Node.js"
-    return (
-        f"[Frontend] {os.path.join(_frontend_dir(), 'node_modules')} was "
-        f"installed by Node.js {installed_by}, but Node.js {major} is on PATH. "
-        f"Rebuild it with 'python curio.py --force-rebuild', or delete that "
-        f"directory if you do not need the frontend toolchain."
+        return
+    raw, major = _read_node_version()
+    if raw is None or major >= NODE_MAJOR:
+        return
+    log_error(
+        f"Node.js {raw} detected; Curio requires Node.js {NODE_MAJOR} or newer. "
+        f"Upgrade with 'conda install -c conda-forge nodejs={NODE_MAJOR}' or "
+        f"from https://nodejs.org, then retry."
     )
+    sys.exit(1)
+
+
+def _frontend_tree_is_stale():
+    """node_modules belongs to another Node major, and Node is here to tell.
+
+    Nothing to check without a tree (the container and pip ship none) or
+    without Node on PATH. A *missing* tree is not stale: it fails obviously,
+    one npm install away, and conjuring 1.6 GB nobody asked for would undo a
+    deliberate delete.
+    """
+    if shutil.which("npm") is None or shutil.which("node") is None:
+        return False
+    if not os.path.isfile(os.path.join(_frontend_dir(), "package.json")):
+        return False  # nothing to reinstall from, so nothing to report
+    _, major = _read_node_version()
+    return bool(major) and _node_tree_is_stale(_frontend_dir(), major)
 
 
 def _write_node_stamp(root, major):
@@ -542,17 +549,16 @@ def check_install_build(dir, force_rebuild=False):
         clean_shutdown()
         return
 
-    # A tree installed by another Node major takes the same path as
-    # --force-rebuild (see NODE_STAMP). The build goes with it: the bundle was
-    # produced by the old toolchain, and the .curio-backend-url stamp alone
-    # would call it current and skip the rebuild.
+    # A tree from another Node major is reinstalled (see NODE_STAMP), and only
+    # the tree: which Node ran webpack does not change the JavaScript it emits,
+    # so the bundle is judged by its own stamp below and usually survives.
     if not force_rebuild and _node_tree_is_stale(abs_dir, node_major):
         log_info(
             f"[Frontend] node_modules was installed by a different Node.js major; "
-            f"rebuilding for Node.js {node_major}...",
+            f"reinstalling for Node.js {node_major}...",
             COLOR_FRONTEND, 0,
         )
-        force_rebuild = True
+        shutil.rmtree(os.path.join(abs_dir, "node_modules"), ignore_errors=True)
 
     if force_rebuild:
         log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
@@ -713,17 +719,14 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
     # dist/ has nothing for the static server to serve. A pip install and the
     # shipped container both arrive with dist/ already built, so neither runs npm.
     original_dir = os.getcwd()
-    if os.getenv("CURIO_DEV") == "1" or force_rebuild or _frontend_needs_build():
+    if (
+        os.getenv("CURIO_DEV") == "1"
+        or force_rebuild
+        or _frontend_needs_build()
+        or _frontend_tree_is_stale()
+    ):
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
-    else:
-        # Nothing is being built, so check_install_build's Node gate never runs
-        # and a tree from another Node major would sit there unnoticed.
-        stale = _stale_frontend_tree_error()
-        if stale:
-            log_error(stale)
-            clean_shutdown()
-            return None
 
     # If we're not starting the server, just exit here
     if no_server:
@@ -1034,18 +1037,11 @@ def _ensure_root_node_modules(project_root: str) -> None:
         )
         return
 
-    # A warning, not a hard stop: this path also runs with CURIO_DEV=0 (a pip
-    # install), where an older Node still gives a working Curio minus the JS and
-    # Autark data nodes. check_install_build's gate is the fatal one, and it only
-    # runs in dev mode. An unreadable version leaves the tree alone.
+    # An unreadable version leaves the tree alone rather than wiping it on a
+    # guess. An out-of-date one never reaches here: _require_supported_node
+    # stops the launch before any server starts.
     node_version_raw, node_major = _read_node_version()
-    if node_version_raw and node_major < NODE_MAJOR:
-        log_warning(
-            f"[Sandbox] Node.js {node_version_raw} detected; the project targets "
-            f"{NODE_MAJOR}. Autark data nodes can die mid-download on Node 24 "
-            f"(the undici regression nodejs/undici#5360)."
-        )
-    elif node_version_raw and _node_tree_is_stale(project_root, node_major):
+    if node_version_raw and _node_tree_is_stale(project_root, node_major):
         log_info(
             f"[Sandbox] Root node_modules was installed by a different Node.js "
             f"major; reinstalling for Node.js {node_major}...",
@@ -1813,6 +1809,7 @@ def main():
         sys.exit(0)
 
     if args.command == "start":
+        _require_supported_node()
         # Mirror the ``shutil.which("npm")`` check at the top of
         # ``start_frontend``: catch drifted Python envs at launch instead
         # of crashing the sandbox/backend on its first module-level import.
