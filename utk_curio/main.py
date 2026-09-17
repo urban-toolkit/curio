@@ -36,14 +36,11 @@ COLOR_SANDBOX = "\033[93m"   # Yellow
 # test_launcher_node_version.py fails when they drift.
 NODE_MAJOR = 26
 
-# Recorded inside node_modules by the Node major that installed it. A checkout
-# whose tree was installed by a different major is wiped and reinstalled once,
-# because ``npm install`` alone does not heal it: it never re-runs an
-# already-installed package's install script, so anything built from source
-# stays built for the old ABI, and webpack's filesystem cache
-# (node_modules/.cache, see the frontend's webpack.config.js) is not keyed on
-# the Node version either. A tree with no stamp predates this check -- e.g.
-# every checkout installed before the move to Node 26 -- and counts as stale.
+# Recorded inside node_modules by the Node major that installed it; a tree from
+# another major (or with no stamp, i.e. any checkout from before Node 26) is
+# reinstalled once. ``npm install`` alone does not heal it: it never re-runs an
+# install script, and webpack's cache under node_modules/.cache is not keyed on
+# the Node version.
 NODE_STAMP = ".curio-node-major"
 
 shutdown_flag = threading.Event()
@@ -467,12 +464,8 @@ def _write_node_stamp(root, major):
         with open(os.path.join(node_modules, NODE_STAMP), "w", encoding="utf-8") as fh:
             fh.write(str(major))
     except OSError as exc:
-        log_info(
-            f"Could not record the installing Node.js major ({exc}); "
-            f"the next start will reinstall node_modules.",
-            COLOR_FRONTEND,
-            0,
-        )
+        # Unstamped counts as stale, so the only cost is one extra reinstall.
+        log_warning(f"Could not record the installing Node.js major: {exc}")
 
 
 def check_install_build(dir, force_rebuild=False):
@@ -543,15 +536,10 @@ def check_install_build(dir, force_rebuild=False):
     else:
         _write_node_stamp(abs_dir, node_major)
 
-    # ``dist`` is the only output there is: webpack writes it (webpack.config.js
-    # ``output.path``) and start_frontend serves it by name. The old
-    # ``"dist" if exists else "build"`` fallback was Create-React-App habit, and
-    # it broke twice: the stamp below landed in a ``build/`` this function
-    # created itself, so the next start found no stamp in ``dist`` and rebuilt
-    # for nothing -- and worse, that leftover ``build/`` kept a matching stamp,
-    # so once ``dist`` was deleted (the documented first step before an e2e run)
-    # the launcher reported "build is current", skipped the build, and served a
-    # directory that did not exist.
+    # The only output there is: webpack writes it and start_frontend serves it by
+    # name. A ``"dist" if exists else "build"`` fallback used to stamp a build/
+    # this function created itself, which then stood in for a deleted dist and
+    # skipped the build (test_leftover_build_dir_does_not_suppress_the_build).
     build_dir = "dist"
     # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
     # existing build is only reusable if it was built for the backend we are
@@ -921,24 +909,16 @@ def _ensure_root_node_modules(project_root: str) -> None:
 
     # A warning, not a hard stop: this path also runs with CURIO_DEV=0 (a pip
     # install), where an older Node still gives a working Curio minus the JS and
-    # Autark data nodes. The frontend's gate in check_install_build is the fatal
-    # one, and it only runs in dev mode.
+    # Autark data nodes. check_install_build's gate is the fatal one, and it only
+    # runs in dev mode. An unreadable version leaves the tree alone.
     node_version_raw, node_major = _read_node_version()
-    if node_version_raw is None:
-        # Unreadable version: leave the tree alone rather than wipe it on a guess.
-        pass
-    elif node_major < NODE_MAJOR:
+    if node_version_raw and node_major < NODE_MAJOR:
         log_warning(
             f"[Sandbox] Node.js {node_version_raw} detected; the project targets "
-            f"Node.js {NODE_MAJOR}. Autark data nodes can die mid-download on "
-            f"Node 24 (the undici regression nodejs/undici#5360). Upgrade with "
-            f"'conda install -c conda-forge nodejs={NODE_MAJOR}' or from "
-            f"https://nodejs.org."
+            f"{NODE_MAJOR}. Autark data nodes can die mid-download on Node 24 "
+            f"(the undici regression nodejs/undici#5360)."
         )
-    elif _node_tree_is_stale(project_root, node_major):
-        # Installed by another Node major: reinstall from scratch (see NODE_STAMP).
-        # The frontend equivalent is the --force-rebuild path in
-        # check_install_build; there is no build output to drop here.
+    elif node_version_raw and _node_tree_is_stale(project_root, node_major):
         log_info(
             f"[Sandbox] Root node_modules was installed by a different Node.js "
             f"major; reinstalling for Node.js {node_major}...",
