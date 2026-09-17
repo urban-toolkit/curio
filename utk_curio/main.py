@@ -320,6 +320,44 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
+def seed_duckdb_extensions():
+    """Put Curio's copy of DuckDB's spatial extension where duckdb-wasm looks.
+
+    autk-db's ``init()`` runs ``INSTALL spatial; LOAD spatial;``. In Node,
+    duckdb-wasm keeps installed extensions under
+    ``~/.duckdb/extensions/<repository>/<version>/<platform>/`` and only
+    downloads one that is not there — so seeding that directory from
+    ``vendor/duckdb-extensions/`` means a node never reaches
+    extensions.duckdb.org: no 23 MB download on a cold container, nothing to
+    flake (#318), and an offline install still runs Autark nodes.
+
+    Copies only what is missing, and never fails a launch: without it the
+    extension is downloaded exactly as before.
+    """
+    import shutil
+    from pathlib import Path
+
+    source_root = Path(__file__).resolve().parent.parent / "vendor" / "duckdb-extensions"
+    if not source_root.is_dir():
+        return
+    target_root = Path.home() / ".duckdb" / "extensions" / "extensions.duckdb.org"
+    seeded = []
+    try:
+        for source in source_root.rglob("*.wasm"):
+            target = target_root / source.relative_to(source_root)
+            if target.is_file() and target.stat().st_size == source.stat().st_size:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            seeded.append(str(target.relative_to(target_root)))
+    except OSError as exc:
+        log_warning(f"[DuckDB] could not seed the spatial extension ({exc}); "
+                    f"it will be downloaded on demand instead")
+        return
+    if seeded:
+        log_always(f"[DuckDB] seeded extension(s) into {target_root}: {', '.join(seeded)}")
+
+
 def logger():
     """
     Continuously reads from the queue and prints to the terminal.
@@ -1558,6 +1596,12 @@ def main():
         if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
             install_framework_requirements()
             install_manifest_dependencies()
+
+        # Autark's data path runs autk-db in the sandbox's Node, which installs
+        # DuckDB's spatial extension. Seed it from the copy Curio ships so that
+        # never becomes a download (#318).
+        if args.server in ("all", "sandbox"):
+            seed_duckdb_extensions()
 
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")

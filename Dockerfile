@@ -36,6 +36,10 @@ COPY datasets/ datasets/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/
+# DuckDB's spatial and json extensions, which the backend seeds into
+# ~/.duckdb for node runs and serves to the browser worker (#318). Without
+# them here every fresh database reaches extensions.duckdb.org.
+COPY vendor/ vendor/
 
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt

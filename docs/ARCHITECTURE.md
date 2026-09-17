@@ -641,6 +641,33 @@ per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.
 
+### DuckDB extensions come from this instance
+
+autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, and DuckDB autoloads
+`json` for the grammar's `json_object` SQL. duckdb-wasm resolves both against
+`https://extensions.duckdb.org/`, so an Autark node used to pull ~24 MB over
+the network — in the browser on **every** grammar run, since duckdb-wasm keeps
+no browser-side cache, and in the sandbox once per cold container. A CDN blip
+failed the node (#318) and an air-gapped install could not run one at all.
+
+Curio ships both extensions in `vendor/duckdb-extensions/`, laid out exactly as
+the CDN serves them (`<duckdb version>/<platform>/<name>.wasm`), and both
+runtimes read that copy:
+
+- **Browser.** `frontend/urban-workflows/webpack/duckdbExtensionMirror.js` is a
+  loader that prepends a redirect to duckdb's worker asset as webpack emits it,
+  so the worker's request goes to the backend's `/file/vendor/duckdb-extensions/`
+  instead. DuckDB's own setting for this (`custom_extension_repository`) is not
+  reachable: autk-db installs the extension inside `init()`, before Curio holds
+  a connection, and the worker has its own global scope.
+- **Sandbox.** `main.py::seed_duckdb_extensions` copies them into
+  `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
+  looks before downloading. Nothing is intercepted there.
+
+Both fall back to the CDN for a file this checkout does not carry, so bumping
+`@duckdb/duckdb-wasm` degrades to the old behaviour instead of breaking; see
+`vendor/duckdb-extensions/README.md` for how to vendor the new version.
+
 ### Portable dataset paths
 
 Data Catalog loader snippets do not embed absolute paths. They emit
