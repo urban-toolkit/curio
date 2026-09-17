@@ -13,7 +13,7 @@ to delete a folder.
 """
 from __future__ import annotations
 
-import json
+import importlib.util
 import os
 from pathlib import Path
 
@@ -31,23 +31,24 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FRONTEND = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows"
 
 
-@pytest.mark.parametrize("name", [".nvmrc", ".node-version"])
-def test_version_files_match_node_major(name):
-    assert (REPO_ROOT / name).read_text(encoding="utf-8").strip() == str(NODE_MAJOR)
+def test_node_version_declarations_agree():
+    """The five places the Node major is written must say the same thing.
 
+    The assertions live in ``scripts/check_node_pins.py`` so CI can run them on
+    the checkout: this suite runs inside the container image, which ships
+    ``utk_curio/`` and not the Dockerfile, .nvmrc or .node-version around it, so
+    here there is nothing to check and failing would only report the image's
+    layout as a drifted pin.
+    """
+    if not (REPO_ROOT / ".nvmrc").is_file():
+        pytest.skip("the image ships utk_curio/ without the checkout around it")
 
-@pytest.mark.parametrize(
-    "pkg", [REPO_ROOT / "package.json", FRONTEND / "package.json"]
-)
-def test_package_engines_match_node_major(pkg):
-    engines = json.loads(pkg.read_text(encoding="utf-8")).get("engines", {})
-    assert engines.get("node") == f"^{NODE_MAJOR}"
+    path = REPO_ROOT / "scripts" / "check_node_pins.py"
+    spec = importlib.util.spec_from_file_location("_scripts_check_node_pins", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
-
-def test_dockerfile_matches_node_major():
-    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert f"setup_{NODE_MAJOR}.x" in dockerfile
-    assert f"node:{NODE_MAJOR}-" in dockerfile
+    assert module.disagreements(REPO_ROOT) == []
 
 
 def test_missing_tree_is_not_stale(tmp_path):

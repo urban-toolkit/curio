@@ -185,6 +185,14 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
+      # .node-version, two package.json "engines", the Dockerfile). The test
+      # suite cannot check them: it runs inside the image, which ships
+      # utk_curio/ and none of those files. Here there is a checkout, and this
+      # runs before the image is built with whatever the Dockerfile pins.
+      - name: 🔒 Assert the Node.js version declarations agree
+        run: python3 scripts/check_node_pins.py
+
       # The sandbox executes arbitrary node code. Production must never
       # publish its port; only the CI overlay does, and only on loopback.
       # Guards the configuration the live instances actually run.
