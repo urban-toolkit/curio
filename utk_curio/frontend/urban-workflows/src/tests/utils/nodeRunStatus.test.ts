@@ -1,4 +1,4 @@
-import { nodeRunStatus } from "../../utils/nodeRunStatus";
+import { nodeRunStatus, nodeRunError } from "../../utils/nodeRunStatus";
 
 /**
  * The node header renders "Done" / a spinner / "Error" from these same
@@ -25,5 +25,35 @@ describe("nodeRunStatus", () => {
     test("an unmodelled code falls back to idle rather than leaking through", () => {
         expect(nodeRunStatus(out(""))).toBe("idle");
         expect(nodeRunStatus(out("something-new"))).toBe("idle");
+    });
+});
+
+describe("nodeRunError (#318)", () => {
+    const err = (content: unknown) => ({ code: "error", content }) as any;
+
+    test("carries the message of a failed node", () => {
+        expect(nodeRunError(err("Binder Error: no such column"))).toBe(
+            "Binder Error: no such column",
+        );
+    });
+
+    test("says nothing for a node that did not fail", () => {
+        expect(nodeRunError(out("success"))).toBeUndefined();
+        expect(nodeRunError(out("exec"))).toBeUndefined();
+        expect(nodeRunError(undefined)).toBeUndefined();
+    });
+
+    test("an empty message is absent rather than an empty attribute", () => {
+        // `read_node_error_text` falls back to the output box when this is
+        // missing; an empty string would end that search with nothing.
+        expect(nodeRunError(err(""))).toBeUndefined();
+        expect(nodeRunError(err("   "))).toBeUndefined();
+    });
+
+    test("a very long message is truncated, so the DOM stays bounded", () => {
+        const long = "x".repeat(5000);
+        const text = nodeRunError(err(long))!;
+        expect(text.length).toBeLessThan(2100);
+        expect(text.endsWith("…")).toBe(true);
     });
 });

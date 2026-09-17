@@ -51,6 +51,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     _wait_for_reactflow_ready,
     api_json,
     require_project_page,
@@ -233,7 +234,7 @@ def test_export_downloads_the_server_named_file(
     drawer = _open_drawer_from_menu(page)
     export = _open_details(page, drawer, dataset_id, title)
 
-    with page.expect_download(timeout=60000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         export.click()
 
     # THE POINT. Equality with the server's own name proves the header crossed

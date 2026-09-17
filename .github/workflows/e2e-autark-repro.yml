@@ -16,8 +16,8 @@ on:
         description: Comma-separated workflow basenames (empty = every workflow with an autk-grammar node)
         default: ""
       trace:
-        description: Keep a Playwright trace of every failing test (1 or 0)
-        default: "1"
+        description: Playwright trace of every failing test ("full" with screenshots, "1" snapshots only, "0" off)
+        default: "full"
 
 permissions:
   contents: read

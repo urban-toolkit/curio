@@ -80,6 +80,7 @@ const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
 const mockAutkDbGetLayerTables = jest.fn(
   (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
 );
+const mockAutkDbSpatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
@@ -87,6 +88,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     loadGeojson: jest.fn().mockResolvedValue(undefined),
     loadCsv: jest.fn().mockResolvedValue(undefined),
     loadJson: jest.fn().mockResolvedValue(undefined),
+    spatialQuery: (...a: any[]) => mockAutkDbSpatialQuery(...a),
     getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
     getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
   })),
@@ -1106,6 +1108,120 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(errCall![0].content).not.toContain('table_osm_surface');
       expect(errCall![0].content).not.toContain('table_osm_roads');
 
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // #319. A join rewrites a table another source created, so the missing-table
+    // check can never see it fail: Regression.json's join died with a DuckDB
+    // Binder Error on every run while its node reported Done.
+    const JOIN_SPEC = {
+      data: [
+        {
+          type: 'osm',
+          pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+          outputTableName: 'table_osm',
+          autoLoadLayers: { layers: ['surface', 'roads'] },
+        },
+        {
+          type: 'join',
+          tableRootName: 'table_osm_roads',
+          tableJoinName: 'table_osm_surface',
+          near: { distance: 50 },
+          groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
+        },
+      ],
+    };
+    const BINDER_ERROR = 'Binder Error: Referenced column "osm_id" not found in FROM clause!';
+    const JOIN_TABLES = [
+      { name: 'table_osm_surface', type: 'surface' },
+      { name: 'table_osm_roads', type: 'roads' },
+    ];
+
+    // The script the sandbox runs, captured from the first interpretCode call.
+    async function captureSandboxScript(spec: object): Promise<string> {
+      let sent = '';
+      const interpretCode = jest.fn((_u, code, _i, _t, cb) => {
+        if (!sent) sent = code;
+        cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } });
+      });
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        jsInterpreter: { interpretCode } as any,
+      });
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      return sent;
+    }
+
+    // Run that script the way the sandbox does (an async function body), with a
+    // stand-in for the autk-db module its one import names.
+    function runSandboxScript(code: string, db: Record<string, any>): Promise<any> {
+      const body = code.replace(/^import \* as __autkDbMod from '@urban-toolkit\/autk-db';/, '');
+      const mod = { AutkDb: function AutkDb() { return db; }, DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395' };
+      // Built from source text rather than `AsyncFunction`: the test transform
+      // compiles `async` arrows down, so their constructor is plain Function.
+      return new Function('__autkDbMod', `return (async () => {\n${body}\n})();`)(mod);
+    }
+
+    function fakeSandboxDb(spatialQuery?: (...a: any[]) => Promise<unknown>) {
+      return {
+        init: async () => {},
+        loadOsm: async () => {},
+        ...(spatialQuery ? { spatialQuery } : {}),
+        getLayerTables: () => JOIN_TABLES,
+        getLayer: async () => ({ type: 'FeatureCollection', features: [] }),
+      };
+    }
+
+    test('sandbox script: a failed spatial join fails the run (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const db = fakeSandboxDb(() => Promise.reject(new Error(BINDER_ERROR)));
+      await expect(runSandboxScript(code, db)).rejects.toThrow(/join.*osm_id/s);
+    });
+
+    test('sandbox script: a join autk-db cannot run fails the run (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      await expect(runSandboxScript(code, fakeSandboxDb())).rejects.toThrow(/join/);
+    });
+
+    test('sandbox script: a join that succeeds still returns every layer (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const out = await runSandboxScript(code, fakeSandboxDb(() => Promise.resolve(undefined)));
+      expect(out.map((l: any) => l.name)).toEqual(['table_osm_surface', 'table_osm_roads']);
+    });
+
+    test('in-browser load: a failed spatial join fails the node instead of reporting Done (#319)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue(JOIN_TABLES);
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockRejectedValue(new Error(BINDER_ERROR));
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(JOIN_SPEC));
+      });
+
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall).toBeTruthy();
+      expect(errCall![0].content).toContain('join');
+      expect(errCall![0].content).toContain('osm_id');
+      expect(outputCallback).not.toHaveBeenCalled();
+
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockResolvedValue(undefined);
       mockAutkDbGetLayerTables.mockReset();
       mockAutkDbGetLayerTables.mockReturnValue([]);
     });

@@ -77,3 +77,44 @@ def user_key_segment(user_key: str) -> str:
     if user_key == GUEST_KEY or user_key.isdigit():
         return user_key
     raise ValueError(f"Invalid user key for storage: {user_key!r}")
+
+
+def clear_test_stores() -> list[str]:
+    """Delete the per-user trees under a TEST root, and say what was removed.
+
+    Emptying the ``user`` table and leaving ``.curio/test/users/`` behind is not
+    a clean slate, it is a trap: the store path contains ``user.id``, SQLite
+    reissues ids from 1 after a delete, and so the next account a test creates
+    opens onto the previous one's imported agents, installed packages, datasets
+    and projects. That is the header of this module, and it produced four
+    separate failures in the #186-#203 follow-ups.
+
+    Both resets call this: ``/api/testing/reset-db`` (over HTTP, when the
+    backend owns a DB file the test process cannot resolve) and the e2e
+    harness's own truncate path, which used to clear SQL only (#308).
+
+    Refuses to touch anything outside ``.curio/test/``: without
+    ``CURIO_TESTING`` the root is a developer's real store.
+    """
+    import logging
+    import shutil
+
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    log = logging.getLogger(__name__)
+    root = curio_root().resolve()
+    if root.name != "test":
+        log.warning("refusing to clear stores: %s is not a test root", root)
+        return []
+
+    cleared = []
+    # The published-agents catalog hangs off the same root (agents/publications.py)
+    # and leaks the same way.
+    for target in (users_base(), (root / "agents-catalog").resolve()):
+        if not is_within(target, root):  # pragma: no cover - both are children
+            continue
+        if not target.exists():
+            continue
+        shutil.rmtree(target, ignore_errors=True)
+        cleared.append(target.name)
+    return cleared

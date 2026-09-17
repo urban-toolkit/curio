@@ -31,6 +31,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     api_json,
     open_tools_palette,
     require_project_page,
@@ -229,7 +230,7 @@ def test_export_then_load_package_through_node_catalog(
     row_locator = palette.locator(f'[data-pkg-palette-coords~="{PKG_DIR}"]')
     expect(row_locator).to_have_count(1, timeout=20000)
 
-    with page.expect_download(timeout=30000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         row_locator.get_by_role("button", name=EXPORT_LABEL).click()
 
     # The filename is computed client-side as `${dirName}.curio.zip`; the
@@ -397,7 +398,7 @@ def test_export_from_the_drawer_in_dataflow_tab(
     export_button = details.get_by_role("button", name="Export", exact=True)
     expect(export_button).to_be_visible(timeout=10000)
 
-    with page.expect_download(timeout=30000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         export_button.click()
 
     assert download.value.suggested_filename == f"{PKG_DIR}.curio.zip"

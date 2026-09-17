@@ -2361,6 +2361,23 @@ def connect_nodes(page, source_id: str, target_id: str, *,
     return edge_id
 
 
+#: How long to wait for a browser download of an archive the server builds
+#: on click (#334).
+#:
+#: Exporting a package or a dataset is not "save a file the browser already
+#: has": the click makes the backend assemble a zip, and only then does
+#: Chromium fire ``download``. On a shared runner under other jobs that took
+#: longer than the 60 s these waits used to allow, so
+#: ``test_save_export_import_and_run_package_nodes`` failed with
+#: ``TimeoutError: ... waiting for event "download"`` on a branch that touched
+#: neither export nor packaging.
+#:
+#: Raising the ceiling costs nothing when the machine is idle - the wait ends
+#: when the event arrives, which is ~2 s locally - and it is the difference
+#: between a red build and a slow one when it is not. A hang still fails,
+#: two minutes later.
+EXPORT_DOWNLOAD_TIMEOUT_MS = 120000
+
 _HEAVY_NODE_TYPES = {
     "AUTK_GRAMMAR",
     "DATA_LOADING",
@@ -2392,19 +2409,30 @@ def node_execution_timeout_ms(node_type: str) -> int:
 
 
 def read_node_error_text(node_el) -> str | None:
-    """Return the error message text from a code node's inline output
-    area. Returns ``None`` if it cannot be read.
+    """Return a failed node's error message, or ``None`` if it cannot be read.
 
-    Works for both autk behavior nodes and Python/JS code nodes:
-    CodeEditor renders any output (success or error) into the same output box,
-    the one carrying the ``[N]:`` counter. For autk,
-    ``autkBehaviorFactory``'s catch block sets
-    ``output = { code: 'error', content: err.message }``; for
-    COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
-    sandbox's stderr/exception traceback is routed there too. We
-    switch to the code tab so that area is in the layout, then read
-    it.
+    Two sources, in order:
+
+    ``data-curio-node-error`` carries the message for EVERY node type, because
+    it is rendered from the same output the status attribute reads. It is the
+    only source for an AUTK_GRAMMAR node: the grammar editor has no output box,
+    so an Autark failure used to reach this helper as ``None`` and an assertion
+    read "execution failed with Error" with nothing after it (#318).
+
+    Otherwise the inline output area, where CodeEditor renders any output
+    (success or error) into the box carrying the ``[N]:`` counter — the
+    sandbox's stderr/traceback for COMPUTATION_ANALYSIS / DATA_LOADING /
+    DATA_TRANSFORMATION. We switch to the code tab so that area is in the
+    layout, then read it.
     """
+    try:
+        attr = node_el.locator("[data-curio-node-error]").first
+        if attr.count():
+            text = attr.get_attribute("data-curio-node-error")
+            if text and text.strip():
+                return text
+    except Exception:
+        pass
     try:
         code_tab = node_el.locator(
             '.nav-link[data-rr-ui-event-key="code"]'

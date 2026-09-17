@@ -136,6 +136,26 @@ def test_tracing_is_off_unless_asked_for():
     assert context.tracing.calls == []
 
 
+def test_a_trace_records_snapshots_without_screenshots(monkeypatch):
+    """What CI runs: the action log and DOM snapshots, but no per-action shots."""
+    monkeypatch.setenv(diagnostics.TRACE_ENV, "1")
+    context = types.SimpleNamespace(tracing=_Tracing())
+
+    diagnostics.start_tracing(context)
+
+    assert context.tracing.calls[0] == ("start", {"screenshots": False, "snapshots": True})
+
+
+def test_full_adds_per_action_screenshots(monkeypatch):
+    """What the manual repro job runs, where the extra cost is worth it."""
+    monkeypatch.setenv(diagnostics.TRACE_ENV, "full")
+    context = types.SimpleNamespace(tracing=_Tracing())
+
+    diagnostics.start_tracing(context)
+
+    assert context.tracing.calls[0] == ("start", {"screenshots": True, "snapshots": True})
+
+
 def test_a_traced_failure_keeps_its_chunk(monkeypatch):
     monkeypatch.setenv(diagnostics.TRACE_ENV, "1")
     page = _Page(nodes=[POOL])

@@ -50,9 +50,19 @@ class TestLocalLaunchDegrades(unittest.TestCase):
         self.assertIn("in-process", reason)
 
     def test_macos_explicit_fork_falls_back_locally(self):
-        """fork and rlimits exist; seccomp does not, but that only gates hosting."""
-        resolved, _reason = mode.resolve_mode("fork", hosted=False, caps=MACOS)
-        self.assertEqual(resolved, mode.FORK)
+        """fork and rlimits exist, so this read as isolable for a long time.
+
+        It is not. ``confine`` calls ``prctl(PR_SET_NO_NEW_PRIVS)`` through
+        ``libc.so.6`` before it does anything else, so macOS resolved to FORK
+        and then killed every node at confinement - the one outcome a local
+        launch is supposed to be protected from. The name of this test was
+        right; its assertion was not.
+        """
+        resolved, reason = mode.resolve_mode("fork", hosted=False, caps=MACOS)
+        self.assertEqual(resolved, mode.OFF)
+        self.assertIsNotNone(reason)
+        self.assertIn("Linux", reason)
+        self.assertIn("in-process", reason)
 
     def test_linux_local_auto_stays_off(self):
         """Local single-user work does not pay the isolation cost by default."""
@@ -104,8 +114,9 @@ class TestExplicitForkFailsClosedWhenHosted(unittest.TestCase):
             mode.resolve_mode("fork", hosted=True, caps=WINDOWS)
         self.assertIn("os.fork", str(caught.exception))
 
-    def test_macos_hosted_refuses_because_seccomp_is_absent(self):
-        """POSIX is not enough: without a syscall filter the child keeps network."""
+    def test_macos_hosted_refuses_because_it_is_not_linux(self):
+        """POSIX is not enough: confinement needs prctl, and hosting needs a
+        syscall filter on top of it. Neither exists here."""
         with self.assertRaises(IsolationUnavailable) as caught:
             mode.resolve_mode("fork", hosted=True, caps=MACOS)
         self.assertIn("Linux", str(caught.exception))
