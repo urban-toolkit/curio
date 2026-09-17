@@ -439,6 +439,38 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # Running the node
 # ---------------------------------------------------------------------------
 
+def _code_reads_arg(code):
+    """Whether the node's code actually *reads* the ``arg`` parameter.
+
+    Mirrors ``worker._code_reads_arg`` for the same reason
+    ``_hoisted_import_statements`` mirrors ``worker._hoist_user_imports``: the
+    child is a forked process and keeps its own copy rather than importing the
+    in-process module.
+
+    The tripwire below used to ask ``'arg' in code``, a substring test over the
+    whole source. That fires on any occurrence of those three letters - a word
+    in a comment, a URL query string, or an identifier such as ``target``,
+    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
+    ``gpd.read_file(<url>)`` was refused for referencing an input it never
+    mentions (#273). The in-process path was fixed; this one was not, so the
+    original bug survived on exactly the deployments that run isolated.
+    """
+    import ast
+
+    try:
+        tree = ast.parse("def userCode(arg):" + chr(10) + code)
+    except SyntaxError:
+        # Unreachable in practice; fall back to the old test rather than
+        # deciding that a node we cannot parse is input-free.
+        return "arg" in code
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == "arg"
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    )
+
+
 def _hoisted_import_statements(code):
     """Top-level import statements in *code*, as source lines.
 
@@ -535,10 +567,10 @@ def run_node(request, namespace_factory):
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
 
-            # Same tripwire as the in-process path: code that mentions `arg`
-            # with nothing wired upstream otherwise fails deep inside user code
-            # with an unhelpful TypeError.
-            if argument is None and "arg" in code:
+            # Same tripwire as the in-process path, and the same AST walk: a
+            # node that never reads an input is not refused for merely
+            # containing the letters "arg" (#273).
+            if argument is None and _code_reads_arg(code):
                 raise RuntimeError(
                     "This node's code refers to 'arg' but no input was "
                     "delivered. Check that an upstream node is connected and "
