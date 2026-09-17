@@ -392,6 +392,11 @@ def run_spa_static_server(directory: str, port: int) -> None:
     dist_dir = os.path.abspath(directory)
 
     class SpaStaticHandler(SimpleHTTPRequestHandler):
+        # The 1.0 default closes the socket after every response, so one page
+        # load opens hundreds of connections. Safe: every response here carries
+        # a Content-Length.
+        protocol_version = "HTTP/1.1"
+
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=dist_dir, **kwargs)
 
