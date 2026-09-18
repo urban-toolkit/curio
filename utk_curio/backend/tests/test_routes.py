@@ -46,6 +46,11 @@ def test_removed_legacy_routes_stay_removed(app):
     packages and datasets blueprints (``/installPackages`` ->
     ``/api/packages/workflow-deps/install``, ``/upload`` ->
     ``/api/datasets/import``).
+
+    ``/datasets`` joined them for #142: the bare dataset browser that
+    ``list_datasets`` fed, removed in 02056f69 along with the frontend
+    DatasetsWindow. Every dataset surface is namespaced under
+    ``/api/datasets/`` now.
     """
     removed = [
         "/cwd",
@@ -56,6 +61,7 @@ def test_removed_legacy_routes_stay_removed(app):
         "/checkDB",
         "/installPackages",
         "/upload",
+        "/datasets",
         "/api/packages/install-deps",
         # The pre-agent LLM assistance. Its last caller was the node editor's
         # Explanation tab, replaced by agent.node-explainer - which reads a
