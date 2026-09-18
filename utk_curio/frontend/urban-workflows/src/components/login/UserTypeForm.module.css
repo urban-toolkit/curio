@@ -17,7 +17,15 @@
   text-transform: capitalize;
 }
 
-.toggleBtn:hover {
+/* Hover feedback is for the toggle you have NOT chosen. `.toggleBtn:hover` is
+   (0,2,0) and `.toggleBtnActive` is (0,1,0), so hovering the selected toggle
+   used to set `color: #1E1F23` over the active rule's `background: #1E1F23` -
+   #1E1F23 on #1E1F23, a 1:1 ratio, with the label simply gone. The dialog opens
+   with "programmer" already selected, so the very first hover hits it. The
+   selected toggle already announces itself with the fill, border and weight, so
+   it needs no hover state at all. Same idiom as `.chip:hover:not(.chipActive)`
+   in CatalogBrowseLayout.module.css (#244/#252). */
+.toggleBtn:hover:not(.toggleBtnActive) {
   border-color: #1E1F23;
   color: #1E1F23;
 }
