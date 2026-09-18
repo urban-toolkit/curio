@@ -51,6 +51,113 @@ _IMPORT_PROBE_TIMEOUT = 60
 # is generous but not infinite.
 _PIP_TIMEOUT_SECONDS = 30 * 60
 
+#: Forbids building from source, so pip only unpacks wheels and no ``setup.py``
+#: runs (#309). Gating decides who may install; this decides what the install is
+#: allowed to execute, which gating cannot touch: ``pip install`` is a plain
+#: subprocess of the backend, so an sdist's build script runs as the backend
+#: user whatever ``CURIO_ISOLATION`` says.
+WHEEL_ONLY_ARG = "--only-binary=:all:"
+
+#: pip's wording when nothing installable was found. A wheel-only attempt that
+#: fails this way is the case the fallback exists for; any other failure is a
+#: real one and is not retried.
+_NO_DISTRIBUTION_MARKERS = (
+    "could not find a version that satisfies",
+    "no matching distribution found",
+)
+
+#: What the sdist build, if it happens, is bounded by. Deliberately not seccomp:
+#: pip needs network and fork, so a syscall filter would have to allow exactly
+#: what an attacker wants anyway. This is a uid and rlimit boundary and is worth
+#: describing as one rather than as a sandbox.
+_BUILD_CPU_SECONDS = 30 * 60
+_BUILD_MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024
+
+
+def _resolve_exec_uid(user):
+    """uid for the configured execution user, or None when not applicable."""
+    if not user:
+        return None
+    try:
+        import pwd
+
+        return pwd.getpwnam(user).pw_uid
+    except (ImportError, KeyError):
+        return None
+
+
+def _resolve_exec_gid(user):
+    """gid for the configured execution user, or None when not applicable."""
+    if not user:
+        return None
+    try:
+        import pwd
+
+        return pwd.getpwnam(user).pw_gid
+    except (ImportError, KeyError):
+        return None
+
+
+def _drops_privileges(preexec) -> bool:
+    """Whether *preexec* was built to change uid. Used by the tests."""
+    return bool(getattr(preexec, "curio_drops_privileges", False))
+
+
+def _build_preexec():
+    """A ``preexec_fn`` bounding the pip run, dropping privileges when it can.
+
+    Returns ``None`` off POSIX, where there is no ``preexec_fn`` and no uid to
+    drop to.
+
+    A local launch configures no execution user, which is not a failure: there
+    is no lesser account to become, and refusing to install without one would
+    break every local run. The limits still apply, and the returned callable
+    records whether it drops privileges so a test can tell the two apart.
+    """
+    if os.name != "posix":
+        return None
+
+    import resource
+
+    user = (os.environ.get("CURIO_EXEC_USER") or "").strip()
+    uid = _resolve_exec_uid(user)
+    gid = _resolve_exec_gid(user)
+    limits = [
+        (resource.RLIMIT_CPU, _BUILD_CPU_SECONDS),
+        (resource.RLIMIT_FSIZE, _BUILD_MAX_FILE_BYTES),
+    ]
+
+    def _preexec():  # runs in the child, pre-exec
+        for key, value in limits:
+            try:
+                resource.setrlimit(key, (value, value))
+            except (ValueError, OSError):
+                pass
+        if uid is not None and gid is not None and os.getuid() == 0:
+            # Group first: after setuid the process can no longer change it.
+            try:
+                os.setgid(gid)
+                os.setuid(uid)
+            except OSError:
+                pass
+
+    _preexec.curio_drops_privileges = bool(
+        uid is not None and gid is not None
+    )
+    return _preexec
+
+
+def _pip_child_kwargs() -> dict:
+    """Extra ``subprocess`` kwargs that harden a pip run."""
+    preexec = _build_preexec()
+    return {"preexec_fn": preexec} if preexec is not None else {}
+
+
+def _looks_like_no_wheel(output: str) -> bool:
+    lowered = (output or "").lower()
+    return any(marker in lowered for marker in _NO_DISTRIBUTION_MARKERS)
+
+
 
 class PipInstallError(RuntimeError):
     """Pip failed (non-zero exit). Carries the tail of stderr/stdout."""
@@ -659,12 +766,19 @@ def install_python_deps_to_target(
     if not deps:
         return InstallReport(installed=[], skipped=[])
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
-    cmd = [sys.executable, "-m", "pip", "install", "--no-input",
-           "--target", str(target_dir), *specs]
+    base = [sys.executable, "-m", "pip", "install", "--no-input",
+            "--target", str(target_dir)]
+
+    # Wheels first, so no setup.py runs at all in the common case (#309). A
+    # dependency with no wheel for this platform still has to install, so a
+    # wheel-only miss falls back to a build - bounded, and unprivileged where an
+    # execution user exists.
+    cmd = [*base, WHEEL_ONLY_ARG, *specs]
     log.info("Running %s", " ".join(cmd))
     if on_line is not None:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            **_pip_child_kwargs(),
         )
         last_lines: list[str] = []
         if proc.stdout is not None:
@@ -689,6 +803,15 @@ def install_python_deps_to_target(
             )
         if rc != 0:
             tail = "\n".join(last_lines)[-2000:]
+            if _looks_like_no_wheel(tail):
+                log.warning(
+                    "No wheel for %s; rebuilding from source. An sdist's "
+                    "setup.py executes, so this runs bounded and as the "
+                    "execution user where one is configured.", sorted(deps),
+                )
+                return _install_to_target_allowing_builds(
+                    base, specs, deps, on_line=on_line,
+                )
             raise PipInstallError(
                 f"pip install --target failed (exit {rc}): {tail.strip()}"
             )
@@ -696,6 +819,76 @@ def install_python_deps_to_target(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
+            **_pip_child_kwargs(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PipInstallError(
+            f"pip install --target timed out after {_PIP_TIMEOUT_SECONDS}s "
+            f"(packages: {specs})"
+        ) from exc
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        if _looks_like_no_wheel(tail):
+            log.warning(
+                "No wheel for %s; rebuilding from source. An sdist's setup.py "
+                "executes, so this runs bounded and as the execution user "
+                "where one is configured.", sorted(deps),
+            )
+            return _install_to_target_allowing_builds(base, specs, deps)
+        raise PipInstallError(
+            f"pip install --target failed (exit {proc.returncode}): {tail.strip()}"
+        )
+    return InstallReport(installed=specs, skipped=[])
+
+
+def _install_to_target_allowing_builds(base, specs, deps, *, on_line=None):
+    """The fallback: the same install with sdists permitted.
+
+    Reached only when the wheel-only attempt reported that nothing installable
+    exists, so this is the case where a build is the only way to get the
+    dependency at all. Refusing here would mean Curio could not install a
+    dependency that has no wheel for the platform, which is a real and ordinary
+    situation, not an attack.
+
+    The build inherits :func:`_pip_child_kwargs`, so it is bounded by rlimits
+    and runs as the execution user when one is configured and the backend is
+    root. That is the whole of the containment: it is a uid boundary, not a
+    sandbox, and it does not stop a malicious setup.py from using the network.
+    """
+    cmd = [*base, *specs]
+    log.info("Running %s", " ".join(cmd))
+    if on_line is not None:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            **_pip_child_kwargs(),
+        )
+        last_lines: list[str] = []
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                stripped = line.rstrip()
+                on_line(stripped)
+                last_lines.append(stripped)
+                if len(last_lines) > 40:
+                    last_lines.pop(0)
+        try:
+            rc = proc.wait(timeout=_PIP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise PipInstallError(
+                f"pip timed out after {_PIP_TIMEOUT_SECONDS}s and was killed"
+            )
+        if rc != 0:
+            tail = "\n".join(last_lines)[-2000:]
+            raise PipInstallError(
+                f"pip install --target failed (exit {rc}): {tail.strip()}"
+            )
+        return InstallReport(installed=specs, skipped=[])
+
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
+            **_pip_child_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise PipInstallError(

@@ -236,6 +236,45 @@ The Curio launcher (`python curio.py start`) exposes the same flag as `--allow-p
 
 Two things worth knowing before you leave publishing on for a shared install: publishing is allowed for **any** signed-in user, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check, so anyone who can reach the API can replace or remove any package in the shared catalog, `curio.builtin@1` included. On a single-user local install (the normal case for authoring) this is a non-issue. On anything multi-user, start with `--no-allow-publish` and treat `<repo_root>/packages/` as operator-managed.
 
+### Who may install a package
+
+Every route that installs a package runs `pip` in the process that also runs node code, so who may
+trigger one matters. The rule, in order:
+
+1. **A local run always may.** Without `--deploy` there is no auth, the single local user is signed
+   in as the guest, and there is no isolation. There is one person and one interpreter on their own
+   machine, so installing and removing libraries is ungated, as it always was.
+2. **A guest on a hosted instance may not.** Every anonymous visitor resolves to one account, so one
+   visitor's install changes what every other visitor's nodes import, and the disk it costs has no
+   owner. `403`, and the UI hides the affordance and says why.
+3. **Nobody may on a hosted instance that cannot scope installs per user**, unless the operator has
+   said otherwise. Without isolation every install lands in the single interpreter serving everyone.
+
+Rule 3 is broader than it sounds, so it has an opt-out. Isolation requires Linux, `fork`,
+`setrlimit`, `pyseccomp` **and** a configured execution user, so `--deploy` on macOS or Windows, on
+Linux without `pyseccomp`, or on Linux with no execution user all fall into "cannot scope" and lose
+package installation. `--allow-shared-installs` (env `CURIO_ALLOW_SHARED_INSTALLS`) turns it back
+on for an operator who knows every account on the instance and accepts that one user's library
+changes what another user's nodes import. It is **off by default**, so the safe posture is the one
+you get without knowing the flag exists. It does not re-admit guests: rule 2 is about identity, not
+scoping, and stands on its own.
+
+### What an install is allowed to execute
+
+Gating decides *who* may install. It does not decide what the install runs, and `pip install` is a
+plain subprocess of the backend, so an sdist's `setup.py` executes as the backend user whatever
+`CURIO_ISOLATION` says. Node code is confined; the install that precedes it was not.
+
+So installs prefer wheels (`--only-binary=:all:`), which are unpacked rather than executed, and no
+`setup.py` runs in the common case. A dependency with no wheel for the platform still has to
+install, so that falls back to a build, bounded by CPU and file-size limits and run as the execution
+user where one is configured and the backend is root.
+
+This is a uid and resource boundary, not a sandbox. There is deliberately no syscall filter: `pip`
+needs network and `fork` to do its job at all, so a filter permissive enough for `pip` is permissive
+enough for most of what a hostile build script would want. Treat the package catalog as a trust
+boundary, not as something the runtime makes safe.
+
 ### Backwards compatibility for projects saved before the per-project lockfile
 
 Projects saved before the lockfile became load-bearing have an empty `dataflow.packages` field. On first read, the backend backfills the lockfile by scanning each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves. No migration script is required, and projects can be edited normally while still on the old shape.
