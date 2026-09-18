@@ -357,6 +357,19 @@ def pytest_addoption(parser):
             "time; scripts/test.sh passes this by default)"
         ),
     )
+    parser.addoption(
+        "--mint-baselines",
+        action="store_true",
+        dest="mint_baselines",
+        default=False,
+        help=(
+            "write a screenshot baseline where none exists, instead of failing. "
+            "Creating one is a deliberate act: whatever the app renders that day "
+            "becomes the definition of correct, so it has to be a build you "
+            "trust, on a machine whose rendering matches CI's, and you have to "
+            "look at the PNG before committing it"
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -372,6 +385,13 @@ def pytest_configure(config):
         "markers",
         "examples: needs a stack seeded with the examples; needs --with-examples",
     )
+    # Imported only when the flag is passed, so an ordinary run never pays for
+    # (or is broken by) importing the e2e helper module.
+    if getattr(config.option, "mint_baselines", False):
+        from utk_curio.backend.tests.test_frontend import utils as e2e_utils
+
+        e2e_utils.MINT_BASELINES = True
+
     excluded = []
     if not config.option.longrun:
         excluded.append("not externalapi")

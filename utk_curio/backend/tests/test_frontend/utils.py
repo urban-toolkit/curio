@@ -1044,6 +1044,16 @@ def dismiss_toasts(
     return dismissed
 
 
+#: Whether a missing baseline may be created by this run. Off unless
+#: ``--mint-baselines`` was passed (see ``tests/conftest.py``), so no ordinary
+#: run - local or CI, serial or parallel - can mint one as a side effect.
+#:
+#: A module global rather than an environment variable on purpose: an env var
+#: survives in a shell and gets inherited by the next run, which is exactly how
+#: someone mints without meaning to. A CLI flag has to be typed each time and is
+#: recorded in the command.
+MINT_BASELINES = False
+
 #: The app's first font is Rubik, fetched from Google Fonts at runtime
 #: (src/index.html). Everything after it in the stack is a system fallback, so
 #: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
@@ -1141,17 +1151,23 @@ def save_workflow_test_screenshot(
     Allure report so that reviewers can inspect the regression directly
     from the GitHub Actions artifact.
 
-    If the file does **not** exist yet the screenshot is saved as the new
-    baseline. Note that a first run therefore *always* passes - generate a
-    baseline deliberately, against a build where the behaviour is already
-    correct, and eyeball the PNG before committing it. A baseline captured
-    against a broken build enshrines the bug as expected output.
+    If the file does **not** exist the run FAILS. Creating a baseline is a
+    deliberate act, ``pytest --mint-baselines``, because whatever the app renders
+    that day becomes the definition of correct for every run afterwards.
 
-    That minting happens in serial runs only. Under xdist (``PYTEST_XDIST_WORKER``
-    set), or whenever ``CURIO_E2E_REQUIRE_BASELINES=1``, a missing baseline is a
-    failure instead: with several workers a mis-derived environment or a grouping
-    bug can change what renders, and a silently written baseline would turn that
-    into a pass. Set ``CURIO_E2E_REQUIRE_BASELINES=0`` to mint anyway.
+    It used to mint implicitly, which meant a first run always passed. Two ways
+    that bites, both seen: a baseline captured against a broken build enshrines
+    the bug as expected output and the suite then *defends* it; and a baseline
+    captured on the wrong machine enshrines that machine. The second is not
+    hypothetical - the macOS captures of the two #333 scenes looked perfect and
+    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
+    because macOS rasterizes text with grayscale antialiasing and the runner uses
+    LCD subpixel.
+
+    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
+    minting in a serial run and refusing under xdist. That was the wrong axis:
+    serialness says nothing about whether a capture deserves to become the
+    reference, and the one that would have broken CI was minted serially.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
@@ -1202,13 +1218,13 @@ def save_workflow_test_screenshot(
         return _capture_full_page(page)
 
     if not os.path.isfile(expected_path):
-        if env_flag("CURIO_E2E_REQUIRE_BASELINES",
-                    default=bool(os.environ.get("PYTEST_XDIST_WORKER"))):
+        if not MINT_BASELINES:
             raise AssertionError(
-                f"no baseline at {expected_path}. Parallel runs never mint "
-                "baselines: generate it with a serial run (or set "
-                "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
-                "committing it."
+                f"no baseline at {expected_path}. Run with --mint-baselines to "
+                "create it, on a build you trust and a machine whose rendering "
+                "matches CI's, then look at the PNG before committing it. A "
+                "baseline is the definition of correct for every later run, so "
+                "it is not something a test run should produce as a side effect."
             )
         minted = _capture()
         _assert_mintable(minted, expected_path, page)
