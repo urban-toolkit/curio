@@ -713,6 +713,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                                     color: 'var(--curio-text-primary, #1E1F23)',
                                     whiteSpace: 'pre-wrap',
                                     overflow: 'auto',
+                                    // Same reason as Simple View's text pane
+                                    // (#267): the wrapper's `nodrag` frees the
+                                    // gesture, but the inherited
+                                    // `user-select: none` still has to be
+                                    // undone where the text actually is.
+                                    userSelect: 'text',
+                                    cursor: 'text',
                                 }}
                             >
                                 {runSummary}
