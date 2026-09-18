@@ -14,6 +14,12 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
+# Formats whose bytes are text, and which every reader downstream therefore
+# assumes are UTF-8: the row counter, the preview, and the generated loader
+# snippet. Uploads in these formats are transcoded to UTF-8 on the way in
+# (#280), because none of those readers can be handed an encoding.
+TEXT_FORMATS = frozenset({"csv", "json", "geojson"})
+
 # OSM PBF suffixes. Not in SUPPORTED_SUFFIXES because a ``.pbf`` isn't stored
 # verbatim: the importer converts it to one GeoParquet dataset per OSM layer
 # before installing. The import route special-cases these suffixes to run that

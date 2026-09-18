@@ -433,6 +433,7 @@ def install_imported_file(
     group_id: str | None = None,
     layer_name: str | None = None,
     source_updated_at: str | None = None,
+    source_encoding: str | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
@@ -484,6 +485,7 @@ def install_imported_file(
         schema=None,
         group_id=group_id,
         layer_name=layer_name,
+        source_encoding=source_encoding,
     )
     write_manifest(manifest_obj, dest)
 

@@ -22,10 +22,12 @@ from utk_curio.backend.app.datasets.domain.constants import (
     JUNK_SOURCE_LABELS,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
+    TEXT_FORMATS,
     is_osm_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
+from utk_curio.backend.app.datasets.infrastructure.text_encoding import TextDecodeError, to_utf8
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
@@ -110,6 +112,21 @@ class CatalogMutations:
         from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
         user_key = self._paths._user_key()
+
+        # Normalise text formats to UTF-8 before anything reads them (#280). The
+        # row counter, the preview and the generated loader all assume UTF-8 and
+        # cannot be told otherwise - loader_snippet emits a bare pd.read_csv with
+        # nowhere to put an encoding= - so a cp1252 upload used to import with a
+        # 201 and no row count, then raise UnicodeDecodeError the first time its
+        # node ran. Deciding once, here, is the same move the catalog already
+        # makes for delimiters.
+        source_encoding: str | None = None
+        if fmt in TEXT_FORMATS:
+            try:
+                file_bytes, source_encoding = to_utf8(file_bytes, what=filename)
+            except TextDecodeError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+
         try:
             result = install_imported_file(
                 user_key,
@@ -120,6 +137,7 @@ class CatalogMutations:
                 group_id=group_id,
                 layer_name=layer_name,
                 source_updated_at=source_updated_at,
+                source_encoding=source_encoding,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc

@@ -99,6 +99,7 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 | `version` | Yes | Free-form version string (e.g. `"1.0.0"`), independent of `compatibility.major`. |
 | `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`. |
 | `dataFile` | Yes | Path to the data relative to the dataset folder, e.g. `data/chicago.geojson`. |
+| `sourceEncoding` | No | For text formats, what the uploaded bytes were decoded from before being stored as UTF-8. `"utf-8"` when nothing had to change; absent on datasets imported before this was recorded. |
 | `compatibility.major` | No | Integer major version; defaults to `1`. Together with `id` it forms the directory name. |
 | `description` | No | Defaults to `""`. |
 | `publisher` | No | Defaults to `"Data Catalog"`. **Load-bearing**: it decides who may unpublish or delete (see *Operator notes*). |
@@ -273,6 +274,26 @@ Previewing a bundle gives you a **tab per part**; a part with no rows is labelle
 | `.pbf`, `.osm.pbf` | **converted** (see below) |
 
 Anything else is rejected with *"Unsupported dataset format"*.
+
+### Text imports are stored as UTF-8
+
+`csv`, `json` and `geojson` uploads are decoded and re-encoded as UTF-8 on the way in, and the
+encoding they came from is recorded in the manifest as `sourceEncoding`. Everything that reads the
+file afterwards, the row counter, the preview, and the generated loader, can then assume UTF-8 and
+be right. That matters because the generated snippet is a bare `pd.read_csv(dataset_path)` with
+nowhere to put an `encoding=`, which is the same reason the catalog's own CSVs are re-saved
+comma-delimited on import. Before this, a cp1252 CSV imported with a `201` and no row count and
+then raised `UnicodeDecodeError` the first time its node ran.
+
+Detection is a guess, not a measurement. Every single-byte encoding decodes every byte, so there is
+no error to catch, and codepages that share a layout can only be told apart by whether the words
+come out meaning anything. Curio tries UTF-8 strictly first, and only guesses when that fails. If
+the guess is wrong the file imports with mangled accents rather than failing, so `sourceEncoding` is
+shown on the dataset: if it names something you did not expect, re-save the file as UTF-8 and import
+it again. A file that decodes as nothing at all is refused at import with a message saying so.
+
+Files already in the store that are not UTF-8 still preview: the reader falls back to detection and
+logs a warning naming the file.
 
 ### OSM PBF imports
 

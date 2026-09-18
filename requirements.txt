@@ -51,6 +51,16 @@ pyseccomp>=0.1.2; sys_platform == "linux"
 # 4.18 is where the referencing backend behind $ref/$defs settled.
 jsonschema>=4.18
 
+# Character-set detection for text dataset imports
+# ------------------------------------------------------------------------------
+# A CSV that is not UTF-8 used to import with a 201 and no row count, then raise
+# UnicodeDecodeError the first time its generated loader ran (#280). Imports are
+# now decoded and stored as UTF-8, which needs a detector. Arrives transitively
+# with requests today - and that is exactly the psutil/jsonschema trap above, so
+# it is declared here in its own right. A floor rather than a pin because
+# requests carries its own constraint and the two must not fight.
+charset-normalizer>=3.3
+
 # Testing
 # ------------------------------------------------------------------------------
 pytest==9.0.3
