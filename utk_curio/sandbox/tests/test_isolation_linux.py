@@ -550,6 +550,75 @@ def resource_unlimited():
     return resource.RLIM_INFINITY
 
 
+def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
+    """#334's actual failure mode, exercised rather than approximated (#358).
+
+    Writing three integers to parquet used to fail with "Failed to allocate
+    block of 32768 bytes" inside the isolated child: ``codec`` opened DuckDB
+    with its defaults - ``threads`` = host cores, ``memory_limit`` ~80% of
+    system RAM - and DuckDB sized its buffers against the HOST while the child
+    ran under an RLIMIT_AS cap. On a many-core CI runner that was enough to
+    exhaust the cap before any data was written.
+
+    ``test_codec.py::TestParquetWriterFootprint`` verifies the fix by spying on
+    the kwargs handed to ``duckdb.connect`` and asserting the two literals. That
+    cannot catch a regression that breaks the cap/DuckDB interaction for any
+    other reason - a new extension, a different default, a change to how the
+    child computes its budget - because it never runs the writer under a cap at
+    all. This does: real zygote, real RLIMIT_AS, real parquet write.
+
+    Deliberately a tiny frame. The claim is not "big frames fit", it is "the
+    writer's own footprint fits", which is what #334 broke.
+    """
+    result = run_isolated(
+        isolated,
+        "    import pandas as pd\n"
+        "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["path"], "the writer produced no artifact"
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    frame = load_from_duckdb(result["output"]["path"])
+    # Round-tripped, not merely written: a truncated file would still exist.
+    assert len(frame["a"]) == 3, frame
+    assert list(frame["a"]) == [1, 2, 3], frame
+
+
+def test_the_writer_is_configured_for_a_capped_child(isolated):
+    """The other half of #334, read from INSIDE the child.
+
+    ``test_codec.py`` asserts the two literals in the parent process, where the
+    cap does not apply. This reads the values DuckDB actually adopted in the
+    child, so a config that is silently ignored under RLIMIT_AS - or overridden
+    by an environment variable the child inherits - shows up here.
+    """
+    result = run_isolated(
+        isolated,
+        "    import duckdb\n"
+        "    from utk_curio.sandbox.util.codec import _WRITER_CONFIG\n"
+        "    con = duckdb.connect(database=':memory:', config=dict(_WRITER_CONFIG))\n"
+        "    try:\n"
+        "        rows = con.execute(\n"
+        "            \"SELECT name, value FROM duckdb_settings() \"\n"
+        "            \"WHERE name IN ('threads', 'memory_limit')\"\n"
+        "        ).fetchall()\n"
+        "    finally:\n"
+        "        con.close()\n"
+        "    return {name: str(value) for name, value in rows}\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    settings = load_from_duckdb(result["output"]["path"])
+    adopted = dict(zip(settings["name"], settings["value"])) if "name" in settings else settings
+    assert str(adopted.get("threads")) == "1", adopted
+    # DuckDB normalises the unit, so match the magnitude rather than the string.
+    assert "256" in str(adopted.get("memory_limit")), adopted
+
+
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 
