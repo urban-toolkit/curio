@@ -2107,17 +2107,16 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
-    # THREE attachments, not one (#355): the reported symptom is the goal being
-    # squeezed by the avatars beside it, and one avatar does not squeeze
-    # anything. The dock is a flex row, so this is the state the geometry has
-    # to survive.
-    for _ in range(3):
+
+    def attach_one() -> None:
         attached = page.request.post(
             f"{base}/attachments",
             headers=headers,
             data={"coord": coord, "target": {"kind": "canvas"}},
         )
         assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    attach_one()
 
     # The dock is rendered from the attachment list the page fetches, so reload
     # rather than wait for a push that may never come.
@@ -2155,9 +2154,19 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     # 0.20 diff ratio, which its own note admits is loose enough for re-clipped
     # text to pass, so the claim is stated as geometry instead.
     #
-    # Measured with THREE agents attached, because that is the reported
-    # condition - the avatars squeezing the field - and one avatar squeezes
-    # nothing.
+    # Two more agents, attached AFTER both captures: the squeeze is the reported
+    # condition and one avatar does not squeeze anything, but crowding the dock
+    # before the captures would leave the baseline PNGs documenting a state this
+    # scene no longer produces. The pictures keep their subject; the assertions
+    # get the harder case.
+    attach_one()
+    attach_one()
+    page.reload()
+    require_owner_view(page)
+    goal = page.get_by_label("Dataflow goal")
+    expect(goal).to_be_visible(timeout=30000)
+    ctx.beat(400)
+
     avatars = page.locator(
         '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
     ).count()
@@ -2203,9 +2212,6 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
         "agents attached - the placeholder cannot fit in that"
     )
 
-    goal.fill("Find heat islands in Chicago")
-    goal.blur()
-    ctx.beat(300)
     ctx.say("Named, and readable end to end",
             "Who sees it is on the tooltip, not in the width budget.")
 
