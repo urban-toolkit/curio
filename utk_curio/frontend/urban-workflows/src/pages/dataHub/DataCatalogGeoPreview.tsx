@@ -17,6 +17,7 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
   shp: { fill: "rgba(122,72,101,0.1)", stroke: "rgba(122,72,101,0.25)", bg: "#F7F2F5" },
   bundle: { fill: "rgba(91,100,114,0.1)", stroke: "rgba(91,100,114,0.25)", bg: "#F2F3F5" },
   osm: { fill: "rgba(122,182,72,0.12)", stroke: "rgba(122,182,72,0.3)", bg: "#F4FAEF" },
+  gpkg: { fill: "rgba(166,84,35,0.1)", stroke: "rgba(166,84,35,0.25)", bg: "#FBF4EF" },
 };
 
 function formatCell(value: unknown): string {

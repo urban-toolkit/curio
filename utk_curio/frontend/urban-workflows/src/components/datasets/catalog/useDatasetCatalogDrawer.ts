@@ -19,7 +19,7 @@ import {
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
   datasetDisplayTitle,
-  isOsmGroupId,
+  isLayerGroupId,
   isInThisDataflow,
   notifyDatasetCatalogRefresh,
   useDatasetImport,
@@ -187,7 +187,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         format: dataset.format,
       });
       try {
-        const isGroup = isOsmGroupId(dataset.id);
+        const isGroup = isLayerGroupId(dataset.id);
         // An OSM group's id is synthetic — install each real per-layer dataset
         // so their dataflow refs (which feed the saved spec) stay accurate.
         const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
@@ -236,7 +236,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const onInstall = useCallback(
     (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
-      const isGroup = isOsmGroupId(dataset.id);
+      const isGroup = isLayerGroupId(dataset.id);
       const layerCount = isGroup ? (dataset.groupLayerIds ?? []).length : 0;
       setConfirmAction({
         title: `Add ${title}?`,
@@ -257,7 +257,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       if (!id) return;
       setBusyId(dataset.id);
       try {
-        const isGroup = isOsmGroupId(dataset.id);
+        const isGroup = isLayerGroupId(dataset.id);
         const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
         for (const memberId of memberIds) {
           try {

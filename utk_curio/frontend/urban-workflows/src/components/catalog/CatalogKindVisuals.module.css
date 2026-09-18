@@ -185,6 +185,11 @@
   color: var(--curio-format-osm-on-tint);
 }
 
+.formatBadge_gpkg {
+  background: var(--curio-format-gpkg-bg);
+  color: var(--curio-format-gpkg-on-tint);
+}
+
 .categoryBadge {
   flex-shrink: 0;
   border-radius: 4px;
