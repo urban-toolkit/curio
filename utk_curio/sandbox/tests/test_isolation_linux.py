@@ -25,6 +25,7 @@ reported as an ordinary node error, at HTTP 200, never as a crash or a hang.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -615,8 +616,26 @@ def test_the_writer_is_configured_for_a_capped_child(isolated):
     settings = load_from_duckdb(result["output"]["path"])
     adopted = dict(zip(settings["name"], settings["value"])) if "name" in settings else settings
     assert str(adopted.get("threads")) == "1", adopted
-    # DuckDB normalises the unit, so match the magnitude rather than the string.
-    assert "256" in str(adopted.get("memory_limit")), adopted
+
+    # DuckDB does not echo the string it was given: "256MB" comes back as
+    # "244.1 MiB", because it reads MB as 10^6 and reports in MiB. So compare
+    # the MAGNITUDE, derived from _WRITER_CONFIG rather than from a literal, or
+    # this test pins a formatting detail instead of a budget.
+    from utk_curio.sandbox.util import codec
+
+    def _bytes(text: str) -> float:
+        m = re.match(r"^\s*([\d.]+)\s*(B|KB|MB|GB|KiB|MiB|GiB)\s*$", str(text))
+        assert m, f"unparseable memory_limit: {text!r}"
+        scale = {"B": 1, "KB": 10 ** 3, "MB": 10 ** 6, "GB": 10 ** 9,
+                 "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30}[m.group(2)]
+        return float(m.group(1)) * scale
+
+    want = _bytes(codec._WRITER_CONFIG["memory_limit"])
+    got = _bytes(adopted.get("memory_limit"))
+    assert abs(got - want) / want < 0.02, (
+        f"the child adopted {adopted.get('memory_limit')!r}, which is not the "
+        f"configured {codec._WRITER_CONFIG['memory_limit']!r}"
+    )
 
 
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
