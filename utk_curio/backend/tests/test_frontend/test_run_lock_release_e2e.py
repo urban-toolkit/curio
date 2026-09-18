@@ -28,13 +28,20 @@ from playwright.sync_api import expect
 from .utils import (
     _wait_for_reactflow_ready,
     dismiss_toasts,
+    held_node_executions,
+    hold_node_execution,
     play_node,
     read_node_output_text,
+    release_node_execution,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    run_all_button,
     stub_login_and_enter_workflow,
+    wait_for_held_node_execution,
     wait_for_node_done,
+    wait_for_run_all_to_end,
+    watch_run_all,
 )
 from .walkthroughs import load_example_spec
 
@@ -85,15 +92,26 @@ def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu
     autark_id = dataflow_without_webgpu["autark"]
     independent_id = dataflow_without_webgpu["independent"]
 
-    run_all = page.get_by_role("button", name="Run all nodes")
-    cancel = page.get_by_role("button", name="Cancel run")
+    # One button in two states (Run All / Cancel run), so the locator matches
+    # either name and the assertions read the state off data-run-active. A
+    # locator written for one name stops matching the moment the run changes
+    # state, and a click on it then waits out its whole budget.
+    run_all = run_all_button(page)
 
-    # Step 2: run everything.
+    # Step 2: run everything. The node executions are held first: this level is
+    # three data-loading nodes, one POST each, and the only thing keeping the
+    # button on "Cancel run" is that those POSTs have not answered yet. Held,
+    # the in-flight state is a fact; unheld, it is a race with a loaded runner.
     expect(run_all).to_be_visible(timeout=30000)
+    hold_node_execution(page)
+    watch_run_all(page)
     run_all.click()
     # The button IS the run's state. A silent no-op here is indistinguishable
     # from a dead control, which is how this was reported in the first place.
-    expect(cancel).to_be_visible(timeout=30000)
+    expect(run_all).to_have_attribute("data-run-active", "true", timeout=30000)
+    expect(run_all).to_have_attribute("aria-label", "Cancel run")
+    wait_for_held_node_execution(page)
+    release_node_execution(page)
 
     # Step 3: the Autark node refuses, and says why. Reporting is what releases
     # its level - a node that stays silent is the wedge.
@@ -104,7 +122,8 @@ def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu
 
     # The claim of #271: the run ends on its own. Generous, because the level
     # also carries data-loading nodes that fetch real files on a loaded runner.
-    expect(run_all).to_be_visible(timeout=180000)
+    wait_for_run_all_to_end(page, timeout_ms=180000)
+    expect(run_all).to_have_attribute("aria-label", "Run all nodes")
 
     # Step 4a: "attempt to execute other independent nodes". Its badge already
     # says executed from the run above, so the evidence is its output: every
@@ -126,9 +145,31 @@ def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu
             "progress'"
         )
 
-    # Step 4b: Run All again, and leave the canvas as we found it.
+    # Step 4b: Run All again, cancel it, and leave the canvas as we found it.
+    #
+    # This is the one place a real browser checks that the button's second state
+    # does what it says - the unit tests assert cancelRun is CALLED, not that a
+    # run stops. Clicking it needs a run that is still in flight, so the level's
+    # node executions are held across the click rather than hoped to still be
+    # outstanding. The assertion afterwards is the one the old version could not
+    # make: the button came back WHILE the requests are still held, so the run
+    # was cancelled rather than merely finished.
     dismiss_toasts(page)
-    run_all.click()
-    expect(cancel).to_be_visible(timeout=30000)
-    cancel.click()
-    expect(run_all).to_be_visible(timeout=60000)
+    hold_node_execution(page)
+    try:
+        watch_run_all(page)
+        run_all.click()
+        expect(run_all).to_have_attribute(
+            "data-run-active", "true", timeout=30000)
+        wait_for_held_node_execution(page)
+
+        run_all.click()  # the same button, now cancelling
+        expect(run_all).to_have_attribute("aria-label", "Run all nodes",
+                                          timeout=30000)
+        expect(run_all).not_to_have_attribute("data-run-active", "true")
+        assert held_node_executions(page) > 0, (
+            "the run ended before the cancel click, so this asserted nothing; "
+            "the held node executions were released too early"
+        )
+    finally:
+        release_node_execution(page)

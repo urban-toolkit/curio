@@ -43,13 +43,20 @@ from .utils import (
     connect_nodes,
     drag_to_canvas,
     frame_node,
+    hold_node_execution,
     node_locator,
     open_tools_palette,
     play_node,
+    release_node_execution,
     require_owner_view,
+    run_all_and_wait,
+    run_all_button,
     run_node_and_wait,
     set_node_code,
+    wait_for_held_node_execution,
     wait_for_node_done,
+    wait_for_run_all_to_end,
+    watch_run_all,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -1391,30 +1398,57 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
     autark.wait_for(state="visible", timeout=45000)
 
-    run_all = page.get_by_role("button", name="Run all nodes")
+    # One button in two states, so the locator matches either name and the
+    # assertions read the state off data-run-active.
+    run_all = run_all_button(page)
     ctx.focus(run_all, hold=900)
     ctx.say("Run all nodes", "One of them cannot run here.")
+
+    # Hold the run open on purpose. The only node here that leaves the browser
+    # is the Autark DATA node in level 0; every other node needs WebGPU and
+    # refuses in the tick it is triggered. So the window in which the button
+    # reads "Cancel run" is exactly the length of that one request - fine on a
+    # quiet machine, and nothing this scene controls on a loaded one. Held, the
+    # in-flight state it photographs is a fact rather than a lucky shot.
+    hold_node_execution(page)
+    watch_run_all(page)
     run_all.click()
 
     # While the run is in flight the same button offers to cancel it.
-    cancel = page.get_by_role("button", name="Cancel run")
-    cancel.wait_for(state="visible", timeout=15000)
+    expect(run_all).to_have_attribute("data-run-active", "true", timeout=15000)
+    expect(run_all).to_have_attribute("aria-label", "Cancel run")
+    wait_for_held_node_execution(page)
     ctx.capture("run-in-flight")
+    release_node_execution(page)
 
     # The Autark node refuses, and reports it - which is what releases its level.
     autark.locator('[role="alert"]').first.wait_for(state="visible", timeout=45000)
 
     # The run ends on its own: the button is Run All again, not a dead control.
-    run_all.wait_for(state="visible", timeout=180000)
+    wait_for_run_all_to_end(page, timeout_ms=180000)
+    expect(run_all).to_have_attribute("aria-label", "Run all nodes")
     ctx.focus(run_all, hold=1200)
     ctx.say("The run ended", "A failed node no longer holds every later run hostage.")
     ctx.capture("run-ended")
 
     # And a second run is accepted - the guard was released, not wedged.
-    run_all.click()
-    cancel.wait_for(state="visible", timeout=15000)
-    cancel.click()
-    expect(run_all).to_be_visible()
+    #
+    # Not by catching that run in flight: nothing in this dataflow can be slow
+    # the second time. The data node answers from its own cache, so the second
+    # run makes no request at all, and every other node refuses at the WebGPU
+    # probe. The run can be over before a locator resolves, and clicking
+    # "Cancel run" then waits out its whole budget for a button that has gone
+    # back to saying "Run all nodes" (CI run 35275085327). What is watched
+    # instead is the guard's own transitions, which a run that starts and ends
+    # within one frame still leaves behind. Cancelling a run is a click this
+    # scene cannot make honestly; test_run_lock_release_e2e.py makes it with a
+    # run held open, and toolsMenuRunAll / playAllRelease cover the handler.
+    ctx.say("Run all again", "The second run is accepted, and it ends too.")
+    second = run_all_and_wait(page, timeout_ms=180000)
+    assert second["started"] >= 1, (
+        "the second Run All was refused: the run guard never went active (#271)"
+    )
+    expect(run_all).to_have_attribute("aria-label", "Run all nodes")
     assert not errors, f"an uncaught page error escaped: {errors}"
 
 
