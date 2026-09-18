@@ -91,6 +91,34 @@ _THROWING_BUNDLE = b"""
 """
 
 
+class TestSkipGuard:
+    """#362 — the guard itself, which nothing asserted.
+
+    ``_require_browser`` is the only reason the four E2E tests below skip
+    rather than hard-fail on a machine without chromium (#278). Drop it, or
+    narrow its ``except``, and they go back to failing - and the suite still
+    looks green on any developer machine that happens to have the browser.
+    These tests fail in that world.
+    """
+
+    def test_an_empty_browser_cache_skips_instead_of_erroring(
+            self, tmp_path, monkeypatch):
+        pytest.importorskip("playwright.sync_api")
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "empty"))
+        # Skipped derives from BaseException, so pytest.raises(Exception)
+        # would NOT catch this; pytest.skip.Exception is the public handle.
+        with pytest.raises(pytest.skip.Exception) as exc:
+            _require_browser()
+        # The skip has to carry the remedy, not just the fact.
+        assert "playwright install chromium" in str(exc.value)
+
+    def test_the_refusal_stays_a_systemexit_subclass(self):
+        """``_require_browser`` catches ``SystemExit``. Rebase GenerationError
+        on Exception and every guarded test errors instead of skipping, with
+        nothing else in the suite noticing."""
+        assert issubclass(installer.GenerationError, SystemExit)
+
+
 class TestGenerator:
     def test_wrapper_bakes_every_path_and_probes(self, wrapper):
         text = wrapper.read_text(encoding="utf-8")
