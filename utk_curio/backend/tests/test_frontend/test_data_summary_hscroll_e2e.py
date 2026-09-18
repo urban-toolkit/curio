@@ -264,6 +264,16 @@ def test_the_data_summary_scrolls_to_its_last_column(
         "the node body reports overflow-y but does not scroll vertically (#156)"
     )
 
+    # Put the SUBJECT in the frame before the shutter. Two things conspire to
+    # leave the describe table out of it otherwise: it renders below Shape /
+    # Data Types / Missing Values, and the behavioural #156 check just above
+    # returns the body to scrollTop 0. A baseline of the node's header area
+    # would sit here proving nothing about horizontal scroll - the Data Pool
+    # one (`screenshot_data-pool-hscroll_...png`) shows its last columns with
+    # the first clipped off the left edge, which is the whole point.
+    scroller.scroll_into_view_if_needed()
+    scroller.evaluate("el => { el.scrollLeft = el.scrollWidth; }")
+
     dismiss_toasts(page)
     save_workflow_test_screenshot(
         page, "data-summary-hscroll",
