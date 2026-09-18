@@ -84,7 +84,8 @@ export function AgentCatalogBrowseCard({
         <p className={styles.cardDescription} {...(!agent.purpose ? { "aria-hidden": true } : {})}>
           {agent.purpose || " "}
         </p>
-        <div className={styles.tagRow}>
+        {/* See DataCatalogBrowseCard: aims the #333 baseline at the claim. */}
+        <div className={styles.tagRow} data-curio-tag-row="true">
           {tags.map((tag) => (
             <span key={tag} className={styles.tag} data-curio-tag-chip="true">
               {tag}

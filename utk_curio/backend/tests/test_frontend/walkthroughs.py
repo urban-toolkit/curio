@@ -620,6 +620,16 @@ AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 #: actions live here, not on a card and not in the canvas.
 BROWSE_DRAWER_ROOT = '[data-curio-browse-drawer="true"]'
 
+#: The tag row inside a browse card, on any of the three catalog pages. Every
+#: page renders many cards, and a clip must resolve to exactly one element, so
+#: the scene takes the first: the claim is about chips *within one card*, and any
+#: card demonstrates it.
+TAG_ROW_FIRST_CARD = '[data-curio-tag-row="true"] >> nth=0'
+
+#: The browse drawer's CTA row, where the long "Remove from all projects" label
+#: lives. One drawer is open at a time, so this is unambiguous.
+BROWSE_DRAWER_CTAS = '[data-curio-drawer-ctas="true"]' 
+
 
 def open_agent_drawer(ctx: Ctx):
     """Data menu -> Agent Catalog, returning the drawer dialog."""
@@ -850,13 +860,23 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
          "the claim is unchanged, only its address.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector=BROWSE_DRAWER_ROOT,
+    # The claim is whether one label fits one button, so the capture is that
+    # button's row rather than the whole 320x607 drawer (#333). At the drawer
+    # size the CTA row was a few percent of the frame, so a 10% budget could not
+    # have seen the label wrap that this scene exists to catch. On the row
+    # itself, a wrap is most of the picture.
+    clip_selector=BROWSE_DRAWER_CTAS,
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (5.1% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.10,
+    # What matters for catching a regression is the slack in PIXELS, not the
+    # ratio. The whole drawer at 10% was 19,400 pixels of slack, several times
+    # the button this scene is about. This row is 319x128, so even at 8% the
+    # slack is ~3,300 pixels and a label wrapping to a second line moves more
+    # than that. The ratio is deliberately NOT tightened to match the frame:
+    # clipping concentrates the text, and cross-platform antialiasing differs
+    # on exactly the text, so the same difference is a LARGER share of a
+    # text-dense crop than of a mostly-empty page. Provisional until a Linux
+    # run measures it; see the PR.
+    max_diff_ratio=0.08,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     page = ctx.page
@@ -1585,11 +1605,19 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     tests=["src/tests/catalog/tagChipsArePlain.test.ts",
            "src/tests/catalog/datasetFormatStyles.test.ts"],
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (2.0% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.05,
+    # The claim is that the chips in one card share a background, so the capture
+    # is that chip row rather than a 1280x720 page (#333). Full page, 5% was
+    # ~46,000 pixels of slack: more than the entire chip row, so a chip going
+    # coloured again passed with room to spare. The row is 306x26, so 8% is
+    # ~640 pixels and one re-tinted chip is thousands. It also stops the
+    # baseline being hostage to the rest of the page: the footer version string
+    # and the "15h ago" freshness labels drift on their own and forced
+    # re-captures that had nothing to do with chips.
+    #
+    # See the sibling scene for why the ratio is not tightened along with the
+    # frame.
+    clip_selector=TAG_ROW_FIRST_CARD,
+    max_diff_ratio=0.08,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.

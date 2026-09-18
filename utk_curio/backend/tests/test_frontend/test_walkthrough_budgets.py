@@ -61,6 +61,35 @@ class TestTheRegistry:
         ]
         assert clipped, "no clipped scene has a tight budget any more"
 
+    def test_the_two_scenes_that_document_a_detail_stay_clipped(self):
+        """#333: both of these captured far more than the claim they document.
+
+        ``catalog-tag-chips-are-plain`` shot a whole 1280x720 page to say that
+        the chips in one card share a background; at 5%, ~46k pixels, the budget
+        was wider than the chip row, so a chip going coloured again would have
+        passed. ``agent-catalog-action-labels-fit`` shot the whole drawer to say
+        that one label fits one button.
+
+        Named explicitly rather than covered by the general rule above, because
+        the general rule is satisfied by any one clipped scene and these two are
+        the ones that were wrong. Reverting either to a full page would restore
+        exactly the gap the issue was filed about, and would do it silently:
+        dropping ``clip_selector`` raises the effective budget to the floor,
+        so the suite would go *greener*, not redder.
+        """
+        by_slug = {w.slug: w for w in WALKTHROUGHS}
+        for slug in ("catalog-tag-chips-are-plain", "agent-catalog-action-labels-fit"):
+            scene = by_slug.get(slug)
+            assert scene is not None, f"{slug} is gone from the registry"
+            assert scene.clip_selector is not None, (
+                f"{slug} went back to a full-page capture; its claim is a detail "
+                f"and a full-page budget cannot see a detail change"
+            )
+            assert scene.effective_max_diff_ratio <= 0.10, (
+                f"{slug} is clipped but its budget is {scene.effective_max_diff_ratio}, "
+                f"wide enough to hide the regression it exists to catch"
+            )
+
     def test_the_floor_is_about_twice_the_measured_cross_platform_cost(self):
         # Measured worst case was 7.66% (project-drawer-offers-delete). A floor
         # at less than ~1.5x that is not headroom; far above it is not a budget.
