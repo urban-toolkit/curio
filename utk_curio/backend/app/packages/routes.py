@@ -1186,12 +1186,23 @@ def install_workflow_deps():
 # Per-project lockfile + per-user defaults
 # ---------------------------------------------------------------------------
 #
-# These five endpoints implement the project-scoped install/uninstall and the
+# These six endpoints implement the project-scoped install/uninstall and the
 # per-user defaults list from [docs/NODE-CATALOG.md]. The drawer in the canvas
 # uses the `/projects/<id>/...` endpoints; the `/catalog` page uses
-# `/defaults`. There is deliberately no `DELETE /defaults/<dir>` - the only
-# way a package leaves the defaults list is via `prune_unreferenced_packages`,
-# which fires when the last project drops a dep.
+# `/defaults`.
+#
+# `DELETE /defaults/<dir>` is API-ONLY and deliberately has no UI (#353). It was
+# added with the #220 fix so that seeding a package into all new projects via
+# `POST /defaults` can be undone; the `/catalog` page offers no button for it,
+# and `catalogCardActions` returns no such action for a package (unlike datasets
+# and agents, which do). The ordinary way a package leaves the list is still
+# `prune_unreferenced_packages`, which fires when the last project drops a dep.
+#
+# Its coverage is therefore route-level by design, not by oversight: see
+# `test_lockfile.py::test_delete_defaults_detaches_without_touching_projects`
+# and its idempotency sibling. A browser-level test would have nothing to click.
+# If a UI affordance is ever wanted, `NodeCatalogBrowse.tsx` already reserves an
+# empty `case "remove-from-all-projects"` for it.
 
 def _packages_error(exc: packages_services.PackageServiceError):
     return jsonify({"error": str(exc)}), exc.status
