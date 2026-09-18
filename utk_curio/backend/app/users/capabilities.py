@@ -55,25 +55,75 @@ def can_manage_shared_catalog(user) -> bool:
     return not is_shared_guest(user)
 
 
-def library_install_refusal(user) -> str | None:
-    """Why *user* may not install or remove a library, or ``None`` if they may.
+def install_refusal(user, *, noun: str = "packages") -> str | None:
+    """Why *user* may not trigger a pip run here, or ``None`` if they may.
 
-    The shared guest is every anonymous visitor at once, so one visitor's
-    install changes what every other visitor's nodes import, and the disk it
-    costs has no owner to account it to. Without auth the one local user IS
-    the shared guest, so this applies only when auth is on.
+    One rule for every install path. It used to be two: the ``/libraries``
+    routes checked the guest rule (#309) and the eight package routes that reach
+    the same chokepoint checked nothing at all (#332). The question is the same
+    either way, because the interpreter is the same.
 
-    Not conditional on isolation. Under ``--deploy`` an install lands in the
-    caller's own overlay, which scopes it away from signed-in accounts but
-    not from the next anonymous visitor: they share the one guest key.
+    Three parts, in this order, and the order matters:
 
-    Read at call time so tests (and a reloaded config) are honoured.
+    1. **No auth means a local run, and a local run always may.** Without
+       ``--deploy`` there is no auth, the single local user is signed in as the
+       guest, and there is no isolation, so rules 2 and 3 would both refuse and
+       both would be wrong. One person, one interpreter, their own machine:
+       nothing to scope, and nobody to protect them from. Installing and
+       removing libraries there is the everyday path.
+    2. **A hosted guest may not.** Every anonymous visitor resolves to one
+       account, so one visitor's install changes what every other visitor's
+       nodes import, and the disk it costs has no owner to account it to.
+    3. **Nobody may on a hosted instance that cannot scope installs, unless the
+       operator said otherwise.** The half #309 was held open for. ``--deploy``
+       on a host that cannot isolate boots with a warning rather than a refusal,
+       so a *signed-in* user's install still lands in the one interpreter that
+       runs everybody's node code.
+
+       This one has an escape hatch, because it is much broader than it looks:
+       isolation needs Linux, fork, setrlimit, pyseccomp AND a configured
+       execution user, so ``--deploy`` on macOS or Windows, on Linux without
+       pyseccomp, or on Linux with no exec user all land here. Refusing them
+       outright would take package installation away from every such
+       deployment, including ones where the operator knows all the accounts.
+       ``--allow-shared-installs`` lets them accept that knowingly; it is off by
+       default, so the safe posture is the one you get without reading this.
+
+    ``None`` passes, as it does for :func:`can_manage_shared_catalog`: that is
+    the launcher installing every manifest's dependencies at boot, which has no
+    request and no user, and refusing it would refuse startup.
+
+    Read at call time so tests and a reloaded config are honoured.
     """
     from utk_curio.backend import config
 
-    if not config.CURIO_NO_AUTH and getattr(user, "is_guest", False):
+    if config.CURIO_NO_AUTH:
+        return None
+    if user is None:
+        return None
+    if getattr(user, "is_guest", False):
         return (
-            "Installing libraries is not available for guest users. Sign in "
-            "with an account to install one."
+            f"Installing {noun} is not available for guest users, because every "
+            f"guest shares one account. Sign in with an account to install one."
+        )
+
+    from utk_curio.backend.app.packages.backend_runtime import per_user_node_envs
+
+    if not per_user_node_envs() and not config.CURIO_ALLOW_SHARED_INSTALLS:
+        return (
+            f"This deployment cannot scope installed {noun} to one user, so an "
+            f"install would change what everybody's nodes import. Ask an "
+            f"operator to run Curio where node execution can be isolated, or "
+            f"to start it with --allow-shared-installs."
         )
     return None
+
+
+def library_install_refusal(user) -> str | None:
+    """Why *user* may not install or remove a library. See :func:`install_refusal`."""
+    return install_refusal(user, noun="libraries")
+
+
+def package_install_refusal(user) -> str | None:
+    """Why *user* may not install a package. See :func:`install_refusal`."""
+    return install_refusal(user, noun="packages")

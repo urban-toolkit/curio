@@ -71,6 +71,7 @@ Curio refuses to start on a Node.js older than 26 and names the upgrade. On a su
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Default state of every node's save-output toggle |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--allow-shared-installs` / `--no-allow-shared-installs` | off | Permit package and library installs on a `--deploy` instance that cannot scope them to one user. Off by default: without isolation every install lands in the one interpreter running everybody's node code. No effect on a local run, which is never gated. See [NODE-CATALOG.md](NODE-CATALOG.md#who-may-install-a-package). |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
 | `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
