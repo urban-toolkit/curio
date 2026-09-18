@@ -10,6 +10,10 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "parquet",
   "geotiff",
   "shp",
+  // A GeoPackage group card carries format "gpkg", so it needs a rail row like
+  // any other format. ``bundle`` and ``osm`` are missing here for the same
+  // reason and are added by #348 (PR #366), which owns that fix.
+  "gpkg",
 ];
 
 /**
@@ -33,7 +37,7 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
  * search excluding every dataset of the selected format would otherwise make the
  * very chip you are filtering by vanish.
  *
- * No numeric cap: the domain is closed at these six formats and ``.filterBar``
+ * No numeric cap: the domain is closed at these formats and ``.filterBar``
  * wraps, so the row cannot overflow.
  */
 export function quickFormatFilters(
