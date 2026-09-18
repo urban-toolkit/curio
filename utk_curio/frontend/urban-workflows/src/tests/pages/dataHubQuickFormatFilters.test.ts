@@ -1,4 +1,6 @@
 import { quickFormatFilters } from "../../pages/dataHub/dataHubBrowseConstants";
+import { DATASET_FORMAT_LABEL } from "../../services/datasetCatalog";
+import type { DatasetFormat } from "../../services/datasetCatalog";
 
 /**
  * #232: the Data Catalog rendered its format filters twice from two different
@@ -54,10 +56,28 @@ describe("quickFormatFilters", () => {
     expect(quickFormatFilters({ parquet: 2 })).toEqual(["parquet"]);
   });
 
-  it("never chips a format the rail cannot filter on", () => {
-    // `bundle` and `osm` are real facet keys with real counts, but FORMAT_FILTERS
-    // has no row for them, so a chip would filter to a rail state that does not
-    // exist. (That gap is its own issue; this pins that #232 did not widen it.)
-    expect(quickFormatFilters({ bundle: 5, osm: 7 })).toEqual([]);
+  it("chips bundle and osm now that the rail can filter on them (#348)", () => {
+    // This pinned the opposite until #348: both are real facet keys the backend
+    // counts, and FORMAT_FILTERS had no row for either - so a computed
+    // multi-output node or an imported PBF inflated the rail's "All formats"
+    // total while having no row and no chip of its own.
+    expect(quickFormatFilters({ bundle: 5, osm: 7 })).toEqual(["bundle", "osm"]);
+  });
+
+  it("covers every DatasetFormat, so no format can go unfilterable again", () => {
+    // The actual invariant behind #348, rather than a list of two names: the
+    // rail's domain and the type's domain have to be the same set.
+    const everyFormat: Record<DatasetFormat, number> = {
+      geojson: 1, csv: 1, json: 1, parquet: 1,
+      geotiff: 1, shp: 1, bundle: 1, osm: 1,
+    };
+    expect(quickFormatFilters(everyFormat).sort()).toEqual(
+      (Object.keys(DATASET_FORMAT_LABEL) as DatasetFormat[]).sort(),
+    );
+  });
+
+  it("still drops a format with no datasets, whichever one it is", () => {
+    // Widening the domain must not turn the chip row into a static list.
+    expect(quickFormatFilters({ bundle: 0, osm: 3 })).toEqual(["osm"]);
   });
 });
