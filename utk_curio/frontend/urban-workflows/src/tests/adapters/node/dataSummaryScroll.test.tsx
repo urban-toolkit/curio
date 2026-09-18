@@ -62,8 +62,11 @@ describe('Data Summary wide-table scroll', () => {
       scrollers.map((el) => el.getAttribute('data-curio-summary-scroll')),
     ).toEqual(['dtypes', 'missing', 'describe']);
     for (const scroller of scrollers) {
-      // MUI's TableContainer default, kept rather than overridden: unlike the
-      // Data Pool there is no outer scroller to pass the overflow up to.
+      // Declared explicitly rather than inherited from MUI's default: the
+      // computed value came back "visible" on the Linux CI runner and "auto"
+      // on macOS for this same element, and a fix that depends on which one
+      // you get is not a fix. Unlike the Data Pool (#203) there is no outer
+      // scroller to pass the overflow up to, so each container keeps it.
       expect(['auto', 'scroll']).toContain(getComputedStyle(scroller).overflowX);
     }
   });

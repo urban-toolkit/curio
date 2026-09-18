@@ -169,14 +169,27 @@ def test_the_data_summary_scrolls_to_its_last_column(
         " overflowX: getComputedStyle(el).overflowX,"
         " tableMinWidth: getComputedStyle(el.querySelector('table')).minWidth })"
     )
-    assert metrics["overflowX"] in ("auto", "scroll"), (
-        f"the stats table's container does not own horizontal scroll "
-        f"(overflow-x={metrics['overflowX']!r})"
-    )
     assert metrics["tableMinWidth"] == "max-content", (
         "without min-width:max-content the browser squeezes the columns toward "
         f"min-content instead of overflowing (got {metrics['tableMinWidth']!r})"
     )
+
+    # Scrollability is asserted by SCROLLING, not by reading overflow-x.
+    # `scrollWidth > clientWidth` above is true of a merely-overflowing box too,
+    # and the computed value is not a reliable stand-in: it came back "auto" on
+    # macOS and "visible" on the Linux CI runner for this same element, while
+    # the box scrolled in both. What the user needs is that setting scrollLeft
+    # moves it, so that is what this checks - and the computed value rides along
+    # in the message for whoever debugs the next difference.
+    moved = scroller.evaluate(
+        "el => { el.scrollLeft = 400; return el.scrollLeft; }"
+    )
+    assert moved > 0, (
+        "the stats table's container does not scroll horizontally "
+        f"(scrollLeft stayed {moved}; overflow-x={metrics['overflowX']!r}, "
+        f"scrollWidth={metrics['scrollWidth']}, clientWidth={metrics['clientWidth']})"
+    )
+    scroller.evaluate("el => { el.scrollLeft = 0; }")
 
     # The behavioural half: a shift+wheel over the table must scroll IT, not pan
     # the canvas. `nowheel` on an ancestor is what makes that true.
