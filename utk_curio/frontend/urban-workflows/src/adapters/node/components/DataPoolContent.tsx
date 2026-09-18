@@ -5,7 +5,7 @@ import { fetchPreviewData } from '../../../services/api';
 import { sandboxArtifactId } from '../../../utils/flowOutputRef';
 import { rowsFromParseOutput } from '../../../utils/tabularPreview';
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
-import { resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
+import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
 
 interface DataPoolContentProps {
   activeTab: string;
@@ -22,6 +22,14 @@ interface DataPoolContentProps {
    * claiming otherwise would send the user to run a node that does not exist.
    */
   connected?: boolean;
+  /**
+   * Did a node feeding this one run and fail?
+   *
+   * Same reasoning as ``connected``: only the behavior can see the graph and
+   * the exec status. Defaults to FALSE so a caller that has not said is treated
+   * as "no known failure" rather than blaming an upstream node at random.
+   */
+  upstreamErrored?: boolean;
 }
 
 const ContentComponent = ({
@@ -106,7 +114,7 @@ const ContentComponent = ({
   );
 };
 
-export default function DataPoolContent({ activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false }: DataPoolContentProps) {
+export default function DataPoolContent({ activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false }: DataPoolContentProps) {
   const wrappers: any[] = (() => {
     if (!data.input || typeof data.input !== "object") return [];
     if (data.input.dataType === "outputs" && Array.isArray(data.input.data)) return data.input.data;
@@ -181,16 +189,17 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
             reason={
               resolveNodeEmptyReason({
                 connected,
+                upstreamErrored,
                 hasInput: data?.input != null && data.input !== '',
-                // A pool only ever renders tables, and ``tabData`` is empty in
-                // this branch, so an input that got here produced nothing
-                // table-shaped. That is "not tabular", not "no rows": a
-                // dataframe with zero rows still yields a tab and renders as an
-                // empty table above, so it never reaches here. Passing `true`
-                // sent every such payload to "The input ran, but came back
-                // empty", which is exactly the uninformative message #224 was
-                // about.
-                tabular: false,
+                // Asked of the PAYLOAD, not of tabData (#347). The premise this
+                // used to state - that a zero-row dataframe still yields a tab
+                // and so never reaches here - is not true: processDataAsync
+                // filters dataframe/geodataframe layers with no rows out before
+                // tabData is set (added for autk-db 2.1.2 empty layers). So a
+                // node that ran and returned an empty table landed here and was
+                // told "This input is not tabular data", which is wrong and
+                // unactionable. The declared dataType still knows better.
+                tabular: isTabularPayload(data?.input),
                 rowCount: 0,
               }) ?? 'no-rows'
             }

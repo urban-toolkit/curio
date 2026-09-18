@@ -156,7 +156,7 @@ interface FlowContextProps {
     projectName: string;
     projectDirty: boolean;
     projectSavedAt: Date | null;
-    nodeExecStatus: Record<string, "stale" | "executed">;
+    nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
 
     // Project operations
@@ -172,6 +172,7 @@ interface FlowContextProps {
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
     markNodeStale: (nodeId: string) => void;
+    markNodeErrored: (nodeId: string) => void;
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
@@ -299,6 +300,7 @@ export const FlowContext = createContext<FlowContextProps>({
     markDirty: () => {},
     markNodeExecuted: () => {},
     markNodeStale: () => {},
+    markNodeErrored: () => {},
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},

@@ -9,6 +9,8 @@
 import {
   NODE_EMPTY_COPY,
   hasIncomingEdge,
+  incomingSourceIds,
+  isTabularPayload,
   resolveGrammarEmptyReason,
   resolveNodeEmptyReason,
   type NodeEmptyReason,
@@ -44,10 +46,134 @@ describe("resolveNodeEmptyReason", () => {
   });
 });
 
+describe("an errored upstream is not an unrun one (#347)", () => {
+  // A node whose execution fails produces no artifact, so it never calls
+  // outputCallback and nothing downstream changes at all. hasInput therefore
+  // stays false and the ladder said "upstream-not-run" - "Run the node feeding
+  // this one", to a user who had just run it and watched it fail.
+  test("outranks having no input", () => {
+    expect(
+      resolveNodeEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: false,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("outranks a stale input left over from an earlier good run", () => {
+    // Why it sits above hasInput rather than below: the rows on screen are from
+    // the run before the failure, so reporting on their shape would be a lie.
+    expect(
+      resolveNodeEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: true,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("does not outrank being disconnected", () => {
+    // An edge the user deleted leaves the old exec status behind; connectivity
+    // is still the more fundamental fact.
+    expect(
+      resolveNodeEmptyReason({
+        connected: false,
+        upstreamErrored: true,
+        hasInput: false,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("disconnected");
+  });
+
+  test("the grammar ladder agrees", () => {
+    expect(
+      resolveGrammarEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: false,
+        hasSpec: true,
+        hasRun: false,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("is absent by default, so nothing changes for callers that do not pass it", () => {
+    expect(
+      resolveNodeEmptyReason({ connected: true, hasInput: false, tabular: false, rowCount: 0 }),
+    ).toBe("upstream-not-run");
+  });
+});
+
+describe("incomingSourceIds", () => {
+  test("names the nodes feeding this one", () => {
+    const edges = [
+      { source: "a", target: "pool" },
+      { source: "b", target: "pool" },
+      { source: "pool", target: "chart" },
+    ];
+    expect(incomingSourceIds(edges, "pool").sort()).toEqual(["a", "b"]);
+  });
+
+  test("de-duplicates a node wired into two ports", () => {
+    const edges = [
+      { source: "a", target: "merge", targetHandle: "in1" },
+      { source: "a", target: "merge", targetHandle: "in2" },
+    ];
+    expect(incomingSourceIds(edges, "merge")).toEqual(["a"]);
+  });
+
+  test("is empty for no edges, no id, or nothing incoming", () => {
+    expect(incomingSourceIds([], "pool")).toEqual([]);
+    expect(incomingSourceIds(null, "pool")).toEqual([]);
+    expect(incomingSourceIds([{ source: "a", target: "other" }], "pool")).toEqual([]);
+  });
+});
+
+describe("isTabularPayload", () => {
+  // The #347 correction: ask the payload what it is, not the row count. A
+  // zero-row dataframe is still tabular, and saying otherwise is what sent it
+  // to "This input is not tabular data".
+  test("an empty dataframe is still tabular", () => {
+    expect(isTabularPayload({ dataType: "dataframe", data: {} })).toBe(true);
+    expect(isTabularPayload({ dataType: "geodataframe", data: { features: [] } })).toBe(true);
+  });
+
+  test("a scalar or dict payload is not", () => {
+    expect(isTabularPayload({ dataType: "value", data: 42 })).toBe(false);
+    expect(isTabularPayload({ dataType: "dict", data: {} })).toBe(false);
+  });
+
+  test("an outputs envelope is tabular when any layer in it is", () => {
+    expect(
+      isTabularPayload({
+        dataType: "outputs",
+        data: [{ dataType: "value", data: 1 }, { dataType: "dataframe", data: {} }],
+      }),
+    ).toBe(true);
+    expect(
+      isTabularPayload({ dataType: "outputs", data: [{ dataType: "value", data: 1 }] }),
+    ).toBe(false);
+  });
+
+  test("a bare filename ref or a missing input is not", () => {
+    // What the pool receives before the preview fetch resolves.
+    expect(isTabularPayload({ filename: "artifact_id" })).toBe(false);
+    expect(isTabularPayload("")).toBe(false);
+    expect(isTabularPayload(null)).toBe(false);
+  });
+});
+
 describe("the copy", () => {
   const REASONS: NodeEmptyReason[] = [
     "disconnected",
     "upstream-not-run",
+    "upstream-errored",
     "no-rows",
     "not-tabular",
   ];
