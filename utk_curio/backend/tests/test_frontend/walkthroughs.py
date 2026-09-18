@@ -2070,7 +2070,8 @@ def data_export_is_one_button(ctx: Ctx) -> None:
          "handed to every agent that reads it - and it looked like a chat box "
          "because it sat among the agent chips with no label except a "
          "placeholder too long to fit.",
-    tests=["src/tests/attach/AgentDock.test.tsx"],
+    tests=["src/tests/attach/AgentDock.test.tsx",
+           "src/tests/styles/agentDockGoalGeometry.test.ts"],
     clip_selector='[role="toolbar"][aria-label="Canvas agents"]',
     fit_reactflow=False,
     # The baseline harness waits for ``.react-flow__node`` before handing over
@@ -2106,12 +2107,17 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
-    attached = page.request.post(
-        f"{base}/attachments",
-        headers=headers,
-        data={"coord": coord, "target": {"kind": "canvas"}},
-    )
-    assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+    # THREE attachments, not one (#355): the reported symptom is the goal being
+    # squeezed by the avatars beside it, and one avatar does not squeeze
+    # anything. The dock is a flex row, so this is the state the geometry has
+    # to survive.
+    for _ in range(3):
+        attached = page.request.post(
+            f"{base}/attachments",
+            headers=headers,
+            data={"coord": coord, "target": {"kind": "canvas"}},
+        )
+        assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
 
     # The dock is rendered from the attachment list the page fetches, so reload
     # rather than wait for a push that may never come.
@@ -2136,6 +2142,70 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     goal.blur()
     ctx.beat(500)
     ctx.capture("goal-filled")
+
+    # The measurement, rather than the pixels (#355). The PNG documents this
+    # scene at a 0.20 diff ratio, which its own note admits is loose enough for
+    # re-clipped text to pass; scrollWidth vs clientWidth is the same claim
+    # stated so a CSS regression cannot slip through a tolerance.
+    #
+    # Checked with the placeholder AND with a value, because they crop for
+    # different reasons: the placeholder is fixed-length copy, the value is
+    # whatever the user typed.
+    # The measurement, rather than the pixels (#355). This scene's PNG sits at a
+    # 0.20 diff ratio, which its own note admits is loose enough for re-clipped
+    # text to pass, so the claim is stated as geometry instead.
+    #
+    # Measured with THREE agents attached, because that is the reported
+    # condition - the avatars squeezing the field - and one avatar squeezes
+    # nothing.
+    avatars = page.locator(
+        '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
+    ).count()
+    assert avatars >= 3, (
+        f"the dock shows {avatars} avatars; the goal is not being squeezed by "
+        "anything, so this measurement proves nothing"
+    )
+
+    # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
+    #    precisely so it would, and it is the only thing naming the field
+    #    before anything is typed. 1px of slack for sub-pixel rounding.
+    goal.fill("")
+    goal.blur()
+    ctx.beat(200)
+    empty = goal.evaluate(
+        "el => ({ scroll: el.scrollWidth, client: el.clientWidth })"
+    )
+    assert empty["scroll"] <= empty["client"] + 1, (
+        f"the goal placeholder is cropped with {avatars} agents attached: "
+        f"scrollWidth {empty['scroll']} > clientWidth {empty['client']} "
+        "(#227/#355)"
+    )
+
+    # 2. A long VALUE is allowed to overflow - a goal longer than the field is
+    #    the normal case, and the fix's own comment says so - but it must
+    #    ellipsize rather than be cut mid-word, and the field must still be
+    #    wide enough to read. Squeezed to nothing is the regression here, not
+    #    overflow itself.
+    goal.fill("Find heat islands in Chicago and rank them by population exposure")
+    goal.blur()
+    ctx.beat(200)
+    filled = goal.evaluate(
+        "el => ({ client: el.clientWidth,"
+        " overflow: getComputedStyle(el).textOverflow,"
+        " minWidth: getComputedStyle(el.parentElement).minWidth })"
+    )
+    assert filled["overflow"] == "ellipsis", (
+        "a goal longer than the field would be cut mid-word rather than "
+        f"ellipsized (text-overflow: {filled['overflow']})"
+    )
+    assert filled["client"] >= 120, (
+        f"the goal field collapsed to {filled['client']}px with {avatars} "
+        "agents attached - the placeholder cannot fit in that"
+    )
+
+    goal.fill("Find heat islands in Chicago")
+    goal.blur()
+    ctx.beat(300)
     ctx.say("Named, and readable end to end",
             "Who sees it is on the tooltip, not in the width budget.")
 
