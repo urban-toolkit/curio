@@ -64,9 +64,10 @@ def _guard():
 
     A ``before_request`` returning a response rather than a per-handler
     ``abort(404)``: it covers every route in the blueprint including any added
-    later, and it does not go through ``create_app``'s
-    ``@app.errorhandler(Exception)``, which catches ``HTTPException`` too and
-    would turn this refusal into a 500 that reads as a server fault. Same
+    later. It was also written this way to walk past ``create_app``'s
+    ``@app.errorhandler(Exception)``, which used to rewrite every
+    ``HTTPException`` to a 500; that is fixed (#279) and ``abort(404)`` would
+    now answer 404, but the blanket coverage is reason enough to keep it. Same
     reasoning as :func:`_scripted_guard` below.
     """
     if not _is_dev() or not _is_testing():
@@ -364,11 +365,11 @@ def stub_project():
 def _scripted_guard():
     """A 404 response when these routes must not exist, else ``None``.
 
-    Deliberately not ``abort(404)`` like :func:`_guard`. ``create_app`` installs
-    an ``@app.errorhandler(Exception)`` that catches ``HTTPException`` too and
-    rewrites it to a 500, so an aborting guard here would answer 500 and the
-    refusal would read as a server fault. Returning the response walks past that
-    handler and says what it means.
+    Returns the response rather than ``abort(404)``, matching :func:`_guard`.
+    The original reason was that ``create_app``'s ``@app.errorhandler(Exception)``
+    rewrote every ``HTTPException`` to a 500; since #279 an ``HTTPException``
+    keeps its own code, so either form would answer 404 now. Left as-is because
+    the two guards should look alike.
     """
     if not _is_dev() or not testing_provider.enabled():
         return jsonify({"error": "not found"}), 404
