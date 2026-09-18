@@ -233,10 +233,36 @@ def test_the_data_summary_scrolls_to_its_last_column(
     assert reached, "could not scroll to the right-hand edge of the stats table"
 
     # #156 must still hold: the node body keeps vertical scroll.
-    body_overflow_y = summary.locator(".nowheel").first.evaluate(
-        "el => getComputedStyle(el).overflowY"
+    #
+    # Anchored to the body that CONTAINS this table, via closest(), rather than
+    # `.nowheel` .first: the node shell emits its resize handle
+    # (`resizer nowheel nodrag`, components/styles.tsx) ahead of the body, so
+    # .first measured the handle - which declares no overflow and reads
+    # "visible". That mistake survived review here because this line had never
+    # run: on macOS the shift+wheel step above ends the test first (see the
+    # platform note in the module docstring), so the Linux runner was the first
+    # machine to reach it.
+    body_overflow_y = scroller.evaluate(
+        "el => { const body = el.closest('.nowheel');"
+        " return body ? getComputedStyle(body).overflowY : null; }"
     )
-    assert body_overflow_y in ("auto", "scroll")
+    assert body_overflow_y in ("auto", "scroll"), (
+        "the node body around the stats table lost its vertical scroll (#156); "
+        f"overflow-y={body_overflow_y!r}"
+    )
+
+    # And the same behavioural check the horizontal claim gets: the declared
+    # value is only worth as much as the scrolling it produces. None means the
+    # body had nothing to scroll, which is not a failure of #156.
+    body_scrolled = scroller.evaluate(
+        "el => { const b = el.closest('.nowheel');"
+        " if (!b || b.scrollHeight <= b.clientHeight) return null;"
+        " b.scrollTop = 40; const moved = b.scrollTop > 0; b.scrollTop = 0;"
+        " return moved; }"
+    )
+    assert body_scrolled is not False, (
+        "the node body reports overflow-y but does not scroll vertically (#156)"
+    )
 
     dismiss_toasts(page)
     save_workflow_test_screenshot(
