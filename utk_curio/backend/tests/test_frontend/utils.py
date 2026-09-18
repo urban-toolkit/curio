@@ -1044,6 +1044,79 @@ def dismiss_toasts(
     return dismissed
 
 
+#: The app's first font is Rubik, fetched from Google Fonts at runtime
+#: (src/index.html). Everything after it in the stack is a system fallback, so
+#: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
+#: baseline minted during a CDN hiccup is rendered in Liberation Sans or
+#: Helvetica and then disagrees with every later run forever, for a reason no
+#: diff percentage explains.
+WEBFONT_FAMILY = "Rubik"
+WEBFONT_TIMEOUT_MS = 15000
+
+
+def _wait_for_webfont(page) -> bool:
+    """Wait for the app's webfont to finish loading. Returns whether it did.
+
+    Never raises. On a comparison run a missing font will show up as a diff,
+    which is the honest outcome; it is the MINT path that must refuse (see
+    :func:`_assert_mintable`). Waiting here rather than only when minting means
+    both sides of a comparison are quiesced the same way.
+    """
+    try:
+        page.wait_for_function(
+            "document.fonts && document.fonts.status === 'loaded'",
+            timeout=WEBFONT_TIMEOUT_MS,
+        )
+    except Exception:  # noqa: BLE001 - a font wait must never fail a test
+        pass
+    # NOT document.fonts.check(): it answers "would this render?", and with the
+    # stylesheet missing there is no @font-face for Rubik at all, so the family
+    # resolves straight to a system fallback and check() reports true. Verified
+    # by blackholing fonts.googleapis.com: check() said true while the capture
+    # came out in a different typeface, 9% off the real baseline.
+    #
+    # The honest signal is whether a FontFace for the family is actually loaded,
+    # which is empty when the stylesheet never arrived.
+    try:
+        return bool(page.evaluate(
+            "(family) => !!document.fonts && "
+            "[...document.fonts].some(f => "
+            "  (f.family || '').replace(/[\"\']/g, '').includes(family) "
+            "  && f.status === 'loaded')",
+            WEBFONT_FAMILY,
+        ))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _assert_mintable(image, expected_path: str, page) -> None:
+    """Refuse to write a baseline that is obviously not what we came for.
+
+    Two ways a mint goes wrong silently, both of which pass the comparison that
+    immediately follows because it compares the capture against itself:
+
+    * the webfont did not load, so the text is in a fallback typeface;
+    * the capture is blank - a renderer starved of memory, or an element that
+      was 'visible' but not yet painted, yields a single flat colour.
+
+    A wrong baseline is worse than no baseline: it enshrines the defect as
+    expected output, which is the whole complaint behind #308 and #333.
+    """
+    if not _wait_for_webfont(page):
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the "
+            f"{WEBFONT_FAMILY} webfont did not load, so this capture is in a "
+            f"fallback typeface and would disagree with every later run. Check "
+            f"network access to fonts.googleapis.com and re-run."
+        )
+    if len(image.convert("RGB").getcolors(maxcolors=2) or []) == 1:
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the capture "
+            f"is a single flat colour, i.e. blank. The element was reported "
+            f"visible but nothing was painted."
+        )
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -1121,6 +1194,8 @@ def save_workflow_test_screenshot(
     if sweep_toasts:
         dismiss_toasts(page)
 
+    _wait_for_webfont(page)
+
     def _capture():
         if clip_selector is not None:
             return _capture_element(page, clip_selector)
@@ -1135,7 +1210,9 @@ def save_workflow_test_screenshot(
                 "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
                 "committing it."
             )
-        _capture().save(expected_path)
+        minted = _capture()
+        _assert_mintable(minted, expected_path, page)
+        minted.save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
     actual_img = _capture()

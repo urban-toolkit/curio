@@ -867,15 +867,17 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
     # itself, a wrap is most of the picture.
     clip_selector=BROWSE_DRAWER_CTAS,
     fit_reactflow=False,
-    # What matters for catching a regression is the slack in PIXELS, not the
-    # ratio. The whole drawer at 10% was 19,400 pixels of slack, several times
-    # the button this scene is about. This row is 319x128, so even at 8% the
-    # slack is ~3,300 pixels and a label wrapping to a second line moves more
-    # than that. The ratio is deliberately NOT tightened to match the frame:
-    # clipping concentrates the text, and cross-platform antialiasing differs
-    # on exactly the text, so the same difference is a LARGER share of a
-    # text-dense crop than of a mostly-empty page. Provisional until a Linux
-    # run measures it; see the PR.
+    # Measured, not guessed. The baseline was minted on Linux and compared
+    # against the render CI actually produced (recovered from the full-page
+    # baseline this PR replaces, 9f27df5e): 5.89%. The same crop taken on macOS
+    # scores 10.05% against that render, i.e. a macOS baseline would have failed
+    # here outright, which is why these are minted on Linux.
+    #
+    # 5.89% leaves less headroom than the sibling scene below, so this one keeps
+    # the wider budget. Part of that 5.89% is probably drift in the drawer since
+    # that baseline was recorded rather than platform, but it cannot be
+    # separated from here, and a budget set from the pessimistic reading is the
+    # one that does not page someone at 3am.
     max_diff_ratio=0.08,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
@@ -1608,16 +1610,20 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     # The claim is that the chips in one card share a background, so the capture
     # is that chip row rather than a 1280x720 page (#333). Full page, 5% was
     # ~46,000 pixels of slack: more than the entire chip row, so a chip going
-    # coloured again passed with room to spare. The row is 306x26, so 8% is
-    # ~640 pixels and one re-tinted chip is thousands. It also stops the
+    # coloured again passed with room to spare. The row is 301x26, so 4% is
+    # ~313 pixels and one re-tinted chip is thousands. It also stops the
     # baseline being hostage to the rest of the page: the footer version string
     # and the "15h ago" freshness labels drift on their own and forced
     # re-captures that had nothing to do with chips.
     #
-    # See the sibling scene for why the ratio is not tightened along with the
-    # frame.
+    # 4% rather than the sibling's 8% because this frame was measured against
+    # the render CI actually produced (recovered from the full-page baseline at
+    # c906947b) and scored 0.88%, so 4% is still ~4.5x the observed
+    # cross-machine cost. The same crop taken on macOS scores 6.11% against that
+    # render: three quarters of an 8% budget spent on platform alone, which is
+    # what makes minting these on Linux load-bearing rather than tidy.
     clip_selector=TAG_ROW_FIRST_CARD,
-    max_diff_ratio=0.08,
+    max_diff_ratio=0.04,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
