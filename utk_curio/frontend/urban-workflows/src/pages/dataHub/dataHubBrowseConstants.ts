@@ -3,6 +3,19 @@ import type { DatasetFormat, DatasetOrigin } from "../../services/datasetCatalog
 /** Browse rail: two provenance buckets (API maps ``imported`` filter to hub/imported/source_node). */
 export const ORIGIN_FILTERS: DatasetOrigin[] = ["computed", "imported"];
 
+/**
+ * Every ``DatasetFormat``, in the order the rail and the chip row show them.
+ *
+ * It used to list six of the eight (#348). ``bundle`` (a computed multi-output
+ * node's result) and ``osm`` (a synthetic OSM PBF layer group) were left out
+ * even though the backend counts both - ``catalog_facets`` seeds them
+ * explicitly - so saving a multi-output node or importing a PBF produced
+ * datasets that inflated the rail's "All formats" total while having no row of
+ * their own and no chip: not filterable, and not visible as a category at all.
+ *
+ * Both already have a label (``DATASET_FORMAT_LABEL``) and dot/chip/card colour
+ * tokens, so nothing else was needed to show them.
+ */
 export const FORMAT_FILTERS: DatasetFormat[] = [
   "geojson",
   "csv",
@@ -10,6 +23,8 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "parquet",
   "geotiff",
   "shp",
+  "bundle",
+  "osm",
 ];
 
 /**
@@ -33,8 +48,8 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
  * search excluding every dataset of the selected format would otherwise make the
  * very chip you are filtering by vanish.
  *
- * No numeric cap: the domain is closed at these six formats and ``.filterBar``
- * wraps, so the row cannot overflow.
+ * No numeric cap: the domain is closed at the eight ``DatasetFormat`` values
+ * and ``.filterBar`` wraps, so the row cannot overflow.
  */
 export function quickFormatFilters(
   counts: Partial<Record<DatasetFormat, number>>,

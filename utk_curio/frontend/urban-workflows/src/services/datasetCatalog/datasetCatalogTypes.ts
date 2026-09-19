@@ -52,6 +52,31 @@ export interface PendingInstall {
   format?: DatasetFormat;
   /** Epoch ms when the install started (used only for the safety timeout). */
   startedAt: number;
+  /**
+   * Whether this install is still running or is known to have failed (#352).
+   *
+   * Absent means "installing", so every existing caller keeps its behaviour.
+   * A placeholder used to be cleared unconditionally when the install-save
+   * settled, however that save went - so a producer whose dataset did not
+   * install saw its entry flash and vanish, which is #217's exact symptom with
+   * nothing left on screen to explain it.
+   */
+  status?: "installing" | "failed";
+}
+
+/**
+ * What one install-sync save actually achieved (#352).
+ *
+ * ``failedNodeIds`` are the producers whose dataset did not install - the
+ * ``dataset_install_warnings`` the save returned, scoped to the nodes this sync
+ * covered. On a save that threw, every covered node is failed: nothing was
+ * written, so nothing succeeded.
+ */
+export interface InstallSyncOutcome {
+  /** False when the save itself failed (network, refused, backend error). */
+  saved: boolean;
+  /** Producers that did NOT get their dataset installed. */
+  failedNodeIds: string[];
 }
 
 /** A dataflow that uses a dataset, as returned by ``GET /datasets/<id>/usage``. */

@@ -28,7 +28,7 @@ import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
-import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
+import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
     getCurrentProjectPackagesList,
     setCurrentProject,
@@ -1039,14 +1039,28 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // ``nodeIds`` scopes the warning toast to the producers this save was run
     // for; omit it to surface every warning the response carries (see
     // surfaceInstallWarnings).
+    //
+    // Returns which producers did NOT get their dataset, so the caller can
+    // decide what to do with their "Adding…" placeholders (#352). This used to
+    // resolve ``void`` and swallow its own errors, so every caller saw the same
+    // success-shaped settle whether the datasets installed, failed to install,
+    // or the save itself threw - and FlowProvider's ``.finally`` cleared every
+    // placeholder unconditionally on the strength of it.
     const persistDataflowForInstall = useCallback(
-        async (nodeIds?: readonly string[]): Promise<void> => {
+        async (nodeIds?: readonly string[]): Promise<InstallSyncOutcome> => {
             try {
                 const detail = await requestProjectSave();
                 surfaceInstallWarnings(detail, nodeIds);
+                const scope = nodeIds ? new Set(nodeIds) : null;
+                const failed = ((detail?.dataset_install_warnings ?? []) as DatasetInstallWarning[])
+                    .map((w: DatasetInstallWarning) => w.node_id)
+                    .filter((id: string) => !scope || scope.has(id));
+                return { saved: true, failedNodeIds: failed };
             } catch (err) {
                 showToast((err as Error)?.message || "Could not save the dataflow.", "error");
                 notifyDatasetCatalogRefresh();
+                // Nothing was installed, so nothing this sync covered succeeded.
+                return { saved: false, failedNodeIds: [...(nodeIds ?? [])] };
             }
         },
         [requestProjectSave, showToast, surfaceInstallWarnings],
@@ -1056,6 +1070,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Upper bound on how long a placeholder can linger if its clear never fires
     // (crashed/aborted run). Matches the client execution timeout ceiling.
     const PENDING_INSTALL_TIMEOUT_MS = 600_000;
+    // How long a FAILED placeholder stays on screen before it is dropped. Long
+    // enough to be noticed beside its toast, short enough not to look like a row.
+    const FAILED_INSTALL_VISIBLE_MS = 30_000;
 
     const endPendingInstall = useCallback((key: string): void => {
         const timer = pendingInstallTimersRef.current[key];
@@ -1083,6 +1100,27 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         },
         [endPendingInstall],
     );
+
+    // Mark a placeholder as failed rather than clearing it (#352). The toast
+    // from surfaceInstallWarnings says what to do; the placeholder stays put
+    // long enough to be seen next to the row that never appeared, instead of
+    // flashing and vanishing the way #217 described.
+    //
+    // Still on a timer, a much shorter one: a failed placeholder is a notice,
+    // not a permanent row, and the user re-running the node replaces it via
+    // beginPendingInstall anyway.
+    const failPendingInstall = useCallback((key: string): void => {
+        const existing = pendingInstallTimersRef.current[key];
+        if (existing !== undefined) clearTimeout(existing);
+        if (!pendingInstallsRef.current.some((p) => p.key === key)) return;
+        pendingInstallTimersRef.current[key] = setTimeout(
+            () => endPendingInstall(key),
+            FAILED_INSTALL_VISIBLE_MS,
+        );
+        setPendingInstalls((prev) =>
+            prev.map((p) => (p.key === key ? { ...p, status: "failed" as const } : p)),
+        );
+    }, [endPendingInstall]);
 
     // Drop every placeholder + timer when the dataflow is swapped/discarded so a
     // pending install from the previous project can't leak into the next one.
@@ -1245,6 +1283,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         pendingInstalls,
         beginPendingInstall,
         endPendingInstall,
+        failPendingInstall,
 
         // Project state
         projectId,
