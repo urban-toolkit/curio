@@ -12,6 +12,22 @@ import { fetchData } from '../../services/api';
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
+/*
+ * The stats table is as wide as the dataframe has columns, so it has to scroll
+ * sideways inside the node (#345, the #203 fix on this surface).
+ *
+ * Two declarations, and both are needed: `min-width: max-content` on the table,
+ * or MUI's `width: 100%` + `table-layout: auto` squeezes the columns toward
+ * min-content and nothing ever overflows; and `overflow-x: auto` on the
+ * container. The second is MUI TableContainer's own default, but it is spelled
+ * out here rather than relied on - the computed value came back "visible" on
+ * the Linux CI runner and "auto" on macOS for this element, and a fix that
+ * depends on which one you get is not a fix.
+ *
+ * Unlike the Data Pool (#203), each table owns its scroll instead of handing it
+ * to one outer div: three tables stack under their own headings here, so the
+ * headings should stay put while you read across the stats.
+ */
 function DescribeTable({ describe, nodeId }: { describe: Record<string, Record<string, any>>; nodeId: string }) {
   const columns = Object.keys(describe);
   if (columns.length === 0) return null;
@@ -19,8 +35,8 @@ function DescribeTable({ describe, nodeId }: { describe: Record<string, Record<s
   const stats = Object.keys(describe[columns[0]]);
 
   return (
-    <TableContainer component={Paper} style={{ marginTop: '4px' }}>
-      <Table size="small">
+    <TableContainer component={Paper} sx={{ overflowX: "auto" }} style={{ marginTop: '4px' }} data-curio-summary-scroll="describe">
+      <Table size="small" sx={{ minWidth: "max-content" }}>
         <TableHead>
           <TableRow>
             <TableCell style={{ fontWeight: 'bold', padding: '4px 8px' }}>Stat</TableCell>
@@ -57,7 +73,10 @@ function DescribeTable({ describe, nodeId }: { describe: Record<string, Record<s
   );
 }
 
-function SummaryContent({ summary, nodeId }: { summary: any; nodeId: string }) {
+// Exported for the #345 scroll test: the hook renders it only after a
+// successful execution and a fetch, which a style assertion has no business
+// standing up.
+export function SummaryContent({ summary, nodeId }: { summary: any; nodeId: string }) {
   const cellStyle = { padding: '4px 8px' };
   const headerStyle = { fontWeight: 'bold', padding: '4px 8px' };
   const hasMissing = summary.missing && Object.values(summary.missing).some((v) => Number(v) > 0);
@@ -79,8 +98,8 @@ function SummaryContent({ summary, nodeId }: { summary: any; nodeId: string }) {
       {summary.dtypes && (
         <div style={{ marginBottom: '12px' }}>
           <strong>Data Types</strong>
-          <TableContainer component={Paper} style={{ marginTop: '4px' }}>
-            <Table size="small">
+          <TableContainer component={Paper} sx={{ overflowX: "auto" }} style={{ marginTop: '4px' }} data-curio-summary-scroll="dtypes">
+            <Table size="small" sx={{ minWidth: "max-content" }}>
               <TableHead>
                 <TableRow>
                   <TableCell style={headerStyle}>Column</TableCell>
@@ -104,8 +123,8 @@ function SummaryContent({ summary, nodeId }: { summary: any; nodeId: string }) {
       {hasMissing && (
         <div style={{ marginBottom: '12px' }}>
           <strong>Missing Values</strong>
-          <TableContainer component={Paper} style={{ marginTop: '4px' }}>
-            <Table size="small">
+          <TableContainer component={Paper} sx={{ overflowX: "auto" }} style={{ marginTop: '4px' }} data-curio-summary-scroll="missing">
+            <Table size="small" sx={{ minWidth: "max-content" }}>
               <TableHead>
                 <TableRow>
                   <TableCell style={headerStyle}>Column</TableCell>
