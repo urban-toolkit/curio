@@ -25,6 +25,7 @@ reported as an ordinary node error, at HTTP 200, never as a crash or a hang.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -548,6 +549,93 @@ def resource_unlimited():
     import resource
 
     return resource.RLIM_INFINITY
+
+
+def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
+    """#334's actual failure mode, exercised rather than approximated (#358).
+
+    Writing three integers to parquet used to fail with "Failed to allocate
+    block of 32768 bytes" inside the isolated child: ``codec`` opened DuckDB
+    with its defaults - ``threads`` = host cores, ``memory_limit`` ~80% of
+    system RAM - and DuckDB sized its buffers against the HOST while the child
+    ran under an RLIMIT_AS cap. On a many-core CI runner that was enough to
+    exhaust the cap before any data was written.
+
+    ``test_codec.py::TestParquetWriterFootprint`` verifies the fix by spying on
+    the kwargs handed to ``duckdb.connect`` and asserting the two literals. That
+    cannot catch a regression that breaks the cap/DuckDB interaction for any
+    other reason - a new extension, a different default, a change to how the
+    child computes its budget - because it never runs the writer under a cap at
+    all. This does: real zygote, real RLIMIT_AS, real parquet write.
+
+    Deliberately a tiny frame. The claim is not "big frames fit", it is "the
+    writer's own footprint fits", which is what #334 broke.
+    """
+    result = run_isolated(
+        isolated,
+        "    import pandas as pd\n"
+        "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["path"], "the writer produced no artifact"
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    frame = load_from_duckdb(result["output"]["path"])
+    # Round-tripped, not merely written: a truncated file would still exist.
+    assert len(frame["a"]) == 3, frame
+    assert list(frame["a"]) == [1, 2, 3], frame
+
+
+def test_the_writer_is_configured_for_a_capped_child(isolated):
+    """The other half of #334, read from INSIDE the child.
+
+    ``test_codec.py`` asserts the two literals in the parent process, where the
+    cap does not apply. This reads the values DuckDB actually adopted in the
+    child, so a config that is silently ignored under RLIMIT_AS - or overridden
+    by an environment variable the child inherits - shows up here.
+    """
+    result = run_isolated(
+        isolated,
+        "    import duckdb\n"
+        "    from utk_curio.sandbox.util.codec import _WRITER_CONFIG\n"
+        "    con = duckdb.connect(database=':memory:', config=dict(_WRITER_CONFIG))\n"
+        "    try:\n"
+        "        rows = con.execute(\n"
+        "            \"SELECT name, value FROM duckdb_settings() \"\n"
+        "            \"WHERE name IN ('threads', 'memory_limit')\"\n"
+        "        ).fetchall()\n"
+        "    finally:\n"
+        "        con.close()\n"
+        "    return {name: str(value) for name, value in rows}\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    settings = load_from_duckdb(result["output"]["path"])
+    adopted = dict(zip(settings["name"], settings["value"])) if "name" in settings else settings
+    assert str(adopted.get("threads")) == "1", adopted
+
+    # DuckDB does not echo the string it was given: "256MB" comes back as
+    # "244.1 MiB", because it reads MB as 10^6 and reports in MiB. So compare
+    # the MAGNITUDE, derived from _WRITER_CONFIG rather than from a literal, or
+    # this test pins a formatting detail instead of a budget.
+    from utk_curio.sandbox.util import codec
+
+    def _bytes(text: str) -> float:
+        m = re.match(r"^\s*([\d.]+)\s*(B|KB|MB|GB|KiB|MiB|GiB)\s*$", str(text))
+        assert m, f"unparseable memory_limit: {text!r}"
+        scale = {"B": 1, "KB": 10 ** 3, "MB": 10 ** 6, "GB": 10 ** 9,
+                 "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30}[m.group(2)]
+        return float(m.group(1)) * scale
+
+    want = _bytes(codec._WRITER_CONFIG["memory_limit"])
+    got = _bytes(adopted.get("memory_limit"))
+    assert abs(got - want) / want < 0.02, (
+        f"the child adopted {adopted.get('memory_limit')!r}, which is not the "
+        f"configured {codec._WRITER_CONFIG['memory_limit']!r}"
+    )
 
 
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
