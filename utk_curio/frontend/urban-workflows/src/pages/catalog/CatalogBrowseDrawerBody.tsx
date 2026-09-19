@@ -156,7 +156,11 @@ export const CatalogBrowseDrawerBody: React.FC<CatalogBrowseDrawerBodyProps> = (
 
       {sections}
 
-      <div className={styles.drawerCtas}>
+      {/* The subject of the `agent-catalog-action-labels-fit` baseline
+          (#333): whether "Remove from all projects" fits on one line. The
+          capture was the whole 320x607 drawer, so the claim was a few percent
+          of the frame and its budget could not see a regression in it. */}
+      <div className={styles.drawerCtas} data-curio-drawer-ctas="true">
         {/* Order is the vocabulary: the account-level action first, then the
             publish control, and the way OUT of this panel last. `View details`
             used to sit between the two actions, splitting them. */}

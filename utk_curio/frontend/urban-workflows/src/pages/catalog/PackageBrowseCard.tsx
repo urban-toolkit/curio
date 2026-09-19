@@ -93,7 +93,8 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         >
           {pkg.description || "\u00a0"}
         </p>
-        <div className={browseStyles.tagRow}>
+        {/* See DataCatalogBrowseCard: aims the #333 baseline at the claim. */}
+        <div className={browseStyles.tagRow} data-curio-tag-row="true">
           <span className={browseStyles.tag} data-curio-tag-chip="true">
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>

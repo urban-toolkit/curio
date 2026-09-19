@@ -1044,6 +1044,89 @@ def dismiss_toasts(
     return dismissed
 
 
+#: Whether a missing baseline may be created by this run. Off unless
+#: ``--mint-baselines`` was passed (see ``tests/conftest.py``), so no ordinary
+#: run - local or CI, serial or parallel - can mint one as a side effect.
+#:
+#: A module global rather than an environment variable on purpose: an env var
+#: survives in a shell and gets inherited by the next run, which is exactly how
+#: someone mints without meaning to. A CLI flag has to be typed each time and is
+#: recorded in the command.
+MINT_BASELINES = False
+
+#: The app's first font is Rubik, fetched from Google Fonts at runtime
+#: (src/index.html). Everything after it in the stack is a system fallback, so
+#: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
+#: baseline minted during a CDN hiccup is rendered in Liberation Sans or
+#: Helvetica and then disagrees with every later run forever, for a reason no
+#: diff percentage explains.
+WEBFONT_FAMILY = "Rubik"
+WEBFONT_TIMEOUT_MS = 15000
+
+
+def _wait_for_webfont(page) -> bool:
+    """Wait for the app's webfont to finish loading. Returns whether it did.
+
+    Never raises. On a comparison run a missing font will show up as a diff,
+    which is the honest outcome; it is the MINT path that must refuse (see
+    :func:`_assert_mintable`). Waiting here rather than only when minting means
+    both sides of a comparison are quiesced the same way.
+    """
+    try:
+        page.wait_for_function(
+            "document.fonts && document.fonts.status === 'loaded'",
+            timeout=WEBFONT_TIMEOUT_MS,
+        )
+    except Exception:  # noqa: BLE001 - a font wait must never fail a test
+        pass
+    # NOT document.fonts.check(): it answers "would this render?", and with the
+    # stylesheet missing there is no @font-face for Rubik at all, so the family
+    # resolves straight to a system fallback and check() reports true. Verified
+    # by blackholing fonts.googleapis.com: check() said true while the capture
+    # came out in a different typeface, 9% off the real baseline.
+    #
+    # The honest signal is whether a FontFace for the family is actually loaded,
+    # which is empty when the stylesheet never arrived.
+    try:
+        return bool(page.evaluate(
+            "(family) => !!document.fonts && "
+            "[...document.fonts].some(f => "
+            "  (f.family || '').replace(/[\"\']/g, '').includes(family) "
+            "  && f.status === 'loaded')",
+            WEBFONT_FAMILY,
+        ))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _assert_mintable(image, expected_path: str, page) -> None:
+    """Refuse to write a baseline that is obviously not what we came for.
+
+    Two ways a mint goes wrong silently, both of which pass the comparison that
+    immediately follows because it compares the capture against itself:
+
+    * the webfont did not load, so the text is in a fallback typeface;
+    * the capture is blank - a renderer starved of memory, or an element that
+      was 'visible' but not yet painted, yields a single flat colour.
+
+    A wrong baseline is worse than no baseline: it enshrines the defect as
+    expected output, which is the whole complaint behind #308 and #333.
+    """
+    if not _wait_for_webfont(page):
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the "
+            f"{WEBFONT_FAMILY} webfont did not load, so this capture is in a "
+            f"fallback typeface and would disagree with every later run. Check "
+            f"network access to fonts.googleapis.com and re-run."
+        )
+    if len(image.convert("RGB").getcolors(maxcolors=2) or []) == 1:
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the capture "
+            f"is a single flat colour, i.e. blank. The element was reported "
+            f"visible but nothing was painted."
+        )
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -1068,17 +1151,23 @@ def save_workflow_test_screenshot(
     Allure report so that reviewers can inspect the regression directly
     from the GitHub Actions artifact.
 
-    If the file does **not** exist yet the screenshot is saved as the new
-    baseline. Note that a first run therefore *always* passes - generate a
-    baseline deliberately, against a build where the behaviour is already
-    correct, and eyeball the PNG before committing it. A baseline captured
-    against a broken build enshrines the bug as expected output.
+    If the file does **not** exist the run FAILS. Creating a baseline is a
+    deliberate act, ``pytest --mint-baselines``, because whatever the app renders
+    that day becomes the definition of correct for every run afterwards.
 
-    That minting happens in serial runs only. Under xdist (``PYTEST_XDIST_WORKER``
-    set), or whenever ``CURIO_E2E_REQUIRE_BASELINES=1``, a missing baseline is a
-    failure instead: with several workers a mis-derived environment or a grouping
-    bug can change what renders, and a silently written baseline would turn that
-    into a pass. Set ``CURIO_E2E_REQUIRE_BASELINES=0`` to mint anyway.
+    It used to mint implicitly, which meant a first run always passed. Two ways
+    that bites, both seen: a baseline captured against a broken build enshrines
+    the bug as expected output and the suite then *defends* it; and a baseline
+    captured on the wrong machine enshrines that machine. The second is not
+    hypothetical - the macOS captures of the two #333 scenes looked perfect and
+    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
+    because macOS rasterizes text with grayscale antialiasing and the runner uses
+    LCD subpixel.
+
+    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
+    minting in a serial run and refusing under xdist. That was the wrong axis:
+    serialness says nothing about whether a capture deserves to become the
+    reference, and the one that would have broken CI was minted serially.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
@@ -1121,21 +1210,25 @@ def save_workflow_test_screenshot(
     if sweep_toasts:
         dismiss_toasts(page)
 
+    _wait_for_webfont(page)
+
     def _capture():
         if clip_selector is not None:
             return _capture_element(page, clip_selector)
         return _capture_full_page(page)
 
     if not os.path.isfile(expected_path):
-        if env_flag("CURIO_E2E_REQUIRE_BASELINES",
-                    default=bool(os.environ.get("PYTEST_XDIST_WORKER"))):
+        if not MINT_BASELINES:
             raise AssertionError(
-                f"no baseline at {expected_path}. Parallel runs never mint "
-                "baselines: generate it with a serial run (or set "
-                "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
-                "committing it."
+                f"no baseline at {expected_path}. Run with --mint-baselines to "
+                "create it, on a build you trust and a machine whose rendering "
+                "matches CI's, then look at the PNG before committing it. A "
+                "baseline is the definition of correct for every later run, so "
+                "it is not something a test run should produce as a side effect."
             )
-        _capture().save(expected_path)
+        minted = _capture()
+        _assert_mintable(minted, expected_path, page)
+        minted.save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
     actual_img = _capture()

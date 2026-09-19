@@ -88,7 +88,11 @@ export function DataCatalogBrowseCard({
         >
           {dataset.description || "\u00a0"}
         </p>
-        <div className={styles.tagRow}>
+        {/* The subject of the `catalog-tag-chips-are-plain` baseline (#333).
+            CSS-module class names are hashed, so a capture cannot be aimed at
+            `.tagRow`; this attribute is what one selector can find on all
+            three catalog pages. */}
+        <div className={styles.tagRow} data-curio-tag-row="true">
           {tags.map((tag) => (
             <span key={tag} className={styles.tag} data-curio-tag-chip="true">
               {tag}
