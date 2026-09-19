@@ -168,8 +168,18 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 |---|---|---|
 | `200` | OK | Render the result |
 | `400` | Bad input (missing field, malformed body) | Surface inline message |
+| `403` | Refused (not yours, or not permitted) | Surface the reason; do not retry |
+| `404` | No such route or resource | Surface "not found"; do not retry |
+| `405` | Wrong method for this route | A client bug; surface it in development |
 | `503` | Service / extras unavailable | Show "install hint" / "backend offline" banner |
 | `5xx` | Unhandled backend error | Generic "Lost connection to backend" toast |
+
+`403`, `404` and `405` are what `abort()` and werkzeug's own routing errors
+produce. Until #279 a single `@app.errorhandler(Exception)` rewrote all of them
+to `500`, so a refusal was indistinguishable from a crash, including the
+path-traversal guard on `/file/<path>`, which reported an attack as a server
+fault. `create_app` now registers an `HTTPException` handler alongside the
+catch-all, and only genuine unhandled exceptions are `500`.
 
 Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 responses; the frontend reads `hint` to give the user an actionable next step. Don't return plain-text 500s.
 

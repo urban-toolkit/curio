@@ -1,4 +1,5 @@
 from flask import Flask, request, current_app, make_response, jsonify
+from werkzeug.exceptions import HTTPException
 import os
 import logging
 import traceback
@@ -93,6 +94,21 @@ def create_app(config_class=config_class):
 
     @app.after_request
     def add_cors_headers(response):
+        return _apply_cors(response)
+
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(err):
+        """Answer with the code the exception carries, not 500.
+
+        Registered alongside the catch-all below. Flask picks the most specific
+        handler, so werkzeug's own NotFound/MethodNotAllowed/Forbidden - every
+        routing error, and every ``abort()`` in the app - land here instead of
+        being rewritten to 500 (#279). Logged at warning: a refusal is a normal
+        outcome, and burying it among real faults is what hid this.
+        """
+        app.logger.warning("HTTP %s on %s: %s", err.code, request.path, err)
+        response = jsonify({"error": err.description or err.name})
+        response.status_code = err.code or 500
         return _apply_cors(response)
 
     @app.errorhandler(Exception)

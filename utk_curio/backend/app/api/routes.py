@@ -281,16 +281,15 @@ def get_file_preview():
         return f'Error loading preview: {str(e)}', 500
 
 
-# Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
-# stay in sync with _SAFE_DATASET_ID_RE in datasets/domain/catalog_item.py (the
-# backend snippet generator) and the frontend datasetLoaderSnippets.ts - the
-# generators only ever emit ids this scan can find. Single or double quotes are
-# accepted because users edit the generated code.
-_DATASET_PATH_CALL_RE = re.compile(
-    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+# The scan moved to datasets/domain/code_refs.py so the lineage path and this
+# execution path cannot drift: a dataset referenced only in code used to be
+# resolvable here and invisible to the catalog's usage helper (#250). The names
+# stay re-exported because tests and callers import them from this module.
+from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
+    DATASET_PATH_CALL_RE as _DATASET_PATH_CALL_RE,
+    MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
+    dataset_ids_in_code,
 )
-# Bound the per-execution resolution work against pathological/generated code.
-MAX_EXEC_DATASET_IDS = 32
 
 
 def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
@@ -301,15 +300,7 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
     anything missing. Only ids appearing as literal calls are found; a
     dynamically built id simply won't be in the mapping.
     """
-    if "curio_dataset_path" not in code:
-        return {}
-    ids: list[str] = []
-    for match in _DATASET_PATH_CALL_RE.finditer(code):
-        dataset_id = match.group(2)
-        if dataset_id not in ids:
-            ids.append(dataset_id)
-        if len(ids) >= MAX_EXEC_DATASET_IDS:
-            break
+    ids = dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
     if not ids:
         return {}
     try:

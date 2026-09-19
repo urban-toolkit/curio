@@ -31,6 +31,10 @@ dependencies = [
   # Validates manifests and dataflow specs against docs/schemas/*.json.
   # See requirements.txt for why this is a floor and not an exact pin.
   "jsonschema>=4.18",
+  # Detects the encoding of text dataset imports so they can be stored as
+  # UTF-8. See requirements.txt for why this is declared and not left
+  # transitive.
+  "charset-normalizer>=3.3",
   "psutil>=5.9",
   "pyseccomp>=0.1.2; sys_platform == 'linux'",
   "pytest==9.0.3",

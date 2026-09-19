@@ -16,7 +16,7 @@
   background-color: #1E1F23;
   height: 65px;
   padding: 10px 20px 10px 10px;
-  font-family: Rubik;
+  font-family: var(--curio-font-family);
   z-index: 100;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }

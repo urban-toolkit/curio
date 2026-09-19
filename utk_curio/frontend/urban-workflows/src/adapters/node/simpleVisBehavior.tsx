@@ -12,6 +12,7 @@ import { formatDate, mapTypes } from '../../utils/formatters';
 import { ICodeDataContent } from '../../types';
 import { resolveImageColumns } from '../../utils/imageColumns';
 import ContentTable from './components/ContentTable';
+import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
@@ -248,10 +249,39 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       );
     }
     if (currentMode === 'text' && textContent) {
+      // This pane is where an upstream error's text lands, so it is the string
+      // a user most often needs to hand to an agent (#267). `.react-flow__node`
+      // sets `user-select: none` so a drag pans the node, which made it
+      // unselectable; `nodrag` releases the gesture and `userSelect` re-enables
+      // the selection, the same pairing CodeEditor's output pane uses. `nowheel`
+      // because the pane scrolls horizontally on its own.
       return (
-        <pre style={{ margin: 0, padding: '8px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-          {textContent}
-        </pre>
+        <div style={{ position: 'relative', height: '100%' }}>
+          {/* Floated over the pane rather than above it: the node body is
+              short, and a header row would cost a line of the text itself. */}
+          <div
+            className="nodrag"
+            style={{ position: 'absolute', top: 4, right: 4, zIndex: 1 }}
+          >
+            <CopyButton value={textContent} label="Copy text" />
+          </div>
+          <pre
+            className="nodrag nowheel"
+            data-curio-node-text="true"
+            style={{
+              margin: 0,
+              padding: '8px',
+              fontSize: '12px',
+              overflowX: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              userSelect: 'text',
+              cursor: 'text',
+            }}
+          >
+            {textContent}
+          </pre>
+        </div>
       );
     }
     // Every branch above now requires actual content, so this is reached

@@ -14,6 +14,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.datasets.domain.code_refs import (
+    code_refers_to_dataset,
+    dataset_ids_in_code,
+    node_code,
+)
 from utk_curio.backend.app.datasets.domain.constants import FORMAT_TO_EXTENSION
 
 
@@ -92,7 +97,12 @@ def resolve_upstream_inputs(spec: dict[str, Any], node_id: str) -> list[dict[str
         if not isinstance(node, dict) or node.get("id") != node_id:
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        for ref in refs:
+        # Same gap as the consumer helper, and it has to close with it: a node
+        # whose only reference is a curio_dataset_path call in its code really
+        # does take that dataset as an input, and leaving it out here would make
+        # upstream lineage contradict the downstream answer on the same spec
+        # (#250).
+        for ref in [*refs, *dataset_ids_in_code(node_code(node))]:
             if isinstance(ref, str) and f"ds:{ref}" not in seen:
                 seen.add(f"ds:{ref}")
                 inputs.append({"datasetId": ref})
@@ -192,7 +202,13 @@ def _dataset_consumer_nodes_in_spec(
         if not isinstance(node, dict):
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        if dataset_id in refs:
+        # A literal ``curio_dataset_path("<id>")`` in the node's own source is a
+        # reference too, and is the common one: the shipped examples carry no
+        # bindings at all, only loaders that name the dataset in code (#250).
+        # Treated exactly like a binding from here on, so a code-referencing
+        # loader is a carrier and a code-referencing compute node is a consumer.
+        in_code = code_refers_to_dataset(node_code(node), dataset_id)
+        if dataset_id in refs or in_code:
             uses = True
             nid = node.get("id")
             if _is_data_loading(node.get("type")):

@@ -18,8 +18,19 @@ import {
   setUnsavedDataflow,
 } from "../registry/projectPackagesStore";
 import { packagesApi } from "../api/packagesApi";
+import { useToastContext } from "../providers/ToastProvider";
+import { loadFailedMessage } from "../utils/dataflowImport";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Shown when neither the owner-scoped nor the shared endpoint could produce the
+ * project (#350). Deliberately does not distinguish "does not exist" from "not
+ * yours": the 404 the owner endpoint returns means both, and guessing which
+ * would either leak the existence of someone else's project or mislead.
+ */
+export const PROJECT_LOAD_FAILED_MESSAGE =
+  "That project could not be opened. It may have been deleted, or the link may not be shared with you.";
 
 function hasLoadableDataflow(
   spec: unknown
@@ -35,6 +46,7 @@ function hasLoadableDataflow(
 export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToastContext();
   const loaded = useRef<string | null>(null);
   const {
     loadProject,
@@ -173,15 +185,34 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
         // trusted=false: the shared spec is foreign content, so we render it
         // but never auto-install its declared deps.
         const status = (err as { status?: number })?.status;
+        // Log AND toast, never log instead of toasting (the UpMenu rule). A
+        // console.error is the only trace a user gets otherwise, and the canvas
+        // just sits there empty - indistinguishable from an empty project,
+        // which is #350. The File > Load picker got this treatment in #251;
+        // this is the same failure through the /dataflow/:id route.
         if (status === 404) {
           try {
             const result = await loadSharedProject(id);
             applyResult(result, { trusted: false });
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
+            // Two different failures land here: the shared endpoint refusing
+            // (a status, so genuinely not reachable) and applyResult throwing
+            // on a spec it did fetch (no status, and its own sentence says
+            // more than "may have been deleted" would).
+            showToast(
+              (sharedErr as { status?: number })?.status
+                ? PROJECT_LOAD_FAILED_MESSAGE
+                : loadFailedMessage(sharedErr),
+              "error",
+            );
           }
         } else {
           console.error("Failed to load project:", err);
+          // A malformed stored spec arrives here too: applyResult's throw
+          // carries a sentence written for the user, so pass it through rather
+          // than replacing it with the generic one.
+          showToast(loadFailedMessage(err), "error");
         }
       }
       // Spec applied (or load failed); the store now reflects the project's
