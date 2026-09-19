@@ -210,21 +210,49 @@ in a way no diff percentage explains.
 
 Only the browser has to be Linux. The app is just a server, and the harness
 injects `window.__CURIO_BACKEND_URL__` per browser context, so a containerised
-Chromium can drive a stack running on the host:
+Chromium can drive a stack running on the host.
+
+> **Not yet run end to end on a Linux host.** The variable names, ports and
+> flags below are taken from `utils.py:e2e_existing_servers` and `main.py`
+> rather than from a successful mint. The version before this one named two
+> variables (`CURIO_E2E_BASE_URL`, `CURIO_E2E_BACKEND_URL`) that nothing in the
+> tree reads, so it cannot have been run either. Delete this note once someone
+> has minted a baseline with it.
 
 ```
-# 1. stack on the host, as usual
-python curio.py start --deploy --with-examples
+# 1. stack on the host, bound so the container can reach it.
+#    CURIO_TESTING=1 is what makes /api/testing/* exist; without it the autouse
+#    e2e_clean_db fixture errors on setup and every scene fails before it draws.
+#    The token has to be knowable: curio.py start otherwise mints a random one
+#    the container cannot recover, and sandbox calls come back 401.
+#    The three hosts default to loopback, which a container cannot reach.
+export CURIO_SANDBOX_TOKEN=local-mint-token
+CURIO_TESTING=1 python curio.py start --deploy --with-examples \
+  --backend-host 0.0.0.0 --sandbox-host 0.0.0.0 --frontend-host 0.0.0.0
 
-# 2. Chromium in a container carrying the same pair scripts/test.sh installs
-docker run --rm -e CURIO_E2E_USE_EXISTING=1 \
-  -e CURIO_E2E_BASE_URL=http://host.docker.internal:<frontend port> \
-  -e CURIO_E2E_BACKEND_URL=http://host.docker.internal:<backend port> \
+# 2. Chromium in a container carrying the same pair scripts/test.sh installs.
+#    --add-host is required on Linux: host.docker.internal is Docker Desktop
+#    magic and does not otherwise resolve, which is the whole point here.
+#    The harness composes its URLs from ONE host plus three ports; there is no
+#    base-url variable.
+docker run --rm --ipc=host \
+  --add-host=host.docker.internal:host-gateway \
+  -e CURIO_E2E_USE_EXISTING=1 \
+  -e CURIO_E2E_HOST=host.docker.internal \
+  -e CURIO_E2E_FRONTEND_PORT=8080 \
+  -e CURIO_E2E_BACKEND_PORT=5002 \
+  -e CURIO_E2E_SANDBOX_PORT=2000 \
+  -e CURIO_SANDBOX_TOKEN="$CURIO_SANDBOX_TOKEN" \
   -v "$PWD:/w" -w /w mcr.microsoft.com/playwright/python:<tag> \
   bash -c 'pip install -r requirements.txt \
            && python -m playwright install chromium \
            && pytest <the scene> --mint-baselines'
 ```
+
+The container runs as root, so with `-v "$PWD:/w"` the minted PNGs land
+root-owned in your worktree. `sudo chown` them before committing, or run the
+container with `--user "$(id -u):$(id -g)"` and a writable `HOME` for the
+browser download.
 
 `requirements.txt` pins `pytest-playwright` but not `playwright`, and CI passes
 no `--browser-channel`, so both CI and this container end up on whatever
