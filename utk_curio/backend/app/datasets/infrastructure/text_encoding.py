@@ -45,8 +45,8 @@ def detect_encoding(data: bytes) -> str | None:
     try:
         data.decode("utf-8")
         return "utf-8"
-    except UnicodeDecodeError:
-        pass
+    except UnicodeDecodeError as exc:
+        first_bad = exc.start
 
     try:
         from charset_normalizer import from_bytes
@@ -54,7 +54,14 @@ def detect_encoding(data: bytes) -> str | None:
         logger.warning("charset-normalizer is unavailable; cannot detect encoding")
         return None
 
-    matches = from_bytes(data[:SNIFF_BYTES])
+    # Anchored on the first byte that is not valid UTF-8, not on byte 0. A file
+    # that is plain ASCII for its first SNIFF_BYTES and only turns non-ASCII
+    # after it would otherwise be detected as "ascii", and to_utf8's
+    # whole-buffer decode would then fail on bytes detection never looked at:
+    # an upload that used to import now 400s (#368). The window stays the same
+    # size, so the bounded cost this constant exists for is unchanged.
+    start = max(0, first_bad - SNIFF_BYTES // 2)
+    matches = from_bytes(data[start:start + SNIFF_BYTES])
     return _pick(matches)
 
 
@@ -133,6 +140,20 @@ def to_utf8(data: bytes, *, what: str = "file") -> tuple[bytes, str]:
             "recognisable. Re-save it as UTF-8 and import it again."
         )
     if encoding.lower().replace("_", "-") in ("utf-8", "utf8"):
+        # detect_encoding answers utf-8 two ways: definitively, when a strict
+        # whole-buffer decode succeeded, or on the detector's word. A BOM makes
+        # the detector answer utf_8 whatever follows it, so passing the bytes
+        # through unverified stored a BOM'd file whose non-ASCII bytes sat past
+        # the sniff window as invalid UTF-8, under a 201 (#368). Verifying costs
+        # a decode only on the path that already failed one.
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise TextDecodeError(
+                f"Could not read {what} as text: it looked like UTF-8 (a byte "
+                f"order mark says so), but decoding it failed ({exc}). Re-save "
+                "it as UTF-8 and import it again."
+            ) from exc
         return data, "utf-8"
     try:
         text = data.decode(encoding)
@@ -161,7 +182,12 @@ def open_text(path, **kwargs):
     encoding = kwargs.pop("encoding", "utf-8-sig")
     try:
         handle = path.open("r", encoding=encoding, **kwargs)
-        handle.read(SNIFF_BYTES)
+        # The whole file, not the first SNIFF_BYTES: the caller reads to EOF, so
+        # validating a prefix only moved the UnicodeDecodeError into the caller
+        # as an uncaught 500 for a legacy file whose first non-ASCII byte sits
+        # past the window. Chunked, so a large file costs time and not memory.
+        while handle.read(SNIFF_BYTES):
+            pass
         handle.seek(0)
         return handle
     except UnicodeDecodeError:
@@ -169,7 +195,9 @@ def open_text(path, **kwargs):
     except Exception:
         raise
 
-    detected = detect_encoding(path.read_bytes()[:SNIFF_BYTES])
+    # Whole file: detect_encoding does its own bounded, anchored sampling, and
+    # slicing here would hide the very bytes that made the strict open fail.
+    detected = detect_encoding(path.read_bytes())
     if detected is None:
         raise TextDecodeError(
             f"Could not read {path.name} as text: its character encoding is not "
