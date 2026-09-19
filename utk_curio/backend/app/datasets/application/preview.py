@@ -10,6 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.datasets.infrastructure.text_encoding import open_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -181,7 +183,7 @@ class DatasetPreviewService:
         return int(item.get("featureCount") or item.get("rowCount") or 0)
 
     def _count_csv_rows(self, path: Path) -> int:
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        with open_text(path, newline="") as handle:
             reader = csv.reader(handle)
             next(reader, None)
             return sum(1 for _ in reader)
@@ -344,7 +346,7 @@ class DatasetPreviewService:
     def _preview_csv(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
         total_rows = self._count_csv_rows(path)
         rows: list[dict[str, Any]] = []
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        with open_text(path, newline="") as handle:
             reader = csv.DictReader(handle)
             for index, row in enumerate(reader):
                 if index < offset:
