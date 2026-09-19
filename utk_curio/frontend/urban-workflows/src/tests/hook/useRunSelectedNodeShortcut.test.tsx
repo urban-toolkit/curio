@@ -47,7 +47,7 @@ function Host({ enabled = true }: { enabled?: boolean }) {
 
 /** The chord, dispatched at *target* (defaults to the document body). */
 function pressRunChord(
-  target: EventTarget = document.body,
+  target: Document | Element | Window | Node = document.body,
   init: Partial<KeyboardEventInit> = {},
 ) {
   return fireEvent.keyDown(target, {
