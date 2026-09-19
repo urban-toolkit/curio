@@ -141,7 +141,11 @@ def _dataset_producer_in_spec(
 
 
 def _dataset_consumer_nodes_in_spec(
-    spec: dict[str, Any], dataset_id: str, dataflow_id: str | None = None
+    spec: dict[str, Any],
+    dataset_id: str,
+    dataflow_id: str | None = None,
+    code_ids_by_node: dict[str, set[str]] | None = None,
+    include_code_refs: bool = True,
 ) -> list[dict[str, Any]] | None:
     """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
     *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
@@ -207,7 +211,17 @@ def _dataset_consumer_nodes_in_spec(
         # bindings at all, only loaders that name the dataset in code (#250).
         # Treated exactly like a binding from here on, so a code-referencing
         # loader is a carrier and a code-referencing compute node is a consumer.
-        in_code = code_refers_to_dataset(node_code(node), dataset_id)
+        # ``code_refers_to_dataset`` costs O(len(code)) per call, including the
+        # early-exit path, so a caller asking about many datasets against one
+        # spec would scan every node's source once per dataset. The browse page
+        # does exactly that. It can hand us the ids per node instead, scanned
+        # once, and the answer here becomes a set lookup.
+        if not include_code_refs:
+            in_code = False
+        elif code_ids_by_node is not None:
+            in_code = dataset_id in code_ids_by_node.get(node.get("id") or "", ())
+        else:
+            in_code = code_refers_to_dataset(node_code(node), dataset_id)
         if dataset_id in refs or in_code:
             uses = True
             nid = node.get("id")

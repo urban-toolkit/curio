@@ -101,6 +101,14 @@ export interface DatasetDataflowUsageRef {
   nodeCount: number;
   /** Consumer nodes within this dataflow (downstream of the dataset). */
   nodes?: Array<{ nodeId: string; nodeType?: string | null }>;
+  /** True when this dataflow uses the dataset ONLY through a node's source
+   *  (a literal `curio_dataset_path("<id>")`), with no ref or binding.
+   *
+   *  The backend's destructive gate ignores these, so they do not keep an
+   *  uploaded file alive on uninstall - but the code stays behind and will
+   *  raise a per-id error the next time that node runs. Anything predicting or
+   *  warning about a deletion has to tell the two apart. */
+  codeOnly?: boolean;
 }
 
 export interface DatasetSchemaField {

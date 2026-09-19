@@ -893,9 +893,16 @@ class CatalogMutations:
 
         Best-effort: any failure (still-referenced, usage lookup error, or a
         locked file) leaves the folder in place and never fails the uninstall.
-        Every project the user has counts as a user of the dataset (#176)."""
+        Every project the user has counts as a user of the dataset (#176).
+
+        Bindings and refs only. A node's source counts as usage everywhere else,
+        but applying a dataset writes ``curio_dataset_path("<id>")`` into that
+        source, so honouring it here meant the ordinary apply-then-uninstall
+        flow never deleted anything: the folder survived, the Data Hub card
+        survived, and the docstring above was simply false. The caller warns
+        about code mentions before it gets here."""
         try:
-            still_used = self._owner.dataset_usage(dataset_id)
+            still_used = self._owner.dataset_usage(dataset_id, include_code_refs=False)
         except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
             return
         if still_used:
