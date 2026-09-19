@@ -387,6 +387,31 @@ def _node_overlay_import_failures(user_key: str, deps) -> dict[str, str]:
         return {}
 
 
+def assert_may_install() -> None:
+    """Refuse the caller if this instance must not run pip for them (#332).
+
+    Placed at the funnel rather than on each route on purpose. Eight routes
+    reach pip and only the two ``/libraries`` ones were gated; a gate per route
+    is a gate a ninth route will be added without. Everything that installs goes
+    through :func:`provision_python_deps`, so this is the one place that cannot
+    be bypassed by adding an endpoint.
+
+    The caller comes from the request context rather than a parameter, because
+    the functions here take a ``user_key`` string and the predicate needs the
+    account. Outside a request there is no user, which is the launcher
+    installing manifests at boot, and ``package_install_refusal(None)`` passes
+    that deliberately.
+    """
+    from flask import g, has_request_context
+
+    from utk_curio.backend.app.users.capabilities import package_install_refusal
+
+    user = getattr(g, "user", None) if has_request_context() else None
+    refusal = package_install_refusal(user)
+    if refusal:
+        raise PackageServiceError(refusal, 403)
+
+
 def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutcome:
     """pip-install *manifest*'s declared python deps, then check they IMPORT.
 
@@ -470,6 +495,8 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     ``dependencyError`` when pip itself failed, ``restartRecommended`` when pip
     changed a shared library under the running server.
     """
+    assert_may_install()
+
     from utk_curio.backend.app.packages import backend_runtime
     from utk_curio.backend.app.packages.pip_runner import PipInstallError, PipSpecError
 
@@ -1145,6 +1172,8 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     overlay is rebuilt rather than its deps being quietly redirected at the
     host interpreter its handlers never import from.
     """
+    assert_may_install()
+
     if not PACKAGE_DIR_RE.match(dir_name):
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
     if not _is_installed_in_user_store(user_key, dir_name):
