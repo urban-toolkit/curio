@@ -69,7 +69,7 @@ describe("quickFormatFilters", () => {
     // rail's domain and the type's domain have to be the same set.
     const everyFormat: Record<DatasetFormat, number> = {
       geojson: 1, csv: 1, json: 1, parquet: 1,
-      geotiff: 1, shp: 1, bundle: 1, osm: 1,
+      geotiff: 1, shp: 1, bundle: 1, osm: 1, gpkg: 1,
     };
     expect(quickFormatFilters(everyFormat).sort()).toEqual(
       (Object.keys(DATASET_FORMAT_LABEL) as DatasetFormat[]).sort(),

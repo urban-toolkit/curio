@@ -23,10 +23,10 @@ from utk_curio.backend.app.datasets.application.export import (
     _serialize_parquet_for_export,
 )
 from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexer
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, is_osm_group_id
-from utk_curio.backend.app.datasets.domain.osm_group import (
-    build_osm_group_item,
-    collapse_osm_groups,
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, is_layer_group_id
+from utk_curio.backend.app.datasets.domain.layer_group import (
+    build_layer_group_item,
+    collapse_layer_groups,
     sort_group_members,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
@@ -318,7 +318,7 @@ class CatalogListing:
         # Other surfaces (e.g. the node palette) keep the individual layers so
         # each stays independently draggable/installable.
         if group_osm:
-            items = collapse_osm_groups(items)
+            items = collapse_layer_groups(items)
 
         # Surrounding whitespace is not part of the needle (#231). Settled here,
         # the single chokepoint, because the two callers disagreed: the HTTP route
@@ -417,11 +417,11 @@ class CatalogListing:
     ) -> dict[str, Any]:
         # A synthetic OSM group id resolves to a bundle-shaped item built from
         # its member layers (which the un-collapsed listing still exposes).
-        if is_osm_group_id(dataset_id):
-            members = self._osm_group_members(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs)
+        if is_layer_group_id(dataset_id):
+            members = self._layer_group_members(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs)
             if not members:
                 raise DatasetCatalogError("Dataset not found", 404)
-            return build_osm_group_item(dataset_id, members)
+            return build_layer_group_item(dataset_id, members)
 
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id -
@@ -591,8 +591,8 @@ class CatalogListing:
         part_index: int | None = None,
     ) -> dict[str, Any]:
         # An OSM group previews as a bundle: one tab (part) per member layer.
-        if is_osm_group_id(dataset_id):
-            return self._preview_osm_group(
+        if is_layer_group_id(dataset_id):
+            return self._preview_layer_group(
                 dataset_id,
                 dataflow_id=dataflow_id,
                 live_outputs=live_outputs,
@@ -615,7 +615,7 @@ class CatalogListing:
             item, row_limit=row_limit, offset=offset, part_index=part_index
         )
 
-    def _osm_group_members(
+    def _layer_group_members(
         self,
         group_id: str,
         *,
@@ -641,7 +641,7 @@ class CatalogListing:
         item["path"] = self._paths._resolve_item_path(item)
         return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
 
-    def _preview_osm_group(
+    def _preview_layer_group(
         self,
         group_id: str,
         *,
@@ -651,7 +651,7 @@ class CatalogListing:
         offset: int,
         part_index: int | None,
     ) -> dict[str, Any]:
-        members = self._osm_group_members(
+        members = self._layer_group_members(
             group_id, dataflow_id=dataflow_id, live_outputs=live_outputs
         )
         if not members:

@@ -19,11 +19,13 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     looks_like_generated_filename,
 )
 from utk_curio.backend.app.datasets.domain.constants import (
+    GPKG_GROUP_ID_PREFIX,
+    GPKG_SUFFIXES,
     JUNK_SOURCE_LABELS,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
     TEXT_FORMATS,
-    is_osm_group_id,
+    is_layer_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
@@ -77,6 +79,13 @@ class CatalogMutations:
         # account-level catalog listing on the next reload.
         if suffix in OSM_PBF_SUFFIXES:
             return self._import_osm_pbf_layers(
+                file_bytes, filename, title=title, source_updated_at=source_updated_at
+            )
+
+        # A GeoPackage is multi-layer for the same reason a PBF is, so it takes
+        # the same route rather than becoming a stored format of its own (#268).
+        if suffix in GPKG_SUFFIXES:
+            return self._import_gpkg_layers(
                 file_bytes, filename, title=title, source_updated_at=source_updated_at
             )
 
@@ -220,6 +229,72 @@ class CatalogMutations:
         # The import route returns a single item. Report how many datasets the
         # PBF produced so the client can message "registered N datasets"; the
         # rest are surfaced by the account-level catalog listing on reload.
+        primary = items[0]
+        primary["importedDatasetCount"] = len(items)
+        return primary
+
+    def _import_gpkg_layers(
+        self,
+        gpkg_bytes: bytes,
+        filename: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Import a GeoPackage as one parquet dataset per layer."""
+        import uuid
+
+        from utk_curio.backend.app.datasets.install.gpkg import (
+            GpkgError,
+            convert_gpkg_layers,
+            safe_layer_name,
+        )
+
+        base = filename
+        if base.lower().endswith(".gpkg"):
+            base = base[: -len(".gpkg")]
+        base = base or "geopackage"
+
+        try:
+            layers = convert_gpkg_layers(gpkg_bytes)
+        except GpkgError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+
+        prefix = title.strip() if title and title.strip() else base
+
+        # One layer is not a group. Wrapping it in a card the user has to expand
+        # to reach a single dataset is worse than not having a card, so it lands
+        # as an ordinary import and the group machinery never sees it.
+        if len(layers) == 1:
+            only = layers[0]
+            return self._install_imported_bytes(
+                only.parquet_bytes,
+                f"{base}.parquet",
+                "parquet",
+                title=prefix,
+                feature_count_override=only.feature_count,
+                source_updated_at=source_updated_at,
+            )
+
+        # One unique group id per *import*, never derived from content, so the
+        # layers of one upload share it while re-importing the same file forms a
+        # separate group. The prefix is what tells the card it is a GeoPackage.
+        group_id = f"{GPKG_GROUP_ID_PREFIX}x{uuid.uuid4().hex[:8]}"
+        items: list[dict[str, Any]] = []
+        for layer in layers:
+            items.append(
+                self._install_imported_bytes(
+                    layer.parquet_bytes,
+                    f"{base}_{safe_layer_name(layer.name)}.parquet",
+                    "parquet",
+                    title=f"{prefix} ({layer.name})",
+                    feature_count_override=layer.feature_count,
+                    group_id=group_id,
+                    layer_name=layer.name,
+                    source_updated_at=source_updated_at,
+                )
+            )
+
         primary = items[0]
         primary["importedDatasetCount"] = len(items)
         return primary
@@ -430,8 +505,8 @@ class CatalogMutations:
         node_title: str | None = None,
     ) -> dict[str, Any]:
         # "Install all layers": an OSM group id installs every member layer.
-        if is_osm_group_id(dataset_id):
-            return self._install_osm_group(dataflow_id, dataset_id)
+        if is_layer_group_id(dataset_id):
+            return self._install_layer_group(dataflow_id, dataset_id)
         item = deepcopy(source_item or self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id))
         # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
         # ``dataset_id`` is authoritative, so backfill it rather than KeyError
@@ -715,7 +790,7 @@ class CatalogMutations:
             "projects": results,
         }
 
-    def _osm_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
+    def _layer_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
         return [
             i["id"]
@@ -723,8 +798,8 @@ class CatalogMutations:
             if i.get("groupId") == group_id and i.get("id")
         ]
 
-    def _install_osm_group(self, dataflow_id: str, group_id: str) -> dict[str, Any]:
-        member_ids = self._osm_group_member_ids(dataflow_id, group_id)
+    def _install_layer_group(self, dataflow_id: str, group_id: str) -> dict[str, Any]:
+        member_ids = self._layer_group_member_ids(dataflow_id, group_id)
         if not member_ids:
             raise DatasetCatalogError("Dataset not found", 404)
         for member_id in member_ids:
@@ -753,8 +828,8 @@ class CatalogMutations:
         criticised for.
         """
         # An OSM group id uninstalls every member layer.
-        if is_osm_group_id(dataset_id):
-            member_ids = self._osm_group_member_ids(dataflow_id, dataset_id)
+        if is_layer_group_id(dataset_id):
+            member_ids = self._layer_group_member_ids(dataflow_id, dataset_id)
             removed = False
             for member_id in member_ids:
                 try:

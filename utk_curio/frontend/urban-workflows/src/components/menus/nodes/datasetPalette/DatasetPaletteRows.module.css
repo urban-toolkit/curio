@@ -155,6 +155,7 @@
 .chip_shp { background: color-mix(in srgb, var(--curio-format-shp-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-shp-fg) 55%, white); }
 .chip_bundle { background: color-mix(in srgb, var(--curio-format-bundle-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-bundle-fg) 55%, white); }
 .chip_osm { background: color-mix(in srgb, var(--curio-format-osm-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-osm-fg) 55%, white); }
+.chip_gpkg { background: color-mix(in srgb, var(--curio-format-gpkg-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-gpkg-fg) 55%, white); }
 
 
 /* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */

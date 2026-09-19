@@ -1,14 +1,19 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm";
+export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm" | "gpkg";
 
 export type DatasetSortMode = "recent" | "name";
 
 /**
  * File extensions the dataset importer can ingest. Mirrors the backend
- * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus OSM PBF, which
- * the backend converts to a single GeoParquet on import
- * (``install/osm_pbf.py``). Keep in lockstep with the backend.
+ * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus the two
+ * multi-layer formats the backend converts on import rather than storing
+ * verbatim: OSM PBF (``install/osm_pbf.py``) and GeoPackage
+ * (``install/gpkg.py``).
+ *
+ * Kept in lockstep with the backend by ``importExtensionsMatchBackend.test.ts``,
+ * which reads the Python and compares. Offering a file the server then rejects,
+ * or rejecting one it would have taken, is invisible until a user hits it.
  */
 export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".csv",
@@ -20,18 +25,28 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".shp",
   ".pbf",
   ".osm.pbf",
+  ".gpkg",
 ] as const;
 
 /** ``accept`` attribute for the Data Catalog import picker. */
 export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
-/** Prefix of a synthetic OSM layer-group id (mirrors the backend). The group
- * is a bundle-shaped catalog entry whose id addresses all its member layers. */
+/** Prefixes of a synthetic layer-group id (mirrors the backend). The group is a
+ * bundle-shaped catalog entry whose id addresses all its member layers. Two
+ * importers make them: OSM PBF extracts and GeoPackages. */
 export const OSM_GROUP_ID_PREFIX = "osm.";
+export const GPKG_GROUP_ID_PREFIX = "gpkg.";
+export const LAYER_GROUP_ID_PREFIXES = [
+  OSM_GROUP_ID_PREFIX,
+  GPKG_GROUP_ID_PREFIX,
+] as const;
 
-/** True when an id addresses a synthetic OSM layer group. */
-export function isOsmGroupId(id: string | null | undefined): boolean {
-  return typeof id === "string" && id.startsWith(OSM_GROUP_ID_PREFIX);
+/** True when an id addresses a synthetic multi-layer group. */
+export function isLayerGroupId(id: string | null | undefined): boolean {
+  return (
+    typeof id === "string" &&
+    LAYER_GROUP_ID_PREFIXES.some((prefix) => id.startsWith(prefix))
+  );
 }
 
 /**
@@ -593,4 +608,5 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   shp: "SHP",
   bundle: "Bundle",
   osm: "OSM PBF",
+  gpkg: "GeoPackage",
 };

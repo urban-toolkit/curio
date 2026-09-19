@@ -25,6 +25,7 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "shp",
   "bundle",
   "osm",
+  "gpkg",
 ];
 
 /**
@@ -48,8 +49,8 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
  * search excluding every dataset of the selected format would otherwise make the
  * very chip you are filtering by vanish.
  *
- * No numeric cap: the domain is closed at the eight ``DatasetFormat`` values
- * and ``.filterBar`` wraps, so the row cannot overflow.
+ * No numeric cap: the domain is closed at these formats and ``.filterBar``
+ * wraps, so the row cannot overflow.
  */
 export function quickFormatFilters(
   counts: Partial<Record<DatasetFormat, number>>,

@@ -177,6 +177,13 @@
   --curio-format-osm-bg: #EAF5DF;
   --curio-format-osm-on-tint: #4C7A1F;
 
+  /* GeoPackage. A warm terracotta: the remaining hues were spoken for, and it
+     stays clear of Parquet's light orange at the fill weight these tokens are
+     used at. */
+  --curio-format-gpkg-fg: #A65423;
+  --curio-format-gpkg-bg: #F7E7DC;
+  --curio-format-gpkg-on-tint: #8A4319;
+
   /* ── Node category palette ─────────────────────────────────────────────
      One colour per node category. Promoted from the canvas, which is where
      this colour already meant something: `nodeTypeBorderColor` in

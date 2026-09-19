@@ -156,6 +156,7 @@
 .dot_shp { background: var(--curio-format-shp-fg); }
 .dot_bundle { background: var(--curio-format-bundle-fg); }
 .dot_osm { background: var(--curio-format-osm-fg); }
+.dot_gpkg { background: var(--curio-format-gpkg-fg); }
 
 .railDivider {
   height: 1px;
@@ -351,6 +352,7 @@
 .chipDot_shp     { background: var(--curio-format-shp-fg); }
 .chipDot_bundle  { background: var(--curio-format-bundle-fg); }
 .chipDot_osm     { background: var(--curio-format-osm-fg); }
+.chipDot_gpkg    { background: var(--curio-format-gpkg-fg); }
 .chipDotDefault { background: var(--curio-text-muted); }
 /* Node Catalog category chips (primaryCategory) */
 .chipDot_data         { background: var(--curio-category-data-fg); }
@@ -476,6 +478,7 @@
 .strip_shp { background: var(--curio-format-shp-fg); }
 .strip_bundle { background: var(--curio-format-bundle-fg); }
 .strip_osm { background: var(--curio-format-osm-fg); }
+.strip_gpkg { background: var(--curio-format-gpkg-fg); }
 
 /* Active card: colored border matches strip */
 .cardActive.card_geojson { border-color: var(--curio-format-geojson-fg); }
@@ -486,6 +489,7 @@
 .cardActive.card_shp { border-color: var(--curio-format-shp-fg); }
 .cardActive.card_bundle { border-color: var(--curio-format-bundle-fg); }
 .cardActive.card_osm { border-color: var(--curio-format-osm-fg); }
+.cardActive.card_gpkg { border-color: var(--curio-format-gpkg-fg); }
 
 .cardFormatBadge {
   height: 16px;
@@ -890,6 +894,7 @@
 .dfmt_shp { background: var(--curio-format-shp-bg); color: var(--curio-format-shp-on-tint); }
 .dfmt_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
 .dfmt_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
+.dfmt_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
 
 .drawerInstalledBadge {
   height: 20px;
