@@ -452,6 +452,21 @@ jobs:
           docker build --target frontend_builder -t curio-frontend-test .
           docker run --rm curio-frontend-test npm test
 
+      - name: TypeScript typecheck
+        # Jest transpiles through babel, which strips types without checking
+        # them, so main could sit broken for tsc while every build was green.
+        # Two such breaks landed in one day during the #363-#373 merge, both in
+        # src/tests/, which tsconfig's "include": ["src/**/*"] does cover.
+        #
+        # The docker build is repeated rather than reusing the tag above because
+        # that step is `if: !cancelled()`: if it is ever skipped or reordered, a
+        # bare docker run would fail with "image not found" instead of a type
+        # error. It is a layer-cache hit.
+        if: ${{ !cancelled() }}
+        run: |
+          docker build --target frontend_builder -t curio-frontend-test .
+          docker run --rm curio-frontend-test npm run typecheck
+
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
         run: |
