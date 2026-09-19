@@ -10,7 +10,7 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
-import { describeError, runAndAlwaysSettle } from './autkRunSettlement';
+import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -510,7 +510,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 showToast(msg, 'error');
             },
             onUnreported: () => {
-                emit({ code: 'error', content: 'The Autark node stopped without reporting a result.' });
+                emit({ code: 'error', content: UNREPORTED_MESSAGE });
             },
         });
     };

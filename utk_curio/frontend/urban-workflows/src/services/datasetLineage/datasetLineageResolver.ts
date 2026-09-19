@@ -59,7 +59,10 @@ export interface LineageCanvasEdge {
   targetHandle?: string | null;
 }
 
-export type NodeExecStatusMap = Record<string, "stale" | "executed">;
+/** "errored" joined the pair for #347: a downstream node needs to tell a
+ *  failed upstream apart from one that was never run. Consumers here compare
+ *  against "stale"/"executed" by name, so the new member reads as neither. */
+export type NodeExecStatusMap = Record<string, "stale" | "executed" | "errored">;
 
 export type NodeLabelResolver = (nodeType: string | undefined) => string | undefined;
 

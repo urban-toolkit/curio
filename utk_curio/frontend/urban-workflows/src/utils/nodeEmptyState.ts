@@ -16,6 +16,8 @@ export type NodeEmptyReason =
   | "disconnected"
   /** Wired, but whatever feeds it has not produced an output yet. */
   | "upstream-not-run"
+  /** Wired, and the node feeding it ran and failed. */
+  | "upstream-errored"
   /** Ran and produced a table with no rows in it. */
   | "no-rows"
   /** Ran and produced something this node cannot render as a table. */
@@ -52,6 +54,12 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   "upstream-not-run": {
     title: "No data yet",
     hint: "Run the node feeding this one.",
+  },
+  // Without this, a failed upstream node read as "upstream-not-run" - telling
+  // the user to run the node they had just run and watched fail (#347).
+  "upstream-errored": {
+    title: "No data yet",
+    hint: "The node feeding this one failed. Open it to see the error.",
   },
   "no-rows": {
     title: "No rows to show",
@@ -94,6 +102,7 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
 /** Duck-typed so this module needs no ``reactflow`` import (see mergeFlowUtils). */
 interface EdgeLike {
   target?: unknown;
+  source?: unknown;
 }
 
 /** Is anything wired into *nodeId*'s input? */
@@ -102,9 +111,49 @@ export function hasIncomingEdge(edges: readonly EdgeLike[] | null | undefined, n
   return edges.some((e) => e?.target === nodeId);
 }
 
+/** The ids of the nodes feeding *nodeId*, so their state can be asked about. */
+export function incomingSourceIds(
+  edges: readonly EdgeLike[] | null | undefined,
+  nodeId: string,
+): string[] {
+  if (!edges || !nodeId) return [];
+  const ids = new Set<string>();
+  for (const edge of edges) {
+    if (edge?.target !== nodeId) continue;
+    if (typeof edge?.source === "string" && edge.source) ids.add(edge.source);
+  }
+  return Array.from(ids);
+}
+
+/** Payload kinds a node can put in a table. */
+const TABULAR_DATA_TYPES = new Set(["dataframe", "geodataframe"]);
+
+/**
+ * Is *input* a payload that was meant to become a table?
+ *
+ * Asked of the PAYLOAD rather than of the rendered row count, which is the
+ * #347 correction. ``useTableData.processDataAsync`` drops dataframe and
+ * geodataframe layers with zero rows before they ever reach ``tabData``, so a
+ * node that legitimately ran and returned an empty table arrives at the empty
+ * branch looking exactly like a payload with no table in it. Deriving from the
+ * declared ``dataType`` keeps "ran and came back empty" distinguishable from
+ * "this is not tabular at all".
+ */
+export function isTabularPayload(input: unknown): boolean {
+  if (!input || typeof input !== "object") return false;
+  const payload = input as { dataType?: unknown; data?: unknown };
+  if (payload.dataType === "outputs") {
+    // A multi-output envelope is tabular when any layer in it is.
+    return Array.isArray(payload.data) && payload.data.some(isTabularPayload);
+  }
+  return typeof payload.dataType === "string" && TABULAR_DATA_TYPES.has(payload.dataType);
+}
+
 export interface NodeEmptyInputs {
   /** True when an edge terminates on this node. */
   connected: boolean;
+  /** True when a node feeding this one ran and failed. */
+  upstreamErrored?: boolean;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True when the payload is a kind this node can tabulate. */
@@ -122,6 +171,11 @@ export interface NodeEmptyInputs {
  */
 export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason | null {
   if (!inputs.connected) return "disconnected";
+  // Above hasInput on purpose: a failed upstream never calls outputCallback, so
+  // hasInput stays false and the node would otherwise advise running a node the
+  // user just watched fail (#347). Above it also covers the rarer case where a
+  // stale input from an earlier successful run is still sitting there.
+  if (inputs.upstreamErrored) return "upstream-errored";
   if (!inputs.hasInput) return "upstream-not-run";
   if (!inputs.tabular) return "not-tabular";
   if (inputs.rowCount <= 0) return "no-rows";
@@ -133,6 +187,8 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
 export interface GrammarEmptyInputs {
   /** True when an edge terminates on this node. */
   connected: boolean;
+  /** True when a node feeding this one ran and failed. */
+  upstreamErrored?: boolean;
   /** True once an input payload has actually arrived. */
   hasInput: boolean;
   /** True when the editor holds something to compile. */
@@ -164,6 +220,7 @@ export function resolveGrammarEmptyReason(
   inputs: GrammarEmptyInputs,
 ): NodeEmptyReason | null {
   if (!inputs.connected) return "disconnected";
+  if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
   if (!inputs.hasInput) return "upstream-not-run";
   if (inputs.inputProblem) return inputs.inputProblem;
   if (!inputs.hasSpec) return "no-spec";

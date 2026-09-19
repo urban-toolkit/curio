@@ -166,7 +166,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
-    const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
+    const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed" | "errored">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
     // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
@@ -1212,6 +1212,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         );
     }, []);
 
+    // A node that ran and failed (#347). Previously indistinguishable from one
+    // that was never run: the failure branch produces no artifact, so it never
+    // calls outputCallback, so nothing downstream changed at all - and the
+    // downstream node told the user to run the node they had just watched fail.
+    // Same no-op-when-unchanged shape as the two above (dev/70).
+    const markNodeErrored = useCallback((nodeId: string) => {
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "errored" ? prev : { ...prev, [nodeId]: "errored" },
+        );
+    }, []);
+
     // ---------------------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------------------
@@ -1270,5 +1281,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         markDirty,
         markNodeExecuted,
         markNodeStale,
+        markNodeErrored,
     };
 }

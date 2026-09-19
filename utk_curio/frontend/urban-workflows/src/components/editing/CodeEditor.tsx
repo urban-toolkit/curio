@@ -56,6 +56,7 @@ function CodeEditor({
         workflowNameRef,
         markNodeExecuted,
         markNodeStale,
+        markNodeErrored,
         signalNodeExecDone,
         projectId,
         defaultSaveOutputDataset,
@@ -249,6 +250,11 @@ function CodeEditor({
                 content: errorContent,
                 missingModule: result.missingModule ?? null,
             });
+            // No artifact, so deliberately no outputCallback - nothing is
+            // propagated downstream. That left every downstream node unable to
+            // tell this apart from "never run", so it advised running the node
+            // the user had just watched fail (#347). Record the failure instead.
+            markNodeErrored(data.nodeId);
             signalNodeExecDone(data.nodeId);
         }
     };
