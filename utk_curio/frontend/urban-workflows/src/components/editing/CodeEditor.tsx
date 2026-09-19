@@ -258,7 +258,7 @@ function CodeEditor({
             signalNodeExecDone(data.nodeId);
         }
     };
-
+    
     // marks were resolved and new code is available
     useEffect(() => {
         if (!replacedCodeDirtyBypass.current) {
