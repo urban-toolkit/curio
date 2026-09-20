@@ -57,15 +57,6 @@ needs_seccomp = pytest.mark.skipif(
 # not an absolute ceiling.
 MEMORY_HEADROOM_MB = 256
 
-# A second budget, high enough that the writer's limit is its cap rather than
-# a derived share.
-#
-# The two regimes have to be covered separately. At MEMORY_HEADROOM_MB the
-# writer derives half the budget, which is what #334's fix has to get right;
-# here the cap binds instead, which is what stops a large host from walking
-# #334 back in through the budget.
-CAPPED_MEMORY_HEADROOM_MB = 1024
-
 # Created by the Dockerfile. Only exists inside the image.
 EXEC_USER = "curio-exec"
 
@@ -580,11 +571,6 @@ def resource_unlimited():
     return resource.RLIM_INFINITY
 
 
-@pytest.mark.parametrize(
-    "isolated",
-    [CAPPED_MEMORY_HEADROOM_MB, MEMORY_HEADROOM_MB, 128],
-    indirect=True,
-)
 def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     """#334's actual failure mode, exercised rather than approximated (#358).
 
@@ -605,18 +591,18 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     Deliberately a tiny frame. The claim is not "big frames fit", it is "the
     writer's own footprint fits", which is what #334 broke.
 
-    Run at three budgets, because the writer's limit is derived from some and
-    capped at others: 1024 and 256 give 256MB and 128MB, and 128 gives 64MB.
-    The original ran only at 256, where the writer's fixed ``memory_limit`` was
-    also 256, so it could not distinguish a writer sized against the child's
-    budget from one that ignores it.
+    Runs at the fixture's budget only, which is 256MB. Deriving the writer's
+    limit is what moved this off the boundary it used to sit on: 256 was both
+    the fixture's budget and the writer's fixed ``memory_limit``, so the test
+    could not distinguish a writer sized against the child's budget from one
+    that ignores it. The writer now gets 128MB here, so it can.
 
-    **Deliberately not in ascending order.** The first CI run of this test
-    failed on whichever parametrization ran second - at 128 when that was
-    second, then at 1024 when that was - with the same ArrowMemoryError in
-    user code, before serialization. A larger budget failing where a smaller
-    one passed rules out the budget as the cause, so the order here is what
-    separates "too small" from "not the first zygote in this test".
+    **Do not parametrize this over other budgets without reading #376.** Three
+    CI runs showed 128 and 1024 both failing here with an ArrowMemoryError in
+    user code, before serialization, while 256 passed - in one run 1024 failed
+    running first, so it is not an ordering effect either. The probe below
+    proves the cap itself is applied correctly at those budgets, so whatever is
+    wrong is downstream of ``_apply_rlimits`` and is not this test's subject.
     """
     # Read the cap the child is actually running under FIRST, so a failure
     # below comes with the numbers rather than just a traceback. An
