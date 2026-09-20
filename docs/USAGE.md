@@ -60,9 +60,9 @@ curio setup                  # install deps and exit
 
 Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
 
-A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout whose `dist/` predates the move to production builds, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
+A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout built in development mode, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
-Curio refuses to start on a Node.js older than 26 and names the upgrade. On a supported Node nothing is refused, it is refreshed: `node_modules/` carries the major that installed it and is reinstalled when that changes, while the bundle beside it is kept unless its own stamp calls for a rebuild.
+Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_modules/` carries the Node major that installed it and is reinstalled when that changes; the bundle beside it is kept unless its own stamp calls for a rebuild.
 
 **Catalogs**
 
@@ -83,10 +83,10 @@ Node-execution isolation has no flag of its own: `--deploy` turns it on wherever
 `--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
 
 > [!WARNING]
-> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it now requires a shared secret, there is no reason to offer that surface to the network.
+> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it requires a shared secret, there is no reason to offer that surface to the network.
 
 > [!NOTE]
-> `--force-rebuild` and `--force-db-init` are always available, including from a pip install and inside Docker. `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
+> `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
 Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
@@ -232,7 +232,7 @@ npm run build
 
 Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) all answer through one provider, configured in **AI Settings**.
 
-Curio ships no endpoint of its own, so an instance whose operator configures nothing resolves no provider and says so rather than sending prompts somewhere nobody chose. Each user can connect their own account, or you can configure a shared key for guest users.
+Curio ships no endpoint of its own. Each user can connect their own account, or you can configure a shared key for guest users; until one of those is set, the AI surfaces report that no provider is configured.
 
 ### Logged-in users
 
@@ -240,7 +240,7 @@ Logged-in users configure their own connection in **AI Settings**, reachable fro
 
 The panel sets the provider, base URL, API key, model, and a HuggingFace token (used only for gated models in the Street Vision node). Each field falls back to the deployment default when you leave it blank, so filling in only one box keeps the rest of the operator's configuration. Key and base URL are not inherited across providers: switching to Anthropic does not lend you the deployment's OpenAI-compatible endpoint.
 
-**An account holds one API key, against one provider.** The provider tabs pick which provider that is; they are not four separate slots. So the saved-key markers show only on the tab the key was saved under, and saving from a different tab replaces it. Before this was made explicit, every tab claimed a saved key, and saving from one of them kept the previous provider's key under the new provider's name.
+**An account holds one API key, against one provider.** The provider tabs pick which provider that is. The saved-key markers show only on the tab the key was saved under, and saving from a different tab replaces it.
 
 The following providers are supported:
 
@@ -255,7 +255,7 @@ Settings are stored per user in the database and apply across all of their proje
 
 ### Guest users
 
-Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. The backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
+Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
 ```bash
 # Required
@@ -289,7 +289,7 @@ GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
-If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.
+If `GUEST_LLM_API_KEY` is not set, the LLM Assistant returns an error for guest users.
 
 ## Node Catalog
 
@@ -315,8 +315,7 @@ names: a column `pop` is `{"field": "pop"}`.
 ### Drawing a GeoDataFrame
 
 Return a `GeoDataFrame` from a Python node and draw it with `mark: "geoshape"`.
-No conversion step is needed: no `shapely.geometry.mapping`, no manual x/y
-centroid columns, no flattening to a plain `DataFrame` first:
+No conversion step is needed:
 
 ```python
 import geopandas as gpd
@@ -342,28 +341,25 @@ yourself:
 
 ### Several geometry columns
 
-A `GeoDataFrame` can hold more than one geometry column, and **every one keeps
-its own pandas name**. The active column is wired automatically; any other is
-named explicitly, because with several present there is no single right answer:
+A `GeoDataFrame` can hold more than one geometry column, each under its own
+pandas name. The active column is wired automatically; name any other
+explicitly:
 
 ```json
 { "shape": { "field": "centroid", "type": "geojson" } }
 ```
 
-A `geoshape` mark draws a `Point` as a small filled circle, so a centroid layer
-needs no special mark type. If a spec asks for `geoshape` and the node cannot
-tell which column to draw, it says so in the node body and lists the candidates
-rather than rendering a blank chart.
+A `geoshape` mark draws a `Point` as a small filled circle. If a spec asks for
+`geoshape` and the node cannot tell which column to draw, it says so in the node
+body and lists the candidates.
 
-Note the injected `mercator` differs from stock Vega-Lite, which would use
-`equalEarth` for a unit spec, and the choice makes unit and layer specs render
-identically, but add a projection if you paste a spec into a vanilla Vega
-editor. Interval brushing over a projection does not propagate downstream:
+If you paste a spec into a vanilla Vega editor, add the projection yourself.
+Interval brushing over a projection does not propagate downstream:
 Vega-Lite rewrites those selections to internal row ids, so no named columns
 reach the Data Pool. Point selection works normally.
 
-Geometry is attached only when the spec actually draws it, so a bar chart over
-a `GeoDataFrame` carries exactly the columns it always did.
+Geometry is attached only when the spec draws it; a bar chart over a
+`GeoDataFrame` sees its non-geometry columns.
 
 Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodataframe-maps.md).
 
@@ -379,8 +375,7 @@ until the upstream node has actually produced output, so a connected-but-unrun
 node stays empty and says *"Run the node feeding this one"*. The spec appears
 the moment that run finishes.
 
-Columns are classified from the pandas dtypes the payload carries, not by
-guessing from values:
+Columns are classified by pandas dtype:
 
 | pandas dtype | role |
 |---|---|
@@ -401,10 +396,7 @@ The first matching rule wins:
 | two or more quantitative | `point` scatter of the first two |
 | one quantitative | `bar` histogram: binned x, `count` y |
 | one nominal | `bar` of counts |
-| nothing usable | the editor stays empty; a wrong default is worse than none |
-
-The bar rules state their `aggregate` rather than relying on Vega-Lite's
-implicit behaviour, which silently draws one bar per row.
+| nothing usable | the editor stays empty |
 
 
 ## Data Catalog
@@ -423,11 +415,9 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is always `<install_root>/packages/`, resolved relative to
-> the installed `utk_curio` package with no env override. On a pip install that
-> is inside `site-packages`, so publishing a node package there is at best
-> non-persistent. That is one more reason to author node packages from a git
-> checkout (see [Authoring nodes](AUTHORING-NODES.md)).
+> package* catalog is always `<install_root>/packages/`, with no env override.
+> On a pip install that path is inside `site-packages`, so author node packages
+> from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
 For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
@@ -437,7 +427,7 @@ Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of
 them, covering chat, debugging, node authoring, dataset discovery, planning and
 evaluation. Which model answers is the provider set in **AI Settings** above.
 
-There are two scopes, and they are different writes:
+There are two scopes:
 
 - **`/catalog/agents`**, the third tab beside the node and data catalogs, is
   your **account**. Adding an agent here makes it available to every dataflow.
@@ -455,7 +445,7 @@ drop it is what it attaches to:
 - **the canvas**, for agents that work over the whole dataflow.
 
 An agent only accepts the targets its manifest declares, so dropping one
-somewhere it does not belong is refused rather than silently rebound. Node
+somewhere it does not belong is refused. Node
 agents appear as a badge on their node; canvas and connection agents appear in
 the dock at the top of the canvas.
 
@@ -492,7 +482,7 @@ and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default. Passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
+`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 
