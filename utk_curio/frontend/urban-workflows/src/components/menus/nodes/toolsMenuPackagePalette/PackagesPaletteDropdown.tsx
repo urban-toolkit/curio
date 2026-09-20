@@ -188,6 +188,15 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
         [paletteRows],
     );
 
+    // The rows render from the installed-package registry, which is ready before
+    // the catalog snapshot is: until the snapshot lands, every row's summary is
+    // still missing its CatalogPublishPill, and mounting that pill shifts the
+    // Export/Edit buttons ~65px left - the actions share a flex cluster with the
+    // row title, and the title is `flex: 1`, so it absorbs the slack. Anything
+    // driving those buttons has to know the row has stopped growing first, so
+    // say so rather than let it guess. See #334.
+    const catalogSnapshotState = paletteCatalogSnapshot !== null ? "loaded" : "loading";
+
     return (
         <div
             id="packages-palette"
@@ -219,6 +228,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                     className={packageStyles.packagePalettePanel}
                     role="region"
                     aria-label="Package templates"
+                    data-curio-palette-catalog={catalogSnapshotState}
                     {...{ [TOOLS_PALETTE_PANEL_ATTR]: "true" }}
                 >
                     <div className={packageStyles.packagePaletteToolbar}>
