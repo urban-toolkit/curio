@@ -64,14 +64,6 @@ MEMORY_HEADROOM_MB = 256
 # writer derives half the budget, which is what #334's fix has to get right;
 # here the cap binds instead, which is what stops a large host from walking
 # #334 back in through the budget.
-#
-# The first version of this went the other way, at 128MB, on the reasoning that
-# the guard at 256 sat on a boundary - 256 was also the writer's fixed
-# memory_limit. It sat on a real boundary, but a budget below MIN_EXEC_MEMORY_MB
-# is not one an operator can set, and on CI the child could not build a
-# three-row DataFrame in it. Deriving the writer's limit moved the guard off
-# that boundary by itself: at 256 the writer now gets 128MB, so the default
-# fixture already distinguishes a derived limit from a fixed one.
 CAPPED_MEMORY_HEADROOM_MB = 1024
 
 # Created by the Dockerfile. Only exists inside the image.
@@ -589,7 +581,9 @@ def resource_unlimited():
 
 
 @pytest.mark.parametrize(
-    "isolated", [MEMORY_HEADROOM_MB, CAPPED_MEMORY_HEADROOM_MB], indirect=True
+    "isolated",
+    [CAPPED_MEMORY_HEADROOM_MB, MEMORY_HEADROOM_MB, 128],
+    indirect=True,
 )
 def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     """#334's actual failure mode, exercised rather than approximated (#358).
@@ -611,21 +605,60 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     Deliberately a tiny frame. The claim is not "big frames fit", it is "the
     writer's own footprint fits", which is what #334 broke.
 
-    Run at two budgets, because the writer's limit is derived from one and
-    capped in the other. At 256 it works out to 128MB; at 1024 the cap binds
-    and it is 256MB. The original ran only at 256, where the writer's fixed
-    ``memory_limit`` was also 256, so it could not distinguish a writer sized
-    against the child's budget from one that ignores it.
+    Run at three budgets, because the writer's limit is derived from some and
+    capped at others: 1024 and 256 give 256MB and 128MB, and 128 gives 64MB.
+    The original ran only at 256, where the writer's fixed ``memory_limit`` was
+    also 256, so it could not distinguish a writer sized against the child's
+    budget from one that ignores it.
+
+    **Deliberately not in ascending order.** The first CI run of this test
+    failed on whichever parametrization ran second - at 128 when that was
+    second, then at 1024 when that was - with the same ArrowMemoryError in
+    user code, before serialization. A larger budget failing where a smaller
+    one passed rules out the budget as the cause, so the order here is what
+    separates "too small" from "not the first zygote in this test".
     """
+    # Read the cap the child is actually running under FIRST, so a failure
+    # below comes with the numbers rather than just a traceback. An
+    # ArrowMemoryError here is indistinguishable between "the budget is too
+    # small" and "the cap is not what the budget says", and those want
+    # opposite fixes.
+    probe = run_isolated(
+        isolated,
+        "    import os, resource\n"
+        "    from utk_curio.sandbox.util import codec\n"
+        "    with open('/proc/self/statm') as h:\n"
+        "        pages = int(h.read().split()[0])\n"
+        "    return {\n"
+        "        'as_mb': resource.getrlimit(resource.RLIMIT_AS)[0] // (1024 * 1024),\n"
+        "        'baseline_mb': (pages * os.sysconf('SC_PAGE_SIZE')) // (1024 * 1024),\n"
+        "        'budget_env': os.environ.get('CURIO_EXEC_MEMORY_MB', '<unset>'),\n"
+        "        'writer': codec._writer_config()['memory_limit'],\n"
+        "    }\n",
+    )
+    assert probe["stderr"] == "", probe["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    seen = load_from_duckdb(probe["output"]["path"])
+    diagnostics = (
+        f"budget={isolated.limits['memory_mb']}MB env={seen['budget_env']} "
+        f"RLIMIT_AS={seen['as_mb']}MB baseline={seen['baseline_mb']}MB "
+        f"writer={seen['writer']}"
+    )
+    # The cap has to be the baseline plus the budget, within a page or two of
+    # drift between the two reads. If this is wrong, nothing below means
+    # anything.
+    expected_as = seen["baseline_mb"] + isolated.limits["memory_mb"]
+    assert abs(seen["as_mb"] - expected_as) <= 8, diagnostics
+
     result = run_isolated(
         isolated,
         "    import pandas as pd\n"
         "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n",
     )
-    assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["path"], "the writer produced no artifact"
-
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    assert result["stderr"] == "", f"{diagnostics}\n{result['stderr']}"
+    assert result["output"]["path"], f"the writer produced no artifact ({diagnostics})"
 
     frame = load_from_duckdb(result["output"]["path"])
     # Round-tripped, not merely written: a truncated file would still exist.

@@ -70,28 +70,16 @@ DEFAULT_LIMITS = {
 # The lowest ``--exec-memory-mb`` the launcher will accept, below which it
 # clamps and says so.
 #
-# Measured, not chosen. The first version of this floor was 64, reasoned from
-# codec's own constants: the writer derives half the budget and will not go
-# below 32MB, so under 64 it would claim most of the child's address space.
-# That relation is real but it is not the binding one. Running the parquet
-# guard at a 128MB budget on CI failed in *user code*, before serialization
-# ever started:
-#
-#     pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
-#     pyarrow.lib.ArrowMemoryError: malloc of size 64 failed
-#
-# RLIMIT_AS is headroom above the warm zygote's footprint (child._apply_rlimits)
-# but pandas and pyarrow keep allocating as they run, and 128MB of it is not
-# enough to build three rows. 256 is the lowest budget the suite demonstrates a
-# node can run in, so it is the lowest the launcher will accept.
-#
-# A floor, not a promise: a fatter image or a different runner could need more.
-# A host too small for this wants fewer concurrent nodes
+# Not a recommendation - it is the point where the budget stops being able to
+# carry what is spent against it. ``codec`` derives DuckDB's memory_limit as
+# half the budget and will not go below its own 32MB floor, so under 64MB the
+# writer starts claiming most of the child's address space, which is what #334
+# was. A host too small for this wants fewer concurrent nodes
 # (``--exec-parallelism``), not a smaller budget each.
 #
-# ``test_codec.py::TestParquetWriterFootprint`` also pins this against codec's
-# two constants, so lowering either cannot silently invalidate it.
-MIN_EXEC_MEMORY_MB = 256
+# ``test_codec.py::TestParquetWriterFootprint`` pins the relation to codec's
+# two constants so lowering either cannot silently invalidate this.
+MIN_EXEC_MEMORY_MB = 64
 
 # Wall-clock allowance. Separate from cpu_seconds because a node that blocks on
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
