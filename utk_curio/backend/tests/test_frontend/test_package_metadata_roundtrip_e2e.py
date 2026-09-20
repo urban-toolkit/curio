@@ -63,6 +63,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     activate_header_icon,
     api_json,
+    click_package_summary_action,
     open_tools_palette,
     require_project_page,
     require_user_auth,
@@ -321,7 +322,7 @@ def _package_anchor(page, dir_name: str):
 
 def _open_metadata_modal(page, anchor):
     # Lives in the accordion <summary>, so the package need not be expanded.
-    anchor.locator(f'button[aria-label="Edit metadata for {PACKAGE_NAME}"]').click()
+    click_package_summary_action(page, anchor, "Edit package metadata")
     expect(page.get_by_role("heading", name="Edit package metadata")).to_be_visible(
         timeout=15000
     )
@@ -445,7 +446,7 @@ def test_package_metadata_survives_export_and_reimport(
     anchor = _package_anchor(page, dir_name)
     expect(anchor).to_have_count(1, timeout=20000)
     with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
-        anchor.locator('button[title="Export package"]').click(force=True)
+        click_package_summary_action(page, anchor, "Export package")
     archive_path = tmp_path / f"{dir_name}.curio.zip"
     download.value.save_as(str(archive_path))
 

@@ -1623,6 +1623,39 @@ def open_tools_palette(page, kind: str):
     return panel
 
 
+def click_package_summary_action(page, anchor, title: str):
+    """Click one of a package row's summary actions ("Export package", "Edit
+    package metadata") only once the row has stopped moving.
+
+    Not a plain ``click(force=True)``, because that is issue #334's "download
+    never arrives".
+
+    The palette renders its rows from the installed-package registry, but the
+    ``CatalogPublishPill`` in each row's summary waits on a separate catalog
+    snapshot (three parallel API calls behind one ``setState``). The summary's
+    actions live in a flex cluster whose title is ``flex: 1``, so it absorbs the
+    slack: when that pill finally mounts, every button to its left jumps ~65px
+    left - measured, not estimated.
+
+    ``force=True`` turns off Playwright's hit-target check, so a click aimed at
+    Export and dispatched just after that jump lands on Publish instead. The
+    confirm dialog opens, its overlay covers the palette, the export is never
+    requested, and the test sits out its whole budget waiting for a download
+    that was never going to come. Under CI load the snapshot lands later, which
+    is why it read as "CI load".
+
+    Two guards, so neither has to be perfect: wait for the palette to report
+    its catalog snapshot in, and then click WITHOUT ``force`` so Playwright
+    verifies the button is what actually receives the click.
+    """
+    expect(
+        page.locator('#packages-palette [data-curio-palette-catalog]')
+    ).to_have_attribute("data-curio-palette-catalog", "loaded", timeout=30000)
+    button = anchor.locator(f'button[title="{title}"]')
+    expect(button).to_be_visible(timeout=20000)
+    button.click()
+
+
 def close_tools_palette(page, kind: str) -> None:
     """Close a left-rail tool palette, if it is open.
 

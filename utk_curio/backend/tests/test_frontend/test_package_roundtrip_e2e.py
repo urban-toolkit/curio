@@ -52,6 +52,7 @@ from .utils import (
     accept_confirm_dialog,
     activate_header_icon,
     api_json,
+    click_package_summary_action,
     connect_nodes,
     drag_to_canvas,
     open_tools_palette,
@@ -355,7 +356,7 @@ def test_save_export_import_and_run_package_nodes(
     # EXPORT: a real browser download, the only way to get the bytes
     # ------------------------------------------------------------------
     with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
-        anchor.locator('button[title="Export package"]').click(force=True)
+        click_package_summary_action(page, anchor, "Export package")
     archive = tmp_path / "roundtrip.curio.zip"
     download.value.save_as(archive)
     # Only a sanity check on the bytes about to be re-imported; the download path
