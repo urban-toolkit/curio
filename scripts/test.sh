@@ -183,7 +183,7 @@ start_extra_shards() {
       # A COPY, not an empty dir: the catalog tests assert the shipped datasets exist.
       cp -r "$REPO_ROOT/datasets/." "$CURIO_CATALOG_ROOT/"
       export CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1
-      python "$REPO_ROOT/curio.py" start backend --deploy --with-examples \
+      python "$REPO_ROOT/curio.py" start backend --deploy --with-examples --allow-shared-installs \
         --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
         > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
       echo $! > "$CURIO_STATE_DIR/backend.pid"
@@ -362,7 +362,7 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --deploy --with-examples \
+    python "$REPO_ROOT/curio.py" start --deploy --with-examples --allow-shared-installs \
       --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
       --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!

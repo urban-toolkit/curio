@@ -164,7 +164,7 @@ def _why_not_isolated(exec_user, blockers):
     )
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, allow_shared_installs=False, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -206,6 +206,16 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
+    # A pre-set value wins over the CLI default, the way CURIO_SANDBOX_TOKEN and
+    # CURIO_ISOLATION already do. Assigning unconditionally made the documented
+    # env var a no-op for anything started through curio.py, so an operator who
+    # set it in a compose ``environment:`` block next to CURIO_ISOLATION got
+    # silence. The flag still wins when passed.
+    os.environ["CURIO_ALLOW_SHARED_INSTALLS"] = (
+        "1"
+        if allow_shared_installs
+        else os.environ.get("CURIO_ALLOW_SHARED_INSTALLS", "0")
+    )
     os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
     if catalog_root:
         os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
@@ -324,6 +334,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
+    log_always(f"CURIO_ALLOW_SHARED_INSTALLS={os.environ['CURIO_ALLOW_SHARED_INSTALLS']}")
     log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
     log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
     # The token itself is deliberately not logged.
@@ -1631,6 +1642,21 @@ def main():
         ),
     )
     parser.add_argument(
+        "--allow-shared-installs", action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Permit package and library installs on a --deploy instance that "
+            "cannot scope them to one user (sets CURIO_ALLOW_SHARED_INSTALLS=1). "
+            "Off by default: where node execution is not isolated, every "
+            "install lands in the one interpreter that runs everybody's node "
+            "code, so one user's library can change what another user's nodes "
+            "import (#332, #309). Turn it on only where you would trust every "
+            "account with that, e.g. a small team on a host that cannot "
+            "isolate. No effect on a local run, which has one user by "
+            "definition and is never gated."
+        ),
+    )
+    parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
             "Memory ceiling per isolated node, in MB (sets "
@@ -1775,6 +1801,7 @@ def main():
         with_examples=args.with_examples,
         reseed=args.reseed,
         allow_publish=args.allow_publish,
+        allow_shared_installs=args.allow_shared_installs,
         collab=args.collab,
         save_node_outputs=args.save_node_outputs,
         catalog_root=args.catalog_root,

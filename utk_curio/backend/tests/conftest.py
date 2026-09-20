@@ -86,6 +86,17 @@ if _TEST_OWNED_DIR is not None:
             pass
 
 os.environ["CURIO_TESTING"] = "1"
+# The suite's default posture is a deployment where installs are permitted.
+#
+# ``CURIO_NO_AUTH`` defaults to False, so an unconfigured test process looks
+# like a *hosted* instance, and nothing here sets CURIO_ISOLATION, so it also
+# looks like one that cannot scope installs per user. Under the #332 gate that
+# combination refuses every install, which would fail ~36 tests that are about
+# install mechanics and say nothing about the gate. Declaring the permissive
+# posture here keeps those tests testing what they are for; the gate itself has
+# its own suite (``test_packages/test_package_install_gate.py``) that sets each
+# combination explicitly rather than inheriting one.
+os.environ.setdefault("CURIO_ALLOW_SHARED_INSTALLS", "1")
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
 # Tests get their own DuckDB under .curio/test/data/, parallel to the
 # SQLite test DB in .curio/test/. The dev sandbox keeps using

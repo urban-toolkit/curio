@@ -255,6 +255,14 @@ Being UI-less is also why its only coverage is a route-level test
 plus an idempotency case): a browser test would have nothing to click. That is
 by design rather than an oversight (#353).
 
+### Who may install a package
+
+A local run installs freely. On a hosted deployment installing can be restricted, and the UI says
+so where it is: see [DEPLOYMENT.md](DEPLOYMENT.md#operator-notes).
+
+Installing a package runs its setup code, so treat the catalog as a trust boundary: install
+packages you trust, the same as any other dependency.
+
 ### Backwards compatibility for projects saved before the per-project lockfile
 
 Projects saved before the lockfile became load-bearing have an empty `dataflow.packages` field. On first read, the backend backfills the lockfile by scanning each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves. No migration script is required, and projects can be edited normally while still on the old shape.

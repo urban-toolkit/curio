@@ -384,7 +384,7 @@ jobs:
               # curio-exec, so --deploy would discover it and isolate. The
               # isolated stacks are test-gpu-isolated and test-gpu-exec-user.
               export CURIO_ISOLATION=off
-              python curio.py start backend --deploy --with-examples \
+              python curio.py start backend --deploy --with-examples --allow-shared-installs \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
