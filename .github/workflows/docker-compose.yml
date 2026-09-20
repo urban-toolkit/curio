@@ -193,6 +193,17 @@ jobs:
       - name: 🔒 Assert the Node.js version declarations agree
         run: python3 scripts/check_node_pins.py
 
+      # BACKEND_URL is baked into the bundle at build time. The container used
+      # to rebuild the frontend at every boot (the image shipped dist/ without
+      # the stamp the launcher reads) in an environment that no longer carried
+      # the build arg, so the launcher's own http://localhost:5002 default was
+      # baked over the deployment's address. curio-dev served a frontend calling
+      # localhost for everything: health banner up, guest sign-in blocked as
+      # mixed content. Same reason as the pins above -- the suite runs inside
+      # the image and cannot see the Dockerfile; here there is a checkout.
+      - name: 🔒 Assert the image keeps the backend URL it was built for
+        run: python3 scripts/check_deploy_backend_url.py
+
       # The sandbox executes arbitrary node code. Production must never
       # publish its port; only the CI overlay does, and only on loopback.
       # Guards the configuration the live instances actually run.
@@ -310,6 +321,30 @@ jobs:
             exit 1
           fi
           echo "OK: the testing stubs are mounted."
+
+      # The static check above proves the Dockerfile is right; this proves the
+      # image built from it behaves. This job builds with a non-default
+      # BACKEND_URL (localhost:5022), so a container that rebuilt its bundle
+      # would be serving localhost:5002 here -- invisible to the e2e suite,
+      # which injects window.__CURIO_BACKEND_URL__ and so never notices, which
+      # is exactly how this reached a deployment.
+      - name: 🔒 Assert the container serves the bundle it shipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          stamp=$(docker compose -p curio-ci exec -T curio \
+            cat /app/utk_curio/frontend/urban-workflows/dist/.curio-backend-url)
+          echo "stamp: ${stamp}"
+          if [ "$(echo "${stamp}" | sed -n 2p | tr -d '\r')" != "${BACKEND_URL}" ]; then
+            echo "::error::the shipped bundle is stamped for something other than ${BACKEND_URL}" >&2
+            exit 1
+          fi
+          # The launcher must agree, or the next start rebuilds and rebakes it.
+          docker compose -p curio-ci exec -T curio python -c 'import sys; from utk_curio.main import _build_stamp_reason as f; r = f(); sys.exit("the container would rebuild its bundle: " + r) if r else print("OK: the launcher reuses the shipped bundle.")'
+          # And the bundle actually being served carries that address.
+          curl -fsS "http://localhost:${CURIO_E2E_FRONTEND_PORT}/bundle.js" \
+            | grep -qF "${BACKEND_URL}"
+          echo "OK: the served bundle calls ${BACKEND_URL}."
 
       - name: 🧪 Run backend unit tests
         run: |

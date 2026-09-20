@@ -2,30 +2,24 @@
 
 curio-dev served a frontend that called ``http://localhost:5002`` for every
 request: the health banner reported the backend down, and guest sign-in failed
-outright because an HTTPS page may not post to plain http (mixed content).
+outright because an HTTPS page may not post to plain http (mixed content). The
+image had built the bundle correctly; the container replaced it seconds after
+boot, because ``dist/`` shipped without a stamp (so the launcher judged it
+stale) and the rebuild ran with ``BACKEND_URL`` unset (so the launcher's own
+localhost default got baked in).
 
-The image built the bundle correctly. The break happened at container start:
-
-1. ``dist/`` shipped without the ``.curio-backend-url`` stamp, because only
-   ``check_install_build`` writes one and the Dockerfile runs webpack directly.
-   ``_build_stamp_reason`` reads a missing stamp as "an unrecorded mode", so the
-   launcher rebuilt the whole bundle on every boot.
-2. That rebuild ran with ``BACKEND_URL`` unset -- build args do not cross build
-   stages -- so ``set_environment_variables`` applied its
-   ``http://localhost:5002`` default, and ``systemvars: true`` made that
-   environment variable beat the ``.env`` the build stage had rewritten.
-
-So the correct bundle was overwritten by a wrong one seconds after the image
-that contained it was deployed. Both halves are pinned here: the stamp the image
-writes, and the ENV that stops the launcher's default from replacing it.
+The Dockerfile half of that lives in ``scripts/check_deploy_backend_url.py``,
+for the same reason as ``check_node_pins.py``: this suite runs inside the
+container image, which ships ``utk_curio/`` and not the Dockerfile around it.
+What is left here is the launcher behaviour the image has to work with, which
+does run in the image -- the localhost default, and the stamp rule that makes an
+unstamped bundle a rebuild.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,116 +27,71 @@ import pytest
 import utk_curio.main as main
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DOCKERFILE = REPO_ROOT / "Dockerfile"
 
 
-def _dockerfile() -> str:
-    """The Dockerfile text, or a skip.
+def test_the_image_keeps_the_backend_url_it_was_built_for():
+    """Delegates to the script, which CI also runs on the checkout."""
+    if not (REPO_ROOT / "Dockerfile").is_file():
+        pytest.skip("the image ships utk_curio/ without the checkout around it")
 
-    This suite also runs inside the built image, which ships ``utk_curio/``
-    without the checkout around it (same reason as test_launcher_node_version).
-    """
-    if not DOCKERFILE.is_file():
-        pytest.skip("the image ships utk_curio/ without the Dockerfile beside it")
-    return DOCKERFILE.read_text(encoding="utf-8")
+    path = REPO_ROOT / "scripts" / "check_deploy_backend_url.py"
+    spec = importlib.util.spec_from_file_location("_scripts_check_backend_url", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
-
-def _runtime_stage(text: str) -> str:
-    """Everything from the final stage's FROM to the end of the file."""
-    marker = "FROM runtime_base AS runtime"
-    assert marker in text, "the final stage was renamed; update this test"
-    return text.split(marker, 1)[1]
+    assert module.problems(REPO_ROOT) == []
 
 
-def _stamp_command(text: str) -> str:
-    """The Dockerfile's own line that writes the stamp, minus the RUN."""
-    for line in text.splitlines():
-        if ".curio-backend-url" in line and line.startswith("RUN "):
-            return line[len("RUN "):]
-    pytest.fail("no RUN line in the Dockerfile writes dist/.curio-backend-url")
-
-
-def test_runtime_stage_publishes_the_backend_url():
-    """Without this ENV the launcher's localhost default wins at container start."""
-    stage = _runtime_stage(_dockerfile())
-    assert re.search(r"^ARG BACKEND_URL\s*$", stage, re.M), (
-        "the runtime stage must re-declare ARG BACKEND_URL; build args do not "
-        "cross stages"
+@pytest.fixture
+def checkout(monkeypatch, tmp_path):
+    """A built frontend at tmp_path, as the image's COPY leaves one."""
+    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
+    monkeypatch.delenv("BACKEND_URL", raising=False)
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"build": "webpack --mode production && npm run x"}}),
+        encoding="utf-8",
     )
-    assert re.search(r"^ENV BACKEND_URL=\$BACKEND_URL\s*$", stage, re.M), (
-        "the runtime stage must export BACKEND_URL, or "
-        "set_environment_variables() defaults it to http://localhost:5002"
-    )
-
-
-def test_the_url_is_exported_before_the_launcher_runs():
-    """ENV has to precede CMD to be in the environment curio.py starts with."""
-    stage = _runtime_stage(_dockerfile())
-    assert stage.index("ENV BACKEND_URL") < stage.index("CMD ["), (
-        "BACKEND_URL is exported after the CMD that reads it"
-    )
-
-
-def test_the_image_stamps_what_it_built():
-    """The build stage must record the bundle, or every boot rebuilds it."""
-    text = _dockerfile()
-    builder = text.split("AS frontend_builder", 1)[1].split("FROM runtime_base AS runtime")[0]
-    assert ".curio-backend-url" in builder, (
-        "the frontend build stage must write the stamp the launcher reads"
-    )
-    assert builder.index("npm run build") < builder.index(".curio-backend-url"), (
-        "the stamp must be written after the build it describes"
-    )
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
-def test_the_stamp_the_image_writes_is_one_the_launcher_accepts(tmp_path, monkeypatch):
-    """Run the Dockerfile's own command, then read it back with the launcher.
-
-    The two live in different languages and different stages, and agree only by
-    convention: two lines, webpack mode then URL. This executes the real writer
-    against the real ``package.json`` and hands the result to the real reader,
-    so a change to either side that breaks the handshake fails here.
-    """
-    url = "https://curio-dev.urbantk.org/api/"
-    frontend = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows"
-    if not (frontend / "package.json").is_file():
-        pytest.skip("no frontend package.json in this tree")
-
-    # The layout the build stage runs in: package.json, and the dist it made.
-    shutil.copy(frontend / "package.json", tmp_path / "package.json")
     (tmp_path / "dist").mkdir()
     (tmp_path / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
+    return tmp_path
 
-    subprocess.run(
-        ["/bin/sh", "-c", _stamp_command(_dockerfile())],
-        cwd=tmp_path,
-        env={**os.environ, "BACKEND_URL": url},
-        check=True,
+
+def test_an_unstamped_bundle_is_rebuilt(checkout):
+    """Why the image has to stamp: this is what it shipped, and it rebuilds.
+
+    Harmless from a checkout, where the rebuild produces the same bundle. In the
+    container it was the whole bug: the rebuild ran in an environment that no
+    longer knew the URL the image had been built for.
+    """
+    assert main._frontend_needs_build() is True
+    assert "unrecorded" in main._build_stamp_reason()
+
+
+def test_a_stamped_bundle_is_served_as_built(checkout, monkeypatch):
+    url = "https://curio-dev.urbantk.org/api/"
+    (checkout / "dist" / ".curio-backend-url").write_text(
+        f"production\n{url}\n", encoding="utf-8"
     )
-
-    stamp = (tmp_path / "dist" / ".curio-backend-url").read_text(encoding="utf-8")
-    assert stamp.splitlines() == ["production", url], stamp
-
-    # What the container does next: the launcher decides whether to rebuild.
-    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
     monkeypatch.setenv("BACKEND_URL", url)
     assert main._build_stamp_reason() is None
     assert main._frontend_needs_build() is False
 
-    # And the regression itself: drop the runtime ENV and the launcher rebuilds,
-    # which is what rebaked localhost:5002 over the deployed address.
+    # And the half the runtime ENV supplies: without it the launcher wants its
+    # own default instead, which is the rebuild that rebaked localhost.
     monkeypatch.delenv("BACKEND_URL")
     assert main._frontend_needs_build() is True
     assert f"built for {url}" in main._build_stamp_reason()
 
 
-def test_launcher_default_is_what_broke_the_deployment(monkeypatch):
-    """Pins the mechanism: unset BACKEND_URL becomes localhost, set is kept."""
+def test_an_unset_backend_url_becomes_localhost(monkeypatch):
+    """The default that overwrote the deployed address. Pins the mechanism."""
     monkeypatch.delenv("BACKEND_URL", raising=False)
     main.set_environment_variables("0.0.0.0", 5002, "127.0.0.1", 2000)
     assert os.environ["BACKEND_URL"] == "http://localhost:5002"
 
+
+def test_an_explicit_backend_url_survives_a_launch(monkeypatch):
+    """What the runtime ENV buys: the image's address is not second-guessed."""
     monkeypatch.setenv("BACKEND_URL", "https://curio-dev.urbantk.org/api")
     main.set_environment_variables("0.0.0.0", 5002, "127.0.0.1", 2000)
     assert os.environ["BACKEND_URL"] == "https://curio-dev.urbantk.org/api"
