@@ -34,7 +34,7 @@ data.urbanlab.chicago-boundary@1/
   data/chicago.geojson
 ```
 
-Eleven dataset packages ship with Curio in the committed catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), four under `data.cityofchicago.*` (green roofs, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels). Together they are the inputs to the curated example dataflows in `docs/examples/`.
+Twelve dataset packages ship with Curio in the committed catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels). Together they are the inputs to the curated example dataflows in `docs/examples/`.
 
 ### Where datasets come from: the four origins
 
@@ -60,21 +60,9 @@ Dataset state lives in three places. As with node packages, knowing which layer 
 | **Per-dataflow refs**, what one dataflow declares it needs | `spec.trill.json` → `dataflow.datasets: []` | The drawer's **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. The shipped examples carry theirs as committed declarations. |
 
 > [!NOTE]
-> Unlike node packages, datasets have **no per-user "defaults" layer**. Nothing auto-seeds a dataset into every new dataflow, and correspondingly there is no "add everywhere" action. Adding a dataset is always scoped to one dataflow.
->
-> The seeded **example projects** are the one deliberate exception. Each example declares the datasets it needs in its own `dataflow.datasets` section, exactly as it declares its node packages in `dataflow.packages`, and Curio provisions those into your dataset store when the examples are seeded (`--with-examples`) and again the first time you open a project. This is a *provisioning* step for a declaration the example already carries, not an "add everywhere": it never touches a dataflow you did not open, and it adds nothing to a new one. See `utk_curio/backend/app/datasets/seed.py`.
+> Unlike node packages, datasets have **no per-user "defaults" layer** and no "add everywhere" action. Adding a dataset is always scoped to one dataflow. The seeded example projects declare the datasets they need in their own `dataflow.datasets` section, and Curio provisions those into your dataset store when the examples are seeded (`--with-examples`) and the first time you open one.
 
 The most important consequence: **computed datasets are account-level assets, not project contents.** Running a node saves its output into your per-user store and writes *no* `dataflow.datasets` ref. It appears in the catalog immediately, but it is only "in" a dataflow once you add it there.
-
-> [!NOTE]
-> A fourth thing exists, but it is not a storage layer: the **dataset index**, a
-> database table mirroring your store's manifests so catalog listings are keyed
-> lookups instead of re-parsing every `manifest.json`. It is a cache, and disk
-> always wins: it is reconciled against the store on every listing, a manifest
-> it cannot read has its row dropped, and any failure falls back to scanning.
-> Nothing you do interacts with it directly and nothing is lost if it is wiped;
-> see [ARCHITECTURE.md](ARCHITECTURE.md#the-dataset-index) if you are working on
-> the backend.
 
 ### Dataset ids
 
@@ -119,7 +107,7 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 
 There are three places you interact with datasets, and unlike the Node Catalog, they are **not** interchangeable:
 
-- **The `/catalog/data` page** is a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none. (The legacy `/data-hub` URL redirects here.)
+- **The `/catalog/data` page** is a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none.
 - **The Data Catalog drawer** (inside the canvas) is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Add to dataflow, Remove from dataflow, Import, Publish, Unpublish, Delete.
 - **The Data palette** (left Tools panel, the **Data Catalog** dropdown) holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits in the left rail below the built-in nodes and the **Node Catalog** dropdown, mirroring the latter; its panel opens in the strip to the right of the rail.
 
@@ -176,7 +164,7 @@ The generated Python matches the format:
 | `bundle` | Rebuilds every part and returns a tuple → `bundle` |
 | OSM group | A `layers` dict of per-layer GeoParquet reads |
 
-The location line is written as a portable `curio_dataset_path("<datasetId>")` call that the sandbox resolves to a real filesystem path at execution time, so the generated code carries no machine-, user-, or mount-specific absolute path and stays valid when the dataflow is shared or moved. Curio falls back to embedding the literal path only when the dataset has no usable id.
+The location line is written as a portable `curio_dataset_path("<datasetId>")` call that the sandbox resolves to a real filesystem path at execution time, so the generated code carries no absolute path and stays valid when the dataflow is shared or moved.
 
 **Clicking** a palette row (rather than dragging it) does something different: it highlights every node on the canvas that uses that dataset. If none do, you get an info toast saying so.
 
@@ -212,12 +200,10 @@ Every output type a node can declare is saved, not just tabular ones:
 | A tuple | `bundle`, one part per item (see [Bundles](#bundles)) |
 | A list or dict *containing* DataFrames | `bundle`, one part per element; a dict keeps its keys as part labels |
 
-JSON is written uncompressed, and a scalar is stored bare rather than wrapped,
-so the stored file is readable by a plain `json.load` and exports as-is. That
-matters when you drag the dataset back onto the canvas: the generated loader
-hands the node the value its producer returned. (Inside a *bundle*, scalar parts
+JSON is written uncompressed, and a scalar is stored bare, so the stored file is
+readable by a plain `json.load` and exports as-is. Inside a *bundle*, scalar parts
 keep a `{"value": ...}` wrapper, because `bundle.json` records each part's kind
-and the bundle loader unwraps by it.)
+and the bundle loader unwraps by it.
 
 The toggle is forced **off**, and no dataset is saved, for:
 
@@ -227,7 +213,7 @@ The toggle is forced **off**, and no dataset is saved, for:
 Outputs appear in the catalog *before* the project is saved: the frontend passes the just-produced outputs to the catalog API as "live outputs", so the drawer's **Computed** tab and the palette show them immediately. Re-running a node rewrites the same dataset in place.
 
 > [!IMPORTANT]
-> **A dataflow must be saved before its node outputs can be persisted.** The dataset id is namespaced by dataflow id, so an unsaved dataflow has nothing to namespace with. Running a node in an unsaved dataflow shows the output as a live catalog row but writes nothing to disk; it is persisted on the next save. This guard exists so Curio never mints a legacy un-namespaced dataset that would duplicate the real one moments later.
+> **A dataflow must be saved before its node outputs can be persisted.** The dataset id is namespaced by dataflow id, so an unsaved dataflow has nothing to namespace with. Running a node in an unsaved dataflow shows the output as a live catalog row but writes nothing to disk; it is persisted on the next save.
 
 ### Lineage
 
@@ -279,12 +265,9 @@ Anything else is rejected with *"Unsupported dataset format"*.
 ### Text imports are stored as UTF-8
 
 `csv`, `json` and `geojson` uploads are decoded and re-encoded as UTF-8 on the way in, and the
-encoding they came from is recorded in the manifest as `sourceEncoding`. Everything that reads the
-file afterwards, the row counter, the preview, and the generated loader, can then assume UTF-8 and
-be right. That matters because the generated snippet is a bare `pd.read_csv(dataset_path)` with
-nowhere to put an `encoding=`, which is the same reason the catalog's own CSVs are re-saved
-comma-delimited on import. Before this, a cp1252 CSV imported with a `201` and no row count and
-then raised `UnicodeDecodeError` the first time its node ran.
+encoding they came from is recorded in the manifest as `sourceEncoding`. The generated loader is a
+bare `pd.read_csv(dataset_path)` with nowhere to put an `encoding=`, which is also why the catalog's
+CSVs are re-saved comma-delimited on import.
 
 Curio tries UTF-8 strictly first, and only guesses when that fails.
 
@@ -297,8 +280,7 @@ A `.pbf` extract is not stored verbatim. On import, Curio reads every non-empty 
 
 This requires the geospatial extras (`geopandas`, `pyogrio`) and a GDAL build with the OSM driver; Curio reports both as readable errors if they are missing.
 
-A `.gpkg` is handled the same way and for the same reason: a GeoPackage is a SQLite container holding
-any number of layers, and the generated loader snippet has no way to name one. Each layer is read,
+A `.gpkg` is handled the same way, since a GeoPackage can hold any number of layers. Each layer is read,
 written as parquet, and registered as its own dataset, with all of them sharing a `gpkg.`-prefixed
 group id so the drawer folds them into a single **GeoPackage** entry.
 
@@ -310,9 +292,8 @@ Two things differ from the PBF path:
 - **Attribute-only tables.** A GeoPackage may hold tables with no geometry. They are kept, as plain
   parquet, rather than dropped.
 
-A GeoPackage holding exactly one layer is imported as an ordinary parquet dataset with no group: a
-card you have to expand to reach a single dataset is worse than no card. This needs the same
-geospatial extras plus GDAL's GPKG driver.
+A GeoPackage holding exactly one layer is imported as an ordinary parquet dataset with no group.
+GeoPackage import needs the same geospatial extras plus GDAL's GPKG driver.
 
 ### Publish, unpublish, delete
 
@@ -322,7 +303,7 @@ geospatial extras plus GDAL's GPKG driver.
 
 **Delete** is the account-level removal: it deletes the stored dataset and strips its references from every one of your dataflows. Only computed, non-hub datasets expose it.
 
-Who may unpublish or delete is decided by the manifest's `publisher` field: you can only remove datasets you published. Attempting otherwise returns `403` with *"You can only unpublish or delete datasets you published."* The three datasets shipped with Curio have `publisher: "Data Catalog"`, so ordinary users cannot remove them.
+Who may unpublish or delete is decided by the manifest's `publisher` field: you can only remove datasets you published. Attempting otherwise returns `403` with *"You can only unpublish or delete datasets you published."* The datasets shipped with Curio have `publisher: "Data Catalog"`, so ordinary users cannot remove them.
 
 ---
 
@@ -349,7 +330,7 @@ When a manifest carries no `schema`, Curio infers field names, types, and nullab
 
 The shared catalog defaults to `<repo_root>/datasets/`, resolved relative to the installed package. That is correct when Curio runs from a checkout, but on a `pip` install it resolves under `site-packages`, where it is read-only and publishing fails, and in Docker it is not persisted across restarts. Set **`CURIO_CATALOG_ROOT`** (or pass `--catalog-root`) to a writable, persistent path in those deployments.
 
-The catalog root is **never created eagerly**. A missing root simply means nothing is published: catalog listings return empty, and unpublish/delete report `404` *"Dataset is not in the Data Catalog"* rather than failing.
+The catalog root is **never created eagerly**. A missing root simply means nothing is published: catalog listings return empty, and unpublish/delete report `404` *"Dataset is not in the Data Catalog"*.
 
 ### Environment variables
 
@@ -361,9 +342,9 @@ The catalog root is **never created eagerly**. A missing root simply means nothi
 
 ### The dataset index
 
-Catalog listings are served from a database table (`dataset_index_entry`, created by alembic revision `d4e5f6a7b8c9`) that mirrors each user's store manifests. Upgrading an existing deployment picks it up through the normal migration run; nothing else is required.
+Catalog listings are served from a database table (`dataset_index_entry`) that mirrors each user's store manifests. Upgrading an existing deployment picks it up through the normal migration run.
 
-It is a cache, so it needs no operational care: it is reconciled against disk on every listing, and any failure degrades to the old full-scan behaviour. If you ever suspect it has drifted, dropping every row is safe, because the next listing rebuilds it. It is also safe to leave alone; there is no cleanup job to schedule.
+It is a cache: it is reconciled against disk on every listing, and any failure falls back to a full scan. If you suspect it has drifted, dropping every row is safe, because the next listing rebuilds it. There is no cleanup job to schedule.
 
 ### There is no publish gate for datasets
 

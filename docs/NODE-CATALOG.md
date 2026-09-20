@@ -73,9 +73,9 @@ ai.urbanlab.uhvi/uhvi-load@1
 There are exactly two places you manage packages:
 
 - **The drawer** (inside the canvas): per-project. Open it from the **Node Catalog** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Adding and removing here affect *only* the open project's lockfile (plus the user-store copy when needed), which is why its buttons say per-dataflow.
-- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Adding there applies to every existing project of yours and auto-seeds into any new project, so the button reads **Add to all projects** rather than the drawer's **Add to dataflow**. There is no removal affordance; the workflows below explain why. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes (see [DATA-CATALOG.md](DATA-CATALOG.md)).
+- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Adding there applies to every existing project of yours and auto-seeds into any new project, so the button reads **Add to all projects** rather than the drawer's **Add to dataflow**. There is no removal button here; see the workflows below. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes (see [DATA-CATALOG.md](DATA-CATALOG.md)).
 
-The drawer's two working tabs are **Browse** and **In dataflow**; an *update available* note appears on a row whose catalog copy carries a different `version`. Each row on **In dataflow** also has a **Reload** button (circular-arrows icon) that re-copies the package from the shared catalog over your installed copy. Use it when you are editing a package under `packages/` and want your changes to show up (see [Authoring nodes](AUTHORING-NODES.md)). It is offered for any package the catalog also carries, not only when the version differs, because editing source without bumping `version` is the normal authoring loop. The **Nodes** tab on `/catalog` uses a Data Catalog-style layout with status and category filters plus a preview drawer.
+The drawer's two working tabs are **Browse** and **In dataflow**; an *update available* note appears on a row whose catalog copy carries a different `version`. Each row on **In dataflow** also has a **Reload** button (circular-arrows icon) that re-copies the package from the shared catalog over your installed copy. Use it when you are editing a package under `packages/` and want your changes to show up (see [Authoring nodes](AUTHORING-NODES.md)). It is offered for any package the catalog also carries, whether or not the version differs. The **Nodes** tab on `/catalog` uses a Data Catalog-style layout with status and category filters plus a preview drawer.
 
 ### Action matrix
 
@@ -93,19 +93,19 @@ The drawer's two working tabs are **Browse** and **In dataflow**; an *update ava
 
 **I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Add to all projects**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
 
-**I want to remove a package.** There is *no* global removal button on the `/catalog` page, and that is deliberate. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model: there is no "remove from defaults" button, because that fall-through is the only mechanism the UI ever uses to touch defaults. An API-only endpoint exists for scripted and administrative use - see *Operator notes*.)
+**I want to remove a package.** There is no global removal button on the `/catalog` page. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy and removes the package from your defaults list so it stops auto-seeding into new projects. An API-only endpoint detaches a default directly; see *Operator notes*.
 
 **I want a package I just built to be installable by other users on this Curio install.** Build it via **Save as package node** (next section), then open the drawer or `/catalog` page and click **Publish** on the package. It writes into the shared catalog at `<repo_root>/packages/`. Note: the Publish button is hidden when the operator disabled catalog writes (see *Operator notes* below).
 
-**I want to make a package a default for new projects without adding it everywhere first.** Just use **Add to all projects** once from the `/catalog` page. That's exactly what that action does: it adds to defaults. The drawer's **Add to dataflow** does NOT add to defaults; it stays scoped to that one project.
+**I want to make a package a default for new projects without adding it everywhere first.** Use **Add to all projects** once from the `/catalog` page. The drawer's **Add to dataflow** stays scoped to one project and never touches defaults.
 
-**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. There is no "remove from defaults" button in the UI, by design: the system never leaves a "seed for new projects" entry that no current project actually uses, so the fall-through is the intended route. If you need to detach one directly - scripting a fleet of installs, or repairing a defaults list by hand - `DELETE /api/packages/defaults/<dirName>` does exactly that and nothing else (see *Operator notes*).
+**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. To detach one directly, for scripted installs or to repair a defaults list by hand, call `DELETE /api/packages/defaults/<dirName>` (see *Operator notes*).
 
 ---
 
 ## 3. Creating a new package from a canvas node
 
-Curio no longer ships the multi-step Node Factory wizard. The single supported flow is **Save as package node**: build the node on the canvas, then save it into a (new or existing) package. Metadata that used to live in the wizard's steps is now editable per-package from the catalog drawer.
+The flow is **Save as package node**: build the node on the canvas, then save it into a (new or existing) package. Package metadata is edited per-package from the catalog drawer.
 
 ### Save as package node
 
@@ -120,14 +120,9 @@ When you save **into an existing package**, the backend preserves the unedited t
 > [!IMPORTANT]
 > **Save as package node cannot produce a custom-UI node.** The archive it
 > builds carries `manifest.json`, `sources/`, `README.md` and `LICENSE`, but
-> never a `scripts/` directory (see `build_packageage_archive` in
-> [`factory.py`](../utk_curio/backend/app/packages/factory.py)). So every
-> package authored this way is a code-editor node, and **forking a custom-UI
-> package this way drops its interface**: the fork inherits the manifest's
-> `behaviorScript` path but not the compiled bundle, the loader's fetch 404s,
-> and the node quietly falls back to the generic code editor. Nothing is
-> broken, but if you forked `curio.streetvision@1` expecting its UI, that is
-> why you got a code box.
+> never a `scripts/` directory. So every package authored this way is a
+> code-editor node, and **forking a custom-UI package this way drops its
+> interface**: the fork falls back to the generic code editor.
 >
 > To author a node with its own React interface, work from a checkout and build
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
@@ -135,7 +130,7 @@ When you save **into an existing package**, the backend preserves the unedited t
 
 ### Source-driven dependencies
 
-`dependencies.python` and `dependencies.js` in the manifest are derived automatically from each template's source file. You don't (and can't) enter them by hand:
+`dependencies.python` and `dependencies.js` in the manifest are derived automatically from each template's source file. They are not entered by hand:
 
 - Each `import` / `from … import` at the top level of a `.py` source is collected. Standard-library modules and Curio-runtime modules are filtered out. A small alias table maps the common cases where the importable name differs from the PyPI install name (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`). Anything not in the alias map passes through unchanged.
 - For `.js` / `.mjs` / `.cjs` sources, `import … from "X"`, dynamic `import("X")`, and `require("X")` are scanned. Relative paths are skipped; subpaths collapse to the top-level (`lodash/fp` → `lodash`); scoped packages keep their scope (`@scope/pkg`).
@@ -166,7 +161,7 @@ When you save (or upload) a package, it lands in your per-user store:
   integrity.json                 ← SHA-256 of every shipped file
 ```
 
-Developers can still publish a draft into the repo's local catalog (`<repo_root>/packages/`) via the publish-to-catalog flow in the installed-packages list, gated by the `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` env var (on by default).
+Developers can publish a draft into the repo's local catalog (`<repo_root>/packages/`) via the publish-to-catalog flow in the installed-packages list, gated by the `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` env var (on by default).
 
 ### The manifest schema
 
@@ -180,7 +175,7 @@ A package is portable: you can export it, send it, and the recipient can drop it
 
 ### Exporting
 
-Open the **Node Catalog** dropdown in the left Tools panel and click the **download** icon on your package's row ("Export package"). It saves the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). The export and metadata-edit buttons live on those rows, next to each other; the catalog drawer handles adding and removing rather than export.
+Open the **Node Catalog** dropdown in the left Tools panel and click the **download** icon on your package's row ("Export package"). It saves the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). The metadata-edit button sits next to it on the same row.
 
 The archive contains exactly what's on disk: `manifest.json`, `sources/`, `README.md`, `LICENSE`, and `scripts/` (so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step). `integrity.json` is the one exception: it is **not** shipped, because the installer regenerates it on the recipient's machine.
 
@@ -206,8 +201,8 @@ The installer extracts into a tmp directory, validates the manifest, computes in
 
 Set `"readOnly": true` at the top level of a manifest to mark a package as read-only. The flag is honoured end-to-end:
 
-- The factory-install endpoint rejects any draft whose manifest declares `readOnly: true`, *and* it rejects drafts targeting an installed package coordinate whose on-disk manifest is read-only, so a forged draft that omits the flag can't sneak through.
-- The Save-As destination picker filters read-only packages out of the dropdown, so the in-canvas authoring flow naturally steers users to a new package.
+- The factory-install endpoint rejects any draft whose manifest declares `readOnly: true`, *and* it rejects drafts targeting an installed package coordinate whose on-disk manifest is read-only.
+- The Save-As destination picker filters read-only packages out of the dropdown.
 - The **Node settings** modal shows a **Read-only** badge when the underlying descriptor belongs to a read-only package, and its primary action stays **Save as package node…**.
 
 The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is available for **org-curated packages** you want to distribute internally without letting downstream users overwrite kinds in place. Forking via Save-As is unaffected; the new package starts unflagged.
@@ -215,11 +210,11 @@ The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is ava
 ### Caveats
 
 - There is no hosted package registry yet. Sharing is file-based: archives by email, Slack, S3, whatever fits. The committed catalog at `<repo_root>/packages/` is a per-deployment alternative for first-party content.
-- To find which of your saved projects are affected, run `python scripts/validate_trill.py --all --resolve`;
-  it reports every dataflow that no longer matches [`docs/schemas/trill.v1.json`](schemas/trill.v1.json),
+- To check your saved projects, run `python scripts/validate_trill.py --all --resolve`;
+  it reports every dataflow that does not match [`docs/schemas/trill.v1.json`](schemas/trill.v1.json),
   and `--resolve` additionally flags node types with no installed template. See
   [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
-- The legacy `NodeType` enum strings (`"DATA_LOADING"`, `"VIS_VEGA"`, etc.) used by Curio before the package refactor are no longer recognized. Trill files saved with those strings won't render correctly until the type fields are rewritten to canonical refs (`"curio.builtin/data-loading"`, `"curio.builtin/vis-vega"`, etc.). The example trills in `docs/examples/` are already migrated; legacy user projects need a one-time JSON rewrite.
+- Trill files saved with the pre-package `NodeType` strings (`"DATA_LOADING"`, `"VIS_VEGA"`, etc.) need a one-time rewrite of their `type` fields to canonical refs (`"curio.builtin/data-loading"`, `"curio.builtin/vis-vega"`, etc.) before they render correctly.
 
 ---
 
@@ -240,20 +235,12 @@ Two things worth knowing before you leave publishing on for a shared install: pu
 
 `DELETE /api/packages/defaults/<dirName>` removes one entry from a user's
 `default-packages.json` and touches nothing else: no project lockfile changes,
-no package is uninstalled from the user store, and it is idempotent. It exists
-so that **Add to all projects** can be undone without opening every project.
+no package is uninstalled from the user store, and it is idempotent. It undoes
+**Add to all projects** without opening every project.
 
-It has **no UI on purpose**. The catalog page offers no button for it, and
-`catalogCardActions` returns no "Remove from all projects" action for a package
-(datasets and agents do offer one - packages are deliberately the odd one out),
-because the normal way a package leaves the defaults list is the auto-prune
-fall-through described above. This endpoint is for scripted installs and manual
-repair.
-
-Being UI-less is also why its only coverage is a route-level test
-(`test_lockfile.py::test_delete_defaults_detaches_without_touching_projects`,
-plus an idempotency case): a browser test would have nothing to click. That is
-by design rather than an oversight (#353).
+It has no UI. The normal way a package leaves the defaults list is the
+auto-prune fall-through described above; this endpoint is for scripted installs
+and manual repair.
 
 ### Who may install a package
 
@@ -263,15 +250,15 @@ so where it is: see [DEPLOYMENT.md](DEPLOYMENT.md#operator-notes).
 Installing a package runs its setup code, so treat the catalog as a trust boundary: install
 packages you trust, the same as any other dependency.
 
-### Backwards compatibility for projects saved before the per-project lockfile
+### Projects with an empty lockfile
 
-Projects saved before the lockfile became load-bearing have an empty `dataflow.packages` field. On first read, the backend backfills the lockfile by scanning each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves. No migration script is required, and projects can be edited normally while still on the old shape.
+A project with an empty `dataflow.packages` field is backfilled on first read: the backend scans each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and takes the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves.
 
 ---
 
 ## Appendix: adding a new behavior or icon (developer-only)
 
-Authoring a package via **Save as package node** or by hand-editing a `manifest.json` covers almost every case of "I want a new node", because the manifest schema already exposes every knob the runtime understands. The exception is a kind that needs **runtime behavior** none of the built-in behaviors provides, such as a new visualization library or a node that talks to a custom data source. Those are code changes, not package changes.
+A package can ship its own runtime behavior as a compiled bundle declared in `behaviorScript` (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). This appendix covers the other case: changing Curio itself to add a **built-in** behavior, icon, or grammar adapter that every install must have before any package is loaded.
 
 ### Adding a new behavior hook
 
@@ -281,7 +268,7 @@ The behaviors a manifest can reference live in [`src/registry/behaviorRegistry.t
 2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
 3. Reference it from a package manifest: `"behavior": "my-key"` on each kind that wants the new behavior.
 
-Third-party packages can use any key registered at startup. There's no per-package behavior code today; manifests can't carry JS.
+Third-party packages can reference any built-in key, or register their own from a `behaviorScript` bundle.
 
 ### Adding a new icon
 

@@ -52,9 +52,7 @@ package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids
 **Twenty-one agents ship with Curio**, declared in
 [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py) and
 materialized into each user's store on first use. They cover the five categories
-below, and among them are the agents that replaced Curio's earlier built-in AI
-assistance: `agent.node-explainer` (which superseded the per-node Explanation
-tab) and `agent.node-content-builder` (which superseded the authoring assistant).
+below.
 
 ### Categories
 
@@ -75,10 +73,8 @@ identifiable at a glance.
 ### Origins
 
 Alongside its category, every agent has an **origin**, which is provenance
-rather than function. It is backend metadata: the browse page counts it in its
-facets but does not currently offer it as a filter, and no card renders it as a
-chip. What the page's left rail offers is a **status** rail (All agents / In all
-projects) and a **category** rail.
+rather than function. It is not offered as a filter; the browse page's left rail
+offers a **status** rail (All agents / In all projects) and a **category** rail.
 
 | Origin | Meaning |
 |---|---|
@@ -88,10 +84,8 @@ projects) and a **category** rail.
 
 ### The storage layers
 
-Agent state lives on the **filesystem, not the database.** Curio's database holds
-users and the project index; agents, like node packages and datasets, are files
-under `.curio/` and inside each project's spec. There are no agent tables and no
-migrations.
+Agent state lives on the filesystem: like node packages and datasets, agents
+are files under `.curio/` and inside each project's spec.
 
 Knowing which layer each action writes is the key to predicting what happens
 after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
@@ -103,13 +97,6 @@ after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
 | **In dataflow** (per-dataflow lockfile) | `spec.trill.json` then `dataflow.agents[]` | **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
 | **Attachments**, a private agent instance bound to a target | `spec.trill.json` then `dataflow.agentAttachments` | **Attach** (dragging an agent onto a node or the canvas) creates one; **Detach** deletes it and its transcript. |
 | **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only, not user-editable, and not surfaced in the interface. |
-
-The same tolerances apply as elsewhere in the catalog: a missing registry file
-is an empty list, a corrupt one is treated as empty (reads never raise), and one
-invalid definition directory is skipped rather than failing the listing. Every
-path resolves through the shared containment guard
-([`app/common/safe_paths.py`](../utk_curio/backend/app/common/safe_paths.py)), so
-a coordinate cannot escape the user's store.
 
 > [!NOTE]
 > **Adding is not attaching.** Adding an agent to a dataflow makes it available
@@ -146,17 +133,13 @@ they are **not** interchangeable:
   it from the top menu **Data** then **Agent Catalog**, or from the left Tools
   panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Everything
   scoped to the open dataflow happens here: Add to dataflow, Remove from
-  dataflow, and Import agent. Publishing is not: it is a decision about the
-  item rather than about one dataflow, so it lives on `/catalog/agents`.
+  dataflow, and Import agent. Publishing lives on `/catalog/agents`.
 - **The Agent palette** (left Tools panel, the **Agent Catalog** dropdown) holds
   the agents already added to this dataflow, ready to drag onto a node or the
   canvas to attach. It sits in the left rail below the **Node Catalog** and
   **Data Catalog** dropdowns, mirroring both.
 
-The drawer has two tabs: **Browse all** (the default) and **In project**. There
-is no Featured tab. The two peers declare one, but the Node drawer maps it onto
-Browse all as a dead member, and agents have nothing to feature; a tab that
-renders the same rows under a second name is worse than two honest ones.
+The drawer has two tabs: **Browse all** (the default) and **In project**.
 
 ### Action matrix
 
@@ -174,8 +157,7 @@ renders the same rows under a second name is worse than two honest ones.
 
 Only **Remove from dataflow** asks for confirmation, matching the Node and
 Data drawers; the rest act immediately. Nothing in this table deletes an agent
-definition from disk: **Remove from my account** drops the registry entry and
-leaves the folder, which is why it is not called Delete.
+definition from disk.
 
 ### Workflows
 
@@ -213,19 +195,17 @@ simply available in the palette.
 | `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. | A row in the dock. |
 
 While you drag a palette row across the canvas, the connection that would
-receive the drop is highlighted, so you can see which one you are aiming at
-before you let go. A node under the pointer wins over any edge routed beneath
-it, and the highlight follows that same rule rather than guessing separately.
+receive the drop is highlighted. A node under the pointer wins over any edge
+routed beneath it.
 
-A connection agent is listed in **both** places on purpose. The badge says
-*which* connection the agent is about, but it is only there while that edge is
-on screen, and it sits behind any node the edge runs under. The dock is the
-roster: always reachable, and the order the chat panel's arrows cycle through.
-Detaching works from either.
+A connection agent is listed in **both** places. The badge says *which*
+connection the agent is about; the dock is the roster, always reachable, and
+sets the order the chat panel's arrows cycle through. Detaching works from
+either.
 
 Not every agent accepts every target: an agent declares which kinds it is
 compatible with, and its category implies a default. A `canvas` agent dropped on
-a node is refused rather than silently rebound.
+a node is refused.
 
 Each attachment carries its own chat transcript, its own **intent** (the editable
 first instruction, defaulting to the definition's own prompt), and its own
@@ -253,11 +233,9 @@ holding a broken reference.
 ## 4. Importing, publishing, and sharing
 
 **Import agent** takes a `manifest.json` and its `.txt` prompt files as JSON, not
-an archive. The upload is strict on purpose: trust is forced to `imported`,
-digests are stamped from the actual bytes rather than trusted from the manifest,
-the prompt files must correspond exactly to what the manifest references, size
-limits apply, and an existing coordinate returns `409` rather than overwriting.
-Agent definitions are immutable; a change means a new version.
+an archive. The prompt files must correspond exactly to what the manifest
+references, size limits apply, and an existing coordinate returns `409` rather
+than overwriting. Agent definitions are immutable; a change means a new version.
 
 **Publish** copies an owned, imported, store-backed definition into the shared
 catalog, where every user on the install can browse it. It rejects built-in and
@@ -283,50 +261,25 @@ account-level setting, edited in **AI Settings** from the header.
 ### Choosing the model
 
 The **Fetch models** button under the Model field asks the configured endpoint
-what it serves (`POST /api/agents/provider-models`, which the panel calls with
-the base URL and key currently *on screen* rather than the saved ones — you are
-usually choosing a model for an endpoint you have not saved yet). What comes
-back becomes a dropdown.
+what it serves, using the base URL and key currently *on screen* rather than the
+saved ones, so you can choose a model for an endpoint you have not saved yet.
+What comes back becomes a dropdown.
 
 It is a convenience, not a gate. A model you saved earlier stays selected and is
-marked *(not listed)* if the endpoint stops offering it, rather than
-disappearing from the control that claims to show it, and the field is free text
-until you press the button.
-
-**The answer is hybrid, and both halves come from the API** (the decision
-recorded for [#241]). Two sources fill the dropdown:
+marked *(not listed)* if the endpoint stops offering it, and the field is free
+text until you press the button. Two sources fill the dropdown:
 
 | Source | What it is |
 |---|---|
-| *From this endpoint* | What the endpoint reported just now. OpenAI-compatible endpoints, Anthropic, and Gemini are all asked; for Gemini only models supporting `generateContent` are offered, since an embedding model saved here would fail at the first agent run. |
-| *Last reported by this endpoint (on <date>)* | What it reported the last time it could be asked. Recorded per account on every success (`agents/model_catalog.py`) and replayed when a live listing is impossible - no key pasted yet, offline, or a key without the scope to list. |
+| *From this endpoint* | What the endpoint reported just now. OpenAI-compatible endpoints, Anthropic, and Gemini are all asked; for Gemini only models supporting `generateContent` are offered. |
+| *Last reported by this endpoint (on <date>)* | What it reported the last time it could be asked. Recorded per account on every success and replayed when a live listing is impossible: no key pasted yet, offline, or a key without the scope to list. |
 
-**Nothing here is maintained by hand.** An earlier cut shipped a literal table
-of model ids per provider. That drifts the moment a provider ships or retires a
-model, nobody notices because stale entries still look plausible, and it could
-say nothing at all about a custom endpoint - there is no such thing as a model
-somebody's Ollama probably serves. A recording of what an endpoint said about
-itself has none of those problems, and it covers custom endpoints for free:
-fetch once against your own server and it is remembered like any other.
+Suggestions are never an allowlist: a model you type by hand is always accepted.
+A replay is labelled with the date it was true.
 
-Suggestions are never an allowlist. Nothing rejects a model missing from them,
-the box stays free text, a live listing always wins, and a model you type by
-hand is always accepted. A replay is labelled with the date it was true, because
-presenting a recording as the present tense is how you save a model the endpoint
-no longer has - which surfaces much later as a failed agent run, not here.
-
-Two consequences worth stating. A **brand-new account with no key has nothing to
-suggest**, and the panel says so rather than guessing; the deployment's own
-configured model still shows as the placeholder. And Curio **does not send a
-placeholder key** - every provider authenticates its models endpoint, so with no
-key the replay answers immediately instead of waiting out a socket timeout for a
-foregone 401.
-
-An earlier version of this panel reported Anthropic and Gemini as
-`listable: false` and said *"This provider does not publish a model list"*. That
-was untrue - nobody had asked them - and it is what #241 was filed about.
-
-[#241]: https://github.com/urban-toolkit/curio/issues/241
+A brand-new account with no key has nothing to suggest, and the panel says so;
+the deployment's own configured model still shows as the placeholder. Curio does
+not send a placeholder key, so with no key the replay answers immediately.
 
 Whoever runs the Curio install can set a default for all four with
 `curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and
@@ -335,21 +288,18 @@ deployment's choice as the inherited value and you override it only by typing
 something else. Leave a field blank and you stay on the deployment default,
 including when the operator later changes it.
 
-**Curio does not meter, cap, or bill agent runs.** There is no quota screen, no
-spend limit, and no way to configure either: the tokens are billed to whoever's
-key is in use, so the ceiling is theirs to impose rather than Curio's to assume.
-No run is ever refused for usage.
+**Curio does not meter, cap, or bill agent runs.** There is no quota screen and
+no spend limit: the tokens are billed to whoever's key is in use. No run is ever
+refused for usage.
 
-One adjacent setting is **max output tokens**, and it is not a quota: it is
-passed to the provider as `max_tokens` on every completion, so it shapes one
-reply rather than rationing a day's worth. It is a deployment constant, the same
-for every run.
+**Max output tokens** is not a quota: it is passed to the provider as
+`max_tokens` on every completion, so it shapes one reply. It is a deployment
+constant, the same for every run.
 
-Curio does keep a local record of what ran, in an append-only per-day file under
-`.curio/users/<key>/agents/ledger/`. It is written from the token counts each
-provider already returns on the completion itself: no usage or billing API is
-ever called, and no USD figure is computed, because Curio has no price table and
-would have to invent the numbers.
+Curio keeps a local record of what ran, in an append-only per-day file under
+`.curio/users/<key>/agents/ledger/`, written from the token counts each provider
+returns on the completion itself. No usage or billing API is called and no USD
+figure is computed.
 
 ---
 
@@ -407,8 +357,8 @@ A minimal, complete manifest:
 | `inputs`, `outputs` | | Context the agent reads, config it requires, and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
-| `tools` | | Typed, allowlisted tool **requirements**. Never executable code, and never a permission grant. |
-| `settingsDefaults` | | Non-secret seed suggestions. A manifest cannot create a new trusted profile family implicitly. |
+| `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
+| `settingsDefaults` | | Non-secret seed suggestions. |
 
 The directory name is authoritative: the loader cross-checks it against the
 manifest's `id` and `version` and rejects a mismatch, exactly as the
@@ -441,16 +391,13 @@ Once written, import the package through the drawer's **Import agent** button
 
 ### An unconfigured install has no provider
 
-Curio ships with **no default LLM endpoint**. This is deliberate: a built-in
-default would mean an unconfigured instance silently sending user data to a
-third party nobody chose. An unconfigured install reaches a clear "no provider
-configured" error instead, and every agent surface that is blocked for want of
-one links to **AI Settings**.
+Curio ships with **no default LLM endpoint**. An unconfigured install reaches a
+clear "no provider configured" error, and every agent surface that is blocked
+for want of one links to **AI Settings**.
 
 So an operator must configure a provider, or each user must configure their own
-in AI Settings, before any agent will run. Guests are a separate case: they can
-use AI only if the deployment ships a guest key, and AI Settings says so plainly
-rather than offering fields that cannot take effect.
+in AI Settings, before any agent will run. Guests can use AI only if the
+deployment ships a guest key, and AI Settings says so.
 
 ### Launcher flags
 
@@ -479,10 +426,6 @@ would disable every AI surface.
 | `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
 
-The package-build variables (`CURIO_BUILD_*`, `CURIO_JS_*`,
-`CURIO_BACKEND_SANDBOX_PYTHON`) belong to the package-build subsystem rather
-than to this catalog, and have no launcher flags either.
-
 ### There is no publish gate for agents
 
 As with datasets, agent publishing is authenticated but not gated by
@@ -494,13 +437,8 @@ agent they authored into the shared catalog.
 ### The usage ledger needs no operational care
 
 The per-day files under `.curio/users/<key>/agents/ledger/` record what ran.
-They are append-only, rotate by date, and are written from token counts the
-provider already returned on each completion, so nothing polls anything. They
-are not surfaced in the interface.
-
-Deleting a day's file loses that day's history and nothing else: no limit is
-computed from it, so nothing changes for the user. Nothing expires the files
-automatically and there is no cleanup job to schedule.
+They are append-only and rotate by date. Deleting a day's file loses that day's
+history and nothing else. Nothing expires the files automatically.
 
 ---
 
