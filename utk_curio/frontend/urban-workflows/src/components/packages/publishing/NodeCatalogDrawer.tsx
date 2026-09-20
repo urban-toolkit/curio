@@ -348,14 +348,24 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       // put the package on every dataflow's palette and none of their
       // lockfiles, which is the "imported packages are not scoped to a project"
       // half of #220.
-      if ((await ensureSavedProjectId("Couldn't save dataflow before importing")) === null) {
+      const intoProjectId = await ensureSavedProjectId(
+        "Couldn't save dataflow before importing",
+      );
+      if (intoProjectId === null) {
         return;
       }
       // The drawer's own busy/error chrome; the shared hook owns the call.
       setBusy(true);
       setActionError(null);
       try {
-        await importArchive(file);
+        // Hand the id over rather than letting the hook read the one it
+        // captured when it rendered. When the save above is what minted it,
+        // that captured value is still null and the hook skipped
+        // ``installToProject`` entirely: the package landed in the account
+        // store and never in this dataflow's lockfile, so it never reached
+        // the palette (#340). ``performInstall`` reads the ref at call time
+        // for the same reason; this path used to be the odd one out.
+        await importArchive(file, intoProjectId);
       } finally {
         setBusy(false);
       }

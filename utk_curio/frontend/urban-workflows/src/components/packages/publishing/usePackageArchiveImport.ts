@@ -22,7 +22,13 @@ import { withRestartNotice } from "../../../services/packageRestartCopy";
  * expressed as `projectId` being null rather than as a separate code path.
  */
 export interface PackageArchiveImportOptions {
-  /** The open dataflow, when there is one. Null on the standalone page. */
+  /**
+   * The open dataflow, when there is one. Null on the standalone page.
+   *
+   * Read when the hook renders, so a caller that only learns the id AFTER that
+   * render -- the drawer auto-saves an unsaved dataflow when the user picks a
+   * file -- must pass it to ``importArchive`` instead. See the second argument.
+   */
   projectId?: string | null;
   /** Re-read whatever listing the caller renders. */
   reload: () => Promise<void>;
@@ -55,16 +61,27 @@ export function usePackageArchiveImport({
   const [importing, setImporting] = useState(false);
 
   const importArchive = useCallback(
-    async (file: File) => {
+    /**
+     * @param intoProjectId The dataflow to install into, when the caller knows
+     *   it better than this hook does. The drawer saves an unsaved dataflow on
+     *   the way in, and the id that save mints cannot reach the ``projectId``
+     *   above: that value was read when the hook rendered, and no render
+     *   happens between the save and this call. Passing it here was the fix
+     *   for an import that wrote the account store and silently skipped the
+     *   dataflow's lockfile (#340) -- no install request was sent at all, so
+     *   the package never reached the dataflow-scoped palette.
+     */
+    async (file: File, intoProjectId?: string | null) => {
       setImporting(true);
       try {
         // Sideload always goes through the user-store install path; if a
         // project is open, drop the new package into its lockfile too so the
         // palette picks it up.
+        const target = intoProjectId ?? projectId;
         const result = await packagesApi.uploadArchive(file, file.name);
-        if (projectId) {
+        if (target) {
           const projResult = await packagesApi.installToProject(
-            projectId,
+            target,
             result.package.dirName,
           );
           onInstalledToProject?.(projResult.packages);
