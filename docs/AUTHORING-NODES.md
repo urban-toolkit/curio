@@ -204,9 +204,6 @@ is meant to be forked.
 
 ## Reading upstream data
 
-This deserves its own section because it is the one part of a custom-UI node
-that is not guessable.
-
 `data.input` usually holds a **reference** to a sandbox artifact, not the data:
 
 ```js
@@ -255,9 +252,8 @@ instead, where each column is an object keyed by row index:
 ```
 
 **Accept both.** A node that requires the row-map form silently sees no data
-from any real Curio DataFrame - it has nothing to render and nothing to throw,
-so it just shows its "connect something upstream" hint forever. That is exactly
-how #194 happened, in the example package this document describes. Read a cell
+from any real Curio DataFrame: it has nothing to render and nothing to throw,
+so it shows its "connect something upstream" hint forever. Read a cell
 through a helper rather than indexing directly:
 
 ```js
@@ -297,13 +293,11 @@ keys the sandbox adds, and one rule about `properties` that is easy to miss:
 Both payload kinds also carry a top-level **`schema`** alongside `dataType`:
 a `{column: dtype}` map straight from `df.dtypes`, e.g.
 `{"zip": "str", "pop": "int64", "geom": "geometry"}`. Read it rather than
-sniffing values - guessing a date from a string, or a zip code from a
-measurement, is exactly where that goes wrong. Note pandas 3 reports a string
-column as `"str"` where pandas 2 said `"object"`, so accept both.
+sniffing values. pandas 3 reports a string column as `"str"` where pandas 2
+said `"object"`, so accept both.
 
 A GeoDataFrame with **no active geometry column** arrives as a `dataframe`,
-not an empty `geodataframe`. It cannot be stored as GeoParquet either, so
-treating it as a table is the only answer that stays consistent end to end.
+not an empty `geodataframe`.
 
 ---
 

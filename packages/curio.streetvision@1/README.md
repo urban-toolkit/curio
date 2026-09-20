@@ -44,7 +44,7 @@ A GPU is *not* required, but with one you'll see roughly 10× faster inference.
 ## Limitations
 
 - **Jobs don't survive backend restart.** Inference state lives in-process; restarting Curio mid-job loses progress. Re-run.
-- **Chicago is not bundled.** Earlier versions of this work included a hardcoded Chicago neighborhoods basemap for spatial enrichment. That feature now lives in the generic **Spatial Join** node (in `curio.builtin@1`) and accepts any polygons FeatureCollection the user provides.
+- **No basemap is bundled.** Spatial enrichment uses the generic **Spatial Join** node (in `curio.builtin@1`), which accepts any polygons FeatureCollection you provide.
 - **Demo cap.** The frontend's Fetcher node caps panorama requests at 200; the default is 20 to keep Google API costs bounded on first try.
 
 ## Origin

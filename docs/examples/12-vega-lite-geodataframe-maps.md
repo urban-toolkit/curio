@@ -1,8 +1,7 @@
 # Example: GeoDataFrame maps in Vega-Lite
 
 Return a `GeoDataFrame` from a Python node, write `{"mark": "geoshape"}`, and you
-get a map. There is no conversion step: no `shapely.geometry.mapping`, no manual
-x/y centroid columns, no flattening the frame first.
+get a map, with no conversion step.
 
 One of four examples on drawing a `GeoDataFrame`:
 [12](12-vega-lite-geodataframe-maps.md) the basics,
