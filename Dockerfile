@@ -67,6 +67,15 @@ RUN if [ -n "$BACKEND_URL" ]; then \
 WORKDIR /src/utk_curio/frontend/urban-workflows
 RUN npm install && npm run build
 
+# Record what the bundle was built for, in the exact format curio.py's launcher
+# reads (utk_curio/main.py::_build_stamp_reason): webpack mode, then the backend
+# URL. The launcher writes this stamp itself, but only when IT runs the build --
+# this stage runs webpack directly, so the image used to ship a dist/ with no
+# stamp, which reads as "built in an unrecorded mode" and forced a full rebuild
+# of the 9 MB bundle on every container start. The mode is parsed from
+# package.json the same way _frontend_build_mode does, so the two cannot drift.
+RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-backend-url',(m?m[1]:'unknown')+'\n'+(process.env.BACKEND_URL||'')+'\n')"
+
 # Jest runs in this stage too (`docker build --target frontend_builder`, then
 # `npm test`, in .github/workflows/docker-compose.yml), and
 # src/tests/utils/deoverlapExamples.test.ts reads the shipped examples from
@@ -82,6 +91,16 @@ COPY utk_curio/backend/app/datasets/domain/constants.py /src/utk_curio/backend/a
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
 FROM runtime_base AS runtime
+
+# The address the bundle copied in below was built for. Build args do not cross
+# stages, so without re-declaring it here BACKEND_URL is unset at runtime and
+# set_environment_variables() falls back to its http://localhost:5002 default --
+# which dotenv-webpack then bakes into the bundle (systemvars: true makes the
+# environment beat the .env file). A deployment behind a public URL served a
+# frontend calling http://localhost:5002 for every request: the health banner
+# claimed the backend was down and guest sign-in failed as mixed content.
+ARG BACKEND_URL
+ENV BACKEND_URL=$BACKEND_URL
 
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0
