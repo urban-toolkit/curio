@@ -10,23 +10,7 @@ Trills live in two places:
 | Where | What |
 |---|---|
 | `.curio/users/<userKey>/projects/<projectId>/spec.trill.json` | a user's saved projects |
-| `docs/examples/*.json`, `docs/examples/dataflows/*.json` | the 31 examples shipped in-repo |
-
-## Why the schema exists
-
-Until it was written, nothing in the codebase said what a trill was. The shape
-lived implicitly in three places that had already drifted apart:
-
-- **`TrillGenerator.generateTrill`** — the canvas writer.
-- **`useCode.loadTrill`** — the reader, which accepts six aliases the writer no
-  longer emits, including a four-deep fallback chain for node width and height.
-- **`agents/services.py`** — agent-applied graph edits, which write deliberately
-  minimal nodes.
-
-The backend never validated any of it: `projects/storage.py` reads and writes a
-spec as opaque JSON, and `spec` is an untyped `dict` through every Pydantic model.
-So the schema is the first written contract this format has had, and the tests
-around it are the only thing keeping the contract and the code together.
+| `docs/examples/*.json`, `docs/examples/dataflows/*.json` | the examples shipped in-repo |
 
 ## Structure
 
@@ -52,9 +36,8 @@ spec
 ### A node
 
 `id`, `type`, `x` and `y` are required. Everything else is optional, including
-`in`, `out`, `goal` and `metadata` — every node in every committed example carries
-all of those, but the agent apply path writes `{id, type, content, goal, x, y}`
-and nothing more, so requiring them would reject output from working code.
+`in`, `out`, `goal` and `metadata`: the agent apply path writes
+`{id, type, content, goal, x, y}` and nothing more.
 
 `content` holds the node's payload: Python or JavaScript source, or a grammar
 document. It is absent on presentation-only templates. `title` and
@@ -63,20 +46,16 @@ accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
 supply either.
 
 `metadata.comments` carries the node's discussion, written only when non-empty.
-Each entry is `{id, text, author, authorName, createdAt, resolved}`. Two fields
-you might expect are deliberately absent: the author's **avatar**, because
-`profile_image` may be a full data URL and one copy per comment would bloat the
-spec, and **`canDelete`**, because it is a per-viewer permission rather than a
-fact about the comment — it is derived on read by comparing `author` to the
-current user, so a shared dataflow cannot hand a visitor a comment claiming they
-may delete it.
+Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
+avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
+is not stored either, because it is derived on read by comparing `author` to the
+current user.
 
 ### An edge
 
 `id`, `source` and `target` are required. `type` is present only on an interaction
 edge, where its single legal value is `"Interaction"`; absence means a plain data
-edge. There is no `"Data"` value, despite one appearing in the stale schema
-embedded in `llm-prompts/default_preamble.txt`.
+edge. There is no `"Data"` value.
 
 `sourceHandle` and `targetHandle` name the concrete ports. They matter: when they
 are absent, the reader infers a merge slot from an `in_N` substring of `edge.id`,
@@ -112,18 +91,16 @@ on which packages are installed:
 
 See [`docs/NODE-CATALOG.md`](NODE-CATALOG.md) and
 [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json). Two details
-where the two schemas nearly agree, and must not be unified:
+where the two schemas nearly agree:
 
-- The **port-type enums differ by exactly one value**, on purpose. A manifest port
-  declares a *capability* and lists the six `SupportedType` members; `node.in` and
-  `node.out` record *what a node is currently set to* and add `DEFAULT`.
-- `node.type`'s template half uses the same grammar as `templates[].id`, arrived at
-  independently from both sides. A test asserts they stay equal rather than
-  factoring one into the other, since the two schemas version separately.
+- The **port-type enums differ by exactly one value**. A manifest port declares a
+  *capability* and lists the six `SupportedType` members; `node.in` and `node.out`
+  record *what a node is currently set to* and add `DEFAULT`.
+- `node.type`'s template half uses the same grammar as `templates[].id`. A test
+  asserts they stay equal, since the two schemas version separately.
 
-The trill schema deliberately does **not** enum `node.type`. Packages are
-user-installable, and the frontend's own `NodeType` enum is already missing a
-built-in template that the examples use.
+The trill schema does **not** enum `node.type`, because packages are
+user-installable.
 
 ## Checking a dataflow
 
@@ -152,29 +129,22 @@ it cannot reproduce byte-for-byte rather than reformatting it. Scope is the
 curated gallery examples only — `docs/examples/dataflows/` is hand-tuned fixture
 material and `.curio/` is your own work.
 
-CI validates the 31 committed examples on every push. It cannot see your own
-projects — `.curio/` is gitignored — which is what the CLI is for.
+CI validates the committed examples on every push. It cannot see your own
+projects, since `.curio/` is gitignored, which is what the CLI is for.
 
-### Your saved projects will probably report failures
+### Your saved projects may report failures
 
-Projects saved before the schema existed are a genuinely looser dialect. They are
-missing exactly four things, in this order of frequency: `provenance_id`,
-`timestamp`, `name`, `task`. Nothing structural differs — no node or edge in any
-local project violates the schema.
+Projects saved before the schema existed may be missing `provenance_id`,
+`timestamp`, `name` or `task`. A non-zero exit from `--all` on those is
+information, not a broken build; fix them with the one-time rewrite
+[`docs/NODE-CATALOG.md`](NODE-CATALOG.md) describes.
 
-That report is the point rather than a problem. It is the migration triage
-[`docs/NODE-CATALOG.md`](NODE-CATALOG.md) asks for when it notes that legacy
-projects need a one-time JSON rewrite. A non-zero exit from `--all` is
-information, not a broken build.
-
-A missing `name` has a visible symptom worth knowing: `dataflowProvenance.latest`
+A missing `name` has a visible symptom: `dataflowProvenance.latest`
 interpolates the name into its version keys, so a spec saved without one carries
 keys that literally read `undefined_1787609706100`.
 
 Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
-of the same shape, requiring only `nodes` and `edges`. A snapshot is a historical
-record; requiring today's completeness of yesterday's history would make an
-otherwise-correct spec permanently invalid on account of its own past.
+of the same shape, requiring only `nodes` and `edges`.
 
 ## Known drift
 
@@ -182,7 +152,7 @@ otherwise-correct spec permanently invalid on account of its own past.
   it to the model on every AI call. It declares `timestamp` as a string, node
   types as a dead uppercase enum (`DATA_LOADING`), and three fields nothing reads
   (`node.output`, `metadata.annotations`, edge type `"Data"`), while omitting
-  everything added since — `title`, the `dashboard*` family, `saveOutputDataset`,
+  everything added since: `title`, the `dashboard*` family, `saveOutputDataset`,
   `metadata.appearance`, the handles, and all of `packages`, `datasets`, `agents`
   and `agentAttachments`. Until it is rewritten, LLM-generated specs will not
   validate against this schema.

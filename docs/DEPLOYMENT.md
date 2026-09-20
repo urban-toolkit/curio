@@ -7,7 +7,7 @@ This guide deploys Curio under a `/curio` path prefix on a hostname you already 
 Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
 > [!IMPORTANT]
-> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. (The baked `BACKEND_URL` is the bundle's *default*: `src/utils/backendUrl.ts` prefers `window.__CURIO_BACKEND_URL__` when a page sets it, which is how the parallel e2e harness points one build at several backends. Deployments still bake the right default.) Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
+> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
 
 ## Contents
 
@@ -37,8 +37,6 @@ Create `/srv/curio/.env`:
 
 ```bash
 CURIO_CONTAINER_NAME=curio
-# CURIO_PORT_2000 is no longer used: the sandbox executes arbitrary node
-# code and is no longer published. Harmless to leave in an existing .env.
 CURIO_PORT_5002=5002
 CURIO_PORT_8080=8080
 
@@ -58,10 +56,8 @@ The three directories you created are bind-mounted into the container and persis
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
 | `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
 
-`packages/` is deliberately **not** mounted. The node catalog is baked into the
-image so it always matches the deployed commit; a bind mount there let a single
-UI publish rewrite the host's git checkout in place. See the comment block in
-`docker-compose.yml` for the full story.
+`packages/` is **not** mounted. The node catalog is baked into the image so it
+always matches the deployed commit.
 
 > [!TIP]
 > `datasets/` lives inside the git checkout, so publishing a dataset dirties your
@@ -151,14 +147,12 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 ## Updating
 
 > **One-time, destructive: archived projects are deleted on this upgrade.**
-> Archive was removed as an action (#261), and alembic revision `f6a7b8c9d0e1`
-> purges what it left behind: every project with `archived_at` set loses its row,
-> its execution-cache entries and its files under
+> Archive is no longer an action, and alembic revision `f6a7b8c9d0e1` purges
+> what it left behind: every project with `archived_at` set loses its row, its
+> execution-cache entries and its files under
 > `.curio/users/<user>/projects/<id>/`. It runs automatically during the
-> migration step, without prompting, and `downgrade` restores only the column —
-> not the data. The files go rather than just the rows because the guest boot
-> re-imports any project folder that has no row, so a rows-only purge would bring
-> archived guest projects back as active ones.
+> migration step, without prompting, and `downgrade` restores only the column,
+> not the data.
 >
 > Before upgrading, if anyone was using Archive as a holding area, copy those
 > trees out. To see what would be removed, query the deployment's database
@@ -186,11 +180,10 @@ After the deploy completes, hard-refresh the browser (Ctrl+Shift+R) to drop any 
 
 `--force-recreate` matters: without it Compose reuses a container whose image
 digest has not changed in its view, and the deploy silently keeps serving the old
-build. The CI workflow passes it for the same reason.
+build.
 
-If a user published a package from the UI on an older build, `git pull` will
-refuse to fast-forward because `packages/` is dirty. That mutation is exactly what
-`--no-allow-publish` now prevents, so it is safe to discard:
+If `packages/` is dirty from a package published through the UI, `git pull`
+refuses to fast-forward. Discard the change:
 
 ```bash
 git checkout -- packages/ && git clean -fdq packages/
@@ -230,7 +223,7 @@ Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → 
 
 ## Cutting a release
 
-Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github/workflows/bump-version.yml), which owns `utk_curio/__init__.py`. It used to classify each release as minor-or-patch via GitHub Models; that service was retired on 2026-07-30, so the bump type is now explicit.
+Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github/workflows/bump-version.yml), which owns `utk_curio/__init__.py`. The bump type is explicit:
 
 | You do | Bump | Tag | Deploys |
 |---|---|---|---|
@@ -262,21 +255,21 @@ To roll back, dispatch Deploy with `ref` set to the previous tag and `target: st
 - Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - Dataset publishing has no equivalent switch. Any signed-in user can publish into the shared Data Catalog; only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
-- **Library installs are on, and scoped per user.** Because isolation is on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. That is deliberate: installs are the Node Catalog working, and they no longer reach anyone else. Three things it does not do: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest is refused outright, because one anonymous visitor's install would change what the next one's nodes import.
-- **On a host that cannot isolate, installs are refused instead.** The overlay pins `CURIO_ISOLATION=fork`, so this does not apply to it, but a `--deploy` elsewhere that degrades to unisolated (below) loses package installation too, not just isolation. `--allow-shared-installs` (env `CURIO_ALLOW_SHARED_INSTALLS`) turns it back on for an operator who knows every account on the instance and accepts that one user's libraries change what another's nodes import. Off by default, and it does not re-admit the shared guest, which is refused on identity rather than scoping.
+- **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
+- **On a host that cannot isolate, installs are refused.** A `--deploy` that runs unisolated (below) loses package installation too. `--allow-shared-installs` (env `CURIO_ALLOW_SHARED_INSTALLS`) turns it back on for an operator who knows every account on the instance and accepts that one user's libraries change what another's nodes import. It does not re-admit the shared guest.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
-- **Isolated node execution is on by default.** `--deploy` turns it on wherever the host can provide it: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes it **fail-closed**: if the sandbox cannot confine, it refuses to start rather than quietly serve in-process. Without that variable the default degrades instead, so a `--deploy` on a host that cannot isolate still boots, unisolated and saying so. Either way the deploy workflow asserts the result over `/version` and fails the deployment if it is not `fork`. To check a running instance, ask the sandbox rather than reading the logs (the startup banner goes to `.curio/messages.log`, not to `docker compose logs`):
+- **Isolated node execution is on by default.** `--deploy` turns it on wherever the host can provide it: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes it **fail-closed**: if the sandbox cannot confine, it refuses to start. Without that variable a `--deploy` on a host that cannot isolate still boots, unisolated and saying so. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
 
   ```bash
   docker compose -p curio exec -T curio curl -sf http://127.0.0.1:2000/version
   ```
 
-  The `isolation` field must read `fork`. The deploy workflow now runs exactly this check and fails on anything else. The version badge in the UI shows the same answer.
-- **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`, and `./.env` to `0600`. It changes **modes only, never ownership**, so each path keeps whatever user created it: root for anything the container wrote, the deploy account for directories the deploy step made. What the tightening removes is group and other access, which is what denies `curio-exec` inside the container. The three stores keep their *file* modes on purpose: a staged input reaches the child as a **hardlink**, which shares its source's inode, so tightening the files would lock the copy the child has to read. The directory is the control instead. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account. This is what buys the filesystem half of the boundary; the execution account without it would be decorative.
+  The `isolation` field must read `fork`. The version badge in the UI shows the same answer.
+- **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`, and `./.env` to `0600`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account.
 - **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not.
 - **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
-- **Node authoring is still close to shell access, but no longer equal to it.** A node author can no longer read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket. They can still run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Keep giving accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
+- **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket, but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.

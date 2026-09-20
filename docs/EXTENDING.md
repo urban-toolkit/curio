@@ -67,18 +67,18 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
 
-Two things the per-account pattern has to get right, and both bit us:
+Two rules the per-account pattern has to follow:
 
 **Resolve in the request, use it downstream.** Street Vision runs inference on a
 detached worker thread, where `g` is gone. The route resolves the token and
 passes it into the job; resolving it inside the worker would silently fall back
 to the deployment value.
 
-**Put the credential in any cache key it affects.** The model cache was keyed on
-`model_id` alone. The first user to download a gated model would seed an entry
-every later caller hit for free, including one whose account had never accepted
-that licence. The key is now `(model_id, token fingerprint)`, hashed rather than
-raw so the token is not sitting where a traceback could print it.
+**Put the credential in any cache key it affects.** The model cache is keyed on
+`(model_id, token fingerprint)`, hashed rather than raw so the token is not
+sitting where a traceback could print it. Keyed on `model_id` alone, the first
+user to download a gated model would seed an entry every later caller hit for
+free, including one whose account had never accepted that licence.
 
 Surface presence, never the value, in `/health` so the frontend can warn before
 an action that needs the credential:
@@ -160,7 +160,7 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory let anyone who could guess an image id fetch somebody else's imagery. That is why this cache moved, and why the previous `STREETVISION_CACHE_DIR` override no longer exists.
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory would let anyone who could guess an image id fetch somebody else's imagery.
 
 ### 3.7 The error contract back to the frontend
 
@@ -175,11 +175,8 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 | `5xx` | Unhandled backend error | Generic "Lost connection to backend" toast |
 
 `403`, `404` and `405` are what `abort()` and werkzeug's own routing errors
-produce. Until #279 a single `@app.errorhandler(Exception)` rewrote all of them
-to `500`, so a refusal was indistinguishable from a crash, including the
-path-traversal guard on `/file/<path>`, which reported an attack as a server
-fault. `create_app` now registers an `HTTPException` handler alongside the
-catch-all, and only genuine unhandled exceptions are `500`.
+produce; `create_app` registers an `HTTPException` handler alongside the
+catch-all, so only genuine unhandled exceptions are `500`.
 
 Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 responses; the frontend reads `hint` to give the user an actionable next step. Don't return plain-text 500s.
 
