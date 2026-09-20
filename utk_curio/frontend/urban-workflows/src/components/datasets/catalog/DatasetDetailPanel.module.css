@@ -166,6 +166,7 @@
 .format_shp { background: var(--curio-format-shp-bg); color: var(--curio-format-shp-on-tint); }
 .format_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
 .format_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
+.format_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
 
 .installedBadge {
   background: #1e1f23;

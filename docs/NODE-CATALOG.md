@@ -45,7 +45,7 @@ Package state in Curio lives in four places. Knowing which one each user action 
 |---|---|---|
 | **Shared catalog** (the source every user browses from) | `<repo_root>/packages/<packageId>@<major>/` | **Publish** (gated by `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`; see *Operator notes*). Otherwise read-only. |
 | **Per-user package store** (implementations on disk) | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Adding copies in; removing (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
-| **Per-user defaults** (what auto-seeds into new projects) | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Add to all projects**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
+| **Per-user defaults** (what auto-seeds into new projects) | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Add to all projects**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. An API-only `DELETE /api/packages/defaults/<dirName>` can also detach one directly (no UI; see *Operator notes*). |
 | **Per-project lockfile** (the source of truth for what a project needs) | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Add to dataflow** adds an entry for the open project; **Remove from dataflow** removes it. The **Nodes** tab on `/catalog` (**Add to all projects**) also walks every existing project and patches its lockfile. |
 
 The canvas palette reads from the per-project lockfile (intersected with the user store), so two projects open in different tabs see different palettes even though they share one user store.
@@ -93,13 +93,13 @@ The drawer's two working tabs are **Browse** and **In dataflow**; an *update ava
 
 **I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Add to all projects**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
 
-**I want to remove a package.** There is *no* global removal on the `/catalog` page, and that is deliberate. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model: there is no "remove from defaults" button, because that fall-through is the only mechanism that ever touches defaults.)
+**I want to remove a package.** There is *no* global removal button on the `/catalog` page, and that is deliberate. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model: there is no "remove from defaults" button, because that fall-through is the only mechanism the UI ever uses to touch defaults. An API-only endpoint exists for scripted and administrative use - see *Operator notes*.)
 
 **I want a package I just built to be installable by other users on this Curio install.** Build it via **Save as package node** (next section), then open the drawer or `/catalog` page and click **Publish** on the package. It writes into the shared catalog at `<repo_root>/packages/`. Note: the Publish button is hidden when the operator disabled catalog writes (see *Operator notes* below).
 
 **I want to make a package a default for new projects without adding it everywhere first.** Just use **Add to all projects** once from the `/catalog` page. That's exactly what that action does: it adds to defaults. The drawer's **Add to dataflow** does NOT add to defaults; it stays scoped to that one project.
 
-**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. There's no separate "remove from defaults" action. By design, the system never leaves a "seed for new projects" entry that no current project actually uses.
+**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. There is no "remove from defaults" button in the UI, by design: the system never leaves a "seed for new projects" entry that no current project actually uses, so the fall-through is the intended route. If you need to detach one directly - scripting a fleet of installs, or repairing a defaults list by hand - `DELETE /api/packages/defaults/<dirName>` does exactly that and nothing else (see *Operator notes*).
 
 ---
 
@@ -235,6 +235,25 @@ The Publish / Unpublish actions write into `<repo_root>/packages/`. On a hosted 
 The Curio launcher (`python curio.py start`) exposes the same flag as `--allow-publish` (default on) with the inverse `--no-allow-publish` opt-out. Note the launcher **sets this env var on every start**, so `--no-allow-publish` is the way to turn it off; putting `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in a `.env` has no effect when you start through `curio.py`. See [`docs/USAGE.md`](USAGE.md) for the full launcher reference and the env-var inventory in [`utk_curio/backend/config.py`](../utk_curio/backend/config.py).
 
 Two things worth knowing before you leave publishing on for a shared install: publishing is allowed for **any** signed-in user, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check, so anyone who can reach the API can replace or remove any package in the shared catalog, `curio.builtin@1` included. On a single-user local install (the normal case for authoring) this is a non-issue. On anything multi-user, start with `--no-allow-publish` and treat `<repo_root>/packages/` as operator-managed.
+
+### Detaching a package from the per-user defaults (API only)
+
+`DELETE /api/packages/defaults/<dirName>` removes one entry from a user's
+`default-packages.json` and touches nothing else: no project lockfile changes,
+no package is uninstalled from the user store, and it is idempotent. It exists
+so that **Add to all projects** can be undone without opening every project.
+
+It has **no UI on purpose**. The catalog page offers no button for it, and
+`catalogCardActions` returns no "Remove from all projects" action for a package
+(datasets and agents do offer one - packages are deliberately the odd one out),
+because the normal way a package leaves the defaults list is the auto-prune
+fall-through described above. This endpoint is for scripted installs and manual
+repair.
+
+Being UI-less is also why its only coverage is a route-level test
+(`test_lockfile.py::test_delete_defaults_detaches_without_touching_projects`,
+plus an idempotency case): a browser test would have nothing to click. That is
+by design rather than an oversight (#353).
 
 ### Who may install a package
 

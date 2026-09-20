@@ -73,6 +73,10 @@ RUN npm install && npm run build
 # <repo>/docs/examples. Only the specs, not the PNG baselines beside them, and
 # after the build so an example edit does not invalidate the npm layers.
 COPY docs/examples/*.json /src/docs/examples/
+# importExtensionsMatchBackend.test.ts reads the backend's format list to
+# prove the two agree. Same reason as the examples above: the frontend test
+# image needs the file, not just the frontend source.
+COPY utk_curio/backend/app/datasets/domain/constants.py /src/utk_curio/backend/app/datasets/domain/constants.py
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets

@@ -101,6 +101,28 @@ _CANDIDATE_NAME_MAX_CHARS = 120
 _CANDIDATE_TEXT_MAX_CHARS = 160
 _CANDIDATE_URL_MAX_CHARS = 300
 
+# The tail budget for a candidates block (#356). CANDIDATES_INSTRUCTION invites
+# 8 rows per lane, but datasetCandidates was on neither allowance list in
+# parse_parts, so a block that followed the documented schema exactly blew the
+# 4096-byte classic cap and fell out to visible text - #269's symptom, reached
+# by obeying the instructions. Measured on realistic rows: 6+6 already leaked.
+#
+# Derived from the bounds above rather than picked, so widening a field cannot
+# silently re-open the leak. NOT the plan budget: 256 KB is four orders of
+# magnitude more than sixteen display rows can legitimately need, and the point
+# of a cap is to bound json.loads on a hostile tail.
+_CANDIDATE_ROW_MAX_BYTES = (
+    _CANDIDATE_NAME_MAX_CHARS          # name
+    + _CANDIDATE_NAME_MAX_CHARS        # datasetId (catalog lane)
+    + _CANDIDATE_URL_MAX_CHARS         # url (external lane)
+    # provider, format, coverage, requirement, fit.rationale
+    + 5 * _CANDIDATE_TEXT_MAX_CHARS
+    + 256                              # keys, punctuation, sourceType, score
+)
+CANDIDATES_TAIL_MAX_BYTES = (
+    2 * _CANDIDATES_MAX_ROWS_PER_LANE * _CANDIDATE_ROW_MAX_BYTES + 256
+)
+
 # The runtime-owned instruction appended to every attachment run's system turn
 # (after the preamble + intent composition, dev/38 — so an edited intent can
 # neither strip nor spoof it). Deliberately optional in tone, and it invites
@@ -804,6 +826,9 @@ def parse_parts(body: str) -> list[dict] | None:
             and not ('"delegateRequest"' in body and any(
                 f'"{capability}"' in body
                 for capability in PACKAGE_AUTHORING_CAPABILITIES))
+            # #356: a full two-lane candidates block, on its own smaller budget.
+            and not ('"datasetCandidates"' in body
+                     and body_bytes <= CANDIDATES_TAIL_MAX_BYTES)
         ):
             return None
     try:
@@ -818,7 +843,11 @@ def parse_parts(body: str) -> list[dict] | None:
         big_tool = isinstance(req, dict) and req.get("tool") in _BIG_TAIL_TOOLS
         big_delegate = (isinstance(delegate_req, dict)  # dev/90 A6
                         and delegate_req.get("capability") in PACKAGE_AUTHORING_CAPABILITIES)
-        if not (big_tool or big_delegate):
+        # Checked on the PARSED payload, so a padded param that merely mentions
+        # datasetCandidates cannot ride this budget - only a real top-level block.
+        big_candidates = ("datasetCandidates" in payload  # #356
+                          and body_bytes <= CANDIDATES_TAIL_MAX_BYTES)
+        if not (big_tool or big_delegate or big_candidates):
             return None  # the enlarged budget is for plan/draft/authoring payloads only
         # A content-class tool's enlarged tail is spent on its CONTENT FIELD;
         # parse_tool_request_verbose still holds every other param to the

@@ -38,8 +38,8 @@ runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
 
 Tests are scheduled with `--dist loadgroup`: one group per workflow in
 `test_workflows.py` (its four class-scoped methods share a browser and a login),
-one group per file everywhere else. A missing screenshot baseline **fails**
-under xdist instead of being minted -- see *Screenshot baselines*.
+one group per file everywhere else. A missing screenshot baseline **fails** in
+any run unless `--mint-baselines` was passed -- see *Screenshot baselines*.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
@@ -184,10 +184,84 @@ Three things are easy to get wrong against the catalog drawers:
 
 `save_workflow_test_screenshot` compares the canvas against a PNG in
 `docs/examples/dataflows/expected_outputs/`, named
-`screenshot_<stem>_<test_name>.png`. **A missing baseline is not a failure** - the
-helper writes the current capture as the new baseline and passes, so the first run
-of a new test silently establishes whatever it happened to render. Review a new
-baseline by eye before trusting it.
+`screenshot_<stem>_<test_name>.png`. **A missing baseline fails the run.** Create
+one deliberately:
+
+```
+pytest ... --mint-baselines
+```
+
+It used to mint implicitly, which meant the first run of a new test always passed
+and silently established whatever it happened to render. Two ways that bites,
+both seen here: a capture taken against a broken build enshrines the bug as
+expected output, and the suite then defends it; and a capture taken on the wrong
+machine enshrines that machine. The macOS captures of the two #333 scenes looked
+perfect by eye and sat 6.11% and 10.05% from what CI renders, the second past its
+budget, because macOS rasterizes text with grayscale antialiasing while the
+runner uses LCD subpixel.
+
+So mint on a build you trust, on a machine whose rendering matches CI's (a Linux
+container is the cheap way - see *Minting on Linux* below), and look at the PNG
+before committing it. Minting also refuses outright if the Rubik webfont did not
+load or the capture came out blank, because both produce a baseline that is wrong
+in a way no diff percentage explains.
+
+### Minting on Linux
+
+Only the browser has to be Linux. The app is just a server, and the harness
+injects `window.__CURIO_BACKEND_URL__` per browser context, so a containerised
+Chromium can drive a stack running on the host:
+
+```
+# 1. stack on the host, bound so the container can reach it.
+#    CURIO_TESTING=1 is what makes /api/testing/* exist; without it the autouse
+#    e2e_clean_db fixture errors on setup and every scene fails before it draws.
+#    The token has to be knowable: curio.py start otherwise mints a random one
+#    the container cannot recover, and sandbox calls come back 401.
+#    The three hosts default to loopback, which a container cannot reach.
+export CURIO_SANDBOX_TOKEN=local-mint-token
+CURIO_TESTING=1 python curio.py start --deploy --with-examples \
+  --backend-host 0.0.0.0 --sandbox-host 0.0.0.0 --frontend-host 0.0.0.0
+
+# 2. Chromium in a container carrying the same pair scripts/test.sh installs.
+#    --add-host is required on Linux: host.docker.internal is Docker Desktop
+#    magic and does not otherwise resolve, which is the whole point here.
+#    The harness composes its URLs from ONE host plus three ports; there is no
+#    base-url variable.
+docker run --rm --ipc=host \
+  --add-host=host.docker.internal:host-gateway \
+  -e CURIO_E2E_USE_EXISTING=1 \
+  -e CURIO_E2E_HOST=host.docker.internal \
+  -e CURIO_E2E_FRONTEND_PORT=8080 \
+  -e CURIO_E2E_BACKEND_PORT=5002 \
+  -e CURIO_E2E_SANDBOX_PORT=2000 \
+  -e CURIO_SANDBOX_TOKEN="$CURIO_SANDBOX_TOKEN" \
+  -v "$PWD:/w" -w /w mcr.microsoft.com/playwright/python:<tag> \
+  bash -c 'pip install -r requirements.txt \
+           && python -m playwright install chromium \
+           && pytest <the scene> --mint-baselines'
+```
+
+The container runs as root, so with `-v "$PWD:/w"` the minted PNGs land
+root-owned in your worktree. `sudo chown` them before committing, or run the
+container with `--user "$(id -u):$(id -g)"` and a writable `HOME` for the
+browser download.
+
+`requirements.txt` pins `pytest-playwright` but not `playwright`, and CI passes
+no `--browser-channel`, so both CI and this container end up on whatever
+`playwright install chromium` resolves that day. That is the drift to watch if
+baselines start failing for no reason; pinning `playwright` separately would
+close it.
+
+Why bother: measured against the render CI actually produces, a Linux container
+sat 0.88% and 5.89% away on the two #333 scenes where macOS sat 6.11% and
+10.05%. The cause is antialiasing mode, and it is checkable - count pixels whose
+RGB channels disagree, since grayscale AA keeps `R == G == B` and LCD subpixel
+does not. CI and the container both come out around 8-9%; macOS comes out at 0%.
+
+Alternatively, let CI mint: `--mint-baselines` works under xdist too (this module
+is its own xdist group, so there is no write race), which is what `d12cc220` and
+`9f27df5e` did. Commit what the runner produces.
 
 The helper calls `_wait_for_reactflow_ready` first, so baseline and comparison
 always share one fitView'd viewport. Comparison allows 20% of pixels to differ by

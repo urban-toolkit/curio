@@ -23,7 +23,7 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
-import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
+import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
@@ -136,6 +136,7 @@ interface FlowContextProps {
     pendingInstalls: PendingInstall[];
     beginPendingInstall: (entry: Omit<PendingInstall, "startedAt">) => void;
     endPendingInstall: (key: string) => void;
+    failPendingInstall: (key: string) => void;
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
@@ -156,7 +157,7 @@ interface FlowContextProps {
     projectName: string;
     projectDirty: boolean;
     projectSavedAt: Date | null;
-    nodeExecStatus: Record<string, "stale" | "executed">;
+    nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
 
     // Project operations
@@ -165,13 +166,14 @@ interface FlowContextProps {
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
-    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<void>;
+    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
     markNodeStale: (nodeId: string) => void;
+    markNodeErrored: (nodeId: string) => void;
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
@@ -280,6 +282,7 @@ export const FlowContext = createContext<FlowContextProps>({
     pendingInstalls: [],
     beginPendingInstall: () => {},
     endPendingInstall: () => {},
+    failPendingInstall: () => {},
 
     // Project defaults
     projectId: null,
@@ -292,13 +295,14 @@ export const FlowContext = createContext<FlowContextProps>({
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
-    persistDataflowForInstall: async () => {},
+    persistDataflowForInstall: async () => ({ saved: false, failedNodeIds: [] }),
     loadProject: async () => {},
     loadSharedProject: async () => {},
     discardProject: () => {},
     markDirty: () => {},
     markNodeExecuted: () => {},
     markNodeStale: () => {},
+    markNodeErrored: () => {},
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
@@ -1673,7 +1677,28 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             // re-sends refs for every toggle-enabled node, so an unscoped toast
             // names nodes the user never ran (#180).
             .persistDataflowForInstall(ids)
-            .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
+            .then((outcome) => {
+                // Per producer, on the save's actual result (#352). This used to
+                // be a `.finally` that cleared every placeholder however the save
+                // went: a dataset that did not install had its "Adding…" entry
+                // flash and disappear, which is #217's symptom, and nothing tied
+                // the two together so no test could catch it coming back.
+                // Tolerant of a resolve with no outcome: a save that reports
+                // nothing is treated as "nothing failed", which is the old
+                // behaviour. A crash here would strand the whole canvas.
+                const failed = new Set(outcome?.failedNodeIds ?? []);
+                ids.forEach((id) =>
+                    failed.has(id)
+                        ? workflowOps.failPendingInstall(id)
+                        : workflowOps.endPendingInstall(id),
+                );
+            })
+            .catch(() => {
+                // persistDataflowForInstall handles its own errors and resolves;
+                // this is only here so an unexpected throw cannot strand every
+                // placeholder in "Adding…" for the full 10-minute safety timeout.
+                ids.forEach((id) => workflowOps.failPendingInstall(id));
+            });
     };
 
     // Force any pending install-save to run now. Called when Play All completes

@@ -40,6 +40,11 @@ class DatasetManifest:
     row_count: int | None = None
     schema: dict[str, Any] | None = None
     source_label: str | None = None
+    # What the uploaded bytes were decoded from before being stored as UTF-8
+    # (#280). ``"utf-8"`` when no transcode was needed. Kept because charset
+    # detection can be confidently wrong, and a wrong guess has to be visible
+    # here rather than only in the mojibake it produces.
+    source_encoding: str | None = None
     # Grouping for multi-part imports (e.g. OSM PBF layers): every layer dataset
     # from one import shares ``group_id`` and carries its own ``layer_name``, so
     # the catalog can present them as a single tabbed entry.
@@ -121,6 +126,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         row_count=row_count,
         schema=schema,
         source_label=str(raw.get("sourceLabel") or raw.get("publisher") or "Data Catalog") or None,
+        source_encoding=str(raw.get("sourceEncoding") or "") or None,
         group_id=str(raw.get("groupId") or "") or None,
         layer_name=str(raw.get("layerName") or "") or None,
         producer_node_id=str(raw.get("producerNodeId") or "") or None,
@@ -161,6 +167,7 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "createdAt": manifest.created_at or None,
         "updatedAt": manifest.updated_at or None,
         "sourceUpdatedAt": manifest.source_updated_at or None,
+        "sourceEncoding": manifest.source_encoding or None,
         "groupId": manifest.group_id or None,
         "layerName": manifest.layer_name or None,
         "producerNodeId": manifest.producer_node_id or None,

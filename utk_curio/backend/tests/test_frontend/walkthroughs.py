@@ -620,6 +620,16 @@ AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 #: actions live here, not on a card and not in the canvas.
 BROWSE_DRAWER_ROOT = '[data-curio-browse-drawer="true"]'
 
+#: The tag row inside a browse card, on any of the three catalog pages. Every
+#: page renders many cards, and a clip must resolve to exactly one element, so
+#: the scene takes the first: the claim is about chips *within one card*, and any
+#: card demonstrates it.
+TAG_ROW_FIRST_CARD = '[data-curio-tag-row="true"] >> nth=0'
+
+#: The browse drawer's CTA row, where the long "Remove from all projects" label
+#: lives. One drawer is open at a time, so this is unambiguous.
+BROWSE_DRAWER_CTAS = '[data-curio-drawer-ctas="true"]' 
+
 
 def open_agent_drawer(ctx: Ctx):
     """Data menu -> Agent Catalog, returning the drawer dialog."""
@@ -850,13 +860,25 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
          "the claim is unchanged, only its address.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector=BROWSE_DRAWER_ROOT,
+    # The claim is whether one label fits one button, so the capture is that
+    # button's row rather than the whole 320x607 drawer (#333). At the drawer
+    # size the CTA row was a few percent of the frame, so a 10% budget could not
+    # have seen the label wrap that this scene exists to catch. On the row
+    # itself, a wrap is most of the picture.
+    clip_selector=BROWSE_DRAWER_CTAS,
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (5.1% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.10,
+    # Measured, not guessed. The baseline was minted on Linux and compared
+    # against the render CI actually produced (recovered from the full-page
+    # baseline this PR replaces, 9f27df5e): 5.89%. The same crop taken on macOS
+    # scores 10.05% against that render, i.e. a macOS baseline would have failed
+    # here outright, which is why these are minted on Linux.
+    #
+    # 5.89% leaves less headroom than the sibling scene below, so this one keeps
+    # the wider budget. Part of that 5.89% is probably drift in the drawer since
+    # that baseline was recorded rather than platform, but it cannot be
+    # separated from here, and a budget set from the pessimistic reading is the
+    # one that does not page someone at 3am.
+    max_diff_ratio=0.08,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     page = ctx.page
@@ -1585,11 +1607,23 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     tests=["src/tests/catalog/tagChipsArePlain.test.ts",
            "src/tests/catalog/datasetFormatStyles.test.ts"],
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (2.0% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.05,
+    # The claim is that the chips in one card share a background, so the capture
+    # is that chip row rather than a 1280x720 page (#333). Full page, 5% was
+    # ~46,000 pixels of slack: more than the entire chip row, so a chip going
+    # coloured again passed with room to spare. The row is 301x26, so 4% is
+    # ~313 pixels and one re-tinted chip is thousands. It also stops the
+    # baseline being hostage to the rest of the page: the footer version string
+    # and the "15h ago" freshness labels drift on their own and forced
+    # re-captures that had nothing to do with chips.
+    #
+    # 4% rather than the sibling's 8% because this frame was measured against
+    # the render CI actually produced (recovered from the full-page baseline at
+    # c906947b) and scored 0.88%, so 4% is still ~4.5x the observed
+    # cross-machine cost. The same crop taken on macOS scores 6.11% against that
+    # render: three quarters of an 8% budget spent on platform alone, which is
+    # what makes minting these on Linux load-bearing rather than tidy.
+    clip_selector=TAG_ROW_FIRST_CARD,
+    max_diff_ratio=0.04,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
@@ -2070,7 +2104,8 @@ def data_export_is_one_button(ctx: Ctx) -> None:
          "handed to every agent that reads it - and it looked like a chat box "
          "because it sat among the agent chips with no label except a "
          "placeholder too long to fit.",
-    tests=["src/tests/attach/AgentDock.test.tsx"],
+    tests=["src/tests/attach/AgentDock.test.tsx",
+           "src/tests/styles/agentDockGoalGeometry.test.ts"],
     clip_selector='[role="toolbar"][aria-label="Canvas agents"]',
     fit_reactflow=False,
     # The baseline harness waits for ``.react-flow__node`` before handing over
@@ -2106,12 +2141,16 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
-    attached = page.request.post(
-        f"{base}/attachments",
-        headers=headers,
-        data={"coord": coord, "target": {"kind": "canvas"}},
-    )
-    assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    def attach_one() -> None:
+        attached = page.request.post(
+            f"{base}/attachments",
+            headers=headers,
+            data={"coord": coord, "target": {"kind": "canvas"}},
+        )
+        assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    attach_one()
 
     # The dock is rendered from the attachment list the page fetches, so reload
     # rather than wait for a push that may never come.
@@ -2136,6 +2175,77 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     goal.blur()
     ctx.beat(500)
     ctx.capture("goal-filled")
+
+    # The measurement, rather than the pixels (#355). The PNG documents this
+    # scene at a 0.20 diff ratio, which its own note admits is loose enough for
+    # re-clipped text to pass; scrollWidth vs clientWidth is the same claim
+    # stated so a CSS regression cannot slip through a tolerance.
+    #
+    # Checked with the placeholder AND with a value, because they crop for
+    # different reasons: the placeholder is fixed-length copy, the value is
+    # whatever the user typed.
+    # The measurement, rather than the pixels (#355). This scene's PNG sits at a
+    # 0.20 diff ratio, which its own note admits is loose enough for re-clipped
+    # text to pass, so the claim is stated as geometry instead.
+    #
+    # Two more agents, attached AFTER both captures: the squeeze is the reported
+    # condition and one avatar does not squeeze anything, but crowding the dock
+    # before the captures would leave the baseline PNGs documenting a state this
+    # scene no longer produces. The pictures keep their subject; the assertions
+    # get the harder case.
+    attach_one()
+    attach_one()
+    page.reload()
+    require_owner_view(page)
+    goal = page.get_by_label("Dataflow goal")
+    expect(goal).to_be_visible(timeout=30000)
+    ctx.beat(400)
+
+    avatars = page.locator(
+        '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
+    ).count()
+    assert avatars >= 3, (
+        f"the dock shows {avatars} avatars; the goal is not being squeezed by "
+        "anything, so this measurement proves nothing"
+    )
+
+    # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
+    #    precisely so it would, and it is the only thing naming the field
+    #    before anything is typed. 1px of slack for sub-pixel rounding.
+    goal.fill("")
+    goal.blur()
+    ctx.beat(200)
+    empty = goal.evaluate(
+        "el => ({ scroll: el.scrollWidth, client: el.clientWidth })"
+    )
+    assert empty["scroll"] <= empty["client"] + 1, (
+        f"the goal placeholder is cropped with {avatars} agents attached: "
+        f"scrollWidth {empty['scroll']} > clientWidth {empty['client']} "
+        "(#227/#355)"
+    )
+
+    # 2. A long VALUE is allowed to overflow - a goal longer than the field is
+    #    the normal case, and the fix's own comment says so - but it must
+    #    ellipsize rather than be cut mid-word, and the field must still be
+    #    wide enough to read. Squeezed to nothing is the regression here, not
+    #    overflow itself.
+    goal.fill("Find heat islands in Chicago and rank them by population exposure")
+    goal.blur()
+    ctx.beat(200)
+    filled = goal.evaluate(
+        "el => ({ client: el.clientWidth,"
+        " overflow: getComputedStyle(el).textOverflow,"
+        " minWidth: getComputedStyle(el.parentElement).minWidth })"
+    )
+    assert filled["overflow"] == "ellipsis", (
+        "a goal longer than the field would be cut mid-word rather than "
+        f"ellipsized (text-overflow: {filled['overflow']})"
+    )
+    assert filled["client"] >= 120, (
+        f"the goal field collapsed to {filled['client']}px with {avatars} "
+        "agents attached - the placeholder cannot fit in that"
+    )
+
     ctx.say("Named, and readable end to end",
             "Who sees it is on the tooltip, not in the width budget.")
 

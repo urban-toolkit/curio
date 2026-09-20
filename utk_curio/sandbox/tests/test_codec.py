@@ -12,6 +12,7 @@ things:
 """
 
 import json
+import re
 
 import duckdb
 import math
@@ -221,6 +222,32 @@ class TestParquetWriterFootprint(unittest.TestCase):
 
     Nothing here needs parallelism: it is one COPY of one frame.
     """
+
+    def test_the_writer_budget_fits_inside_the_child_budget(self):
+        """The two numbers have to stay in a sane relation (#358).
+
+        ``_WRITER_CONFIG["memory_limit"]`` is spent INSIDE the RLIMIT_AS cap
+        that ``--exec-memory-mb`` sets, so a writer budget at or above the
+        child's budget puts the failure back exactly where #334 found it -
+        DuckDB reserving address space the child does not have. Neither value
+        is pinned to a literal here; what is pinned is that one leaves room for
+        the other.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        raw = codec._WRITER_CONFIG["memory_limit"]
+        writer_mb = int(re.match(r"^(\d+)\s*(MB|MiB)$", raw).group(1))
+        child_mb = supervisor.DEFAULT_LIMITS["memory_mb"]
+
+        self.assertLess(
+            writer_mb, child_mb,
+            f"the writer may reserve {writer_mb}MB inside a {child_mb}MB child "
+            "budget - that is #334's shape again",
+        )
+        # Half is arbitrary as a number and not as an idea: the writer is one
+        # of several things sharing the child's address space, so it must not
+        # be most of it.
+        self.assertLessEqual(writer_mb, child_mb // 2, (writer_mb, child_mb))
 
     def _captured_config(self, frame=None):
         import tempfile

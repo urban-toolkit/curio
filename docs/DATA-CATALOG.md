@@ -97,8 +97,9 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 | `id` | Yes | Dataset id (see grammar above). |
 | `name` | Yes | Display title. |
 | `version` | Yes | Free-form version string (e.g. `"1.0.0"`), independent of `compatibility.major`. |
-| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`. |
+| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`. (`osm` and `gpkg` are group cards, synthesised at read time, never written to a manifest.) |
 | `dataFile` | Yes | Path to the data relative to the dataset folder, e.g. `data/chicago.geojson`. |
+| `sourceEncoding` | No | For text formats, what the uploaded bytes were decoded from before being stored as UTF-8. `"utf-8"` when nothing had to change; absent on datasets imported before this was recorded. |
 | `compatibility.major` | No | Integer major version; defaults to `1`. Together with `id` it forms the directory name. |
 | `description` | No | Defaults to `""`. |
 | `publisher` | No | Defaults to `"Data Catalog"`. **Load-bearing**: it decides who may unpublish or delete (see *Operator notes*). |
@@ -141,7 +142,7 @@ Only **Unpublish** and **Delete** ask for confirmation; Add to dataflow, Remove 
 
 **I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset, click **Add to dataflow**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`). Import only *registers* the dataset in your account. Switch to the **In dataflow** or **Browse all** tab and click **Add to dataflow** to attach it to the open dataflow.
+**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`, `.gpkg`). Import only *registers* the dataset in your account. Switch to the **In dataflow** or **Browse all** tab and click **Add to dataflow** to attach it to the open dataflow.
 
 **I want to reuse a node's output as an input somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button), then run it: the output is saved as a computed dataset. Open the drawer's **Computed** tab and click **Add to dataflow** on it, either in this dataflow or in a different one.
 
@@ -271,14 +272,52 @@ Previewing a bundle gives you a **tab per part**; a part with no rows is labelle
 | `.tif`, `.tiff` | `geotiff` |
 | `.shp` | `shp` |
 | `.pbf`, `.osm.pbf` | **converted** (see below) |
+| `.gpkg` | **converted** (see below) |
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
-### OSM PBF imports
+### Text imports are stored as UTF-8
+
+`csv`, `json` and `geojson` uploads are decoded and re-encoded as UTF-8 on the way in, and the
+encoding they came from is recorded in the manifest as `sourceEncoding`. Everything that reads the
+file afterwards, the row counter, the preview, and the generated loader, can then assume UTF-8 and
+be right. That matters because the generated snippet is a bare `pd.read_csv(dataset_path)` with
+nowhere to put an `encoding=`, which is the same reason the catalog's own CSVs are re-saved
+comma-delimited on import. Before this, a cp1252 CSV imported with a `201` and no row count and
+then raised `UnicodeDecodeError` the first time its node ran.
+
+Detection is a guess, not a measurement. Every single-byte encoding decodes every byte, so there is
+no error to catch, and codepages that share a layout can only be told apart by whether the words
+come out meaning anything. Curio tries UTF-8 strictly first, and only guesses when that fails. If
+the guess is wrong the file imports with mangled accents rather than failing, so `sourceEncoding` is
+shown on the dataset: if it names something you did not expect, re-save the file as UTF-8 and import
+it again. A file that decodes as nothing at all is refused at import with a message saying so.
+
+Files already in the store that are not UTF-8 still preview: the reader falls back to detection and
+logs a warning naming the file.
+
+### Multi-layer imports: OSM PBF and GeoPackage
 
 A `.pbf` extract is not stored verbatim. On import, Curio reads every non-empty layer (`points`, `lines`, `multilinestrings`, `multipolygons`, `other_relations`), reprojects to EPSG:4326 when the CRS is missing, and installs **each layer as its own GeoParquet dataset**, titled `<name> (<layer>)`. All layers from one import share a `groupId`, so the drawer and palette can fold them into a single collapsible **OSM PBF** entry that installs or uninstalls all layers together. Each import mints a fresh group, so importing the same extract twice gives you two independent groups.
 
 This requires the geospatial extras (`geopandas`, `pyogrio`) and a GDAL build with the OSM driver; Curio reports both as readable errors if they are missing.
+
+A `.gpkg` is handled the same way and for the same reason: a GeoPackage is a SQLite container holding
+any number of layers, and the generated loader snippet has no way to name one. Each layer is read,
+written as parquet, and registered as its own dataset, with all of them sharing a `gpkg.`-prefixed
+group id so the drawer folds them into a single **GeoPackage** entry.
+
+Two things differ from the PBF path:
+
+- **CRS.** Every OSM layer is WGS84, so a layer that declares no CRS can simply be labelled 4326. A
+  GeoPackage layer carries whatever it was authored in, so one that is not 4326 is **reprojected**.
+  Only a layer with no CRS at all is labelled.
+- **Attribute-only tables.** A GeoPackage may hold tables with no geometry. They are kept, as plain
+  parquet, rather than dropped.
+
+A GeoPackage holding exactly one layer is imported as an ordinary parquet dataset with no group: a
+card you have to expand to reach a single dataset is worse than no card. This needs the same
+geospatial extras plus GDAL's GPKG driver.
 
 ### Publish, unpublish, delete
 

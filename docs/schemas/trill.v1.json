@@ -319,7 +319,7 @@
         "title": { "type": "string", "description": "Display title at the time it was applied." },
         "format": {
           "type": "string",
-          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm"],
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm", "gpkg"],
           "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
         },
         "origin": { "$ref": "#/$defs/datasetOrigin" }

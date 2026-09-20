@@ -14,19 +14,42 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
+# Formats whose bytes are text, and which every reader downstream therefore
+# assumes are UTF-8: the row counter, the preview, and the generated loader
+# snippet. Uploads in these formats are transcoded to UTF-8 on the way in
+# (#280), because none of those readers can be handed an encoding.
+TEXT_FORMATS = frozenset({"csv", "json", "geojson"})
+
 # OSM PBF suffixes. Not in SUPPORTED_SUFFIXES because a ``.pbf`` isn't stored
 # verbatim: the importer converts it to one GeoParquet dataset per OSM layer
 # before installing. The import route special-cases these suffixes to run that
 # conversion (see ``install/osm_pbf.py``).
 OSM_PBF_SUFFIXES = (".pbf",)
 
-# The per-layer OSM datasets from one import share a ``group_id`` with this
-# prefix (e.g. ``osm.x1a2b3c4d``). The catalog presents the group as a single
-# bundle-shaped entry whose id IS the group id; helpers below recognize it so
-# list/get/preview/install can expand the group into its member layers.
-OSM_GROUP_ID_PREFIX = "osm."
+# GeoPackage suffixes. Not in SUPPORTED_SUFFIXES for the same reason as .pbf: a
+# .gpkg holds any number of layers and is converted to one parquet dataset per
+# layer on the way in rather than stored verbatim (see ``install/gpkg.py``).
+GPKG_SUFFIXES = (".gpkg",)
 
-# Canonical tab order for OSM layers in the grouped detail view.
+# The per-layer datasets from one multi-layer import share a ``group_id`` with
+# one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``). The catalog
+# presents the group as a single bundle-shaped entry whose id IS the group id;
+# helpers below recognize it so list/get/preview/install can expand the group
+# into its member layers.
+#
+# The prefix also says which *kind* of import produced the group, which is what
+# lets the group card name itself honestly. A GeoPackage shown as an OSM PBF
+# import is a visible bug, so the kind is carried in the id rather than guessed.
+OSM_GROUP_ID_PREFIX = "osm."
+GPKG_GROUP_ID_PREFIX = "gpkg."
+LAYER_GROUP_ID_PREFIXES = {
+    OSM_GROUP_ID_PREFIX: "osm",
+    GPKG_GROUP_ID_PREFIX: "gpkg",
+}
+
+# Canonical tab order for OSM layers in the grouped detail view. GeoPackage
+# layer names are arbitrary, so they have no such order; ``sort_group_members``
+# already falls back to a name sort for anything not listed here.
 OSM_LAYER_ORDER = {
     "points": 0,
     "lines": 1,
@@ -36,9 +59,19 @@ OSM_LAYER_ORDER = {
 }
 
 
-def is_osm_group_id(dataset_id: object) -> bool:
-    """True when *dataset_id* addresses a synthetic OSM layer group."""
-    return isinstance(dataset_id, str) and dataset_id.startswith(OSM_GROUP_ID_PREFIX)
+def layer_group_kind(dataset_id: object) -> str | None:
+    """``"osm"`` / ``"gpkg"`` when *dataset_id* addresses a layer group, else None."""
+    if not isinstance(dataset_id, str):
+        return None
+    for prefix, kind in LAYER_GROUP_ID_PREFIXES.items():
+        if dataset_id.startswith(prefix):
+            return kind
+    return None
+
+
+def is_layer_group_id(dataset_id: object) -> bool:
+    """True when *dataset_id* addresses a synthetic multi-layer group."""
+    return layer_group_kind(dataset_id) is not None
 
 # Sidecar files written next to dataset files: the row/feature counts cache from
 # ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map

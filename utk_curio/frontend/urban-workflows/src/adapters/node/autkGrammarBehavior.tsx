@@ -10,7 +10,7 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
-import { describeError, runAndAlwaysSettle } from './autkRunSettlement';
+import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -510,7 +510,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 showToast(msg, 'error');
             },
             onUnreported: () => {
-                emit({ code: 'error', content: 'The Autark node stopped without reporting a result.' });
+                emit({ code: 'error', content: UNREPORTED_MESSAGE });
             },
         });
     };
@@ -713,6 +713,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                                     color: 'var(--curio-text-primary, #1E1F23)',
                                     whiteSpace: 'pre-wrap',
                                     overflow: 'auto',
+                                    // Same reason as Simple View's text pane
+                                    // (#267): the wrapper's `nodrag` frees the
+                                    // gesture, but the inherited
+                                    // `user-select: none` still has to be
+                                    // undone where the text actually is.
+                                    userSelect: 'text',
+                                    cursor: 'text',
                                 }}
                             >
                                 {runSummary}
