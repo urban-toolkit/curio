@@ -176,7 +176,7 @@ Nodes tied to a dataset show a small pill on their title bar: **DATASET** when t
 
 ### The save-output toggle
 
-Every runnable node has a small database-icon toggle immediately to the right of its play button. It is **off by default**, so saving is opt-in per node; the deployment-wide default is controlled by `CURIO_DEFAULT_SAVE_NODE_OUTPUT`. When it is on, running the node saves its output into your per-user dataset store as `computed.<dataflowId>.<nodeId>@1`.
+Every runnable node has a small database-icon toggle immediately to the right of its play button. It is **off by default**, so saving is opt-in per node. When it is on, running the node saves its output into your per-user dataset store as `computed.<dataflowId>.<nodeId>@1`.
 
 A `GeoDataFrame` output is stored as **GeoParquet**, and reloads as a
 `GeoDataFrame`: its CRS survives, and so does *every* geometry column, not only
@@ -338,7 +338,6 @@ The catalog root is **never created eagerly**. A missing root simply means nothi
 |---|---|---|
 | `CURIO_CATALOG_ROOT` | `<repo_root>/datasets/` | Shared catalog read source and publish target. |
 | `CURIO_LAUNCH_CWD` | process CWD | Anchors the per-user store at `.curio/users/<key>/datasets/`. |
-| `CURIO_DEFAULT_SAVE_NODE_OUTPUT` | `False` | Default state of every node's save-output toggle. |
 
 ### The dataset index
 
