@@ -210,14 +210,7 @@ in a way no diff percentage explains.
 
 Only the browser has to be Linux. The app is just a server, and the harness
 injects `window.__CURIO_BACKEND_URL__` per browser context, so a containerised
-Chromium can drive a stack running on the host.
-
-> **Not yet run end to end on a Linux host.** The variable names, ports and
-> flags below are taken from `utils.py:e2e_existing_servers` and `main.py`
-> rather than from a successful mint. The version before this one named two
-> variables (`CURIO_E2E_BASE_URL`, `CURIO_E2E_BACKEND_URL`) that nothing in the
-> tree reads, so it cannot have been run either. Delete this note once someone
-> has minted a baseline with it.
+Chromium can drive a stack running on the host:
 
 ```
 # 1. stack on the host, bound so the container can reach it.
