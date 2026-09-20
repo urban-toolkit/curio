@@ -84,6 +84,6 @@ services:
       - sh
       - -c
       - >-
-        umask 000 && exec python curio.py start all --deploy --with-examples
+        umask 000 && exec python curio.py start all --deploy --with-examples --allow-shared-installs
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000

@@ -1208,6 +1208,17 @@ def _packages_error(exc: packages_services.PackageServiceError):
     return jsonify({"error": str(exc)}), exc.status
 
 
+# The five routes below call this from their own ``except``. The install gate
+# does not get that chance: ``assert_may_install`` fires from inside
+# ``provision_declared_deps``, which three routes call from within the
+# ``jsonify({...})`` they return, after their try block has closed. Unregistered,
+# a deliberate 403 refusal reached the app-wide handler and came back as a 500
+# with a traceback, which is the exact confusion #279 was filed about.
+packages_bp.register_error_handler(
+    packages_services.PackageServiceError, _packages_error
+)
+
+
 @packages_bp.route("/projects/<project_id>", methods=["GET"])
 @require_auth
 def get_project_packages(project_id: str):

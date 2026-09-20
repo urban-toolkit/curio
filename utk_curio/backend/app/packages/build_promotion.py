@@ -131,6 +131,17 @@ def promote(
     an existing active/completed journal for the same artifact is returned
     as-is — a disconnect + retry never reinstalls blindly.
     """
+    # Gated like every other path that ends in pip. This one is the reason the
+    # gate exists: an agent proposal the user accepts installs whatever
+    # dependencies the model wrote, into the interpreter that runs everyone's
+    # node code. Checked before the lock, so a refusal costs nothing.
+    from utk_curio.backend.app.packages import services as packages_services
+
+    try:
+        packages_services.assert_may_install()
+    except packages_services.PackageServiceError as exc:
+        raise PromotionError(str(exc), exc.status) from exc
+
     with _target_lock(user_key, target):
         existing = load_journal(user_key, artifact_digest)
         if existing is not None:

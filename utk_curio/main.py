@@ -206,8 +206,15 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
+    # A pre-set value wins over the CLI default, the way CURIO_SANDBOX_TOKEN and
+    # CURIO_ISOLATION already do. Assigning unconditionally made the documented
+    # env var a no-op for anything started through curio.py, so an operator who
+    # set it in a compose ``environment:`` block next to CURIO_ISOLATION got
+    # silence. The flag still wins when passed.
     os.environ["CURIO_ALLOW_SHARED_INSTALLS"] = (
-        "1" if allow_shared_installs else "0"
+        "1"
+        if allow_shared_installs
+        else os.environ.get("CURIO_ALLOW_SHARED_INSTALLS", "0")
     )
     os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
     if catalog_root:
