@@ -282,7 +282,27 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     # Always exported, including empty: a discovered account has to reach the
     # sandbox, and an explicit empty value has to survive as "none, deliberately".
     os.environ["CURIO_EXEC_USER"] = exec_user or ""
-    if exec_memory_mb:
+    # ``is not None``, unlike the flags around it: 0 is a value an operator can
+    # type, and it has to hit the clamp rather than fall through to the default.
+    if exec_memory_mb is not None:
+        from utk_curio.sandbox.isolation.supervisor import MIN_EXEC_MEMORY_MB
+
+        # Clamped, not just warned about, because the number is spent by code
+        # that cannot see it: codec.py sizes DuckDB's memory_limit against this
+        # budget, and that write happens inside the child's RLIMIT_AS cap.
+        # Below the floor there is nothing left to size against, and a writer
+        # reserving address space the child does not have is #334 all over
+        # again. The floor is on the headroom, not on the child's total -
+        # child._apply_rlimits adds the interpreter's own footprint on top.
+        if int(exec_memory_mb) < MIN_EXEC_MEMORY_MB:
+            log_warning(
+                f"--exec-memory-mb {exec_memory_mb} is below the "
+                f"{MIN_EXEC_MEMORY_MB}MB floor and was raised to it. Node code "
+                "needs room to allocate beyond the interpreter the child starts "
+                "with. To fit more concurrent nodes on a small host, lower "
+                "--exec-parallelism instead."
+            )
+            exec_memory_mb = MIN_EXEC_MEMORY_MB
         os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
     if exec_parallelism:
         os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
@@ -1539,6 +1559,10 @@ def run_tests(argv, command_prefix="curio") -> None:
 
 
 def main():
+    # Local, like every other utk_curio import in this file: the launcher must
+    # stay importable without the sandbox stack. Needed here so --help can
+    # quote the floor rather than restate it.
+    from utk_curio.sandbox.isolation import supervisor
 
     global processes
     global verbosity
@@ -1659,9 +1683,10 @@ def main():
     parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
-            "Memory ceiling per isolated node, in MB (sets "
-            "CURIO_EXEC_MEMORY_MB, default 4096). Note the real host ceiling "
-            "is this times --exec-parallelism."
+            "Memory a node may allocate, in MB, on top of the interpreter the "
+            "isolated child starts with (sets CURIO_EXEC_MEMORY_MB, default "
+            f"4096, floor {supervisor.MIN_EXEC_MEMORY_MB}). Note the real host "
+            "ceiling is this times --exec-parallelism."
         ),
     )
     parser.add_argument(

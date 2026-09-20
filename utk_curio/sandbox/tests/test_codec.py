@@ -223,21 +223,24 @@ class TestParquetWriterFootprint(unittest.TestCase):
     Nothing here needs parallelism: it is one COPY of one frame.
     """
 
+    @staticmethod
+    def _limit_mb(config):
+        return int(re.match(r"^(\d+)\s*(MB|MiB)$", config["memory_limit"]).group(1))
+
     def test_the_writer_budget_fits_inside_the_child_budget(self):
         """The two numbers have to stay in a sane relation (#358).
 
-        ``_WRITER_CONFIG["memory_limit"]`` is spent INSIDE the RLIMIT_AS cap
-        that ``--exec-memory-mb`` sets, so a writer budget at or above the
-        child's budget puts the failure back exactly where #334 found it -
-        DuckDB reserving address space the child does not have. Neither value
-        is pinned to a literal here; what is pinned is that one leaves room for
+        The writer's ``memory_limit`` is spent INSIDE the RLIMIT_AS cap that
+        ``--exec-memory-mb`` sets, so a writer budget at or above the child's
+        budget puts the failure back exactly where #334 found it - DuckDB
+        reserving address space the child does not have. Neither value is
+        pinned to a literal here; what is pinned is that one leaves room for
         the other.
         """
         from utk_curio.sandbox.isolation import supervisor
 
-        raw = codec._WRITER_CONFIG["memory_limit"]
-        writer_mb = int(re.match(r"^(\d+)\s*(MB|MiB)$", raw).group(1))
         child_mb = supervisor.DEFAULT_LIMITS["memory_mb"]
+        writer_mb = self._limit_mb(codec._writer_config({}))
 
         self.assertLess(
             writer_mb, child_mb,
@@ -248,6 +251,71 @@ class TestParquetWriterFootprint(unittest.TestCase):
         # of several things sharing the child's address space, so it must not
         # be most of it.
         self.assertLessEqual(writer_mb, child_mb // 2, (writer_mb, child_mb))
+
+    def test_the_relation_holds_at_every_budget_an_operator_can_set(self):
+        """The real #334 fix, rather than the default-only version above.
+
+        ``--exec-memory-mb`` is a documented knob and USAGE.md sells the host
+        ceiling as budget x parallelism, which actively invites lowering it to
+        fit more parallelism on a small host. While the writer's limit was a
+        module constant it did not move when the budget did, so a low enough
+        budget handed the child less headroom than DuckDB had been told it
+        could spend - #334 again with the host swapped for a stale constant.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        for child_mb in (supervisor.MIN_EXEC_MEMORY_MB, 100, 256, 512, 1024,
+                         supervisor.DEFAULT_LIMITS["memory_mb"], 65536):
+            with self.subTest(child_mb=child_mb):
+                writer_mb = self._limit_mb(
+                    codec._writer_config({"CURIO_EXEC_MEMORY_MB": str(child_mb)})
+                )
+                self.assertLessEqual(
+                    writer_mb, child_mb // 2,
+                    f"a {child_mb}MB child budget let the writer claim "
+                    f"{writer_mb}MB",
+                )
+
+    def test_the_launcher_floor_keeps_the_writer_floor_from_biting(self):
+        """Why ``MIN_EXEC_MEMORY_MB`` is the number it is.
+
+        The writer will not derive below ``_WRITER_MEMORY_FLOOR_MB``, because
+        under that DuckDB has no workable arena. That floor is only safe while
+        the launcher refuses budgets small enough for it to bind: below twice
+        the writer's floor, the clamp stops holding and the writer starts
+        claiming most of the child's address space.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        self.assertGreaterEqual(
+            supervisor.MIN_EXEC_MEMORY_MB,
+            codec._WRITER_MEMORY_FLOOR_MB * codec._WRITER_BUDGET_DIVISOR,
+        )
+
+    def test_an_unset_or_unusable_budget_falls_back_to_the_cap(self):
+        """codec also runs where no budget is set - the in-process path.
+
+        An unparseable value means "unset", not "zero", which is how
+        ``IsolationConfig.from_environment`` reads the same variable. Reading
+        it as zero would derive a limit of nothing at all.
+        """
+        for env in ({}, {"CURIO_EXEC_MEMORY_MB": ""},
+                    {"CURIO_EXEC_MEMORY_MB": "lots"},
+                    {"CURIO_EXEC_MEMORY_MB": "-1"}):
+            with self.subTest(env=env):
+                self.assertEqual(
+                    self._limit_mb(codec._writer_config(env)),
+                    codec._WRITER_MEMORY_CAP_MB,
+                )
+
+    def test_a_large_budget_does_not_raise_the_writer_above_its_cap(self):
+        """The derivation lowers the limit; it never raises it.
+
+        #334 was DuckDB sizing itself against a machine it did not own. A
+        256GB host must not walk that back in through the budget.
+        """
+        config = codec._writer_config({"CURIO_EXEC_MEMORY_MB": "262144"})
+        self.assertEqual(self._limit_mb(config), codec._WRITER_MEMORY_CAP_MB)
 
     def _captured_config(self, frame=None):
         import tempfile
@@ -278,6 +346,21 @@ class TestParquetWriterFootprint(unittest.TestCase):
         self.assertIsNotNone(limit, "no memory_limit: DuckDB would size itself from host RAM")
         # A number plus a unit, and not gigabytes of it.
         self.assertRegex(str(limit), r"^\d+\s*(MB|MiB)$")
+
+    def test_a_lowered_budget_reaches_the_real_write(self):
+        """End to end through os.environ, not just the pure helper.
+
+        The child inherits ``CURIO_EXEC_MEMORY_MB`` from the sandbox (the
+        zygote is spawned without an ``env=``, and nothing scrubs it), so this
+        is the path that actually runs under RLIMIT_AS.
+        """
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {"CURIO_EXEC_MEMORY_MB": "128"}):
+            config = self._captured_config()
+        self.assertEqual(config.get("memory_limit"), "64MB")
+        self.assertEqual(config.get("threads"), 1)
 
     def test_a_large_frame_still_writes_under_that_limit(self):
         # The bound must not turn a big output into a failure: `register` is

@@ -18,6 +18,7 @@ without any access to the artifact store can import this module alone.
 import datetime
 import json
 import math
+import os
 import sys
 
 import duckdb
@@ -256,7 +257,7 @@ def _object_column_needs_json_encoding(series):
         "decimal",
     }
 
-#: What one COPY of one frame is allowed to reserve (#334).
+#: The most one COPY of one frame may reserve, in MB (#334).
 #:
 #: DuckDB's defaults assume it owns the machine: ``threads`` follows the host's
 #: core count and ``memory_limit`` is ~80% of system RAM. Serialization runs
@@ -264,17 +265,57 @@ def _object_column_needs_json_encoding(series):
 #: ``--exec-memory-mb``), so on a many-core host those defaults reserved enough
 #: address space that writing ``pd.DataFrame({'a': [1, 2, 3]})`` failed with
 #: "Failed to allocate block of 32768 bytes". Measured on 8 cores: 7040 KB of
-#: peak RSS per write by default, 496 KB with these settings.
+#: peak RSS per write by default, 496 KB bounded to this.
 #:
 #: Not a ceiling on the frame: ``register`` is zero-copy and COPY streams row
 #: groups, so a 150 MB frame writes through a 256 MB limit in half a second.
 #: Insertion order is deliberately left alone - row order is part of a node's
 #: output, whatever DuckDB's own out-of-memory advice suggests.
-_WRITER_CONFIG = {"threads": 1, "memory_limit": "256MB"}
+_WRITER_MEMORY_CAP_MB = 256
+
+#: The writer's share of a child budget smaller than twice the cap.
+#:
+#: The cap above was a fixed number while ``--exec-memory-mb`` was a knob, so
+#: an operator lowering the budget to fit more parallelism on a small host
+#: (USAGE.md sells the ceiling as budget x parallelism) handed the child less
+#: headroom than DuckDB had been told it could spend. That is #334's shape
+#: again with the host swapped for a stale constant, so the two numbers are
+#: now derived from each other instead of set independently.
+#:
+#: Half, because the writer is one of several things sharing the child's
+#: address space - the frame it is serializing is still live, and ``register``
+#: is zero-copy - so it must not be most of it.
+_WRITER_BUDGET_DIVISOR = 2
+
+#: Below this DuckDB has no workable arena, so a budget that would derive less
+#: gets this instead. The operator-facing guard is the floor on
+#: ``--exec-memory-mb`` in ``main.py``; this one only catches a raw
+#: ``CURIO_EXEC_MEMORY_MB`` set past it.
+_WRITER_MEMORY_FLOOR_MB = 32
+
+
+def _writer_memory_limit_mb(env=None):
+    """The writer's budget, derived from the child's (#334)."""
+    env = os.environ if env is None else env
+    try:
+        child_mb = int(env.get("CURIO_EXEC_MEMORY_MB") or 0)
+    except (TypeError, ValueError):
+        # Same fallback as IsolationConfig.from_environment: an unparseable
+        # value means "unset", not "zero".
+        child_mb = 0
+    if child_mb <= 0:
+        return _WRITER_MEMORY_CAP_MB
+    derived = child_mb // _WRITER_BUDGET_DIVISOR
+    return max(_WRITER_MEMORY_FLOOR_MB, min(_WRITER_MEMORY_CAP_MB, derived))
+
+
+def _writer_config(env=None):
+    """DuckDB settings for one write, sized against the child's budget."""
+    return {"threads": 1, "memory_limit": f"{_writer_memory_limit_mb(env)}MB"}
 
 
 def _write_dataframe_parquet(frame, parquet_path):
-    writer = duckdb.connect(database=":memory:", config=dict(_WRITER_CONFIG))
+    writer = duckdb.connect(database=":memory:", config=_writer_config())
     try:
         writer.register("curio_frame", frame)
         escaped_path = str(parquet_path).replace("'", "''")

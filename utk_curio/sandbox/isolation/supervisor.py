@@ -67,6 +67,20 @@ DEFAULT_LIMITS = {
     "nofile": 1024,
 }
 
+# The lowest ``--exec-memory-mb`` the launcher will accept, below which it
+# clamps and says so.
+#
+# Not a recommendation - it is the point where the budget stops being able to
+# carry what is spent against it. ``codec`` derives DuckDB's memory_limit as
+# half the budget and will not go below its own 32MB floor, so under 64MB the
+# writer starts claiming most of the child's address space, which is what #334
+# was. A host too small for this wants fewer concurrent nodes
+# (``--exec-parallelism``), not a smaller budget each.
+#
+# ``test_codec.py::TestParquetWriterFootprint`` pins the relation to codec's
+# two constants so lowering either cannot silently invalidate this.
+MIN_EXEC_MEMORY_MB = 64
+
 # Wall-clock allowance. Separate from cpu_seconds because a node that blocks on
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
 DEFAULT_WALL_TIMEOUT_SECONDS = 300
