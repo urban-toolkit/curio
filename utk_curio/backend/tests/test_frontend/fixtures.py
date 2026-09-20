@@ -304,7 +304,9 @@ def curio_servers(session_app, request):
     # test_computed_json_output_e2e.py deliberately does NOT rely on this: it
     # flips the per-node toggle in the UI, because "the user turned it on" is the
     # scenario #180 reports.
-    extra_args.append("--save-node-outputs")
+    # An env var, not a flag: this only seeds a per-node UI toggle, so curio.py
+    # deliberately has no argument for it and reads the environment instead.
+    env["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1"
     # The examples are what #200 was about, and the gap that let it through:
     # this harness launched with ``--deploy`` but never ``--with-examples``, so
     # the one configuration where the gallery came up empty was the one

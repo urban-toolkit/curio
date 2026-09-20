@@ -1160,7 +1160,7 @@ class TestSessionRealData:
             else:
                 s.note(
                     "the save-output toggle was already on "
-                    "(--save-node-outputs is set deployment-wide)"
+                    "(CURIO_DEFAULT_SAVE_NODE_OUTPUT is set deployment-wide)"
                 )
             s.tour.beat(800)
             run_and_report(
