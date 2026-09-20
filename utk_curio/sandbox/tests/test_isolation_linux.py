@@ -57,14 +57,22 @@ needs_seccomp = pytest.mark.skipif(
 # not an absolute ceiling.
 MEMORY_HEADROOM_MB = 256
 
-# A second budget, low enough that the writer's derived limit is not its cap.
+# A second budget, high enough that the writer's limit is its cap rather than
+# a derived share.
 #
-# At MEMORY_HEADROOM_MB the parquet guard below sits exactly on a boundary: 256
-# was also the writer's fixed memory_limit, so the test could not tell a writer
-# sized against the child's budget from one that ignores it. Anything the
-# operator can set has to work, and USAGE.md sells lowering the budget as the
-# way to fit more parallelism on a small host.
-LOW_MEMORY_HEADROOM_MB = 128
+# The two regimes have to be covered separately. At MEMORY_HEADROOM_MB the
+# writer derives half the budget, which is what #334's fix has to get right;
+# here the cap binds instead, which is what stops a large host from walking
+# #334 back in through the budget.
+#
+# The first version of this went the other way, at 128MB, on the reasoning that
+# the guard at 256 sat on a boundary - 256 was also the writer's fixed
+# memory_limit. It sat on a real boundary, but a budget below MIN_EXEC_MEMORY_MB
+# is not one an operator can set, and on CI the child could not build a
+# three-row DataFrame in it. Deriving the writer's limit moved the guard off
+# that boundary by itself: at 256 the writer now gets 128MB, so the default
+# fixture already distinguishes a derived limit from a fixed one.
+CAPPED_MEMORY_HEADROOM_MB = 1024
 
 # Created by the Dockerfile. Only exists inside the image.
 EXEC_USER = "curio-exec"
@@ -581,7 +589,7 @@ def resource_unlimited():
 
 
 @pytest.mark.parametrize(
-    "isolated", [MEMORY_HEADROOM_MB, LOW_MEMORY_HEADROOM_MB], indirect=True
+    "isolated", [MEMORY_HEADROOM_MB, CAPPED_MEMORY_HEADROOM_MB], indirect=True
 )
 def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     """#334's actual failure mode, exercised rather than approximated (#358).
@@ -603,10 +611,11 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     Deliberately a tiny frame. The claim is not "big frames fit", it is "the
     writer's own footprint fits", which is what #334 broke.
 
-    Run at two budgets. The 256MB one was the original, and it was also the
-    writer's fixed ``memory_limit``, so it could not distinguish a writer sized
-    against the child's budget from one that ignores it; the low one can,
-    because there the writer's limit is derived rather than capped.
+    Run at two budgets, because the writer's limit is derived from one and
+    capped in the other. At 256 it works out to 128MB; at 1024 the cap binds
+    and it is 256MB. The original ran only at 256, where the writer's fixed
+    ``memory_limit`` was also 256, so it could not distinguish a writer sized
+    against the child's budget from one that ignores it.
     """
     result = run_isolated(
         isolated,
@@ -624,7 +633,6 @@ def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     assert list(frame["a"]) == [1, 2, 3], frame
 
 
-@pytest.mark.parametrize("isolated", [LOW_MEMORY_HEADROOM_MB], indirect=True)
 def test_the_writer_tracks_a_lowered_budget_into_the_child(isolated):
     """The writer's limit follows ``--exec-memory-mb`` down.
 
@@ -632,6 +640,10 @@ def test_the_writer_tracks_a_lowered_budget_into_the_child(isolated):
     to fit more parallelism on a small host - which USAGE.md invites - left
     DuckDB sizing its buffers against 256MB inside a child that had less, which
     is #334's shape with the host swapped for a stale constant.
+
+    The fixture's default budget is the launcher's floor, and the writer
+    derives 128MB from it, so this runs where the derivation is what decides
+    the number rather than the cap.
 
     Read from inside the child, so what is asserted is the value DuckDB
     actually adopted under the cap, not what the parent computed.
