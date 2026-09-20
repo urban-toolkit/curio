@@ -67,7 +67,17 @@ def _handshake_problem(root: Path, dockerfile: str) -> str | None:
     if command is None:
         return None  # already reported by the structural checks
     if shutil.which("node") is None:
-        return "node is not on PATH, so the stamp handshake could not be checked"
+        # Not a failure. The self-hosted CI runner keeps node inside the runner's
+        # own externals rather than on PATH, and the real proof runs there
+        # anyway: the "Assert the container serves the bundle it shipped" step
+        # reads the stamp out of the built image and asks the actual launcher
+        # whether it would rebuild. This half is for a developer's checkout.
+        print(
+            "note: node is not on PATH; skipping the stamp handshake "
+            "(the CI step against the built image covers it).",
+            file=sys.stderr,
+        )
+        return None
 
     package = root / "utk_curio" / "frontend" / "urban-workflows" / "package.json"
     if not package.is_file():
