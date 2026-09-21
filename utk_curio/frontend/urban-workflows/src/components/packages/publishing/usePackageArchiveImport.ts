@@ -85,6 +85,19 @@ export function usePackageArchiveImport({
             result.package.dirName,
           );
           onInstalledToProject?.(projResult.packages);
+        } else {
+          // Legitimate from the Node Catalog PAGE, which has no dataflow to
+          // drop the package into, so this is not an error and must not toast.
+          // Said out loud anyway because it is indistinguishable from the bug:
+          // the drawer guarantees a target, and when one failed to arrive the
+          // package landed in the account store, never in the lockfile, and
+          // never on the dataflow-scoped palette (#340) - with nothing
+          // anywhere to say the install had been skipped rather than failed.
+          console.warn(
+            `[import] ${result.package.dirName} was installed into the account ` +
+              `store only: no dataflow to add it to, so it will not appear on a ` +
+              `project's palette.`,
+          );
         }
         await refreshPackageRegistry();
         // ``reload`` refetches the project lockfile. That read can race the

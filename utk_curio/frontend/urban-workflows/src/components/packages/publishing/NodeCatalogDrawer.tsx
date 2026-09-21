@@ -366,11 +366,22 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         // the palette (#340). ``performInstall`` reads the ref at call time
         // for the same reason; this path used to be the odd one out.
         await importArchive(file, intoProjectId);
+      } catch (err) {
+        // Every other action in this drawer reports through here; this one
+        // used to have only a `finally`, so anything thrown after the upload
+        // became an unhandled rejection. Both `finally` blocks then tidied the
+        // UI back to its resting state, leaving a failed import that looked
+        // exactly like a successful one: no toast, no error chrome, the footer
+        // button back to "Import package", and the package in the account
+        // store but not in the lockfile. That is unreadable for a user and it
+        // is why #340 could only ever be seen as an e2e waiting out its
+        // timeout on an install request nobody could prove was sent.
+        reportActionError(`Couldn't import ${file.name}`, err);
       } finally {
         setBusy(false);
       }
     },
-    [ensureSavedProjectId, importArchive],
+    [ensureSavedProjectId, importArchive, reportActionError],
   );
 
   const performUninstall = useCallback(async (pkg: PackagePayload) => {
