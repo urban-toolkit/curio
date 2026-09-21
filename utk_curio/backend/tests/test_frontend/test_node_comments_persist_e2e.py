@@ -177,7 +177,9 @@ def _node_data_comments(page, node_id: str) -> list[dict]:
     """The comments the canvas node itself carries.
 
     This, not the rendered text, is the assertion that discriminates the fix
-    from the bug - see ``test_a_comment_survives_dashboard_mode``.
+    from the bug: before #237 ``node.data.comments`` did not exist at any point
+    in the lifecycle, so a rendered comment could only ever have been component
+    state.
     """
     return page.evaluate(
         """(nodeId) => {
@@ -189,31 +191,40 @@ def _node_data_comments(page, node_id: str) -> list[dict]:
     )
 
 
-def test_a_comment_survives_dashboard_mode(
+def _drag_tile(page, node_id: str, dx: int, dy: int) -> None:
+    """Drag a dashboard tile by its title band, the only part that moves it."""
+    handle = page.locator(
+        f'.react-flow__node[data-id="{node_id}"] .curio-dashboard-tile-handle'
+    ).first
+    handle.wait_for(state="visible", timeout=30000)
+    box = handle.bounding_box()
+    assert box, "the tile's title band has no box to grab"
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + dx, y + dy, steps=10)
+    page.mouse.up()
+
+
+def test_a_comment_survives_a_dashboard_layout_save(
     app_frontend: "FrontendPage", current_server, page
 ):
-    """A comment is carried by the node, so Dashboard Mode cannot lose it.
+    """A comment is carried by the node, so saving a dashboard cannot lose it.
 
-    Read the assertions before changing them: the obvious version of this test
-    proves nothing.
+    The dashboard is a page of its own now, and its one write - Save layout -
+    saves the whole dataflow spec from the nodes the PAGE loaded: every one of
+    them, pinned or not, rewritten with tile geometry. That is a second path by
+    which a node's data reaches disk, and the comment has to come through it
+    intact. Before #237 there was nothing on the node to come through.
 
-    Toggling Dashboard Mode does NOT unmount the node - it is the same
-    ``<ReactFlow>`` instance with different props, and the node's DOM element
-    survives the whole round trip. So a test that merely looked for the comment
-    text afterwards would ALSO have passed against the bug, because
-    component-local ``useState`` survives a re-render just as well. That is the
-    trap this test exists to avoid falling into.
-
-    What does discriminate is where the comment lives. Dashboard Mode rewrites
-    every pinned node's data (position, dimensions, ``dashboardPinned``), and
-    the comment has to come through that intact - which it can only do by being
-    ON the node. Before the fix ``node.data.comments`` did not exist at any
-    point in the lifecycle, so the store assertion below could not have passed.
+    The round trip is two full page loads, dataflow to dashboard and back, so
+    nothing can survive in component state: whatever the second canvas shows
+    was read from the spec the dashboard wrote.
     """
     require_project_page()
     require_user_auth()
 
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -225,53 +236,56 @@ def test_a_comment_survives_dashboard_mode(
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
     dismiss_toasts(page)
+    project_id = session["project"]["id"]
 
     node_id = _rightmost_node_id(page)
     _add_comment(page, node_id, COMMENT_TEXT)
-
     stored = _node_data_comments(page, node_id)
     assert [c["text"] for c in stored] == [COMMENT_TEXT], (
         f"the comment never reached the node's data, so it is still living in "
         f"component state (#237); node.data.comments = {stored!r}"
     )
 
+    # Pin the node under test and save, so the dashboard has it as a tile.
     node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
-    # Dashboard Mode refuses to enter with nothing pinned (#192), so pin the
-    # node under test first - otherwise the toggle below is a no-op. The pin
-    # control is title-toggling ("Pin to dashboard" -> "Unpin from dashboard"),
-    # so this selector only matches while the node is unpinned.
     activate_header_icon(node.locator('[title="Pin to dashboard"]').first)
     expect(node.locator('[title="Unpin from dashboard"]')).to_have_count(1, timeout=10000)
+    _save(page)
 
-    # In: View -> Dashboard Mode.
-    page.get_by_role("button", name=re.compile("View")).click(force=True)
-    page.get_by_text("Dashboard Mode", exact=True).first.click()
-    exit_btn = page.locator('[title="Exit Dashboard Mode"]')
-    exit_btn.wait_for(state="visible", timeout=15000)
-
-    # The node's header icons are not rendered in dashboard mode, so there is
-    # nothing to click on the node itself here - only the panel's own control.
-    assert node.locator('[title="Comments"]').count() == 0, (
-        "the node header is rendering in dashboard mode; this test's "
-        "assumptions about what is reachable there no longer hold"
+    # Onto the dashboard, move the tile, and save the layout.
+    page.goto(f"{app_frontend.base_url}/dashboard/{project_id}")
+    page.get_by_test_id("edit-layout-btn").wait_for(state="visible", timeout=45000)
+    # The node header is not rendered on a tile, so the comment cannot be edited
+    # here: whatever reaches disk came from the node's data, not from this page.
+    tile = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    tile.wait_for(state="visible", timeout=45000)
+    assert tile.locator('[title="Comments"]').count() == 0, (
+        "the tile is rendering the canvas node header; this test's assumptions "
+        "about what is reachable on the dashboard no longer hold"
     )
+    page.get_by_test_id("edit-layout-btn").click()
+    before = page.evaluate(
+        "(id) => window.__curio_reactFlow.getNode(id).position", node_id,
+    )
+    _drag_tile(page, node_id, 120, 60)
+    after = page.evaluate(
+        "(id) => window.__curio_reactFlow.getNode(id).position", node_id,
+    )
+    assert after != before, "the tile did not move, so the layout save has nothing to write"
+    page.get_by_test_id("save-layout-btn").click()
+    page.get_by_test_id("save-layout-btn").wait_for(state="detached", timeout=20000)
 
-    # Out: the panel's own control. There is no View menu in dashboard mode -
-    # `{!dashboardOn && <UpMenu>}` takes the whole top bar with it.
-    exit_btn.click()
-    page.wait_for_selector('[title="Comments"]', timeout=45000)
+    # Back to the dataflow, from disk.
+    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
+    page.wait_for_selector(".react-flow__node", timeout=45000)
     dismiss_toasts(page)
 
     survived = _node_data_comments(page, node_id)
     assert [c["text"] for c in survived] == [COMMENT_TEXT], (
-        f"the dashboard round trip dropped the comment from the node's data, "
-        f"so it would not be saved either (#237); node.data.comments = "
-        f"{survived!r}"
+        f"the dashboard's layout save dropped the comment from the node, so the "
+        f"spec on disk no longer has it (#237); node.data.comments = {survived!r}"
     )
-    # And it is still on screen. The popover was never closed - `showComments`
-    # is component state and nothing here unmounts the node - so re-activating
-    # the Comments icon would toggle it SHUT rather than open.
+    _open_comments(page, node_id)
     assert _comment_visible(page, node_id, COMMENT_TEXT), (
-        "the comment is on the node but no longer rendered after leaving "
-        "dashboard mode"
+        "the comment is on the node but is not rendered after the round trip"
     )

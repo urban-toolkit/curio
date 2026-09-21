@@ -19,7 +19,7 @@ import { useFlowContext } from "../../providers/FlowProvider";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
 import { dataflowPath } from "../../utils/shareLinks";
 import DashboardTopBar from "./DashboardTopBar";
-import { useDashboardFit } from "./useDashboardFit";
+import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
 import "reactflow/dist/style.css";
 import "../../components/MainCanvas.css";
@@ -76,16 +76,18 @@ export const DashboardPage: React.FC = () => {
   }), []);
 
   // The same test hooks the canvas exposes, so the Playwright helpers that read
-  // the graph work on this page too. The fit is scoped to the pinned tiles:
-  // asking for every node would wait on dimensions the hidden ones never get.
+  // the graph work on this page too. The fit frames the tiles exactly as the
+  // page itself does, whatever padding the caller asks for, so a screenshot
+  // shows the dashboard a visitor sees. It is scoped to the visible tiles:
+  // handed no nodes, the helper would fall back to all of them and wait on
+  // dimensions the hidden ones never get.
   useEffect(() => {
     (window as any).__curio_reactFlow = reactFlow;
-    (window as any).__curio_fitViewWithMenuOffset = (options?: FitViewOptions) =>
-      fitViewWithMenuOffset(reactFlow, {
-        ...options,
-        nodes: reactFlow.getNodes().filter((node) => node.style?.display !== "none"),
-        maxZoom: 1,
-      });
+    (window as any).__curio_fitViewWithMenuOffset = (_options?: FitViewOptions) => {
+      const tiles = reactFlow.getNodes().filter((node) => node.style?.display !== "none");
+      if (tiles.length === 0) return false;
+      return fitViewWithMenuOffset(reactFlow, { ...DASHBOARD_FIT_OPTIONS, nodes: tiles });
+    };
     return () => {
       if ((window as any).__curio_reactFlow === reactFlow) {
         delete (window as any).__curio_reactFlow;

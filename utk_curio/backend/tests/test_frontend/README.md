@@ -715,7 +715,7 @@ The take is one continuous Playwright recording of a single page, so the whole
 tour runs in one browser session: signup, the projects page, configuring the AI
 provider, authoring a dataflow from a catalog dataset, dataset lineage, the Node
 Catalog, the Agent Catalog, attaching and running an agent, Vega-Lite views,
-dashboard mode, provenance, linked interactions, an Autark/WebGPU map, and the
+the dashboard page, provenance, linked interactions, an Autark/WebGPU map, and the
 catalog pages. Captions, a synthetic cursor and the spotlight ring come
 from [`tour.py`](tour.py), which paints them into the page above the app -
 Playwright records the page and nothing else, so a real pointer would be
@@ -786,7 +786,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
 | `agents` | AI Settings from both of its entry points, all four provider tabs, Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
-| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; dashboard mode with its lock; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
 
 ### What it produces
 

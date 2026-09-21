@@ -2282,7 +2282,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
         raise AssertionError(
             "Drop produced no node. Either the drag payload was empty (the "
             "source's own onDragStart did not run) or the canvas is refusing "
-            "drops (dashboard mode / shared read-only view)."
+            "drops (a shared read-only view)."
         ) from None
 
     created = [n for n in canvas_nodes(page) if n["id"] not in before]
