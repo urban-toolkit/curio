@@ -179,8 +179,7 @@ export const NodeContainer = ({
     // Derived from node data rather than held in local state (#237). Comments
     // used to live in a `useState` that nothing ever wrote back, so they were
     // lost on save and on every remount - reopening the project was the path
-    // the reporter took. (A dashboard-mode toggle was NOT: it re-renders this
-    // component but never unmounts it, so the old local state survived that.)
+    // the reporter took.
     // Reading through `data` makes the canvas node the single source of truth,
     // so there is no second copy to fall out of step with the saved spec.
     const viewer = useMemo(
@@ -368,6 +367,8 @@ export const NodeContainer = ({
                         dashboardWidth: newWidth,
                         dashboardHeight: newHeight,
                     });
+                    // Tile geometry is saved state, so resizing one is an edit.
+                    markDirty();
                 }
             } else {
                 if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
@@ -458,6 +459,9 @@ export const NodeContainer = ({
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
+    // A dashboard tile's title band: narrower than the canvas header, and the
+    // only thing on the tile that can be dragged while the layout is unlocked.
+    const dashboardTitleBandPx = 22;
 
     // --- Dataset drag-and-drop via capture-phase native listeners ---
     // Monaco editor installs its own native dragover/drop handlers that call
@@ -634,6 +638,35 @@ export const NodeContainer = ({
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                 }}
             >
+                {!noContent && dashboardOn ? (
+                    <div
+                        // Matches DASHBOARD_TILE_DRAG_HANDLE, which the dashboard
+                        // page hands React Flow as the tile's ``dragHandle``. No
+                        // ``nodrag`` here, deliberately: this band is the handle.
+                        className="curio-dashboard-tile-handle"
+                        title={headerKindLabel}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            height: `${dashboardTitleBandPx}px`,
+                            marginBottom: "1px",
+                            padding: "0 4px",
+                            boxSizing: "border-box",
+                            width: "100%",
+                            flexShrink: 0,
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            color: "#55565c",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            cursor: dashboardLocked ? "default" : "grab",
+                        }}
+                    >
+                        {headerKindLabel}
+                    </div>
+                ) : null}
+
                 {!noContent && !dashboardOn ? (
                     <>
                         <div style={{
@@ -755,7 +788,7 @@ export const NodeContainer = ({
                     </>
                 ) : null}
 
-                <div style={{height: dashboardOn ? "100%" : `calc(100% - ${nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{height: `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
                     {children}
                 </div>
 

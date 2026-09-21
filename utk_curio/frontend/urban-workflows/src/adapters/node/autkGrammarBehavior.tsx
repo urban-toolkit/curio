@@ -12,6 +12,7 @@ import { backendUrl } from '../../utils/backendUrl';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
+import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 
 export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
@@ -945,31 +946,12 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 //
 // Naming mirrors autk-db's own, which derives a layer table as
 // `outputTableName || `${osmInputTableName}_${layer}``.
-export type AutkSpecKind = 'render' | 'data' | 'compute' | 'unknown';
-
-/**
- * Which kind of step an UrbanSpec describes (#282).
- *
- * ``render`` draws a map or plot; ``compute`` runs WGSL over upstream layers;
- * ``data`` only loads sources. The last two have nothing to draw, so the node
- * body reports what they produced instead of staying blank.
- */
-export function classifyAutkSpec(spec: any): AutkSpecKind {
-    if (!spec || typeof spec !== 'object') return 'unknown';
-    if (spec.map != null || spec.plot != null) return 'render';
-    if (Array.isArray(spec.compute) && spec.compute.length > 0) return 'compute';
-    if (Array.isArray(spec.data) && spec.data.length > 0) return 'data';
-    return 'unknown';
-}
-
-export function classifyAutkSpecString(specString: unknown): AutkSpecKind {
-    if (typeof specString !== 'string' || specString.trim() === '') return 'unknown';
-    try {
-        return classifyAutkSpec(JSON.parse(specString));
-    } catch {
-        return 'unknown';
-    }
-}
+// The spec classifier moved to ``utils/autkSpecKind`` so the dashboard's layout
+// pass can ask what kind of step a node is without importing this module and
+// with it the WebGPU renderer. Re-exported here because every existing caller,
+// including the behaviour tests, imports it from this file.
+export type { AutkSpecKind } from '../../utils/autkSpecKind';
+export { classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 
 /** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
 export function describeAutkRun(verb: string, noun: string, items: string[]): string {

@@ -54,8 +54,6 @@ const makeDeps = () => {
     outputsRef: { current: [] },
     setInteractions: jest.fn(),
     setDashboardPins: jest.fn(),
-    setPositionsInDashboard: jest.fn(),
-    setPositionsInWorkflow: jest.fn(),
     setWorkflowName: jest.fn((n: string) => {
       workflowNameRef.current = n;
     }),

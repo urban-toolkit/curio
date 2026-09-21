@@ -1,0 +1,176 @@
+import React, { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import clsx from "clsx";
+
+import logo from "assets/curio-2.png";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import ShareMenu from "../../components/menus/top/ShareMenu";
+import { UserMenu } from "../../components/login/UserMenu";
+import { useFlowContext, useNodeActionsContext } from "../../providers/FlowProvider";
+import { useToastContext } from "../../providers/ToastProvider";
+import { useUserContext } from "../../providers/UserProvider";
+import { dataflowPath } from "../../utils/shareLinks";
+import barStyles from "../../components/menus/top/UpMenu.module.css";
+import styles from "./DashboardTopBar.module.css";
+
+export const LEAVE_UNSAVED_LAYOUT =
+  "Leaving this dashboard discards the layout changes you have not saved.";
+
+/**
+ * The dashboard's own top bar.
+ *
+ * Built from the dataflow bar's stylesheet on purpose: this is the same product,
+ * so the two bars look like each other. What it holds is deliberately almost
+ * nothing, because the page is the content: a way back to the dataflow, the
+ * share links, and, for the owner, the two controls that move tiles around.
+ * None of the editor's menus are here. There is no palette to drop nodes from,
+ * nothing to run, and no save status, because a dashboard is not edited except
+ * by explicitly saving a layout.
+ */
+export function DashboardTopBar({ id }: { id: string }) {
+  const navigate = useNavigate();
+  const { showToast } = useToastContext();
+  const { user, enableUserAuth } = useUserContext();
+  const { workflowName } = useNodeActionsContext();
+  const {
+    projectName,
+    projectId,
+    projectDirty,
+    viewerMode,
+    dashboardLocked,
+    setDashboardLocked,
+    saveCurrentProject,
+  } = useFlowContext();
+
+  const [shareOpen, setShareOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pendingLeave, setPendingLeave] = useState<null | (() => void)>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // Close the menu on a click anywhere else, as the dataflow bar does.
+  useEffect(() => {
+    if (!shareOpen) return;
+    const onClick = (event: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(event.target as Node)) {
+        setShareOpen(false);
+      }
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [shareOpen]);
+
+  /**
+   * Who may move the tiles: the owner of a saved dataflow, and not a guest.
+   *
+   * A visitor on a share link is ``viewerMode === "shared"`` and saving would
+   * throw; a guest under auth is blocked by the same rule as the canvas
+   * (``blockGuestSaves``), so offering the control would only produce a toast.
+   */
+  const canEditLayout =
+    viewerMode === "owner"
+    && !!projectId
+    && !(enableUserAuth && user?.is_guest);
+
+  const leave = (action: () => void) => {
+    // Unsaved tile geometry is real work: warn before dropping it.
+    if (!projectDirty || dashboardLocked) {
+      action();
+      return;
+    }
+    setPendingLeave(() => action);
+  };
+
+  const saveLayout = async () => {
+    setSaving(true);
+    try {
+      // ``omitOutputs``: this page writes where the tiles sit. Which outputs the
+      // dataflow has is the canvas's business, and nothing here ran.
+      await saveCurrentProject(undefined, { omitOutputs: true });
+      setDashboardLocked(true);
+      showToast("Dashboard layout saved.", "success");
+    } catch (err) {
+      showToast((err as Error)?.message || "Could not save the layout.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className={clsx(barStyles.menuBar, "nowheel", "nodrag")} ref={barRef}>
+        <img
+          className={barStyles.logo}
+          src={logo}
+          alt="Curio"
+          onClick={() => leave(() => navigate("/projects"))}
+        />
+
+        <Link
+          className={barStyles.button}
+          to={dataflowPath(id)}
+          data-testid="open-dataflow-link"
+          onClick={(event) => {
+            if (projectDirty && !dashboardLocked) {
+              event.preventDefault();
+              leave(() => navigate(dataflowPath(id)));
+            }
+          }}
+        >
+          Open dataflow
+        </Link>
+
+        <ShareMenu
+          id={id}
+          includeOpenDashboard={false}
+          open={shareOpen}
+          onToggle={() => setShareOpen((open) => !open)}
+          onClose={() => setShareOpen(false)}
+        />
+
+        {canEditLayout && (
+          <button
+            className={clsx(barStyles.button, !dashboardLocked && styles.buttonActive)}
+            onClick={() => setDashboardLocked(!dashboardLocked)}
+            data-testid="edit-layout-btn"
+          >
+            {dashboardLocked ? "Edit layout" : "Editing layout"}
+          </button>
+        )}
+        {canEditLayout && !dashboardLocked && (
+          <button
+            className={barStyles.button}
+            disabled={saving}
+            onClick={() => void saveLayout()}
+            data-testid="save-layout-btn"
+          >
+            {saving ? "Saving..." : "Save layout"}
+          </button>
+        )}
+
+        <h1 className={styles.title} title={projectName || workflowName}>
+          {projectName || workflowName}
+        </h1>
+
+        <UserMenu />
+      </div>
+
+      {pendingLeave ? (
+        <ConfirmDialog
+          title="Discard unsaved layout?"
+          body={LEAVE_UNSAVED_LAYOUT}
+          confirmLabel="Discard and continue"
+          cancelLabel="Stay here"
+          destructive
+          onConfirm={() => {
+            const run = pendingLeave;
+            setPendingLeave(null);
+            run();
+          }}
+          onCancel={() => setPendingLeave(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export default DashboardTopBar;

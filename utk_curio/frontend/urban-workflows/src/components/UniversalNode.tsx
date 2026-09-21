@@ -12,6 +12,11 @@ import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
+import { classifyAutkSpecString } from '../utils/autkSpecKind';
+import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
+import { hasIncomingEdge } from '../utils/nodeEmptyState';
+import { isEmptySpecBuffer } from '../utils/vegaDefaultSpec';
+import { NodeType } from '../constants';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
@@ -82,7 +87,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, edges: flowEdges } = useFlowContext();
+  const kindConfig = readCanvasTemplateConfig({ data });
+  const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   const outputCodeRef = useRef(output?.code);
@@ -119,6 +126,59 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     sendCode(nodeState.code);
     if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
+
+  // ── Drawing from a restored input, with no Play ──────────────────────────
+  //
+  // A grammar node only draws when something calls its ``applyGrammar``, which
+  // until now only a Play did. That is the whole reason a reloaded chart used to
+  // be an empty box, and it is fatal on the dashboard, which has no play button
+  // at all. Both kinds are compiled the same way a Play compiles them (through
+  // ``sendCode``, so the widgets pass still resolves its markers first) rather
+  // than by reaching into the behaviours.
+  //
+  // What is deliberately NOT here: code nodes. Their pane shows the run's stdout,
+  // which no saved dataset can restore, so running one would execute the user's
+  // code because they opened a page.
+  const kind = unversionedNodeType(String(data.nodeType ?? ""));
+  const connected = hasIncomingEdge(flowEdges ?? edges, data.nodeId);
+  const hasInput = data.input != null && data.input !== "";
+  const specIsEmpty = isEmptySpecBuffer(nodeState.code);
+  // Vega compiles its spec against the rows its input names, so a restored input
+  // is all it needs - on the canvas as much as on the dashboard. Keyed on the
+  // input so a chart behind a Data Pool draws when the pool's fetch lands, and
+  // guarded so the same input never recompiles twice.
+  const lastRenderedInputRef = useRef<unknown>(undefined);
+  useEffect(() => {
+    if (kind !== NodeType.VIS_VEGA) return;
+    if (!sendCode || disablePlay || specIsEmpty) return;
+    if (!hasInput) return;
+    if (lastRenderedInputRef.current === data.input) return;
+    lastRenderedInputRef.current = data.input;
+    setOutputCallback({ code: "exec", content: "" });
+    sendCode(nodeState.code);
+  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input]);
+
+  // An Autark tile is drawn once, and only on the dashboard. Its render spec
+  // needs a WebGPU canvas, so this is real work rather than a recompile: the
+  // page it is pinned to is the only place worth doing it, and only for the tile
+  // itself. Its upstream data and compute nodes are not run - their layers come
+  // from the Data Catalog, which is the point.
+  const autoRenderedRef = useRef(false);
+  const isPinnedAutarkTile =
+    dashboardOn
+    && kind === NodeType.AUTK_GRAMMAR
+    && !!data.dashboardPinned
+    && classifyAutkSpecString(nodeState.code) === "render";
+  useEffect(() => {
+    if (!isPinnedAutarkTile || autoRenderedRef.current) return;
+    if (!sendCode || disablePlay || specIsEmpty) return;
+    // Wait for the input a wired tile needs; an unwired one has everything in
+    // its own spec.
+    if (connected && !hasInput) return;
+    autoRenderedRef.current = true;
+    setOutputCallback({ code: "exec", content: "" });
+    sendCode(nodeState.code);
+  }, [isPinnedAutarkTile, sendCode, disablePlay, specIsEmpty, connected, hasInput]);
 
   useEffect(() => {
     outputCodeRef.current = output?.code;
@@ -161,8 +221,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
   const allHandles = behavior.handlesOverride
     ?? [...adapter.handles, ...(behavior.dynamicHandles ?? [])];
-  const kindConfig = readCanvasTemplateConfig({ data });
-  const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
   return (
     // ``display: contents`` keeps the wrapper invisible to ReactFlow's
@@ -223,8 +281,12 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         handleType={adapter.container.handleType}
         isLoading={showLoading}
         noContent={adapter.container.noContent}
-        nodeWidth={data.nodeWidth ?? adapter.container.nodeWidth}
-        nodeHeight={data.nodeHeight ?? adapter.container.nodeHeight}
+        // A tile keeps its own size, which the dashboard's resize handle writes
+        // to ``dashboardWidth``/``dashboardHeight``. Read only here: writing the
+        // canvas fields from the dashboard would persist tile geometry as the
+        // node's size on the canvas (TrillGenerator saves those).
+        nodeWidth={(dashboardOn ? data.dashboardWidth : undefined) ?? data.nodeWidth ?? adapter.container.nodeWidth}
+        nodeHeight={(dashboardOn ? data.dashboardHeight : undefined) ?? data.nodeHeight ?? adapter.container.nodeHeight}
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}

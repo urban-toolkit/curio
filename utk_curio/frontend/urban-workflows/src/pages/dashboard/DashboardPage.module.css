@@ -1,0 +1,45 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: #ffffff;
+  /* The bar is `position: fixed` (UpMenu.module.css), so the page reserves its
+     height rather than laying it out. The canvas box below is what the fit and
+     the resize observer measure, so it must not extend under the bar. */
+  padding-top: 65px;
+  box-sizing: border-box;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: #55565c;
+  font-size: 14px;
+  /* Above the (empty) canvas, but under the bar and its dropdowns. */
+  z-index: 10;
+  background-color: #ffffff;
+}
+
+.stateTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1E1F23;
+}
+
+.stateLink {
+  color: #2980b9;
+}

@@ -5,7 +5,7 @@
  * from the API, applies the spec via loadParsedTrill, and pre-populates
  * FlowContext.outputs so every node renders in an executed state.
  */
-import React, { useEffect, useRef } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
@@ -21,7 +21,23 @@ import { packagesApi } from "../api/packagesApi";
 import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
+
+/** How far the load has got, for a page that has to say which state it is in. */
+export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
+
+const ProjectLoadStateContext = createContext<ProjectLoadState>("idle");
+
+/**
+ * The load's progress.
+ *
+ * The dashboard needs it to tell three things apart that all render as an empty
+ * page: still loading, loaded with nothing pinned, and could not be opened. The
+ * canvas has its own chrome to say so and ignores this.
+ */
+export function useProjectLoadState(): ProjectLoadState {
+  return useContext(ProjectLoadStateContext);
+}
 
 /**
  * Shown when neither the owner-scoped nor the shared endpoint could produce the
@@ -43,9 +59,14 @@ function hasLoadableDataflow(
   );
 }
 
-export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const ProjectLoader: React.FC<{
+  children: React.ReactNode;
+  /** Loading for the dashboard page rather than the canvas. */
+  presentation?: boolean;
+}> = ({ children, presentation = false }) => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const [loadState, setLoadState] = useState<ProjectLoadState>("idle");
   const { showToast } = useToastContext();
   const loaded = useRef<string | null>(null);
   const {
@@ -125,16 +146,19 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     ) => {
       const { spec, outputs } = result;
 
+      let loaded: { nodes: any[]; edges: any[] } | null = null;
       if (spec) {
         if (!hasLoadableDataflow(spec)) {
           throw new Error(
             "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
           );
         }
-        loadTrill(spec);
+        loaded = loadTrill(spec);
         // Auto-install missing deps only for the owner's own project — never
-        // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note).
-        if (trusted) ensureWorkflowDeps(spec);
+        // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note), and
+        // never for a dashboard: opening a page to look at it must not install
+        // Python packages on the server.
+        if (trusted && !presentation) ensureWorkflowDeps(spec);
       }
 
       if (outputs && outputs.length > 0) {
@@ -158,10 +182,16 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
         // Refill downstream data.input (incl. merge slots) from the restored
         // outputs — otherwise every reload requires rerunning each upstream
         // node before merges/pools receive anything (dev/64).
-        hydrateRestoredOutputs(newOutputs);
+        //
+        // Against the edges the load just built, not React Flow's store: the
+        // store is written from an effect and still reports nothing at this
+        // point, so whether the restore reached anyone was a race. It is what a
+        // dashboard tile draws from, and it has no Play to fall back on.
+        hydrateRestoredOutputs(newOutputs, loaded?.edges);
       }
     };
 
+    setLoadState("loading");
     (async () => {
       // Package descriptors register asynchronously at boot. If a user deep-links
       // straight into /dataflow/<id>, ProjectLoader can mount before
@@ -178,6 +208,7 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         const result = await loadProject(id);
         applyResult(result, { trusted: true });
+        setLoadState("loaded");
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)
@@ -194,8 +225,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           try {
             const result = await loadSharedProject(id);
             applyResult(result, { trusted: false });
+            setLoadState("loaded");
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
+            setLoadState("failed");
             // Two different failures land here: the shared endpoint refusing
             // (a status, so genuinely not reachable) and applyResult throwing
             // on a spec it did fetch (no status, and its own sentence says
@@ -209,6 +242,7 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         } else {
           console.error("Failed to load project:", err);
+          setLoadState("failed");
           // A malformed stored spec arrives here too: applyResult's throw
           // carries a sentence written for the user, so pass it through rather
           // than replacing it with the generic one.
@@ -226,5 +260,9 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     })();
   }, [id]);
 
-  return <>{children}</>;
+  return (
+    <ProjectLoadStateContext.Provider value={loadState}>
+      {children}
+    </ProjectLoadStateContext.Provider>
+  );
 };
