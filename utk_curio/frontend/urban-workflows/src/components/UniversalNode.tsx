@@ -87,7 +87,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, edges: flowEdges } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, edges: flowEdges, isRunActive } = useFlowContext();
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
@@ -148,15 +148,23 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
   // guarded so the same input never recompiles twice.
   const lastRenderedInputRef = useRef<unknown>(undefined);
+  // Never while a run is in flight: the runner compiles this node itself, and
+  // two ``sendCode`` calls in one tick cancel each other. Each one toggles the
+  // widgets pass, so two toggles in the same batch leave the flag where it
+  // started, the marker round trip never happens, and the node sits at "exec"
+  // until its watchdog. Whatever a run leaves behind is what this draws from
+  // the next time an input arrives.
+  const runInFlight = !!isRunActive;
   useEffect(() => {
     if (kind !== NodeType.VIS_VEGA) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
+    if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
     if (lastRenderedInputRef.current === data.input) return;
     lastRenderedInputRef.current = data.input;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
-  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input]);
+  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight]);
 
   // An Autark tile is drawn once, and only on the dashboard. Its render spec
   // needs a WebGPU canvas, so this is real work rather than a recompile: the
@@ -172,13 +180,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   useEffect(() => {
     if (!isPinnedAutarkTile || autoRenderedRef.current) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
+    if (runInFlight || output?.code === "exec") return;
     // Wait for the input a wired tile needs; an unwired one has everything in
     // its own spec.
     if (connected && !hasInput) return;
     autoRenderedRef.current = true;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
-  }, [isPinnedAutarkTile, sendCode, disablePlay, specIsEmpty, connected, hasInput]);
+  }, [isPinnedAutarkTile, sendCode, disablePlay, specIsEmpty, connected, hasInput, runInFlight]);
 
   useEffect(() => {
     outputCodeRef.current = output?.code;

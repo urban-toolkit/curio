@@ -24,6 +24,7 @@ const mockSendCode = jest.fn();
 const mockSetOutput = jest.fn();
 let mockDashboardOn = false;
 let mockFlowEdges: any[] = [];
+let mockIsRunActive = false;
 
 jest.mock("reactflow", () => ({
   Handle: () => null,
@@ -82,7 +83,9 @@ jest.mock("../../hook/useNodeState", () => {
     useNodeState: (data: any) => {
       const [sendCode, setSendCode] = React.useState(undefined);
       return {
-        output: { code: "", content: "" },
+        // ``data.output`` lets a test start the node mid-compile, the state the
+        // runner leaves it in.
+        output: data.output ?? { code: "", content: "" },
         setOutput: mockSetOutput,
         code: data.code ?? "",
         setCode: () => {},
@@ -102,6 +105,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     signalNodeExecDone: () => {},
     dashboardOn: mockDashboardOn,
     edges: mockFlowEdges,
+    isRunActive: mockIsRunActive,
   }),
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({
@@ -141,6 +145,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDashboardOn = false;
   mockFlowEdges = [];
+  mockIsRunActive = false;
 });
 
 describe("a Vega chart", () => {
@@ -239,6 +244,46 @@ describe("an Autark tile", () => {
 
     // A Data Pool re-emits on every brush; the map syncs highlights itself.
     await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, input: INPUT_B }));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a run already in flight", () => {
+  test("is left to compile the chart itself", async () => {
+    // The runner triggers the node it is running. Doing it here as well puts two
+    // `sendCode` calls in one tick, and each toggles the widgets pass: two
+    // toggles in a batch cancel, the marker round trip never happens, and the
+    // node sits at "exec" until its watchdog. Found by the end-to-end run.
+    mockIsRunActive = true;
+
+    await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("the same holds for an Autark tile", async () => {
+    mockDashboardOn = true;
+    mockIsRunActive = true;
+
+    await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("and a node already compiling is not asked again", async () => {
+    await mount({ ...data(VEGA, { code: VEGA_SPEC, input: INPUT_A }), output: { code: "exec" } });
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("once the run ends, a restored input still draws", async () => {
+    mockIsRunActive = true;
+    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    mockIsRunActive = false;
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
 });
