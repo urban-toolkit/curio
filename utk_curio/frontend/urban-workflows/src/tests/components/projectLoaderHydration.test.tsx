@@ -92,7 +92,13 @@ describe("restoring saved outputs", () => {
 
     await waitFor(() => expect(mockHydrateRestoredOutputs).toHaveBeenCalled());
     const [restored, edges] = mockHydrateRestoredOutputs.mock.calls[0];
-    expect(restored).toEqual([{ nodeId: "py", output: OUTPUTS[0].filename }]);
+    // The TYPE travels with the name: a Vega node refuses an input whose type it
+    // cannot see, so a bare filename restored a chart that then refused its own
+    // data.
+    expect(restored).toEqual([{
+      nodeId: "py",
+      output: { path: OUTPUTS[0].filename, dataType: "dataframe" },
+    }]);
     // Not the store: React Flow has not seen these edges yet.
     expect(edges).toBe(BUILT_EDGES);
     expect(mockSetOutputs).toHaveBeenCalled();
@@ -106,6 +112,21 @@ describe("restoring saved outputs", () => {
 
     await waitFor(() => expect(mockHydrateRestoredOutputs).toHaveBeenCalled());
     expect(mockHydrateRestoredOutputs.mock.calls[0][1]).toBe(BUILT_EDGES);
+  });
+
+  it("falls back to the bare name when the manifest recorded no type", async () => {
+    // Older manifests have refs without one; they must still restore.
+    mockLoadProject.mockResolvedValue({
+      spec: SPEC,
+      outputs: [{ node_id: "py", filename: "art_py" }],
+    });
+
+    renderLoader();
+
+    await waitFor(() => expect(mockHydrateRestoredOutputs).toHaveBeenCalled());
+    expect(mockHydrateRestoredOutputs.mock.calls[0][0]).toEqual([
+      { nodeId: "py", output: "art_py" },
+    ]);
   });
 
   it("restores nothing when nothing was saved", async () => {

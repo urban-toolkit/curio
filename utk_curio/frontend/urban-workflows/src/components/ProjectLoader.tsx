@@ -141,7 +141,10 @@ export const ProjectLoader: React.FC<{
     setCurrentProject(id, []);
 
     const applyResult = (
-      result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> },
+      result: {
+        spec: unknown;
+        outputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
+      },
       { trusted }: { trusted: boolean }
     ) => {
       const { spec, outputs } = result;
@@ -164,7 +167,15 @@ export const ProjectLoader: React.FC<{
       if (outputs && outputs.length > 0) {
         const newOutputs: IOutput[] = outputs.map((o) => ({
           nodeId: o.node_id,
-          output: o.filename,
+          // Carry the TYPE, not just the name. A Vega node refuses an input
+          // whose type it cannot see ("undefined is not a valid input type"),
+          // and a bare filename has none, so a restored chart rejected its own
+          // data and rendered the empty state instead. The manifest records the
+          // type beside the filename precisely so this does not have to be
+          // guessed.
+          output: o.data_type
+            ? { path: o.filename, dataType: o.data_type }
+            : o.filename,
         }));
         setOutputs((prev: IOutput[]) => {
           const existing = new Set(prev.map((p) => p.nodeId));
