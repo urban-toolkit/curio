@@ -14,7 +14,7 @@
  */
 import { renderHook, act } from "@testing-library/react";
 
-const mockFitViewWithMenuOffset = jest.fn(() => true);
+const mockFitViewWithMenuOffset = jest.fn((..._args: any[]) => true);
 jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   fitViewWithMenuOffset: (...args: any[]) => mockFitViewWithMenuOffset(...args),
 }));
