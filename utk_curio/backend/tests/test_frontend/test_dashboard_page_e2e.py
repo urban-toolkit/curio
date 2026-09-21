@@ -389,7 +389,13 @@ def test_share_on_an_unsaved_dataflow_says_to_save_first(
         name="Unsaved",
         username=f"dash_new_{uuid.uuid4().hex[:8]}",
     )
+    # Let the first canvas finish booting before leaving it. `stub_login_and_enter_workflow`
+    # returns on `domcontentloaded`, so navigating straight off it cancels the
+    # session bootstrap mid-flight and the blank dataflow lands on the sign-in
+    # form instead of the canvas.
+    page.wait_for_selector("#tools-menu", timeout=45000)
     page.goto(f"{app_frontend.base_url}/dataflow/new")
+    require_owner_view(page)
     page.wait_for_selector("#tools-menu", timeout=45000)
     dismiss_toasts(page)
 
