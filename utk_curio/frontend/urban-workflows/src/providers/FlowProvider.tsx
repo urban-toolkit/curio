@@ -1615,6 +1615,12 @@ const FlowProvider = ({
     const installSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const installSyncPendingIdsRef = useRef<Set<string>>(new Set());
     scheduleInstallSyncRef.current = (nodeId: string) => {
+        // Never from a dashboard. A tile drawing itself emits an output like any
+        // run, and this is what turns an output into a project save: from the
+        // dashboard that would rewrite the owner's dataflow behind their back,
+        // and for a visitor holding a link it would throw and surface as an error
+        // toast on a page they only opened to look at.
+        if (dashboardOn) return;
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
         const canonical = getUnversionedFlowNodeType(node);

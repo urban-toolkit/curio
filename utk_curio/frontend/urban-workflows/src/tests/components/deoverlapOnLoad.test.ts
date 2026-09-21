@@ -62,8 +62,9 @@ describe("de-overlap on load", () => {
     });
 
     test("it does not touch the dashboard's workflowPosition", () => {
-        // That key is dashboard mode's alone; setting it at load time would pin
-        // what TrillGenerator persists for every later save.
+        // That key belongs to the dashboard page's layout pass
+        // (`prepareDashboardNodes`); setting it here would pin what
+        // TrillGenerator persists for every later save.
         const layout = read("utils/deoverlapLayout.ts");
 
         expect(layout).not.toMatch(/workflowPosition\s*[:=]/);

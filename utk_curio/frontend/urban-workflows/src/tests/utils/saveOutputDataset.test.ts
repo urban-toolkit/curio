@@ -159,3 +159,86 @@ describe("DATA_POOL is a save-trigger extra, not a shared sink", () => {
     ]);
   });
 });
+
+/**
+ * Pinning a node to the dashboard is a promise that its tile will draw when
+ * someone opens the page, which only holds if the output behind it was saved.
+ * So a dashboard source saves whatever its own toggle says.
+ *
+ * The two directions are both quiet failures: miss a source and the tile is an
+ * empty box on a page the owner shared; save too much and the user's Data
+ * Catalog fills with rows nothing reads.
+ */
+describe('outputs a dashboard tile depends on', () => {
+  const { shouldSaveOutputOnRun } = require('../../utils/saveOutputDataset');
+
+  // `type` is the React Flow sentinel every canvas node carries; the sink check
+  // reads the real kind through it (getFlowNodeCanonicalType), so a fixture
+  // without it is not a vis node as far as the filter is concerned.
+  const producer = {
+    id: 'py',
+    type: '__curioUniversalNode',
+    data: { nodeId: 'py', nodeType: 'curio.builtin/computation-analysis' },
+  };
+  const chart = {
+    id: 'chart',
+    type: '__curioUniversalNode',
+    data: { nodeId: 'chart', nodeType: 'curio.builtin/vis-vega' },
+  };
+  const outputs = [
+    { nodeId: 'py', output: { path: 'art_py', dataType: 'dataframe' } },
+    { nodeId: 'chart', output: { path: 'art_py', dataType: 'dataframe' } },
+  ];
+
+  test('a source is recorded even with its toggle off', () => {
+    const refs = buildSaveableLiveOutputs(outputs, [producer, chart], false, new Set(['py']));
+
+    expect(refs?.map((r: any) => r.node_id)).toEqual(['py']);
+  });
+
+  test('a view node is still excluded, even pinned', () => {
+    // A chart passes its input through; saving it would duplicate the producer's
+    // dataset under the chart's name.
+    const refs = buildSaveableLiveOutputs(outputs, [producer, chart], false, new Set(['chart']));
+
+    expect(refs).toBeUndefined();
+  });
+
+  test('a dataset-palette node feeding a tile is recorded', () => {
+    // Its ref resolves against the dataset it reads, so a reload restores the
+    // tile's data; the backend installers know not to copy it again.
+    const palette = {
+      id: 'ds',
+      type: '__curioUniversalNode',
+      data: {
+        nodeId: 'ds',
+        nodeType: 'curio.builtin/data-loading',
+        datasetSource: { datasetId: 'd1' },
+      },
+    };
+    const paletteOutputs = [{ nodeId: 'ds', output: { path: 'art_ds', dataType: 'dataframe' } }];
+
+    const refs = buildSaveableLiveOutputs(paletteOutputs, [palette], false, new Set(['ds']));
+
+    expect(refs?.map((r: any) => r.node_id)).toEqual(['ds']);
+  });
+
+  test('no dashboard sources leaves the toggle in charge', () => {
+    expect(buildSaveableLiveOutputs(outputs, [producer, chart], false, new Set())).toBeUndefined();
+    expect(buildSaveableLiveOutputs(outputs, [producer, chart], false, null)).toBeUndefined();
+    expect(
+      buildSaveableLiveOutputs(outputs, [producer, chart], true, new Set())?.map((r: any) => r.node_id),
+    ).toEqual(['py']);
+  });
+
+  test('shouldSaveOutputOnRun follows the pin, and never a palette node', () => {
+    expect(shouldSaveOutputOnRun({}, false, true)).toBe(true);
+    expect(shouldSaveOutputOnRun({}, false, false)).toBe(false);
+    // An explicit toggle still wins on its own.
+    expect(shouldSaveOutputOnRun({ saveOutputDataset: true }, false, false)).toBe(true);
+    // A palette node only ever loads; it has nothing new to save.
+    expect(
+      shouldSaveOutputOnRun({ datasetSource: { datasetId: 'd1' } }, false, true),
+    ).toBe(false);
+  });
+});
