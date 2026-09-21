@@ -164,7 +164,7 @@ def _why_not_isolated(exec_user, blockers):
     )
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, allow_shared_installs=False, collab=False, save_node_outputs=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, allow_shared_installs=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -216,7 +216,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         if allow_shared_installs
         else os.environ.get("CURIO_ALLOW_SHARED_INSTALLS", "0")
     )
-    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
+    # No CLI flag: this only seeds the per-node "Save output dataset" toggle,
+    # which every user can flip in the UI, so it is an operator env var rather
+    # than another curio.py argument. Read, never overwritten, so setting it in
+    # a compose ``environment:`` block reaches the backend.
+    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = os.environ.get(
+        "CURIO_DEFAULT_SAVE_NODE_OUTPUT", "0"
+    )
     if catalog_root:
         os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
@@ -1705,15 +1711,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=False,
-        help=(
-            "Persist every node run's output as a Computed dataset in the "
-            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1). "
-            "Saving is opt-in per node by default (via each node's Save output "
-            "toggle); pass this to turn it on for every node instead."
-        ),
-    )
-    parser.add_argument(
         "--catalog-root", default=None, metavar="PATH",
         help=(
             "Directory for the shared Data Catalog (hub read + publish "
@@ -1828,7 +1825,6 @@ def main():
         allow_publish=args.allow_publish,
         allow_shared_installs=args.allow_shared_installs,
         collab=args.collab,
-        save_node_outputs=args.save_node_outputs,
         catalog_root=args.catalog_root,
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,

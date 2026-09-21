@@ -69,12 +69,11 @@ Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_m
 | Flag | Default | Effect |
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
-| `--save-node-outputs` / `--no-save-node-outputs` | off | Default state of every node's save-output toggle |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
 | `--allow-shared-installs` / `--no-allow-shared-installs` | off | Permit package and library installs on a `--deploy` instance that cannot scope them to one user. Off by default: without isolation every install lands in the one interpreter running everybody's node code. No effect on a local run, which is never gated. See [NODE-CATALOG.md](NODE-CATALOG.md#who-may-install-a-package). |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, and the real host memory ceiling is `exec-memory-mb x exec-parallelism`. To fit more concurrent nodes on a small host, lower `--exec-parallelism` rather than the budget each node gets: values under 64 MB are clamped to 64, because the parquet writer's own footprint is sized against this number |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
 Node-execution isolation has no flag of its own: `--deploy` turns it on wherever the host can provide it (Linux, plus an unprivileged execution account, which the Docker image creates as `curio-exec`). Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed, so a host that cannot provide isolation refuses to start rather than run without it. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 
@@ -409,7 +408,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
 
-A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere. This is off by default, so turn the toggle on for the nodes whose output you want to keep; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=1` to turn it on for every node instead.
+A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 

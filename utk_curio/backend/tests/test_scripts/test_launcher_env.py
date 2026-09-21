@@ -277,13 +277,16 @@ def test_no_project_still_skips_both_pages():
     assert os.environ["CURIO_NO_PROJECT"] == "1"
 
 
-def test_save_node_outputs_defaults_off_and_can_be_turned_on():
+def test_save_node_outputs_defaults_off_and_honours_the_env_var(monkeypatch):
     # Opt-in per node (#180): a dataflow should not accumulate a Computed
-    # dataset for every node the user happens to run.
+    # dataset for every node the user happens to run. There is no curio.py flag
+    # for this - it only seeds a toggle every user can flip in the UI - so the
+    # env var is the whole interface and must survive a launch through curio.py.
     set_environment_variables(**BASE)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
 
-    set_environment_variables(**BASE, save_node_outputs=True)
+    monkeypatch.setenv("CURIO_DEFAULT_SAVE_NODE_OUTPUT", "1")
+    set_environment_variables(**BASE)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
 
 

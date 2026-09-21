@@ -1,12 +1,18 @@
 """The parts of isolation that only exist on Linux: fork, confine, kill.
 
-**These tests have never run.** They were written on a Windows host with no
-container runtime, so CI is their first execution. If something here fails, the
-most likely explanation is a bug in
+**Run by the ``test-gpu`` CI job, and by nothing else.** Not by
+``test-gpu-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
+runs ``scripts/test.sh --e2e-only`` against it, and not by
+``test-gpu-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
+a running stack: each test builds its own ``IsolationConfig`` and starts its
+own zygote, so the ambient ``CURIO_ISOLATION`` is not consulted and a green run
+of either other job says nothing about this file.
+
+If something here fails, the most likely explanation is a bug in
 ``utk_curio/sandbox/isolation/{child,zygote,supervisor,lifecycle}.py`` rather
 than in the test, and the failure is doing its job.
 
-Everything platform-independent is covered elsewhere and does run today:
+Everything platform-independent is covered elsewhere:
 ``test_isolation_protocol.py`` (the trust boundary), ``test_isolation_child.py``
 (execution logic, input rebuild, output serialization),
 ``test_isolation_staging.py`` (the full store round trip), and
