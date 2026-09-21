@@ -14,6 +14,7 @@ from shapely import wkt
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util.parsers import (
     load_from_duckdb,
+    load_shared_output_file,
     load_tabular_arrow_from_duckdb,
     load_tabular_preview_from_duckdb,
     parseOutput,
@@ -132,26 +133,50 @@ def get_artifact():
     # chdir_locked serializes against execute_code() so a concurrent /exec
     # can't restore cwd out from under us (or vice versa).
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    max_rows = int(max_rows_param) if max_rows_param is not None else None
     try:
         with chdir_locked(launch_dir):
             total_rows = None
             raw = None
-            if max_rows_param is not None:
-                max_rows = int(max_rows_param)
-                preview = load_tabular_preview_from_duckdb(
-                    art_id,
-                    max_rows,
-                    session_id=session_id,
-                )
-                if preview is not None:
-                    raw, total_rows = preview
-            if raw is None:
-                raw = load_from_duckdb(art_id, session_id=session_id)
-                if max_rows_param is not None:
-                    max_rows = int(max_rows_param)
-                    if isinstance(raw, _pd.DataFrame):
+            try:
+                if max_rows is not None:
+                    preview = load_tabular_preview_from_duckdb(
+                        art_id,
+                        max_rows,
+                        session_id=session_id,
+                    )
+                    if preview is not None:
+                        raw, total_rows = preview
+                if raw is None:
+                    raw = load_from_duckdb(art_id, session_id=session_id)
+                    if max_rows is not None and isinstance(raw, _pd.DataFrame):
                         total_rows = len(raw)
                         raw = raw.head(max_rows)
+            except Exception as store_error:
+                # The store could not serve it. Three ways that happens and all
+                # three mean the same thing to a caller holding a project's
+                # saved output: no such row, a row this session may not read
+                # (rows are session-tagged), or no readable database at all -
+                # the file is created on first write and can be locked by a
+                # concurrent /exec. So try the shared data directory, where a
+                # project load hydrates every output the manifest records. That
+                # file carries no session tag, which is what lets a dashboard -
+                # or any second viewer - read an output the producing session no
+                # longer owns.
+                try:
+                    raw = load_shared_output_file(art_id)
+                except KeyError:
+                    # Nothing hydrated under that name either. Report what the
+                    # STORE said rather than what the fallback said: for a
+                    # genuinely missing artifact that is the same KeyError this
+                    # route has always returned, and for a locked or missing
+                    # database it keeps the diagnostic instead of replacing it
+                    # with a misleading "no artifact with id".
+                    raise store_error
+                total_rows = None
+                if max_rows is not None and isinstance(raw, _pd.DataFrame):
+                    total_rows = len(raw)
+                    raw = raw.head(max_rows)
             data = parseOutput(raw)
     except Exception as e:
         # Surface the underlying exception in the response body so callers
