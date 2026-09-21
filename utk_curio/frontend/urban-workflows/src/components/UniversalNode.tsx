@@ -92,6 +92,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
+  // The input this node's content was last compiled against, by a run or by the
+  // restore path below, so neither repeats the other's work.
+  const lastRenderedInputRef = useRef<unknown>(undefined);
   const outputCodeRef = useRef(output?.code);
 
   // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
@@ -124,6 +127,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     }
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
+    lastRenderedInputRef.current = data.input;
     if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
@@ -147,7 +151,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
   // guarded so the same input never recompiles twice.
-  const lastRenderedInputRef = useRef<unknown>(undefined);
   // Never while a run is in flight: the runner compiles this node itself, and
   // two ``sendCode`` calls in one tick cancel each other. Each one toggles the
   // widgets pass, so two toggles in the same batch leave the flag where it

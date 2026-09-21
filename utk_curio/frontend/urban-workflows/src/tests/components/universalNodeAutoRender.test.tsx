@@ -286,6 +286,21 @@ describe("a run already in flight", () => {
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
+
+  test("but a node the run compiled is not compiled again when it ends", async () => {
+    // The run's own trigger records which input it compiled, so the end of a Run
+    // All does not recompile every chart it just drew.
+    mockIsRunActive = true;
+    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 0 }));
+
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 1 }));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    mockIsRunActive = false;
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 1 }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("a code node", () => {
