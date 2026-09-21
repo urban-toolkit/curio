@@ -73,7 +73,7 @@ Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_m
 | `--allow-shared-installs` / `--no-allow-shared-installs` | off | Permit package and library installs on a `--deploy` instance that cannot scope them to one user. Off by default: without isolation every install lands in the one interpreter running everybody's node code. No effect on a local run, which is never gated. See [NODE-CATALOG.md](NODE-CATALOG.md#who-may-install-a-package). |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
 Node-execution isolation has no flag of its own: `--deploy` turns it on wherever the host can provide it (Linux, plus an unprivileged execution account, which the Docker image creates as `curio-exec`). Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed, so a host that cannot provide isolation refuses to start rather than run without it. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 

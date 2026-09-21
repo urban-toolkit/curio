@@ -43,6 +43,7 @@ def _isolate_env(monkeypatch, tmp_path):
         "BACKEND_URL",
         "CURIO_ISOLATION",
         "CURIO_EXEC_USER",
+        "CURIO_EXEC_MEMORY_MB",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -542,3 +543,70 @@ def test_an_explicit_backend_url_wins(monkeypatch):
     monkeypatch.setenv("BACKEND_URL", "https://curio.example.org")
     set_environment_variables(**{**BASE, "backend_port": 5102})
     assert os.environ["BACKEND_URL"] == "https://curio.example.org"
+
+
+class TestExecMemoryFloor:
+    """``--exec-memory-mb`` is clamped, not just passed through (#334).
+
+    The number is spent by code that never sees the flag: ``codec`` sizes
+    DuckDB's ``memory_limit`` against it, and that write happens inside the
+    child's RLIMIT_AS cap. While the writer's limit was a fixed 256MB, an
+    operator lowering the budget - which USAGE.md invites, since it sells the
+    host ceiling as budget x parallelism - handed the child less headroom than
+    DuckDB had been told it could spend. Deriving the writer's limit fixes the
+    drift; this floor is the other half, enforced where the value enters.
+    """
+
+    def _floor(self):
+        from utk_curio.sandbox.isolation.supervisor import MIN_EXEC_MEMORY_MB
+
+        return MIN_EXEC_MEMORY_MB
+
+    def test_a_workable_budget_is_passed_through_untouched(self):
+        set_environment_variables(**BASE, exec_memory_mb=1024)
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == "1024"
+
+    def test_the_floor_itself_is_not_clamped(self):
+        """An off-by-one here would move the documented floor."""
+        set_environment_variables(**BASE, exec_memory_mb=self._floor())
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor())
+
+    def test_a_budget_below_the_floor_is_raised_to_it(self):
+        set_environment_variables(**BASE, exec_memory_mb=16)
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor())
+
+    def test_a_nonsense_budget_is_raised_too(self):
+        """Nothing else rejects this: argparse takes any int.
+
+        A negative budget reached ``child._apply_rlimits`` as a cap below the
+        interpreter's own footprint, which fails every allocation the child
+        makes - and, as the module docstring records, once made a
+        runaway-allocation test pass for the wrong reason.
+        """
+        for value in (-1, 0):
+            set_environment_variables(**BASE, exec_memory_mb=value)
+            assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor()), value
+
+    def test_the_clamp_says_so_rather_than_silently_moving_the_number(self, capsys):
+        """An operator who asked for 16 and got 64 has to find out here.
+
+        Silently honouring a different limit than the one asked for is how a
+        host ends up over-committed: the ceiling USAGE.md quotes is budget x
+        parallelism, and both factors have to be the real ones.
+        """
+        set_environment_variables(**BASE, exec_memory_mb=16)
+        warning = capsys.readouterr().err
+        assert "--exec-memory-mb" in warning
+        assert "16" in warning and str(self._floor()) in warning
+        # And points at the knob that actually solves the problem they had.
+        assert "--exec-parallelism" in warning
+
+    def test_an_omitted_flag_leaves_the_variable_unset(self):
+        """The clamp must not start exporting a default nobody asked for.
+
+        ``runner.IsolationConfig.from_environment`` supplies
+        ``DEFAULT_LIMITS["memory_mb"]`` when the variable is absent, so writing
+        one here would duplicate that default in a second place.
+        """
+        set_environment_variables(**BASE)
+        assert "CURIO_EXEC_MEMORY_MB" not in os.environ

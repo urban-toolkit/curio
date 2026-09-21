@@ -1,8 +1,8 @@
 """Parent side of isolated execution: stage, dispatch, time out, persist.
 
-NOT VERIFIED ON ANY MACHINE. The dispatch half needs Linux (AF_UNIX, killpg)
-and has never been executed; it was written on a Windows host with no container
-runtime available.
+The dispatch half needs Linux (AF_UNIX, killpg). It is exercised by
+``sandbox/tests/test_isolation_linux.py``, which runs in the ``test-gpu`` CI
+job and nowhere else.
 
 This module keeps every privilege the child must not have. It owns the DuckDB
 connection, resolves artifacts under session scoping, and decides what a
@@ -66,6 +66,20 @@ DEFAULT_LIMITS = {
     "fsize_mb": 8192,
     "nofile": 1024,
 }
+
+# The lowest ``--exec-memory-mb`` the launcher will accept, below which it
+# clamps and says so.
+#
+# Not a recommendation - it is the point where the budget stops being able to
+# carry what is spent against it. ``codec`` derives DuckDB's memory_limit as
+# half the budget and will not go below its own 32MB floor, so under 64MB the
+# writer starts claiming most of the child's address space, which is what #334
+# was. A host too small for this wants fewer concurrent nodes
+# (``--exec-parallelism``), not a smaller budget each.
+#
+# ``test_codec.py::TestParquetWriterFootprint`` pins the relation to codec's
+# two constants so lowering either cannot silently invalidate this.
+MIN_EXEC_MEMORY_MB = 64
 
 # Wall-clock allowance. Separate from cpu_seconds because a node that blocks on
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
