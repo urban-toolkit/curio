@@ -7,7 +7,7 @@ from typing import Optional
 
 from sqlalchemy import or_
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import commit_with_retry, db
 from utk_curio.backend.app.users.models import (
     SESSION_LIFETIME_DAYS,
     User,
@@ -38,32 +38,42 @@ def user_by_id(user_id: int) -> Optional[User]:
 
 
 def create_user(**kwargs) -> User:
-    user = User(**kwargs)
-    db.session.add(user)
-    db.session.commit()
-    return user
+    def _apply() -> User:
+        user = User(**kwargs)
+        db.session.add(user)
+        return user
+
+    # Every write below goes through commit_with_retry for the same reason:
+    # the request has already read (the username check, the session lookup)
+    # before it writes, and SQLite fails that write outright when another
+    # writer committed in between. See extensions.commit_with_retry.
+    return commit_with_retry(_apply)
 
 
 def create_session(user_id: int) -> UserSession:
-    now = datetime.now(timezone.utc)
-    session = UserSession(
-        user_id=user_id,
-        token=new_session_token(),
-        expires_at=now + timedelta(days=SESSION_LIFETIME_DAYS),
-        last_seen_at=now,
-    )
-    db.session.add(session)
-    db.session.commit()
-    return session
+    def _apply() -> UserSession:
+        now = datetime.now(timezone.utc)
+        session = UserSession(
+            user_id=user_id,
+            token=new_session_token(),
+            expires_at=now + timedelta(days=SESSION_LIFETIME_DAYS),
+            last_seen_at=now,
+        )
+        db.session.add(session)
+        return session
+
+    return commit_with_retry(_apply)
 
 
 def invalidate_session(token: str) -> bool:
-    session = UserSession.query.filter_by(token=token, active=True).first()
-    if not session:
-        return False
-    session.active = False
-    db.session.commit()
-    return True
+    def _apply() -> bool:
+        session = UserSession.query.filter_by(token=token, active=True).first()
+        if not session:
+            return False
+        session.active = False
+        return True
+
+    return commit_with_retry(_apply)
 
 
 def session_by_token(token: str) -> Optional[UserSession]:
@@ -71,5 +81,9 @@ def session_by_token(token: str) -> Optional[UserSession]:
 
 
 def touch_session(session: UserSession) -> None:
-    session.last_seen_at = datetime.now(timezone.utc)
-    db.session.commit()
+    def _apply() -> None:
+        session.last_seen_at = datetime.now(timezone.utc)
+
+    # This one runs on every authenticated request, so it is also the write
+    # most likely to collide with somebody else's.
+    commit_with_retry(_apply)

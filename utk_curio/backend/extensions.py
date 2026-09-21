@@ -1,9 +1,12 @@
+import random
 import sqlite3
+import time
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 
 
 db = SQLAlchemy()
@@ -42,6 +45,64 @@ def _sqlite_pragmas(dbapi_connection, _record):
         cursor.execute("PRAGMA busy_timeout=30000")
     finally:
         cursor.close()
+
+
+# ---------------------------------------------------------------------------
+# Writes that lost a race with another writer
+# ---------------------------------------------------------------------------
+
+# The one case the pragmas above cannot cover. ``busy_timeout`` makes a
+# connection WAIT for the write lock, but a transaction that has already READ
+# and only then writes has no lock to wait for: if another connection committed
+# in between, this one's snapshot is stale and SQLite fails the write
+# immediately, however long the timeout is. Request handlers are full of that
+# shape -- sign-up checks the username, creates the user, seeds the examples
+# and only then inserts the session -- and five people registering at the same
+# moment was enough to 500 three of them.
+#
+# Starting every transaction with BEGIN IMMEDIATE would fix it and was measured
+# to be worse: a node run queries the session table to authenticate and then
+# holds its connection for the whole execution, so the whole database would
+# stay write-locked for the 40 seconds the sandbox takes. Retrying the one
+# write that lost the race keeps the lock short and costs nothing when there is
+# no contention.
+_WRITE_CONFLICT_ATTEMPTS = 6
+_WRITE_CONFLICT_BASE_DELAY = 0.02  # seconds; worst case ~1.2s of backoff
+
+
+def _is_write_conflict(exc: BaseException) -> bool:
+    """True when *exc* is SQLite refusing a write that another writer won."""
+    message = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
+def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
+    """Apply a change and commit it, retrying if another writer got there first.
+
+    ``apply_changes`` is re-run on each attempt, not just the commit: a rollback
+    discards the pending insert or the attribute assignment along with the
+    transaction, so replaying the change is what makes the retry meaningful. It
+    must therefore be safe to run more than once -- these are single-object
+    writes, so it is.
+
+    Anything that is not a lost write race is re-raised on the spot, and so is
+    the last attempt: a caller that keeps failing should see the real error
+    rather than a swallowed one.
+    """
+    delay = _WRITE_CONFLICT_BASE_DELAY
+    for attempt in range(attempts):
+        try:
+            result = apply_changes()
+            db.session.commit()
+            return result
+        except OperationalError as exc:
+            db.session.rollback()
+            if not _is_write_conflict(exc) or attempt == attempts - 1:
+                raise
+            # Jittered, so two racing writers do not line up again on the retry.
+            time.sleep(delay + random.uniform(0, delay))
+            delay *= 2
+
 
 # Flask-SocketIO singleton, populated by init_socketio(app) when
 # ENABLE_COLLAB=True. Left as None otherwise so the flask-socketio package is
