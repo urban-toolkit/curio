@@ -116,7 +116,7 @@ A lot has landed since v0.5. Highlights:
 - 💾 **Auto-save.** With unsaved-changes guard and a save status icon.
 - ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
 - 👥 **Session-level multi-user isolation.** Across backend, sandbox, and frontend.
-- 📊 **Dashboard mode toggle.** Switches mode while preserving node state, edges, and positions.
+- 📊 **Shareable dashboards.** Pin the nodes you want to present and Share > Open dashboard opens them as a page of their own at `/dashboard/<id>`, with a link you can pass on. The tiles draw from the outputs the dataflow saved, so a visitor sees the charts without running anything.
 - 🦆 **DuckDB-native artifact I/O.** Faster, type-safe data exchange between sandbox and backend.
 - 🖼️ **Project thumbnails** in the project list, plus the `--with-examples` flag to seed example projects on startup, and toast notifications replacing browser alerts.
 - 👥 **Real-time collaboration.** Opt-in via `curio start --collab`. Co-edit a project with presence, soft locks, and shared execution output. See [docs/COLLABORATION.md](docs/COLLABORATION.md).

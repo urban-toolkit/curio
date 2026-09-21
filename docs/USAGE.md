@@ -99,6 +99,11 @@ The three startup modes control which pages are shown when a user first opens Cu
 | `--collab` | Stackable with other modes (pairs naturally with `--deploy`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
+> A `/dashboard/<id>` link opened by someone with no account needs guest sign-in,
+> which is on unless the instance runs with `CURIO_ENV=prod`. Without it the visitor
+> gets the sign-in page, because reading a dataflow's saved outputs needs a session.
+
+> [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
 
 ## Installation from pip
@@ -397,6 +402,42 @@ The first matching rule wins:
 | one nominal | `bar` of counts |
 | nothing usable | the editor stays empty |
 
+
+## Dashboards
+
+A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`, showing the
+nodes you pinned and nothing else. It is a link you can pass on, and whoever opens it
+sees the charts without running anything.
+
+**Pin what you want to show.** Each node's header has a pin control (*Pin to dashboard*).
+Pinning also decides what gets saved: the outputs of the nodes FEEDING a pinned tile are
+written to your Data Catalog as computed datasets, because that is what the page draws
+from later. Curio says so when you pin.
+
+**Open it.** *Share ⏷ → Open dashboard*, on the dataflow's top bar. It opens in a new
+tab, so the dataflow you are editing stays where it is. The same menu copies either
+link, the dashboard's or the dataflow's.
+
+**The page shows what is saved**, so save the dataflow after pinning or rearranging.
+Opening the dashboard with unsaved edits says as much.
+
+**Editing the layout** is the owner's: *Edit layout* unlocks the tiles, which can then
+be dragged by their title band and resized from their corner, and *Save layout* writes
+where they sit. Tile geometry is stored per node (`dashboardX`, `dashboardY`,
+`dashboardWidth`, `dashboardHeight`) beside the canvas coordinates, so a dashboard
+layout never disturbs the dataflow's own.
+
+**Sharing** follows the same rule a `/dataflow/<id>` link already does: anyone who has
+the link can open it read-only, and only the owner can change it. A visitor without an
+account is signed in as a guest, which needs guest sign-in to be available on the
+instance (it is, unless you run with `CURIO_ENV=prod`); reading a saved output needs a
+session, so without it the page loads with empty tiles.
+
+**What renders without a run:** charts and tables, from the outputs the dataflow saved.
+An Autark map tile draws in the viewer's browser and so needs WebGPU there, but it draws
+from the layers its upstream nodes already produced rather than recomputing them. A code
+node's tile shows its editor and its last output pane: a run's console text is not
+something a saved dataset can restore.
 
 ## Data Catalog
 
