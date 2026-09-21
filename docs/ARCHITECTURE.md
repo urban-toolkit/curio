@@ -805,7 +805,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged artifact store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs. That file carries no session tag, so a saved output is readable by anyone who can load the project, which is the posture `GET /api/projects/<id>/shared` already has |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
 | `/starters` | GET | Per-template starter source bodies from every installed package |

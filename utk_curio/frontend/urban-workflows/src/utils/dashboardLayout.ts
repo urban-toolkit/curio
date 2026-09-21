@@ -129,8 +129,11 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
       return {
         ...node,
         style: undefined,
-        draggable: true,
-        selectable: true,
+        // `draggable` and `selectable` are deliberately NOT set here. React
+        // Flow reads a node's own flag in preference to the canvas-wide one
+        // (`node.draggable || (nodesDraggable && node.draggable === undefined)`),
+        // so setting either to true would make a tile movable while the
+        // dashboard's layout is locked, which is every viewer's state.
         dragHandle: DASHBOARD_TILE_DRAG_HANDLE,
       };
     }

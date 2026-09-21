@@ -74,6 +74,18 @@ describe("prepareDashboardNodes", () => {
     expect(tile.dragHandle).toBe(DASHBOARD_TILE_DRAG_HANDLE);
   });
 
+  test("a tile leaves the page's lock in charge of whether it moves", () => {
+    // React Flow prefers a node's own flag over the canvas-wide one, so a tile
+    // marked draggable would be movable while the layout is locked - which is
+    // the state every viewer of a shared dashboard is in.
+    const nodes = [node("a", NodeType.VIS_VEGA, { dashboardPinned: true })];
+
+    const [tile] = prepareDashboardNodes(nodes, [], { a: true }).nodes as any[];
+
+    expect(tile.draggable).toBeUndefined();
+    expect(tile.selectable).toBeUndefined();
+  });
+
   test("a pinned tile with no saved slot is laid out automatically", () => {
     const nodes = [
       node("a", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true }),
