@@ -1,5 +1,7 @@
+import contextlib
 import duckdb
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -82,6 +84,43 @@ _connection: '_NonClosingConn | None' = None
 _connection_path: str | None = None
 _initialized: bool = False
 
+# The sandbox serves requests on threads, and every execution path releases the
+# shared connection when it finishes (see release_connection). Without the two
+# below, whichever request finished first closed the connection out from under
+# the ones still running: concurrent Autark data loads failed with "Connection
+# already closed!" mid-INSERT, and two threads racing init_db's migration
+# produced "Column with name session_id". Both were reproduced by the stress
+# tiers at ten users.
+#
+# ``_in_use`` counts the requests currently holding the connection open via
+# ``connection_in_use``; ``_close_pending`` remembers that somebody asked for
+# the close that had to be deferred.
+_state_lock = threading.RLock()
+_in_use: int = 0
+_close_pending: bool = False
+
+
+@contextlib.contextmanager
+def connection_in_use():
+    """Hold the shared connection open for the duration of one request.
+
+    Wrap any handler that touches DuckDB. A ``release_connection()`` from
+    another thread while this is held is remembered and carried out when the
+    last holder leaves -- so the cross-process contract still holds (the
+    sandbox does not keep the write handle open between requests) without a
+    request losing its connection mid-query.
+    """
+    global _in_use
+    with _state_lock:
+        _in_use += 1
+    try:
+        yield
+    finally:
+        with _state_lock:
+            _in_use -= 1
+            if _in_use == 0 and _close_pending:
+                _close_now()
+
 
 def _ensure_data_dir() -> Path:
     """
@@ -118,12 +157,13 @@ def get_connection() -> '_NonClosingConn':
     """
     global _connection, _connection_path
     path = get_db_path()
-    if _connection is not None and _connection_path != path:
-        release_connection()
-    if _connection is None:
-        _connection = _NonClosingConn(_connect_with_retry(path))
-        _connection_path = path
-    return _connection
+    with _state_lock:
+        if _connection is not None and _connection_path != path:
+            release_connection()
+        if _connection is None:
+            _connection = _NonClosingConn(_connect_with_retry(path))
+            _connection_path = path
+        return _connection
 
 
 def get_read_connection():
@@ -135,23 +175,39 @@ def get_read_connection():
     Backend process: opens a fresh read-only connection (_connection is None).
       close() on the returned raw connection actually closes it.
     """
-    if _connection is not None:
-        return _connection
+    with _state_lock:
+        if _connection is not None:
+            return _connection
     return _connect_with_retry(get_db_path(), read_only=True)
 
 
-def release_connection() -> None:
-    """
-    Actually close the persistent connection and reset state.
-    Call this when the current process is done with DuckDB and another
-    process (e.g., the sandbox subprocess) needs write access to the file.
-    """
-    global _connection, _connection_path, _initialized
+def _close_now() -> None:
+    """Close the connection and reset state. Callers hold ``_state_lock``."""
+    global _connection, _connection_path, _initialized, _close_pending
     if _connection is not None:
         object.__getattribute__(_connection, '_con').close()
         _connection = None
     _connection_path = None
     _initialized = False
+    _close_pending = False
+
+
+def release_connection(force: bool = False) -> None:
+    """
+    Close the persistent connection and reset state.
+    Call this when the current request is done with DuckDB and another
+    process (e.g., the sandbox subprocess) needs write access to the file.
+
+    Deferred while another thread is inside ``connection_in_use``: that thread
+    closes it on the way out instead. ``force=True`` closes regardless, for
+    teardown paths that know nothing else is running.
+    """
+    global _close_pending
+    with _state_lock:
+        if _in_use > 0 and not force:
+            _close_pending = True
+            return
+        _close_now()
 
 
 def init_db() -> None:
@@ -164,8 +220,16 @@ def init_db() -> None:
     # cache via release_connection() if the dir was wiped, so a stale
     # _initialized=True after a teardown will fall through to re-DDL.
     _ensure_data_dir()
-    if _initialized:
-        return
+    # Serialized: two threads running the DESCRIBE/ALTER migration below at
+    # once is what produced "Column with name session_id" under load.
+    with _state_lock:
+        if _initialized:
+            return
+        _init_db_locked()
+
+
+def _init_db_locked() -> None:
+    global _initialized
     con = get_connection()
     con.execute("""
         CREATE TABLE IF NOT EXISTS artifacts (
