@@ -95,6 +95,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // The input this node's content was last compiled against, by a run or by the
   // restore path below, so neither repeats the other's work.
   const lastRenderedInputRef = useRef<unknown>(undefined);
+  // The input that reached this node while its spec buffer was still empty, so
+  // the restore path can tell an authoring gesture from a reload. See below.
+  const starterFillInputRef = useRef<unknown>(undefined);
   const outputCodeRef = useRef(output?.code);
 
   // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
@@ -160,14 +163,27 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const runInFlight = !!isRunActive;
   useEffect(() => {
     if (kind !== NodeType.VIS_VEGA) return;
+    // An input that lands while the buffer is still empty belongs to a node
+    // somebody is wiring up right now: `vegaBehavior` fetches a preview and
+    // fills the buffer with a spec guessed from that input's columns a moment
+    // later. Drawing the guess would run the node on connect and pull its
+    // editor to the output pane while the author is still typing into it, which
+    // is not what a restore is for. A reload never looks like this, because the
+    // saved spec is in the buffer before the data is. Canvas only: a pinned
+    // tile always opens with its spec already loaded, and the dashboard has no
+    // author to interrupt.
+    if (!dashboardOn && hasInput && specIsEmpty) {
+      starterFillInputRef.current = data.input;
+    }
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
+    if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     lastRenderedInputRef.current = data.input;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
-  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight]);
+  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
   // An Autark tile is drawn once, and only on the dashboard. Its render spec
   // needs a WebGPU canvas, so this is real work rather than a recompile: the

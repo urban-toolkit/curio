@@ -196,6 +196,43 @@ describe("a Vega chart", () => {
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
+
+  test("the spec the starter fill guessed is not drawn on its own", async () => {
+    // Wiring a fresh chart to a node that has already run: the input lands on an
+    // empty buffer, `vegaBehavior` fetches a preview and writes a spec guessed
+    // from its columns, and that arrives as a second render. Drawing it would
+    // run the node on connect and pull the editor to its output pane while the
+    // author is still typing the real spec into it.
+    const utils = await mount(data(VEGA, { code: "", input: INPUT_A }));
+
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("but the next input draws, because the author has a spec by then", async () => {
+    const utils = await mount(data(VEGA, { code: "", input: INPUT_A }));
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(VEGA_SPEC);
+  });
+
+  test("a tile is never held back that way, it opens with its spec loaded", async () => {
+    // The dashboard has no author to interrupt, and a pinned tile's spec comes
+    // back from the save before its data does.
+    mockDashboardOn = true;
+    const utils = await mount(data(VEGA, { code: "", input: INPUT_A, dashboardPinned: true }));
+
+    await rerenderWith(
+      utils,
+      data(VEGA, { code: VEGA_SPEC, input: INPUT_A, dashboardPinned: true }),
+    );
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("an Autark tile", () => {
