@@ -37,6 +37,7 @@ from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    dismiss_toasts,
     assert_vega_canvas_rendered,
     canvas_nodes,
     close_tools_palette,
@@ -1281,6 +1282,11 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     project_id = dataflow_id_from_url(page)
 
     ctx.say("Share", "The dashboard and the dataflow each have a link.")
+    # Clear the pin and save toasts BEFORE opening the menu. The capture helper
+    # sweeps toasts by clicking their close buttons, and a click anywhere else
+    # on the page is what closes this dropdown - so an unswept toast at capture
+    # time photographs a menu that has just shut.
+    dismiss_toasts(page)
     ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
     page.get_by_test_id("open-dashboard-link").wait_for(state="visible", timeout=10000)
     ctx.capture("share-menu")
