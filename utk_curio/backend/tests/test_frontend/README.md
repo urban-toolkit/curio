@@ -53,6 +53,43 @@ There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including 
 
 `AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
+## Multi-user stress tiers
+
+`test-gpu-stress` in CI runs the shipped examples with 5, 10, 50 and 100 users
+at once. It has two halves, because a dataflow does.
+
+**The HTTP tiers** (`utk_curio/backend/tests/stress/`) need no browser: they
+call the same backend endpoints the canvas does, including the Autark data
+load, which is compiled to autk-db JavaScript and runs in the sandbox. That is
+what makes 100 users affordable. Against a stack that is already up:
+
+```bash
+# Node 26 is required: the harness runs the frontend's own Autark compiler
+# through Node's type stripping instead of reimplementing it in Python.
+python -m utk_curio.backend.tests.stress \
+    --backend http://127.0.0.1:5002 --tiers 5,10 --out .curio/stress
+```
+
+It writes `report.json` and `summary.md` (errors by kind, p50/p95/max per
+endpoint, the slowest users, every failure with its stderr) and exits non-zero
+if any tier had any failure. Useful flags: `--mix` to pick the examples,
+`--register-concurrency 0` to let the accounts be created concurrently too,
+which currently reproduces a SQLite lock failure at sign-up, and
+`CURIO_NODE_BIN` to point at a Node 26 binary when it is not the one on PATH.
+
+**The browser tier** (`test_stress_browser.py`) covers what only a browser can:
+Autark's map, plot and compute run on WebGPU in the page. Five real browser
+contexts, one per user, all rendering together.
+
+```bash
+CURIO_STRESS=1 CURIO_E2E_USE_EXISTING=1 \
+  pytest utk_curio/backend/tests/test_frontend/test_stress_browser.py -v
+```
+
+`CURIO_STRESS_BROWSER_USERS` and `CURIO_STRESS_BROWSER_WORKFLOW` change the
+user count and the dataflow. It stops at a handful of users on purpose: each
+one is a WebGPU context, and the CI runner has one GPU.
+
 ## Test database contract
 
 These tests boot the **real** backend through `curio.py start`, so they must never touch the developer's dev DB. The strategy keeps dev and test state fully separate:

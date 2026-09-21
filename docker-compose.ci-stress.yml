@@ -1,0 +1,62 @@
+# Compose override for the multi-user stress job
+# (.github/workflows/docker-compose.yml, job `test-gpu-stress`).
+#
+# This stack is the deployment shape -- --deploy, fork isolation, the
+# curio-exec account -- because the numbers are only worth reading if they come
+# from what users actually run against. It is docker-compose.ci-exec-user.yml
+# with two differences, both required by the harness rather than by the
+# configuration under test:
+#
+# 1. CURIO_TESTING=1. The browser tier creates its users through
+#    /api/testing/stub-login, which is mounted only in a non-production
+#    environment AND with this set (backend/app/testing/routes.py). The HTTP
+#    tiers do not need it -- they use the real /api/auth/signup, the same call
+#    the signup form makes -- so dropping this variable would cost the browser
+#    tier, not the load itself.
+#
+# 2. The frontend port is published. The browser tier drives real pages.
+#
+# Execution limits are left at their defaults on purpose: CURIO_EXEC_PARALLELISM
+# (2), CURIO_EXEC_MEMORY_MB (4096) and CURIO_EXEC_TIMEOUT (300) are what a
+# deployment runs with, and a tier that queues behind them is reporting
+# something true. Raise them in a dispatch run to measure a different shape,
+# never to make a red tier green.
+#
+# A sixth port triple. The runner shares its host with prod curio
+# (2000/5002/8080), curio-dev (2010/5012/8090), the in-process CI stack
+# (2020/5022/8100), the isolated one (2030/5032/8110) and the exec-user one
+# (2040/5042/8120), so this takes 2070/5072/8150 and its own compose project
+# (-p curio-ci-stress). 2050 and 2060 belong to the two dispatch-only repro
+# workflows.
+services:
+  curio:
+    # 100 users means up to 100 concurrent Node subprocesses for the Autark
+    # data loads (/execJs has no cap), each of them a real process tree. This
+    # limit is one of the things the run is measuring the distance to, so it
+    # matches the other CI overlays rather than being widened for the job.
+    pids_limit: 4096
+    environment:
+      - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # Pinned, not inferred: a runner that cannot confine must fail the job
+      # rather than quietly run every user's node code in one process, which
+      # would measure a stack nobody deploys.
+      - CURIO_ISOLATION=fork
+      # Only for the browser tier's stub-login; see the header.
+      - CURIO_TESTING=1
+    ports:
+      - "127.0.0.1:${CURIO_PORT_2000:-2070}:2000"
+    command:
+      - python
+      - curio.py
+      - start
+      - all
+      - --deploy
+      - --with-examples
+      - --backend-host
+      - 0.0.0.0
+      - --backend-port
+      - "5002"
+      - --sandbox-host
+      - 0.0.0.0
+      - --sandbox-port
+      - "2000"
