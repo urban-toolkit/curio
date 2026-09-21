@@ -6,11 +6,17 @@ import VersionBadge from "../../components/VersionBadge";
 /**
  * The badge says how node code is running, so it must not overstate it.
  *
- * `/version` reports the mode the sandbox *resolved*, which is the only honest
- * source: `auto` resolves to `off`, and a `fork` the platform cannot support
- * degrades to `off`. The case these tests exist for is the last one below --
- * an unrecognised or missing mode must render nothing rather than fall back to
- * a reassuring default.
+ * `/version` reports two things. `isolation` is the mode the sandbox
+ * *resolved*: `auto` resolves to `off`, and a `fork` the platform cannot
+ * support degrades to `off`. `isolation_active` is what execution actually
+ * did, and it is the only field that can reveal a stack which resolved `fork`
+ * and is running in-process anyway, because the confined child is started
+ * lazily and a failure there is not fatal.
+ *
+ * Two cases these tests exist for, pulling in opposite directions: an
+ * unrecognised or missing mode must render nothing rather than fall back to a
+ * reassuring default, and a not-yet-known `isolation_active` must NOT be read
+ * as a downgrade on an instance that is isolated.
  *
  * The two labels differ by a leading "not", so every assertion here matches the
  * rendered text exactly. A substring match for "isolated" is satisfied by "not
@@ -97,5 +103,97 @@ describe("VersionBadge", () => {
     mockVersion({ version: "", isolation: "fork" });
     const { container } = await renderBadge();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  // ── isolation_active: the outcome, not the resolved mode ────────────────
+
+  test("a resolved fork that fell back to in-process says NOT isolated", async () => {
+    // The reason this field exists. The sandbox still reports `fork`, because
+    // that is genuinely what it resolved, but the confined child never
+    // started. A badge reading only `isolation` claims a boundary that is not
+    // there.
+    mockVersion({
+      version: "0.16.10",
+      isolation: "fork",
+      isolation_active: "off",
+    });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(NOT_ISOLATED)).toBeInTheDocument());
+    expect(screen.queryByText(ISOLATED)).toBeNull();
+  });
+
+  test("the degraded tooltip says the child could not start, not that it was off", async () => {
+    // "not isolated" is the right label but the wrong whole story: an operator
+    // who configured isolation needs to know it failed, not think they never
+    // asked for it.
+    mockVersion({
+      version: "0.16.10",
+      isolation: "fork",
+      isolation_active: "off",
+    });
+    await renderBadge();
+
+    const badge = await screen.findByText(NOT_ISOLATED);
+    expect(badge).toHaveAttribute("title", expect.stringContaining("could not be started"));
+  });
+
+  test("pending is not a downgrade: a fresh page on an isolated stack still says isolated", async () => {
+    // The common case. `pending` means no node has run yet, which is true of
+    // every freshly loaded page, and is not evidence of anything.
+    mockVersion({
+      version: "0.16.10",
+      isolation: "fork",
+      isolation_active: "pending",
+    });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(ISOLATED)).toBeInTheDocument());
+    expect(screen.queryByText(NOT_ISOLATED)).toBeNull();
+  });
+
+  test("a confirmed fork says isolated", async () => {
+    mockVersion({
+      version: "0.16.10",
+      isolation: "fork",
+      isolation_active: "fork",
+    });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(ISOLATED)).toBeInTheDocument());
+  });
+
+  test("an older sandbox that sends no isolation_active still says isolated", async () => {
+    // Backward compatibility, and the mirror of the bug above: absence is not
+    // evidence of a failed zygote, and reading it as one would show "not
+    // isolated" on an instance that is isolated.
+    mockVersion({ version: "0.16.10", isolation: "fork" });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(ISOLATED)).toBeInTheDocument());
+  });
+
+  test("an unreachable sandbox does not downgrade a resolved mode", async () => {
+    // The backend sends 'unknown' for both when it cannot reach the sandbox.
+    mockVersion({
+      version: "0.16.10",
+      isolation: "fork",
+      isolation_active: "unknown",
+    });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(ISOLATED)).toBeInTheDocument());
+  });
+
+  test("an off stack stays off whatever the outcome field says", async () => {
+    mockVersion({
+      version: "0.16.10",
+      isolation: "off",
+      isolation_active: "off",
+    });
+    await renderBadge();
+
+    await waitFor(() => expect(screen.getByText(NOT_ISOLATED)).toBeInTheDocument());
+    expect(screen.queryByText(ISOLATED)).toBeNull();
   });
 });

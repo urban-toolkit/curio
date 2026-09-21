@@ -109,3 +109,66 @@ def test_file_route_blocks_path_traversal(app):
     # either way the file must not be served.
     assert resp.status_code != 200
     assert b"root:" not in resp.data
+
+
+class TestVersionPassesTheSandboxIsolationFields:
+    """The badge's two fields have to survive the proxy.
+
+    ``/api/version`` is what the browser reads; it asks the sandbox and
+    forwards the answer. The sandbox reports both the mode it *resolved*
+    (``isolation``) and what execution actually did (``isolation_active``),
+    and only the second can reveal a stack that resolved ``fork`` and is
+    running node code in-process anyway. A proxy that dropped it would put the
+    badge back to claiming a boundary that is not there.
+    """
+
+    def _get(self, app, payload, *, status=200, boom=None):
+        from unittest import mock
+
+        import requests
+
+        from utk_curio.backend.app.api import routes
+
+        class _Response:
+            status_code = status
+
+            @staticmethod
+            def json():
+                return payload
+
+        def _fake_get(*_args, **_kwargs):
+            if boom is not None:
+                raise boom
+            return _Response()
+
+        with mock.patch.object(routes._sandbox_session, "get", _fake_get):
+            return app.test_client().get("/version").get_json()
+
+    def test_both_fields_are_forwarded(self, app):
+        body = self._get(app, {"isolation": "fork", "isolation_active": "fork"})
+        assert body["isolation"] == "fork"
+        assert body["isolation_active"] == "fork"
+
+    def test_a_degraded_stack_is_forwarded_as_such(self, app):
+        """The combination the field exists for; the proxy must not flatten it."""
+        body = self._get(app, {"isolation": "fork", "isolation_active": "off"})
+        assert body["isolation"] == "fork"
+        assert body["isolation_active"] == "off"
+
+    def test_an_older_sandbox_yields_unknown_not_off(self, app):
+        """Absence is not evidence of a failed zygote.
+
+        Reporting ``off`` here would make the badge say "not isolated" on an
+        instance that is isolated, which is the mirror of the bug this guards.
+        """
+        body = self._get(app, {"isolation": "fork"})
+        assert body["isolation_active"] == "unknown"
+
+    def test_an_unreachable_sandbox_still_answers(self, app):
+        """The badge must render when the sandbox is slow or down."""
+        import requests
+
+        body = self._get(app, None, boom=requests.RequestException("down"))
+        assert body["isolation"] == "unknown"
+        assert body["isolation_active"] == "unknown"
+        assert body["version"]
