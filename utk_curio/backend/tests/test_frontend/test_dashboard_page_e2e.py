@@ -42,7 +42,6 @@ from .utils import (
     allow_guest_login_env,
     api_json,
     assert_vega_canvas_rendered,
-    auth_enabled_env,
     dismiss_toasts,
     node_locator,
     play_node,
@@ -274,7 +273,11 @@ def test_a_visitor_with_no_account_sees_the_dashboard_read_only(
     through the sandbox's by-name fallback to the hydrated file.
     """
     require_project_page()
-    if auth_enabled_env() and not allow_guest_login_env():
+    # The owner half of this needs a real account: `_pinned_and_saved` runs and
+    # saves a dataflow, and a stack booted without user auth opens every project
+    # read-only as the shared guest.
+    require_user_auth()
+    if not allow_guest_login_env():
         pytest.skip("A visitor with no account needs guest sign-in (ALLOW_GUEST_LOGIN)")
     session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_share")
     project_id = session["project"]["id"]
