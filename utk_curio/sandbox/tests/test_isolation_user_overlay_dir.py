@@ -128,21 +128,46 @@ class TestTheBackendAndTheSandboxAgree(unittest.TestCase):
 
     def test_the_two_spellings_are_the_same_directory(self):
         import tempfile
+        from unittest import mock
 
         from utk_curio.backend.app.packages import backend_runtime as rt
 
-        with tempfile.TemporaryDirectory() as tmp:
-            os.environ["CURIO_LAUNCH_CWD"] = tmp
-            os.environ["CURIO_SHARED_DATA"] = "./.curio/data/"
-            try:
-                store = os.path.join(tmp, ".curio", "data")
-                self.assertEqual(
-                    os.path.realpath(supervisor.user_overlay_dir(store, "7")),
-                    os.path.realpath(str(rt.user_node_overlay_dir("7"))),
-                )
-            finally:
-                os.environ.pop("CURIO_LAUNCH_CWD", None)
-                os.environ.pop("CURIO_SHARED_DATA", None)
+        # ``patch.dict`` rather than setting and popping. Both of these are
+        # owned by the backend suite's root conftest, which sets them at import
+        # time, so popping them does not restore anything - it deletes them for
+        # every later test in the session. ``_shared_data_dir`` then falls back
+        # to ``os.getcwd()`` and ``./.curio/data/`` and *creates* that tree, so
+        # a run that collects both suites wrote its DuckDB and its parquet
+        # artifacts into the developer's real store, which the backend conftest
+        # is explicit about never clobbering.
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"CURIO_LAUNCH_CWD": tmp, "CURIO_SHARED_DATA": "./.curio/data/"},
+        ):
+            store = os.path.join(tmp, ".curio", "data")
+            self.assertEqual(
+                os.path.realpath(supervisor.user_overlay_dir(store, "7")),
+                os.path.realpath(str(rt.user_node_overlay_dir("7"))),
+            )
+
+    def test_it_leaves_the_session_environment_alone(self):
+        """The test above borrows two vars it does not own.
+
+        ``CURIO_LAUNCH_CWD`` and ``CURIO_SHARED_DATA`` are set by the backend
+        suite's root conftest at import time, so in any run that collects both
+        suites they are live session state. Consuming them here is invisible
+        until something much later reads one: with a bare pop, this file left
+        ``test_routes.py::test_file_route_serves_relative_to_launch_cwd``
+        failing on a KeyError, and every subsequent artifact write landing in
+        the repo's own ``.curio/data`` instead of the test store.
+
+        Asserted by value rather than by presence, so it holds whether or not
+        the backend conftest was collected.
+        """
+        keys = ("CURIO_LAUNCH_CWD", "CURIO_SHARED_DATA")
+        before = {k: os.environ.get(k) for k in keys}
+        self.test_the_two_spellings_are_the_same_directory()
+        self.assertEqual({k: os.environ.get(k) for k in keys}, before)
 
     def test_the_subdirectory_name_is_the_same(self):
         self.assertEqual(supervisor.OVERLAY_SUBDIR, rt_subdir())
