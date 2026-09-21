@@ -36,7 +36,7 @@ export const DataflowProviders: React.FC<{
     // only reaches *descendants*. Putting it on the inside would hand
     // FlowProvider the no-op default value and silently drop every broadcast.
     <FlowProvider dashboardOn={presentation}>
-      {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider — the drawer
+      {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and
           a portal preserves React tree context, not DOM position. Outside
           FlowProvider, useFlowContext returns no-op defaults and Install
