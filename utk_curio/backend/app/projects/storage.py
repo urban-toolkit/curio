@@ -245,6 +245,22 @@ def _account_store_computed_file(
         return None
 
 
+def installed_dataset_file_for_node(
+    user_key: str,
+    spec: Optional[dict],
+    node_id: str,
+) -> Optional[Path]:
+    """The installed dataset file *node_id* reads, or ``None``.
+
+    Public name for the resolver :func:`_durable_source_for` uses. The dataset
+    installers call it to tell "this node's output IS a dataset the account
+    already holds" from "this node computed something new". The first needs no
+    computed copy: a reload restores its output from the very dataset the node
+    reads, so installing one would leave the user with two rows for one file.
+    """
+    return _installed_file_for_node(user_key, spec, node_id)
+
+
 def _durable_source_for(
     user_key: str,
     project_id: str,
