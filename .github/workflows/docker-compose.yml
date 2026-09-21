@@ -633,10 +633,14 @@ jobs:
       # reading anything into the test results. Without this a silently
       # degraded boot (fork unavailable, pyseccomp missing) would run the
       # in-process path and report a green "isolated" run.
-      - name: 🔒 Assert node execution is actually isolated
+      - name: 🔒 Assert the stack came up configured for isolation
         shell: bash
         run: |
           set -euo pipefail
+          # Boot-time, so this is the configuration only. Whether the workloads
+          # below actually forked is a separate question, asked after they run
+          # by "Assert the workflows above actually forked".
+          #
           # Ask the sandbox, do not read the logs. The startup banner goes to
           # the sandbox subprocess's stderr, which curio.py routes into
           # .curio/messages.log -- `docker compose logs` only carries the
@@ -714,6 +718,35 @@ jobs:
         run: |
           bash scripts/test.sh --e2e-only --use-existing \
             --workflows "$ISOLATED_WORKFLOWS"
+
+      - name: 🔒 Assert the workflows above actually forked
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The boot-time check earlier reads `isolation`, the mode the sandbox
+          # RESOLVED. That is settled before any node runs, so on its own it
+          # verifies a configuration and not a workload.
+          #
+          # The gap it leaves is reachable. The zygote is started lazily on the
+          # first /exec, and a spawn that fails degrades to in-process for the
+          # life of the process rather than failing the request, because the
+          # node still has to run. `isolation` does not move when that happens.
+          # This job would then have run every workflow in-process, produced
+          # the same correct answers, and gone green as a duplicate of test-gpu.
+          #
+          # `isolation_active` is the outcome rather than the intent, so it has
+          # to be read AFTER the workflows. `pending` means nothing executed,
+          # which is a failure here too: it would mean the e2e step dispatched
+          # no node at all.
+          active="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
+                    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation_active",""))')"
+          if [ "$active" != "fork" ]; then
+            echo "::error::the workflows did not run isolated (isolation_active='${active:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' >&2 || true
+            exit 1
+          fi
+          echo "OK: node execution was dispatched to the zygote"
 
       - name: 📋 Capture sandbox/backend logs
         if: always()

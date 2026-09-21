@@ -70,6 +70,37 @@ def _isolation_label():
     return _resolved_isolation_label
 
 
+def _isolation_active_label():
+    """What node execution is actually DOING, not what was resolved.
+
+    ``_isolation_label`` answers "what did this instance resolve to". That is a
+    configuration question and it is settled before any node runs, which makes
+    it the wrong thing to check when the question is "did this workload go
+    through the confined path".
+
+    The two can disagree, and nothing used to report it. The zygote is started
+    lazily, on the first ``/exec`` (``_isolation_runner`` below is the only
+    caller of ``lifecycle.ensure_running`` in the tree; ``server.py`` hardens
+    at boot but starts nothing). A spawn that fails is not fatal by design -
+    the node still has to run - so the sandbox degrades to in-process and
+    caches that for the life of the process, while the resolved label goes on
+    saying ``fork``.
+
+    - ``pending``: no node has executed yet, so there is nothing to report.
+    - ``fork``: executions are being dispatched to the zygote.
+    - ``off``: node code is running in this process.
+
+    Deliberately reports the decision rather than ``lifecycle.is_running()``.
+    Liveness answers "is a zygote up right now", which flaps: the zygote can
+    die after a workload finishes and be respawned on the next request, and
+    neither changes the fact that the executions went through the fork path.
+    """
+    state = _isolation_state
+    if state is None:
+        return 'pending'
+    return 'fork' if state else 'off'
+
+
 @app.route('/version', methods=['GET'])
 def version():
     from utk_curio import __version__
@@ -79,6 +110,7 @@ def version():
     return jsonify({
         'version': __version__,
         'isolation': _isolation_label(),
+        'isolation_active': _isolation_active_label(),
     })
 
 @app.route('/get', methods=['GET'])

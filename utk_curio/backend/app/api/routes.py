@@ -149,21 +149,38 @@ def version():
     against what the platform can actually do, so `CURIO_ISOLATION` here would
     report an intention, not a fact. Degrades to 'unknown' rather than failing
     -- the version badge must still render when the sandbox is slow or down.
+
+    Both fields are passed through, because the resolved mode alone can
+    overstate the boundary. The zygote is started lazily on the first node
+    execution, and a spawn that fails degrades to in-process for the life of
+    the sandbox process without changing what `isolation` reports;
+    `isolation_active` is what the sandbox actually did. The badge needs both
+    to avoid claiming a confinement that is not there.
     """
     from utk_curio import __version__
 
     isolation = 'unknown'
+    isolation_active = 'unknown'
     try:
         response = _sandbox_session.get(
             api_address + ":" + str(api_port) + '/version',
             timeout=SANDBOX_VERSION_TIMEOUT,
         )
         if response.status_code == 200:
-            isolation = response.json().get('isolation', 'unknown')
+            payload = response.json()
+            isolation = payload.get('isolation', 'unknown')
+            # An older sandbox does not send this. 'unknown' rather than 'off':
+            # the badge only downgrades on an explicit 'off', so a missing
+            # field must not be read as evidence of a failed zygote.
+            isolation_active = payload.get('isolation_active', 'unknown')
     except (requests.RequestException, ValueError):
         pass
 
-    return jsonify({'version': __version__, 'isolation': isolation})
+    return jsonify({
+        'version': __version__,
+        'isolation': isolation,
+        'isolation_active': isolation_active,
+    })
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
