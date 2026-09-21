@@ -43,3 +43,20 @@
 .stateLink {
   color: #2980b9;
 }
+
+/* The read-only notice, in the yellow the canvas uses for a shared view. */
+.banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #FFF4D6;
+  color: #7A5A00;
+  border: 1px solid #E6CD7A;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 90;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}

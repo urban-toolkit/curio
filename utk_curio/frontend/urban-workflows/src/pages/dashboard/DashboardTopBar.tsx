@@ -13,6 +13,27 @@ import { dataflowPath } from "../../utils/shareLinks";
 import barStyles from "../../components/menus/top/UpMenu.module.css";
 import styles from "./DashboardTopBar.module.css";
 
+/**
+ * May this viewer move the tiles?
+ *
+ * The owner of a saved dataflow, and not a guest account under auth. A visitor
+ * on a share link is ``viewerMode === "shared"`` and saving would throw; a guest
+ * is refused by the rule the canvas already applies (``blockGuestSaves``), so
+ * offering the control would only produce an error toast.
+ *
+ * Exported because the page reads it too: whoever cannot edit is told the
+ * dashboard is read-only.
+ */
+export function useCanEditLayout(): boolean {
+  const { user, enableUserAuth } = useUserContext();
+  const { viewerMode, projectId } = useFlowContext();
+  return (
+    viewerMode === "owner"
+    && !!projectId
+    && !(enableUserAuth && user?.is_guest)
+  );
+}
+
 export const LEAVE_UNSAVED_LAYOUT =
   "Leaving this dashboard discards the layout changes you have not saved.";
 
@@ -30,17 +51,15 @@ export const LEAVE_UNSAVED_LAYOUT =
 export function DashboardTopBar({ id }: { id: string }) {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
-  const { user, enableUserAuth } = useUserContext();
   const { workflowName } = useNodeActionsContext();
   const {
     projectName,
-    projectId,
     projectDirty,
-    viewerMode,
     dashboardLocked,
     setDashboardLocked,
     saveCurrentProject,
   } = useFlowContext();
+  const canEditLayout = useCanEditLayout();
 
   const [shareOpen, setShareOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,18 +77,6 @@ export function DashboardTopBar({ id }: { id: string }) {
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
   }, [shareOpen]);
-
-  /**
-   * Who may move the tiles: the owner of a saved dataflow, and not a guest.
-   *
-   * A visitor on a share link is ``viewerMode === "shared"`` and saving would
-   * throw; a guest under auth is blocked by the same rule as the canvas
-   * (``blockGuestSaves``), so offering the control would only produce a toast.
-   */
-  const canEditLayout =
-    viewerMode === "owner"
-    && !!projectId
-    && !(enableUserAuth && user?.is_guest);
 
   const leave = (action: () => void) => {
     // Unsaved tile geometry is real work: warn before dropping it.

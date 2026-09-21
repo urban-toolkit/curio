@@ -18,7 +18,7 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
 import { dataflowPath } from "../../utils/shareLinks";
-import DashboardTopBar from "./DashboardTopBar";
+import DashboardTopBar, { useCanEditLayout } from "./DashboardTopBar";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
 import "reactflow/dist/style.css";
@@ -27,6 +27,8 @@ import "../../components/MainCanvas.css";
 export const NOTHING_PINNED_TITLE = "Nothing is pinned to this dashboard yet.";
 export const NOTHING_PINNED_BODY =
   "Open the dataflow and use Pin to dashboard on the nodes you want to show here.";
+export const READ_ONLY_NOTICE =
+  "Viewing a shared dashboard (read-only). Open the dataflow to make a copy.";
 export const LOAD_FAILED_TITLE = "This dashboard could not be opened.";
 export const LOAD_FAILED_BODY =
   "It may have been deleted, or the link may not be shared with you.";
@@ -60,6 +62,7 @@ export const DashboardPage: React.FC = () => {
     markDirty,
   } = useFlowContext();
   const loadState = useProjectLoadState();
+  const canEditLayout = useCanEditLayout();
   const reactFlow = useReactFlow();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +134,13 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className={styles.page}>
       {id ? <DashboardTopBar id={id} /> : null}
+      {loadState === "loaded" && !canEditLayout ? (
+        // The notice the canvas gives a visitor, for the same reason: the page
+        // looks editable (tiles, a Share menu) and is not.
+        <div className={styles.banner} data-testid="shared-view-banner">
+          {READ_ONLY_NOTICE}
+        </div>
+      ) : null}
       <div className={styles.canvas} ref={canvasRef}>
         <ReactFlow
           nodes={nodes}

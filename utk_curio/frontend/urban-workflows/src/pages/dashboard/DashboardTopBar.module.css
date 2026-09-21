@@ -19,26 +19,3 @@
 .buttonActive {
   color: rgb(251, 170, 105);
 }
-
-.banner {
-  position: fixed;
-  top: 76px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #FFF4D6;
-  color: #7A5A00;
-  border: 1px solid #E6CD7A;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  z-index: 90;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.hint {
-  composes: banner;
-  background: #EEF4FB;
-  color: #2B4A66;
-  border-color: #C6D9EC;
-}

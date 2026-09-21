@@ -185,11 +185,13 @@ describe("editing the layout", () => {
     expect(mockFlow.setDashboardLocked).not.toHaveBeenCalled();
   });
 
-  test("a visitor on a share link gets no edit controls", async () => {
+  test("a visitor on a share link gets no edit controls, and is told why", async () => {
     mockFlow = flow({ viewerMode: "shared", projectId: null });
     await renderPage();
 
     expect(screen.queryByTestId("edit-layout-btn")).toBeNull();
+    // The page looks editable and is not, so it says so, the way the canvas does.
+    expect(screen.getByTestId("shared-view-banner").textContent).toContain("read-only");
   });
 
   test("a guest under auth gets no edit controls", async () => {
@@ -304,6 +306,20 @@ describe("the states", () => {
 
     expect(screen.getByText(LOAD_FAILED_TITLE)).toBeTruthy();
     expect(screen.queryByText(NOTHING_PINNED_TITLE)).toBeNull();
+  });
+
+  test("the owner gets no read-only notice", async () => {
+    await renderPage();
+
+    expect(screen.queryByTestId("shared-view-banner")).toBeNull();
+  });
+
+  test("the notice waits for the load, so it cannot flash on a page that fails", async () => {
+    mockLoadState = "loading";
+    mockFlow = flow({ viewerMode: "shared", projectId: null });
+    await renderPage();
+
+    expect(screen.queryByTestId("shared-view-banner")).toBeNull();
   });
 
   test("pinned tiles show no state overlay", async () => {

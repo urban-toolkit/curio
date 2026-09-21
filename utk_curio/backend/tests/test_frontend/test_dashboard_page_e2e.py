@@ -248,11 +248,16 @@ def test_the_editor_restores_saved_outputs_on_reload(
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
-    # Without a Play: the producer's saved output reached the pool, and the pool's
-    # rows reached the chart.
+    # Without a Play: the producer's saved output reached the pool, the pool
+    # rendered it, and the chart drew it.
     _chart_drew(page)
-    producer_status = node_locator(page, PRODUCER).locator("[data-curio-node-status]").first
-    expect(producer_status).to_have_attribute("data-curio-node-status", "done", timeout=30000)
+    pool_table = node_locator(page, POOL).locator("table").first
+    pool_table.wait_for(state="visible", timeout=45000)
+    rows = pool_table.locator("tbody tr")
+    assert rows.count() == 3, (
+        f"the Data Pool shows {rows.count()} rows of the producer's 3, so the "
+        f"saved output did not reach it"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,8 +353,10 @@ def test_share_opens_the_dashboard_in_a_new_tab_and_copies_links(
     with page.context.expect_page() as popup_info:
         page.get_by_test_id("open-dashboard-link").click()
     dashboard = popup_info.value
+    # A brand-new page reports an empty URL until it has navigated, so wait on
+    # the URL rather than on a load state.
+    dashboard.wait_for_url(re.compile(rf"/dashboard/{project_id}$"), timeout=30000)
     dashboard.wait_for_load_state("domcontentloaded")
-    assert re.search(rf"/dashboard/{project_id}$", dashboard.url), dashboard.url
     assert_vega_canvas_rendered(dashboard, CHART, timeout=90000)
     # The editor tab stayed where it was.
     assert page.url == editor_url
