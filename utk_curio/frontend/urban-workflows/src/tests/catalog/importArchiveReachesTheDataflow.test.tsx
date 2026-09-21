@@ -102,10 +102,19 @@ describe("the install that puts an imported package on the palette", () => {
   test("the standalone page, which has no dataflow, still installs nothing", async () => {
     // The page imports into the account store only. Guarding the fix does not
     // mean every surface suddenly acquires a project.
-    const done = importOnce(null);
-    await waitFor(() => expect(done).toHaveBeenCalledWith("imported"));
-    expect(mockUploadArchive).toHaveBeenCalledTimes(1);
-    expect(mockInstallToProject).not.toHaveBeenCalled();
+    //
+    // Silenced, not asserted: this path warns now, and the assertion for that
+    // belongs to the describe block below. Without the spy the warning is
+    // printed on every run of an otherwise quiet suite.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const done = importOnce(null);
+      await waitFor(() => expect(done).toHaveBeenCalledWith("imported"));
+      expect(mockUploadArchive).toHaveBeenCalledTimes(1);
+      expect(mockInstallToProject).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
@@ -129,3 +138,62 @@ describe("the drawer hands over the id it saved", () => {
     );
   });
 });
+
+describe("neither silent path stays silent", () => {
+  /**
+   * Both ways an import can fail to reach the lockfile used to look identical
+   * from outside, and identical to success: the upload returns 201, the UI
+   * resets, and nothing anywhere says the second call did not happen. On CI
+   * that is a 120s timeout in an unrelated assertion, which is how #340 was
+   * read as flake three times (#341, `351792bf`, and again on `main`).
+   */
+
+  test("a throw after the upload is reported, not swallowed", async () => {
+    // The drawer's handler had only a `finally`, so this became an unhandled
+    // rejection and the footer button went back to "Import package" as though
+    // the import had worked.
+    const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    const handler = src.slice(src.indexOf("const onPickArchive"));
+    const body = handler.slice(0, handler.indexOf("[ensureSavedProjectId"));
+    expect(body).toMatch(/catch\s*\([\s\S]{0,40}?\)\s*{[\s\S]{0,1200}?reportActionError/);
+  });
+
+  test("reportActionError is a dependency of the handler that now uses it", () => {
+    // A stale closure here would report through a function captured before
+    // the drawer had its error chrome, which is the quiet way this regresses.
+    const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    expect(src).toMatch(
+      /\[ensureSavedProjectId,\s*importArchive,\s*reportActionError\]/,
+    );
+  });
+
+  test("skipping the project install says so", async () => {
+    // The page path is legitimate and must not toast, so this is a console
+    // warning rather than an error - but it must exist, because it is the
+    // only thing that distinguishes "no dataflow to install into" from "the
+    // dataflow's id failed to arrive".
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const done = importOnce(null);
+      await waitFor(() => expect(done).toHaveBeenCalledWith("imported"));
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("account store only"),
+      );
+      expect(warn.mock.calls[0][0]).toContain("curio.demo.pkg");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("an install that did happen warns about nothing", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const done = importOnce("project-already-open");
+      await waitFor(() => expect(done).toHaveBeenCalledWith("imported"));
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
