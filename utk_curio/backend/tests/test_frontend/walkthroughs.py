@@ -1240,7 +1240,7 @@ def dataflow_id_from_url(page) -> str:
 @walkthrough(
     slug="dashboard-page-renders-pinned-charts",
     example=PROVENANCE_EXAMPLE,
-    refs=[192],
+    refs=[125, 192],
     title="A dashboard is a page of its own",
     premise="Pin a chart, save, open the dashboard: the chart is there without "
             "pressing Run. Unpin it and the page says what is missing.",
