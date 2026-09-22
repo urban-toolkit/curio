@@ -12,7 +12,6 @@ import { CURIO_UNIVERSAL_NODE_TYPE, EdgeType } from "../../constants";
 import UniversalNode from "../../components/UniversalNode";
 import BiDirectionalEdge from "../../components/edges/BiDirectionalEdge";
 import UniDirectionalEdge from "../../components/edges/UniDirectionalEdge";
-import VersionBadge from "../../components/VersionBadge";
 import { Loading } from "../../components/login/Loading";
 import { useProjectLoadState } from "../../components/ProjectLoader";
 import { useFlowContext } from "../../providers/FlowProvider";
@@ -165,7 +164,10 @@ export const DashboardPage: React.FC = () => {
           minZoom={0.05}
           // Never enlarge a tile past the size it was authored at.
           maxZoom={1}
-          proOptions={{ hideAttribution: false }}
+          // Hidden here as the provenance views already do: this page is
+          // shown to whoever holds the link, and the watermark sat on top of
+          // the content in the corner.
+          proOptions={{ hideAttribution: true }}
         />
         {loadState === "loading" || loadState === "idle" ? (
           <div className={styles.state}>
@@ -188,7 +190,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         ) : null}
       </div>
-      <VersionBadge />
     </div>
   );
 };

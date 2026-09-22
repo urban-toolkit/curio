@@ -19,6 +19,8 @@
  * the user's catalog fills with datasets nothing reads.
  */
 import {
+  DASHBOARD_TILE_DEFAULT_HEIGHT,
+  DASHBOARD_TILE_DEFAULT_WIDTH,
   DASHBOARD_TILE_DRAG_HANDLE,
   dashboardSourceNodeIds,
   prepareDashboardNodes,
@@ -41,6 +43,69 @@ function edge(source: string, target: string) {
 const RENDER_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const COMPUTE_SPEC = JSON.stringify({ compute: [{ shader: "x" }] });
 const DATA_SPEC = JSON.stringify({ data: [{ type: "osm" }] });
+
+describe("the automatic layout leaves room for the tiles it places", () => {
+  // A tile is drawn at `dashboardWidth`, or at the dashboard's own default when
+  // nobody has resized it. The layout used to advance columns by a single fixed
+  // pitch that was narrower than either, so two pinned tiles in adjacent columns
+  // were laid down on top of each other and the owner had to drag them apart
+  // before the dashboard could be read at all.
+  test("two columns are at least a tile apart", () => {
+    const nodes = [
+      node("src", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true }),
+      node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
+    ];
+    const edges = [edge("src", "chart")];
+
+    const prepared = prepareDashboardNodes(nodes, edges, { src: true, chart: true });
+    const src = prepared.nodes.find((n) => n.id === "src")!;
+    const chart = prepared.nodes.find((n) => n.id === "chart")!;
+
+    expect(Math.abs(chart.position.x - src.position.x)).toBeGreaterThanOrEqual(
+      DASHBOARD_TILE_DEFAULT_WIDTH,
+    );
+  });
+
+  test("a column is as wide as its widest tile, not as the default", () => {
+    const wide = 1400;
+    const nodes = [
+      node("src", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true, dashboardWidth: wide }),
+      node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
+    ];
+    const edges = [edge("src", "chart")];
+
+    const prepared = prepareDashboardNodes(nodes, edges, { src: true, chart: true });
+    const src = prepared.nodes.find((n) => n.id === "src")!;
+    const chart = prepared.nodes.find((n) => n.id === "chart")!;
+
+    expect(chart.position.x - src.position.x).toBeGreaterThanOrEqual(wide);
+  });
+
+  test("tiles stacked in one column clear each other vertically", () => {
+    const nodes = [
+      node("a", NodeType.VIS_VEGA, { dashboardPinned: true }),
+      node("b", NodeType.VIS_VEGA, { dashboardPinned: true }),
+    ];
+
+    const prepared = prepareDashboardNodes(nodes, [], { a: true, b: true });
+    const ys = prepared.nodes
+      .filter((n) => n.id === "a" || n.id === "b")
+      .map((n) => n.position.y)
+      .sort((x, y) => x - y);
+
+    expect(ys[1] - ys[0]).toBeGreaterThanOrEqual(DASHBOARD_TILE_DEFAULT_HEIGHT);
+  });
+
+  test("a saved tile position still wins over the automatic one", () => {
+    const nodes = [
+      node("a", NodeType.VIS_VEGA, { dashboardPinned: true, dashboardX: 400, dashboardY: 120 }),
+    ];
+
+    const prepared = prepareDashboardNodes(nodes, [], { a: true });
+
+    expect(prepared.nodes[0].position).toEqual({ x: 400, y: 120 });
+  });
+});
 
 describe("prepareDashboardNodes", () => {
   test("it stamps the canvas position, so a save cannot overwrite it", () => {

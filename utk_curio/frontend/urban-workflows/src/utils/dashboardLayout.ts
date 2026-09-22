@@ -17,12 +17,36 @@ interface NodeWithPosition extends Node {
  */
 export const DASHBOARD_TILE_DRAG_HANDLE = '.curio-dashboard-tile-handle';
 
-const NODE_WIDTH = 200;
-// Distance between nodes in the dashboard layout
-const DASHBOARD_SPACING = 450;
+/**
+ * The size a tile gets when nobody has resized it on the dashboard.
+ *
+ * Deliberately much larger than a canvas node. A node is sized to be legible
+ * among fifty others on a canvas; a tile is the content of a page, and at node
+ * size a single pinned chart floated in a corner of the window looking like a
+ * node that had lost its canvas. The page fits every tile into the window, so
+ * a generous default costs nothing when there are many: they scale down
+ * together. It is only a default, and `dashboardWidth`/`dashboardHeight` win.
+ */
+export const DASHBOARD_TILE_DEFAULT_WIDTH = 880;
+export const DASHBOARD_TILE_DEFAULT_HEIGHT = 560;
+
 const START_Y = 50;
 const V_GAP = 20;
-const DEFAULT_NODE_HEIGHT = 350;
+/** Gutter between auto-laid columns and their neighbours. */
+const H_GAP = 40;
+
+/**
+ * What a tile will actually be drawn at, which is what the auto-layout has to
+ * reserve room for. Mirrors the fallback chain `UniversalNode` uses for a
+ * dashboard tile, so the two never disagree about how wide a column is.
+ */
+function tileWidth(node: NodeWithPosition): number {
+  return node.data?.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH;
+}
+
+function tileHeight(node: NodeWithPosition): number {
+  return node.data?.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT;
+}
 
 // Function to apply a dashboard layout to nodes based on their pinned status
 // Pinned nodes are arranged in a grid-like structure based on their distances from root nodes
@@ -68,21 +92,28 @@ export function applyDashboardLayout(
       distanceGroups.get(distance)?.push(node);
     });
     const baseX = Math.min(...pinnedNodes.map(n => n.position.x));
+    // Columns advance by the width of the widest tile in the column just
+    // placed, rather than by one fixed pitch. A fixed pitch narrower than a
+    // tile overlapped its neighbour, and the owner had to drag them apart
+    // before the dashboard was readable at all.
+    let cursorX = baseX;
     Array.from(distanceGroups.keys()).sort((a, b) => a - b).forEach(distance => {
-      const currentX = baseX + distance * (NODE_WIDTH + DASHBOARD_SPACING);
+      const currentX = cursorX;
       const group = distanceGroups.get(distance) ?? [];
       // Sort column by original Y for consistent ordering
       group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
-      group.forEach((node, nodeIndex) => {
+      let stackY = START_Y;
+      group.forEach((node) => {
         // If node has a saved dashboard position, use it; otherwise auto-layout
         if (typeof node.data?.dashboardX === "number") {
           updatedNodes.push({ ...node, position: { x: node.data.dashboardX, y: node.data.dashboardY } });
         } else {
-          const nodeH = node.data?.dashboardHeight ?? node.data?.nodeHeight ?? DEFAULT_NODE_HEIGHT;
-          const y = START_Y + nodeIndex * (nodeH + V_GAP);
-          updatedNodes.push({ ...node, position: { x: currentX, y } });
+          updatedNodes.push({ ...node, position: { x: currentX, y: stackY } });
+          stackY += tileHeight(node) + V_GAP;
         }
       });
+      const columnWidth = Math.max(...group.map(tileWidth));
+      cursorX += columnWidth + H_GAP;
     });
   }
   return updatedNodes;

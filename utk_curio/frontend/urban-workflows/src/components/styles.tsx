@@ -461,7 +461,7 @@ export const NodeContainer = ({
     const nodeHeaderBandPx = 28;
     // A dashboard tile's title band: narrower than the canvas header, and the
     // only thing on the tile that can be dragged while the layout is unlocked.
-    const dashboardTitleBandPx = 22;
+    const dashboardTitleBandPx = 28;
 
     // --- Dataset drag-and-drop via capture-phase native listeners ---
     // Monaco editor installs its own native dragover/drop handlers that call
@@ -654,9 +654,9 @@ export const NodeContainer = ({
                             boxSizing: "border-box",
                             width: "100%",
                             flexShrink: 0,
-                            fontSize: "11px",
+                            fontSize: "13px",
                             fontWeight: 600,
-                            color: "#55565c",
+                            color: "var(--curio-text-primary)",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -1248,14 +1248,18 @@ export const getNodeContainerStyles = (
     };
 
     if (state.dashboardOn) {
-        // Dashboard mode frames every node identically, accent included.
+        // A dashboard tile is a card on a page, so it drops the canvas's accent
+        // stripe for the same hairline border, radius and resting shadow every
+        // other Curio card carries. The old 2px black square read as a node
+        // lifted off the canvas rather than as published content.
         return {
             ...base,
             borderStyle: "solid",
-            borderColor: "#000",
-            borderWidth: "2px",
-            borderRadius: "0",
-            boxShadow: "none",
+            borderColor: "var(--curio-border)",
+            borderWidth: "1px",
+            borderRadius: "var(--curio-radius-lg)",
+            boxShadow: "var(--curio-shadow-browse-card)",
+            padding: "10px",
             resize: "none",
         };
     }

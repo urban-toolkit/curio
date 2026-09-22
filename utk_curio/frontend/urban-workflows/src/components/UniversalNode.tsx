@@ -16,6 +16,10 @@ import { classifyAutkSpecString } from '../utils/autkSpecKind';
 import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
 import { hasIncomingEdge } from '../utils/nodeEmptyState';
 import { isEmptySpecBuffer } from '../utils/vegaDefaultSpec';
+import {
+  DASHBOARD_TILE_DEFAULT_HEIGHT,
+  DASHBOARD_TILE_DEFAULT_WIDTH,
+} from '../utils/dashboardLayout';
 import { NodeType } from '../constants';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
@@ -313,8 +317,22 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // to ``dashboardWidth``/``dashboardHeight``. Read only here: writing the
         // canvas fields from the dashboard would persist tile geometry as the
         // node's size on the canvas (TrillGenerator saves those).
-        nodeWidth={(dashboardOn ? data.dashboardWidth : undefined) ?? data.nodeWidth ?? adapter.container.nodeWidth}
-        nodeHeight={(dashboardOn ? data.dashboardHeight : undefined) ?? data.nodeHeight ?? adapter.container.nodeHeight}
+        //
+        // An unsized tile falls back to the dashboard's own default rather than
+        // to the node's canvas size. A node is sized to sit among many on a
+        // canvas, and at that size a tile reads as a stray node rather than as
+        // the content of the page. The page fits every tile to the window, so
+        // the larger default costs nothing when several are pinned.
+        nodeWidth={
+          dashboardOn
+            ? (data.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH)
+            : (data.nodeWidth ?? adapter.container.nodeWidth)
+        }
+        nodeHeight={
+          dashboardOn
+            ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
+            : (data.nodeHeight ?? adapter.container.nodeHeight)
+        }
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}
