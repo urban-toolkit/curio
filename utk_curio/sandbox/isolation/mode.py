@@ -131,7 +131,11 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
             return OFF, (
                 "Isolation is explicitly disabled on an instance with user auth "
                 "enabled. Node code runs in-process with full privileges; treat "
-                "node-authoring rights as shell access."
+                "node-authoring rights as shell access. It also serializes "
+                "them: in-process execution holds one process-wide lock, so "
+                "users' Python nodes run strictly one at a time however many "
+                "cores the host has. Isolation is what makes them concurrent "
+                "(CURIO_EXEC_PARALLELISM)."
             )
         return OFF, None
 
@@ -151,7 +155,8 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
                 "Isolation was requested but is unavailable here ("
                 + ", ".join(missing)
                 + "). Falling back to in-process execution, which is the normal "
-                "local-development path."
+                "local-development path -- and a single-user one: node runs "
+                "serialize behind one process-wide lock."
             )
         return FORK, None
 

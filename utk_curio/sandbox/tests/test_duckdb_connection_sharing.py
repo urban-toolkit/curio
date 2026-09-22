@@ -112,3 +112,57 @@ def test_init_db_migration_is_serialized(workspace):
         db_module.get_connection().execute("DESCRIBE artifacts").fetchall()
     }
     assert "session_id" in columns
+
+
+def test_each_thread_reads_what_another_just_committed(workspace):
+    """A row committed by one thread is visible to every other, at once.
+
+    Threads used to share one connection object, and therefore one
+    transaction context: a reader could run inside a transaction another
+    thread had open and miss a row that was already committed. It surfaced as
+    "No artifact with id X" for artifacts that were in the database the whole
+    time, which failed nodes under the stress tiers at five users.
+    """
+    db_module.init_db()
+    failures: list[str] = []
+    ready = threading.Barrier(6)
+
+    def write_then_have_others_read(index: int) -> None:
+        art_id = f"visible-{index}"
+        with db_module.connection_in_use():
+            db_module.get_connection().execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_str) "
+                "VALUES (?, ?, ?, ?)",
+                [art_id, f"node-{index}", "str", "v"],
+            )
+        ready.wait(timeout=30)
+        # Every thread now looks for every other thread's row.
+        for other in range(6):
+            with db_module.connection_in_use():
+                row = db_module.get_read_connection().execute(
+                    "SELECT id FROM artifacts WHERE id = ?", [f"visible-{other}"],
+                ).fetchone()
+            if row is None:
+                failures.append(f"thread {index} could not see visible-{other}")
+
+    threads = [
+        threading.Thread(target=write_then_have_others_read, args=(i,))
+        for i in range(6)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    assert not failures, failures[:5]
+
+
+def test_a_cursor_is_not_reused_after_the_connection_closes(workspace):
+    """A thread that outlives a release gets a fresh cursor, not a dead one."""
+    db_module.init_db()
+    first = db_module.get_connection()
+    db_module.release_connection(force=True)
+
+    second = db_module.get_connection()
+    assert second is not first
+    assert second.execute("SELECT 1").fetchone() == (1,)

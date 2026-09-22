@@ -110,6 +110,22 @@ _close_pending: bool = False
 # next write.
 _writer_process: bool = False
 
+# DuckDB's Python client is explicit that concurrent work needs a cursor per
+# thread: several threads sharing one connection object share its transaction
+# state, and a statement can then run inside a transaction another thread
+# opened. That is not a crash, which is what made it hard to see -- it is a
+# stale read. Under the stress tiers a node would be handed "No artifact with
+# id X" for a row that was already committed and is still in the database
+# afterwards.
+#
+# ``con.cursor()`` is a duplicate over the same database instance, so the
+# cursors share the data and the file handle while each keeps its own
+# transaction. ``_cursor_generation`` invalidates the per-thread cache when
+# the master is closed, so a thread that outlives a release does not hold a
+# cursor on a dead connection.
+_thread_state = threading.local()
+_cursor_generation: int = 0
+
 
 @contextlib.contextmanager
 def connection_in_use():
@@ -157,6 +173,23 @@ def get_db_path() -> str:
     return str(_ensure_data_dir() / "curio_data.duckdb")
 
 
+def _thread_cursor(master: '_NonClosingConn') -> '_NonClosingConn':
+    """This thread's cursor over *master*, created on first use.
+
+    Callers get something that behaves like the connection and whose close()
+    is a no-op, exactly as before; what changed is that two threads no longer
+    share one transaction context.
+    """
+    cursor = getattr(_thread_state, "cursor", None)
+    generation = getattr(_thread_state, "generation", None)
+    if cursor is None or generation != _cursor_generation:
+        raw = object.__getattribute__(master, "_con")
+        cursor = _NonClosingConn(raw.cursor())
+        _thread_state.cursor = cursor
+        _thread_state.generation = _cursor_generation
+    return cursor
+
+
 def get_connection() -> '_NonClosingConn':
     """
     Return the shared persistent DuckDB connection for this process.
@@ -175,7 +208,7 @@ def get_connection() -> '_NonClosingConn':
             _connection = _NonClosingConn(_connect_with_retry(path))
             _connection_path = path
             _writer_process = True
-        return _connection
+        return _thread_cursor(_connection)
 
 
 def get_read_connection():
@@ -189,7 +222,7 @@ def get_read_connection():
     """
     with _state_lock:
         if _connection is not None:
-            return _connection
+            return _thread_cursor(_connection)
         if _writer_process:
             # The sandbox between two runs: reopen the read-write connection
             # rather than a read-only one it would then have to fight.
@@ -200,12 +233,15 @@ def get_read_connection():
 def _close_now() -> None:
     """Close the connection and reset state. Callers hold ``_state_lock``."""
     global _connection, _connection_path, _initialized, _close_pending
+    global _cursor_generation
     if _connection is not None:
         object.__getattribute__(_connection, '_con').close()
         _connection = None
     _connection_path = None
     _initialized = False
     _close_pending = False
+    # Every per-thread cursor is dead with the master; make them be recreated.
+    _cursor_generation += 1
 
 
 def release_connection(force: bool = False) -> None:

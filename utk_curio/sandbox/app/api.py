@@ -344,6 +344,49 @@ def _isolated_runner():
         return _isolation_state
 
 
+@app.route('/artifact-meta', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def artifact_meta():
+    """The stored row for one artifact, without opening the database file.
+
+    This exists so the backend never opens curio_data.duckdb itself. DuckDB
+    allows a single cross-process writer, so every backend read-only open had
+    to be fitted around the sandbox closing its write handle between runs --
+    which is why the handle was released after every execution, and why an
+    auto-install that happened to collide with a node run silently read
+    nothing and moved on. With the read served here, the sandbox keeps one
+    connection for its lifetime and nothing contends for the file.
+
+    Returns the same columns the backend used to SELECT for itself; a missing
+    artifact is a 404 rather than an error, because "not there" is an ordinary
+    answer for a caller resolving an id it merely hopes is an artifact.
+    """
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+
+    from utk_curio.sandbox.util.db import get_read_connection
+
+    con = get_read_connection()
+    row = con.execute(
+        "SELECT kind, value_int, value_float, value_str, value_json "
+        "FROM artifacts WHERE id = ?",
+        [art_id],
+    ).fetchone()
+    if row is None:
+        return jsonify({'error': 'not found', 'fileName': art_id}), 404
+
+    kind, value_int, value_float, value_str, value_json = row
+    return jsonify({
+        'kind': kind,
+        'value_int': value_int,
+        'value_float': value_float,
+        'value_str': value_str,
+        'value_json': value_json,
+    })
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
 @holds_duckdb

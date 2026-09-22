@@ -148,7 +148,7 @@ def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict
 
 def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              baselines: dict, register_concurrency: int,
-             profile: str = "burst") -> tuple[list, float]:
+             profile: str = "burst", label: str | None = None) -> tuple[list, float]:
     """Run *tier* users, all doing their dataflow work at the same moment.
 
     ``register_concurrency`` caps how many accounts are created at once (0
@@ -162,9 +162,10 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     # Seeded on the run id: two runs of the same tier get the same arrival
     # pattern, so their numbers can be compared.
     pacing = build_pacing(profile, tier, random.Random(f"{run_id}-{tier}"))
+    label = label or str(tier)
     users = [
         VirtualUser(
-            backend_url, new_user_name(tier, index, run_id),
+            backend_url, new_user_name(label, index, run_id),
             examples[index % len(examples)].relpath,
             examples[index % len(examples)].spec_json,
             examples[index % len(examples)].workflow,
@@ -217,11 +218,11 @@ def main(argv: list[str] | None = None) -> int:
 
     tier_reports = []
     all_results = []
-    for tier in tiers:
+    for position, tier in enumerate(tiers):
         print(f"[stress] tier {tier}: starting", flush=True)
         results, seconds = run_tier(backend_url, args.run_id, tier, examples,
                                     baselines, args.register_concurrency,
-                                    args.profile)
+                                    args.profile, label=f"{tier}x{position}")
         all_results.extend(results)
         summary = reporting.tier_summary(tier, results, seconds, args.profile)
         tier_reports.append(summary)

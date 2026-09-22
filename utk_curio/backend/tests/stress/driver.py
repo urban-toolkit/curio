@@ -459,7 +459,12 @@ class VirtualUser:
             raise UserFailed(f"node {node.id} output differs from baseline")
 
 
-def new_user_name(tier: int, index: int, run_id: str | None = None) -> str:
-    """A username unique per run, so reruns never collide in the database."""
+def new_user_name(tier: str | int, index: int, run_id: str | None = None) -> str:
+    """A username unique per run, so reruns never collide in the database.
+
+    ``tier`` is a label rather than a number so that the same size can be run
+    twice in one command (``--tiers 10,10``) without the second pass trying to
+    register the first pass's accounts and getting a 409.
+    """
     run = run_id or uuid.uuid4().hex[:6]
     return f"stress_{run}_t{tier}_u{index}"

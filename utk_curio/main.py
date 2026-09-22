@@ -1707,7 +1707,9 @@ def main():
         "--exec-parallelism", type=int, default=None,
         help=(
             "How many isolated nodes may run at once (sets "
-            "CURIO_EXEC_PARALLELISM, default 2)."
+            "CURIO_EXEC_PARALLELISM). Defaults to half the host's cores, "
+            "capped at 8, with a floor of 2: the ceiling is memory, roughly "
+            "this times --exec-memory-mb."
         ),
     )
     parser.add_argument(
