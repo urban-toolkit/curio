@@ -358,6 +358,21 @@ class IsolationConfig:
 
         limits = dict(supervisor.DEFAULT_LIMITS)
         limits["memory_mb"] = _int("CURIO_EXEC_MEMORY_MB", limits["memory_mb"])
+        parallelism = _int("CURIO_EXEC_PARALLELISM", _default_parallelism())
+        # RLIMIT_NPROC is per real UID on Linux, not per process, and every
+        # isolated child runs as the same execution user -- so this number is
+        # a budget the concurrent children SHARE, not one each. At parallelism
+        # 2 nobody noticed; at 8 the 100-user stress run started failing nodes
+        # with "can't start new thread" inside ordinary library code, because
+        # numpy, pyogrio and friends all start threads of their own.
+        #
+        # Scaled with parallelism so each child keeps the allowance it always
+        # had. Deliberately not lowered per child instead: a node is allowed
+        # its threads, and taking them away would make user code slower rather
+        # than the instance safer.
+        limits["nproc"] = _int(
+            "CURIO_EXEC_NPROC", supervisor.DEFAULT_LIMITS["nproc"] * parallelism
+        )
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS
         )
@@ -374,7 +389,7 @@ class IsolationConfig:
             limits=limits,
             wall_timeout=wall_timeout,
             exec_uid=_resolve_exec_uid(env.get("CURIO_EXEC_USER")),
-            parallelism=_int("CURIO_EXEC_PARALLELISM", _default_parallelism()),
+            parallelism=parallelism,
         )
 
 
