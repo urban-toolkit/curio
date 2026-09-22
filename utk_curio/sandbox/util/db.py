@@ -99,6 +99,17 @@ _state_lock = threading.RLock()
 _in_use: int = 0
 _close_pending: bool = False
 
+# True once this process has opened the read-write connection, i.e. it is the
+# sandbox rather than the backend. DuckDB refuses to open the same file
+# read-only in a process that already holds it read-write ("Can't open a
+# connection to same database file with a different configuration"), so the
+# read path has to know which side it is on. Inferring it from "is the shared
+# connection open right now" is not enough: between a release and the next
+# open there is a window where the sandbox looks like the backend, and a read
+# arriving in that window took out a read-only handle that then blocked the
+# next write.
+_writer_process: bool = False
+
 
 @contextlib.contextmanager
 def connection_in_use():
@@ -155,7 +166,7 @@ def get_connection() -> '_NonClosingConn':
     Reopens when ``CURIO_LAUNCH_CWD`` / ``CURIO_SHARED_DATA`` change — e.g.
     pytest switches per-test workspaces while reusing the same process.
     """
-    global _connection, _connection_path
+    global _connection, _connection_path, _writer_process
     path = get_db_path()
     with _state_lock:
         if _connection is not None and _connection_path != path:
@@ -163,6 +174,7 @@ def get_connection() -> '_NonClosingConn':
         if _connection is None:
             _connection = _NonClosingConn(_connect_with_retry(path))
             _connection_path = path
+            _writer_process = True
         return _connection
 
 
@@ -178,6 +190,10 @@ def get_read_connection():
     with _state_lock:
         if _connection is not None:
             return _connection
+        if _writer_process:
+            # The sandbox between two runs: reopen the read-write connection
+            # rather than a read-only one it would then have to fight.
+            return get_connection()
     return _connect_with_retry(get_db_path(), read_only=True)
 
 

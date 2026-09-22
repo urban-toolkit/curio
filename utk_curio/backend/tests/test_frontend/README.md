@@ -73,9 +73,9 @@ python -m utk_curio.backend.tests.stress \
 It writes `report.json` and `summary.md` (errors by kind, p50/p95/max per
 endpoint, the slowest users, every failure with its stderr) and exits non-zero
 if any tier had any failure. Useful flags: `--mix` to pick the examples,
-`--register-concurrency 0` to let the accounts be created concurrently too,
-which currently reproduces a SQLite lock failure at sign-up, and
-`CURIO_NODE_BIN` to point at a Node 26 binary when it is not the one on PATH.
+`--register-concurrency N` to cap how many accounts are created at once
+(uncapped by default), and `CURIO_NODE_BIN` to point at a Node 26 binary when
+it is not the one on PATH.
 
 **The browser tier** (`test_stress_browser.py`) covers what only a browser can:
 Autark's map, plot and compute run on WebGPU in the page. Five real browser

@@ -267,15 +267,12 @@ class VirtualUser:
     def run(self) -> UserResult:
         """Register, then run the dataflow alongside everybody else.
 
-        The two halves are gated differently on purpose. Registration goes
-        through ``register_gate`` because concurrent sign-ups currently 500 on
-        the shared SQLite file, and every user failing at the front door would
-        leave the node execution -- the thing these tiers exist to measure --
-        untested. That contention is a real finding, reproduced on its own by
-        ``--register-concurrency 0``, not something to design around silently.
+        Registration is concurrent like everything else. ``register_gate``
+        exists to cap it (``--register-concurrency``) for a run that wants to
+        isolate the dataflow work from the sign-up burst; it is off by default.
 
         ``start_gate`` then lines the registered users up so their dataflow
-        work starts together.
+        work starts together rather than as each one finishes signing up.
         """
         started = time.time()
         try:

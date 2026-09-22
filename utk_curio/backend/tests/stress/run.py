@@ -163,10 +163,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=os.path.join(REPO_ROOT, ".curio", "stress"))
     parser.add_argument("--stats-log", default=None,
                         help="docker stats sample log to fold into the report")
-    parser.add_argument("--register-concurrency", type=int, default=1,
-                        help="how many accounts may be created at once "
-                             "(0 = no cap, which reproduces the sign-up "
-                             "contention on its own)")
+    parser.add_argument("--register-concurrency", type=int, default=0,
+                        help="cap on how many accounts may be created at once "
+                             "(0, the default, means no cap)")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
     args = parser.parse_args(argv)
 
