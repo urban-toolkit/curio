@@ -1079,9 +1079,20 @@ jobs:
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
+      # CURIO_STATE_DIR is what keeps this runnable at all. The e2e conftest
+      # creates its own ``.curio/test`` tree on the host at import time, and
+      # this stack runs with an execution user, which hardens the bind-mounted
+      # ``.curio`` to 0700 root-owned -- so the import died with EACCES before
+      # a browser was ever launched. The tier attaches to the running stack
+      # over HTTP and resets the database through /api/testing/reset-db, so
+      # those host-side paths are never read by anything; pointing them at the
+      # runner's temp dir costs nothing.
       - name: 🖥️ Run the browser tier (5 concurrent WebGPU users)
         if: always()
+        env:
+          CURIO_STATE_DIR: ${{ runner.temp }}/stress-e2e/.curio
         run: |
+          mkdir -p "$CURIO_STATE_DIR"
           cd utk_curio/backend
           PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest \
             tests/test_frontend/test_stress_browser.py -v -ra

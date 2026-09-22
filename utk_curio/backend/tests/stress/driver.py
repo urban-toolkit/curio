@@ -33,11 +33,20 @@ PY_INDENT = "    "
 AUTK_GRAMMAR = "AUTK_GRAMMAR"
 JS_COMPUTATION = "JS_COMPUTATION"
 
-# The client-side ceilings the two interpreters set on a node run. Matching
-# them means a node this harness reports as timed out is one the browser would
-# also have given up on.
+# Each wait matches what the code under test itself allows, so a timeout here
+# means the stack missed its own deadline rather than that the harness ran out
+# of patience:
+#   PY/JS   - the ceilings PythonInterpreter and JavaScriptInterpreter set on a
+#             node run in the browser.
+#   ARTIFACT- the backend's own deadline for a sandbox read (SANDBOX_GET_TIMEOUT
+#             in backend/app/api/routes.py); a shorter one here would report
+#             reads the backend was still willing to wait for.
+#   API     - project create/read/save. Nothing server-side bounds these, so
+#             this is a judgement: a dataflow save that takes over two minutes
+#             is a failure worth seeing, not a slow success.
 PY_TIMEOUT_S = 600
 JS_TIMEOUT_S = 180
+ARTIFACT_TIMEOUT_S = 300
 API_TIMEOUT_S = 120
 
 # How long a user waits for the rest of the tier to finish registering before
@@ -398,7 +407,7 @@ class VirtualUser:
         """
         ref = self.result.outputs[node.id]
         body = self._call("GET", "/get", params={"fileName": ref["path"]},
-                          node_id=node.id)
+                          node_id=node.id, timeout=ARTIFACT_TIMEOUT_S)
         digest = artifact_hash(body)
         self.result.hashes[node.id] = digest
         expected = self.compare_to.get(node.id)

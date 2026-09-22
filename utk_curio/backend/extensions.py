@@ -76,14 +76,15 @@ def _is_write_conflict(exc: BaseException) -> bool:
     return "database is locked" in message or "database table is locked" in message
 
 
-def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
-    """Apply a change and commit it, retrying if another writer got there first.
+def retry_on_write_conflict(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
+    """Run a unit of work, replaying it if another writer got there first.
 
-    ``apply_changes`` is re-run on each attempt, not just the commit: a rollback
-    discards the pending insert or the attribute assignment along with the
-    transaction, so replaying the change is what makes the retry meaningful. It
-    must therefore be safe to run more than once -- these are single-object
-    writes, so it is.
+    ``apply_changes`` is re-run in full on each attempt rather than just the
+    failing statement: a rollback discards the pending insert or the attribute
+    assignment along with the transaction, so replaying the change is what
+    makes the retry meaningful. It must therefore be safe to run more than
+    once, which is why callers pass the ORM work and leave file writes and
+    other side effects outside.
 
     Anything that is not a lost write race is re-raised on the spot, and so is
     the last attempt: a caller that keeps failing should see the real error
@@ -92,9 +93,7 @@ def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
     delay = _WRITE_CONFLICT_BASE_DELAY
     for attempt in range(attempts):
         try:
-            result = apply_changes()
-            db.session.commit()
-            return result
+            return apply_changes()
         except OperationalError as exc:
             db.session.rollback()
             if not _is_write_conflict(exc) or attempt == attempts - 1:
@@ -102,6 +101,16 @@ def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
             # Jittered, so two racing writers do not line up again on the retry.
             time.sleep(delay + random.uniform(0, delay))
             delay *= 2
+
+
+def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):
+    """Apply a change and commit it, retrying the pair on a lost write race."""
+    def _apply_and_commit():
+        result = apply_changes()
+        db.session.commit()
+        return result
+
+    return retry_on_write_conflict(_apply_and_commit, attempts=attempts)
 
 
 # Flask-SocketIO singleton, populated by init_socketio(app) when
