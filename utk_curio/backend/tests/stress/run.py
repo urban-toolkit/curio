@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import random
 import threading
 import time
 import uuid
@@ -25,7 +26,7 @@ import requests
 from ..test_frontend.workflow_spec import parse_workflow
 from . import report as reporting
 from .autk import compile_autk_data
-from .driver import VirtualUser, new_user_name
+from .driver import BURST, Pacing, VirtualUser, new_user_name
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -52,6 +53,32 @@ DEFAULT_MIX = [
 # A single user's whole session. Generous: under load a node legitimately
 # queues behind the sandbox's parallelism limit for minutes.
 USER_DEADLINE_S = 20 * 60
+
+# How a tier's users behave. ``burst`` is the worst case: everyone starts at
+# the same instant and runs their dataflow flat out, which is what the gated
+# tiers measure. ``session`` is a room of people working: they arrive over a
+# ramp and read each result before running the next node. A stack can be fine
+# for fifty people working and still fall over when all fifty press Run
+# together, and only running both tells you which one you have.
+SESSION_RAMP_S = 120.0
+SESSION_THINK_MIN_S = 3.0
+SESSION_THINK_MAX_S = 20.0
+
+
+def build_pacing(profile: str, tier: int, rng: random.Random) -> list[Pacing]:
+    """One Pacing per user of the tier."""
+    if profile == "burst":
+        return [BURST] * tier
+    # Poisson-ish arrivals: uniform offsets over the ramp, which for a fixed
+    # population is the same thing and keeps the tier's end time predictable.
+    return [
+        Pacing(
+            arrival_delay=rng.uniform(0, SESSION_RAMP_S),
+            think_min=SESSION_THINK_MIN_S,
+            think_max=SESSION_THINK_MAX_S,
+        )
+        for _ in range(tier)
+    ]
 
 
 class Example:
@@ -120,7 +147,8 @@ def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict
 
 
 def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
-             baselines: dict, register_concurrency: int) -> tuple[list, float]:
+             baselines: dict, register_concurrency: int,
+             profile: str = "burst") -> tuple[list, float]:
     """Run *tier* users, all doing their dataflow work at the same moment.
 
     ``register_concurrency`` caps how many accounts are created at once (0
@@ -131,6 +159,9 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     register_gate = (
         threading.Semaphore(register_concurrency) if register_concurrency else None
     )
+    # Seeded on the run id: two runs of the same tier get the same arrival
+    # pattern, so their numbers can be compared.
+    pacing = build_pacing(profile, tier, random.Random(f"{run_id}-{tier}"))
     users = [
         VirtualUser(
             backend_url, new_user_name(tier, index, run_id),
@@ -141,6 +172,7 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
             compare_to=baselines.get(examples[index % len(examples)].relpath),
             register_gate=register_gate,
             start_gate=start_gate,
+            pacing=pacing[index],
         )
         for index in range(tier)
     ]
@@ -166,6 +198,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--register-concurrency", type=int, default=0,
                         help="cap on how many accounts may be created at once "
                              "(0, the default, means no cap)")
+    parser.add_argument("--profile", choices=("burst", "session"), default="burst",
+                        help="burst: everyone starts together and runs flat "
+                             "out (the gated worst case). session: arrivals "
+                             "over a ramp, with pauses between node runs")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
     args = parser.parse_args(argv)
 
@@ -175,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
 
     wait_for_backend(backend_url)
     print(f"[stress] run {args.run_id} against {backend_url}; "
-          f"tiers {tiers}", flush=True)
+          f"tiers {tiers}; profile {args.profile}", flush=True)
 
     baselines = run_baseline(backend_url, args.run_id, examples)
 
@@ -184,15 +220,16 @@ def main(argv: list[str] | None = None) -> int:
     for tier in tiers:
         print(f"[stress] tier {tier}: starting", flush=True)
         results, seconds = run_tier(backend_url, args.run_id, tier, examples,
-                                    baselines, args.register_concurrency)
+                                    baselines, args.register_concurrency,
+                                    args.profile)
         all_results.extend(results)
-        summary = reporting.tier_summary(tier, results, seconds)
+        summary = reporting.tier_summary(tier, results, seconds, args.profile)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
-                                    args.stats_log)
+                                    args.stats_log, profile=args.profile)
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
         json.dump(reporting.raw_samples(all_results), fh)

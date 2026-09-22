@@ -44,7 +44,8 @@ def endpoint_stats(results: list[UserResult]) -> dict[str, dict]:
     }
 
 
-def tier_summary(tier: int, results: list[UserResult], seconds: float) -> dict:
+def tier_summary(tier: int, results: list[UserResult], seconds: float,
+                 profile: str = "burst") -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -52,6 +53,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float) -> dict:
     durations = [r.seconds for r in results]
     return {
         "tier": tier,
+        "profile": profile,
         "users": len(results),
         "completed": sum(1 for r in results if r.completed),
         "wall_seconds": round(seconds, 1),
@@ -123,10 +125,11 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
-                 stats_log: str | None = None) -> dict:
+                 stats_log: str | None = None, profile: str = "burst") -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
+        "profile": profile,
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
     }
@@ -137,7 +140,7 @@ def build_report(run_id: str, backend_url: str, tiers: list[dict],
 
 
 def markdown(report: dict) -> str:
-    lines = [f"## Stress run `{report['run_id']}`", ""]
+    lines = [f"## Stress run `{report['run_id']}` ({report.get('profile', 'burst')} profile)", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
     lines.append("| ---: | ----: | --------: | ---: | -------: | -------: |")
     for tier in report["tiers"]:

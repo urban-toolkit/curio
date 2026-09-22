@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import textwrap
 import threading
 import time
@@ -53,6 +54,32 @@ API_TIMEOUT_S = 120
 # starting anyway. Sign-up plus project creation is sub-second per user when
 # it is not queued.
 START_GATE_TIMEOUT_S = 300
+
+
+@dataclass
+class Pacing:
+    """How a user paces itself: when it arrives and how long it pauses.
+
+    ``burst`` (everyone at once, no pauses) is the worst case and the one the
+    tiers gate on. ``session`` spreads arrivals over a ramp and pauses between
+    node runs, which is what a room full of people using Curio actually looks
+    like: they read a result before running the next node. The two answer
+    different questions -- "can the stack survive a thundering herd" and "how
+    many people can work at the same time" -- and the report says which one
+    produced its numbers.
+    """
+
+    arrival_delay: float = 0.0
+    think_min: float = 0.0
+    think_max: float = 0.0
+
+    def think(self) -> float:
+        if self.think_max <= 0:
+            return 0.0
+        return random.uniform(self.think_min, self.think_max)
+
+
+BURST = Pacing()
 
 
 @dataclass
@@ -130,6 +157,7 @@ class VirtualUser:
         password: str = "stress-pass-1234",
         register_gate=None,
         start_gate=None,
+        pacing: "Pacing" = BURST,
     ):
         self.backend_url = backend_url.rstrip("/")
         self.name = name
@@ -144,6 +172,7 @@ class VirtualUser:
         # ``run`` for why.
         self.register_gate = register_gate
         self.start_gate = start_gate
+        self.pacing = pacing
         self.session = requests.Session()
         self.token: str | None = None
         self.project_id: str | None = None
@@ -258,6 +287,13 @@ class VirtualUser:
                 propagated = propagate_node_input(self.workflow, node.id, outputs)
                 if propagated is not None:
                     outputs[node.id] = propagated
+                continue
+
+            # A person looks at what a node produced before running the next
+            # one. Zero under the burst profile.
+            pause = self.pacing.think()
+            if pause:
+                time.sleep(pause)
 
     def save_and_reload(self) -> None:
         """Save the run's outputs onto the project, then read it back."""
@@ -293,6 +329,10 @@ class VirtualUser:
                 self.sign_up()
                 self.create_project()
             self._wait_at_start_gate()
+            if self.pacing.arrival_delay:
+                # Arrivals are spread from the same starting line rather than
+                # staggered thread by thread, so the offsets stay meaningful.
+                time.sleep(self.pacing.arrival_delay)
             self.run_nodes()
             self.save_and_reload()
             self.result.completed = True

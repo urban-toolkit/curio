@@ -1076,6 +1076,20 @@ jobs:
             --out "$GITHUB_WORKSPACE/stress" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
+      # The same 100 users, behaving like people rather than a thundering
+      # herd: arrivals spread over two minutes and a pause between node runs.
+      # A stack can be fine for a hundred people working and still fall over
+      # when all hundred press Run in the same millisecond, and the two
+      # numbers are fixed by different things, so both are recorded.
+      - name: 🚶 Run the session profile (100 users, realistic pacing)
+        if: always()
+        run: |
+          python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --profile session \
+            --out "$GITHUB_WORKSPACE/stress-session" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -1117,6 +1131,7 @@ jobs:
           name: stress-report
           path: |
             stress/
+            stress-session/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7

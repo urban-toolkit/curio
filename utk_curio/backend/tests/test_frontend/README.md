@@ -72,7 +72,15 @@ python -m utk_curio.backend.tests.stress \
 
 It writes `report.json` and `summary.md` (errors by kind, p50/p95/max per
 endpoint, the slowest users, every failure with its stderr) and exits non-zero
-if any tier had any failure. Useful flags: `--mix` to pick the examples,
+if any tier had any failure.
+
+Two profiles, because they answer different questions. `--profile burst` (the
+default, and what the tiers gate on) starts every user at the same instant and
+runs flat out: can the stack survive a thundering herd. `--profile session`
+spreads arrivals over a ramp and pauses between node runs, like a room of
+people reading a result before running the next node: how many users can work
+at once. A stack can pass one and fail the other, so the report records which
+profile produced its numbers. Useful flags: `--mix` to pick the examples,
 `--register-concurrency N` to cap how many accounts are created at once
 (uncapped by default), and `CURIO_NODE_BIN` to point at a Node 26 binary when
 it is not the one on PATH.
