@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from uuid import uuid4
 
@@ -1022,6 +1023,75 @@ def load_shared_project(project_id: str) -> dict:
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
     }
+
+
+# ---------------------------------------------------------------------------
+# Standalone dashboard
+# ---------------------------------------------------------------------------
+
+def _dashboard_envelope_reader():
+    """Read one saved output as the wire envelope ``/get`` would return.
+
+    Goes to the sandbox rather than parsing the file here, so an embedded page
+    carries byte-for-byte what a fetching page would have received. Reproducing
+    the parsing would be a second implementation of the wire format, and the
+    two would drift the first time either changed.
+
+    No session id is sent, deliberately. The artifact store is keyed to the
+    session that produced a row, which the owner's browser had and this call
+    never will; ``load_shared_project`` has just hydrated every saved output
+    into the shared data dir, and the sandbox falls back to reading it by name
+    from there. That fallback is the only reason a dashboard can be assembled
+    for anyone other than the person who ran the dataflow.
+    """
+    from utk_curio.backend.app.api.routes import _sandbox_call, SANDBOX_GET_TIMEOUT
+
+    def read(filename: str) -> dict:
+        resp = _sandbox_call(
+            "get", "/get",
+            label="/get (dashboard)", timeout=SANDBOX_GET_TIMEOUT,
+            params={"fileName": filename},
+        )
+        if isinstance(resp, tuple):  # transport failure, already a Flask tuple
+            raise KeyError(filename)
+        resp.raise_for_status()
+        return resp.json()
+
+    return read
+
+
+def build_standalone_dashboard(
+    project_id: str,
+    *,
+    limit_bytes: Optional[int] = None,
+    fetch_envelope=None,
+) -> dict:
+    """Everything the page at ``/dashboard/<id>`` needs, with nothing left to fetch.
+
+    Built on the shared-project load rather than the owner's, because a
+    dashboard is opened by whoever holds the link and the two must see the same
+    thing. Raises :class:`DashboardTooLargeError` when the rows would not fit in
+    a page; the caller turns that into a message naming the heavy tiles.
+    """
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DEFAULT_PAYLOAD_LIMIT_BYTES,
+        build_dashboard_payload,
+    )
+
+    loaded = load_shared_project(project_id)
+    detail = loaded["project"]
+    payload = build_dashboard_payload(
+        spec=loaded["spec"],
+        output_refs=loaded["outputs"],
+        fetch_envelope=fetch_envelope or _dashboard_envelope_reader(),
+        meta={
+            "projectId": project_id,
+            "name": getattr(detail, "name", None),
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+        },
+        limit_bytes=limit_bytes if limit_bytes is not None else DEFAULT_PAYLOAD_LIMIT_BYTES,
+    )
+    return payload.to_dict()
 
 
 # ---------------------------------------------------------------------------

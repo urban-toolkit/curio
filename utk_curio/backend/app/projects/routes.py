@@ -163,6 +163,48 @@ def get_shared_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/projects/:id/dashboard - everything a standalone dashboard carries
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard", methods=["GET"])
+def get_dashboard_payload(project_id: str):
+    """The spec and the rows for one dashboard, in a single response.
+
+    Unauthenticated for the same reason ``/shared`` is: a dashboard is opened by
+    whoever holds the link, and this serves exactly what that page would have
+    fetched piecemeal anyway.
+
+    A dashboard whose rows will not fit in a page is a 413 carrying the
+    breakdown, not a truncated payload. Falling back to fetching would produce a
+    page that looks standalone and is not, and the owner would only find out
+    when somebody opened it where the server is unreachable.
+    """
+    from utk_curio.backend.app.projects.dashboard_payload import DashboardTooLargeError
+
+    try:
+        payload = services.build_standalone_dashboard(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except DashboardTooLargeError as exc:
+        return jsonify({
+            "error": exc.describe(),
+            "totalBytes": exc.total_bytes,
+            "limitBytes": exc.limit_bytes,
+            "heaviest": [
+                {
+                    "nodeId": w.node_id,
+                    "bytes": w.bytes,
+                    "dataType": w.data_type,
+                }
+                for w in exc.weights[:10]
+            ],
+        }), 413
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+
+    return jsonify(payload), 200
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/projects/:id
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["DELETE"])
