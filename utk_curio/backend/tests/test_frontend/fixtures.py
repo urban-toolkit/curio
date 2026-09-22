@@ -48,6 +48,9 @@ _SHARED_SESSION_CLASSES = (
     # using it for the other five; a truncation between chapters would
     # invalidate the session token the browser is still holding.
     "TestCurioStressTour",
+    # The browser stress tier stubs several accounts up front and drives them
+    # all from one test; truncating would log every one of them out.
+    "TestBrowserStressTier",
 )
 
 _SQLA_MUTABLE_TABLES = (

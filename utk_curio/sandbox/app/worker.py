@@ -9,8 +9,12 @@ Thread safety: _exec_lock serializes calls because contextlib.redirect_stdout
 mutates the global sys.stdout, and os.chdir is process-wide. Both are restored
 after each call via a finally block. For a single-user tool this is acceptable.
 
-execute_js_code() runs JavaScript via a Node.js subprocess. No lock is needed
-because each call is fully isolated in a child process.
+execute_js_code() runs JavaScript via a Node.js subprocess, and those run in
+parallel: the child isolates the user code, so no lock is needed for
+correctness. What it does have is a ceiling (_js_slot) on how many children
+exist at once, because a hundred simultaneous Autark loads is a memory
+problem, not a correctness one. Its DuckDB access is protected by the
+connection guard in util/db.py, not by a lock of its own.
 """
 
 import collections
@@ -20,6 +24,42 @@ import threading
 
 _globals_cache: dict = {}
 _exec_lock = threading.Lock()
+
+
+def _default_js_parallelism() -> int:
+    """How many Node subprocesses may run at once.
+
+    Not a lock: JS nodes are meant to run in parallel, and this leaves them
+    doing so. It is a ceiling on how many at once, which the route had none of
+    -- one Node process per request, each loading autk-db and its own DuckDB.
+    A hundred simultaneous Autark loads peaked the CI container at 51 GB and
+    1313 processes, which is how a machine dies rather than queues.
+
+    Half the cores, floor 2, cap 16: an Autark PBF load is CPU- and
+    memory-heavy, and the work the child does is what costs, not the pipe.
+    ``CURIO_JS_PARALLELISM`` overrides it.
+    """
+    try:
+        configured = int(os.environ.get("CURIO_JS_PARALLELISM", ""))
+    except (TypeError, ValueError):
+        configured = 0
+    if configured > 0:
+        return configured
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 16))
+
+
+# Bounded, not serialized. Sized on first use so the env is fully populated.
+_js_slots: "threading.BoundedSemaphore | None" = None
+_js_slots_lock = threading.Lock()
+
+
+def _js_slot() -> "threading.BoundedSemaphore":
+    global _js_slots
+    with _js_slots_lock:
+        if _js_slots is None:
+            _js_slots = threading.BoundedSemaphore(_default_js_parallelism())
+        return _js_slots
 
 # Module bindings created by user `import` statements, keyed by session. This is
 # what makes an upstream node's `import numpy as np` visible downstream (#158).
@@ -462,18 +502,16 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
-            # Drop the sandbox write lock so the backend can open read-only
-            # DuckDB (catalog, auto-install) as soon as this request returns.
-            #
-            # NOTE: this teardown-per-exec is REQUIRED, not wasteful - DuckDB
-            # allows only a single cross-process writer, so the sandbox cannot
-            # hold the R/W handle open between requests or the backend's
-            # read-only opens would fail. The reopen is lazy (``get_connection``
-            # only runs when the next exec actually touches DuckDB), so an exec
-            # that never loads/saves pays nothing. Do not "optimize" by keeping
-            # the connection alive across execs.
-            from utk_curio.sandbox.util.db import release_connection
-            release_connection()
+            # The connection stays open. It used to be dropped here so the
+            # backend could open the file read-only between runs, which made
+            # the handle's lifetime a negotiation between two processes: the
+            # reopen cost every execution, a collision made the backend read
+            # nothing, and closing it under a concurrent request was the
+            # cause of two failures the stress tiers found. The backend now
+            # reads artifacts through /artifact-meta instead, so this process
+            # is the only one that ever opens curio_data.duckdb and can keep
+            # one connection for its lifetime. Anything that genuinely needs
+            # the file free (teardown, tests) calls release_connection().
             t1 = time.perf_counter()
             print(
                 f"[exec] load={t_load-t0:.3f}s  code={t_code-t_load:.3f}s"
@@ -813,7 +851,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             )
 
         def _run_node():
-            """Run the script in one Node subprocess.
+            """Run the script in one Node subprocess, up to the JS ceiling.
 
             Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
             the body only so a crash inside Node itself can be retried: every
@@ -821,6 +859,19 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             this point, so a second call re-runs the same execution rather than a
             different one.
             """
+            slot = _js_slot()
+            waited_at = time.perf_counter()
+            slot.acquire()
+            queued = time.perf_counter() - waited_at
+            if queued > 1.0:
+                print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
+                      file=_sys.stderr, flush=True)
+            try:
+                return _run_node_holding_slot()
+            finally:
+                slot.release()
+
+        def _run_node_holding_slot():
             print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
             t_start = time.perf_counter()
 
@@ -952,6 +1003,6 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 'output': {'path': '', 'dataType': 'str'}}
     except Exception:
         return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
-    finally:
-        from utk_curio.sandbox.util.db import release_connection
-        release_connection()
+    # No release here either: see the note in execute_code. The JS path is the
+    # one where dropping the connection mid-flight actually bit, since several
+    # Autark loads finish at once.

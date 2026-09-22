@@ -78,43 +78,33 @@ def _failure(stderr):
     return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
 
 
-def _persist_and_release(descriptor, *, node_type, session_id, save_dataset):
-    """File the output away and drop the DuckDB write handle. Returns (id, dataset).
+def _persist_output(descriptor, *, node_type, session_id, save_dataset):
+    """File the child's output away. Returns (artifact id, dataset file).
 
-    Two things have to happen here that are easy to get wrong.
+    The write handle is no longer dropped here. It used to be, because the
+    backend opened the DuckDB file read-only for the catalog, auto-install and
+    output resolution, so the sandbox had to hand the file back between runs.
+    The backend reads through ``/artifact-meta`` now, leaving this process the
+    only one that opens it.
 
-    **The write handle must be released.** DuckDB permits a single read-write
-    connection across processes, and the backend opens short-lived read-only
-    ones for the catalog, auto-install and output resolution. If the sandbox
-    keeps the handle, those fail (see the note in ``worker.execute_code``'s
-    finally block, and ``db._is_lock_conflict``). The in-process path releases
-    per execution for exactly this reason; the isolated path has to as well, or
-    the first isolated node starves the backend for the life of the process.
-
-    **It must be serialized against ``/get``.** In the in-process path
-    ``_exec_lock`` covers both the execution and this teardown, so a concurrent
-    ``/get`` reading through the shared connection cannot have it closed
-    underneath it (``chdir_locked`` takes the same lock). Isolated executions
-    deliberately do not hold ``_exec_lock`` while the child runs, which is what
-    makes them parallel, so it is taken here instead: just for the persist and
-    the release, not for the execution. Concurrency where it matters is
-    preserved, because the slow part is the child.
+    ``_exec_lock`` still wraps the persist. It is not about DuckDB: the staging
+    step moves files relative to the process's working directory, which
+    ``chdir_locked`` and the in-process executor also move. Isolated executions
+    deliberately do not hold the lock while the child runs, which is what makes
+    them parallel; taking it for the persist alone costs nothing, because the
+    slow part is the child.
     """
     from utk_curio.sandbox.app.worker import _exec_lock
     from utk_curio.sandbox.util import staging
-    from utk_curio.sandbox.util.db import release_connection
 
     with _exec_lock:
-        try:
-            # Before persist_output, which moves the file out of scratch.
-            dataset_file = (
-                staging.copy_output_dataset(descriptor) if save_dataset else None
-            )
-            art_id = staging.persist_output(
-                descriptor, node_id=node_type, session_id=session_id
-            )
-        finally:
-            release_connection()
+        # Before persist_output, which moves the file out of scratch.
+        dataset_file = (
+            staging.copy_output_dataset(descriptor) if save_dataset else None
+        )
+        art_id = staging.persist_output(
+            descriptor, node_id=node_type, session_id=session_id
+        )
     return art_id, dataset_file
 
 
@@ -285,7 +275,7 @@ def execute_isolated(
         _remember_imports(session_id, manifest["imports"])
 
         descriptor = manifest["output"]
-        art_id, dataset_file = _persist_and_release(
+        art_id, dataset_file = _persist_output(
             descriptor, node_type=node_type, session_id=session_id,
             save_dataset=save_dataset,
         )
@@ -319,6 +309,24 @@ def execute_isolated(
             supervisor.cleanup_scratch(scratch_dir)
 
 
+def _default_parallelism() -> int:
+    """How many isolated nodes may run at once when nobody says otherwise.
+
+    Two was a single-user default and it is what a multi-user instance queues
+    behind: at fifty simultaneous users the stress tiers measured a p95 of
+    161s for a node that takes under a second on an idle stack, almost all of
+    it spent waiting for a slot. Sizing to the host instead means a machine
+    with cores to spare uses them.
+
+    Capped at 8 because the real ceiling is memory, not CPU: peak usage is
+    roughly this times ``CURIO_EXEC_MEMORY_MB`` (4096 by default), so an
+    uncapped count on a 64-core box would promise far more memory than it has.
+    An operator who knows their workload raises it with --exec-parallelism.
+    """
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 8))
+
+
 class IsolationConfig:
     """Everything resolved once at sandbox startup for the isolated path."""
 
@@ -350,6 +358,21 @@ class IsolationConfig:
 
         limits = dict(supervisor.DEFAULT_LIMITS)
         limits["memory_mb"] = _int("CURIO_EXEC_MEMORY_MB", limits["memory_mb"])
+        parallelism = _int("CURIO_EXEC_PARALLELISM", _default_parallelism())
+        # RLIMIT_NPROC is per real UID on Linux, not per process, and every
+        # isolated child runs as the same execution user -- so this number is
+        # a budget the concurrent children SHARE, not one each. At parallelism
+        # 2 nobody noticed; at 8 the 100-user stress run started failing nodes
+        # with "can't start new thread" inside ordinary library code, because
+        # numpy, pyogrio and friends all start threads of their own.
+        #
+        # Scaled with parallelism so each child keeps the allowance it always
+        # had. Deliberately not lowered per child instead: a node is allowed
+        # its threads, and taking them away would make user code slower rather
+        # than the instance safer.
+        limits["nproc"] = _int(
+            "CURIO_EXEC_NPROC", supervisor.DEFAULT_LIMITS["nproc"] * parallelism
+        )
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS
         )
@@ -366,7 +389,7 @@ class IsolationConfig:
             limits=limits,
             wall_timeout=wall_timeout,
             exec_uid=_resolve_exec_uid(env.get("CURIO_EXEC_USER")),
-            parallelism=_int("CURIO_EXEC_PARALLELISM", 2),
+            parallelism=parallelism,
         )
 
 

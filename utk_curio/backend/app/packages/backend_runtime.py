@@ -58,7 +58,26 @@ log = logging.getLogger(__name__)
 
 #: Concurrency bound (memo dev/91 §3.3): the sandbox never multiplies load
 #: unboundedly. Waiters past the slot wait are refused loudly (503).
-MAX_CONCURRENT_WORKERS = 2
+#:
+#: Two was a single-user number: on a multi-user instance the third person to
+#: run a package node gets a 503 after ten seconds, however idle the host is.
+#: Sized to the machine instead, with the same cap-and-refuse behaviour, and
+#: overridable with CURIO_PACKAGE_WORKERS for an operator who has measured
+#: their own workload.
+
+
+def _default_worker_slots() -> int:
+    try:
+        configured = int(os.environ.get("CURIO_PACKAGE_WORKERS", ""))
+    except (TypeError, ValueError):
+        configured = 0
+    if configured > 0:
+        return configured
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 8))
+
+
+MAX_CONCURRENT_WORKERS = _default_worker_slots()
 _SLOT_WAIT_SECONDS = 10.0
 _worker_slots = threading.BoundedSemaphore(MAX_CONCURRENT_WORKERS)
 
