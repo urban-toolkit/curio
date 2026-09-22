@@ -33,6 +33,9 @@ const mockBeginPendingInstall = jest.fn();
 const mockPersistDataflowForInstall = jest.fn().mockResolvedValue({ saved: true, failedNodeIds: [] });
 const mockMarkDirty = jest.fn();
 const mockShowToast = jest.fn();
+const mockSaveCurrentProject = jest.fn().mockResolvedValue(undefined);
+let mockProjectId: string | null = 'project-1';
+let mockViewerMode: 'owner' | 'shared' = 'owner';
 
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
@@ -58,6 +61,9 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     loadSharedProject: jest.fn(),
     cleanCanvas: jest.fn(),
     discardProject: jest.fn(),
+    saveCurrentProject: mockSaveCurrentProject,
+    projectId: mockProjectId,
+    viewerMode: mockViewerMode,
   }),
 }));
 
@@ -161,7 +167,99 @@ async function connect(source: string, target: string) {
   await flush();
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockProjectId = 'project-1';
+  mockViewerMode = 'owner';
+  mockSaveCurrentProject.mockResolvedValue(undefined);
+});
+
+describe('pinning saves straight away', () => {
+  // A pin is the one edit whose whole point is to change a DIFFERENT page, and
+  // that page renders what is on disk. Left to the 30 second auto-save, "pin a
+  // tile, open the dashboard" showed "nothing is pinned yet" for up to half a
+  // minute, which reads as the feature being broken rather than as a save that
+  // has not happened yet.
+  async function pin(value = true, dashboardOn = false) {
+    renderFlow(dashboardOn);
+    await flush();
+    await act(async () => {
+      api.addNode(makeNode('chart', NodeType.VIS_VEGA), undefined, false);
+    });
+    await act(async () => { api.setPinForDashboard('chart', value); });
+    // Past the debounce.
+    await act(async () => { jest.advanceTimersByTime(500); });
+    await flush();
+  }
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  test('it writes the pin to disk', async () => {
+    await pin(true);
+
+    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+  });
+
+  test('unpinning is saved just as promptly', async () => {
+    // Otherwise the tile stays on a page the user has already removed it from.
+    await pin(false);
+
+    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+  });
+
+  test('a burst of pins is one save', async () => {
+    renderFlow(false);
+    await flush();
+    await act(async () => {
+      api.addNode(makeNode('a', NodeType.VIS_VEGA), undefined, false);
+      api.addNode(makeNode('b', NodeType.VIS_VEGA), undefined, false);
+    });
+    await act(async () => {
+      api.setPinForDashboard('a', true);
+      api.setPinForDashboard('b', true);
+    });
+    await act(async () => { jest.advanceTimersByTime(500); });
+    await flush();
+
+    expect(mockSaveCurrentProject).toHaveBeenCalledTimes(1);
+  });
+
+  test('a dataflow that was never saved is not saved by a pin', async () => {
+    // There is no project to update, and creating one behind the user's back on
+    // a pin is not what they asked for.
+    mockProjectId = null;
+
+    await pin(true);
+
+    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+  });
+
+  test('a visitor holding a link never writes', async () => {
+    mockViewerMode = 'shared';
+
+    await pin(true);
+
+    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+  });
+
+  test('the dashboard itself still saves only on Save layout', async () => {
+    await pin(true, true);
+
+    expect(mockSaveCurrentProject).not.toHaveBeenCalled();
+  });
+
+  test('a failed save says so, rather than leaving a stale dashboard', async () => {
+    mockSaveCurrentProject.mockRejectedValue(new Error('offline'));
+
+    await pin(true);
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('Could not save the pin'),
+      'error',
+    );
+  });
+});
 
 describe('the presentation flag', () => {
   test('it comes from the route, not from state', async () => {

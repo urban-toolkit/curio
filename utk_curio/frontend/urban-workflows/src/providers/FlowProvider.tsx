@@ -379,6 +379,13 @@ const FlowProvider = ({
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    // Saves the project right after a pin changes (assigned below, next to
+    // markDirtyRef). Pinning is the one edit whose entire purpose is to change
+    // a DIFFERENT page, and that page renders what is on disk, so leaving it to
+    // the 30 second auto-save meant "pin a tile, open the dashboard" showed
+    // "nothing is pinned yet" for up to half a minute. That reads as a broken
+    // feature rather than as a save that has not happened yet.
+    const savePinChangeRef = useRef<() => void>(() => {});
     // Set after workflowOps exists; called from applyNewOutput (a genuine runtime
     // output, NOT project load — load writes outputs via setOutputs directly) to
     // auto-install + surface a produced dataset without a manual disk-icon save.
@@ -499,6 +506,10 @@ const FlowProvider = ({
         // is not now: the page renders what is on disk, so an unsaved pin would
         // be a tile the dashboard never shows.
         markDirtyRef.current();
+        // Both directions: unpinning has to reach the dashboard just as promptly
+        // as pinning, or the tile stays on a page the user has already removed
+        // it from.
+        savePinChangeRef.current();
         if (!value) return;
         // Say what pinning does beyond hiding the other nodes: the tile has to
         // be able to draw without a run, which means the outputs behind it get
@@ -1600,6 +1611,31 @@ const FlowProvider = ({
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markDirtyRef.current = workflowOps.markDirty;
+
+    // Debounced so toggling several pins in a row is one save, and so the save
+    // reads the React Flow store after the pin has landed in it rather than the
+    // snapshot from the click.
+    const pinSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    savePinChangeRef.current = () => {
+        // The dashboard writes on its own terms (Save layout), and a visitor
+        // holding a link has nothing to write to.
+        if (dashboardOn) return;
+        if (!workflowOps.projectId) return;
+        if (workflowOps.viewerMode === "shared") return;
+        if (pinSaveTimerRef.current) clearTimeout(pinSaveTimerRef.current);
+        pinSaveTimerRef.current = setTimeout(() => {
+            workflowOps.saveCurrentProject().catch((err: unknown) => {
+                // Loud, unlike the 30 second auto-save: the user just asked for
+                // something whose only visible effect is on another page, so a
+                // silent failure would look like the dashboard ignoring them.
+                console.error("Saving the pin failed:", err);
+                showToast(
+                    "Could not save the pin. The dashboard will not show this tile until the dataflow is saved.",
+                    "error",
+                );
+            });
+        }, 400);
+    };
 
     // ── Auto-surface produced datasets without a manual disk-icon save ─────────
     // A dataset is installed when its producing node's output is persisted: for
