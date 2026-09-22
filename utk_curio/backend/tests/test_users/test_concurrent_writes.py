@@ -201,3 +201,45 @@ def test_a_real_error_is_not_retried(file_db_app):
         with pytest.raises(OperationalError):
             commit_with_retry(_apply)
     assert attempts["count"] == 1
+
+
+def test_the_session_stamp_is_not_rewritten_on_every_request(file_db_app):
+    """The busiest write in the system was a field nothing reads.
+
+    ``last_seen_at`` exists to say roughly when a session was last active;
+    expiry is decided by ``expires_at``. Writing it per request turned every
+    read-only call into a writer, and on one SQLite file that was what a
+    hundred users collided over.
+    """
+    from utk_curio.backend.app.users import repositories as repo
+
+    with file_db_app.app_context():
+        user = repo.create_user(username="toucher", name="T", type="programmer")
+        session = repo.create_session(user.id)
+        first = session.last_seen_at
+
+        for _ in range(20):
+            repo.touch_session(session)
+
+        assert session.last_seen_at == first, (
+            "a burst of requests rewrote the session stamp; that write is the "
+            "one the 100-user run kept losing"
+        )
+
+
+def test_the_session_stamp_is_refreshed_once_it_is_stale(file_db_app):
+    """It is still a liveness stamp: past the interval, it moves."""
+    from datetime import timedelta
+
+    from utk_curio.backend.app.users import repositories as repo
+
+    with file_db_app.app_context():
+        user = repo.create_user(username="toucher2", name="T", type="programmer")
+        session = repo.create_session(user.id)
+        stale = datetime.now(timezone.utc) - repo.SESSION_TOUCH_INTERVAL - timedelta(seconds=1)
+        session.last_seen_at = stale.replace(tzinfo=None)
+        _db.session.commit()
+
+        repo.touch_session(session)
+
+        assert session.last_seen_at.replace(tzinfo=timezone.utc) > stale

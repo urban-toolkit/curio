@@ -80,10 +80,33 @@ def session_by_token(token: str) -> Optional[UserSession]:
     return UserSession.query.filter_by(token=token, active=True).first()
 
 
-def touch_session(session: UserSession) -> None:
-    def _apply() -> None:
-        session.last_seen_at = datetime.now(timezone.utc)
+#: How stale ``last_seen_at`` may get before a request refreshes it.
+#:
+#: It used to be written on every authenticated request, which made the
+#: busiest write in the system a field nothing reads: session expiry is
+#: decided by ``expires_at``, fixed when the session is created. On one
+#: SQLite file with a hundred users that write became the dominant source of
+#: lock contention -- every ``database is locked`` failure left in the
+#: 100-user stress run was this statement, on requests that were otherwise
+#: only reading.
+#:
+#: A minute of slack keeps the field's meaning (roughly when this session was
+#: last active) and removes almost all of the writes.
+SESSION_TOUCH_INTERVAL = timedelta(minutes=1)
 
-    # This one runs on every authenticated request, so it is also the write
-    # most likely to collide with somebody else's.
+
+def touch_session(session: UserSession) -> None:
+    """Refresh the session's liveness stamp, at most once per interval."""
+    now = datetime.now(timezone.utc)
+    previous = session.last_seen_at
+    if previous is not None:
+        # Stored naive, in UTC.
+        if previous.tzinfo is None:
+            previous = previous.replace(tzinfo=timezone.utc)
+        if now - previous < SESSION_TOUCH_INTERVAL:
+            return
+
+    def _apply() -> None:
+        session.last_seen_at = now
+
     commit_with_retry(_apply)
