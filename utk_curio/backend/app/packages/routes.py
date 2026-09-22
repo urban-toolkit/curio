@@ -33,7 +33,7 @@ from pathlib import Path
 
 import json as _json
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 
 from utk_curio.backend.app.packages.factory import (
     FactoryError,
@@ -426,9 +426,16 @@ def upload_packageage():
         result = install_packageage_from_archive(
             user_key, upload.stream.read(), replace=replace
         )
-    except InstallerError as exc:
-        return _error(str(exc))
-    except PackageIdError as exc:
+    except (InstallerError, PackageIdError) as exc:
+        # Logged, not only returned. The reason reaches the browser and stops
+        # there: a rejected sideload in CI left a 400 in the access log with
+        # nothing to say which archive or why, and the e2e failure that
+        # followed was a timeout on the NEXT request, two steps from the
+        # cause.
+        current_app.logger.warning(
+            "package upload rejected: filename=%s replace=%s reason=%s",
+            upload.filename, replace, exc,
+        )
         return _error(str(exc))
     user_packageage = package_dir(user_key, result.manifest.dir_name)
     return jsonify({
@@ -567,6 +574,10 @@ def remove_packageage(dir_name: str):
     from utk_curio.backend.app.packages.backend_runtime import remove_backend_residue
 
     remove_backend_residue(user_key, dir_name)
+    # ...and so do the lockfile entries that named it. Without this every
+    # dataflow that had the package kept a reference to something no longer
+    # installed, and reopening it retried an install that cannot succeed.
+    packages_services.detach_from_all_projects(user_key, dir_name)
     return "", 204
 
 

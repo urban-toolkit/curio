@@ -419,9 +419,14 @@ def test_save_export_import_and_run_package_nodes(
             with page.expect_file_chooser() as chooser:
                 drawer.get_by_role("button", name="Import package").click()
             chooser.value.set_files(str(archive))
-    assert uploaded.value.ok, (
-        f"import failed ({uploaded.value.status}): {uploaded.value.text()[:500]}"
-    )
+        # Asserted inside the outer wait: a rejected upload means the client
+        # never sends the install, so leaving this until after both blocks
+        # turned a 400 here into a timeout on a request that was never going
+        # to be made. Raising from here skips the outer wait entirely.
+        assert uploaded.value.ok, (
+            f"import failed ({uploaded.value.status}): "
+            f"{uploaded.value.text()[:500]}"
+        )
     assert installed_to_project.value.ok, (
         f"the import did not reach the dataflow's lockfile "
         f"({installed_to_project.value.status}): "

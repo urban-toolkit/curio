@@ -1228,6 +1228,37 @@ def install_to_project(
     }
 
 
+def detach_from_all_projects(user_key: str, dir_name: str) -> list[str]:
+    """Drop *dir_name* from every one of this user's project lockfiles.
+
+    A lockfile entry is a reference Curio manages, not something the user
+    typed, so removing the package it names is Curio's job too. Leaving them
+    behind gave every dataflow that had ever installed the package a
+    permanent dangling entry: ``useEnsureWorkflowDeps`` tries to reinstall
+    anything in the lockfile that is not in the store, so each open of that
+    dataflow retried an install that cannot succeed and ended in "Could not
+    install <coordinate>".
+
+    Best-effort per project: a spec that cannot be read or written is skipped
+    rather than failing the uninstall, since the package is already gone from
+    the store by the time this runs. Returns the project ids it changed.
+    """
+    detached: list[str] = []
+    for project_id in projects_storage.list_project_ids(user_key):
+        try:
+            current = get_project_lockfile(user_key, project_id)
+        except Exception:  # noqa: BLE001 - an unreadable spec is not this call's problem
+            continue
+        if dir_name not in current:
+            continue
+        try:
+            _write_lockfile(user_key, project_id, current - {dir_name})
+        except Exception:  # noqa: BLE001 - same
+            continue
+        detached.append(project_id)
+    return detached
+
+
 def uninstall_from_project(
     user_key: str, project_id: str, dir_name: str,
 ) -> dict:
