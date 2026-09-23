@@ -3,9 +3,14 @@
 A slot queue and a lock queue are indistinguishable from outside the process:
 both make a request that takes a second when idle take minutes under load.
 Raising ``CURIO_EXEC_PARALLELISM`` from 8 to 32 on the 100-user stress tier
-changed throughput by 0.2% while /get's median went from 3.66s to 27.65s,
-which says the waiting moved onto this lock -- by inference. These counters
-are what let the next run say it outright.
+changed total blocked time by 0.2%, which said the constraint was not the slot
+count without saying what it was. These counters answered that: 18722s of the
+tier's 24051s of waiting was this lock, 403.4s of its 407.6s of hold time was
+artifact serving, and that is what the change alongside them removes.
+
+(Percentiles are not the evidence here. /get's p50 ranged from 3.66s to 33.25s
+across five runs including two that changed nothing, while these counters
+reproduced within 3%.)
 
 Runs everywhere: threads and a mutex, no fork and no sandbox.
 """
@@ -22,9 +27,9 @@ class ExecLockAccountingTest(unittest.TestCase):
         self.lock = _ExecLock()
 
     def test_an_uncontended_hold_records_no_meaningful_wait(self):
-        with self.lock.hold("chdir"):
+        with self.lock.hold("isolated_persist"):
             pass
-        entry = self.lock.snapshot()["labels"]["chdir"]
+        entry = self.lock.snapshot()["labels"]["isolated_persist"]
         self.assertEqual(entry["acquisitions"], 1)
         self.assertLess(entry["wait_seconds"], 0.05)
 
@@ -43,7 +48,7 @@ class ExecLockAccountingTest(unittest.TestCase):
         self.assertTrue(holder_has_it.wait(5))
 
         def waiter():
-            with self.lock.hold("chdir"):
+            with self.lock.hold("exec_in_process"):
                 pass
 
         blocked = threading.Thread(target=waiter)
@@ -54,18 +59,18 @@ class ExecLockAccountingTest(unittest.TestCase):
         blocked.join(5)
 
         labels = self.lock.snapshot()["labels"]
-        self.assertGreater(labels["chdir"]["wait_seconds"], 0.2)
+        self.assertGreater(labels["exec_in_process"]["wait_seconds"], 0.2)
         self.assertGreater(labels["isolated_persist"]["held_seconds"], 0.2)
         # And the holder itself waited for nothing, so the two are not conflated.
         self.assertLess(labels["isolated_persist"]["wait_seconds"], 0.05)
 
     def test_call_sites_are_counted_apart(self):
-        """/get waiting on persists is a different finding from the reverse."""
-        for label in ("chdir", "chdir", "exec_in_process"):
+        """Which call site is queueing is the whole point of labelling."""
+        for label in ("isolated_persist", "isolated_persist", "exec_in_process"):
             with self.lock.hold(label):
                 pass
         labels = self.lock.snapshot()["labels"]
-        self.assertEqual(labels["chdir"]["acquisitions"], 2)
+        self.assertEqual(labels["isolated_persist"]["acquisitions"], 2)
         self.assertEqual(labels["exec_in_process"]["acquisitions"], 1)
 
     def test_the_plain_context_manager_still_works(self):
@@ -88,7 +93,7 @@ class ExecLockAccountingTest(unittest.TestCase):
         release = threading.Event()
 
         def holder():
-            with self.lock.hold("chdir"):
+            with self.lock.hold("isolated_persist"):
                 holder_has_it.set()
                 release.wait(5)
 
@@ -100,7 +105,7 @@ class ExecLockAccountingTest(unittest.TestCase):
         let_waiters_go = threading.Event()
 
         def waiter():
-            with self.lock.hold("chdir"):
+            with self.lock.hold("isolated_persist"):
                 let_waiters_go.wait(5)
 
         blocked = [threading.Thread(target=waiter) for _ in range(2)]
@@ -130,9 +135,9 @@ class ExecLockDeltaTest(unittest.TestCase):
     def test_the_delta_is_what_happened_between_the_reads(self):
         from utk_curio.backend.tests.stress.report import exec_lock_delta
 
-        before = self._snapshot(chdir=(10, 5.0, 2.0, 1.0))
-        after = self._snapshot(chdir=(30, 65.0, 12.0, 9.0))
-        delta = exec_lock_delta(before, after)["labels"]["chdir"]
+        before = self._snapshot(isolated_persist=(10, 5.0, 2.0, 1.0))
+        after = self._snapshot(isolated_persist=(30, 65.0, 12.0, 9.0))
+        delta = exec_lock_delta(before, after)["labels"]["isolated_persist"]
         self.assertEqual(delta["acquisitions"], 20)
         self.assertEqual(delta["wait_seconds"], 60.0)
         self.assertEqual(delta["held_seconds"], 10.0)
@@ -143,9 +148,9 @@ class ExecLockDeltaTest(unittest.TestCase):
     def test_a_label_that_did_not_move_is_left_out(self):
         from utk_curio.backend.tests.stress.report import exec_lock_delta
 
-        before = self._snapshot(chdir=(10, 5.0, 2.0, 1.0), other=(3, 0.1, 0.1, 0.1))
-        after = self._snapshot(chdir=(11, 6.0, 3.0, 1.0), other=(3, 0.1, 0.1, 0.1))
-        self.assertEqual(list(exec_lock_delta(before, after)["labels"]), ["chdir"])
+        before = self._snapshot(isolated_persist=(10, 5.0, 2.0, 1.0), other=(3, 0.1, 0.1, 0.1))
+        after = self._snapshot(isolated_persist=(11, 6.0, 3.0, 1.0), other=(3, 0.1, 0.1, 0.1))
+        self.assertEqual(list(exec_lock_delta(before, after)["labels"]), ["isolated_persist"])
 
     def test_a_missing_reading_reports_nothing_rather_than_zero(self):
         """A failed monitor call must not read as an uncontended run."""
@@ -173,7 +178,7 @@ class ExecLockReachesTheMonitorTest(unittest.TestCase):
         from utk_curio.sandbox.app.api import app
         from utk_curio.sandbox.app.worker import _exec_lock
 
-        with _exec_lock.hold("chdir"):
+        with _exec_lock.hold("isolated_persist"):
             pass
 
         token = os.environ.get("CURIO_SANDBOX_TOKEN")
@@ -181,7 +186,7 @@ class ExecLockReachesTheMonitorTest(unittest.TestCase):
         body = app.test_client().get("/monitor", headers=headers).get_json()
 
         self.assertIn("exec_lock", body)
-        self.assertIn("chdir", body["exec_lock"]["labels"])
+        self.assertIn("isolated_persist", body["exec_lock"]["labels"])
         self.assertGreaterEqual(
-            body["exec_lock"]["labels"]["chdir"]["acquisitions"], 1
+            body["exec_lock"]["labels"]["isolated_persist"]["acquisitions"], 1
         )

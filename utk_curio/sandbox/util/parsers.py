@@ -419,6 +419,12 @@ def parseOutput(output):
             json_output['data'] = parsed_geojson
     # A DatasetReader can only exist if user code already imported rasterio,
     # so the sys.modules guard is exact without importing the optional lib.
+    #
+    # ``name`` echoes whatever path the reader was opened with, so serving an
+    # artifact now reports the path _resolve_raster_source produced: absolute,
+    # for both execution modes. Isolated runs already reported an absolute path
+    # here, because staging stores rasters that way; this makes the in-process
+    # mode agree rather than keeping two spellings of the same field.
     elif 'rasterio' in sys.modules and isinstance(output, sys.modules['rasterio'].io.DatasetReader):
         json_output['data'] = output.name
         json_output['dataType'] = 'raster'
@@ -458,6 +464,43 @@ def _resolve_stored_artifact_path(rel_path, *, create_parent=False) -> Path:
     if create_parent:
         full_path.parent.mkdir(parents=True, exist_ok=True)
     return full_path
+
+
+def _resolve_raster_source(value_str):
+    """The path to hand rasterio, resolved without touching the process cwd.
+
+    Rasters are the one artifact kind stored as a free-form path rather than a
+    payload or a path under the shared data dir, so this is the only read on
+    the /get route that used to need the process working directory. That is
+    why /get held the sandbox's execution lock across its whole load: os.chdir
+    is process-wide, Flask serves with threaded=True, and /exec moves the cwd
+    too, so the save/chdir/restore had to be serialized against everything
+    else. It cost 2.64s of lock hold per artifact fetch and 78% of the blocked
+    time in the 100-user stress run. Resolving the path explicitly instead
+    costs nothing and lets artifact fetches run concurrently.
+
+    Two writers produce ``artifacts.value_str`` for a raster, and one join
+    covers both. ``staging.persist_output`` stores an ABSOLUTE path, and
+    pathlib's ``/`` discards its left operand when the right one is absolute,
+    so the join is the identity there. The in-process writer stores
+    ``value.name``, whatever the user opened, which is relative to the launch
+    directory by construction because ``execute_code`` chdirs there before
+    user code runs.
+
+    No CURIO_LAUNCH_CWD means nobody chdirs at all -- execute_code's chdir is
+    guarded by the same condition -- so returning the stored string untouched
+    is the old behaviour exactly, not a degraded one.
+
+    ``staging.py`` resolves the same string the same way for the isolated
+    child; keep the two in step. If hydration ever learns to serve rasters by
+    bare name, ``_shared_data_dir() / Path(value_str).name`` is the candidate
+    to add here, and ``output_paths.PATH_BEARING_KINDS`` is the reader that
+    already assumes it.
+    """
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD")
+    if not launch_dir:
+        return value_str
+    return str(Path(launch_dir) / value_str)
 
 
 def _parquet_source(value_str, blob):
@@ -706,7 +749,7 @@ def load_from_duckdb(art_id, session_id=None):
                 result.__dict__['metadata'] = frame_meta
         elif kind == 'raster':
             import rasterio  # optional dep — see parse_raster
-            result = rasterio.open(v_str)
+            result = rasterio.open(_resolve_raster_source(v_str))
         elif kind == 'list_of_ids':
             child_ids = json.loads(v_json)
             con.close()                       # close before recursing — one conn per call

@@ -282,38 +282,6 @@ def _hoist_user_imports(code, ns, session_id):
     _session_imports.move_to_end(key)
 
 
-@contextlib.contextmanager
-def chdir_locked(launch_dir):
-    """Process-wide ``os.chdir`` guarded by ``_exec_lock``.
-
-    Flask runs with ``threaded=True`` and ``os.chdir`` is process-wide, so
-    without serialization the /get handler's save/chdir/restore can
-    interleave with /exec's and leave cwd pointing at the wrong directory
-    mid-execution. ``execute_code`` already takes ``_exec_lock``; callers
-    that need cwd to point at ``launch_dir`` (e.g. /get re-opening a
-    raster artifact via a relative path) must take the same lock.
-
-    Falls back to a no-op when ``launch_dir`` is falsy or no longer exists,
-    matching the prior /get behaviour.
-    """
-    if not launch_dir:
-        yield
-        return
-    # Labelled: this is the artifact-serving side of the lock, and telling it
-    # apart from execution is the whole point of the counters.
-    with _exec_lock.hold("chdir"):
-        original = os.getcwd()
-        try:
-            os.chdir(launch_dir)
-        except OSError:
-            yield
-            return
-        try:
-            yield
-        finally:
-            os.chdir(original)
-
-
 def _worker_init():
     """Load all heavy imports once. Called at sandbox startup."""
     global _globals_cache

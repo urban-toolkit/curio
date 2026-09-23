@@ -89,8 +89,8 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
     only one that opens it.
 
     ``_exec_lock`` still wraps the persist. It is not about DuckDB: the staging
-    step moves files relative to the process's working directory, which
-    ``chdir_locked`` and the in-process executor also move. Isolated executions
+    step moves files relative to the process's working directory, which the
+    in-process executor also moves. Isolated executions
     deliberately do not hold the lock while the child runs, which is what makes
     them parallel; taking it for the persist alone costs nothing, because the
     slow part is the child.
