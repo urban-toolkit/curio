@@ -70,6 +70,7 @@ Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_m
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
 | `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |

@@ -7,7 +7,7 @@
 # with two differences, both required by the harness rather than by the
 # configuration under test:
 #
-# 1. CURIO_TESTING=1. The browser tier creates its users through
+# 1. --testing. The browser tier creates its users through
 #    /api/testing/stub-login, which is mounted only in a non-production
 #    environment AND with this set (backend/app/testing/routes.py). The HTTP
 #    tiers do not need it -- they use the real /api/auth/signup, the same call
@@ -41,8 +41,6 @@ services:
       # rather than quietly run every user's node code in one process, which
       # would measure a stack nobody deploys.
       - CURIO_ISOLATION=fork
-      # Only for the browser tier's stub-login; see the header.
-      - CURIO_TESTING=1
     ports:
       - "127.0.0.1:${CURIO_PORT_2000:-2070}:2000"
     command:
@@ -51,6 +49,7 @@ services:
       - start
       - all
       - --deploy
+      - --testing
       - --with-examples
       - --backend-host
       - 0.0.0.0

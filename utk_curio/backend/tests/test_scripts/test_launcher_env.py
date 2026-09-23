@@ -684,3 +684,30 @@ def test_deploy_that_can_isolate_starts_and_isolates(linux_host, monkeypatch):
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
     assert os.environ["CURIO_ISOLATION"] == "fork"
+
+
+def test_the_testing_flag_declares_the_rig(monkeypatch):
+    """``--testing`` is the flag form of what was an env var only.
+
+    It has to be set before anything reads it: the database URL, the
+    /api/testing routes and the isolation exemption all key off the same
+    value, and two of those are decided while this function runs.
+    """
+    _cannot_isolate(monkeypatch)
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE, deploy=True, testing=True)
+
+    assert os.environ["CURIO_TESTING"] == "1"
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_preset_testing_env_var_still_counts(monkeypatch):
+    """The pytest rig imports the app in-process and has no command line."""
+    _cannot_isolate(monkeypatch)
+    monkeypatch.setenv("CURIO_TESTING", "1")
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"

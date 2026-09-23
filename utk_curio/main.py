@@ -183,7 +183,7 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -243,6 +243,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SHARED_DATA"] = os.environ.get(
         "CURIO_SHARED_DATA"
     ) or str(Path("./.curio/data").resolve())
+
+    # Set before anything reads it: the database URL, the testing routes and
+    # the isolation exemption below all key off this one value. A pre-set env
+    # var still wins, because the pytest rig has no command line to pass a
+    # flag on -- it imports the app in-process.
+    if testing:
+        os.environ["CURIO_TESTING"] = "1"
 
     if deploy:
         os.environ["CURIO_NO_AUTH"] = "0"
@@ -1661,6 +1668,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--testing", action="store_true",
+        help=(
+            "Run against the dedicated test database under .curio/test/ and "
+            "mount the test-only /api/testing routes (sets CURIO_TESTING=1). "
+            "Also the one exemption to --deploy requiring isolated execution: "
+            "a rig that creates its own accounts on one machine may run them "
+            "unisolated. Not for a real instance: the testing routes reset the "
+            "database and sign in as any user without a password."
+        ),
+    )
+    parser.add_argument(
         "--with-examples", action="store_true", default=False,
         help="Seed example projects from docs/examples/ on startup (sets CURIO_SEED_EXAMPLES=1)"
     )
@@ -1818,6 +1836,7 @@ def main():
         with_examples=args.with_examples,
         reseed=args.reseed,
         allow_publish=args.allow_publish,
+        testing=args.testing,
         collab=args.collab,
         catalog_root=args.catalog_root,
         exec_memory_mb=args.exec_memory_mb,
