@@ -1,4 +1,6 @@
 from flask import request, abort, jsonify, g, Response, current_app
+
+from utk_curio.backend.app.monitor import counters as _monitor_counters
 import re
 import requests
 import json
@@ -376,21 +378,25 @@ def process_python_code():
     # the in-process path ignores it entirely.
     exec_user_key = _exec_user_key()
     t1 = _time.perf_counter()
-    response = _sandbox_call(
-        'post', '/exec',
-        label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
-        data=json.dumps({
-            "code": code,
-            "file_path": input['path'],
-            "nodeType": nodeType,
-            "dataType": input['dataType'],
-            "session_id": session_id,
-            "save_dataset": bool(save_output_dataset),
-            "dataset_paths": dataset_paths,
-            "user_key": exec_user_key,
-        }),
-        headers={"Content-Type": "application/json"},
-    )
+    # The gauge wraps only the sandbox round trip, which is where a node
+    # actually spends its time. Counting the surrounding parse and JSON work
+    # would report nodes as "running" that are really just being serialised.
+    with _monitor_counters.in_flight():
+        response = _sandbox_call(
+            'post', '/exec',
+            label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
+            data=json.dumps({
+                "code": code,
+                "file_path": input['path'],
+                "nodeType": nodeType,
+                "dataType": input['dataType'],
+                "session_id": session_id,
+                "save_dataset": bool(save_output_dataset),
+                "dataset_paths": dataset_paths,
+                "user_key": exec_user_key,
+            }),
+            headers={"Content-Type": "application/json"},
+        )
     if isinstance(response, tuple):
         return response
     t2 = _time.perf_counter()
@@ -454,6 +460,17 @@ def process_python_code():
         node_id=node_id,
         dataflow_id=request.json.get("dataflowId") or None,
         code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
+    # Deliberately a SIBLING of the journal call, not a line inside it:
+    # _record_runtime_outcome returns early whenever node/dataflow/user is
+    # missing, which is every execution from an unsaved canvas. Counters placed
+    # in there would silently under-count exactly the runs a new user makes.
+    _monitor_counters.record_execution(
+        language="python",
+        node_type=nodeType,
+        ok=bool(isinstance(output, dict) and output.get("path")),
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
 
@@ -532,19 +549,23 @@ def process_javascript_code():
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
-    response = _sandbox_call(
-        'post', '/execJs',
-        label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
-        data=json.dumps({
-            "code": code,
-            "file_path": input['path'],
-            "nodeType": nodeType,
-            "dataType": input['dataType'],
-            "session_id": session_id,
-            "save_dataset": bool(save_output_dataset),
-        }),
-        headers={"Content-Type": "application/json"},
-    )
+    # The gauge wraps only the sandbox round trip, which is where a node
+    # actually spends its time. Counting the surrounding parse and JSON work
+    # would report nodes as "running" that are really just being serialised.
+    with _monitor_counters.in_flight():
+        response = _sandbox_call(
+            'post', '/execJs',
+            label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
+            data=json.dumps({
+                "code": code,
+                "file_path": input['path'],
+                "nodeType": nodeType,
+                "dataType": input['dataType'],
+                "session_id": session_id,
+                "save_dataset": bool(save_output_dataset),
+            }),
+            headers={"Content-Type": "application/json"},
+        )
     if isinstance(response, tuple):
         return response
     t2 = _time.perf_counter()
@@ -607,6 +628,17 @@ def process_javascript_code():
         node_id=node_id,
         dataflow_id=request.json.get("dataflowId") or None,
         code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
+    # Deliberately a SIBLING of the journal call, not a line inside it:
+    # _record_runtime_outcome returns early whenever node/dataflow/user is
+    # missing, which is every execution from an unsaved canvas. Counters placed
+    # in there would silently under-count exactly the runs a new user makes.
+    _monitor_counters.record_execution(
+        language="javascript",
+        node_type=nodeType,
+        ok=bool(isinstance(output, dict) and output.get("path")),
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
 
