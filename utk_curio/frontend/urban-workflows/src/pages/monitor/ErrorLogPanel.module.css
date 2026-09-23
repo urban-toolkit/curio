@@ -1,0 +1,150 @@
+.panel {
+  background: #fff;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-card);
+  overflow: hidden;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.filter {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--curio-border-strong);
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+  border-radius: var(--curio-radius-pill);
+  padding: 3px 10px;
+}
+
+.filterOff {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.dropped {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--curio-warning-text);
+}
+
+.empty {
+  margin: 0;
+  padding: 22px 16px;
+  font-size: 13px;
+  color: var(--curio-text-secondary);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* The log is the one unbounded region on the page, so it owns its scroll
+     rather than stretching the shell. */
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.row {
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowHead {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 8px 14px;
+}
+
+.rowHead:hover {
+  background: var(--curio-surface-muted);
+}
+
+.time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--curio-text-muted);
+  white-space: nowrap;
+}
+
+.source {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--curio-radius-pill);
+  white-space: nowrap;
+}
+
+.sourceNode {
+  background: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+}
+
+.sourceSandbox {
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+}
+
+.sourceBackend {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-secondary);
+}
+
+.sourceClient {
+  background: var(--curio-surface-alt);
+  color: var(--curio-text-secondary);
+}
+
+.summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--curio-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  background: var(--curio-surface-muted);
+  border-radius: var(--curio-radius-pill);
+  padding: 1px 7px;
+}
+
+.detail {
+  margin: 0;
+  padding: 10px 14px 14px;
+  background: var(--curio-surface-alt);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--curio-text-primary);
+  /* pre-wrap, not nowrap: a traceback with a long path must wrap rather than
+     push a horizontal scrollbar under every row. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
