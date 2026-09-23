@@ -130,16 +130,30 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
 
 
 def peak_container_stats(stats_log: str | None) -> dict | None:
-    """Peak memory and PID count from a ``docker stats`` sample log.
+    """Peak memory, PID count and CPU from a ``docker stats`` sample log.
 
     The log is written by the CI job (one ``docker stats --no-stream`` line per
-    sample). Absent or unreadable, this is simply left out of the report: the
-    run's own numbers do not depend on it.
+    sample, plus a ``HOST`` line carrying the load average and core count).
+    Absent or unreadable, this is simply left out of the report: the run's own
+    numbers do not depend on it.
+
+    Docker reports CPU as a percentage of ONE core, so 800% is eight cores
+    busy, and the useful reading is that number against the host's core count.
+    That comparison is the point of collecting it: a tier that saturates a
+    lock rather than the machine shows up here as a nearly idle host, and no
+    amount of extra execution parallelism would change it.
+
+    Reads both the current four-field format and the three-field one that
+    every run before this wrote, so old logs still parse.
     """
     if not stats_log or not os.path.exists(stats_log):
         return None
     peak_mib = 0.0
     peak_pids = 0
+    peak_cpu = 0.0
+    cpu_samples = []
+    peak_load = 0.0
+    host_cores = None
     units = {"kib": 1 / 1024, "mib": 1.0, "gib": 1024.0}
     try:
         with open(stats_log, encoding="utf-8", errors="replace") as fh:
@@ -147,6 +161,26 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
                 parts = [p.strip() for p in line.split("|")]
                 if len(parts) < 3:
                     continue
+                if parts[0] == "HOST":
+                    # HOST|load1|load5|load15|cores
+                    try:
+                        peak_load = max(peak_load, float(parts[1]))
+                    except ValueError:
+                        pass
+                    if len(parts) >= 5:
+                        try:
+                            host_cores = int(parts[4])
+                        except ValueError:
+                            pass
+                    continue
+                if len(parts) >= 4 and parts[1].endswith("%"):
+                    try:
+                        cpu = float(parts[1][:-1])
+                        peak_cpu = max(peak_cpu, cpu)
+                        cpu_samples.append(cpu)
+                    except ValueError:
+                        pass
+                    parts = [parts[0]] + parts[2:]  # fall through as name|mem|pids
                 raw_mem = parts[1].split("/")[0].strip().lower()
                 for unit, factor in units.items():
                     if raw_mem.endswith(unit):
@@ -163,7 +197,17 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
         return None
     if peak_mib == 0.0 and peak_pids == 0:
         return None
-    return {"peak_memory_mib": round(peak_mib, 1), "peak_pids": peak_pids}
+    stats = {"peak_memory_mib": round(peak_mib, 1), "peak_pids": peak_pids}
+    if cpu_samples:
+        stats["peak_cpu_percent"] = round(peak_cpu, 1)
+        stats["mean_cpu_percent"] = round(sum(cpu_samples) / len(cpu_samples), 1)
+        # The reading that matters: cores actually busy, against cores present.
+        stats["peak_cores_busy"] = round(peak_cpu / 100, 1)
+    if peak_load:
+        stats["peak_host_load"] = round(peak_load, 2)
+    if host_cores:
+        stats["host_cores"] = host_cores
+    return stats
 
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
@@ -194,8 +238,17 @@ def markdown(report: dict) -> str:
         )
     peaks = report.get("container_peaks")
     if peaks:
-        lines += ["", f"Container peak: {peaks['peak_memory_mib']} MiB, "
-                      f"{peaks['peak_pids']} PIDs."]
+        peak_line = (f"Container peak: {peaks['peak_memory_mib']} MiB, "
+                     f"{peaks['peak_pids']} PIDs")
+        if "peak_cores_busy" in peaks:
+            peak_line += (f", {peaks['peak_cpu_percent']}% CPU "
+                          f"({peaks['peak_cores_busy']} cores busy at peak, "
+                          f"{peaks['mean_cpu_percent']}% mean)")
+        if "peak_host_load" in peaks:
+            cores = peaks.get("host_cores")
+            peak_line += (f". Host load peaked at {peaks['peak_host_load']}"
+                          + (f" on {cores} cores" if cores else ""))
+        lines += ["", peak_line + "."]
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]
