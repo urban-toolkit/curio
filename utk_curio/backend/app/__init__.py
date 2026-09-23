@@ -70,6 +70,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.agents.routes import agents_bp
     app.register_blueprint(agents_bp)
 
+    from utk_curio.backend.app.monitor.routes import monitor_bp
+    app.register_blueprint(monitor_bp)
+
     from utk_curio.backend.app.streetvision import bp as streetvision_bp
     app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
 
