@@ -33,6 +33,12 @@ on:
       - 'docs/schemas/**'
   pull_request:
     branches: [ main ]
+    # `labeled` is here so that putting the `stress` label on an open PR starts
+    # a run. With the default types (opened, synchronize, reopened) the label
+    # would only take effect on the next push. Such a run carries the stress
+    # job alone: every other job below skips on `action == 'labeled'`, since
+    # they already ran on the push that produced this ref.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
@@ -59,7 +65,26 @@ on:
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
       - 'docs/schemas/**'
+  # test-gpu-stress runs on this schedule instead of on every push. It holds
+  # the single GPU runner for ~30 minutes, which roughly doubles a run, and
+  # what it measures -- does the stack hold up under 5/10/50/100 users -- moves
+  # with the stack as a whole, not with most diffs. To exercise it on a change
+  # that does move it (the stress harness, the sandbox, the queue, anything
+  # concurrency-shaped), label the PR `stress`.
+  #
+  # 08:00 UTC is 3 AM in Chicago during CDT; cron has no notion of DST, so it
+  # becomes 2 AM local once CST starts. Mon/Wed/Fri rather than `*/2` in the
+  # day-of-month field, which restarts its count every month and so would fire
+  # on the 31st and the 1st back to back. Note that GitHub disables scheduled
+  # workflows after 60 days with no repository activity.
+  schedule:
+    - cron: '0 8 * * 1,3,5'
   workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
+    inputs:
+      stress:
+        description: 'Also run the multi-user stress job (~30 min on the GPU runner)'
+        type: boolean
+        default: false
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
@@ -107,9 +132,17 @@ jobs:
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
     # `utk`. Run only for push / workflow_dispatch / same-repo PRs. Fork PRs
     # are skipped entirely (they get no CI; a maintainer pushes the branch).
+    #
+    # The two stress triggers (the cron, and a `stress` label on an open PR)
+    # are there to run test-gpu-stress by itself, so this job and the two
+    # after it sit out those runs: the code they cover was already tested on
+    # the push or PR that produced the ref, and repeating them would hold the
+    # GPU for another 20 minutes.
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
 
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
@@ -568,6 +601,8 @@ jobs:
     # information and worth having -- unless the run was cancelled.
     if: >-
       !cancelled() &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, gpu, curio]
@@ -814,6 +849,8 @@ jobs:
     # Serialized behind them because all three share the runner's workspace.
     if: >-
       !cancelled() &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, gpu, curio]
@@ -978,10 +1015,19 @@ jobs:
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
     needs: test-gpu-exec-user
+    # Not on every push: on the cron above, on a PR labelled `stress`, or on a
+    # manual dispatch that asks for it. `!cancelled()` rather than a plain
+    # condition because on those three triggers the jobs it needs are skipped,
+    # and a skipped dependency would otherwise skip this one too; it also keeps
+    # the job running when an earlier suite went red, same as the two above.
     if: >-
       !cancelled() &&
       (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.stress) ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 75
 

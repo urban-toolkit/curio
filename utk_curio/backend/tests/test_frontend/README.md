@@ -58,6 +58,14 @@ There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including 
 `test-gpu-stress` in CI runs the shipped examples with 5, 10, 50 and 100 users
 at once. It has two halves, because a dataflow does.
 
+It is not part of every run. It holds the single GPU runner for ~30 minutes,
+which roughly doubles a build, so it runs on a schedule (08:00 UTC on Monday,
+Wednesday and Friday) and on demand: tick `stress` when dispatching the
+workflow by hand, or put the `stress` label on a PR. Label the PR whenever the
+change is concurrency-shaped - the sandbox, the queue, the session or user
+handling - or touches this harness, since the schedule will not cover it
+before it merges.
+
 **The HTTP tiers** (`utk_curio/backend/tests/stress/`) need no browser: they
 call the same backend endpoints the canvas does, including the Autark data
 load, which is compiled to autk-db JavaScript and runs in the sandbox. That is
