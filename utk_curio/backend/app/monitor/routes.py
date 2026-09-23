@@ -19,7 +19,7 @@ import time
 
 from flask import Blueprint, jsonify, request
 
-from utk_curio.backend.app.monitor import counters, errors, stats, storage
+from utk_curio.backend.app.monitor import counters, errors, hardware, stats, storage
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
 
@@ -158,6 +158,9 @@ def monitor_route():
         "generatedAt": _iso_now(),
         "uptimeSeconds": counters.uptime_seconds(),
         "deployment": _deployment(sandbox),
+        "hardware": hardware.snapshot(
+            sandbox_rss=(sandbox or {}).get("rss_bytes"),
+        ),
         "execution": {
             "backend": counters.snapshot(),
             "sandbox": _sandbox_section(sandbox),

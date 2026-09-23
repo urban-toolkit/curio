@@ -175,6 +175,23 @@ def snapshot() -> dict:
                 "errorWindow": ERROR_WINDOW, "childDeaths": {}}
 
 
+def process_rss_bytes():
+    """This process's resident memory, or None where psutil cannot say.
+
+    Deliberately implemented here rather than imported from the backend's
+    ``monitor.hardware``: the sandbox is a separate process and must not depend
+    on backend packages. psutil is already a dependency of both (``server.py``
+    imports it), so this is a two-line duplicate rather than a shared module
+    pulling a layer the wrong way round.
+    """
+    try:
+        import psutil
+
+        return int(psutil.Process().memory_info().rss)
+    except Exception:
+        return None
+
+
 def reset() -> None:
     """Drop all state. For tests only."""
     global _total, _isolated, _in_process, _slots_in_use

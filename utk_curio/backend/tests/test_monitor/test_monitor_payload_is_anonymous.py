@@ -76,6 +76,8 @@ def test_no_identifier_appears_in_the_payload(client, seeded):
     assert "probe.invalid" not in raw
     assert IPV4.search(raw) is None, "an IP-shaped string reached the payload"
     assert "/Users/" not in raw, "a filesystem path reached the payload"
+    # The hardware section describes the machine, never who owns it.
+    assert "hostname" not in raw.lower()
 
 
 def test_node_type_ids_are_reduced_to_a_count(client, seeded):
@@ -105,14 +107,17 @@ def test_every_string_leaf_is_a_timestamp_or_a_known_token(client, seeded):
     """
     body = client.get("/api/monitor").get_json()
 
-    # version, platform and pythonVersion are process facts, not user data, and
-    # are free-form by nature. Popped by name rather than pattern-matched, so
-    # adding a fourth free-text field means editing this line on purpose.
+    # Process and machine facts, not user data, and free-form by nature.
+    # Popped by name rather than pattern-matched, so adding another free-text
+    # field means editing this list on purpose rather than it slipping through.
     deployment = body["deployment"]
+    cpu = body["hardware"]["cpu"]
     exempt = {
         deployment.pop("version"),
         deployment.pop("platform"),
         deployment.pop("pythonVersion"),
+        cpu.pop("model"),
+        cpu.pop("arch"),
     }
 
     offenders = []

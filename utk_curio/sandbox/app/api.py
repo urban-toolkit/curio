@@ -190,6 +190,10 @@ def monitor():
     except Exception:  # noqa: BLE001
         payload['zygote_running'] = None
 
+    # This process's own resident memory. It is the one running node code, so
+    # it is the number an operator chasing an OOM actually wants.
+    payload['rss_bytes'] = metrics.process_rss_bytes()
+
     return jsonify(payload)
 
 
