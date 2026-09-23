@@ -1142,6 +1142,26 @@ jobs:
             --out "$GITHUB_WORKSPACE/stress-session" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
+      # TEMPORARY, and meant to be deleted. The same 100 users fetching their
+      # outputs as Arrow instead of JSON, which is the format the sandbox
+      # already serves and the canvas does not yet ask for. It is here to
+      # attribute the Arrow work: a local bench puts the server side at 137x
+      # for a dataframe and 197x for a geodataframe, and this is what says
+      # whether that survives a real stack under load.
+      #
+      # Once it has, delete this step and the stress-arrow upload below and
+      # leave --artifact-format for dispatch runs. Keeping it costs 8-10
+      # minutes of the shared GPU runner on every scheduled run to re-prove a
+      # settled result. See the tracking issue linked in the PR that added it.
+      - name: 🏹 Run the 100-user tier with Arrow artifacts
+        if: always()
+        run: |
+          python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --artifact-format arrow \
+            --out "$GITHUB_WORKSPACE/stress-arrow" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -1184,6 +1204,7 @@ jobs:
           path: |
             stress/
             stress-session/
+            stress-arrow/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7

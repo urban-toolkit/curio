@@ -130,6 +130,33 @@ class UserFailed(Exception):
 VOLATILE_ARTIFACT_FIELDS = ("filename",)
 
 
+# The Accept header the sandbox answers with an Arrow IPC stream instead of
+# JSON. The canvas does not send it yet; this is how the harness measures what
+# it would cost if it did.
+ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
+
+
+def arrow_artifact_hash(content: bytes, headers) -> str:
+    """Digest of an Arrow response: the bytes, plus the metadata headers.
+
+    The headers carry what the JSON body carries inline (kind, row counts,
+    which columns are JSON-encoded), so leaving them out would let a change in
+    them pass unnoticed. ``X-Curio-Filename`` is dropped for the same reason
+    ``VOLATILE_ARTIFACT_FIELDS`` drops ``filename``: it is minted per run.
+
+    An Arrow digest and a JSON digest are not comparable to each other. Both
+    the baseline and the tier are taken in the same format in the same run, so
+    they never need to be.
+    """
+    metadata = sorted(
+        (k.lower(), v) for k, v in headers.items()
+        if k.lower().startswith("x-curio-") and k.lower() != "x-curio-filename"
+    )
+    digest = hashlib.sha256(content)
+    digest.update(json.dumps(metadata, sort_keys=True).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def artifact_hash(payload: object) -> str:
     """Stable digest of a node's output, for comparing users against each other."""
     if isinstance(payload, dict):
@@ -158,8 +185,11 @@ class VirtualUser:
         register_gate=None,
         start_gate=None,
         pacing: "Pacing" = BURST,
+        artifact_format: str = "json",
     ):
         self.backend_url = backend_url.rstrip("/")
+        # "json" is what the canvas sends today; "arrow" is what it could send.
+        self.artifact_format = artifact_format
         self.name = name
         self.example = example
         self.spec_json = spec_json
@@ -197,6 +227,8 @@ class VirtualUser:
         node_id: str | None = None,
         timeout: float = API_TIMEOUT_S,
         expect: int | tuple[int, ...] = 200,
+        accept: str | None = None,
+        raw: bool = False,
     ) -> dict:
         """Make one call, record a Sample, and raise UserFailed on anything bad.
 
@@ -207,9 +239,12 @@ class VirtualUser:
         url = f"{self.backend_url}{path_url or path}"
         started = time.time()
         try:
+            headers = self._headers()
+            if accept:
+                headers["Accept"] = accept
             resp = self.session.request(
                 method, url, json=json_body, params=params,
-                headers=self._headers(), timeout=timeout,
+                headers=headers, timeout=timeout,
             )
         except requests.Timeout:
             self._record(path, node_id, None, started, False,
@@ -225,6 +260,10 @@ class VirtualUser:
             raise UserFailed(f"{path} returned {resp.status_code}")
 
         self._record(path, node_id, resp.status_code, started, True)
+        if raw:
+            # The Arrow path: bytes plus the headers that carry the metadata
+            # the JSON body would have carried inline.
+            return {"content": resp.content, "headers": dict(resp.headers)}
         if not resp.content:
             return {}
         try:
@@ -444,11 +483,26 @@ class VirtualUser:
         difference means concurrency changed a result -- one user reading
         another's artifact, or an output overwritten mid-run -- which no
         latency number would reveal.
+
+        In ``arrow`` mode this is also the measurement: the fetch is the
+        expensive half of a dataflow (42% of blocked time at 100 users), and
+        the Arrow path skips the pandas materialisation and the JSON encode
+        that make it expensive.
         """
         ref = self.result.outputs[node.id]
-        body = self._call("GET", "/get", params={"fileName": ref["path"]},
-                          node_id=node.id, timeout=ARTIFACT_TIMEOUT_S)
-        digest = artifact_hash(body)
+        if self.artifact_format == "arrow":
+            response = self._call(
+                "GET", "/get", params={"fileName": ref["path"]},
+                node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
+                accept=ARROW_IPC_MIME, raw=True,
+            )
+            digest = arrow_artifact_hash(
+                response.get("content") or b"", response.get("headers") or {}
+            )
+        else:
+            body = self._call("GET", "/get", params={"fileName": ref["path"]},
+                              node_id=node.id, timeout=ARTIFACT_TIMEOUT_S)
+            digest = artifact_hash(body)
         self.result.hashes[node.id] = digest
         expected = self.compare_to.get(node.id)
         if expected is not None and expected != digest:

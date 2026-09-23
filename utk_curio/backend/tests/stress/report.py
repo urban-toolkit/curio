@@ -86,7 +86,8 @@ def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
 
 
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
-                 profile: str = "burst", exec_lock: dict | None = None) -> dict:
+                 profile: str = "burst", exec_lock: dict | None = None,
+                 artifact_format: str = "json") -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -95,6 +96,10 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
     return {
         "tier": tier,
         "profile": profile,
+        # Which wire format the fetches used. In the report because a tier
+        # measured in one format cannot be compared with a tier measured in
+        # the other, and nothing else on the page would say which it was.
+        "artifact_format": artifact_format,
         "users": len(results),
         "completed": sum(1 for r in results if r.completed),
         "wall_seconds": round(seconds, 1),
@@ -251,7 +256,9 @@ def markdown(report: dict) -> str:
         lines += ["", peak_line + "."]
 
     for tier in report["tiers"]:
-        lines += ["", f"### {tier['tier']} users", ""]
+        fmt = tier.get("artifact_format", "json")
+        suffix = "" if fmt == "json" else f" ({fmt} artifacts)"
+        lines += ["", f"### {tier['tier']} users{suffix}", ""]
         lines.append("| Endpoint | Calls | Errors | p50 | p95 | max |")
         lines.append("| -------- | ----: | -----: | --: | --: | --: |")
         for endpoint, stat in tier["endpoints"].items():
