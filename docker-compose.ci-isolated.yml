@@ -40,10 +40,8 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
-      # Same as docker-compose.ci.yml: the /api/testing/* stubs the e2e
-      # fixtures depend on are gated on CURIO_TESTING as well as a dev env,
-      # and a compose-owned stack has nothing to set it for them.
-      - CURIO_TESTING=1
+      # ``--testing`` on the command mounts the /api/testing/* stubs the e2e
+      # fixtures depend on; see docker-compose.ci.yml.
       - CURIO_LAUNCH_CWD=/app
       # Fork isolation without --deploy, which no flag can express any more:
       # this stack exists to run a real workload through the fork path on an
@@ -64,6 +62,6 @@ services:
       # umask 000 for the same reason as the in-process overlay: host-side
       # Playwright writes into the bind-mounted .curio as the runner user.
       - >-
-        umask 000 && exec python curio.py start all --with-examples
+        umask 000 && exec python curio.py start all --testing --with-examples
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000

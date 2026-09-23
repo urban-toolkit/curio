@@ -113,7 +113,7 @@ jobs:
             -H 'Content-Type: application/json' -d '{}' \
             "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
           if [ "$code" != "200" ]; then
-            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
 
@@ -143,7 +143,7 @@ jobs:
               mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
               export CURIO_ISOLATION=off
-              python curio.py start backend --deploy --with-examples \
+              python curio.py start backend --deploy --testing --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &

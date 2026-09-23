@@ -40,6 +40,7 @@ import json
 import os
 import re
 import sys
+import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -120,6 +121,12 @@ def shard_env(k: int, environ=os.environ) -> dict[str, str]:
         "DATABASE_URL_TEST": f"sqlite:///{db}",
         "DATABASE_URL": f"sqlite:///{db}",
         "CURIO_CATALOG_ROOT": str(state / "datasets"),
+        # The package catalog is otherwise ONE directory for every worker,
+        # whatever else they have their own copy of: a publish on one shard
+        # showed up in another shard's catalog listing, and landed untracked
+        # in the git-managed <repo_root>/packages. Seeded from the repo
+        # catalog by the caller, since the user seeder reads from it.
+        "CURIO_PACKAGES_ROOT": str(state / "packages"),
         # N launchers from one checkout must not pip/npm install concurrently;
         # the driver warms the environment once beforehand.
         "CURIO_SKIP_DEP_INSTALL": "1",
@@ -147,10 +154,38 @@ def apply_shard_env(environ=os.environ) -> dict[str, str] | None:
         )
     environ.update(env)
     environ[_APPLIED] = str(k)
-    for key in ("CURIO_SHARED_DATA", "CURIO_CATALOG_ROOT"):
+    for key in ("CURIO_SHARED_DATA", "CURIO_CATALOG_ROOT", "CURIO_PACKAGES_ROOT"):
         if key in env:
             Path(env[key]).mkdir(parents=True, exist_ok=True)
+    seed_package_catalog(env.get("CURIO_PACKAGES_ROOT"))
     return env
+
+
+#: shards.py -> tests -> backend -> utk_curio -> <repo_root>/packages
+_REPO_PACKAGE_CATALOG = Path(__file__).resolve().parents[3] / "packages"
+
+
+def seed_package_catalog(root: str | None) -> None:
+    """Fill an empty package catalog from the committed one.
+
+    Every test stack gets its own catalog so a publish cannot appear in
+    another worker's listing or land in the git-tracked tree, but plenty of
+    code reads the catalog: the user seeder installs ``curio.builtin`` from
+    it, and whole suites assert against the shipped fixtures. An empty one
+    would break both. Copied once, on creation (472K, 37 files): a catalog
+    that already has content is left alone, so a rerun does not undo whatever
+    a test published.
+    """
+    if not root:
+        return
+    target = Path(root)
+    if any(target.iterdir()):
+        return
+    if not _REPO_PACKAGE_CATALOG.is_dir():
+        return
+    for package in _REPO_PACKAGE_CATALOG.iterdir():
+        if package.is_dir():
+            shutil.copytree(package, target / package.name, dirs_exist_ok=True)
 
 
 def _base_of(environ) -> dict[str, str]:

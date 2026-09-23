@@ -267,6 +267,7 @@ def curio_servers(session_app, request):
         "CURIO_TESTING",
         "CURIO_LAUNCH_CWD",
         "CURIO_SHARED_DATA",
+        "CURIO_PACKAGES_ROOT",
         "DATABASE_URL",
         "DATABASE_URL_TEST",
     ):
@@ -296,6 +297,12 @@ def curio_servers(session_app, request):
     extra_args: list[str] = []
     if env.get("CURIO_NO_AUTH", "0") not in ("1", "true", "yes", "on"):
         extra_args.append("--deploy")
+        # Says out loud what this stack is. It puts the child on the test DB
+        # and mounts /api/testing/*, both of which the suite depends on, and
+        # it is the exemption that lets --deploy run without isolation -- on
+        # a developer's macOS laptop there is none to be had, and without it
+        # the child would refuse to start.
+        extra_args.append("--testing")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
     # Saving a node's output to the Data Catalog is opt-in per node by default

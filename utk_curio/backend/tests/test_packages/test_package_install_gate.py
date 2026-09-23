@@ -92,22 +92,14 @@ def scoped(monkeypatch):
 
 @pytest.fixture
 def unscoped(monkeypatch):
-    """One interpreter for everybody: --deploy on a host that cannot isolate.
+    """One interpreter for everybody.
 
-    Also clears the operator opt-out. The suite-wide conftest declares
-    ``CURIO_ALLOW_SHARED_INSTALLS=1`` so the ~900 tests about install mechanics
-    are not all gate tests; the gate's own suite has to state each posture
-    itself rather than inherit that one.
+    Reachable only by a test rig now: ``--deploy`` on a host that cannot
+    isolate refuses to start unless ``CURIO_TESTING`` is set
+    (``main.py::_refuse_unisolated_deploy``). Kept as a posture here because
+    the rules below must still hold on the rigs that do run it.
     """
     monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: False)
-    monkeypatch.setattr(config, "CURIO_ALLOW_SHARED_INSTALLS", False)
-
-
-@pytest.fixture
-def unscoped_but_permitted(monkeypatch):
-    """Unscoped, with the operator having accepted that (--allow-shared-installs)."""
-    monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: False)
-    monkeypatch.setattr(config, "CURIO_ALLOW_SHARED_INSTALLS", True)
 
 
 class TestALocalRunIsNeverRefused:
@@ -135,38 +127,18 @@ class TestAHostedInstance:
         user = _make_user(db, "bob", "t4")
         assert package_install_refusal(user) is None
 
-    def test_nobody_may_when_installs_are_not_scoped(self, db, auth_on, unscoped):
-        # #309's residual: a signed-in account on a --deploy instance that
-        # could not isolate still wrote into the shared interpreter.
-        user = _make_user(db, "carol", "t5")
-        refusal = package_install_refusal(user)
-        assert refusal and "scope" in refusal.lower()
-
-
-class TestTheOperatorOptOut:
-    """``--allow-shared-installs``.
-
-    Rule 3 is far broader than "a misconfigured deployment": isolation needs
-    Linux, fork, setrlimit, pyseccomp AND a configured execution user, so
-    ``--deploy`` on macOS or Windows, on Linux without pyseccomp, or on Linux
-    with no exec user all land in "cannot scope". Refusing every one of them
-    would take package installation away from deployments whose operator knows
-    every account. The flag is off by default, so the safe posture is the one
-    you get without knowing the flag exists.
-    """
-
-    def test_an_operator_can_accept_shared_installs(
-        self, db, auth_on, unscoped_but_permitted,
+    def test_a_signed_in_user_may_even_where_installs_are_not_scoped(
+        self, db, auth_on, unscoped,
     ):
-        user = _make_user(db, "frank", "t6")
-        assert package_install_refusal(user) is None
+        """The rule that used to live here went with the mode it guarded.
 
-    def test_it_does_not_let_a_guest_back_in(self, db, auth_on, unscoped_but_permitted):
-        # The flag is about SCOPING, not about identity. Every guest is still
-        # the same account, and that is a different objection.
-        guest = _make_user(db, config.CURIO_SHARED_GUEST_USERNAME, "t7", is_guest=True)
-        refusal = package_install_refusal(guest)
-        assert refusal and "guest" in refusal.lower()
+        A hosted instance that cannot scope installs no longer boots: --deploy
+        requires isolated execution and refuses without it. What remains in
+        this posture is a test rig, which is one machine with users it created
+        itself, so refusing its installs only broke its own suites.
+        """
+        user = _make_user(db, "carol", "t5")
+        assert package_install_refusal(user) is None
 
 
 class TestTheSystemCaller:
@@ -189,18 +161,22 @@ class TestTheRoutesEnforceIt:
         assert "guest" in resp.get_json()["error"].lower()
         assert pip_calls == []
 
-    def test_workflow_deps_install_is_refused_when_unscoped(
+    def test_workflow_deps_install_runs_when_unscoped(
         self, client, db, auth_on, unscoped, pip_calls,
     ):
+        """The route no longer refuses a signed-in user for the shape alone.
+
+        The shape is unreachable outside a test rig now: --deploy without
+        isolation refuses to start. Driven through the route rather than the
+        predicate, because the refusal used to be applied here too.
+        """
         _make_user(db, "dave", "dave-token")
         resp = client.post(
             "/api/packages/workflow-deps/install",
             json={"packages": ["curio.builtin@1"]},
             headers=_auth("dave-token"),
         )
-        assert resp.status_code == 403, resp.get_data(as_text=True)
-        assert "scope" in resp.get_json()["error"].lower()
-        assert pip_calls == []
+        assert resp.status_code != 403, resp.get_data(as_text=True)
 
     def test_a_local_run_still_installs_through_the_same_route(
         self, client, shared_guest_token, auth_off, unscoped, pip_calls,
@@ -216,14 +192,24 @@ class TestTheRoutesEnforceIt:
 
 
 class TestTheUIIsToldWhy:
-    def test_the_libraries_listing_reports_the_unscoped_refusal(
+    def test_the_libraries_listing_offers_the_install_when_unscoped(
         self, client, db, auth_on, unscoped,
     ):
-        # The drawer hides the affordance from what this returns, so a refusal
-        # the listing does not mention is a button that fails when clicked.
+        # The drawer takes the affordance from what this returns, so a refusal
+        # that no longer applies must not still disable the button.
         _make_user(db, "erin", "erin-token")
         body = client.get(
             "/api/packages/libraries", headers=_auth("erin-token"),
         ).get_json()
+        assert body["installAllowed"] is True
+        assert not body.get("installDisabledReason")
+
+    def test_the_libraries_listing_still_reports_the_guest_refusal(
+        self, client, shared_guest_token, auth_on, scoped,
+    ):
+        # The rule that remains: a hosted guest is one shared account.
+        body = client.get(
+            "/api/packages/libraries", headers=_auth(shared_guest_token),
+        ).get_json()
         assert body["installAllowed"] is False
-        assert "scope" in body["installDisabledReason"].lower()
+        assert "guest" in body["installDisabledReason"].lower()

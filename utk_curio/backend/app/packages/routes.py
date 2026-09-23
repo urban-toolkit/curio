@@ -69,6 +69,7 @@ from utk_curio.backend.app.packages.resolver import (
 from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
 from utk_curio.backend.app.packages.storage import (
     PackageIdError,
+    catalog_root as storage_catalog_root,
     list_user_packageages,
     package_dir,
     PACKAGE_DIR_RE,
@@ -200,7 +201,7 @@ def _catalog_root() -> Path:
     catalog drawer (and the future remote registry).
     """
     # routes.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-    return Path(__file__).resolve().parents[4] / "packages"
+    return storage_catalog_root()
 
 
 def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Path]:

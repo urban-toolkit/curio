@@ -340,7 +340,7 @@ jobs:
       # stub-project to skip the signup UI, reset-db between every test. That
       # blueprint refuses with 404 unless the server is BOTH a dev env and a
       # declared test rig (backend/app/testing/routes.py), and a compose-owned
-      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # stack only gets the second factor from --testing on its command.
       # Drop it and the stack still comes up healthy while all ~207 e2e tests
       # error inside an autouse fixture on a bare 404 -- 12k log lines that say
       # nothing about the cause. Ask once, here, and name it.
@@ -352,7 +352,7 @@ jobs:
             -H 'Content-Type: application/json' -d '{}' \
             "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
           if [ "$code" != "200" ]; then
-            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
           echo "OK: the testing stubs are mounted."
@@ -447,14 +447,18 @@ jobs:
               eval "$(env -u CURIO_E2E_BACKEND_PORT -u CURIO_E2E_SANDBOX_PORT \
                           -u BACKEND_PORT -u SANDBOX_PORT \
                           python -m utk_curio.backend.tests.shards "$k")"
-              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA" "$CURIO_PACKAGES_ROOT"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
+              # The package catalog is per shard for the same reason the
+              # dataset one is: it is otherwise a single directory every
+              # worker publishes into and reads back.
+              cp -r /app/packages/. "$CURIO_PACKAGES_ROOT/"
               # CURIO_ISOLATION=off for the same reason docker-compose.ci.yml
               # sets it: these shards run as root in an image carrying
               # curio-exec, so --deploy would discover it and isolate. The
               # isolated stacks are test-gpu-isolated and test-gpu-exec-user.
               export CURIO_ISOLATION=off
-              python curio.py start backend --deploy --with-examples --allow-shared-installs \
+              python curio.py start backend --deploy --testing --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
@@ -710,7 +714,7 @@ jobs:
       # stub-project to skip the signup UI, reset-db between every test. That
       # blueprint refuses with 404 unless the server is BOTH a dev env and a
       # declared test rig (backend/app/testing/routes.py), and a compose-owned
-      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # stack only gets the second factor from --testing on its command.
       # Drop it and the stack still comes up healthy while all ~207 e2e tests
       # error inside an autouse fixture on a bare 404 -- 12k log lines that say
       # nothing about the cause. Ask once, here, and name it.
@@ -722,7 +726,7 @@ jobs:
             -H 'Content-Type: application/json' -d '{}' \
             "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
           if [ "$code" != "200" ]; then
-            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
           echo "OK: the testing stubs are mounted."

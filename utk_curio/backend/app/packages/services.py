@@ -44,6 +44,7 @@ from utk_curio.backend.app.packages.spec_packages import (
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
     PackageIdError,
+    catalog_root as storage_catalog_root,
     list_user_packageages,
     package_dir,
     user_packageages_dir,
@@ -70,7 +71,7 @@ def catalog_root() -> Path:
     future cleanup can centralise these three copies in one place.
     """
     # services.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-    return Path(__file__).resolve().parents[4] / "packages"
+    return storage_catalog_root()
 
 
 class PackageServiceError(Exception):
