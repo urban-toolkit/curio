@@ -4,6 +4,7 @@ import json
 import sys
 import geopandas as gpd
 import pandas as pd
+from utk_curio.sandbox import metrics
 from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
@@ -327,6 +328,10 @@ def _isolated_runner():
                 f"to in-process execution: {exc}",
                 file=sys.stderr, flush=True,
             )
+            metrics.record_error(
+                summary="Could not start the execution zygote",
+                detail=f"{exc}\n\nNode execution fell back to the in-process path.",
+            )
             _isolation_state = False
             return None
 
@@ -427,6 +432,7 @@ def exec():
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     isolated = _isolated_runner()
+    metrics.record_dispatch(isolated is not None)
     if isolated is not None:
         run, config = isolated
         # launch_dir is passed to both paths in the same position: it is the
@@ -469,6 +475,8 @@ def exec_js():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
+    # JS has no isolated path at all, so this is always an in-process dispatch.
+    metrics.record_dispatch(False)
     result = execute_js_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
         session_id=session_id, save_dataset=bool(save_dataset),

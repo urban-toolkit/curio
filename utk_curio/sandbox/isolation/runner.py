@@ -26,6 +26,7 @@ import collections
 import os
 import threading
 
+from utk_curio.sandbox import metrics
 from utk_curio.sandbox.isolation import protocol, supervisor
 from utk_curio.sandbox.isolation.protocol import ProtocolError
 from utk_curio.sandbox.isolation.supervisor import IsolatedExecutionError
@@ -250,18 +251,25 @@ def execute_isolated(
         )
 
         client = supervisor.ZygoteClient(config.socket_path)
-        with config.slot():
+        # metrics.slot() is a gauge only; config.slot() is what actually bounds
+        # concurrency. Nesting rather than merging keeps the limiter unaware of
+        # the monitor, so bookkeeping can never affect whether work runs.
+        with metrics.slot(), config.slot():
             exit_code, signal_number, timed_out = client.run(
                 request, wall_timeout=config.wall_timeout
             )
 
         if timed_out or exit_code not in (0, None) or signal_number is not None:
-            return _failure(
-                supervisor.describe_child_death(
-                    exit_code, signal_number, timed_out,
-                    wall_timeout=config.wall_timeout, limits=config.limits,
-                )
+            sentence = supervisor.describe_child_death(
+                exit_code, signal_number, timed_out,
+                wall_timeout=config.wall_timeout, limits=config.limits,
             )
+            metrics.record_child_death(
+                supervisor.classify_child_death(exit_code, signal_number, timed_out),
+                detail=sentence,
+                context={"nodeType": node_type},
+            )
+            return _failure(sentence)
 
         manifest = supervisor.read_child_manifest(scratch_dir)
 
