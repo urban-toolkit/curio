@@ -27,31 +27,34 @@ _globals_cache: dict = {}
 
 
 class _ExecLock:
-    """``_exec_lock``, plus the numbers that say whether it is the bottleneck.
+    """A counted gate, plus the numbers that say whether it is the bottleneck.
 
-    The lock itself is unchanged: one process-wide mutex, ``with _exec_lock:``
-    still works, and nothing about who waits for whom is different. What is new
-    is that each acquisition records how long it waited and how long it held,
-    under a label naming the call site.
+    One slot is a mutex, which is what ``_exec_lock`` is; more than one bounds
+    concurrency without serializing it, which is what ``_artifact_slots`` is.
+    Either way each acquisition records how long it waited and how long it
+    held, under a label naming the call site.
 
     This exists because a stress run cannot otherwise tell a slot queue from a
-    lock queue. Raising ``CURIO_EXEC_PARALLELISM`` from 8 to 32 left the
-    100-user tier's throughput unchanged while /get's median got 7.5x worse,
-    which says the waiting moved from the execution semaphore to this lock --
-    but says it by inference. These counters say it directly.
+    lock queue: both turn a request that takes a second when idle into one
+    that takes minutes under load. Raising ``CURIO_EXEC_PARALLELISM`` from 8 to
+    32 left the 100-user tier's blocked time unchanged, which said the
+    execution semaphore was not the constraint without saying what was. These
+    counters answered it: 18722s of that tier's 24051s of waiting was this
+    lock, and 403.4s of its 407.6s of hold time was serving artifacts.
 
     Accounting costs two ``perf_counter`` calls and a dict update per
     acquisition, against critical sections that run for seconds. The stats
-    mutex is separate from the real one and is never held across user work, so
-    it cannot become a second queue.
+    mutex is separate from the gate itself and is never held across user work,
+    so it cannot become a second queue.
     """
 
-    def __init__(self):
-        self._lock = threading.Lock()
+    def __init__(self, slots=1):
+        self._slots = max(1, slots)
+        self._lock = threading.BoundedSemaphore(self._slots)
         self._stats_lock = threading.Lock()
         self._stats = {}
         self._waiting = 0
-        self._holder = None
+        self._in_use = 0
 
     @contextlib.contextmanager
     def hold(self, label="other"):
@@ -66,12 +69,14 @@ class _ExecLock:
                 self._waiting -= 1
         waited = time.perf_counter() - requested
         acquired = time.perf_counter()
-        self._holder = label
+        with self._stats_lock:
+            self._in_use += 1
         try:
             yield
         finally:
             held = time.perf_counter() - acquired
-            self._holder = None
+            with self._stats_lock:
+                self._in_use -= 1
             self._lock.release()
             self._record(label, waited, held)
 
@@ -109,9 +114,11 @@ class _ExecLock:
                 label: dict(entry) for label, entry in self._stats.items()
             }
             waiting = self._waiting
+            in_use = self._in_use
         return {
             "waiting": waiting,
-            "holder": self._holder,
+            "in_use": in_use,
+            "slots": self._slots,
             "labels": labels,
             "total_wait_seconds": round(
                 sum(e["wait_seconds"] for e in labels.values()), 3
@@ -123,6 +130,41 @@ class _ExecLock:
 
 
 _exec_lock = _ExecLock()
+
+
+def _default_artifact_parallelism() -> int:
+    """How many artifacts may be loaded from the store at once.
+
+    Serving an artifact used to hold ``_exec_lock``, so exactly one could run
+    at a time and every node execution queued behind them: 18722s of waiting
+    across a 100-user tier. Removing that lock fixed the queue and replaced it
+    with a stampede -- a hundred simultaneous loads, each materialising a frame
+    and its JSON, peaked the container 5GB higher and pushed 23 of 100 users
+    past the 300s artifact deadline that none had hit before.
+
+    Neither one at a time nor all at once, then. This is the ceiling: loads
+    overlap, node executions no longer wait behind them, and the memory a
+    burst can claim is bounded by a number rather than by how many people
+    happen to press a button. ``CURIO_GET_PARALLELISM`` overrides it.
+
+    Half the cores, floor 2, cap 8, matching the isolated executor's shape.
+    The cap is memory, not CPU: the JSON path materialises the whole artifact
+    as pandas and again as a JSON string, so the peak scales with how many run
+    together, not with how fast each one is.
+    """
+    try:
+        configured = int(os.environ.get("CURIO_GET_PARALLELISM", ""))
+    except (TypeError, ValueError):
+        configured = 0
+    if configured > 0:
+        return configured
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 8))
+
+
+# Sized at import: the artifact route is the only caller and the value cannot
+# change under a running server.
+_artifact_slots = _ExecLock(slots=_default_artifact_parallelism())
 
 
 def _default_js_parallelism() -> int:

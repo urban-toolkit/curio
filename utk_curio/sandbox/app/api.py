@@ -13,7 +13,9 @@ import mmap
 
 from shapely import wkt
 
-from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code
+from utk_curio.sandbox.app.worker import (
+    _artifact_slots, _worker_init, execute_code, execute_js_code,
+)
 from utk_curio.sandbox.util.db import connection_in_use
 
 
@@ -201,11 +203,16 @@ def monitor():
     # tells them apart. Cumulative since startup; a caller comparing two
     # snapshots gets the interval.
     try:
-        from utk_curio.sandbox.app.worker import _exec_lock
+        from utk_curio.sandbox.app.worker import _artifact_slots, _exec_lock
 
         payload['exec_lock'] = _exec_lock.snapshot()
+        # The artifact route's own ceiling, reported the same way: whether
+        # fetches are queueing is a different question from whether node
+        # executions are, and the two used to be the same number.
+        payload['artifact_slots'] = _artifact_slots.snapshot()
     except Exception:  # noqa: BLE001 - a monitor never fails over its subject
         payload['exec_lock'] = None
+        payload['artifact_slots'] = None
 
     return jsonify(payload)
 
@@ -225,56 +232,64 @@ def get_artifact():
     if request.accept_mimetypes.best == ARROW_IPC_MIME:
         return _get_artifact_arrow(art_id, session_id, max_rows_param)
 
-    # No lock and no chdir here. Serving an artifact used to hold the
-    # sandbox's process-wide execution lock across this whole load, because
-    # a raster re-opens by a path that could be relative to the launch
-    # directory and os.chdir is process-wide. parsers._resolve_raster_source
-    # resolves that path explicitly instead, so fetches now run concurrently
-    # with each other and with node executions.
+    # Bounded, and no chdir. This load used to run inside the sandbox's
+    # process-wide execution lock, because a raster re-opens by a path that
+    # can be relative to the launch directory and os.chdir is process-wide.
+    # That made node executions queue behind artifact fetches: 18722s of
+    # waiting across a 100-user tier for 407s of actual work.
+    # parsers._resolve_raster_source resolves the path explicitly instead, so
+    # the lock is gone from here entirely.
+    #
+    # A ceiling stays, because removing the lock without one replaced the
+    # queue with a stampede: a hundred concurrent loads, 5GB more peak memory
+    # and a fifth of the users past the 300s deadline that none had hit
+    # before. _artifact_slots lets fetches overlap while capping how many
+    # materialise a frame at once; node executions do not wait on it at all.
     max_rows = int(max_rows_param) if max_rows_param is not None else None
     try:
-        total_rows = None
-        raw = None
-        try:
-            if max_rows is not None:
-                preview = load_tabular_preview_from_duckdb(
-                    art_id,
-                    max_rows,
-                    session_id=session_id,
-                )
-                if preview is not None:
-                    raw, total_rows = preview
-            if raw is None:
-                raw = load_from_duckdb(art_id, session_id=session_id)
+        with _artifact_slots.hold("artifact_load"):
+            total_rows = None
+            raw = None
+            try:
+                if max_rows is not None:
+                    preview = load_tabular_preview_from_duckdb(
+                        art_id,
+                        max_rows,
+                        session_id=session_id,
+                    )
+                    if preview is not None:
+                        raw, total_rows = preview
+                if raw is None:
+                    raw = load_from_duckdb(art_id, session_id=session_id)
+                    if max_rows is not None and isinstance(raw, _pd.DataFrame):
+                        total_rows = len(raw)
+                        raw = raw.head(max_rows)
+            except Exception as store_error:
+                # The store could not serve it. Three ways that happens and all
+                # three mean the same thing to a caller holding a project's
+                # saved output: no such row, a row this session may not read
+                # (rows are session-tagged), or no readable database at all -
+                # the file is created on first write and can be locked by a
+                # concurrent /exec. So try the shared data directory, where a
+                # project load hydrates every output the manifest records. That
+                # file carries no session tag, which is what lets a dashboard -
+                # or any second viewer - read an output the producing session no
+                # longer owns.
+                try:
+                    raw = load_shared_output_file(art_id)
+                except KeyError:
+                    # Nothing hydrated under that name either. Report what the
+                    # STORE said rather than what the fallback said: for a
+                    # genuinely missing artifact that is the same KeyError this
+                    # route has always returned, and for a locked or missing
+                    # database it keeps the diagnostic instead of replacing it
+                    # with a misleading "no artifact with id".
+                    raise store_error
+                total_rows = None
                 if max_rows is not None and isinstance(raw, _pd.DataFrame):
                     total_rows = len(raw)
                     raw = raw.head(max_rows)
-        except Exception as store_error:
-            # The store could not serve it. Three ways that happens and all
-            # three mean the same thing to a caller holding a project's
-            # saved output: no such row, a row this session may not read
-            # (rows are session-tagged), or no readable database at all -
-            # the file is created on first write and can be locked by a
-            # concurrent /exec. So try the shared data directory, where a
-            # project load hydrates every output the manifest records. That
-            # file carries no session tag, which is what lets a dashboard -
-            # or any second viewer - read an output the producing session no
-            # longer owns.
-            try:
-                raw = load_shared_output_file(art_id)
-            except KeyError:
-                # Nothing hydrated under that name either. Report what the
-                # STORE said rather than what the fallback said: for a
-                # genuinely missing artifact that is the same KeyError this
-                # route has always returned, and for a locked or missing
-                # database it keeps the diagnostic instead of replacing it
-                # with a misleading "no artifact with id".
-                raise store_error
-            total_rows = None
-            if max_rows is not None and isinstance(raw, _pd.DataFrame):
-                total_rows = len(raw)
-                raw = raw.head(max_rows)
-        data = parseOutput(raw)
+            data = parseOutput(raw)
     except Exception as e:
         # Surface the underlying exception in the response body so callers
         # see *why* the load failed instead of an empty 500 page.

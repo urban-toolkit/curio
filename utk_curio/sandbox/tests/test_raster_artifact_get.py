@@ -243,5 +243,36 @@ class ServingTakesNoExecutionLockTest(unittest.TestCase):
             thread.join(10)
 
 
+class ArtifactSlotsAreTakenTest(ServingTakesNoExecutionLockTest):
+    """The route holds the bounded gate, not the mutex.
+
+    The pair matters: the first test of this file's other class says node
+    executions no longer wait behind fetches, and this one says fetches are
+    still capped so a hundred of them cannot claim the container's memory at
+    once. Both failed in one direction or the other before this change.
+    """
+
+    def _artifact_acquisitions(self):
+        from utk_curio.sandbox.app.worker import _artifact_slots
+
+        labels = _artifact_slots.snapshot()["labels"]
+        return labels.get("artifact_load", {}).get("acquisitions", 0)
+
+    def test_serving_an_artifact_takes_an_artifact_slot(self):
+        import pandas as pd
+
+        name = parsers.save_dataset_parquet(pd.DataFrame({"n": [1]}), "dataframe")
+        before = self._artifact_acquisitions()
+        response = self.client.get("/get", query_string={"fileName": name})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._artifact_acquisitions(), before + 1)
+
+    def test_the_gate_reports_a_ceiling_above_one(self):
+        """One slot would be the mutex again under a different name."""
+        from utk_curio.sandbox.app.worker import _artifact_slots
+
+        self.assertGreaterEqual(_artifact_slots.snapshot()["slots"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

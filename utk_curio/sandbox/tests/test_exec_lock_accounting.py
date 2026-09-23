@@ -190,3 +190,90 @@ class ExecLockReachesTheMonitorTest(unittest.TestCase):
         self.assertGreaterEqual(
             body["exec_lock"]["labels"]["isolated_persist"]["acquisitions"], 1
         )
+
+
+class BoundedGateTest(unittest.TestCase):
+    """More than one slot bounds concurrency instead of serializing it.
+
+    ``_artifact_slots`` is the same class with a count: removing the mutex from
+    the artifact route fixed the queue and replaced it with a stampede (a
+    hundred concurrent loads, 5GB more peak memory, a fifth of the users past
+    the 300s deadline), so the route keeps a ceiling without keeping a lock.
+    """
+
+    def test_slots_run_together_up_to_the_ceiling(self):
+        gate = _ExecLock(slots=3)
+        inside = threading.Semaphore(0)
+        release = threading.Event()
+        peak = []
+
+        def worker():
+            with gate.hold("artifact_load"):
+                peak.append(gate.snapshot()["in_use"])
+                inside.release()
+                release.wait(5)
+
+        threads = [threading.Thread(target=worker) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for _ in range(3):
+            self.assertTrue(inside.acquire(timeout=5))
+        # All three got in at once: a mutex would have deadlocked this wait.
+        self.assertEqual(gate.snapshot()["in_use"], 3)
+        release.set()
+        for t in threads:
+            t.join(5)
+        self.assertEqual(max(peak), 3)
+
+    def test_the_fourth_waits(self):
+        gate = _ExecLock(slots=3)
+        inside = threading.Semaphore(0)
+        release = threading.Event()
+
+        def holder():
+            with gate.hold("artifact_load"):
+                inside.release()
+                release.wait(5)
+
+        threads = [threading.Thread(target=holder) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for _ in range(3):
+            self.assertTrue(inside.acquire(timeout=5))
+
+        blocked = threading.Thread(target=holder)
+        blocked.start()
+        time.sleep(0.3)
+        self.assertEqual(gate.snapshot()["waiting"], 1)
+        self.assertEqual(gate.snapshot()["in_use"], 3)
+
+        release.set()
+        for t in threads + [blocked]:
+            t.join(5)
+        self.assertEqual(gate.snapshot()["in_use"], 0)
+
+    def test_a_single_slot_is_still_a_mutex(self):
+        """``_exec_lock`` is this class with slots=1, so that has to hold."""
+        gate = _ExecLock()
+        self.assertEqual(gate.snapshot()["slots"], 1)
+        with gate.hold("exec_in_process"):
+            self.assertFalse(gate._lock.acquire(blocking=False))
+
+
+class ArtifactParallelismDefaultTest(unittest.TestCase):
+    def test_it_sizes_to_the_host_and_can_be_overridden(self):
+        import os
+        from unittest import mock
+
+        from utk_curio.sandbox.app import worker
+
+        with mock.patch.dict(os.environ, {"CURIO_GET_PARALLELISM": "4"}):
+            self.assertEqual(worker._default_artifact_parallelism(), 4)
+
+        env = {k: v for k, v in os.environ.items() if k != "CURIO_GET_PARALLELISM"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(os, "cpu_count", return_value=64):
+            self.assertEqual(worker._default_artifact_parallelism(), 8)
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(os, "cpu_count", return_value=2):
+            self.assertEqual(worker._default_artifact_parallelism(), 2)

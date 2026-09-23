@@ -93,7 +93,7 @@ def _unreachable_sandbox() -> dict:
         "memoryLimitMb": None, "cpuSecondsLimit": None,
         "wallTimeoutSeconds": None,
         "total": None, "isolated": None, "inProcess": None,
-        "childDeaths": None, "execLock": None,
+        "childDeaths": None, "execLock": None, "artifactSlots": None,
     }
 
 
@@ -118,6 +118,10 @@ def _sandbox_section(payload) -> dict:
         # execution lock. Cumulative since the sandbox started: the stress
         # harness diffs two readings to get one tier's contention.
         "execLock": payload.get("exec_lock"),
+        # The artifact route's own ceiling. Separate from execLock because
+        # "fetches are queueing" and "node executions are queueing" are
+        # different findings with different fixes.
+        "artifactSlots": payload.get("artifact_slots"),
     }
 
 

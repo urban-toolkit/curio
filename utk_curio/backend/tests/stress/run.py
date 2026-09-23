@@ -117,19 +117,21 @@ def wait_for_backend(backend_url: str, timeout_s: float = 180.0) -> None:
     raise SystemExit(f"[stress] backend {backend_url} never came up: {last}")
 
 
-def read_exec_lock(backend_url: str) -> dict | None:
-    """The sandbox's execution-lock counters, or None if unavailable.
+def read_gate_counters(backend_url: str) -> tuple[dict | None, dict | None]:
+    """The sandbox's execution-lock and artifact-slot counters.
 
-    Public and unauthenticated, like the rest of /api/monitor. Best effort:
-    a tier that cannot read them reports no lock section rather than failing.
+    Public and unauthenticated, like the rest of /api/monitor. Best effort: a
+    tier that cannot read them reports no contention section rather than
+    failing. Both are fetched in one call so the two readings bracket the same
+    interval.
     """
     try:
         resp = requests.get(f"{backend_url}/api/monitor", timeout=10)
         payload = resp.json() or {}
     except (requests.RequestException, ValueError):
-        return None
+        return None, None
     sandbox = (payload.get("execution") or {}).get("sandbox") or {}
-    return sandbox.get("execLock")
+    return sandbox.get("execLock"), sandbox.get("artifactSlots")
 
 
 def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict:
@@ -237,14 +239,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[stress] tier {tier}: starting", flush=True)
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
-        lock_before = read_exec_lock(backend_url)
+        lock_before, slots_before = read_gate_counters(backend_url)
         results, seconds = run_tier(backend_url, args.run_id, tier, examples,
                                     baselines, args.register_concurrency,
                                     args.profile, label=f"{tier}x{position}")
         all_results.extend(results)
-        lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
+        lock_after, slots_after = read_gate_counters(backend_url)
+        lock = reporting.exec_lock_delta(lock_before, lock_after)
+        slots = reporting.exec_lock_delta(slots_before, slots_after)
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
-                                         exec_lock=lock)
+                                         exec_lock=lock, artifact_slots=slots)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)

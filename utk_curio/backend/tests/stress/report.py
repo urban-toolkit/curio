@@ -86,7 +86,8 @@ def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
 
 
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
-                 profile: str = "burst", exec_lock: dict | None = None) -> dict:
+                 profile: str = "burst", exec_lock: dict | None = None,
+                 artifact_slots: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -107,6 +108,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
         },
         "endpoints": endpoint_stats(results),
         "exec_lock": exec_lock,
+        "artifact_slots": artifact_slots,
         "failures": [
             {
                 "user": result.user,
@@ -259,19 +261,9 @@ def markdown(report: dict) -> str:
                 f"| `{endpoint}` | {stat['calls']} | {stat['errors']} "
                 f"| {stat['p50_s']}s | {stat['p95_s']}s | {stat['max_s']}s |"
             )
-        lock = tier.get("exec_lock")
-        if lock:
-            lines += ["", "Execution lock, this tier:", ""]
-            lines.append("| Call site | Acquisitions | Waited | Held | Mean wait | Max wait |")
-            lines.append("| --------- | -----------: | -----: | ---: | --------: | -------: |")
-            for label, stat in sorted(
-                lock["labels"].items(), key=lambda kv: -kv[1]["wait_seconds"]
-            ):
-                lines.append(
-                    f"| `{label}` | {stat['acquisitions']} "
-                    f"| {stat['wait_seconds']}s | {stat['held_seconds']}s "
-                    f"| {stat['mean_wait_seconds']}s | {stat['max_wait_seconds']}s |"
-                )
+        for key, heading in (("exec_lock", "Execution lock, this tier:"),
+                             ("artifact_slots", "Artifact slots, this tier:")):
+            lines += _gate_table(tier.get(key), heading)
         if tier["failures"]:
             lines += ["", "<details><summary>"
                           f"{len(tier['failures'])} failure(s)</summary>", ""]
@@ -287,6 +279,32 @@ def markdown(report: dict) -> str:
                              "(see report.json)")
             lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
+
+
+def _gate_table(lock: dict | None, heading: str) -> list[str]:
+    """One gate's contention table as lines, or none when it was not recorded.
+
+    Two gates bound this stack and they answer different questions: whether
+    node executions are queueing (the execution lock) and whether artifact
+    fetches are (the artifact slots). They used to be the same number, which
+    is precisely the confusion this reports its way out of.
+    """
+    if not lock:
+        return []
+    lines = [
+        "", heading, "",
+        "| Call site | Acquisitions | Waited | Held | Mean wait | Max wait |",
+        "| --------- | -----------: | -----: | ---: | --------: | -------: |",
+    ]
+    for label, stat in sorted(
+        lock["labels"].items(), key=lambda kv: -kv[1]["wait_seconds"]
+    ):
+        lines.append(
+            f"| `{label}` | {stat['acquisitions']} "
+            f"| {stat['wait_seconds']}s | {stat['held_seconds']}s "
+            f"| {stat['mean_wait_seconds']}s | {stat['max_wait_seconds']}s |"
+        )
+    return lines
 
 
 def write_outputs(report: dict, out_dir: str) -> tuple[str, str]:
