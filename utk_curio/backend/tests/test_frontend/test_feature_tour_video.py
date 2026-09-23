@@ -1449,7 +1449,7 @@ def scene_dashboard(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.say(
         "Pin the views you want to present",
-        "Dashboard Mode keeps node state, edges and positions intact.",
+        "Pinned views make a dashboard: a page of its own, with its own link.",
         hold=2600,
     )
     for node_id in (ctx.state.get("vega_ids") or _node_ids_by_type(page, "vis-vega"))[:2]:
@@ -1469,17 +1469,37 @@ def scene_dashboard(ctx: Ctx) -> None:
         activate_header_icon(pin)
         tour.beat(700)
     tour.hush()
-    tour.click(_menu(page, "View"), force=True)
-    tour.click(page.get_by_role("button", name="Dashboard Mode", exact=True))
+
+    # Pins live in the saved spec, and the dashboard renders what is on disk.
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url
+        and r.request.method in ("POST", "PUT") and r.ok,
+        timeout=40000,
+    ):
+        tour.click(page.locator("[data-curio-save-state]").first, force=True)
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    if not match:
+        _log(f"[tour] no saved dataflow to open a dashboard for: {page.url}")
+        return
+    project_id = match.group(1)
+
+    tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+    tour.focus(page.get_by_test_id("open-dashboard-link"), hold=1400)
+    # The menu opens the dashboard in a new tab. A recording follows one page,
+    # so the tour opens it in this one; the tab itself is covered by
+    # test_dashboard_page_e2e.py.
+    tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+    page.goto(f"{page.url.split('/dataflow/')[0]}/dashboard/{project_id}")
+    page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
     tour.beat(3200)
     tour.say(
         "The same dataflow, presented",
-        "Toggle back and the canvas is exactly where you left it.",
+        "Charts draw from the saved outputs, with nothing to press. Share the link.",
         hold=2600,
     )
     tour.hush()
-    exit_btn = page.locator('button[title="Exit Dashboard Mode"]')
-    tour.click(exit_btn)
+    tour.click(page.get_by_test_id("open-dataflow-link"))
+    page.wait_for_selector(".react-flow__node", timeout=45000)
     tour.beat(1200)
     _fit_view(page)
 

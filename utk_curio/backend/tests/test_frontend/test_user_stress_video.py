@@ -1298,8 +1298,8 @@ class TestSessionMapsAndInteraction:
                 )
             )
 
-        with s.step("Pin the views and switch to Dashboard Mode",
-                    "The presentation half of the canvas.", chapter="Dashboard"):
+        with s.step("Pin the views and open the dashboard",
+                    "The presentation half: a page of its own.", chapter="Dashboard"):
             pinned = 0
             for node_id in vega_ids[:2]:
                 pin = node_locator(page, node_id).locator(
@@ -1320,14 +1320,33 @@ class TestSessionMapsAndInteraction:
                         "in each node header"
                     ),
                 )
-            s.tour.click(_menu(page, "View"), force=True)
-            s.tour.click(
-                page.get_by_role("button", name="Dashboard Mode", exact=True)
+            # Pins are part of the saved spec, and the dashboard shows what is
+            # saved.
+            s.tour.click(page.locator("[data-curio-save-state]").first, force=True)
+            page.wait_for_function(
+                "() => document.querySelector('[data-curio-save-state]')"
+                "?.getAttribute('data-curio-save-state') === 'saved'",
+                timeout=60000,
             )
-            s.tour.beat(2600)
-            exit_btn = page.locator('button[title="Exit Dashboard Mode"]')
-            exit_btn.wait_for(state="visible", timeout=20000)
-            s.tour.click(exit_btn)
+            s.tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+            s.tour.focus(page.get_by_test_id("open-dashboard-link"), hold=900)
+            s.tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+            match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+            if match:
+                # The menu opens a new tab; a recording follows one page.
+                base = page.url.split("/dataflow/")[0]
+                page.goto(f"{base}/dashboard/{match.group(1)}")
+                page.get_by_test_id("open-dataflow-link").wait_for(
+                    state="visible", timeout=45000,
+                )
+                s.tour.beat(2600)
+                s.tour.click(page.get_by_test_id("open-dataflow-link"))
+                page.wait_for_selector(".react-flow__node", timeout=45000)
+            else:
+                s.record(
+                    "absent", "the dataflow did not save to a project, so it has no dashboard",
+                    severity="warning", detail_full=page.url,
+                )
             s.tour.beat(1200)
             _fit_view(page)
 

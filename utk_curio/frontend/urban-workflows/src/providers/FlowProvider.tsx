@@ -27,7 +27,7 @@ import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCata
 import { NodeType, EdgeType } from "../constants";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
-import { applyDashboardLayout } from "../utils/dashboardLayout";
+import { dashboardSourceNodeIds } from "../utils/dashboardLayout";
 import {
     ensureMergeArrays,
     parseHandleIndex,
@@ -40,7 +40,7 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
-import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, shouldSaveOutputOnRun } from "../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
@@ -97,14 +97,14 @@ interface FlowContextProps {
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
-    setDashBoardMode: (value: boolean) => void;
+    /** True while the tree is rendering the dashboard page rather than the canvas. */
     dashboardOn: boolean;
     dashboardLocked: boolean;
+    /** Does a pinned tile depend on this node's output being saved? */
+    isDashboardSource: (nodeId: string) => boolean;
     setDashboardLocked: React.Dispatch<React.SetStateAction<boolean>>;
-    updatePositionWorkflow: (nodeId: string, position: any) => void;
-    updatePositionDashboard: (nodeId: string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
-    hydrateRestoredOutputs: (outputs: IOutput[]) => void;
+    hydrateRestoredOutputs: (outputs: IOutput[], edges?: readonly any[]) => void;
 
     // NEW CODE
     dashboardPins: { [key: string]: boolean };
@@ -163,7 +163,7 @@ interface FlowContextProps {
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
-    saveCurrentProject: (nameOverride?: string) => Promise<any>;
+    saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
     persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
@@ -235,12 +235,10 @@ export const FlowContext = createContext<FlowContextProps>({
     onEdgesDelete: () => { },
     onNodesDelete: () => { },
     setPinForDashboard: () => { },
-    setDashBoardMode: () => { },
     dashboardOn: false,
     dashboardLocked: true,
+    isDashboardSource: () => false,
     setDashboardLocked: () => { },
-    updatePositionWorkflow: () => { },
-    updatePositionDashboard: () => { },
     applyNewOutput: () => { },
     hydrateRestoredOutputs: () => { },
 
@@ -356,7 +354,17 @@ function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
     return levels;
 }
 
-const FlowProvider = ({ children }: { children: ReactNode }) => {
+/**
+ * ``dashboardOn`` is a PROP, not state: it says which route mounted this tree.
+ * It used to be a mode the canvas toggled into, which is why the nodes had two
+ * sets of coordinates and no URL to share. The dashboard is its own route now,
+ * so the flag is decided once, above the provider, and everything that reads it
+ * means "I am rendering a dashboard tile" rather than "the canvas is pretending".
+ */
+const FlowProvider = ({
+    children,
+    dashboardOn = false,
+}: { children: ReactNode; dashboardOn?: boolean }) => {
     const { showToast } = useToastContext();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -371,6 +379,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    // Saves the project right after a pin changes (assigned below, next to
+    // markDirtyRef). Pinning is the one edit whose entire purpose is to change
+    // a DIFFERENT page, and that page renders what is on disk, so leaving it to
+    // the 30 second auto-save meant "pin a tile, open the dashboard" showed
+    // "nothing is pinned yet" for up to half a minute. That reads as a broken
+    // feature rather than as a save that has not happened yet.
+    const savePinChangeRef = useRef<() => void>(() => {});
     // Set after workflowOps exists; called from applyNewOutput (a genuine runtime
     // output, NOT project load — load writes outputs via setOutputs directly) to
     // auto-install + surface a produced dataset without a manual disk-icon save.
@@ -425,18 +440,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
 
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
-    const [dashboardOn, setDashboardOn] = useState<boolean>(false);
+    // Whether the dashboard's tiles can be moved and resized. Session-only and
+    // owner-only: the page starts locked and unlocks for an explicit edit.
     const [dashboardLocked, setDashboardLocked] = useState<boolean>(true);
-
-    const positionsInDashboardRef = useRef<any>({});
-    const setPositionsInDashboard = (data: any) => {
-        positionsInDashboardRef.current = typeof data === 'function' ? data(positionsInDashboardRef.current) : data;
-    };
-
-    const positionsInWorkflowRef = useRef<any>({});
-    const setPositionsInWorkflow = (data: any) => {
-        positionsInWorkflowRef.current = typeof data === 'function' ? data(positionsInWorkflowRef.current) : data;
-    };
 
     const reactFlow = useReactFlow();
     const [loading, setLoading] = useState<boolean>(false);
@@ -475,80 +481,59 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         initializeProvenance();
     }, []);
 
-    const setDashBoardMode = (value: boolean) => {
-        // Refuse entry with nothing pinned (#192). `applyDashboardLayout`
-        // returns the nodes untouched when no node is pinned, and then every
-        // one of them is given `display: none` below while the edges are
-        // hidden and `{!dashboardOn && <UpMenu>}` removes the top bar - so the
-        // whole screen goes blank with only DashboardPanel's ✕ to escape by.
-        // Better to say what is missing than to enter a mode that shows nothing.
-        if (value && !Object.values(dashboardPins).some(Boolean)) {
-            showToast("Pin at least one node to the dashboard first.", "warning");
-            return;
+    // Which nodes a pinned tile depends on. Derived from the live graph rather
+    // than stored: pins and wiring both change, and a stale set would either
+    // save the wrong node's output or none at all.
+    const isDashboardSource = useCallback((nodeId: string) => {
+        try {
+            return dashboardSourceNodeIds(
+                reactFlow.getNodes() as any, reactFlow.getEdges() as any,
+            ).has(nodeId);
+        } catch {
+            // The graph is the source of truth, not a requirement. If it cannot
+            // be read, fall back to the explicit toggle alone.
+            return false;
         }
-        setDashboardOn(value);
-        if (value) {
-            setDashboardLocked(true);
-            // When entering dashboard mode, apply the automatic layout
-            setNodes((nds) => {
-                // Save current positions as workflow positions if not already set
-                const nodesWithWorkflowPositions = nds.map(node => ({
-                    ...node,
-                    data: {
-                        ...node.data,
-                        workflowPosition: node.data.workflowPosition || node.position,
-                    },
-                }));
-
-                const updatedNodes = applyDashboardLayout(nodesWithWorkflowPositions, edges, dashboardPins);
-
-                // Update positions in the dashboard state
-                updatedNodes.forEach((node) => {
-                    if (dashboardPins[node.id]) {
-                        updatePositionDashboard(node.id, node.position);
-                    }
-                });
-
-                return updatedNodes.map(node => ({
-                    ...node,
-                    style: dashboardPins[node.id] ? node.style : { display: 'none' },
-                }));
-            });
-            setEdges(eds => eds.map(e => ({ ...e, hidden: true })));
-        } else {
-            // When exiting dashboard mode, reset to workflow positions
-            setNodes((nds) => {
-                return nds.map(node => {
-                    const workflowPos = node.data.workflowPosition || node.position;
-                    return {
-                        ...node,
-                        style: undefined,
-                        position: workflowPos,
-                        data: {
-                            ...node.data,
-                            dashboardPosition: undefined,
-                        },
-                    };
-                });
-            });
-            setEdges(eds => eds.map(e => ({ ...e, hidden: false })));
-        }
-    };
-
-    const updatePositionWorkflow = useCallback((nodeId: string, change: any) => {
-        positionsInWorkflowRef.current = { ...positionsInWorkflowRef.current, [nodeId]: change };
-    }, []);
-
-    const updatePositionDashboard = useCallback((nodeId: string, position: { x: number; y: number }) => {
-        positionsInDashboardRef.current = { ...positionsInDashboardRef.current, [nodeId]: position };
-    }, []);
+    }, [reactFlow]);
 
     const setPinForDashboard = useCallback((nodeId: string, value: boolean) => {
         setDashboardPins((prev: any) => ({ ...prev, [nodeId]: value }));
         setNodes((nds: Node[]) =>
             nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, dashboardPinned: value } } : n)
         );
-    }, [setDashboardPins, setNodes]);
+        // A pin is part of the saved spec, so it is an edit. Nothing said so
+        // before, which was harmless while the dashboard was a canvas mode and
+        // is not now: the page renders what is on disk, so an unsaved pin would
+        // be a tile the dashboard never shows.
+        markDirtyRef.current();
+        // Both directions: unpinning has to reach the dashboard just as promptly
+        // as pinning, or the tile stays on a page the user has already removed
+        // it from.
+        savePinChangeRef.current();
+        if (!value) return;
+        // Say what pinning does beyond hiding the other nodes: the tile has to
+        // be able to draw without a run, which means the outputs behind it get
+        // saved to the Data Catalog.
+        const sources = dashboardSourceNodeIds(
+            reactFlow.getNodes().map((n) =>
+                n.id === nodeId
+                    ? { ...n, data: { ...n.data, dashboardPinned: true } }
+                    : n,
+            ) as any,
+            reactFlow.getEdges() as any,
+        );
+        if (sources.size === 0) return;
+        const labels = reactFlow.getNodes()
+            .filter((n) => sources.has(n.id))
+            .map((n) => resolveNodeDisplayLabel(n.data))
+            .filter(Boolean);
+        if (labels.length === 0) return;
+        showToast(
+            `Pinned. The output of ${labels.join(", ")} will be saved to the `
+            + `Data Catalog so this tile can render without running the dataflow.`,
+            "info",
+        );
+    }, [setDashboardPins, setNodes, reactFlow, showToast]);
 
     // The bridge's content path (dev/51): both fields, one provider-state
     // update — ``defaultCode`` drives the Monaco editor's value and ``code``
@@ -569,16 +554,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
             console.log("add node");
-            setNodes((prev: any) => {
-                updatePositionWorkflow(node.id, {
-                    id: node.id,
-                    dragging: true,
-                    position: { ...node.position },
-                    positionAbsolute: { ...node.position },
-                    type: "position"
-                });
-                return prev.concat(node);
-            });
+            setNodes((prev: any) => prev.concat(node));
 
             if (provenance) {
                 TrillGenerator.addNewVersionProvenance(
@@ -612,9 +588,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [setNodes]
     );
 
-    // Push a source node's cached output to every direct downstream consumer.
-    const propagateDownstreamInputs = (sourceId: string, rawOutput: unknown) => {
-        const currentEdges = reactFlow.getEdges();
+    /**
+     * Push a source node's cached output to every direct downstream consumer.
+     *
+     * *edgesOverride* names the graph to read instead of React Flow's store.
+     * The store is written from an effect, so right after a load it is still a
+     * render behind and reports no edges at all; a restore that read it then
+     * silently reached nobody. On the canvas that showed up as nodes waiting for
+     * a Play, which hid it. The dashboard has no Play, so the caller passes the
+     * edges the load just built.
+     */
+    const propagateDownstreamInputs = (
+        sourceId: string,
+        rawOutput: unknown,
+        edgesOverride?: readonly { source?: unknown; target?: unknown; sourceHandle?: unknown; targetHandle?: unknown }[],
+    ) => {
+        const currentEdges = (edgesOverride ?? reactFlow.getEdges()) as any[];
         const nodesAffected: string[] = [];
         for (const edge of currentEdges) {
             if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
@@ -1307,11 +1296,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     // the user manually reruns each upstream node (dev/64). Deferred one tick so
     // loadTrill's nodes/edges are committed to the React Flow store first. No
     // exec bookkeeping (signalNodeExecDone / install sync) — nothing executed.
-    const hydrateRestoredOutputs = (restored: IOutput[]) => {
+    const hydrateRestoredOutputs = (restored: IOutput[], edges?: readonly any[]) => {
         setTimeout(() => {
             for (const o of restored) {
                 if (o?.nodeId && o.output != null && o.output !== "") {
-                    propagateDownstreamInputs(o.nodeId, o.output);
+                    propagateDownstreamInputs(o.nodeId, o.output, edges);
                 }
             }
         }, 0);
@@ -1608,7 +1597,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         nodes, edges,
         setNodes, setEdges,
         setOutputs, outputsRef, setInteractions,
-        setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
+        setDashboardPins,
+        presentation: dashboardOn,
         setWorkflowName,
         workflowNameRef,
         setWorkflowDescription,
@@ -1621,6 +1611,31 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markDirtyRef.current = workflowOps.markDirty;
+
+    // Debounced so toggling several pins in a row is one save, and so the save
+    // reads the React Flow store after the pin has landed in it rather than the
+    // snapshot from the click.
+    const pinSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    savePinChangeRef.current = () => {
+        // The dashboard writes on its own terms (Save layout), and a visitor
+        // holding a link has nothing to write to.
+        if (dashboardOn) return;
+        if (!workflowOps.projectId) return;
+        if (workflowOps.viewerMode === "shared") return;
+        if (pinSaveTimerRef.current) clearTimeout(pinSaveTimerRef.current);
+        pinSaveTimerRef.current = setTimeout(() => {
+            workflowOps.saveCurrentProject().catch((err: unknown) => {
+                // Loud, unlike the 30 second auto-save: the user just asked for
+                // something whose only visible effect is on another page, so a
+                // silent failure would look like the dashboard ignoring them.
+                console.error("Saving the pin failed:", err);
+                showToast(
+                    "Could not save the pin. The dashboard will not show this tile until the dataflow is saved.",
+                    "error",
+                );
+            });
+        }, 400);
+    };
 
     // ── Auto-surface produced datasets without a manual disk-icon save ─────────
     // A dataset is installed when its producing node's output is persisted: for
@@ -1636,6 +1651,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const installSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const installSyncPendingIdsRef = useRef<Set<string>>(new Set());
     scheduleInstallSyncRef.current = (nodeId: string) => {
+        // Never from a dashboard. A tile drawing itself emits an output like any
+        // run, and this is what turns an output into a project save: from the
+        // dashboard that would rewrite the owner's dataflow behind their back,
+        // and for a visitor holding a link it would throw and surface as an error
+        // toast on a page they only opened to look at.
+        if (dashboardOn) return;
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
         const canonical = getUnversionedFlowNodeType(node);
@@ -1647,7 +1668,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             return;
         }
         if (isDatasetPaletteNode(node.data)) return;
-        if (!resolveSaveOutputDataset(node.data, defaultSaveOutputDataset)) return;
+        if (!shouldSaveOutputOnRun(
+            node.data, defaultSaveOutputDataset, isDashboardSource(nodeId),
+        )) return;
 
         installSyncPendingIdsRef.current.add(nodeId);
         workflowOps.beginPendingInstall({
@@ -1765,9 +1788,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 onEdgesDelete,
                 onNodesDelete,
                 setPinForDashboard,
-                setDashBoardMode,
-                updatePositionWorkflow,
-                updatePositionDashboard,
+                isDashboardSource,
                 applyNewOutput,
                 hydrateRestoredOutputs,
                 playAllNodes,

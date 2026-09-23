@@ -816,6 +816,74 @@ def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
             pass
 
 
+def load_shared_output_file(file_name):
+    """Load a project output hydrated into the shared data directory.
+
+    The DuckDB artifact store is the primary source and the caller tries it
+    first; this is the fallback for a name it does not know. That is the normal
+    state for a saved output read outside the session that produced it: the
+    artifact row is session-tagged (see :func:`load_from_duckdb`) and may have
+    been pruned entirely, while the hydrated file is the durable copy the
+    project owns. It is what a project load writes here for every output the
+    manifest records (``backend/app/projects/storage.hydrate_outputs``).
+
+    No session check, deliberately. The file is in this directory only because
+    a project load put it there, so the authorization already happened at
+    ``GET /api/projects/<id>`` (owner) or ``GET /api/projects/<id>/shared``
+    (link). Holding the project is what grants its outputs.
+
+    The name alone does not say what the bytes are - a dataset parquet keeps
+    its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
+    installed from a JSON or parquet artifact lands under the bare artifact id
+    - so the content is sniffed.
+
+    Raises ``KeyError`` for an unsafe name, a missing file, or bytes this
+    cannot decode, so callers can treat it exactly like a missing artifact.
+    """
+    missing = KeyError(f"No artifact with id {file_name}")
+
+    name = str(file_name or "").strip()
+    # One safe path component, mirroring the backend's ``validate_component``:
+    # a separator or a dot entry would address something other than a hydrated
+    # output. The containment check below is the second line of defence.
+    if not name or name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
+        raise missing
+
+    data_dir = _shared_data_dir()
+    try:
+        path = (data_dir / name).resolve()
+        path.relative_to(data_dir)
+    except (OSError, ValueError):
+        raise missing
+    if not path.is_file():
+        raise missing
+
+    with open(path, "rb") as handle:
+        header = handle.read(4)
+
+    # Parquet, by magic or by name. ``load_dataset_parquet`` reads GeoParquet as
+    # a GeoDataFrame and restores the ``.decode.json`` sidecar, so object columns
+    # come back as objects rather than JSON strings.
+    if header[:4] == b"PAR1" or name.endswith(".parquet"):
+        try:
+            return load_dataset_parquet(path)
+        except Exception:
+            raise missing
+
+    payload = path.read_bytes()
+    # dict/list artifacts are stored zlib-compressed (see _write_json_artifact);
+    # an installed copy of one keeps those bytes.
+    if name.endswith(".json.zlib") or header[:1] == b"\x78":
+        try:
+            return json.loads(zlib.decompress(payload).decode("utf-8"))
+        except Exception:
+            pass
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except Exception:
+        raise missing
+
+
 def save_dataset_parquet(output, kind):
     """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
     directory (top-level, not inside ``artifacts/``).

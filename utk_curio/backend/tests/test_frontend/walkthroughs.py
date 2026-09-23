@@ -37,6 +37,7 @@ from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    dismiss_toasts,
     assert_vega_canvas_rendered,
     canvas_nodes,
     close_tools_palette,
@@ -1214,82 +1215,121 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
 AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
 
 
-def open_view_menu_dashboard(ctx: Ctx) -> None:
-    """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
+def save_from_the_status_icon(ctx: Ctx) -> None:
+    """Save the open dataflow and wait until the indicator says it is on disk.
+
+    The status icon rather than File > Save: it is one click, it is the control
+    a user reaches for, and its ``data-curio-save-state`` is the one signal that
+    the request actually finished rather than merely started.
+    """
     page = ctx.page
-    ctx.click(top_menu(page, "View"), force=True)
-    ctx.click(page.get_by_text("Dashboard Mode", exact=True).first)
+    ctx.click(page.locator("[data-curio-save-state]").first, force=True)
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=30000,
+    )
+
+
+def dataflow_id_from_url(page) -> str:
+    """The project id of the dataflow open in *page*, read off its route."""
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    assert match, f"not on a saved dataflow: {page.url}"
+    return match.group(1)
 
 
 @walkthrough(
-    slug="dashboard-mode-refuses-a-blank-screen",
+    slug="dashboard-page-renders-pinned-charts",
     example=PROVENANCE_EXAMPLE,
-    refs=[192],
-    title="Dashboard Mode says what it needs",
-    premise="Enter Dashboard Mode with nothing pinned, then with one node pinned.",
-    note="Entering with nothing pinned hid every node and every edge, and "
-         "`{!dashboardOn && <UpMenu>}` took the top bar with them - so the "
-         "screen went blank with only the dashboard panel's close button left. "
-         "The menu also ran the toggle twice per click, because MainCanvas "
-         "passed the same handler to two props and UpMenu called both.",
-    tests=["src/tests/providers/dashboardModeGuard.test.tsx"],
+    refs=[125, 192],
+    title="A dashboard is a page of its own",
+    premise="Pin a chart, save, open the dashboard: the chart is there without "
+            "pressing Run. Unpin it and the page says what is missing.",
+    note="Dashboard Mode was a state of the canvas: no URL to share, and nothing "
+         "on it after a reload, because a chart only drew when Play was pressed "
+         "and its data was readable only by the session that ran it. The "
+         "dashboard is now its own route, the outputs behind a pinned tile are "
+         "saved to the Data Catalog, and the tile draws from them on load.",
+    tests=[
+        "src/tests/pages/dashboardPage.test.tsx",
+        "src/tests/components/universalNodeAutoRender.test.tsx",
+        "src/tests/utils/dashboardLayout.test.ts",
+        "src/tests/providers/dashboardPresentation.test.tsx",
+        "utk_curio/sandbox/tests/test_get_shared_file_fallback.py",
+    ],
 )
-def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
+def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     page = ctx.page
 
-    ctx.say("Dashboard Mode, with nothing pinned",
-            "This used to empty the screen with no way back but one ✕.")
-    open_view_menu_dashboard(ctx)
-
-    toast = page.locator(TOAST_REGION).get_by_text(
-        "Pin at least one node to the dashboard first.", exact=True
-    )
-    toast.first.wait_for(state="visible", timeout=15000)
-    ctx.focus(toast.first, hold=1600)
-
-    # The canvas is untouched: still here, still showing its nodes.
-    nodes = page.locator(".react-flow__node")
-    assert nodes.count() > 0, "the canvas emptied despite the refusal"
-    expect(page.locator("#tools-menu")).to_be_visible()
-    ctx.capture("refused-with-nothing-pinned")
-
-    # RUN a node that renders, and pin that one. `.react-flow__node.first` is
-    # the Data Loading node, which has no visual output and, unrun, no output
-    # at all - so Dashboard Mode laid out an empty tile and the capture was a
-    # flat grey box that would still be a flat grey box if the mode broke.
-    # `play_node` runs the not-yet-successful ancestors too, so playing the
-    # chart at the tail runs the chain behind it.
-    ctx.say("Run the chart", "Dashboard Mode needs something to lay out.")
+    # RUN the chart, so there is an output behind it to save. `play_node` runs
+    # the not-yet-successful ancestors too, so this runs the chain feeding it.
+    ctx.say("Run the chart", "A dashboard shows what a run produced.")
     node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
     node.scroll_into_view_if_needed()
-    # Not `run_node_and_wait`: that returns the output text and so waits for
-    # `[data-curio-node-output]`, the code node's text pane, which a chart node
-    # does not have. Wait on the status attribute, then on drawn marks.
+    # Not `run_node_and_wait`: that waits for a code node's text pane, which a
+    # chart does not have. Wait on the status attribute, then on drawn marks.
     play_node(page, node_id)
     wait_for_node_done(page, node_id, node_type="vis-vega", timeout_ms=180000)
     assert_vega_canvas_rendered(page, node_id, timeout=60000)
 
-    ctx.say("Pin it", "Now the mode has something to show.")
+    ctx.say("Pin it, and save", "Pinning saves the output behind the chart.")
     pin = node.get_by_role("button", name="Pin to dashboard")
     pin.wait_for(state="visible", timeout=15000)
     ctx.click(pin.first)
-    ctx.beat(700)
+    save_from_the_status_icon(ctx)
+    project_id = dataflow_id_from_url(page)
 
-    ctx.say("And it opens", "One pinned node, laid out on its own.")
-    open_view_menu_dashboard(ctx)
-    page.wait_for_timeout(1200)
-    # The pinned node is the subject, so prove the chart came with it rather
-    # than photographing whatever the panel put on screen. Scoped to the Vega
-    # mount (`"vega" + nodeId`, the convention useVega.ts owns) - a bare
-    # `canvas` locator finds Monaco's hidden decorationsOverviewRuler first.
-    dash_canvas = page.locator(f"#vega{node_id} canvas").first
-    dash_canvas.wait_for(state="visible", timeout=45000)
-    assert dash_canvas.evaluate("c => c.width > 0 && c.height > 0"), (
-        "Dashboard Mode laid out the pinned node but its chart drew nothing"
+    ctx.say("Share", "The dashboard and the dataflow each have a link.")
+    # Clear the pin and save toasts BEFORE opening the menu. The capture helper
+    # sweeps toasts by clicking their close buttons, and a click anywhere else
+    # on the page is what closes this dropdown - so an unswept toast at capture
+    # time photographs a menu that has just shut.
+    dismiss_toasts(page)
+    ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
+    page.get_by_test_id("open-dashboard-link").wait_for(state="visible", timeout=10000)
+    ctx.capture("share-menu")
+    # Close it again: the capture is the only thing that needed it open.
+    ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
+
+    # The menu's link opens a NEW tab, which `test_dashboard_page_e2e.py` asserts.
+    # A walkthrough records one page, so it navigates this one instead - a full
+    # load, which is the point: nothing the canvas held in memory comes along.
+    ctx.say("Open the dashboard", "A full page load: nothing is kept from the canvas.")
+    page.goto(f"{ctx.frontend}/dashboard/{project_id}")
+    page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+
+    # The pinned chart drew, and nothing pressed Play on this page to make it.
+    # Scoped to the Vega mount (`"vega" + nodeId`): a bare `canvas` finds
+    # Monaco's hidden overview ruler first.
+    chart = page.locator(f"#vega{node_id} canvas").first
+    chart.wait_for(state="visible", timeout=90000)
+    assert chart.evaluate("c => c.width > 0 && c.height > 0"), (
+        "the dashboard laid out the pinned chart but it drew nothing: the output "
+        "behind it was not restored from the Data Catalog"
     )
-    ctx.capture("entered-with-one-pin")
+    # A page, not the canvas: no palette, no node chrome to pin or run with.
+    assert page.locator("#tools-menu").count() == 0, "the editor's palette is on the dashboard"
+    assert page.get_by_role("button", name="Pin to dashboard").count() == 0, (
+        "a tile is showing the canvas node header"
+    )
+    ctx.capture("dashboard-page")
+
+    ctx.say("And with nothing pinned", "The page says what is missing, and where to fix it.")
+    ctx.click(page.get_by_test_id("open-dataflow-link"))
+    node = node_locator(page, node_id)
+    node.wait_for(state="visible", timeout=45000)
+    unpin = node.get_by_role("button", name="Unpin from dashboard")
+    unpin.wait_for(state="visible", timeout=15000)
+    ctx.click(unpin.first)
+    save_from_the_status_icon(ctx)
+
+    page.goto(f"{ctx.frontend}/dashboard/{project_id}")
+    empty = page.get_by_test_id("dashboard-empty")
+    empty.wait_for(state="visible", timeout=45000)
+    expect(empty).to_contain_text("Nothing is pinned to this dashboard yet.")
+    ctx.capture("empty-state")
 
 
 @walkthrough(

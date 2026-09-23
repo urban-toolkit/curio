@@ -398,6 +398,26 @@ The first matching rule wins:
 | nothing usable | the editor stays empty |
 
 
+## Dashboards
+
+A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`: the nodes you
+pinned, and nothing else. Anyone with the link can open it, and the tiles draw without
+running anything.
+
+- **Pin** the nodes to show, with the pin control in each node's header. Pinning also
+  saves the outputs feeding those nodes to your Data Catalog, which is what the page
+  draws from later.
+- **Open** it from **Share ⏷ → Open dashboard**, which opens a new tab. The same menu
+  copies either link.
+- **Save the dataflow** after pinning or rearranging: the page shows what is on disk.
+- **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
+  and **Save layout** records where they sit, without touching the canvas positions.
+- **Sharing** works like a `/dataflow/<id>` link: read-only for everyone but the owner,
+  and a visitor without an account needs guest sign-in (on unless `CURIO_ENV=prod`).
+
+An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
+console output is not restored: no saved dataset carries it.
+
 ## Data Catalog
 
 Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.

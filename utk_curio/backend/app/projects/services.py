@@ -308,6 +308,14 @@ def _auto_install_computed_outputs(
         if _is_sink_node_type(node_types.get(node_id)):
             continue
 
+        # A node that LOADS an installed dataset (a Data Catalog palette node)
+        # already has a durable source: the dataset it reads. Its output ref is
+        # kept, so a reload restores it through ``_installed_file_for_node``,
+        # but installing it would mint a second copy of a file the account
+        # already holds, titled after this node. Keep the ref, skip the copy.
+        if storage.installed_dataset_file_for_node(user_key, spec, node_id) is not None:
+            continue
+
         try:
             result = install_node_output(
                 user_key,

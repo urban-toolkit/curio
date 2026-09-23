@@ -213,8 +213,9 @@ describe("deoverlapNodes", () => {
             const input = [node("a", 0, 0), node("b", 10, 10)];
             const result = deoverlapNodes(input, { measure });
 
-            // `data.workflowPosition` belongs to dashboard mode; writing it here
-            // would pin what TrillGenerator persists for the rest of time.
+            // `data.workflowPosition` belongs to the dashboard page's layout
+            // pass; writing it here would pin what TrillGenerator persists for
+            // the rest of time.
             expect(result[1].data).toBe(input[1].data);
             expect((result[1] as any).data.workflowPosition).toBeUndefined();
         });

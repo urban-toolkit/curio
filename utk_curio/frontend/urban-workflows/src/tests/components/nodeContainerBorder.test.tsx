@@ -51,11 +51,21 @@ describe("getNodeContainerStyles", () => {
   });
 
   test("frames the node uniformly in dashboard mode", () => {
-    const style = getNodeContainerStyles("curio.builtin/data-loading", { dashboardOn: true });
-    expect(style.borderStyle).toBe("solid");
-    expect(style.borderColor).toBe("#000");
-    expect(style.borderWidth).toBe("2px");
-    expect(style.boxShadow).toBe("none");
+    // The point of this case is uniformity: on the dashboard a tile is content,
+    // so it drops the per-kind accent the canvas uses to tell nodes apart. The
+    // frame itself is a card (hairline border, rounded, resting shadow) rather
+    // than the 2px black square it used to be, which read as a node lifted off
+    // a canvas instead of as something published.
+    const loader = getNodeContainerStyles("curio.builtin/data-loading", { dashboardOn: true });
+    const chart = getNodeContainerStyles("curio.builtin/vis-vega", { dashboardOn: true });
+
+    expect(chart).toEqual(loader);
+    expect(loader.borderStyle).toBe("solid");
+    expect(loader.borderWidth).toBe("1px");
+    expect(loader.borderLeftWidth).toBeUndefined();
+    expect(loader.borderColor).toBe("var(--curio-border)");
+    expect(loader.borderRadius).toBe("var(--curio-radius-lg)");
+    expect(loader.boxShadow).toBe("var(--curio-shadow-browse-card)");
   });
 
   test("resolves a versioned node type to the same accent as an unversioned one", () => {

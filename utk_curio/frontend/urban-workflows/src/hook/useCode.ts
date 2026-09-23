@@ -62,9 +62,15 @@ type CreateCodeNodeOptions = {
     simpleVis?: { imageColumn?: string };
 };
 
+/** What a load built, so a caller can hydrate against it. */
+export interface LoadedGraph {
+    nodes: any[];
+    edges: any[];
+}
+
 interface IUseCode {
     createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
-    loadTrill: (trill: any, suggestionType?: string) => void;
+    loadTrill: (trill: any, suggestionType?: string) => LoadedGraph;
 }
 
 export function useCode(): IUseCode {
@@ -109,8 +115,15 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    // suggestionType: "workflow" | "connection" | "none"
-    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean) => {
+    /**
+     * Turn a spec into canvas nodes and edges and hand them to the provider.
+     *
+     * Returns them as well. Restoring a saved output means pushing it into the
+     * nodes downstream of its producer, and the only reliable statement of who
+     * those are, at this moment, is the edge list this function just built:
+     * React Flow's own store is written from an effect and is a render behind.
+     */
+    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean): LoadedGraph => {
 
         let nodes = [];
         let edges = [];
@@ -304,6 +317,7 @@ export function useCode(): IUseCode {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
         }
 
+        return { nodes, edges };
     }
 
     const generateCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {

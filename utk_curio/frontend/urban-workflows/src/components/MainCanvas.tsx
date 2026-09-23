@@ -37,7 +37,6 @@ import VersionBadge from "./VersionBadge";
 import html2canvas from "html2canvas";
 
 import FloatingPanel from "./FloatingPanel";
-import { DashboardPanel } from "./DashboardPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 import {
     buildDatasetLoaderNodeOptions,
@@ -165,22 +164,11 @@ export function MainCanvas() {
     }, [reactFlow]);
 
     const {
-        setDashBoardMode,
-        updatePositionWorkflow,
-        updatePositionDashboard,
-        updateDataNode,
-        workflowNameRef,
-        workflowGoal,
-        dashboardOn,
-        dashboardLocked,
-        dashboardPins,
         viewerMode,
     } = useFlowContext();
 
-    // Ctrl/Cmd+Enter on a selected node. Gated on !dashboardOn to match the
-    // play button, which styles.tsx hides in dashboard mode -- a shortcut for a
-    // control that is not on screen is a surprise (#223).
-    useRunSelectedNodeShortcut(!dashboardOn);
+    // Ctrl/Cmd+Enter on a selected node (#223).
+    useRunSelectedNodeShortcut();
 
     // When real-time collaboration is on, a peer opening the owner's URL
     // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
@@ -192,22 +180,6 @@ export function MainCanvas() {
 
     // Refs used inside callbacks so the callbacks don't need to list them as deps
     const selectedEdgeIdRef = useRef<string>("");
-    const dashboardOnRef = useRef<boolean>(false);
-    const savedViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
-    useEffect(() => { dashboardOnRef.current = dashboardOn; }, [dashboardOn]);
-    useEffect(() => {
-        if (dashboardOn) {
-            savedViewportRef.current = getViewport();
-            const pinnedNodes = Object.keys(dashboardPins)
-                .filter(id => dashboardPins[id])
-                .map(id => ({ id }));
-            setTimeout(() => fitView({ duration: 300, padding: 0.08, nodes: pinnedNodes }), 50);
-        } else {
-            if (savedViewportRef.current) {
-                setViewport(savedViewportRef.current, { duration: 300 });
-            }
-        }
-    }, [dashboardOn]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -242,12 +214,6 @@ export function MainCanvas() {
             return next;
         });
     }
-
-    // Apply dashboard mode changes
-    const handleDashboardToggle = useCallback((value: boolean) => {
-        dashboardOnRef.current = value;
-        setDashBoardMode(value);
-    }, [setDashBoardMode]);
 
     // Last dragover point, so a pointer that reports the same coordinate twice
     // (browsers fire dragover on a timer as well as on movement) costs nothing.
@@ -410,22 +376,11 @@ export function MainCanvas() {
                 change.position != undefined &&
                 change.position.x != undefined
             ) {
-                if (dashboardOnRef.current) {
-                    updatePositionDashboard(change.id, change);
-                } else {
-                    updatePositionWorkflow(change.id, change);
-                }
                 dirty = true;
-                // Broadcast the new position to peers. Dashboard positions
-                // are intentionally local-only — they're a per-user view of
-                // the same nodes — so only the canvas-workflow position is
-                // synced.
-                if (!dashboardOnRef.current) {
-                    collabRef.current.broadcastNodeUpdated({
-                        nodeId: change.id,
-                        patch: { position: change.position },
-                    });
-                }
+                collabRef.current.broadcastNodeUpdated({
+                    nodeId: change.id,
+                    patch: { position: change.position },
+                });
             }
 
             if (allowed) allowedChanges.push(change);
@@ -434,12 +389,7 @@ export function MainCanvas() {
         if (dirty) markDirty();
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
-    }, [reactFlow, showToast, updatePositionDashboard, updatePositionWorkflow, onNodesDelete, onNodesChange, markDirty]);
-
-    const handleNodeDragStop = useCallback((_event: React.MouseEvent, node: any) => {
-        if (!dashboardOnRef.current) return;
-        updateDataNode(node.id, { ...node.data, dashboardX: node.position.x, dashboardY: node.position.y });
-    }, [updateDataNode]);
+    }, [reactFlow, showToast, onNodesDelete, onNodesChange, markDirty]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
         let selected = "";
@@ -545,7 +495,7 @@ export function MainCanvas() {
         <AgentAttachmentsProvider enabled={!isSharedView}>
         <>
         {!loading ? <div
-            style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
+            style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             // onWheelCapture={handleWheel}
         >
             {Object.keys(floatingPanels).map((key, index) => (
@@ -557,54 +507,43 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            {!dashboardOn && <ToolsMenu />}
-            {!dashboardOn && <UpMenu
-                setDashBoardMode={handleDashboardToggle}
-                dashboardOn={dashboardOn}
-            />}
-            {!dashboardOn && <CollaborationSidePanel />}
-
-            {dashboardOn && <DashboardPanel />}
+            <ToolsMenu />
+            <UpMenu />
+            <CollaborationSidePanel />
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
-                onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
-                onDragLeave={!dashboardOn && !isSharedView ? handleDragLeave : undefined}
-                onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
+                onDragOver={!isSharedView ? handleDragOver : undefined}
+                onDragLeave={!isSharedView ? handleDragLeave : undefined}
+                onDrop={!isSharedView ? handleDrop : undefined}
             >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={handleNodesChange}
-                onNodeDragStop={handleNodeDragStop}
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
-                selectionKeyCode={dashboardOn ? null : "Shift"}
+                selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!dashboardOn && !isSharedView ? onConnect : undefined}
+                onConnect={!isSharedView ? onConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
                 translateExtent={translateExtent}
-                panOnDrag={!dashboardOn || !dashboardLocked}
-                zoomOnScroll={!dashboardOn || !dashboardLocked}
-                zoomOnPinch={!dashboardOn || !dashboardLocked}
-                zoomOnDoubleClick={!dashboardOn || !dashboardLocked}
-                nodesDraggable={!isSharedView && (!dashboardOn || !dashboardLocked)}
+                nodesDraggable={!isSharedView}
                 elementsSelectable={true}
-                nodesConnectable={!isSharedView && !dashboardOn}
+                nodesConnectable={!isSharedView}
                 edgesUpdatable={!isSharedView}
                 // React Flow defaults to "Backspace" alone, so Windows users pressing
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
                 deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
-                style={dashboardOn ? { backgroundColor: "#ffffff" } : undefined}
             >
-                {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
-                {!dashboardOn && <Controls />}
+                <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
+                <Controls />
             </ReactFlow>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>

@@ -144,7 +144,8 @@ Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProv
 | `edges` | `Edge[]` | All connections between nodes |
 | `outputs` | `IOutput[]` | Most recent execution output per node |
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
-| `dashboardPins` | `string[]` | Node IDs pinned to the dashboard view |
+| `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
+| `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
@@ -804,7 +805,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it) |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
 | `/starters` | GET | Per-template starter source bodies from every installed package |

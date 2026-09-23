@@ -117,8 +117,8 @@ If you scroll to the component's `return (`, currently around line 471, you will
 ```tsx
 return (
     <div>
-        {!dashboardOn && <ToolsMenu />}
-        {!dashboardOn && <UpMenu ... />}
+        <ToolsMenu />
+        <UpMenu />
         <ReactFlow ... />
         {/* other components */}
     </div>

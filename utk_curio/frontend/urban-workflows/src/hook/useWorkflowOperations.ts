@@ -25,6 +25,7 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { dashboardSourceNodeIds, prepareDashboardNodes } from "../utils/dashboardLayout";
 import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
@@ -51,8 +52,14 @@ export interface WorkflowOperationsDeps {
     outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: unknown }>>;
     setInteractions: any;
     setDashboardPins: (value: any) => void;
-    setPositionsInDashboard: (data: any) => void;
-    setPositionsInWorkflow: (data: any) => void;
+    /**
+     * True while this tree is the dashboard page rather than the canvas.
+     *
+     * Two things turn on it: a load lays the graph out as tiles, and nothing
+     * saves on its own. A dashboard's only write is an explicit Save layout, so
+     * a viewer who never touches it cannot rewrite the owner's dataflow.
+     */
+    presentation?: boolean;
     setWorkflowName: (name: string) => void;
     workflowNameRef: React.MutableRefObject<string>;
     setWorkflowDescription: (description: string) => void;
@@ -72,7 +79,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         nodes, edges,
         setNodes, setEdges,
         setOutputs, setInteractions,
-        setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
+        setDashboardPins,
+        presentation = false,
         setWorkflowName,
         workflowNameRef,
         setWorkflowDescription,
@@ -311,6 +319,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setNodes(() => []);
         }
 
+        // Pins come off the spec, so they are known before anything is added.
+        const pins: Record<string, boolean> = {};
+        for (const node of loaded_nodes) {
+            if (node.data?.dashboardPinned) pins[node.id] = true;
+        }
+
+        // On the dashboard page the graph enters provider state already laid out
+        // as tiles. Done here rather than in the page for two reasons: the page
+        // has no "the load finished" signal to react to, and a transform applied
+        // afterwards would fight React Flow over `position` on every tile drag.
+        if (!merge && presentation) {
+            const prepared = prepareDashboardNodes(loaded_nodes, loaded_edges, pins);
+            loaded_nodes = prepared.nodes;
+            loaded_edges = prepared.edges;
+        }
+
         // Provenance is recorded below, from these local arrays, NOT by addNode /
         // onConnect. Those two snapshot `reactFlow.getNodes()`, and React Flow only
         // syncs `useNodesState` into its zustand store from a useEffect - so inside
@@ -417,17 +441,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             if (!merge) {
                 setOutputs([]);
                 setInteractions([]);
-                // Restore dashboard pins from persisted node data
-                const pins: Record<string, boolean> = {};
-                for (const node of loaded_nodes) {
-                    if (node.data?.dashboardPinned) pins[node.id] = true;
-                }
                 setDashboardPins(pins);
-                setPositionsInDashboard({});
-                setPositionsInWorkflow({});
             }
 
-            setFitViewOnLoad(true);
+            // The dashboard page frames its own tiles (`useDashboardFit`); the
+            // canvas fit would fight it, and it cannot even complete there since
+            // an unpinned node is `display: none` and never gets measured.
+            if (!presentation) setFitViewOnLoad(true);
             return prevNodes;
         });
 
@@ -503,8 +523,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setOutputs([]);
         setInteractions([]);
         setDashboardPins({});
-        setPositionsInDashboard({});
-        setPositionsInWorkflow({});
         setSuggestionsLeft(0);
         setPackages([]);
     }
@@ -729,6 +747,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 deps.outputsRef.current,
                 reactFlow.getNodes(),
                 defaultSaveOutputDataset,
+                // Whatever feeds a pinned tile is recorded too, whatever its
+                // toggle says: the ref is what lets a reload hand that tile its
+                // data instead of an empty box.
+                dashboardSourceNodeIds(
+                    reactFlow.getNodes() as any, reactFlow.getEdges() as any,
+                ),
             ) ?? [];
         // Attach each producing node's friendly display label so the save-time
         // installer (``_auto_install_computed_outputs``) titles computed datasets
@@ -835,7 +859,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         })();
     }, []);
 
-    const saveCurrentProject = useCallback(async (nameOverride?: string) => {
+    /**
+     * Save the open dataflow.
+     *
+     * ``omitOutputs`` leaves the outputs out of the request, so the manifest the
+     * backend holds is untouched. The dashboard's Save layout uses it: that page
+     * writes tile geometry, and it has no business re-recording which outputs a
+     * dataflow has - its own nodes never ran.
+     */
+    const saveCurrentProject = useCallback(async (
+        nameOverride?: string,
+        options?: { omitOutputs?: boolean },
+    ) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
         }
@@ -869,7 +904,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
-        const outputRefs: OutputRef[] = buildOutputRefs();
+        const outputRefs: OutputRef[] | undefined =
+            options?.omitOutputs ? undefined : buildOutputRefs();
 
         // The ref, not the closure (#270): see projectNameRef.
         const name = nameOverride || projectNameRef.current || workflowNameRef.current;
@@ -885,7 +921,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (existingId) {
             const detail = await projectsApi.update(existingId, {
                 spec,
-                outputs: outputRefs,
+                // Absent, not empty: the backend keeps the stored manifest when
+                // the field is missing and replaces it when it is [].
+                ...(outputRefs ? { outputs: outputRefs } : {}),
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
@@ -915,7 +953,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             const detail = await projectsApi.create({
                 name,
                 spec,
-                outputs: outputRefs,
+                // A create always sends them: there is no stored manifest to keep.
+                outputs: outputRefs ?? [],
             });
             // Pin the ref synchronously so a save chained immediately after this
             // create sees the new id and updates instead of creating a duplicate
@@ -1179,6 +1218,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
         if (!projectId || !projectDirty || blockGuestSaves || viewerMode === "shared") return;
+        // Never from the dashboard: its writes are explicit (Save layout), so a
+        // page left open cannot save on a timer.
+        if (presentation) return;
         const id = window.setInterval(async () => {
             try {
                 await saveCurrentProject();
@@ -1187,7 +1229,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode]);
+    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode, presentation]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         if (blockGuestSaves) {

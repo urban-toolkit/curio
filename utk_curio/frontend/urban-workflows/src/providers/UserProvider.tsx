@@ -14,6 +14,7 @@ import {
 } from "../utils/authApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import { Loading } from "../components/login/Loading";
+import { isShareLinkPath } from "../utils/shareLinks";
 
 interface UserProviderProps {
   user: UserData | null;
@@ -162,13 +163,10 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (!token) {
           // Share-link bootstrap: when an unauthenticated visitor lands on a
-          // /dataflow/<uuid> URL and guest login is allowed, sign them in as
-          // the shared guest so they can view the linked dataflow without
-          // facing a login form.
-          const onShareUrl =
-            /\/dataflow\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
-              window.location.pathname
-            );
+          // link to one dataflow - its canvas or its dashboard - and guest login
+          // is allowed, sign them in as the shared guest so they can look at it
+          // without facing a login form.
+          const onShareUrl = isShareLinkPath(window.location.pathname);
           if (onShareUrl && cfg?.allow_guest_login) {
             try {
               const res = await authApi.signinGuest();

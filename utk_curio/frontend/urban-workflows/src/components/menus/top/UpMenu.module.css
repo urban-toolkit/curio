@@ -31,19 +31,15 @@
   border: none;
   /* border-bottom: 3px solid #fbfcf6; */
   border-radius: 4px;
+  /* The dashboard bar wears this on a react-router <Link>, so the browser's
+     default anchor underline has to be turned off here rather than in one
+     caller. Harmless on the <button> elements the dataflow bar uses it for. */
+  text-decoration: none;
 }
 
 /* Must appear after .button so it wins the cascade when both classes are present */
 .aiIconActive {
   color: #5cb85c;
-}
-
-.dashboardOn {
-  color: rgb(251, 170, 105);
-}
-
-.dashboardOff {
-  background: transparent;
 }
 
 .dropDownMenu {
@@ -99,6 +95,9 @@
   background: none;
   border: none;
   color: white;
+  /* "Open dashboard" is a real anchor so it can open a tab, and an anchor
+     arrives underlined. */
+  text-decoration: none;
 }
 
 .workflowNameContainer {

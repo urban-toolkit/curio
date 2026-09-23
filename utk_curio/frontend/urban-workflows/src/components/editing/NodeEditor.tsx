@@ -90,7 +90,12 @@ function NodeEditor({
         () => resolveInitialEditorTab({ code, grammar, widgets })
     );
     const { dashboardOn } = useFlowContext();
-    const effectiveTab = dashboardOn ? "output" : activeTab;
+    // A dashboard tile shows its output, not its editor. Only when it HAS an
+    // output pane: a code node's result is the text box under its editor, so
+    // forcing the pane unconditionally rendered a pinned code node as an empty
+    // tile with nothing reachable on it.
+    const hasOutputPane = outputId != undefined || contentComponent != undefined;
+    const effectiveTab = dashboardOn && hasOutputPane ? "output" : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
