@@ -30,10 +30,12 @@ import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
+    getCurrentProjectId,
     getCurrentProjectPackagesList,
     setCurrentProject,
     setCurrentProjectPackages,
     subscribe as subscribeProjectPackages,
+    whenProjectSettled,
 } from "../registry/projectPackagesStore";
 
 export interface WorkflowOperationsDeps {
@@ -803,6 +805,36 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return true;
     }, [setWorkflowName, markDirty]);
 
+    /**
+     * A route load that has not delivered an id yet, or ``null`` when there is
+     * nothing to wait for.
+     *
+     * ``null`` rather than a resolved promise, and checked rather than awaited,
+     * because the common cases are both "nothing to wait for" -- a dataflow
+     * that has loaded, and one that genuinely has no id because it has never
+     * been saved (``/dataflow/new`` leaves the store's project id undefined,
+     * which is what tells the two apart). Awaiting a resolved promise still
+     * costs a microtask, and the request would no longer leave in the tick its
+     * caller ran in: ``requestProjectSave`` chains on that, and two saves
+     * queued in one tick would each see an idle chain and race.
+     *
+     * The promise rejects rather than letting the caller create when the load
+     * settles without an id: a 404 that fell through to the shared endpoint, a
+     * load that overran {@link PROJECT_LOAD_WAIT_MS}, a failure ProjectLoader
+     * has already toasted. Creating there is what duplicated the dataflow.
+     */
+    const settleRoutedLoad = useCallback((): Promise<void> | null => {
+        if (projectIdRef.current) return null;
+        if (!getCurrentProjectId()) return null;
+        return (async () => {
+            await whenProjectSettled();
+            if (projectIdRef.current) return;
+            throw new Error(
+                "This dataflow is still opening. Wait for it to finish loading, then try again.",
+            );
+        })();
+    }, []);
+
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -810,6 +842,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (blockGuestSaves) {
             throw new Error("Guest users cannot save projects");
         }
+        // A routed dataflow is never unsaved; at most it has not loaded YET.
+        //
+        // ``projectIdRef`` fills in when ``loadProject`` answers, which is well
+        // after the route resolved, so anything that saves in that window - the
+        // catalog drawer's import, install and remove all do - used to fall
+        // into the create branch below and mint a SECOND dataflow, installing
+        // into it while the URL still named the first (#340).
+        //
+        // Before the canvas is read, not after: the spec is serialized from
+        // whatever the canvas holds at that moment, so waiting later would
+        // persist the empty pre-load canvas over the stored dataflow.
+        const routedLoad = settleRoutedLoad();
+        if (routedLoad) await routedLoad;
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         // Read packages directly from the store (always up-to-date) rather than
@@ -903,7 +948,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, settleRoutedLoad, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     // Serialize project saves so concurrent callers (e.g. two producing nodes
     // finishing back-to-back) can never run two creates in parallel and POST
@@ -1187,6 +1232,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const result = await projectsApi.get(id);
         const { project, spec, outputs } = result;
 
+        // Pin the ref here rather than letting the next render carry it over,
+        // for the same reason the create branch of ``saveCurrentProject`` does:
+        // ``settleRoutedLoad`` reads it the moment ProjectLoader releases the
+        // latch, which is sooner than React is obliged to re-render.
+        projectIdRef.current = project.id;
         setProjectId(project.id);
         setProjectName(project.name);
         setProjectDirty(false);
@@ -1209,6 +1259,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Deliberately leave projectId=null: this dataflow is not "open for
         // editing" in the visitor's workspace. Save-a-copy goes through
         // saveAsNewProject, which creates a fresh project owned by them.
+        // Pinned on the ref too, so a save racing this load is refused for
+        // being read-only rather than waiting out the latch first.
+        projectIdRef.current = null;
         setProjectId(null);
         setProjectName(project.name);
         setProjectDirty(false);
