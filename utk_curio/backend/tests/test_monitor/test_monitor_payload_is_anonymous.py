@@ -135,3 +135,46 @@ def test_every_string_leaf_is_a_timestamp_or_a_known_token(client, seeded):
         f"{offenders}. Either reduce the value to a count, or add it to "
         "ALLOWED_STRINGS if it is genuinely a closed vocabulary."
     )
+
+
+def test_the_storage_payload_is_anonymous_too(client, seeded, state_root):
+    """The other aggregate route, held to the same rule.
+
+    Store directories are named by user id, so the walk sees identifiers even
+    though the payload must not.
+    """
+    for name in ("zqxprobe", "alice"):
+        store = state_root / "users" / name
+        store.mkdir(parents=True)
+        (store / "blob.bin").write_bytes(b"x" * 1024)
+
+    from utk_curio.backend.app.monitor import storage
+    storage.reset()
+
+    response = client.get("/api/monitor/storage")
+    raw = response.get_data(as_text=True)
+    assert "zqx" not in raw.lower()
+    assert "alice" not in raw
+    assert "@" not in raw
+    assert IPV4.search(raw) is None
+
+    body = response.get_json()
+    # Not vacuous: the stores really were measured.
+    assert body["userStores"]["count"] == 2
+
+    offenders = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{path}[{i}]")
+        elif isinstance(node, str):
+            if ISO_Z.match(node) or node in ALLOWED_STRINGS:
+                return
+            offenders.append((path, node))
+
+    walk(body, "$")
+    assert not offenders, f"free-text strings reached the storage payload: {offenders}"

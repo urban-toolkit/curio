@@ -12,6 +12,7 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     TestConfig,
     client,
     db,
+    tmp_curio,
 )
 
 
@@ -28,14 +29,14 @@ def app():
 @pytest.fixture(autouse=True)
 def clean_monitor_state():
     """Counters and error windows are module globals, so they leak across tests."""
-    from utk_curio.backend.app.monitor import counters, errors, routes
+    from utk_curio.backend.app.monitor import counters, errors, routes, storage
 
-    counters.reset()
-    errors.reset()
+    for module in (counters, errors, storage):
+        module.reset()
     routes.reset_rate_limit()
     yield
-    counters.reset()
-    errors.reset()
+    for module in (counters, errors, storage):
+        module.reset()
     routes.reset_rate_limit()
 
 
@@ -60,3 +61,21 @@ def real_sandbox_monitor(stub_sandbox, monkeypatch):
     Depends on `stub_sandbox` so it is applied after it, not before.
     """
     monkeypatch.setattr(_monitor_routes, "_sandbox_monitor", _REAL_SANDBOX_MONITOR)
+
+
+@pytest.fixture()
+def state_root(tmp_path, monkeypatch):
+    """An isolated .curio tree, resolved the way the app resolves it.
+
+    Returns the directory the app will actually walk. Note curio_root() appends
+    a `test` segment while CURIO_TESTING is set, so building the path by hand
+    from CURIO_STATE_DIR would create directories the walk never visits.
+    """
+    from utk_curio.backend.app.common import user_storage
+    from utk_curio.backend.app.monitor import storage
+
+    monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path / "state"))
+    root = user_storage.curio_root()
+    root.mkdir(parents=True, exist_ok=True)
+    storage.reset()
+    return root

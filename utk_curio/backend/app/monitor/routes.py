@@ -19,7 +19,7 @@ import time
 
 from flask import Blueprint, jsonify, request
 
-from utk_curio.backend.app.monitor import counters, errors, stats
+from utk_curio.backend.app.monitor import counters, errors, stats, storage
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
 
@@ -165,6 +165,12 @@ def monitor_route():
         "accounts": stats.accounts(),
         "content": stats.content(),
     })
+
+
+@monitor_bp.route("/storage", methods=["GET"])
+def monitor_storage_route():
+    """Disk usage across the state tree, from a cached walk. Aggregates."""
+    return jsonify(storage.snapshot())
 
 
 @monitor_bp.route("/errors", methods=["GET"])

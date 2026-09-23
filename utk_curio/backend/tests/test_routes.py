@@ -14,6 +14,7 @@ def test_app_routes(app):
         "/processPythonCode",
         "/processJavaScriptCode",
         "/api/monitor",
+        "/api/monitor/storage",
         "/api/monitor/errors",
         "/api/monitor/errors/client",
     ]
@@ -27,6 +28,7 @@ def test_app_routes(app):
         "api.process_python_code",
         "api.process_javascript_code",
         "monitor.monitor_route",
+        "monitor.monitor_storage_route",
         "monitor.monitor_errors_route",
         "monitor.monitor_client_error_route",
     ]
