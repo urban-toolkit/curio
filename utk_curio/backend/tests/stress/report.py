@@ -44,8 +44,49 @@ def endpoint_stats(results: list[UserResult]) -> dict[str, dict]:
     }
 
 
+def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
+    """What one tier cost on the sandbox's execution lock.
+
+    The counters are cumulative since the sandbox started, so a tier's own
+    contention is the difference between a reading taken before it and one
+    taken after. Returns None when either reading is missing rather than
+    inventing a zero, which would read as "no contention".
+    """
+    if not before or not after:
+        return None
+    labels = {}
+    for label, end in (after.get("labels") or {}).items():
+        start = (before.get("labels") or {}).get(label) or {}
+        acquisitions = end["acquisitions"] - start.get("acquisitions", 0)
+        if acquisitions <= 0:
+            continue
+        waited = end["wait_seconds"] - start.get("wait_seconds", 0.0)
+        labels[label] = {
+            "acquisitions": acquisitions,
+            "wait_seconds": round(waited, 1),
+            "held_seconds": round(
+                end["held_seconds"] - start.get("held_seconds", 0.0), 1
+            ),
+            "mean_wait_seconds": round(waited / acquisitions, 2),
+            # Not a delta: the peak is a high-water mark, so the run's largest
+            # single wait is the honest number to carry here.
+            "max_wait_seconds": round(end["max_wait_seconds"], 1),
+        }
+    if not labels:
+        return None
+    return {
+        "labels": labels,
+        "total_wait_seconds": round(
+            sum(e["wait_seconds"] for e in labels.values()), 1
+        ),
+        "total_held_seconds": round(
+            sum(e["held_seconds"] for e in labels.values()), 1
+        ),
+    }
+
+
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
-                 profile: str = "burst") -> dict:
+                 profile: str = "burst", exec_lock: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -65,6 +106,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
             "max": round(max(durations), 1) if durations else 0.0,
         },
         "endpoints": endpoint_stats(results),
+        "exec_lock": exec_lock,
         "failures": [
             {
                 "user": result.user,
@@ -164,6 +206,19 @@ def markdown(report: dict) -> str:
                 f"| `{endpoint}` | {stat['calls']} | {stat['errors']} "
                 f"| {stat['p50_s']}s | {stat['p95_s']}s | {stat['max_s']}s |"
             )
+        lock = tier.get("exec_lock")
+        if lock:
+            lines += ["", "Execution lock, this tier:", ""]
+            lines.append("| Call site | Acquisitions | Waited | Held | Mean wait | Max wait |")
+            lines.append("| --------- | -----------: | -----: | ---: | --------: | -------: |")
+            for label, stat in sorted(
+                lock["labels"].items(), key=lambda kv: -kv[1]["wait_seconds"]
+            ):
+                lines.append(
+                    f"| `{label}` | {stat['acquisitions']} "
+                    f"| {stat['wait_seconds']}s | {stat['held_seconds']}s "
+                    f"| {stat['mean_wait_seconds']}s | {stat['max_wait_seconds']}s |"
+                )
         if tier["failures"]:
             lines += ["", "<details><summary>"
                           f"{len(tier['failures'])} failure(s)</summary>", ""]

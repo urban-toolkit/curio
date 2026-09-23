@@ -195,6 +195,18 @@ def monitor():
     # it is the number an operator chasing an OOM actually wants.
     payload['rss_bytes'] = metrics.process_rss_bytes()
 
+    # Contention on the process-wide execution lock, per call site. A slot
+    # queue and a lock queue look identical from the outside -- both are a
+    # request taking minutes that takes a second when idle -- and only this
+    # tells them apart. Cumulative since startup; a caller comparing two
+    # snapshots gets the interval.
+    try:
+        from utk_curio.sandbox.app.worker import _exec_lock
+
+        payload['exec_lock'] = _exec_lock.snapshot()
+    except Exception:  # noqa: BLE001 - a monitor never fails over its subject
+        payload['exec_lock'] = None
+
     return jsonify(payload)
 
 
