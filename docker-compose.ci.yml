@@ -54,6 +54,10 @@ services:
     # allocating, which shows up as exactly that kind of slowdown. The
     # risk a memory cap guarded is already covered: RLIMIT_AS bounds each
     # child (child._apply_rlimits) and the fork bomb is opt-in.
+    #
+    # Left at 4096 where docker-compose.ci-stress.yml raises it: this ceiling
+    # holds the isolated pool's derived default to 8 concurrent nodes, which is
+    # more than the e2e suites ever ask for.
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}

@@ -30,6 +30,7 @@ from utk_curio.sandbox import metrics
 from utk_curio.sandbox.isolation import protocol, supervisor
 from utk_curio.sandbox.isolation.protocol import ProtocolError
 from utk_curio.sandbox.isolation.supervisor import IsolatedExecutionError
+from utk_curio.sandbox.util import hostlimits
 
 # Per-session import statements, the isolated counterpart of
 # worker._session_imports. That one caches live module objects, which cannot
@@ -317,7 +318,26 @@ def execute_isolated(
             supervisor.cleanup_scratch(scratch_dir)
 
 
-def _default_parallelism() -> int:
+# The most concurrent children the default will ever ask for, however large
+# the host. Not a memory statement -- the formula below already makes that one
+# -- but a bound on everything that scales with the count: the shared
+# RLIMIT_NPROC budget, the zygote's fork rate, and the number of node processes
+# competing with the backend for the same GIL-bound request threads.
+MAX_DEFAULT_PARALLELISM = 32
+
+# The share of visible memory the isolated pool may promise. The other half is
+# the rest of the container: the backend and sandbox processes, DuckDB, the
+# artifact store's page cache, and the Node children of ``/execJs``, which are
+# bounded by their own semaphore and are not counted here.
+_MEMORY_SHARE = 2
+
+# What to assume when memory cannot be determined at all: the flat cap this
+# used to have unconditionally. Standing still beats guessing here, because
+# guessing high is an OOM kill and guessing low is only a queue.
+_PARALLELISM_WITHOUT_MEMORY = 8
+
+
+def _default_parallelism(memory_mb: int) -> int:
     """How many isolated nodes may run at once when nobody says otherwise.
 
     Two was a single-user default and it is what a multi-user instance queues
@@ -326,13 +346,70 @@ def _default_parallelism() -> int:
     it spent waiting for a slot. Sizing to the host instead means a machine
     with cores to spare uses them.
 
-    Capped at 8 because the real ceiling is memory, not CPU: peak usage is
-    roughly this times ``CURIO_EXEC_MEMORY_MB`` (4096 by default), so an
-    uncapped count on a 64-core box would promise far more memory than it has.
-    An operator who knows their workload raises it with --exec-parallelism.
+    The ceiling is memory, not CPU: peak usage is roughly this count times
+    ``CURIO_EXEC_MEMORY_MB``. This used to say so and then not look, capping at
+    a flat 8, which is wrong in both directions -- it promises 32GB of node
+    memory on a 32GB VM, and it holds a 64-core, 377GB host to the same 8
+    children. So the count is now the smallest of four numbers the host can
+    actually answer for: half the cores, half the *visible* memory divided by
+    the per-node budget, what the container's PID ceiling can carry, and
+    ``MAX_DEFAULT_PARALLELISM``.
+
+    "Visible" is the load-bearing word, and why this asks
+    ``hostlimits.visible_memory_mb`` rather than reading /proc/meminfo: in a
+    container with a memory limit, the host's total is not what this process
+    may spend. When nothing can be determined the old constant stands, because
+    a wrong guess here is an OOM kill rather than a slow queue.
+
+    Assumes this instance is the one that matters on its host: co-tenants see
+    the same memory and each size to half of it. Two Curio stacks on one box
+    want a ``mem_limit`` each, or an explicit count. An operator who knows
+    their workload overrides it with --exec-parallelism either way.
     """
     cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 8))
+    by_cores = cores // 2
+    visible_mb = hostlimits.visible_memory_mb()
+    by_memory = (
+        (visible_mb // _MEMORY_SHARE) // max(1, memory_mb)
+        if visible_mb
+        else _PARALLELISM_WITHOUT_MEMORY
+    )
+    # A container's PID ceiling bounds the count too, because each child is
+    # allowed ``DEFAULT_LIMITS["nproc"]`` processes and threads of its own (see
+    # _default_nproc). Fewer children, not a thinner allowance each: squeezing
+    # the allowance is how nodes start failing inside numpy and pyogrio with
+    # "can't start new thread", and a host that will not let 32 children have
+    # their threads should be running fewer children. Half the ceiling, since
+    # the backend, the sandbox, the zygote and the Node pool hold PIDs too.
+    pids_max = hostlimits.visible_pids_max()
+    by_pids = (
+        (pids_max // 2) // supervisor.DEFAULT_LIMITS["nproc"]
+        if pids_max
+        else MAX_DEFAULT_PARALLELISM
+    )
+    return max(2, min(by_cores, by_memory, by_pids, MAX_DEFAULT_PARALLELISM))
+
+
+def _default_nproc(parallelism: int) -> int:
+    """The shared RLIMIT_NPROC budget for ``parallelism`` concurrent children.
+
+    RLIMIT_NPROC is per real UID on Linux, not per process, and every isolated
+    child runs as the same execution user -- so this number is a budget the
+    concurrent children SHARE, not one each. At parallelism 2 nobody noticed;
+    at 8 the 100-user stress run started failing nodes with "can't start new
+    thread" inside ordinary library code, because numpy, pyogrio and friends
+    all start threads of their own.
+
+    Scaled with the count so each child keeps the allowance it always had, and
+    deliberately not lowered per child instead: a node is allowed its threads,
+    and taking them away would make user code slower rather than the instance
+    safer. What keeps the total inside the container's PID ceiling is the
+    count, chosen above with that ceiling in hand -- so this multiplication is
+    safe by construction for the default. An operator who overrides
+    ``CURIO_EXEC_PARALLELISM`` past what the ceiling supports gets a budget
+    the container cannot honour, and the launcher says so.
+    """
+    return supervisor.DEFAULT_LIMITS["nproc"] * parallelism
 
 
 class IsolationConfig:
@@ -366,21 +443,13 @@ class IsolationConfig:
 
         limits = dict(supervisor.DEFAULT_LIMITS)
         limits["memory_mb"] = _int("CURIO_EXEC_MEMORY_MB", limits["memory_mb"])
-        parallelism = _int("CURIO_EXEC_PARALLELISM", _default_parallelism())
-        # RLIMIT_NPROC is per real UID on Linux, not per process, and every
-        # isolated child runs as the same execution user -- so this number is
-        # a budget the concurrent children SHARE, not one each. At parallelism
-        # 2 nobody noticed; at 8 the 100-user stress run started failing nodes
-        # with "can't start new thread" inside ordinary library code, because
-        # numpy, pyogrio and friends all start threads of their own.
-        #
-        # Scaled with parallelism so each child keeps the allowance it always
-        # had. Deliberately not lowered per child instead: a node is allowed
-        # its threads, and taking them away would make user code slower rather
-        # than the instance safer.
-        limits["nproc"] = _int(
-            "CURIO_EXEC_NPROC", supervisor.DEFAULT_LIMITS["nproc"] * parallelism
+        # Sized against the memory budget resolved just above: the two numbers
+        # multiply into the pool's real footprint, so the default count cannot
+        # be chosen without knowing what each child may allocate.
+        parallelism = _int(
+            "CURIO_EXEC_PARALLELISM", _default_parallelism(limits["memory_mb"])
         )
+        limits["nproc"] = _int("CURIO_EXEC_NPROC", _default_nproc(parallelism))
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS
         )

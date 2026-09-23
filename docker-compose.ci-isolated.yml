@@ -37,6 +37,11 @@ services:
     # Same reasoning as docker-compose.ci.yml: the isolation tests can provoke
     # process exhaustion, root inside the container bypasses RLIMIT_NPROC, and
     # this host also runs the live stacks.
+    #
+    # Left at 4096 where docker-compose.ci-stress.yml raises it: this ceiling
+    # holds the isolated pool's derived default to 8 concurrent nodes, which is
+    # more than the e2e suites ever ask for and keeps the tighter bound on the
+    # stack that deliberately provokes process exhaustion.
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}

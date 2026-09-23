@@ -327,6 +327,27 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
             exec_memory_mb = MIN_EXEC_MEMORY_MB
         os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
     if exec_parallelism:
+        # Warned about, not clamped: an operator who sizes the pool by hand may
+        # know something this check does not, and the cost of being wrong is a
+        # node failing to start a thread rather than a corrupt artifact. The
+        # default picks a count the ceiling can honour (see
+        # runner._default_parallelism); only an explicit number lands above it.
+        from utk_curio.sandbox.isolation.supervisor import DEFAULT_LIMITS
+        from utk_curio.sandbox.util.hostlimits import visible_pids_max
+
+        pids_max = visible_pids_max()
+        asked_for = int(exec_parallelism) * DEFAULT_LIMITS["nproc"]
+        if pids_max and asked_for > pids_max // 2:
+            supported = max(1, (pids_max // 2) // DEFAULT_LIMITS["nproc"])
+            log_warning(
+                f"--exec-parallelism {exec_parallelism} asks for more "
+                f"processes than this container's PID limit ({pids_max}) can "
+                f"carry: every isolated node may hold "
+                f"{DEFAULT_LIMITS['nproc']} processes and threads, and they "
+                f"share one budget. Nodes may fail with \"can't start new "
+                f"thread\" inside ordinary library code. Raise the "
+                f"container's pids_limit, or run {supported} at once."
+            )
         os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
     if exec_timeout:
         # Must stay under the backend's SANDBOX_EXEC_TIMEOUT (600s), or the
@@ -1718,9 +1739,10 @@ def main():
         "--exec-parallelism", type=int, default=None,
         help=(
             "How many isolated nodes may run at once (sets "
-            "CURIO_EXEC_PARALLELISM). Defaults to half the host's cores, "
-            "capped at 8, with a floor of 2: the ceiling is memory, roughly "
-            "this times --exec-memory-mb."
+            "CURIO_EXEC_PARALLELISM). Defaults to whichever is smallest of "
+            "half the cores, half the memory this process can see divided by "
+            "--exec-memory-mb, and what the container's PID limit can carry, "
+            "with a floor of 2 and a ceiling of 32."
         ),
     )
     parser.add_argument(

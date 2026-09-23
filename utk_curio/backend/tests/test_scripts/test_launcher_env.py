@@ -612,6 +612,45 @@ class TestExecMemoryFloor:
         assert "CURIO_EXEC_MEMORY_MB" not in os.environ
 
 
+class TestExecParallelismAgainstThePidCeiling:
+    """An explicit count the container's PID limit cannot carry is called out.
+
+    Every isolated child may hold ``DEFAULT_LIMITS["nproc"]`` processes and
+    threads, and because RLIMIT_NPROC is per real UID they share one budget.
+    Ask for more children than the ceiling can carry and nodes start failing
+    with "can't start new thread" inside numpy or pyogrio, which reads as a
+    broken node rather than a misconfigured host. Warned about and not
+    clamped: the operator may know something this check does not, and the
+    derived default already fits the ceiling on its own.
+    """
+
+    def _with_pid_ceiling(self, monkeypatch, pids_max):
+        from utk_curio.sandbox.util import hostlimits
+
+        monkeypatch.setattr(hostlimits, "visible_pids_max", lambda: pids_max)
+
+    def test_too_many_children_for_the_ceiling_warns(self, monkeypatch, capsys):
+        self._with_pid_ceiling(monkeypatch, 4096)
+        set_environment_variables(**BASE, exec_parallelism=32)
+        warning = capsys.readouterr().err
+        assert "--exec-parallelism" in warning and "4096" in warning
+        # Says what to do about it, and names the count that would fit.
+        assert "pids_limit" in warning and " 8" in warning
+        # Warned, not clamped: what was asked for is what is exported.
+        assert os.environ["CURIO_EXEC_PARALLELISM"] == "32"
+
+    def test_a_ceiling_with_room_is_silent(self, monkeypatch, capsys):
+        self._with_pid_ceiling(monkeypatch, 32768)
+        set_environment_variables(**BASE, exec_parallelism=32)
+        assert "--exec-parallelism" not in capsys.readouterr().err
+
+    def test_no_ceiling_is_silent(self, monkeypatch, capsys):
+        """No cgroup PID limit: nothing to exceed, so nothing to say."""
+        self._with_pid_ceiling(monkeypatch, None)
+        set_environment_variables(**BASE, exec_parallelism=32)
+        assert "--exec-parallelism" not in capsys.readouterr().err
+
+
 # ── --deploy requires isolation, or it does not start ───────────────────────
 
 

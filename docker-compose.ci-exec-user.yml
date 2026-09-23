@@ -46,6 +46,10 @@ services:
     # Same reasoning as the other two CI overlays: the isolation paths can
     # provoke process exhaustion and this host also runs the live stacks.
     # RLIMIT_NPROC bounds each child, but the sandbox parent is root here.
+    #
+    # Left at 4096 where docker-compose.ci-stress.yml raises it: this ceiling
+    # holds the isolated pool's derived default to 8 concurrent nodes, which is
+    # more than the e2e suites ever ask for.
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}

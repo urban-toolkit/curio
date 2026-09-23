@@ -26,6 +26,25 @@ _globals_cache: dict = {}
 _exec_lock = threading.Lock()
 
 
+# What one Node child of ``/execJs`` costs while it runs. Unlike the isolated
+# Python path there is no per-child cap to read this from -- nothing limits a
+# Node process's address space -- so it is an estimate, and it is the measured
+# one: the 100-user run that peaked at 51 GB was ~100 concurrent Autark loads,
+# so ~512MB each, rounded up because a PBF load is the heavy end of the range
+# and a low estimate here is an OOM rather than a queue.
+JS_MEMORY_MB_ESTIMATE = 1024
+
+# A quarter of visible memory, where the isolated pool takes half: the two
+# pools draw on the same container and the backend still has to live in what
+# is left. Node children are also the shorter-lived of the two.
+_JS_MEMORY_SHARE = 4
+
+# Never more than this many, however large the host. An Autark PBF load is
+# CPU-heavy, and these children compete for cores with the isolated Python
+# pool, which sizes itself to half the cores on its own.
+MAX_DEFAULT_JS_PARALLELISM = 16
+
+
 def _default_js_parallelism() -> int:
     """How many Node subprocesses may run at once.
 
@@ -35,9 +54,12 @@ def _default_js_parallelism() -> int:
     A hundred simultaneous Autark loads peaked the CI container at 51 GB and
     1313 processes, which is how a machine dies rather than queues.
 
-    Half the cores, floor 2, cap 16: an Autark PBF load is CPU- and
-    memory-heavy, and the work the child does is what costs, not the pipe.
-    ``CURIO_JS_PARALLELISM`` overrides it.
+    Half the cores, floor 2, cap 16, and no more than the visible memory can
+    carry at ``JS_MEMORY_MB_ESTIMATE`` each. The memory term can only lower
+    this below the core count, never raise it: an Autark PBF load is CPU- as
+    well as memory-heavy, and on a big host these already share their cores
+    with the isolated Python pool. ``CURIO_JS_PARALLELISM`` overrides it, and
+    is what to raise on a host with memory to spare.
     """
     try:
         configured = int(os.environ.get("CURIO_JS_PARALLELISM", ""))
@@ -45,8 +67,19 @@ def _default_js_parallelism() -> int:
         configured = 0
     if configured > 0:
         return configured
+    # Imported here rather than at module scope, like every other utk_curio
+    # import in this file: the sandbox worker is the process the zygote forks
+    # from, and this is called once, on first use.
+    from utk_curio.sandbox.util import hostlimits
+
     cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 16))
+    visible_mb = hostlimits.visible_memory_mb()
+    by_memory = (
+        (visible_mb // _JS_MEMORY_SHARE) // JS_MEMORY_MB_ESTIMATE
+        if visible_mb
+        else MAX_DEFAULT_JS_PARALLELISM
+    )
+    return max(2, min(cores // 2, by_memory, MAX_DEFAULT_JS_PARALLELISM))
 
 
 # Bounded, not serialized. Sized on first use so the env is fully populated.

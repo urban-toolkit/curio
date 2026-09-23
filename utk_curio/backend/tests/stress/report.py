@@ -125,7 +125,8 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
-                 stats_log: str | None = None, profile: str = "burst") -> dict:
+                 stats_log: str | None = None, profile: str = "burst",
+                 stack: dict | None = None) -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
@@ -133,6 +134,12 @@ def build_report(run_id: str, backend_url: str, tiers: list[dict],
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
     }
+    # What the stack was configured to do, not what it did. Execution
+    # parallelism is derived from the host, so the same tier on two machines
+    # is two different measurements, and a report that does not say which one
+    # it is cannot be compared with the one before it.
+    if stack:
+        report["stack"] = stack
     peaks = peak_container_stats(stats_log)
     if peaks:
         report["container_peaks"] = peaks
@@ -154,6 +161,13 @@ def markdown(report: dict) -> str:
     if peaks:
         lines += ["", f"Container peak: {peaks['peak_memory_mib']} MiB, "
                       f"{peaks['peak_pids']} PIDs."]
+    stack = report.get("stack")
+    if stack:
+        described = ", ".join(
+            f"{key} {value}" for key, value in stack.items() if value is not None
+        )
+        if described:
+            lines += ["", f"Stack: {described}."]
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]

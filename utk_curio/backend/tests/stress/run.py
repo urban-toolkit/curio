@@ -117,6 +117,29 @@ def wait_for_backend(backend_url: str, timeout_s: float = 180.0) -> None:
     raise SystemExit(f"[stress] backend {backend_url} never came up: {last}")
 
 
+def read_stack_shape(backend_url: str) -> dict:
+    """What the stack under test is configured to allow, via /api/monitor.
+
+    Unauthenticated and best-effort: a report without this is worth less, but
+    not worth failing a run over. The numbers matter because parallelism is
+    derived from the host -- the same tier against 8 slots and against 32 is
+    two different measurements, and only this says which one the reader has.
+    """
+    try:
+        resp = requests.get(f"{backend_url}/api/monitor", timeout=10)
+        payload = resp.json() or {}
+        sandbox = (payload.get("execution") or {}).get("sandbox") or {}
+    except (requests.RequestException, ValueError):
+        return {}
+    shape = {
+        "isolation": sandbox.get("isolation"),
+        "exec_parallelism": sandbox.get("parallelism"),
+        "exec_memory_mb": sandbox.get("memoryLimitMb"),
+        "exec_timeout_s": sandbox.get("wallTimeoutSeconds"),
+    }
+    return {k: v for k, v in shape.items() if v is not None}
+
+
 def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict:
     """Run each example alone, first, and keep its output hashes.
 
@@ -211,8 +234,10 @@ def main(argv: list[str] | None = None) -> int:
     examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
 
     wait_for_backend(backend_url)
+    stack = read_stack_shape(backend_url)
     print(f"[stress] run {args.run_id} against {backend_url}; "
           f"tiers {tiers}; profile {args.profile}", flush=True)
+    print(f"[stress] stack: {stack or 'unknown'}", flush=True)
 
     baselines = run_baseline(backend_url, args.run_id, examples)
 
@@ -230,7 +255,8 @@ def main(argv: list[str] | None = None) -> int:
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
-                                    args.stats_log, profile=args.profile)
+                                    args.stats_log, profile=args.profile,
+                                    stack=stack)
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
         json.dump(reporting.raw_samples(all_results), fh)

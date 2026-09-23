@@ -16,11 +16,18 @@
 #
 # 2. The frontend port is published. The browser tier drives real pages.
 #
-# Execution limits are left at their defaults on purpose: CURIO_EXEC_PARALLELISM
-# (2), CURIO_EXEC_MEMORY_MB (4096) and CURIO_EXEC_TIMEOUT (300) are what a
+# Execution limits are left at their defaults on purpose: CURIO_EXEC_MEMORY_MB
+# (4096), CURIO_EXEC_TIMEOUT (300) and CURIO_EXEC_PARALLELISM are what a
 # deployment runs with, and a tier that queues behind them is reporting
 # something true. Raise them in a dispatch run to measure a different shape,
 # never to make a red tier green.
+#
+# Parallelism has no fixed number to quote here, and that is the point: it is
+# derived from the host (half the cores, half the visible memory over the
+# per-node budget, what pids_limit below can carry, floor 2, ceiling 32). On
+# the utk runner that is 32. Anyone reading a stress report has to know which
+# count produced it, so the harness records the effective value in the report
+# header rather than the reader inferring it from this file.
 #
 # A sixth port triple. The runner shares its host with prod curio
 # (2000/5002/8080), curio-dev (2010/5012/8090), the in-process CI stack
@@ -30,11 +37,20 @@
 # workflows.
 services:
   curio:
-    # 100 users means up to 100 concurrent Node subprocesses for the Autark
-    # data loads (/execJs has no cap), each of them a real process tree. This
-    # limit is one of the things the run is measuring the distance to, so it
-    # matches the other CI overlays rather than being widened for the job.
-    pids_limit: 4096
+    # Node subprocesses for the Autark data loads are capped by the sandbox's
+    # own semaphore now (worker._default_js_parallelism, 16 on this runner),
+    # so 100 users no longer means 100 process trees at once. This limit is
+    # still one of the things the run measures the distance to: the 100-user
+    # tier peaked at 1313 PIDs.
+    #
+    # Raised from 4096 because the number is now load-bearing rather than
+    # protective. The isolated pool's default count is capped at what half the
+    # PID ceiling can carry at 256 processes each, so 4096 would pin this
+    # stack to 8 concurrent nodes and the job would report a shape no
+    # deployment of this size runs. 32768 carries the ceiling of 32 with room
+    # for the backend, the sandbox, the zygote and the Node pool, and is still
+    # a bound: a fork bomb hits it long before it hits the host's pid_max.
+    pids_limit: 32768
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       # Pinned, not inferred: a runner that cannot confine must fail the job
