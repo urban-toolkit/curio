@@ -46,12 +46,6 @@ CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 # Catalog author actions (publish/unpublish into <repo_root>/packages/).
 # Default ON so dev installs keep working without extra config; operators
 # locking down a deployment can disable with =0/false/no/off.
-# Whether a --deploy instance that cannot scope installs per user may install
-# anyway. Off by default: without isolation every install lands in the one
-# interpreter that runs everybody's node code (#332, #309). An operator who
-# would trust every account with that turns it on with --allow-shared-installs.
-CURIO_ALLOW_SHARED_INSTALLS = _env_flag("CURIO_ALLOW_SHARED_INSTALLS", False)
-
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
     "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
 )

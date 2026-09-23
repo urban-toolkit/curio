@@ -610,3 +610,77 @@ class TestExecMemoryFloor:
         """
         set_environment_variables(**BASE)
         assert "CURIO_EXEC_MEMORY_MB" not in os.environ
+
+
+# ── --deploy requires isolation, or it does not start ───────────────────────
+
+
+def _cannot_isolate(monkeypatch):
+    """A host with no fork isolation to be had: macOS, Windows, a bare Linux."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "darwin", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+
+
+def test_deploy_refuses_to_start_where_it_cannot_isolate(monkeypatch):
+    """Two shapes, not three.
+
+    A deployment has accounts AND isolates; a local run has neither. The third
+    shape -- accounts sharing one interpreter -- used to boot with a warning,
+    which meant one user's ``pip install`` could change what another user's
+    nodes import and the only protection was a gate on installs that nobody
+    could see from the command they typed. Refusing is the honest answer: the
+    operator asked for something this host cannot give.
+    """
+    _cannot_isolate(monkeypatch)
+    # The suite runs under CURIO_TESTING, which is the exemption itself: clear
+    # it to stand in for an operator's shell.
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    with pytest.raises(SystemExit) as exit_info:
+        set_environment_variables(**BASE, deploy=True)
+
+    message = str(exit_info.value)
+    assert "--deploy needs isolated node execution" in message
+    # It has to say what to do next, not just what it refused.
+    assert "drop --deploy" in message
+
+
+def test_a_test_rig_may_still_run_accounts_without_isolation(monkeypatch):
+    """The exemption, and the only one.
+
+    The e2e and stress harnesses boot ``--deploy`` to get the login page, on
+    whatever machine the developer has, and create every account themselves.
+    """
+    _cannot_isolate(monkeypatch)
+    monkeypatch.setenv("CURIO_TESTING", "1")
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_local_run_on_the_same_host_is_untouched(monkeypatch):
+    """No --deploy, no refusal: this is the everyday developer path."""
+    _cannot_isolate(monkeypatch)
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_deploy_that_can_isolate_starts_and_isolates(linux_host, monkeypatch):
+    """The supported deployment shape still resolves to fork."""
+    monkeypatch.setattr("utk_curio.main._discover_exec_user", lambda: "curio-exec")
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "fork"

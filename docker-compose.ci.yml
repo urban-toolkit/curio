@@ -57,7 +57,9 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
-      # This is the UNISOLATED baseline stack. --deploy now turns isolation on
+      # This is the UNISOLATED baseline stack, which only CURIO_TESTING below
+      # makes bootable: --deploy refuses to start unisolated anywhere else.
+      # --deploy now turns isolation on
       # wherever the host can deliver it, and this container runs as root in an
       # image that carries curio-exec, so the launcher would otherwise discover
       # it and quietly switch the main e2e suite onto the fork path.
@@ -84,6 +86,6 @@ services:
       - sh
       - -c
       - >-
-        umask 000 && exec python curio.py start all --deploy --with-examples --allow-shared-installs
+        umask 000 && exec python curio.py start all --deploy --with-examples
         --backend-host 0.0.0.0 --backend-port 5002
         --sandbox-host 0.0.0.0 --sandbox-port 2000

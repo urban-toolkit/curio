@@ -22,9 +22,10 @@ services:
       # session's artifacts). --deploy turns this on by itself and discovers
       # the curio-exec account the image creates; see the Dockerfile's note.
       #
-      # Setting it explicitly here makes it FAIL-CLOSED, which the default is
-      # not. The default degrades so that `curio.py start --deploy` still boots
-      # on a laptop or on Windows; a real deployment wants the opposite. If the
+      # Setting it explicitly here is belt and braces: --deploy now refuses to
+      # start at all where it cannot isolate, so the degraded shape this used
+      # to guard against no longer exists. Pinned anyway because it says what
+      # the deployment requires rather than what it happened to get. If the
       # sandbox cannot confine (no Linux, no pyseccomp, or those paths are
       # still reachable by curio-exec after hardening) it refuses to start
       # rather than serve while claiming a boundary it does not have. That
