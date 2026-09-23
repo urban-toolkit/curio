@@ -139,6 +139,60 @@ def version():
         'isolation_active': _isolation_active_label(),
     })
 
+@app.route('/monitor', methods=['GET'])
+@require_sandbox_token
+def monitor():
+    """Execution counters, live capacity and recent failures, for the backend.
+
+    Gated, unlike /version. /version discloses nothing; this route reports how
+    much capacity is free and carries raw failure text, and its only caller is
+    the backend, which already holds the shared secret. Nothing else should be
+    able to read it directly.
+
+    The isolation labels come from the same two helpers the version badge uses,
+    so the badge and the monitor page can never disagree about what this
+    sandbox is doing.
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    payload = metrics.snapshot()
+    payload['isolation'] = _isolation_label()
+    payload['isolation_active'] = _isolation_active_label()
+    payload['errors'] = metrics.errors()
+
+    # The limits actually in force when a zygote is up, else the ones this
+    # process would use if one started. Both are worth reporting: an operator
+    # comparing a configured budget against a running one is exactly how the
+    # "I set --exec-memory-mb and nothing changed" question gets answered.
+    config = None
+    state = _isolation_state
+    if isinstance(state, tuple):
+        config = state[1]
+    else:
+        try:
+            config = runner.IsolationConfig.from_environment()
+        except Exception:  # noqa: BLE001 - a monitor never fails over config
+            config = None
+
+    if config is not None:
+        payload['parallelism'] = config.parallelism
+        payload['memory_limit_mb'] = config.limits.get('memory_mb')
+        payload['cpu_seconds_limit'] = config.limits.get('cpu_seconds')
+        payload['wall_timeout_seconds'] = config.wall_timeout
+    else:
+        payload['parallelism'] = None
+        payload['memory_limit_mb'] = None
+        payload['cpu_seconds_limit'] = None
+        payload['wall_timeout_seconds'] = None
+
+    try:
+        payload['zygote_running'] = bool(lifecycle.is_running())
+    except Exception:  # noqa: BLE001
+        payload['zygote_running'] = None
+
+    return jsonify(payload)
+
+
 @app.route('/get', methods=['GET'])
 @require_sandbox_token
 @holds_duckdb

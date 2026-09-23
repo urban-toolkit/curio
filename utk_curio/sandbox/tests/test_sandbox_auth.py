@@ -29,6 +29,9 @@ GUARDED = (
                                   "nodeType": "curio.builtin/computation-analysis",
                                   "dataType": ""}}),
     ("get", "/get", {"query_string": {"fileName": "does-not-exist"}}),
+    # Reports free capacity and carries raw failure text. Only the backend
+    # calls it, and the backend already holds the token.
+    ("get", "/monitor", {}),
 )
 
 OPEN_ROUTES = (("get", "/live"), ("get", "/version"), ("get", "/health"))
