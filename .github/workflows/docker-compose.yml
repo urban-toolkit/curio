@@ -414,8 +414,12 @@ jobs:
               eval "$(env -u CURIO_E2E_BACKEND_PORT -u CURIO_E2E_SANDBOX_PORT \
                           -u BACKEND_PORT -u SANDBOX_PORT \
                           python -m utk_curio.backend.tests.shards "$k")"
-              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA" "$CURIO_PACKAGES_ROOT"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
+              # The package catalog is per shard for the same reason the
+              # dataset one is: it is otherwise a single directory every
+              # worker publishes into and reads back.
+              cp -r /app/packages/. "$CURIO_PACKAGES_ROOT/"
               # CURIO_ISOLATION=off for the same reason docker-compose.ci.yml
               # sets it: these shards run as root in an image carrying
               # curio-exec, so --deploy would discover it and isolate. The

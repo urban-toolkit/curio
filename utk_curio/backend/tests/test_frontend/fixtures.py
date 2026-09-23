@@ -267,6 +267,7 @@ def curio_servers(session_app, request):
         "CURIO_TESTING",
         "CURIO_LAUNCH_CWD",
         "CURIO_SHARED_DATA",
+        "CURIO_PACKAGES_ROOT",
         "DATABASE_URL",
         "DATABASE_URL_TEST",
     ):

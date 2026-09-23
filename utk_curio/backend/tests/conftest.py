@@ -41,7 +41,7 @@ _REPO_ROOT = os.path.abspath(
 # Under xdist every worker attaches to its own backend+sandbox pair. Derive this
 # worker's ports and state root before anything below (or any backend import)
 # reads the environment. A no-op in a serial run. See shards.py.
-from .shards import apply_shard_env  # noqa: E402
+from .shards import apply_shard_env, seed_package_catalog  # noqa: E402
 apply_shard_env()
 
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
@@ -103,6 +103,15 @@ os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
 # .curio/data/, so a pytest run never clobbers dev artifacts.
 os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(_TEST_DB_DIR, "data"))
 os.makedirs(os.environ["CURIO_SHARED_DATA"], exist_ok=True)
+
+# The package catalog too, seeded from the committed one. It defaults to
+# <repo_root>/packages,
+# so a test that publishes writes into a git-tracked directory and every other
+# process on the machine sees it: a publish on one stack showed up in a second
+# stack's catalog listing, with nothing shared between them but this path.
+os.environ.setdefault("CURIO_PACKAGES_ROOT", os.path.join(_TEST_DB_DIR, "packages"))
+os.makedirs(os.environ["CURIO_PACKAGES_ROOT"], exist_ok=True)
+seed_package_catalog(os.environ["CURIO_PACKAGES_ROOT"])
 
 # Point the backend (and any subprocess that inherits this env — e.g. the
 # ``curio start`` child spawned by test_frontend/fixtures.py) at the test
