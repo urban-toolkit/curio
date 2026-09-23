@@ -13,6 +13,10 @@ def test_app_routes(app):
         "/file/<path:filename>",
         "/processPythonCode",
         "/processJavaScriptCode",
+        "/api/monitor",
+        "/api/monitor/storage",
+        "/api/monitor/errors",
+        "/api/monitor/errors/client",
     ]
 
     expected_app_routes = [
@@ -23,6 +27,10 @@ def test_app_routes(app):
         "api.serve_launch_cwd_file",
         "api.process_python_code",
         "api.process_javascript_code",
+        "monitor.monitor_route",
+        "monitor.monitor_storage_route",
+        "monitor.monitor_errors_route",
+        "monitor.monitor_client_error_route",
     ]
 
     with app.app_context():

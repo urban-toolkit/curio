@@ -4,6 +4,7 @@ import json
 import sys
 import geopandas as gpd
 import pandas as pd
+from utk_curio.sandbox import metrics
 from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
@@ -137,6 +138,64 @@ def version():
         'isolation': _isolation_label(),
         'isolation_active': _isolation_active_label(),
     })
+
+@app.route('/monitor', methods=['GET'])
+@require_sandbox_token
+def monitor():
+    """Execution counters, live capacity and recent failures, for the backend.
+
+    Gated, unlike /version. /version discloses nothing; this route reports how
+    much capacity is free and carries raw failure text, and its only caller is
+    the backend, which already holds the shared secret. Nothing else should be
+    able to read it directly.
+
+    The isolation labels come from the same two helpers the version badge uses,
+    so the badge and the monitor page can never disagree about what this
+    sandbox is doing.
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    payload = metrics.snapshot()
+    payload['isolation'] = _isolation_label()
+    payload['isolation_active'] = _isolation_active_label()
+    payload['errors'] = metrics.errors()
+
+    # The limits actually in force when a zygote is up, else the ones this
+    # process would use if one started. Both are worth reporting: an operator
+    # comparing a configured budget against a running one is exactly how the
+    # "I set --exec-memory-mb and nothing changed" question gets answered.
+    config = None
+    state = _isolation_state
+    if isinstance(state, tuple):
+        config = state[1]
+    else:
+        try:
+            config = runner.IsolationConfig.from_environment()
+        except Exception:  # noqa: BLE001 - a monitor never fails over config
+            config = None
+
+    if config is not None:
+        payload['parallelism'] = config.parallelism
+        payload['memory_limit_mb'] = config.limits.get('memory_mb')
+        payload['cpu_seconds_limit'] = config.limits.get('cpu_seconds')
+        payload['wall_timeout_seconds'] = config.wall_timeout
+    else:
+        payload['parallelism'] = None
+        payload['memory_limit_mb'] = None
+        payload['cpu_seconds_limit'] = None
+        payload['wall_timeout_seconds'] = None
+
+    try:
+        payload['zygote_running'] = bool(lifecycle.is_running())
+    except Exception:  # noqa: BLE001
+        payload['zygote_running'] = None
+
+    # This process's own resident memory. It is the one running node code, so
+    # it is the number an operator chasing an OOM actually wants.
+    payload['rss_bytes'] = metrics.process_rss_bytes()
+
+    return jsonify(payload)
+
 
 @app.route('/get', methods=['GET'])
 @require_sandbox_token
@@ -327,6 +386,10 @@ def _isolated_runner():
                 f"to in-process execution: {exc}",
                 file=sys.stderr, flush=True,
             )
+            metrics.record_error(
+                summary="Could not start the execution zygote",
+                detail=f"{exc}\n\nNode execution fell back to the in-process path.",
+            )
             _isolation_state = False
             return None
 
@@ -427,6 +490,7 @@ def exec():
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     isolated = _isolated_runner()
+    metrics.record_dispatch(isolated is not None)
     if isolated is not None:
         run, config = isolated
         # launch_dir is passed to both paths in the same position: it is the
@@ -469,6 +533,8 @@ def exec_js():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
+    # JS has no isolated path at all, so this is always an in-process dispatch.
+    metrics.record_dispatch(False)
     result = execute_js_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
         session_id=session_id, save_dataset=bool(save_dataset),

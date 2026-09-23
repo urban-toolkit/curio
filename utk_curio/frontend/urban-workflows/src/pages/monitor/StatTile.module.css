@@ -1,0 +1,145 @@
+/* Tiles, meters and chips for the monitor page. Tokens only: no literal colours
+   here, so a change to curioTokens.css reaches this page like every other. */
+
+.tile {
+  background: #fff;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-card);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--curio-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--curio-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero .value {
+  font-size: 34px;
+}
+
+.sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+}
+
+.warn .value {
+  color: var(--curio-warning-text);
+}
+
+.danger .value {
+  color: var(--curio-danger-text);
+}
+
+/* ── Meter ──────────────────────────────────────────────────────────── */
+
+.meterBlock {
+  padding: 4px 0 10px;
+}
+
+.meterHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.meterCaption {
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.meterTrack {
+  height: 8px;
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-surface-muted);
+  overflow: hidden;
+}
+
+.meterFill {
+  height: 100%;
+  border-radius: var(--curio-radius-pill);
+  /* One hue against its own track: a meter compares a part to a whole, so a
+     second colour would imply a second series that does not exist. */
+  background: var(--curio-text-primary);
+  transition: width 240ms ease;
+}
+
+.meterFill.warn {
+  background: var(--curio-warning-text);
+}
+
+.meterFill.danger {
+  background: var(--curio-danger-text);
+}
+
+/* ── Chip ───────────────────────────────────────────────────────────── */
+
+.chipRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--curio-border);
+  min-width: 0;
+}
+
+.chipRow:last-child {
+  border-bottom: none;
+}
+
+.chipLabel {
+  font-size: 13px;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--curio-radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.chip_neutral {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-secondary);
+}
+
+.chip_good {
+  background: var(--curio-success-bg);
+  color: var(--curio-success-text);
+}
+
+.chip_warn {
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+}
+
+.chip_danger {
+  background: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+}
