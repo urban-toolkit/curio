@@ -105,7 +105,7 @@ export function toMarkdown({ monitor, storage, errors }: DiagnosticsInput): stri
   } else {
     for (const entry of list.slice(0, MAX_BUNDLED_ERRORS)) {
       const repeat = entry.count > 1 ? ` (x${entry.count})` : "";
-      lines.push(`**${entry.at} · ${entry.source}${repeat}** — ${entry.summary}`);
+      lines.push(`**${entry.at} · ${entry.source}${repeat}**: ${entry.summary}`);
       if (entry.detail) {
         lines.push("```", entry.detail.trimEnd(), "```");
       }

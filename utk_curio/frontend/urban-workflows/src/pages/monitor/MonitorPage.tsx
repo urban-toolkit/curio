@@ -176,7 +176,7 @@ export const MonitorPage: React.FC = () => {
           <div className={styles.tileGrid} data-testid="monitor-hardware">
             <StatTile
               label="CPU"
-              value={hw?.cpu.logicalCores ?? "—"}
+              value={hw?.cpu.logicalCores ?? "n/a"}
               sub={
                 hw
                   ? `${hw.cpu.model}${
@@ -195,7 +195,7 @@ export const MonitorPage: React.FC = () => {
             />
             <StatTile
               label="Load (1m)"
-              value={hw?.load.avg1m ?? "—"}
+              value={hw?.load.avg1m ?? "n/a"}
               sub={
                 hw?.load.perCore != null
                   ? `${hw.load.perCore} per core`
@@ -251,19 +251,19 @@ export const MonitorPage: React.FC = () => {
                 <tbody>
                   <tr>
                     <td>1 minute</td>
-                    <td className={styles.num}>{hw?.load.avg1m ?? "—"}</td>
+                    <td className={styles.num}>{hw?.load.avg1m ?? "n/a"}</td>
                   </tr>
                   <tr>
                     <td>5 minutes</td>
-                    <td className={styles.num}>{hw?.load.avg5m ?? "—"}</td>
+                    <td className={styles.num}>{hw?.load.avg5m ?? "n/a"}</td>
                   </tr>
                   <tr>
                     <td>15 minutes</td>
-                    <td className={styles.num}>{hw?.load.avg15m ?? "—"}</td>
+                    <td className={styles.num}>{hw?.load.avg15m ?? "n/a"}</td>
                   </tr>
                   <tr>
                     <td>Architecture</td>
-                    <td className={styles.num}>{hw?.cpu.arch ?? "—"}</td>
+                    <td className={styles.num}>{hw?.cpu.arch ?? "n/a"}</td>
                   </tr>
                   {hw?.cpu.maxFrequencyMhz ? (
                     <tr>
@@ -285,22 +285,22 @@ export const MonitorPage: React.FC = () => {
             <StatTile
               hero
               label="Node runs"
-              value={backend?.total ?? "—"}
+              value={backend?.total ?? "n/a"}
               sub={`${backend?.ok ?? 0} ok · ${backend?.error ?? 0} failed`}
             />
             <StatTile
               label="In flight"
-              value={backend?.inFlight ?? "—"}
+              value={backend?.inFlight ?? "n/a"}
               sub={`${backend?.python ?? 0} python · ${backend?.javascript ?? 0} js`}
             />
             <StatTile
               label="Median run"
-              value={backend?.durations.p50Ms != null ? `${backend.durations.p50Ms} ms` : "—"}
-              sub={`p90 ${backend?.durations.p90Ms ?? "—"} ms · p99 ${backend?.durations.p99Ms ?? "—"} ms`}
+              value={backend?.durations.p50Ms != null ? `${backend.durations.p50Ms} ms` : "n/a"}
+              sub={`p90 ${backend?.durations.p90Ms ?? "n/a"} ms · p99 ${backend?.durations.p99Ms ?? "n/a"} ms`}
             />
             <StatTile
               label="Node types"
-              value={backend?.distinctNodeTypes ?? "—"}
+              value={backend?.distinctNodeTypes ?? "n/a"}
               sub={backend?.lastExecutionAt ? `last run ${backend.lastExecutionAt}` : "no runs yet"}
             />
           </div>
@@ -379,33 +379,33 @@ export const MonitorPage: React.FC = () => {
           <div className={styles.tileGrid} data-testid="monitor-accounts">
             <StatTile
               label="Accounts"
-              value={m?.accounts.total ?? "—"}
+              value={m?.accounts.total ?? "n/a"}
               sub={`${m?.accounts.registered ?? 0} registered · ${m?.accounts.guest ?? 0} guest`}
             />
             <StatTile
               label="Active sessions"
-              value={m?.accounts.sessions.active ?? "—"}
+              value={m?.accounts.sessions.active ?? "n/a"}
               sub={`${m?.accounts.sessions.seenLast5m ?? 0} seen in 5 min`}
             />
             <StatTile
               label="Failed sign-ins"
-              value={m?.accounts.signIn.failure ?? "—"}
+              value={m?.accounts.signIn.failure ?? "n/a"}
               sub={`${m?.accounts.signIn.distinctSources ?? 0} sources in ${m?.accounts.signIn.windowMinutes ?? 60} min`}
               tone={(m?.accounts.signIn.failure ?? 0) > 20 ? "warn" : "neutral"}
             />
             <StatTile
               label="Projects"
-              value={m?.content.projects.total ?? "—"}
+              value={m?.content.projects.total ?? "n/a"}
               sub={`${m?.content.projects.openedLast24h ?? 0} opened in 24h`}
             />
             <StatTile
               label="Datasets"
-              value={m?.content.datasets.total ?? "—"}
+              value={m?.content.datasets.total ?? "n/a"}
               sub={`${m?.content.datasets.imported ?? 0} imported · ${m?.content.datasets.computed ?? 0} computed`}
             />
             <StatTile
               label="Cached outputs"
-              value={m?.content.execCacheEntries ?? "—"}
+              value={m?.content.execCacheEntries ?? "n/a"}
               sub="exec cache entries"
             />
           </div>

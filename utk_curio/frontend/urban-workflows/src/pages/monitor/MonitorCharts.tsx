@@ -109,7 +109,7 @@ function durationBinLabel(bucket: DurationBucket, previous: number | null): stri
   const upper = bucket.leMs >= 1000 ? `${bucket.leMs / 1000}s` : `${bucket.leMs}ms`;
   if (previous === null) return `≤ ${upper}`;
   const lower = previous >= 1000 ? `${previous / 1000}s` : `${previous}ms`;
-  return `${lower}–${upper}`;
+  return `${lower} to ${upper}`;
 }
 
 export const DurationHistogram: React.FC<{ buckets: DurationBucket[] }> = ({
