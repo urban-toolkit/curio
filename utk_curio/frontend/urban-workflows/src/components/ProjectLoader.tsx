@@ -13,8 +13,10 @@ import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
+  beginProjectLoad,
   setCurrentProject,
   setCurrentProjectPackages,
+  settleProjectLoad,
   setUnsavedDataflow,
 } from "../registry/projectPackagesStore";
 import { packagesApi } from "../api/packagesApi";
@@ -118,6 +120,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     // filter knows we're in a project; loadProject below will replace the
     // package set via setPackages → projectPackagesStore.
     setCurrentProject(id, []);
+    // ...and open the latch that says this dataflow is being loaded, so a save
+    // fired before the load lands waits for it instead of reading the empty
+    // flow state as "never saved" and creating a second dataflow (#340).
+    beginProjectLoad(id);
 
     const applyResult = (
       result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> },
@@ -223,7 +229,12 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch {
         /* ditto: descriptor-miss surfaces per-node */
       }
-    })();
+      // The latch opens in the ``finally`` below, which is both LAST and on
+      // every path including the failures handled above. Last because on this
+      // side of it the canvas carries the stored spec: a save that was waiting
+      // then persists this dataflow rather than the empty canvas it would have
+      // caught a moment earlier, which would be a wipe rather than a fork.
+    })().finally(() => settleProjectLoad(id));
   }, [id]);
 
   return <>{children}</>;

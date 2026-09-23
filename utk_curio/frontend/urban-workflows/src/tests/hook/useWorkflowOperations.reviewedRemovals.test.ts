@@ -32,6 +32,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
+  // No routed dataflow and nothing loading: saves take their id from the
+  // hook's own state, as they do once a load has landed.
+  getCurrentProjectId: jest.fn(() => undefined),
+  whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
   setCurrentProjectPackages: jest.fn(),
   subscribe: jest.fn(() => jest.fn()),

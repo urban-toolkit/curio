@@ -4,12 +4,16 @@
  */
 import {
   applyProjectLockfile,
+  beginProjectLoad,
   clearCurrentProject,
   getCurrentProjectPackagesList,
   getPackagesRevision,
   setCurrentProject,
   setCurrentProjectPackages,
+  settleProjectLoad,
+  setUnsavedDataflow,
   subscribe,
+  whenProjectSettled,
 } from "../../registry/projectPackagesStore";
 
 /** A read that started now, i.e. one nothing has raced. */
@@ -97,5 +101,90 @@ describe("applyProjectLockfile — a read that lost a race", () => {
     // store on, so it does not get to overwrite it.
     expect(applyProjectLockfile(["second@1"], bothReadAt)).toBe(false);
     expect(getCurrentProjectPackagesList()).toEqual(["first@1"]);
+  });
+});
+
+/**
+ * The route-load latch (#340).
+ *
+ * Its whole job is to tell "this dataflow has never been saved" apart from
+ * "this dataflow's load has not landed yet", in the same tick the route
+ * resolves. Everything that saves reads it, so the lifecycle has to be exact:
+ * a latch left open stalls saves, and one released early is the bug back.
+ */
+describe("project load latch", () => {
+  beforeEach(() => clearCurrentProject());
+
+  /**
+   * Did ``p`` resolve once everything already queued has run?
+   *
+   * A microtask race is too tight to answer that: releasing the latch resolves
+   * through two ``then``s of its own, so a one-tick race reports "pending" for
+   * a promise that is about to resolve. A zero-delay timer drains all of them
+   * while still leaving a real timer (the 15s bound) unfired.
+   */
+  const settledSoon = async (p: Promise<void>) => {
+    let done = false;
+    void p.then(() => {
+      done = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return done ? "settled" : "pending";
+  };
+
+  it("resolves immediately when nothing is loading", async () => {
+    setCurrentProject("p1", []);
+    await expect(whenProjectSettled()).resolves.toBeUndefined();
+  });
+
+  it("holds until the load settles", async () => {
+    setCurrentProject("p1", []);
+    beginProjectLoad("p1");
+    const waiting = whenProjectSettled();
+    expect(await settledSoon(waiting)).toBe("pending");
+    settleProjectLoad("p1");
+    expect(await settledSoon(waiting)).toBe("settled");
+  });
+
+  it("ignores a settle from a load that no longer owns the latch", async () => {
+    // A navigation overtook a slow load. Releasing on the old id would hand
+    // waiters an answer about a dataflow that is no longer on screen.
+    beginProjectLoad("p1");
+    beginProjectLoad("p2");
+    const waiting = whenProjectSettled();
+    settleProjectLoad("p1");
+    expect(await settledSoon(waiting)).toBe("pending");
+    settleProjectLoad("p2");
+    expect(await settledSoon(waiting)).toBe("settled");
+  });
+
+  it("releases waiters when the route leaves for an unsaved dataflow", async () => {
+    // Otherwise every save on the new canvas waits out the full bound first.
+    beginProjectLoad("p1");
+    const waiting = whenProjectSettled();
+    setUnsavedDataflow([]);
+    expect(await settledSoon(waiting)).toBe("settled");
+  });
+
+  it("gives up after the bound rather than waiting forever", async () => {
+    jest.useFakeTimers();
+    try {
+      beginProjectLoad("p1");
+      const waiting = whenProjectSettled(50);
+      jest.advanceTimersByTime(50);
+      await expect(waiting).resolves.toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("re-entering the same load does not restart the wait", async () => {
+    // StrictMode mounts the effect twice; the second call must not replace a
+    // latch the first one's load is about to settle.
+    beginProjectLoad("p1");
+    const waiting = whenProjectSettled();
+    beginProjectLoad("p1");
+    settleProjectLoad("p1");
+    expect(await settledSoon(waiting)).toBe("settled");
   });
 });

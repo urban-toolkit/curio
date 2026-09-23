@@ -529,8 +529,17 @@ def test_package_metadata_survives_export_and_reimport(
     # a request that was never going to be made -- CI showed "Timeout
     # exceeded while waiting for event response" while the real answer, a
     # 400 from the upload, appeared in neither the failure nor the log.
+    #
+    # The predicate matches an install into ANY dataflow, then the id is
+    # asserted below. Keyed to ``project_id`` it could only ever time out on
+    # the failure it was written to catch: the import used to mint a SECOND
+    # dataflow and install into that one, so the request this waited for was
+    # never going to be sent, and 120s later the failure said "Timeout
+    # exceeded while waiting for event response" about a request that had in
+    # fact gone out, to a different id, within a second (#340).
     with page.expect_response(
-        lambda r: f"/api/packages/projects/{project_id}/install" in r.url
+        lambda r: "/api/packages/projects/" in r.url
+        and r.url.endswith("/install")
         and r.request.method == "POST",
         timeout=120000,
     ) as installed_to_project:
@@ -547,6 +556,11 @@ def test_package_metadata_survives_export_and_reimport(
             f"import failed ({uploaded.value.status}): "
             f"{uploaded.value.text()[:500]}"
         )
+    assert f"/api/packages/projects/{project_id}/install" in installed_to_project.value.url, (
+        "the import installed into a different dataflow than the one under "
+        f"test: {installed_to_project.value.url}. The page is on {project_id}, "
+        "so a package imported here would never reach its palette (#340)."
+    )
     assert installed_to_project.value.ok, (
         f"the import did not reach the dataflow's lockfile "
         f"({installed_to_project.value.status}): "
