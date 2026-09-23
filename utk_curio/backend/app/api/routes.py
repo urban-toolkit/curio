@@ -1,6 +1,7 @@
 from flask import request, abort, jsonify, g, Response, current_app
 
 from utk_curio.backend.app.monitor import counters as _monitor_counters
+from utk_curio.backend.app.monitor import errors as _monitor_errors
 import re
 import requests
 import json
@@ -473,6 +474,16 @@ def process_python_code():
         ok=bool(isinstance(output, dict) and output.get("path")),
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
+    if not (isinstance(output, dict) and output.get("path")):
+        # Same canonical predicate as above: an EMPTY output path. A non-empty
+        # stderr is NOT the predicate, because benign warnings land there too
+        # and logging those as errors would bury the real ones.
+        _monitor_errors.record(
+            "node",
+            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
+            detail=str(stderr or ""),
+            context={"nodeType": nodeType, "language": "python"},
+        )
 
     # Which library the run was missing, when that is why it failed (#299).
     # Gated on the canonical failure contract - an EMPTY output path, not a
@@ -641,6 +652,16 @@ def process_javascript_code():
         ok=bool(isinstance(output, dict) and output.get("path")),
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
+    if not (isinstance(output, dict) and output.get("path")):
+        # Same canonical predicate as above: an EMPTY output path. A non-empty
+        # stderr is NOT the predicate, because benign warnings land there too
+        # and logging those as errors would bury the real ones.
+        _monitor_errors.record(
+            "node",
+            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
+            detail=str(stderr or ""),
+            context={"nodeType": nodeType, "language": "javascript"},
+        )
 
     return {
         'stdout': stdout,

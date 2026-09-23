@@ -113,7 +113,18 @@ def create_app(config_class=config_class):
 
     @app.errorhandler(Exception)
     def handle_unhandled_exception(err):
-        app.logger.error("Unhandled exception: %s\n%s", err, traceback.format_exc())
+        formatted = traceback.format_exc()
+        app.logger.error("Unhandled exception: %s\n%s", err, formatted)
+        # Only the catch-all, never handle_http_exception above. Every 404 and
+        # 403 flows through that one, and burying real faults among routine
+        # refusals is the exact mistake #279 fixed.
+        from utk_curio.backend.app.monitor import errors as monitor_errors
+        monitor_errors.record(
+            "backend",
+            summary=f"{request.method} {request.path} -> {type(err).__name__}",
+            detail=formatted,
+            context={"method": request.method, "path": request.path},
+        )
         response = jsonify({"error": str(err)})
         response.status_code = 500
         return _apply_cors(response)
