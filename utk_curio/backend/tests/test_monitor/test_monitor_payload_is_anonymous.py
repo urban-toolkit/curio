@@ -21,7 +21,7 @@ import re
 
 import pytest
 
-from utk_curio.backend.app.monitor import counters, stats
+from utk_curio.backend.app.monitor import counters
 
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")

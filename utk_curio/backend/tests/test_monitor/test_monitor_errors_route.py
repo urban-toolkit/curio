@@ -8,8 +8,6 @@ mirror image of this bug (refusals being logged as 500s).
 
 import json
 
-import pytest
-
 from utk_curio.backend.app.monitor import errors, routes
 
 

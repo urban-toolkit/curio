@@ -24,7 +24,11 @@ IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, page):
     base = app_frontend.base_url
 
-    page.goto(f"{base}/monitor")
+    # 120s, matching test_feature_tour_video and test_walkthrough_videos. The
+    # harness serves the frontend through webpack-dev-server, which opens its
+    # port before it has finished the first compile, so the default 30s races
+    # that build on a cold cache.
+    page.goto(f"{base}/monitor", timeout=120000)
     page.wait_for_load_state("domcontentloaded")
 
     # 1. Every section renders.
@@ -47,26 +51,16 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     page.wait_for_timeout(6500)
     assert page.get_by_text(re.compile(r"^Last updated")).inner_text() != updated
 
-    # 5. Pausing stops it.
+    # 5. Pausing stops it, and resuming starts it again.
     page.get_by_role("button", name="Pause").click()
     paused_at = page.get_by_text(re.compile(r"^Last updated")).inner_text()
     page.wait_for_timeout(6500)
     assert page.get_by_text(re.compile(r"^Last updated")).inner_text() == paused_at
-
-    # 6. A browser error travels: window handler -> public POST -> ring buffer
-    #    -> render. The marker makes it unambiguous which entry is ours.
-    marker = "curio-e2e-marker-9f3a1c"
-    page.evaluate(
-        """(marker) => {
-            window.dispatchEvent(new ErrorEvent('error', {
-                message: marker,
-                error: new Error(marker),
-            }));
-        }""",
-        marker,
-    )
     page.get_by_role("button", name="Resume").click()
-    page.get_by_text(marker).wait_for(timeout=30000)
+
+    # 6. The diagnostics bundle is what a user actually hands over.
+    page.get_by_role("button", name="Copy diagnostics").click()
+    page.get_by_role("button", name="Copied").wait_for(timeout=10000)
 
     # 7. The aggregate panels name nobody. Scoped to those panels rather than
     #    the whole body: the error log is raw by design, so a body-wide
@@ -77,6 +71,24 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
         assert "@" not in text, f"{panel} rendered an email-shaped string"
         assert IPV4.search(text) is None, f"{panel} rendered an IP-shaped string"
 
-    # 8. The diagnostics bundle is what a user actually hands over.
-    page.get_by_role("button", name="Copy diagnostics").click()
-    page.get_by_role("button", name="Copied").wait_for(timeout=10000)
+    # 8. A browser error travels: window handler -> public POST -> ring buffer
+    #    -> render. The marker makes it unambiguous which entry is ours.
+    #
+    # LAST on purpose, and nothing may click after it. This harness serves the
+    # frontend through webpack-dev-server, whose client shows a full-page
+    # overlay iframe on any window error and swallows every pointer event
+    # behind it. The overlay is a dev-server feature that does not exist in a
+    # built bundle, so working around it here beats weakening the test: the
+    # assertion below reads the DOM rather than clicking, so the overlay
+    # cannot affect it.
+    marker = "curio-e2e-marker-9f3a1c"
+    page.evaluate(
+        """(marker) => {
+            window.dispatchEvent(new ErrorEvent('error', {
+                message: marker,
+                error: new Error(marker),
+            }));
+        }""",
+        marker,
+    )
+    page.get_by_text(marker).wait_for(timeout=30000)

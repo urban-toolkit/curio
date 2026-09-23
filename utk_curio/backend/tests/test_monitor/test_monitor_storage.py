@@ -7,8 +7,6 @@ is a denial of service anybody could trigger with a browser tab.
 
 import os
 
-import pytest
-
 from utk_curio.backend.app.monitor import storage
 
 

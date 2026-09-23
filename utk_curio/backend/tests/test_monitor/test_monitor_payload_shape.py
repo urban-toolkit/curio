@@ -10,8 +10,6 @@ each boundary.
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 
 def naive_ago(**kwargs):
     """A stored-format timestamp N ago: UTC arithmetic, tzinfo stripped."""
