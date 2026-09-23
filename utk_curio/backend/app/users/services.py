@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import commit_with_retry, db
 from utk_curio.backend.app.users.models import User
 from utk_curio.backend.app.users.schemas import (
     AuthOut,
@@ -66,10 +66,12 @@ def _shared_guest_user() -> User:
         )
     if user:
         if user.type != "guest" or user.name != CURIO_SHARED_GUEST_NAME:
-            user.type = "guest"
-            user.name = CURIO_SHARED_GUEST_NAME
-            user.is_guest = True
-            db.session.commit()
+            def _normalize() -> None:
+                user.type = "guest"
+                user.name = CURIO_SHARED_GUEST_NAME
+                user.is_guest = True
+
+            commit_with_retry(_normalize)
         return user
     return repo.create_user(
         username=CURIO_SHARED_GUEST_USERNAME,
@@ -151,6 +153,17 @@ def get_me(user: User) -> UserOut:
 
 
 def patch_me(user: User, data: UserPatchIn) -> UserOut:
+    # The assignments are inside the retried unit: a rollback reverts them
+    # along with the transaction, so committing a second time without
+    # re-applying them would silently save nothing.
+    def _apply() -> None:
+        _apply_profile_patch(user, data)
+
+    commit_with_retry(_apply)
+    return _user_out(user)
+
+
+def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
     if data.name is not None:
         user.name = data.name
     if data.email is not None:
@@ -170,5 +183,3 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
             user.llm_model = data.llm_model if data.llm_model else None
         if data.huggingface_token is not None:
             user.huggingface_token = data.huggingface_token or None
-    db.session.commit()
-    return _user_out(user)

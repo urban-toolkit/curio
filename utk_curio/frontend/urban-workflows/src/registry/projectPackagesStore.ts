@@ -83,6 +83,10 @@ export function setCurrentProject(projectId: string, packages: Iterable<string>)
  * save instead of showing everything the account owns until then.
  */
 export function setUnsavedDataflow(packages: Iterable<string>): void {
+  // Leaving a routed dataflow for an unsaved one: any load still in flight is
+  // no longer what the app is on, and waiting for it would stall every save on
+  // this canvas until the timeout.
+  _abandonLoad();
   _state = { kind: 'dataflow', projectId: undefined, packages: new Set(packages) };
   _revision += 1;
   _notify();
@@ -98,6 +102,7 @@ export function setCurrentProjectPackages(packages: Iterable<string>): void {
 }
 
 export function clearCurrentProject(): void {
+  _abandonLoad();
   _state = { kind: 'none', projectId: undefined, packages: new Set() };
   _revision += 1;
   _notify();
@@ -119,6 +124,84 @@ export function getCurrentProjectPackagesList(): string[] {
 
 export function getCurrentProjectId(): string | undefined {
   return _state.projectId;
+}
+
+/**
+ * How long a caller will wait for an in-flight route load before giving up on
+ * it. Only a bound on the wait: a load that overruns it is reported, never
+ * treated as "this dataflow was never saved".
+ */
+export const PROJECT_LOAD_WAIT_MS = 15000;
+
+type LoadLatch = { id: string; settled: Promise<void>; settle: () => void };
+
+let _load: LoadLatch | null = null;
+
+function _abandonLoad(): void {
+  _load?.settle();
+  _load = null;
+}
+
+/**
+ * A route load for ``id`` has started.
+ *
+ * ``projectId`` above is pinned the moment the route resolves, but the flow
+ * state's id only arrives when ``loadProject`` answers, and the canvas only
+ * when the spec is applied after that. In between, the app is on a saved
+ * dataflow that looks unsaved to anything reading the flow state - and the
+ * writers that read it (import, install, uninstall) then took their "this
+ * dataflow has never been saved" branch and created a SECOND dataflow,
+ * installing into it while the URL still named the first (#340).
+ *
+ * The latch is what those writers wait on. It lives here rather than in React
+ * state because it has to be readable in the same tick the route resolves,
+ * which is a render too early for a state update.
+ */
+export function beginProjectLoad(id: string): void {
+  if (_load?.id === id) return;
+  _abandonLoad();
+  let settle!: () => void;
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  _load = { id, settled, settle };
+}
+
+/**
+ * That load has finished, successfully or not.
+ *
+ * Called once the spec is on the canvas, not when the fetch answers: a save
+ * that ran in between would persist the half-loaded canvas over the stored
+ * dataflow, which is a worse outcome than the duplicate this fixes.
+ *
+ * Ignored when a newer load owns the latch, so a navigation that overtakes a
+ * slow load does not release the wait for the dataflow now on screen.
+ */
+export function settleProjectLoad(id: string): void {
+  if (_load?.id !== id) return;
+  _abandonLoad();
+}
+
+/**
+ * Resolves once no route load is in flight, or after ``timeoutMs``.
+ *
+ * Resolving on timeout rather than rejecting keeps one rule at the call sites:
+ * after the wait, an id that is still missing while {@link getCurrentProjectId}
+ * names a dataflow means the load did not deliver one, whether it failed, is a
+ * shared dataflow, or simply overran. That is reported; it never falls through
+ * to creating a dataflow.
+ */
+export function whenProjectSettled(timeoutMs: number = PROJECT_LOAD_WAIT_MS): Promise<void> {
+  const latch = _load;
+  if (!latch) return Promise.resolve();
+  if (timeoutMs <= 0) return latch.settled;
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    void latch.settled.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 export function subscribe(listener: Listener): () => void {

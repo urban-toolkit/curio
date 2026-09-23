@@ -405,8 +405,12 @@ def test_save_export_import_and_run_package_nodes(
     # the upload writes the user store, then installToProject writes the
     # dataflow's lockfile. Waiting only for the upload leaves the lockfile query
     # below racing a request that has not been sent yet.
+    # Any dataflow, with the id asserted after: keyed to this one, an import
+    # that installed into a different dataflow could only report a timeout on
+    # a request that was never coming, which is how #340 read for weeks.
     with page.expect_response(
-        lambda r: f"/api/packages/projects/{consumer_project_id}/install" in r.url
+        lambda r: "/api/packages/projects/" in r.url
+        and r.url.endswith("/install")
         and r.request.method == "POST",
         timeout=60000,
     ) as installed_to_project:
@@ -419,8 +423,20 @@ def test_save_export_import_and_run_package_nodes(
             with page.expect_file_chooser() as chooser:
                 drawer.get_by_role("button", name="Import package").click()
             chooser.value.set_files(str(archive))
-    assert uploaded.value.ok, (
-        f"import failed ({uploaded.value.status}): {uploaded.value.text()[:500]}"
+        # Asserted inside the outer wait: a rejected upload means the client
+        # never sends the install, so leaving this until after both blocks
+        # turned a 400 here into a timeout on a request that was never going
+        # to be made. Raising from here skips the outer wait entirely.
+        assert uploaded.value.ok, (
+            f"import failed ({uploaded.value.status}): "
+            f"{uploaded.value.text()[:500]}"
+        )
+    assert (
+        f"/api/packages/projects/{consumer_project_id}/install"
+        in installed_to_project.value.url
+    ), (
+        "the import installed into a different dataflow than the one under "
+        f"test: {installed_to_project.value.url}, not {consumer_project_id} (#340)."
     )
     assert installed_to_project.value.ok, (
         f"the import did not reach the dataflow's lockfile "

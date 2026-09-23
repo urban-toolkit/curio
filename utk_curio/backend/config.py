@@ -46,12 +46,6 @@ CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 # Catalog author actions (publish/unpublish into <repo_root>/packages/).
 # Default ON so dev installs keep working without extra config; operators
 # locking down a deployment can disable with =0/false/no/off.
-# Whether a --deploy instance that cannot scope installs per user may install
-# anyway. Off by default: without isolation every install lands in the one
-# interpreter that runs everybody's node code (#332, #309). An operator who
-# would trust every account with that turns it on with --allow-shared-installs.
-CURIO_ALLOW_SHARED_INSTALLS = _env_flag("CURIO_ALLOW_SHARED_INSTALLS", False)
-
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
     "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
 )
@@ -149,6 +143,24 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = _resolve_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = True
+
+    # A connection per concurrent request, not SQLAlchemy's default 5 (+10
+    # overflow). A request holds its connection for its whole lifetime, and a
+    # node run spends most of that waiting on the sandbox -- tens of seconds
+    # for an Autark data load -- so the pool is sized by how many people are
+    # mid-run, not by how much SQL is being executed. At 50 simultaneous users
+    # the default pool ran out and unrelated requests 500ed with "QueuePool
+    # limit of size 5 overflow 10 reached" (found by the stress tiers).
+    #
+    # These are file handles on a local SQLite database, so a large pool costs
+    # little; WAL and busy_timeout (see extensions.py) are what actually
+    # serialize the writes.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": int(os.environ.get("CURIO_DB_POOL_SIZE", "64")),
+        "max_overflow": int(os.environ.get("CURIO_DB_POOL_OVERFLOW", "128")),
+        "pool_timeout": int(os.environ.get("CURIO_DB_POOL_TIMEOUT", "30")),
+        "pool_pre_ping": True,
+    }
 
     WTF_CSRF_ENABLED = True
 

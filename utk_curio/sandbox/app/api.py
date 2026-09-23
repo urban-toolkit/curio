@@ -1,8 +1,10 @@
 from flask import request, abort, jsonify, Response
+from functools import wraps
 import json
 import sys
 import geopandas as gpd
 import pandas as pd
+from utk_curio.sandbox import metrics
 from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
@@ -12,6 +14,30 @@ import mmap
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
+from utk_curio.sandbox.util.db import connection_in_use
+
+
+def holds_duckdb(view):
+    """Keep the shared DuckDB connection open for one whole request.
+
+    Every execution path releases the connection when it finishes, because
+    DuckDB allows a single cross-process writer and the backend needs to open
+    the file read-only between runs. On a threaded server that release lands
+    while other requests are still using the connection: concurrent Autark
+    data loads failed mid-INSERT with "Connection already closed!" at ten
+    simultaneous users. Under this decorator the release is deferred to
+    whichever request leaves last, so the cross-process contract is unchanged
+    and no request loses its connection halfway through.
+
+    Note what this is not: a lock. Requests still run in parallel -- N Node
+    subprocesses for N Autark loads, exactly as before.
+    """
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        with connection_in_use():
+            return view(*args, **kwargs)
+
+    return wrapper
 from utk_curio.sandbox.util.parsers import (
     load_from_duckdb,
     load_shared_output_file,
@@ -114,8 +140,67 @@ def version():
         'isolation_active': _isolation_active_label(),
     })
 
+@app.route('/monitor', methods=['GET'])
+@require_sandbox_token
+def monitor():
+    """Execution counters, live capacity and recent failures, for the backend.
+
+    Gated, unlike /version. /version discloses nothing; this route reports how
+    much capacity is free and carries raw failure text, and its only caller is
+    the backend, which already holds the shared secret. Nothing else should be
+    able to read it directly.
+
+    The isolation labels come from the same two helpers the version badge uses,
+    so the badge and the monitor page can never disagree about what this
+    sandbox is doing.
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    payload = metrics.snapshot()
+    payload['isolation'] = _isolation_label()
+    payload['isolation_active'] = _isolation_active_label()
+    payload['errors'] = metrics.errors()
+
+    # The limits actually in force when a zygote is up, else the ones this
+    # process would use if one started. Both are worth reporting: an operator
+    # comparing a configured budget against a running one is exactly how the
+    # "I set --exec-memory-mb and nothing changed" question gets answered.
+    config = None
+    state = _isolation_state
+    if isinstance(state, tuple):
+        config = state[1]
+    else:
+        try:
+            config = runner.IsolationConfig.from_environment()
+        except Exception:  # noqa: BLE001 - a monitor never fails over config
+            config = None
+
+    if config is not None:
+        payload['parallelism'] = config.parallelism
+        payload['memory_limit_mb'] = config.limits.get('memory_mb')
+        payload['cpu_seconds_limit'] = config.limits.get('cpu_seconds')
+        payload['wall_timeout_seconds'] = config.wall_timeout
+    else:
+        payload['parallelism'] = None
+        payload['memory_limit_mb'] = None
+        payload['cpu_seconds_limit'] = None
+        payload['wall_timeout_seconds'] = None
+
+    try:
+        payload['zygote_running'] = bool(lifecycle.is_running())
+    except Exception:  # noqa: BLE001
+        payload['zygote_running'] = None
+
+    # This process's own resident memory. It is the one running node code, so
+    # it is the number an operator chasing an OOM actually wants.
+    payload['rss_bytes'] = metrics.process_rss_bytes()
+
+    return jsonify(payload)
+
+
 @app.route('/get', methods=['GET'])
 @require_sandbox_token
+@holds_duckdb
 def get_artifact():
     import pandas as _pd
     import traceback as _tb
@@ -181,6 +266,13 @@ def get_artifact():
     except Exception as e:
         # Surface the underlying exception in the response body so callers
         # see *why* the load failed instead of an empty 500 page.
+        #
+        # ...and in the log as well. The backend does not relay this body (it
+        # answers "Error loading artifact: 500 Server Error"), so a load that
+        # fails under load left no account of itself anywhere a CI run could
+        # read afterwards.
+        print(f"[sandbox /get] failed  fileName={art_id}  session={session_id}\n"
+              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
         return jsonify({
             'error': type(e).__name__,
             'message': str(e),
@@ -319,6 +411,10 @@ def _isolated_runner():
                 f"to in-process execution: {exc}",
                 file=sys.stderr, flush=True,
             )
+            metrics.record_error(
+                summary="Could not start the execution zygote",
+                detail=f"{exc}\n\nNode execution fell back to the in-process path.",
+            )
             _isolation_state = False
             return None
 
@@ -336,8 +432,52 @@ def _isolated_runner():
         return _isolation_state
 
 
+@app.route('/artifact-meta', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def artifact_meta():
+    """The stored row for one artifact, without opening the database file.
+
+    This exists so the backend never opens curio_data.duckdb itself. DuckDB
+    allows a single cross-process writer, so every backend read-only open had
+    to be fitted around the sandbox closing its write handle between runs --
+    which is why the handle was released after every execution, and why an
+    auto-install that happened to collide with a node run silently read
+    nothing and moved on. With the read served here, the sandbox keeps one
+    connection for its lifetime and nothing contends for the file.
+
+    Returns the same columns the backend used to SELECT for itself; a missing
+    artifact is a 404 rather than an error, because "not there" is an ordinary
+    answer for a caller resolving an id it merely hopes is an artifact.
+    """
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+
+    from utk_curio.sandbox.util.db import get_read_connection
+
+    con = get_read_connection()
+    row = con.execute(
+        "SELECT kind, value_int, value_float, value_str, value_json "
+        "FROM artifacts WHERE id = ?",
+        [art_id],
+    ).fetchone()
+    if row is None:
+        return jsonify({'error': 'not found', 'fileName': art_id}), 404
+
+    kind, value_int, value_float, value_str, value_json = row
+    return jsonify({
+        'kind': kind,
+        'value_int': value_int,
+        'value_float': value_float,
+        'value_str': value_str,
+        'value_json': value_json,
+    })
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
+@holds_duckdb
 # @cache.cached(make_cache_key=make_key)
 def exec():
     import time
@@ -375,6 +515,7 @@ def exec():
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     isolated = _isolated_runner()
+    metrics.record_dispatch(isolated is not None)
     if isolated is not None:
         run, config = isolated
         # launch_dir is passed to both paths in the same position: it is the
@@ -397,6 +538,7 @@ def exec():
 
 @app.route('/execJs', methods=['POST'])
 @require_sandbox_token
+@holds_duckdb
 def exec_js():
     import time
     import sys
@@ -416,6 +558,8 @@ def exec_js():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
+    # JS has no isolated path at all, so this is always an in-process dispatch.
+    metrics.record_dispatch(False)
     result = execute_js_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
         session_id=session_id, save_dataset=bool(save_dataset),

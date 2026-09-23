@@ -327,6 +327,32 @@ def read_child_manifest(scratch_dir):
     return protocol.parse_child_result(raw, scratch_dir=scratch_dir)
 
 
+DEATH_REASONS = ("timeout", "oom", "cpu", "signal", "refused", "exit", "unknown")
+
+
+def classify_child_death(exit_code, signal_number, timed_out):
+    """One stable token per branch of ``describe_child_death`` below.
+
+    Split out so a tally of how children die and the sentence a user reads
+    cannot drift apart: both come from this single branch order. The tokens
+    are a closed vocabulary (``DEATH_REASONS``), which is what lets a caller
+    put them in a payload without leaking anything a user typed.
+    """
+    if timed_out:
+        return "timeout"
+    if signal_number == SIGKILL:
+        return "oom"
+    if signal_number == SIGXCPU:
+        return "cpu"
+    if signal_number is not None:
+        return "signal"
+    if exit_code == 3:
+        return "refused"
+    if exit_code not in (0, None):
+        return "exit"
+    return "unknown"
+
+
 def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
                          limits):
     """Turn an abnormal child exit into a sentence a user can act on.
@@ -334,14 +360,15 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
     A bare "killed by signal 9" tells a data scientist nothing. Each branch
     names the limit that fired and what to do next.
     """
-    if timed_out:
+    reason = classify_child_death(exit_code, signal_number, timed_out)
+    if reason == "timeout":
         return (
             f"This node was stopped after {wall_timeout}s. It is still counted "
             "as a failure rather than a partial result. If the work genuinely "
             "needs longer, raise --exec-timeout; if it is stuck, look for an "
             "unbounded loop or a wait on something that never arrives."
         )
-    if signal_number == SIGKILL:
+    if reason == "oom":
         memory_mb = limits.get("memory_mb")
         return (
             "This node was killed by the operating system. The usual cause is "
@@ -349,21 +376,21 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
             "columns or filtering rows before returning, or raise "
             "--exec-memory-mb."
         )
-    if signal_number == SIGXCPU:
+    if reason == "cpu":
         return (
             f"This node exceeded its CPU allowance of {limits.get('cpu_seconds')}s. "
             "Note this counts CPU time, not wall-clock, so a busy loop hits it "
             "quickly. Raise --exec-timeout if the work is genuinely this heavy."
         )
-    if signal_number is not None:
+    if reason == "signal":
         return f"This node was killed by signal {signal_number}."
-    if exit_code == 3:
+    if reason == "refused":
         return (
             "The sandbox could not confine this execution, so it refused to run "
             "the node rather than run it unprotected. Check the sandbox log for "
             "the failing step."
         )
-    if exit_code not in (0, None):
+    if reason == "exit":
         return (
             f"This node's process exited with status {exit_code} without "
             "reporting a result. If it called os._exit or crashed a C "

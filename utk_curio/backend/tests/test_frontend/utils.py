@@ -19,6 +19,12 @@ from playwright.sync_api import (
     expect,
 )
 
+# Code-shaping helpers live in workflow_spec (no pytest/playwright imports)
+# so the non-browser runners -- this module and tests/stress -- can share
+# them. Re-exported here because call sites across the suite import them
+# from utils.
+from .workflow_spec import resolve_widget_placeholders, seed_node_code  # noqa: F401
+
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -175,44 +181,6 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     # re-parsed copy at once, on top of the programmatic run's expected map.
     result.pop('filename', None)  # artifact ID varies per execution run
     return result
-
-
-# ---------------------------------------------------------------------------
-# Deterministic seeding for reproducible programmatic execution
-# ---------------------------------------------------------------------------
-
-_SEED_PREFIX = (
-    "import numpy as _np; _np.random.seed({seed}); "
-    "import random as _rnd; _rnd.seed({seed})\n"
-)
-
-
-def seed_node_code(code: str, seed: int = 42) -> str:
-    """Prepend deterministic random-seed lines to *code*.
-
-    Uses underscore-prefixed aliases (``_np``, ``_rnd``) so the seed
-    imports never shadow the user's own ``import numpy as np``.
-    """
-    return _SEED_PREFIX.format(seed=seed) + code
-
-
-_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
-
-
-def resolve_widget_placeholders(code: str) -> str:
-    """Replace ``[!! name$type$default !!]`` widget markers with defaults.
-
-    The frontend resolves these before sending code to the sandbox; the
-    programmatic executor must do the same.
-    """
-    def _replace(m):
-        parts = m.group(1).split("$")
-        if len(parts) >= 3:
-            return parts[2]
-        return m.group(0)
-    return _WIDGET_RE.sub(_replace, code)
-
-
 
 
 def state_root() -> str:
@@ -689,7 +657,11 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 
     sandbox_url = sandbox_base_url()
 
-    from .workflow_spec import PY_CODE_TYPES
+    from .workflow_spec import (
+        PY_CODE_TYPES,
+        propagate_node_input,
+        resolve_node_input,
+    )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
@@ -699,33 +671,20 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         # (JS_COMPUTATION) — propagate upstream output without execution: the
         # Python-exec path below would parse-error on JS source.
         if node.category != "code" or node.type not in PY_CODE_TYPES:
-            upstreams = spec.upstream_nodes(node.id)
-            if len(upstreams) == 1 and upstreams[0] in outputs:
-                outputs[node.id] = outputs[upstreams[0]]
-            elif len(upstreams) > 1:
-                outputs[node.id] = {
-                    "path": [outputs[uid] for uid in upstreams if uid in outputs],
-                    "dataType": "outputs",
-                }
+            propagated = propagate_node_input(spec, node.id, outputs)
+            if propagated is not None:
+                outputs[node.id] = propagated
             continue
 
         # Resolve input (mirrors process_python_code in backend routes.py)
-        upstreams = spec.upstream_nodes(node.id)
-        if not upstreams:
-            file_path = ""
-            data_type = ""
-        elif len(upstreams) == 1:
-            up = outputs[upstreams[0]]
-            if up.get("dataType") == "outputs":
-                # Pass as stringified list; worker.py eval()s it back
-                file_path = str(up["path"])
-                data_type = "outputs"
-            else:
-                file_path = up["path"]
-                data_type = up["dataType"]
-        else:
-            file_path = str([outputs[uid] for uid in upstreams])
+        ref = resolve_node_input(spec, node.id, outputs)
+        if ref["dataType"] == "outputs":
+            # Pass as stringified list; worker.py eval()s it back
+            file_path = str(ref["path"])
             data_type = "outputs"
+        else:
+            file_path = ref["path"]
+            data_type = ref["dataType"]
 
         # Sandbox /exec expects code already indented as a function body
         resolved = resolve_widget_placeholders(node.content)

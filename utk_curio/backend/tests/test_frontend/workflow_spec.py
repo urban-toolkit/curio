@@ -273,3 +273,89 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
         edges=edges,
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Input resolution: what a node receives from the nodes above it
+# ---------------------------------------------------------------------------
+#
+# Both non-browser runners need this and must agree with each other and with
+# the canvas: ``utils.execute_workflow_programmatically`` (expected outputs for
+# the E2E comparisons) and ``tests/stress`` (the CI load harness). Keeping one
+# copy here, in the module with no test-framework imports, is what stops the
+# two from drifting apart.
+#
+# The reference shape mirrors ``_parse_input_ref`` in
+# ``backend/app/api/routes.py``: ``{"path": <artifact id | list of refs>,
+# "dataType": <sandbox data type | "outputs">}``.
+
+
+def resolve_node_input(spec, node_id: str, outputs: dict) -> dict:
+    """Return the input reference for *node_id*, for a node about to execute.
+
+    Raises ``KeyError`` when an upstream has not produced an output yet: for a
+    node that is being executed, a missing upstream is a bug in the caller's
+    ordering, not something to paper over.
+    """
+    upstreams = spec.upstream_nodes(node_id)
+    if not upstreams:
+        return {"path": "", "dataType": ""}
+    if len(upstreams) == 1:
+        return dict(outputs[upstreams[0]])
+    return {"path": [outputs[uid] for uid in upstreams], "dataType": "outputs"}
+
+
+def propagate_node_input(spec, node_id: str, outputs: dict) -> dict | None:
+    """Return what a *non-executing* node passes downstream, or ``None``.
+
+    Passive and browser-only nodes (VIS_*, MERGE_FLOW, a JS node in a Python
+    runner) produce nothing of their own, so they forward what is above them.
+    Unlike ``resolve_node_input`` this tolerates gaps: whole branches of a
+    dataflow may never have run in the runner that is asking.
+    """
+    upstreams = spec.upstream_nodes(node_id)
+    if len(upstreams) == 1 and upstreams[0] in outputs:
+        return dict(outputs[upstreams[0]])
+    if len(upstreams) > 1:
+        return {
+            "path": [outputs[uid] for uid in upstreams if uid in outputs],
+            "dataType": "outputs",
+        }
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Node source shaping: deterministic seeding and widget defaults, the two
+# things the canvas applies to a node's code before sending it
+# ---------------------------------------------------------------------------
+
+_SEED_PREFIX = (
+    "import numpy as _np; _np.random.seed({seed}); "
+    "import random as _rnd; _rnd.seed({seed})\n"
+)
+
+
+def seed_node_code(code: str, seed: int = 42) -> str:
+    """Prepend deterministic random-seed lines to *code*.
+
+    Uses underscore-prefixed aliases (``_np``, ``_rnd``) so the seed
+    imports never shadow the user's own ``import numpy as np``.
+    """
+    return _SEED_PREFIX.format(seed=seed) + code
+
+
+_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
+
+
+def resolve_widget_placeholders(code: str) -> str:
+    """Replace ``[!! name$type$default !!]`` widget markers with defaults.
+
+    The frontend resolves these before sending code to the sandbox; the
+    programmatic executor must do the same.
+    """
+    def _replace(m):
+        parts = m.group(1).split("$")
+        if len(parts) >= 3:
+            return parts[2]
+        return m.group(0)
+    return _WIDGET_RE.sub(_replace, code)

@@ -49,6 +49,8 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   clearCurrentProject: jest.fn(),
+  beginProjectLoad: jest.fn(),
+  settleProjectLoad: jest.fn(),
   setCurrentProject: jest.fn(),
   setUnsavedDataflow: jest.fn(),
   setCurrentProjectPackages: jest.fn(),

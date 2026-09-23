@@ -183,7 +183,7 @@ start_extra_shards() {
       # A COPY, not an empty dir: the catalog tests assert the shipped datasets exist.
       cp -r "$REPO_ROOT/datasets/." "$CURIO_CATALOG_ROOT/"
       export CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1
-      python "$REPO_ROOT/curio.py" start backend --deploy --with-examples --allow-shared-installs \
+      python "$REPO_ROOT/curio.py" start backend --deploy --testing --with-examples \
         --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
         > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
       echo $! > "$CURIO_STATE_DIR/backend.pid"
@@ -350,19 +350,19 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # them - skipped instead of running, so a green run proved far less than it
   # appeared to. The curio_servers fixture already passes --deploy when it boots
   # its own stack; this is the CURIO_E2E_USE_EXISTING=1 path catching up.
-  # CURIO_TESTING is REQUIRED here for the same reason --deploy is. The E2E
-  # suite seeds users and projects through /api/testing/* and resets the DB
-  # between tests through /api/testing/reset-db, and that blueprint refuses
-  # with 404 unless the server is BOTH a dev env and a declared test rig
-  # (backend/app/testing/routes.py). backend/tests/conftest.py sets the flag
-  # for the pytest process, but this server is a child of THIS script, so
-  # without it every E2E test errors in its autouse fixture on a bare 404.
-  # It also puts the server on the test DB under .curio/test/, which is
-  # where the suite already looks.
+  # --testing is REQUIRED here for the same reason --deploy is. The E2E suite
+  # seeds users and projects through /api/testing/* and resets the DB between
+  # tests through /api/testing/reset-db, and that blueprint refuses with 404
+  # unless the server is BOTH a dev env and a declared test rig
+  # (backend/app/testing/routes.py). backend/tests/conftest.py declares it for
+  # the pytest process, but this server is a child of THIS script, so without
+  # it every E2E test errors in its autouse fixture on a bare 404. It also
+  # puts the server on the test DB under .curio/test/, which is where the
+  # suite already looks, and it is what lets --deploy run unisolated here.
   set -m
-  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_TESTING=1 \
+  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --deploy --with-examples --allow-shared-installs \
+    python "$REPO_ROOT/curio.py" start --deploy --testing --with-examples \
       --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
       --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!

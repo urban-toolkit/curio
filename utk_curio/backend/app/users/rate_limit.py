@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import commit_with_retry, db
 from utk_curio.backend.app.users.models import AuthAttempt
 
 WINDOW_SECONDS = 600  # 10 minutes
@@ -25,6 +25,10 @@ def can_attempt(ip: str, identifier: str) -> bool:
 
 
 def record_attempt(ip: str, identifier: str, success: bool) -> None:
-    attempt = AuthAttempt(ip=ip, identifier=identifier, success=success)
-    db.session.add(attempt)
-    db.session.commit()
+    def _apply() -> None:
+        attempt = AuthAttempt(ip=ip, identifier=identifier, success=success)
+        db.session.add(attempt)
+
+    # Reads the recent attempts, then writes one: the shape that loses the
+    # race under concurrent sign-ins (see extensions.commit_with_retry).
+    commit_with_retry(_apply)

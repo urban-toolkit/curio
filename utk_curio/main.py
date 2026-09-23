@@ -148,23 +148,42 @@ def _discover_exec_user():
 
 
 def _why_not_isolated(exec_user, blockers):
-    """Why a --deploy launch is running node code in-process after all."""
+    """Why this host cannot isolate node execution."""
     if blockers:
-        reason = "this host is missing " + ", ".join(blockers)
-    else:
-        reason = (
-            f"no execution user is configured (no {DEFAULT_EXEC_USER!r} account, "
-            "or Curio is not running as root)"
-        )
+        return "this host is missing " + ", ".join(blockers)
     return (
-        "Node execution is NOT isolated on this deployment: "
-        f"{reason}. Node code runs in-process with the sandbox's full "
-        "privileges, so treat node-authoring rights as shell access. The "
-        "version badge in the UI reports this too."
+        f"no execution user is configured (no {DEFAULT_EXEC_USER!r} account, "
+        "or Curio is not running as root)"
     )
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, allow_shared_installs=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def _refuse_unisolated_deploy(exec_user, blockers):
+    """Stop a ``--deploy`` that cannot isolate, rather than serving anyway.
+
+    There are two shapes, and this is what keeps it to two: a deployment,
+    which has accounts AND isolates, or a local run, which has neither. The
+    third shape -- accounts without isolation -- is the one where every user's
+    node code shares one interpreter, so one person's ``pip install`` changes
+    what another person's nodes import and node-authoring rights are shell
+    access for everybody. It used to boot with a warning and a gate on
+    installs; the warning was easy to miss and the gate was a rule nobody
+    could see from the command they typed.
+
+    ``CURIO_TESTING`` is exempt: the e2e and stress rigs run accounts without
+    isolation deliberately, on one machine, with users they create themselves.
+    """
+    raise SystemExit(
+        "Refusing to start: --deploy needs isolated node execution, and "
+        f"{_why_not_isolated(exec_user, blockers)}.\n"
+        "\n"
+        "Without isolation every account's node code runs in one interpreter, "
+        "so one user's library install changes what everybody's nodes import. "
+        "Run Curio where it can isolate (the Docker image does: Linux, fork, "
+        "setrlimit, pyseccomp and the curio-exec account), or drop --deploy "
+        "and run it as the single-user tool it then is."
+    )
+
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -206,16 +225,6 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
-    # A pre-set value wins over the CLI default, the way CURIO_SANDBOX_TOKEN and
-    # CURIO_ISOLATION already do. Assigning unconditionally made the documented
-    # env var a no-op for anything started through curio.py, so an operator who
-    # set it in a compose ``environment:`` block next to CURIO_ISOLATION got
-    # silence. The flag still wins when passed.
-    os.environ["CURIO_ALLOW_SHARED_INSTALLS"] = (
-        "1"
-        if allow_shared_installs
-        else os.environ.get("CURIO_ALLOW_SHARED_INSTALLS", "0")
-    )
     # No CLI flag: this only seeds the per-node "Save output dataset" toggle,
     # which every user can flip in the UI, so it is an operator env var rather
     # than another curio.py argument. Read, never overwritten, so setting it in
@@ -234,6 +243,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SHARED_DATA"] = os.environ.get(
         "CURIO_SHARED_DATA"
     ) or str(Path("./.curio/data").resolve())
+
+    # Set before anything reads it: the database URL, the testing routes and
+    # the isolation exemption below all key off this one value. A pre-set env
+    # var still wins, because the pytest rig has no command line to pass a
+    # flag on -- it imports the app in-process.
+    if testing:
+        os.environ["CURIO_TESTING"] = "1"
 
     if deploy:
         os.environ["CURIO_NO_AUTH"] = "0"
@@ -276,8 +292,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
             requested = isolation_mode.FORK
         else:
             requested = isolation_mode.AUTO
-            if deploy:
-                log_warning(_why_not_isolated(exec_user, blockers))
+            if deploy and not _is_testing():
+                _refuse_unisolated_deploy(exec_user, blockers)
 
     isolation_resolved, isolation_reason = isolation_mode.resolve_mode(
         requested, hosted=hosted,
@@ -360,7 +376,6 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
-    log_always(f"CURIO_ALLOW_SHARED_INSTALLS={os.environ['CURIO_ALLOW_SHARED_INSTALLS']}")
     log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
     log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
     # The token itself is deliberately not logged.
@@ -1653,6 +1668,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--testing", action="store_true",
+        help=(
+            "Run against the dedicated test database under .curio/test/ and "
+            "mount the test-only /api/testing routes (sets CURIO_TESTING=1). "
+            "Also the one exemption to --deploy requiring isolated execution: "
+            "a rig that creates its own accounts on one machine may run them "
+            "unisolated. Not for a real instance: the testing routes reset the "
+            "database and sign in as any user without a password."
+        ),
+    )
+    parser.add_argument(
         "--with-examples", action="store_true", default=False,
         help="Seed example projects from docs/examples/ on startup (sets CURIO_SEED_EXAMPLES=1)"
     )
@@ -1669,21 +1695,6 @@ def main():
             "Allow the catalog Publish/Unpublish actions (sets "
             "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=1, the previous default). "
             "Pass --no-allow-publish to lock these author actions down."
-        ),
-    )
-    parser.add_argument(
-        "--allow-shared-installs", action=argparse.BooleanOptionalAction,
-        default=False,
-        help=(
-            "Permit package and library installs on a --deploy instance that "
-            "cannot scope them to one user (sets CURIO_ALLOW_SHARED_INSTALLS=1). "
-            "Off by default: where node execution is not isolated, every "
-            "install lands in the one interpreter that runs everybody's node "
-            "code, so one user's library can change what another user's nodes "
-            "import (#332, #309). Turn it on only where you would trust every "
-            "account with that, e.g. a small team on a host that cannot "
-            "isolate. No effect on a local run, which has one user by "
-            "definition and is never gated."
         ),
     )
     parser.add_argument(
@@ -1707,7 +1718,9 @@ def main():
         "--exec-parallelism", type=int, default=None,
         help=(
             "How many isolated nodes may run at once (sets "
-            "CURIO_EXEC_PARALLELISM, default 2)."
+            "CURIO_EXEC_PARALLELISM). Defaults to half the host's cores, "
+            "capped at 8, with a floor of 2: the ceiling is memory, roughly "
+            "this times --exec-memory-mb."
         ),
     )
     parser.add_argument(
@@ -1823,7 +1836,7 @@ def main():
         with_examples=args.with_examples,
         reseed=args.reseed,
         allow_publish=args.allow_publish,
-        allow_shared_installs=args.allow_shared_installs,
+        testing=args.testing,
         collab=args.collab,
         catalog_root=args.catalog_root,
         exec_memory_mb=args.exec_memory_mb,

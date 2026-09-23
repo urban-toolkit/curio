@@ -18,6 +18,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [Optional: dev stack alongside stable](#optional-dev-stack-alongside-stable)
 - [Optional: CI/CD with GitHub Actions + Tailscale](#optional-cicd-with-github-actions--tailscale)
 - [Cutting a release](#cutting-a-release)
+- [The monitor page](#the-monitor-page)
 - [Troubleshooting](#troubleshooting)
 - [Security checklist](#security-checklist)
 
@@ -238,6 +239,67 @@ So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stab
 
 To roll back, dispatch Deploy with `ref` set to the previous tag and `target: stable`.
 
+## The monitor page
+
+Every instance serves `/monitor`, a page that reports what the deployment is
+doing and what has recently gone wrong. It exists on a laptop and on a server
+alike; there is no flag to turn it on.
+
+It shows:
+
+- **Deployment** - version, the requested and active isolation mode, and which
+  optional features are configured. Settings that have a value somebody chose
+  (the execution account, the LLM base URL, model and key) are reported only as
+  "configured" or "none", never as their value.
+- **Hardware** - CPU model and core count, memory, swap, load average (raw and
+  per core), and the resident memory of the backend and sandbox processes. The
+  hostname is deliberately not reported.
+- **Execution** - node runs since launch, failures, a duration histogram, how
+  many isolated slots are busy, and a tally of how child processes died
+  (timeout, OOM, CPU limit, refused confinement).
+- **Accounts and content** - account, session, sign-in, project and dataset
+  counts.
+- **Storage** - disk usage across the `.curio` tree, as a distribution over
+  user stores plus a per-area breakdown.
+- **Recent errors** - the last failures from node executions, the sandbox, the
+  backend, and the browser.
+
+"Copy diagnostics" puts the whole picture on the clipboard as markdown, ready
+to paste into an issue; "Download" saves the same thing as JSON.
+
+Nothing is persisted. Every figure is since the process started, which is why
+uptime is on the page, and a restart resets them.
+
+### What the page exposes, and who can read it
+
+**`/monitor` and its four routes are public and unauthenticated**, like
+`/version`. On a deployment, anyone who can reach the URL can read them.
+
+The statistics are aggregates by design: no route reports a username, an email
+address, an IP address, or a per-user row. That is enforced by a test
+(`test_monitor_payload_is_anonymous.py`) rather than by convention.
+
+**The error log is the exception, and it is deliberate.** `GET
+/api/monitor/errors` returns raw, unredacted failures so that whoever hits a
+problem can share the whole picture without an operator in the loop. Those
+entries will contain absolute server paths including the home directory of the
+account Curio runs as, fragments of other users' node code, and any values
+their tracebacks interpolated.
+
+There is no redaction setting. If that exposure is not acceptable for your
+deployment, block `/api/monitor/errors` (or `/monitor` as a whole) at the
+reverse proxy. In Caddy:
+
+```caddyfile
+@monitor path /monitor /api/monitor*
+respond @monitor 404
+```
+
+Browser error reports arrive on `POST /api/monitor/errors/client`, which is
+also public. It is rate limited per address and globally, caps what it stores,
+and keeps browser reports in a separate window from server-side failures, so
+flooding it cannot push real errors out of the log.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -248,15 +310,18 @@ To roll back, dispatch Deploy with `ref` set to the previous tag and `target: st
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
 | Mixed-content errors in browser console | Bundle has an HTTP `BACKEND_URL` baked in. Update `.env`, rebuild with `--no-cache`. |
 | Bundle still references old URL after deploy | Cached npm-build layer. Run `docker compose build --no-cache`. |
+| Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
+| `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 
 ## Security checklist
 
+- **Decide who may read `/monitor`.** It is public and unauthenticated on every instance, and its error log carries raw tracebacks including server paths and fragments of user node code. Block it at the reverse proxy if that is not acceptable; see [The monitor page](#the-monitor-page).
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into or delete from the shared node catalog, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - Dataset publishing has no equivalent switch. Any signed-in user can publish into the shared Data Catalog; only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
-- **On a host that cannot isolate, installs are refused.** A `--deploy` that runs unisolated (below) loses package installation too. `--allow-shared-installs` (env `CURIO_ALLOW_SHARED_INSTALLS`) turns it back on for an operator who knows every account on the instance and accepts that one user's libraries change what another's nodes import. It does not re-admit the shared guest.
+- **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
 - **Isolated node execution is on by default.** `--deploy` turns it on wherever the host can provide it: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes it **fail-closed**: if the sandbox cannot confine, it refuses to start. Without that variable a `--deploy` on a host that cannot isolate still boots, unisolated and saying so. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:

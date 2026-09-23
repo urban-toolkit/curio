@@ -52,6 +52,8 @@ jest.mock("../../providers/ToastProvider", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   clearCurrentProject: jest.fn(),
+  beginProjectLoad: jest.fn(),
+  settleProjectLoad: jest.fn(),
   setCurrentProject: jest.fn(),
   // An unsaved dataflow now gets a real scope seeded from the account defaults
   // rather than "no project, show everything" (#204).

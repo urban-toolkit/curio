@@ -86,6 +86,8 @@ import DataHubPage from "./pages/dataHub/DataHubPage";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
+import MonitorPage from "./pages/monitor/MonitorPage";
+import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
 const MainCanvasRoute: React.FC = () => (
   <DataflowProviders>
@@ -193,6 +195,10 @@ const App: React.FC = () => {
                         </RequireAuth>
                       }
                     />
+                    {/* Deliberately outside RequireAuth: the monitor is
+                        public, so whoever is hitting a problem can read it and
+                        share it without an account. */}
+                    <Route path="/monitor" element={<MonitorPage />} />
                     <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}
@@ -232,6 +238,10 @@ window.addEventListener("unhandledrejection", (event) => {
 // dataset to all projects from `/catalog` in one tab left a dataflow open in
 // another serving a listing cached from before the mutation.
 listenForPeerDatasetCatalogRefresh();
+
+// Installed before the first render so a crash during mount is reported too.
+// The reporter caps itself and never throws; see clientErrorReporter.ts.
+installClientErrorReporter();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
