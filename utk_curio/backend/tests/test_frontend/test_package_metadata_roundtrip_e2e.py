@@ -520,6 +520,15 @@ def test_package_metadata_survives_export_and_reimport(
     # the palette stays empty for the full 30s wait (#340).
     #
     # ``test_package_roundtrip_e2e`` waits for both requests for the same reason.
+    # Both waits open around the click, because a response that lands before
+    # its wait does is missed and the wait then runs to its full timeout.
+    #
+    # What changed is WHERE the upload is asserted: inside the outer wait,
+    # the moment it resolves. A rejected upload means the client never sends
+    # the install, so asserting after both blocks reported a 120s timeout on
+    # a request that was never going to be made -- CI showed "Timeout
+    # exceeded while waiting for event response" while the real answer, a
+    # 400 from the upload, appeared in neither the failure nor the log.
     with page.expect_response(
         lambda r: f"/api/packages/projects/{project_id}/install" in r.url
         and r.request.method == "POST",
@@ -532,9 +541,12 @@ def test_package_metadata_survives_export_and_reimport(
             with page.expect_file_chooser() as chooser:
                 drawer.get_by_role("button", name="Import package").click()
             chooser.value.set_files(str(archive_path))
-    assert uploaded.value.ok, (
-        f"import failed ({uploaded.value.status}): {uploaded.value.text()[:500]}"
-    )
+        # Raising here leaves the outer block without waiting out its
+        # timeout, so the failure carries the upload's own status and body.
+        assert uploaded.value.ok, (
+            f"import failed ({uploaded.value.status}): "
+            f"{uploaded.value.text()[:500]}"
+        )
     assert installed_to_project.value.ok, (
         f"the import did not reach the dataflow's lockfile "
         f"({installed_to_project.value.status}): "
