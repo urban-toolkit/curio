@@ -259,7 +259,13 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
                   const dir = sourcesById.get(r.sourceId)?.dirName;
-                  if (dir) void acquisition.start(dir, r.resourceId, { format: fmt });
+                  // ``title``: see DataLakeSourceDetail - without it the
+                  // dataset is named after the remote file, not the resource.
+                  if (dir)
+                    void acquisition.start(dir, r.resourceId, {
+                      format: fmt,
+                      title: r.name,
+                    });
                 }}
                 onCancel={(r) => {
                   const dir = sourcesById.get(r.sourceId)?.dirName;

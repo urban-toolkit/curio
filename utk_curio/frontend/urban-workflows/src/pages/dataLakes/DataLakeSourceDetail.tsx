@@ -164,7 +164,14 @@ export const DataLakeSourceDetail: React.FC = () => {
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
                 datasetHref={(id) => `/catalog/data/${encodeURIComponent(id)}`}
                 onDownload={(r, fmt) =>
-                  void acquisition.start(decoded, r.resourceId, { format: fmt })
+                  // The portal's own title, or the dataset lands named after
+                  // the remote FILE - "ijzp-q8t2.csv" rather than "Crimes -
+                  // 2001 to Present", which is unreadable in the Data Catalog
+                  // and cannot be searched for by the name it was found under.
+                  void acquisition.start(decoded, r.resourceId, {
+                    format: fmt,
+                    title: r.name,
+                  })
                 }
                 onCancel={(r) => acquisition.cancel(decoded, r.resourceId)}
                 onDismiss={(r) => acquisition.dismiss(decoded, r.resourceId)}
