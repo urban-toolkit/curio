@@ -135,6 +135,14 @@ VOLATILE_ARTIFACT_FIELDS = ("filename",)
 # it would cost if it did.
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
+# Geometry rides as WKB on the Arrow path, so the sandbox refuses a
+# geodataframe unless the client says it can take it. The harness digests the
+# response bytes rather than decoding them, so accepting WKB is honest: what
+# it measures is the cost of producing and shipping the artifact. Without
+# this, every spatial example in the mix comes back 415 -- which is how the
+# first Arrow tier failed, on example 01 of all things.
+ARROW_GEOMETRY_HEADERS = {"X-Curio-Accept-Geometry": "wkb"}
+
 
 def arrow_artifact_hash(content: bytes, headers) -> str:
     """Digest of an Arrow response: the bytes, plus the metadata headers.
@@ -229,6 +237,7 @@ class VirtualUser:
         expect: int | tuple[int, ...] = 200,
         accept: str | None = None,
         raw: bool = False,
+        extra_headers: dict | None = None,
     ) -> dict:
         """Make one call, record a Sample, and raise UserFailed on anything bad.
 
@@ -242,6 +251,8 @@ class VirtualUser:
             headers = self._headers()
             if accept:
                 headers["Accept"] = accept
+            if extra_headers:
+                headers.update(extra_headers)
             resp = self.session.request(
                 method, url, json=json_body, params=params,
                 headers=headers, timeout=timeout,
@@ -495,6 +506,7 @@ class VirtualUser:
                 "GET", "/get", params={"fileName": ref["path"]},
                 node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
                 accept=ARROW_IPC_MIME, raw=True,
+                extra_headers=ARROW_GEOMETRY_HEADERS,
             )
             digest = arrow_artifact_hash(
                 response.get("content") or b"", response.get("headers") or {}

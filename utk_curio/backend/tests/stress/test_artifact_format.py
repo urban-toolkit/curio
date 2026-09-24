@@ -148,6 +148,35 @@ class TheAcceptHeaderActuallyGoesOutTest(unittest.TestCase):
         # And the body comes back as bytes, not parsed.
         self.assertEqual(response["content"], b"ARROW1")
 
+    def _fetch_one_artifact(self, artifact_format):
+        """Drive the real artifact fetch, the way a tier does."""
+        import types
+
+        user = self._user(artifact_format)
+        user.result.outputs["n1"] = {"path": "a1", "dataType": "dataframe"}
+        user._compare_to_baseline(types.SimpleNamespace(id="n1"))
+        return user.session.sent[0][2]
+
+    def test_the_artifact_fetch_accepts_wkb_geometry(self):
+        """Without this every spatial example in the mix comes back 415.
+
+        The gate is deliberate -- a client that cannot decode WKB should not
+        be handed it -- and the harness can take it, because it digests the
+        response bytes rather than rendering them. This drives
+        ``_compare_to_baseline`` rather than ``_call`` directly, because the
+        header being reachable is not the same as it being sent.
+        """
+        headers = self._fetch_one_artifact("arrow")
+
+        self.assertEqual(headers.get("Accept"), ARROW_IPC_MIME)
+        self.assertEqual(headers.get("X-Curio-Accept-Geometry"), "wkb")
+
+    def test_the_json_fetch_sends_neither(self):
+        headers = self._fetch_one_artifact("json")
+
+        self.assertNotEqual(headers.get("Accept"), ARROW_IPC_MIME)
+        self.assertIsNone(headers.get("X-Curio-Accept-Geometry"))
+
     def test_json_mode_sends_no_arrow_accept(self):
         user = self._user("json")
         user._call("GET", "/get", params={"fileName": "a1"})
