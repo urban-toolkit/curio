@@ -91,6 +91,12 @@ DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.
 GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
 GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
 GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)
+
+# Data Lake Catalog: a deployment-wide Socrata app token, inherited by any user
+# who has not set their own. Same shape as the LLM key above, including the
+# reason there is no CLI flag for it: an argument is visible in the process
+# list to every user on the host.
+DEFAULT_SOCRATA_APP_TOKEN = os.environ.get("CURIO_DEFAULT_SOCRATA_APP_TOKEN") or None
 GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", DEFAULT_LLM_MODEL)
 
 

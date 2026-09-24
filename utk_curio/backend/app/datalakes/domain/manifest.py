@@ -39,6 +39,14 @@ AUTH_MODES = ("public", "optional-token", "required-token")
 #: refusal message and every job record safe to store verbatim.
 AUTH_SCHEMES = ("header",)
 
+#: The credential slots that exist, as a SERVER-owned allowlist. A manifest may
+#: name one; it may not invent one. Each maps to a column on the user's row -
+#: see ``datalakes/infrastructure/credentials.py`` - so a manifest inventing a
+#: slot would be a manifest inventing somewhere for a secret to live. Declared
+#: here rather than imported from that module because a manifest must be
+#: readable without the ORM; ``test_credentials.py`` asserts the two agree.
+KNOWN_SECRET_SLOTS = ("socrata.app-token",)
+
 #: The formats this catalog can hand to the Data Catalog's importer. A subset
 #: of the Data Catalog's own SUPPORTED_FORMATS: multi-file and archive formats
 #: (shp, bundle) are not acquirable remotely in v1 - a .shp is meaningless
@@ -188,6 +196,13 @@ def _parse_auth(raw: object) -> AuthSpec:
         secret_id = _require_str(secret_id, "auth.secretId")
         if not _SECRET_ID_RE.match(secret_id):
             raise ManifestError(f"manifest.auth.secretId is not a valid slot: {secret_id!r}")
+        if secret_id not in KNOWN_SECRET_SLOTS:
+            raise ManifestError(
+                f"manifest.auth.secretId names an unknown credential slot "
+                f"{secret_id!r}; this deployment holds {sorted(KNOWN_SECRET_SLOTS)}. "
+                "Adding one is a column on the user row, a migration, and an "
+                "entry in datalakes/infrastructure/credentials.py."
+            )
     if mode != "public" and not secret_id:
         raise ManifestError(f"manifest.auth.secretId is required when mode is {mode!r}")
     header_name = raw.get("headerName")

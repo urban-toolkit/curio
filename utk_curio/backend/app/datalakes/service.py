@@ -13,6 +13,7 @@ from utk_curio.backend.app.datalakes.application.browse import LakeBrowse
 from utk_curio.backend.app.datalakes.application.catalog import LakeCatalog
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
 from utk_curio.backend.app.datalakes.domain.resource import SearchQuery
+from utk_curio.backend.app.datalakes.infrastructure import credentials
 from utk_curio.backend.app.datalakes.infrastructure import transport as transport_mod
 from utk_curio.backend.app.datalakes.schemas.payloads import (
     resource_detail_row,
@@ -32,11 +33,16 @@ class DataLakeService:
         self,
         user_key: str | None = None,
         *,
+        user=None,
         icon_url_for=None,
         transport=None,
         budget=None,
     ) -> None:
         self.user_key = user_key or "-"
+        # The ``User`` row, when there is one. Only ``credentials`` reads it,
+        # and only to answer "does this account hold that slot" and to hand the
+        # transport one header.
+        self.user = user
         self._budget = budget
         # A caller may pass a transport (tests, and the agent runtime threading
         # its own call budget through). Otherwise one is built per request, so
@@ -54,18 +60,20 @@ class DataLakeService:
 
     # ── collaborators ──────────────────────────────────────────────────────
 
-    def _transport_for(self, _manifest: LakeSourceManifest):
-        if self._transport is not None:
-            return self._transport
-        return transport_mod.build_transport(budget=self._budget)
+    def _transport_for(self, manifest: LakeSourceManifest):
+        inner = self._transport or transport_mod.build_transport(budget=self._budget)
+        credential = self._credential_for(manifest)
+        if credential is None:
+            return inner
+        # Bound here rather than passed down, so providers never handle a
+        # token and cannot put one in a URL they build or a message they log.
+        return transport_mod.CredentialedTransport(inner, credential)
 
-    def _credential_for(self, _manifest: LakeSourceManifest) -> str | None:
-        # Credentials arrive in their own phase. Until then no account holds
-        # one, which is what `_credential_present` reports.
-        return None
+    def _credential_for(self, manifest: LakeSourceManifest) -> str | None:
+        return credentials.credential_header(self.user, manifest)
 
-    def _credential_present(self, _secret_id: str | None) -> bool:
-        return False
+    def _credential_present(self, secret_id: str | None) -> bool:
+        return credentials.has_token(self.user, secret_id)
 
     # ── roster (disk) ──────────────────────────────────────────────────────
 

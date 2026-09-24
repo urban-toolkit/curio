@@ -7,11 +7,11 @@ The Data Catalog holds datasets you already have. This one holds the **places
 you can get more**: open data portals and lakes. You browse a portal, download
 what you want, and it lands in your Data Catalog as an ordinary dataset.
 
-> **Status.** The source roster, the manifest format, the browse page and
-> **live search across portals** all work today. Downloading a resource into
-> the Data Catalog, and per-user tokens, are the remaining pieces; the
-> sections describing those are marked *(not yet wired)* rather than omitted,
-> so the shape is reviewable before the code lands.
+> **Status.** The source roster, the manifest format, the browse page, **live
+> search across portals** and **per-user portal tokens** all work today.
+> Downloading a resource into the Data Catalog is the remaining piece; that
+> section is marked *(not yet wired)* rather than omitted, so the shape is
+> reviewable before the code lands.
 
 ## 1. A source is a portal, not a dataset
 
@@ -200,19 +200,67 @@ exists to point at those portals.
 when, and the reasoning; removing one is deleting a PNG and a manifest line,
 after which the card renders the glyph.
 
-## 7. Credentials *(not yet wired)*
+## 7. Credentials
 
-Some portals take an API token: Socrata app tokens raise rate limits, some
-CKAN instances require a key. A manifest names a **slot** (`auth.secretId`),
-never a value, and slots are shared across a family - one `socrata.app-token`
-serves every Socrata portal.
+Some portals take an API token. Socrata app tokens are the case that matters
+today: the portals answer without one, but a token raises the caller's rate
+limit sharply.
 
-Tokens are per-user, stored the way the Hugging Face token already is, and
-responses report only whether a slot is filled, never its contents.
+**A token is a per-person entitlement, so it lives on your account**, exactly
+as your LLM provider key does. One shared secret would mean everyone on an
+install spending the same allowance and being throttled together.
 
-**`auth.scheme` is `header` only.** That single constraint means no secret ever
-enters a URL, which in turn makes the egress audit record, every refusal
-message and every job record safe to store verbatim.
+Set it in **AI Settings**, from the button in the top bar, beside the LLM
+provider key. Blank means keep what is saved; there is an explicit *Remove
+saved token* for clearing one.
+
+**Guests are refused out loud** - a 403, the way the LLM key refuses them -
+rather than having the value quietly discarded. A guest account is shared, so a
+personal token on it would be everyone's, and accepting the value silently
+would leave someone believing they are authenticated when they are not.
+
+Curio reports only *whether* a token is stored, never its value: a source card
+shows "Token set" or "Token needed", and the API answers with a boolean.
+
+### A deployment can supply one for everybody
+
+Set `CURIO_DEFAULT_SOCRATA_APP_TOKEN` and every user who has not saved their
+own inherits it; anyone can still override it with theirs. The same per-field
+inheritance the LLM provider config has, and useful for the same reason: an
+operator running Curio for a class raises the rate limit for the whole room
+with one environment variable.
+
+There is deliberately **no `curio.py start` flag** for it, matching
+`--llm-api-key`'s absence and for the same reason: a secret passed as an
+argument is visible in the process list to every user on the host.
+
+The settings screen says which applies - `(optional)`, `(inherited - leave
+blank to use it)`, or `(saved)` - and the "is a token set" the source card
+shows means *will one be sent*, so an inherited token satisfies a portal that
+requires one.
+
+### Slots are a server-owned allowlist
+
+A manifest names the credential it wants (`auth.secretId`), but **which
+credentials can exist is decided in code**, by `SLOT_COLUMNS` in
+`datalakes/infrastructure/credentials.py`. A manifest naming an unknown slot
+fails to load, with a message saying so.
+
+This is the same posture the agent tool registry takes, and for the same
+reason: a manifest is operator-authored configuration, and letting it invent a
+credential slot would let it invent somewhere for a secret to live. Adding a
+slot is a column on the user row, a migration, and one line in that registry -
+deliberately the same cost as adding any other account credential, because
+that is what it is.
+
+### `auth.scheme` is `header` only
+
+That single constraint is what keeps a secret out of every URL, which in turn
+makes the egress audit record, every refusal message and every job record safe
+to store verbatim. Providers are handed a header *name* and a slot; the
+transport is the only code that turns that into a value, and it binds it at
+construction so no provider ever handles a token or could put one in a URL it
+builds.
 
 ## 8. Adding a provider
 

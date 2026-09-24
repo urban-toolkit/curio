@@ -13,7 +13,7 @@ import hashlib
 
 from urllib.parse import unquote
 
-from flask import Blueprint, jsonify, request, send_file, url_for
+from flask import Blueprint, g, jsonify, request, send_file, url_for
 
 from utk_curio.backend.app.agents import egress
 from utk_curio.backend.app.common.safe_paths import is_within
@@ -87,7 +87,20 @@ def _icon_path(manifest: LakeSourceManifest):
 
 
 def _service() -> DataLakeService:
-    return DataLakeService(icon_url_for=_icon_url_for)
+    """The per-request service, carrying who is asking.
+
+    The user is needed for two things and nothing else: the per-source rate
+    limit is per account, and a portal token is an account credential. Both
+    come from ``g.user``, which ``@require_auth`` has already resolved.
+    """
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    return DataLakeService(
+        _user_dir_key(user) if user is not None else None,
+        user=user,
+        icon_url_for=_icon_url_for,
+    )
 
 
 @datalakes_bp.route("/catalog", methods=["GET"])

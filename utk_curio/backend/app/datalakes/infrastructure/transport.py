@@ -201,6 +201,41 @@ class FixtureLakeTransport:
         )
 
 
+class CredentialedTransport:
+    """Binds one source's credential to a transport.
+
+    Providers call ``json_get(url)`` and know nothing about credentials - that
+    is deliberate, and it is what keeps a token out of provider code, out of
+    the URLs providers build, and out of anything a provider might log. Binding
+    it here means the one place that materialises a secret stays the one place,
+    while every provider stays ignorant of it.
+    """
+
+    def __init__(self, inner: LakeTransport, credential: str | None) -> None:
+        self._inner = inner
+        self._credential = credential
+
+    # Exposed for tests that assert on what was requested; carries no secret.
+    @property
+    def calls(self):
+        return getattr(self._inner, "calls", [])
+
+    def json_get(self, url, *, credential=None, headers=None):
+        return self._inner.json_get(
+            url, credential=credential or self._credential, headers=headers
+        )
+
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None):
+        return self._inner.download(
+            url,
+            sink,
+            max_bytes=max_bytes,
+            credential=credential or self._credential,
+            headers=headers,
+            progress=progress,
+        )
+
+
 def build_transport(*, budget=None) -> LakeTransport:
     """The transport this process should use.
 

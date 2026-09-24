@@ -45,6 +45,7 @@ def _user_out(u: User) -> UserOut:
         llm_base_url=u.llm_base_url,
         llm_model=u.llm_model,
         has_huggingface_token=bool(u.huggingface_token),
+        has_socrata_app_token=bool(u.socrata_app_token),
     )
 
 
@@ -174,6 +175,14 @@ def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
         if user.is_guest:
             raise AuthError("Guest users cannot set an API key.", 403)
         user.llm_api_key = data.llm_api_key if data.llm_api_key else None
+    if data.socrata_app_token is not None:
+        # Refused out loud rather than quietly dropped, matching the LLM key
+        # above: a guest account is shared, so a personal token saved on it
+        # would be everyone's, and a UI that accepts the value and discards it
+        # leaves the user believing they are authenticated when they are not.
+        if user.is_guest:
+            raise AuthError("Guest users cannot set a portal token.", 403)
+        user.socrata_app_token = data.socrata_app_token or None
     if not user.is_guest:
         if data.llm_api_type is not None:
             user.llm_api_type = data.llm_api_type if data.llm_api_type else None
