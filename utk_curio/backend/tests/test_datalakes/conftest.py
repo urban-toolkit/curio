@@ -38,6 +38,21 @@ def lake_root(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def failing_source(lake_root):
+    """A direct-URL source whose resource ids are the recorded failure URLs.
+
+    Lets the refusal branches - oversized, archive, unreachable - be exercised
+    deterministically. They are the hardest cases to provoke against a live
+    portal and the easiest to get wrong.
+    """
+    write_source(lake_root, "lake.test.fail@1", a_manifest(
+        id="lake.test.fail", name="Failure Cases",
+        provider={"type": "direct", "baseUrl": ""},
+        capabilities={"search": False, "formats": ["csv", "geojson", "json"]}))
+    return lake_root
+
+
+@pytest.fixture()
 def shipped_root(monkeypatch):
     """The real committed catalog, pinned explicitly.
 

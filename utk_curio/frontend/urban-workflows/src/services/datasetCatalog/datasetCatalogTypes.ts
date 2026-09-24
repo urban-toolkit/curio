@@ -135,6 +135,24 @@ export interface DatasetLoaderSnippet {
   returnVariable?: string | null;
 }
 
+/**
+ * Where a dataset downloaded from the Data Lake Catalog came from.
+ *
+ * Mirrors the `lakeSource` block on the dataset manifest. Null for every
+ * dataset that did not come from a portal, which is most of them. Such a
+ * dataset's `origin` is still `"imported"` - this block is what distinguishes
+ * it, rather than a fifth origin value.
+ */
+export interface DatasetLakeSource {
+  lakeId: string;
+  lakeName: string;
+  resourceId: string;
+  resourceUrl: string;
+  finalUrl?: string;
+  fetchedAt?: string;
+  contentSha256?: string;
+}
+
 export interface DatasetCatalogItem {
   id: string;
   title: string;
@@ -205,6 +223,7 @@ export interface DatasetCatalogItem {
   tags: string[];
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
+  lakeSource?: DatasetLakeSource | null;
   installed?: boolean;
   /** In the user's account-level "all projects" list. Independent of
    *  `installed`, which is one dataflow's spec refs. */

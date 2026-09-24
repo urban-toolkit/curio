@@ -206,3 +206,61 @@ export function partialFailureMessage(
       : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `${list} did not answer. Showing what the other portals returned.`;
 }
+
+
+// ── Acquisition ────────────────────────────────────────────────────────────
+
+export type LakeJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "refused"
+  | "cancelled";
+
+export const LAKE_JOB_TERMINAL: readonly LakeJobStatus[] = [
+  "completed",
+  "failed",
+  "refused",
+  "cancelled",
+];
+
+export function isTerminal(status: LakeJobStatus): boolean {
+  return LAKE_JOB_TERMINAL.includes(status);
+}
+
+export interface LakeAcquireJob {
+  jobId: string;
+  status: LakeJobStatus;
+  bytesRead: number;
+  /** From the portal's Content-Length when it sent one. Null means the bar is
+   *  indeterminate - plenty of portals stream without declaring a length. */
+  totalBytes: number | null;
+  stageMessage: string;
+  error: string | null;
+  datasetId: string | null;
+  dataset: Record<string, unknown> | null;
+  alreadyPresent: boolean;
+  unchanged: boolean;
+  sourceId: string;
+  resourceId: string;
+}
+
+/** What `POST .../acquire` answers: either a job to poll, or the dataset you
+ *  already had - in which case no portal was contacted at all. */
+export interface LakeAcquireStart extends Partial<LakeAcquireJob> {
+  dataset?: Record<string, unknown> | null;
+  alreadyPresent?: boolean;
+}
+
+/** 0..1, or null when the total is unknown. */
+export function jobProgress(job: LakeAcquireJob): number | null {
+  if (!job.totalBytes || job.totalBytes <= 0) return null;
+  return Math.min(1, job.bytesRead / job.totalBytes);
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}

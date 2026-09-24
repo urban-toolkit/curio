@@ -66,6 +66,30 @@ class UserDatasetRepository:
     def __init__(self, user: Any | None):
         self.user = user
 
+    def find_by_lake_resource(
+        self, lake_id: str, resource_id: str, fmt: str | None = None
+    ) -> dict[str, Any] | None:
+        """A dataset this account already downloaded from that portal resource.
+
+        What makes "do I already hold this?" answerable without a network call,
+        and so what stops the same file arriving twice under two generated ids.
+        Matched on the ``lakeSource`` block rather than on content, because the
+        point is to answer BEFORE downloading anything.
+
+        ``fmt`` narrows it: the same resource downloaded as CSV and as GeoJSON
+        is two datasets, and holding one is not holding the other.
+        """
+        if self.user is None or not lake_id or not resource_id:
+            return None
+        for item in self.list_items():
+            lake = item.get("lakeSource") or {}
+            if lake.get("lakeId") != lake_id or lake.get("resourceId") != resource_id:
+                continue
+            if fmt and item.get("format") != fmt:
+                continue
+            return item
+        return None
+
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
             return []

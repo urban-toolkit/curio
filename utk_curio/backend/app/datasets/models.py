@@ -76,6 +76,12 @@ class DatasetIndexEntry(db.Model):
     producer_dataflow_id = db.Column(db.String(64), nullable=True)
     producer_dataflow_name = db.Column(db.Text, nullable=True)
     upstream_inputs_json = db.Column(db.Text, nullable=True)
+    # Provenance for a dataset downloaded from the Data Lake Catalog. Mirrored
+    # like the lineage columns above: the listing rebuilds its manifest from
+    # this row, so anything absent here is absent from every catalog surface -
+    # including the "do I already hold this resource?" check that stops the
+    # same file being downloaded twice.
+    lake_source_json = db.Column(db.Text, nullable=True)
 
     # ── Freshness ─────────────────────────────────────────────────────────────
     # stat() pair of the mirrored manifest.json. reconcile() re-parses a dir only

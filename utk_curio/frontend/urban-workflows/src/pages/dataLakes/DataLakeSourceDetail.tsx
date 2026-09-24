@@ -5,8 +5,11 @@ import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeade
 import {
   LAKE_AUTH_LABEL,
   LAKE_PROVIDER_LABEL,
+  acquireKey,
   dataLakeCatalogApi,
+  notifyDatasetCatalogRefresh,
   unsearchableReason,
+  useLakeAcquire,
   useLakeSearch,
   type LakeSourceRow,
 } from "../../services/dataLakeCatalog";
@@ -46,6 +49,11 @@ export const DataLakeSourceDetail: React.FC = () => {
       cancelled = true;
     };
   }, [decoded]);
+
+  // A finished download is a new Data Catalog dataset, so every surface that
+  // lists datasets - in this tab and in any other - has to be told. Skipping
+  // this is how the download succeeds and the dataset appears to be missing.
+  const acquisition = useLakeAcquire(() => notifyDatasetCatalogRefresh());
 
   const blocked = source ? unsearchableReason(source) : null;
   const search = useLakeSearch({
@@ -153,6 +161,13 @@ export const DataLakeSourceDetail: React.FC = () => {
                 key={`${resource.sourceId}:${resource.resourceId}`}
                 resource={resource}
                 iconUrl={source.iconUrl}
+                job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
+                datasetHref={(id) => `/catalog/data/${encodeURIComponent(id)}`}
+                onDownload={(r, fmt) =>
+                  void acquisition.start(decoded, r.resourceId, { format: fmt })
+                }
+                onCancel={(r) => acquisition.cancel(decoded, r.resourceId)}
+                onDismiss={(r) => acquisition.dismiss(decoded, r.resourceId)}
               />
             ))}
           </div>

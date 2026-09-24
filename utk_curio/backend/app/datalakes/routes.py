@@ -20,7 +20,7 @@ from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.datalakes.domain.errors import DataLakeError, SourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
 from utk_curio.backend.app.datalakes.infrastructure import storage
-from utk_curio.backend.app.datalakes.service import DataLakeService
+from utk_curio.backend.app.datalakes.service import DataLakeService, JobNotFound
 from utk_curio.backend.app.users.dependencies import require_auth
 
 datalakes_bp = Blueprint("datalakes_api", __name__, url_prefix="/api/datalakes")
@@ -205,3 +205,43 @@ def describe_datalake_resource(source_dir: str, resource_id: str):
     """
     payload = _service().describe_resource(source_dir, unquote(resource_id))
     return jsonify(payload), 200
+
+
+@datalakes_bp.route(
+    "/sources/<source_dir>/resources/<path:resource_id>/acquire", methods=["POST"]
+)
+@require_auth
+@_map_lake_errors
+def acquire_datalake_resource(source_dir: str, resource_id: str):
+    """Download a resource into the Data Catalog.
+
+    ``202`` with a job when there is work to do, ``200`` with the dataset when
+    this account already holds it - in which case no request was made to the
+    portal at all.
+    """
+    body = request.get_json(silent=True) or {}
+    payload = _service().start_acquire(
+        source_dir,
+        unquote(resource_id),
+        fmt=(body.get("format") or None),
+        title=(body.get("title") or None),
+        refresh=bool(body.get("refresh")),
+    )
+    return jsonify(payload), (200 if payload.get("alreadyPresent") else 202)
+
+
+@datalakes_bp.route("/jobs/<job_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def get_datalake_job(job_id: str):
+    return jsonify(_service().get_job(job_id)), 200
+
+
+@datalakes_bp.route("/jobs/<job_id>", methods=["DELETE"])
+@require_auth
+@_map_lake_errors
+def cancel_datalake_job(job_id: str):
+    """Ask a download to stop. Checked between chunks, so it takes effect on
+    the next one rather than instantly."""
+    _service().cancel_job(job_id)
+    return "", 204

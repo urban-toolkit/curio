@@ -8,11 +8,14 @@ import {
   writeLakeCatalogCache,
 } from "./dataLakeCatalogCache";
 import type {
+  LakeAcquireJob,
+  LakeAcquireStart,
   LakeCatalogQuery,
   LakeCatalogResponse,
   LakeSearchQuery,
   LakeSearchResponse,
 } from "./dataLakeCatalogTypes";
+import { isTerminal } from "./dataLakeCatalogTypes";
 
 const EMPTY: LakeCatalogResponse = {
   sources: [],
@@ -183,4 +186,120 @@ export function useLakeSearch(
   }, [sourceDir, q, format, provider, limit]);
 
   return { data, loading, error, searched };
+}
+
+
+// ── Acquisition ────────────────────────────────────────────────────────────
+
+/** First poll delay, then backed off. Fast enough to feel responsive on a
+ *  small file, slow enough not to hammer the backend on a large one. */
+const POLL_START_MS = 1000;
+const POLL_MAX_MS = 3000;
+
+export interface UseLakeAcquireResult {
+  /** Jobs in flight or recently finished, keyed `<sourceId>:<resourceId>`. */
+  jobs: Record<string, LakeAcquireJob>;
+  start: (
+    dirName: string,
+    resourceId: string,
+    opts?: { format?: string; title?: string; refresh?: boolean }
+  ) => Promise<LakeAcquireStart>;
+  cancel: (dirName: string, resourceId: string) => void;
+  dismiss: (dirName: string, resourceId: string) => void;
+}
+
+export function acquireKey(sourceId: string, resourceId: string): string {
+  return `${sourceId}:${resourceId}`;
+}
+
+/**
+ * Start downloads and follow them.
+ *
+ * Polling rather than a socket: a download is minutes at worst, the backend
+ * already exposes the job, and a socket for this would be a second transport
+ * to keep alive. It backs off, and stops the moment a job reaches a terminal
+ * state - a poll loop that keeps running after the answer arrived is how a
+ * backgrounded tab quietly generates traffic forever.
+ */
+export function useLakeAcquire(
+  onCompleted?: (job: LakeAcquireJob) => void
+): UseLakeAcquireResult {
+  const [jobs, setJobs] = useState<Record<string, LakeAcquireJob>>({});
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Lets `cancel` read the current jobs without being re-created on every
+  // progress tick, which would re-render every row that holds it.
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
+  const done = useRef(onCompleted);
+  done.current = onCompleted;
+
+  useEffect(
+    () => () => {
+      Object.values(timers.current).forEach(clearTimeout);
+      timers.current = {};
+    },
+    []
+  );
+
+  const poll = useCallback((key: string, jobId: string, delay: number) => {
+    timers.current[key] = setTimeout(() => {
+      dataLakeCatalogApi
+        .getJob(jobId)
+        .then((job) => {
+          setJobs((prev) => ({ ...prev, [key]: job }));
+          if (isTerminal(job.status)) {
+            delete timers.current[key];
+            if (job.status === "completed") done.current?.(job);
+            return;
+          }
+          poll(key, jobId, Math.min(delay * 1.5, POLL_MAX_MS));
+        })
+        .catch((err: Error) => {
+          // The job is gone, or the backend is. Either way, stop: retrying a
+          // job we can no longer read is a loop with no exit.
+          delete timers.current[key];
+          setJobs((prev) => ({
+            ...prev,
+            [key]: {
+              ...(prev[key] as LakeAcquireJob),
+              status: "failed",
+              error: err.message || "Lost track of that download.",
+            },
+          }));
+        });
+    }, delay);
+  }, []);
+
+  const start = useCallback(
+    async (dirName: string, resourceId: string, opts = {}) => {
+      const key = acquireKey(dirName, resourceId);
+      const started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
+      if (started.jobId) {
+        setJobs((prev) => ({ ...prev, [key]: started as LakeAcquireJob }));
+        poll(key, started.jobId, POLL_START_MS);
+      }
+      return started;
+    },
+    [poll]
+  );
+
+  const cancel = useCallback((dirName: string, resourceId: string) => {
+    const key = acquireKey(dirName, resourceId);
+    const job = jobsRef.current[key];
+    if (!job?.jobId) return;
+    void dataLakeCatalogApi.cancelJob(job.jobId).catch(() => undefined);
+  }, []);
+
+  const dismiss = useCallback((dirName: string, resourceId: string) => {
+    const key = acquireKey(dirName, resourceId);
+    clearTimeout(timers.current[key]);
+    delete timers.current[key];
+    setJobs((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  return { jobs, start, cancel, dismiss };
 }

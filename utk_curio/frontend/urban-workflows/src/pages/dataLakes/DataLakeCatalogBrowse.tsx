@@ -3,7 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import {
+  acquireKey,
+  notifyDatasetCatalogRefresh,
   partialFailureMessage,
+  useLakeAcquire,
   useLakeCatalog,
   useLakeSearch,
   type LakeAuthMode,
@@ -63,6 +66,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   // it. Idle lists the portals; a query fans out across them.
   const searching = search.trim().length > 0;
   const results = useLakeSearch({ q: searching ? search : "", provider });
+  const acquisition = useLakeAcquire(() => notifyDatasetCatalogRefresh());
 
   const sources = useMemo(() => {
     const rows = [...data.sources];
@@ -242,6 +246,29 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                 resource={resource}
                 showSource
                 iconUrl={sourcesById.get(resource.sourceId)?.iconUrl ?? null}
+                job={
+                  acquisition.jobs[
+                    acquireKey(
+                      sourcesById.get(resource.sourceId)?.dirName ?? resource.sourceId,
+                      resource.resourceId
+                    )
+                  ]
+                }
+                datasetHref={(id) => `/catalog/data/${encodeURIComponent(id)}`}
+                onDownload={(r, fmt) => {
+                  // A federated row carries the source ID; the API wants the
+                  // versioned dirName, which only the roster knows.
+                  const dir = sourcesById.get(r.sourceId)?.dirName;
+                  if (dir) void acquisition.start(dir, r.resourceId, { format: fmt });
+                }}
+                onCancel={(r) => {
+                  const dir = sourcesById.get(r.sourceId)?.dirName;
+                  if (dir) acquisition.cancel(dir, r.resourceId);
+                }}
+                onDismiss={(r) => {
+                  const dir = sourcesById.get(r.sourceId)?.dirName;
+                  if (dir) acquisition.dismiss(dir, r.resourceId);
+                }}
               />
             ))}
             {!results.loading && results.searched && results.data.resources.length === 0 ? (

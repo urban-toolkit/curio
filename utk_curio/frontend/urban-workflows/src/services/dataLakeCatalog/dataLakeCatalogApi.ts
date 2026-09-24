@@ -3,6 +3,8 @@ import { invalidateLakeCatalogCache } from "./dataLakeCatalogCache";
 import type {
   LakeCatalogQuery,
   LakeCatalogResponse,
+  LakeAcquireJob,
+  LakeAcquireStart,
   LakeResourceDetail,
   LakeSearchQuery,
   LakeSearchResponse,
@@ -55,6 +57,30 @@ export const dataLakeCatalogApi = {
       `/api/datalakes/sources/${encodeURIComponent(dirName)}/search${searchQuery(params)}`,
       { signal }
     );
+  },
+
+  /** Start a download. Answers `{dataset, alreadyPresent: true}` when this
+   *  account already holds the resource, in which case nothing was fetched. */
+  acquire(
+    dirName: string,
+    resourceId: string,
+    body: { format?: string; title?: string; refresh?: boolean } = {}
+  ): Promise<LakeAcquireStart> {
+    return apiFetch<LakeAcquireStart>(
+      `/api/datalakes/sources/${encodeURIComponent(dirName)}/resources/` +
+        `${encodeURIComponent(resourceId)}/acquire`,
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  },
+
+  getJob(jobId: string): Promise<LakeAcquireJob> {
+    return apiFetch<LakeAcquireJob>(`/api/datalakes/jobs/${encodeURIComponent(jobId)}`);
+  },
+
+  cancelJob(jobId: string): Promise<void> {
+    return apiFetch<void>(`/api/datalakes/jobs/${encodeURIComponent(jobId)}`, {
+      method: "DELETE",
+    });
   },
 
   describeResource(

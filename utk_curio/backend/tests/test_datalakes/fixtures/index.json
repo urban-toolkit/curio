@@ -27,6 +27,14 @@
     },
     "status": 200
   },
+  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "44",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
   "https://hub.arcgis.com/api/v3/datasets/a971ab89a5ca4da2ae44b5f55b06edfd": {
     "file": "arcgis/02.json",
     "headers": {
@@ -41,6 +49,32 @@
     },
     "status": 200
   },
+  "https://portal.test/archive.zip": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/declares-huge.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "999999999",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://portal.test/nameless": {
+    "file": "download/nameless",
+    "headers": {},
+    "status": 200
+  },
+  "https://portal.test/oversized.csv": {
+    "error": "too-large"
+  },
+  "https://portal.test/timeout.csv": {
+    "error": "timeout"
+  },
   "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=DescribeFeatureType&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo": {
     "file": "wfs/02.xml",
     "headers": {
@@ -52,6 +86,13 @@
     "file": "wfs/01.xml",
     "headers": {
       "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetFeature&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo&outputFormat=application%2Fjson&srsName=EPSG:4326": {
+    "file": "download/paraciclo.geojson",
+    "headers": {
+      "Content-Type": "application/json"
     },
     "status": 200
   }

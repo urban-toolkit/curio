@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import { DataLakeResourceRow } from '../../pages/dataLakes/DataLakeResourceRow';
-import type { LakeResourceRow } from '../../services/dataLakeCatalog';
+import type { LakeAcquireJob, LakeResourceRow } from '../../services/dataLakeCatalog';
 
 function resource(over: Partial<LakeResourceRow> = {}): LakeResourceRow {
   return {
@@ -59,22 +59,31 @@ describe('DataLakeResourceRow', () => {
     expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ name: 'Bike Routes' }), 'geojson');
   });
 
-  test('the download button is disabled while acquisition is unwired', () => {
+  test('the download button is disabled where there is no handler', () => {
     // A button that looks live and does nothing is worse than one that says so.
     render(<DataLakeResourceRow resource={resource()} />);
-    const button = screen.getByRole('button', { name: 'Download' });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', expect.stringContaining('not wired up'));
+    expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
   });
 
-  test('a row already held says so', () => {
+  test('it is enabled once a handler is given', () => {
+    render(<DataLakeResourceRow resource={resource()} onDownload={jest.fn()} />);
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+  });
+
+  test('a row already held says so, and links instead of offering a second copy', () => {
     render(
       <DataLakeResourceRow
         resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef' })}
         onDownload={jest.fn()}
+        datasetHref={(id) => `/catalog/data/${id}`}
       />
     );
     expect(screen.getByText('In your Data Catalog')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View dataset' })).toHaveAttribute(
+      'href',
+      '/catalog/data/imported.xdeadbeef'
+    );
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
   });
 
   test('a non-acquirable row cannot be downloaded even with a handler', () => {
@@ -97,5 +106,108 @@ describe('DataLakeResourceRow', () => {
     const link = screen.getByRole('link', { name: /View on the portal/ });
     expect(link).toHaveAttribute('href', 'https://alpha.example/d/abcd-1234');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  });
+});
+
+
+describe('DataLakeResourceRow: a download in flight', () => {
+  const job = (over: Partial<LakeAcquireJob> = {}): LakeAcquireJob => ({
+    jobId: 'j1',
+    status: 'running',
+    bytesRead: 0,
+    totalBytes: null,
+    stageMessage: 'Downloading…',
+    error: null,
+    datasetId: null,
+    dataset: null,
+    alreadyPresent: false,
+    unchanged: false,
+    sourceId: 'lake.a.portal@1',
+    resourceId: 'abcd-1234',
+    ...over,
+  });
+
+  test('shows a determinate bar when the portal declared a length', () => {
+    render(
+      <DataLakeResourceRow
+        resource={resource()}
+        job={job({ bytesRead: 512, totalBytes: 2048 })}
+      />
+    );
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '25');
+    expect(screen.getByText('512 B')).toBeInTheDocument();
+  });
+
+  test('shows an indeterminate bar when it did not', () => {
+    // Plenty of portals stream without a Content-Length, and a bar stuck at
+    // 0% reads as broken.
+    render(<DataLakeResourceRow resource={resource()} job={job()} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(screen.getByText('Downloading…')).toBeInTheDocument();
+  });
+
+  test('the download button gives way to Cancel', () => {
+    const onCancel = jest.fn();
+    render(
+      <DataLakeResourceRow resource={resource()} job={job()} onCancel={onCancel} onDownload={jest.fn()} />
+    );
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  test('a finished download links to where it landed', () => {
+    render(
+      <DataLakeResourceRow
+        resource={resource()}
+        job={job({ status: 'completed', datasetId: 'imported.xabc' })}
+        datasetHref={(id) => `/catalog/data/${id}`}
+      />
+    );
+    expect(screen.getByRole('link', { name: 'View dataset' })).toHaveAttribute(
+      'href',
+      '/catalog/data/imported.xabc'
+    );
+  });
+
+  test.each(['failed', 'refused'] as const)(
+    'a %s download shows the server own words, not a generic failure',
+    (status) => {
+      // The server knows whether the file was too large, an archive, or a
+      // portal that refused. Any of those is more use than "download failed".
+      render(
+        <DataLakeResourceRow
+          resource={resource()}
+          job={job({ status, error: 'that resource is a application/zip archive.' })}
+        />
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent('archive');
+    }
+  );
+
+  test('a failure can be dismissed', () => {
+    const onDismiss = jest.fn();
+    render(
+      <DataLakeResourceRow
+        resource={resource()}
+        job={job({ status: 'failed', error: 'nope' })}
+        onDismiss={onDismiss}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  test('a cancelled download offers the button again', () => {
+    render(
+      <DataLakeResourceRow
+        resource={resource()}
+        job={job({ status: 'cancelled' })}
+        onDownload={jest.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
   });
 });

@@ -1,9 +1,12 @@
 import React from "react";
 
 import { CatalogFormatBadge } from "../../components/catalog/CatalogKindVisuals";
-import type {
-  LakeAcquirableFormat,
-  LakeResourceRow as Row,
+import {
+  formatBytes,
+  jobProgress,
+  type LakeAcquirableFormat,
+  type LakeAcquireJob,
+  type LakeResourceRow as Row,
 } from "../../services/dataLakeCatalog";
 import { LakeSourceIcon } from "./LakeSourceIcon";
 import styles from "./DataLakeResourceRow.module.css";
@@ -14,9 +17,13 @@ export interface DataLakeResourceRowProps {
    *  page. Omitted on a single-source page, where it would repeat. */
   showSource?: boolean;
   iconUrl?: string | null;
-  /** Absent until acquisition ships; the row then renders a disabled button
-   *  rather than pretending it can download. */
   onDownload?: (resource: Row, format: string) => void;
+  /** The download in flight or just finished for this row, if any. */
+  job?: LakeAcquireJob;
+  onCancel?: (resource: Row) => void;
+  onDismiss?: (resource: Row) => void;
+  /** Where a finished download landed, so the toast/link can point at it. */
+  datasetHref?: (datasetId: string) => string;
 }
 
 /**
@@ -32,11 +39,19 @@ export function DataLakeResourceRow({
   showSource = false,
   iconUrl = null,
   onDownload,
+  job,
+  onCancel,
+  onDismiss,
+  datasetHref,
 }: DataLakeResourceRowProps) {
   const [format, setFormat] = React.useState<LakeAcquirableFormat | "">(
     resource.formats[0] ?? ""
   );
   const held = Boolean(resource.alreadyHeldDatasetId);
+  const running = job != null && (job.status === "queued" || job.status === "running");
+  const finished = job?.status === "completed";
+  const failed = job != null && (job.status === "failed" || job.status === "refused");
+  const landedAt = job?.datasetId ?? resource.alreadyHeldDatasetId;
 
   return (
     <article className={styles.row} data-lake-resource={resource.resourceId}>
@@ -75,34 +90,105 @@ export function DataLakeResourceRow({
       </div>
 
       <div className={styles.actions}>
-        {resource.formats.length > 1 ? (
-          <select
-            className={styles.formatSelect}
-            value={format}
-            aria-label={`Download format for ${resource.name}`}
-            onChange={(e) => setFormat(e.target.value as LakeAcquirableFormat)}
-          >
-            {resource.formats.map((f) => (
-              <option key={f} value={f}>
-                {f.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <button
-          type="button"
-          className={styles.download}
-          /* Disabled until acquisition ships. A button that looks live and
-             does nothing is worse than one that says it cannot yet. */
-          disabled={!onDownload || !resource.acquirable}
-          title={onDownload ? undefined : "Downloading is not wired up yet"}
-          onClick={() => onDownload?.(resource, format)}
-        >
-          Download
-        </button>
+        {running ? (
+          <ProgressPanel job={job!} onCancel={() => onCancel?.(resource)} />
+        ) : (
+          <>
+            {resource.formats.length > 1 ? (
+              <select
+                className={styles.formatSelect}
+                value={format}
+                aria-label={`Download format for ${resource.name}`}
+                onChange={(e) => setFormat(e.target.value as LakeAcquirableFormat)}
+              >
+                {resource.formats.map((f) => (
+                  <option key={f} value={f}>
+                    {f.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {(finished || held) && landedAt && datasetHref ? (
+              <a className={styles.viewDataset} href={datasetHref(landedAt)}>
+                View dataset
+              </a>
+            ) : (
+              <button
+                type="button"
+                className={styles.download}
+                disabled={!onDownload || !resource.acquirable}
+                title={onDownload ? undefined : "Downloading is not available here"}
+                onClick={() => onDownload?.(resource, format)}
+              >
+                Download
+              </button>
+            )}
+          </>
+        )}
       </div>
+
+      {failed ? (
+        /* The server's own words. It knows whether the file was too large, an
+           archive, or a portal that refused - and any of those is more use
+           than "download failed". */
+        <p className={styles.failure} role="alert">
+          {job?.error || "That download did not finish."}
+          {onDismiss ? (
+            <button
+              type="button"
+              className={styles.dismiss}
+              aria-label="Dismiss"
+              onClick={() => onDismiss(resource)}
+            >
+              ×
+            </button>
+          ) : null}
+        </p>
+      ) : null}
     </article>
   );
 }
+
+/**
+ * A download in flight.
+ *
+ * Determinate when the portal sent a Content-Length, indeterminate with the
+ * stage message when it did not - plenty of portals stream without declaring
+ * one, and a bar stuck at 0% reads as broken.
+ */
+const ProgressPanel: React.FC<{ job: LakeAcquireJob; onCancel: () => void }> = ({
+  job,
+  onCancel,
+}) => {
+  const fraction = jobProgress(job);
+  return (
+    <div className={styles.progress}>
+      <div
+        className={styles.progressTrack}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={fraction == null ? undefined : 100}
+        aria-valuenow={fraction == null ? undefined : Math.round(fraction * 100)}
+        aria-label={job.stageMessage}
+      >
+        <span
+          className={[
+            styles.progressFill,
+            fraction == null ? styles.progressIndeterminate : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          style={fraction == null ? undefined : { width: `${fraction * 100}%` }}
+        />
+      </div>
+      <span className={styles.progressLabel}>
+        {job.bytesRead > 0 ? formatBytes(job.bytesRead) : job.stageMessage}
+      </span>
+      <button type="button" className={styles.cancel} onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  );
+};
 
 export default DataLakeResourceRow;

@@ -7,11 +7,10 @@ The Data Catalog holds datasets you already have. This one holds the **places
 you can get more**: open data portals and lakes. You browse a portal, download
 what you want, and it lands in your Data Catalog as an ordinary dataset.
 
-> **Status.** The source roster, the manifest format, the browse page, **live
-> search across portals** and **per-user portal tokens** all work today.
-> Downloading a resource into the Data Catalog is the remaining piece; that
-> section is marked *(not yet wired)* rather than omitted, so the shape is
-> reviewable before the code lands.
+> **Status.** The catalog works end to end: browse the portals, search across
+> them, and download a resource into your Data Catalog. What remains is the
+> agent seam - letting the Dataset Finder propose a download - and the
+> end-to-end browser tests.
 
 ## 1. A source is a portal, not a dataset
 
@@ -159,28 +158,86 @@ only when an operator publishes one, and runs to hundreds of kilobytes.
 It is cached per source with a short TTL, which also makes a WFS source nearly
 free inside a fan-out.
 
-## 5. Downloading *(not yet wired)*
+## 5. Downloading
 
 Downloading fetches the bytes server-side and hands them to the same import
 path a file upload uses, so the result is an **ordinary Data Catalog dataset**
 with a manifest, preview, schema and `curio_dataset_path()` loader. Nothing
-downstream needs to know it came from a portal. It carries a `lakeSource`
-block recording which portal, which resource, and the content hash, which is
-what lets Curio answer "do I already have this?" without downloading it again.
+downstream needs to know it came from a portal.
 
-The catalog does **not** install the dataset into a dataflow or create a node.
-Adding a dataset to a dataflow is the Data Catalog's existing job, it works
-the same whether or not a project is open, and keeping it there means this
-catalog never needs to know about the current project.
+The catalog does **not** install it into a dataflow or create a node. Adding a
+dataset to a dataflow is the Data Catalog's existing job, it works the same
+whether or not a project is open, and keeping it there means this catalog never
+needs to know about the current project.
 
-### Off-portal distributions
+### It is a job, not a request
 
-A CKAN package on `catalog.data.gov` often points at a file on the publishing
-agency's own host. Following that link is necessary and is also the one place
-a download leaves the portal's base URL, so it is opt-in per manifest
-(`capabilities.allowOffBaseDistributions`) rather than a provider default. It
-widens what a hostile search response could aim a request at, which makes it
-an operator's decision. Those URLs still pass the full address policy.
+A 64 MiB file from a municipal portal can outlast any comfortable request
+timeout, and the page wants a progress bar rather than a spinner. So a download
+returns a job id and the page polls it: determinate when the portal sent a
+`Content-Length`, indeterminate with a stage message when it did not, with a
+Cancel that takes effect on the next chunk.
+
+Jobs are per account - asking for someone else's id is indistinguishable from
+asking for one that does not exist - and finished ones are swept after fifteen
+minutes. They are process-local and **lost on restart**: a download in flight
+when the backend stops is gone, and the page says so rather than waiting
+forever.
+
+Two downloads at a time per account, so nobody can queue fifty against a
+municipal portal.
+
+### "Do I already have this?"
+
+The `lakeSource` block on a downloaded dataset records which portal resource it
+came from, so the second click on Download answers from what you hold and
+**contacts the portal not at all**. The same resource in two formats is two
+datasets: holding the CSV is not holding the GeoJSON.
+
+`refresh` forces a fetch. If the bytes hash the same, no second dataset is
+created - the download was paid for, a duplicate would not be. If they differ,
+a **new** dataset is minted and the old one is left alone: a saved dataflow
+loads a dataset by id, and rewriting its bytes would change that dataflow's
+results with nothing on screen to explain it.
+
+### What kind of file is this?
+
+Portals disagree about how to say. Detection is a ladder, most-trusted first:
+
+1. **what we asked for** - the provider put the format in the URL, so we know
+   what we requested rather than what a server claims;
+2. the **final URL's suffix**, after redirects;
+3. the **`Content-Disposition`** filename;
+4. the **`Content-Type`**, which plenty of sites get wrong;
+5. the **first bytes** - `PAR1` for Parquet, the TIFF magic, and a JSON probe
+   that tells GeoJSON from plain JSON by looking for a geometry type.
+
+That last distinction matters: GeoJSON filed as `json` produces a node that
+returns a dict where the user expected a GeoDataFrame.
+
+Whatever it decides is checked against what the source is allowed to deliver,
+and anything it cannot identify is an honest error rather than a guess.
+
+### Bounds and refusals
+
+- **64 MiB**, the server's ceiling; a manifest may lower it, never raise it.
+  `Content-Length` over the bound is refused before a body byte is read, and
+  the stream is capped again while writing so a lying or absent length cannot
+  get past it.
+- **Archives are refused**, by content type and by extension. Nothing is
+  unpacked: that is the decompression-bomb surface and it deserves its own
+  design rather than arriving as a side effect of a download.
+- Remote filenames are sanitised, and the dataset *directory* is minted as
+  `imported.x<uuid>` by the importer - which no remote input can influence at
+  all, and is the reason a hostile `Content-Disposition` cannot reach the
+  filesystem even if the sanitiser were wrong.
+- Bytes land in a per-user staging directory under `.curio/users/<id>/`, not
+  `/tmp`: they are user data under a tree we already scope, and a crashed job
+  leaves an orphan somewhere a sweep can find it.
+
+Failures are reported in the server's own words - "that resource is a
+application/zip archive", "the response declares 999999999 bytes" - because any
+of those is more use than "download failed".
 
 ## 6. Icons
 
