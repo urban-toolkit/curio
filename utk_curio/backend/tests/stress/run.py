@@ -132,8 +132,7 @@ def read_exec_lock(backend_url: str) -> dict | None:
     return sandbox.get("execLock")
 
 
-def run_baseline(backend_url: str, run_id: str, examples: list[Example],
-                 artifact_format: str = "json") -> dict:
+def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict:
     """Run each example alone, first, and keep its output hashes.
 
     This is the yardstick the concurrent users are measured against, and it
@@ -145,7 +144,6 @@ def run_baseline(backend_url: str, run_id: str, examples: list[Example],
         user = VirtualUser(
             backend_url, new_user_name(0, index, run_id), example.relpath,
             example.spec_json, example.workflow, example.autk_code,
-            artifact_format=artifact_format,
         )
         result = user.run()
         if not result.completed:
@@ -165,8 +163,7 @@ def run_baseline(backend_url: str, run_id: str, examples: list[Example],
 
 def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              baselines: dict, register_concurrency: int,
-             profile: str = "burst", label: str | None = None,
-             artifact_format: str = "json") -> tuple[list, float]:
+             profile: str = "burst", label: str | None = None) -> tuple[list, float]:
     """Run *tier* users, all doing their dataflow work at the same moment.
 
     ``register_concurrency`` caps how many accounts are created at once (0
@@ -192,7 +189,6 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
             register_gate=register_gate,
             start_gate=start_gate,
             pacing=pacing[index],
-            artifact_format=artifact_format,
         )
         for index in range(tier)
     ]
@@ -222,15 +218,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="burst: everyone starts together and runs flat "
                              "out (the gated worst case). session: arrivals "
                              "over a ramp, with pauses between node runs")
-    parser.add_argument(
-        "--artifact-format", choices=("json", "arrow"), default="arrow",
-        help="how users fetch node outputs. arrow is the default because it "
-             "is what the canvas asks for, so the job measures what people "
-             "actually hit; json is the fallback path, still reachable for "
-             "artifact kinds Arrow cannot serve and worth measuring on its "
-             "own. Baseline and tiers always use the same one, so their "
-             "digests stay comparable within a run -- but an arrow digest and "
-             "a json digest are not comparable to each other.")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
     args = parser.parse_args(argv)
 
@@ -240,11 +227,9 @@ def main(argv: list[str] | None = None) -> int:
 
     wait_for_backend(backend_url)
     print(f"[stress] run {args.run_id} against {backend_url}; "
-          f"tiers {tiers}; profile {args.profile}; "
-          f"artifacts {args.artifact_format}", flush=True)
+          f"tiers {tiers}; profile {args.profile}", flush=True)
 
-    baselines = run_baseline(backend_url, args.run_id, examples,
-                             args.artifact_format)
+    baselines = run_baseline(backend_url, args.run_id, examples)
 
     tier_reports = []
     all_results = []
@@ -255,13 +240,11 @@ def main(argv: list[str] | None = None) -> int:
         lock_before = read_exec_lock(backend_url)
         results, seconds = run_tier(backend_url, args.run_id, tier, examples,
                                     baselines, args.register_concurrency,
-                                    args.profile, label=f"{tier}x{position}",
-                                    artifact_format=args.artifact_format)
+                                    args.profile, label=f"{tier}x{position}")
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
-                                         exec_lock=lock,
-                                         artifact_format=args.artifact_format)
+                                         exec_lock=lock)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)

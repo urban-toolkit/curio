@@ -123,13 +123,6 @@ class UserFailed(Exception):
     """A user's session ended early. The Sample already records the reason."""
 
 
-# Fields of a /get body that differ between two runs of identical code, so
-# hashing them would report every user as a mismatch. Same reason
-# ``utils.load_artifact_as_dict`` drops it for the E2E comparisons: the
-# artifact id is minted per execution.
-VOLATILE_ARTIFACT_FIELDS = ("filename",)
-
-
 # The Accept header the sandbox answers with an Arrow IPC stream instead of
 # JSON. The canvas does not send it yet; this is how the harness measures what
 # it would cost if it did.
@@ -147,14 +140,13 @@ ARROW_GEOMETRY_HEADERS = {"X-Curio-Accept-Geometry": "wkb"}
 def arrow_artifact_hash(content: bytes, headers) -> str:
     """Digest of an Arrow response: the bytes, plus the metadata headers.
 
-    The headers carry what the JSON body carries inline (kind, row counts,
-    which columns are JSON-encoded), so leaving them out would let a change in
-    them pass unnoticed. ``X-Curio-Filename`` is dropped for the same reason
-    ``VOLATILE_ARTIFACT_FIELDS`` drops ``filename``: it is minted per run.
+    The headers carry what the JSON body used to carry inline (kind, row
+    counts, which columns are JSON-encoded), so leaving them out would let a
+    change in them pass unnoticed. ``X-Curio-Filename`` is dropped because it
+    is minted per execution: hashing it would report every user as a mismatch.
 
-    An Arrow digest and a JSON digest are not comparable to each other. Both
-    the baseline and the tier are taken in the same format in the same run, so
-    they never need to be.
+    The baseline and the tiers are digested the same way in the same run,
+    which is what makes them comparable.
     """
     metadata = sorted(
         (k.lower(), v) for k, v in headers.items()
@@ -163,16 +155,6 @@ def arrow_artifact_hash(content: bytes, headers) -> str:
     digest = hashlib.sha256(content)
     digest.update(json.dumps(metadata, sort_keys=True).encode("utf-8"))
     return digest.hexdigest()
-
-
-def artifact_hash(payload: object) -> str:
-    """Stable digest of a node's output, for comparing users against each other."""
-    if isinstance(payload, dict):
-        payload = {k: v for k, v in payload.items()
-                   if k not in VOLATILE_ARTIFACT_FIELDS}
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
 
 
 class VirtualUser:
@@ -193,11 +175,8 @@ class VirtualUser:
         register_gate=None,
         start_gate=None,
         pacing: "Pacing" = BURST,
-        artifact_format: str = "arrow",
     ):
         self.backend_url = backend_url.rstrip("/")
-        # "arrow" is what the canvas asks for; "json" is the fallback path.
-        self.artifact_format = artifact_format
         self.name = name
         self.example = example
         self.spec_json = spec_json
@@ -501,20 +480,15 @@ class VirtualUser:
         that make it expensive.
         """
         ref = self.result.outputs[node.id]
-        if self.artifact_format == "arrow":
-            response = self._call(
-                "GET", "/get", params={"fileName": ref["path"]},
-                node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
-                accept=ARROW_IPC_MIME, raw=True,
-                extra_headers=ARROW_GEOMETRY_HEADERS,
-            )
-            digest = arrow_artifact_hash(
-                response.get("content") or b"", response.get("headers") or {}
-            )
-        else:
-            body = self._call("GET", "/get", params={"fileName": ref["path"]},
-                              node_id=node.id, timeout=ARTIFACT_TIMEOUT_S)
-            digest = artifact_hash(body)
+        response = self._call(
+            "GET", "/get", params={"fileName": ref["path"]},
+            node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
+            accept=ARROW_IPC_MIME, raw=True,
+            extra_headers=ARROW_GEOMETRY_HEADERS,
+        )
+        digest = arrow_artifact_hash(
+            response.get("content") or b"", response.get("headers") or {}
+        )
         self.result.hashes[node.id] = digest
         expected = self.compare_to.get(node.id)
         if expected is not None and expected != digest:

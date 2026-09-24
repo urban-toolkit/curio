@@ -1142,27 +1142,6 @@ jobs:
             --out "$GITHUB_WORKSPACE/stress-session" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
-      # TEMPORARY, and meant to be deleted. The tiers above now measure the
-      # Arrow path, because that is what the canvas asks for. This repeats the
-      # 100-user tier on the JSON path, which is still reachable -- it is the
-      # fallback for artifact kinds Arrow cannot serve -- so the two can be
-      # compared on the same stack in the same run.
-      #
-      # It exists to attribute the Arrow work: three runs put the 100-user
-      # tier at ~101s against ~468s. Once that is settled, delete this step
-      # and the stress-json upload below, and leave --artifact-format for
-      # dispatch runs. Keeping it spends 8-10 minutes of the shared GPU runner
-      # on every scheduled run to re-prove a settled result. See the tracking
-      # issue linked in the PR that added it.
-      - name: 🐢 Run the 100-user tier on the JSON fallback path
-        if: always()
-        run: |
-          python -m utk_curio.backend.tests.stress \
-            --backend "http://localhost:5072" \
-            --tiers 100 --artifact-format json \
-            --out "$GITHUB_WORKSPACE/stress-json" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
-
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -1205,7 +1184,6 @@ jobs:
           path: |
             stress/
             stress-session/
-            stress-json/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7
