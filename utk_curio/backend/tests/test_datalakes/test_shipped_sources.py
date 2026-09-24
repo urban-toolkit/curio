@@ -174,3 +174,31 @@ def test_the_wheel_ships_the_catalog():
     packaging paths, and a source that reaches one does not reach the other.
     """
     assert "recursive-include datalakes" in _packaging_file("MANIFEST.in")
+
+
+@pytest.mark.parametrize(
+    "compose", ["docker-compose.ci.yml", "docker-compose.ci-isolated.yml"]
+)
+def test_the_ci_container_is_pointed_at_the_recorded_corpus(compose: str):
+    """CI's container gets ``CURIO_DATALAKE_FIXTURES``, at the path it really has.
+
+    The third packaging path, and the one the other two do not cover. CI runs
+    the browser specs with ``--use-existing`` against the container, so it is
+    the CONTAINER that decides whether a lake search is a recording or a live
+    call to a municipal portal - setting the variable for the pytest process
+    does nothing for it.
+
+    The path is derived rather than written down twice: moving the corpus
+    inside the tree would otherwise leave the compose files pointing at a
+    directory that no longer exists, which degrades silently to real HTTP.
+    """
+    repo_root = SHIPPED_ROOT.parent
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    in_image = "/app/" + fixtures.relative_to(repo_root).as_posix()
+
+    text = _packaging_file(compose)
+    assert f"CURIO_DATALAKE_FIXTURES={in_image}" in text, (
+        f"{compose} does not point the container at {in_image} - the lake e2e "
+        "specs there would reach live portals (they skip instead, so the only "
+        "symptom is lost coverage)"
+    )

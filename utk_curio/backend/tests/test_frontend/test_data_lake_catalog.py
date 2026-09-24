@@ -25,7 +25,10 @@ Run::
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import urllib.error
+import urllib.request
 
+import pytest
 from playwright.sync_api import expect
 
 from .utils import (
@@ -72,6 +75,46 @@ def _one_node_spec() -> dict:
     }
 
 
+#: A query no recording answers. On the fixture transport this comes back as a
+#: FixtureMissing; on real HTTP the portal would answer it perfectly well.
+_UNRECORDED_QUERY = "zzz-not-a-recorded-query-zzz"
+
+
+def _require_recorded_corpus(backend_url: str, token: str) -> None:
+    """Skip unless this stack is serving portal responses from the corpus.
+
+    Without it these specs are silently something else: a stack whose backend
+    has no ``CURIO_DATALAKE_FIXTURES`` falls back to real HTTP, so every test
+    below would quietly become a live call to a municipal portal. That is slow,
+    it needs five third parties to be up, and it is exactly what the fixture
+    transport exists to avoid, so it should be a visible skip rather than an
+    invisible change of meaning.
+
+    The probe is a query nothing recorded: the fixture transport refuses it by
+    name (502, "no recorded response for ..."), a real portal answers it 200.
+    """
+    url = (
+        f"{backend_url}/api/datalakes/sources/{CHICAGO}/search"
+        f"?q={_UNRECORDED_QUERY}"
+    )
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        # The refusal arrives as a status, so it is read here rather than in
+        # the success branch. Anything else is a broken probe, not a verdict.
+        body = exc.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 - a probe never fails a run
+        pytest.skip(f"could not probe the lake transport: {exc}")
+    if "no recorded response" not in body:
+        pytest.skip(
+            "this backend is not serving the recorded portal corpus "
+            "(CURIO_DATALAKE_FIXTURES is unset for it), so these specs would "
+            "reach live portals"
+        )
+
+
 def _enter(page, app_frontend, current_server, *, username, project):
     page.emulate_media(reduced_motion="reduce")
     result = stub_login_and_enter_workflow(
@@ -84,6 +127,7 @@ def _enter(page, app_frontend, current_server, *, username, project):
         project_spec=_one_node_spec(),
     )
     require_owner_view(page)
+    _require_recorded_corpus(current_server, result["token"])
     # Absorb the cold webpack compile on the canvas, the way the rest of this
     # suite does: the fixture's readiness gate is port-based, and
     # webpack-dev-server opens its port before the first build finishes.
