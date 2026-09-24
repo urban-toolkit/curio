@@ -400,7 +400,10 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
 
     # THE POINT, part two: the dialog states the every-dataflow scope.
     delete.click()
-    modal = _modal(page, re.compile(r"^Delete "))
+    # The title says "Permanently delete", the same question the projects page
+    # asks for the same act (#285) - the button is plain "Delete" on both, so
+    # the permanence claim lives here.
+    modal = _modal(page, re.compile(r"^Permanently delete "))
     expect(modal).to_contain_text("every dataflow that uses it")
     expect(modal).to_contain_text("not just this one")
     save_workflow_test_screenshot(
@@ -424,7 +427,7 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
         lambda r: "/api/datasets/" in r.url and r.request.method == "DELETE",
         timeout=60000,
     ):
-        _modal(page, re.compile(r"^Delete ")).get_by_role(
+        _modal(page, re.compile(r"^Permanently delete ")).get_by_role(
             "button", name="Delete", exact=True
         ).click()
 

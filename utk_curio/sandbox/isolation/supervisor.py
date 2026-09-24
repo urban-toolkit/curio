@@ -1,8 +1,8 @@
 """Parent side of isolated execution: stage, dispatch, time out, persist.
 
-NOT VERIFIED ON ANY MACHINE. The dispatch half needs Linux (AF_UNIX, killpg)
-and has never been executed; it was written on a Windows host with no container
-runtime available.
+The dispatch half needs Linux (AF_UNIX, killpg). It is exercised by
+``sandbox/tests/test_isolation_linux.py``, which runs in the ``test-gpu`` CI
+job and nowhere else.
 
 This module keeps every privilege the child must not have. It owns the DuckDB
 connection, resolves artifacts under session scoping, and decides what a
@@ -43,7 +43,7 @@ from utk_curio.sandbox.isolation.protocol import ProtocolError
 # one where an artifact whose name it can guess is one open() away. Beside the
 # store, `.curio/data` can be 0700 with nothing to reach through it.
 #
-# That is also what makes hardlinking safe under an --exec-user. A hardlink
+# That is also what makes hardlinking safe under an execution user. A hardlink
 # shares its source's inode, so the staged copy cannot have permissions of its
 # own: whatever the child may read here, it may read at the source. Access is
 # denied by the *path* instead -- the store is unreachable, the scratch
@@ -66,6 +66,20 @@ DEFAULT_LIMITS = {
     "fsize_mb": 8192,
     "nofile": 1024,
 }
+
+# The lowest ``--exec-memory-mb`` the launcher will accept, below which it
+# clamps and says so.
+#
+# Not a recommendation - it is the point where the budget stops being able to
+# carry what is spent against it. ``codec`` derives DuckDB's memory_limit as
+# half the budget and will not go below its own 32MB floor, so under 64MB the
+# writer starts claiming most of the child's address space, which is what #334
+# was. A host too small for this wants fewer concurrent nodes
+# (``--exec-parallelism``), not a smaller budget each.
+#
+# ``test_codec.py::TestParquetWriterFootprint`` pins the relation to codec's
+# two constants so lowering either cannot silently invalidate this.
+MIN_EXEC_MEMORY_MB = 64
 
 # Wall-clock allowance. Separate from cpu_seconds because a node that blocks on
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
@@ -197,6 +211,52 @@ def user_work_dir(shared_data_dir, user_key):
     )
 
 
+#: #332: the per-user node-library tree, sibling to SCRATCH_SUBDIR. The backend
+#: writes it; an isolated child reads it and nothing more. Spelled in
+#: ``packages.backend_runtime`` too - one of the two has to be the definition
+#: and the backend owns overlay paths, but the sandbox must not import the
+#: backend, so the pair is pinned by test instead.
+OVERLAY_SUBDIR = "exec-overlays"
+
+
+def user_overlay_dir(shared_data_dir, user_key):
+    """The node libraries this user installed, as an importable directory.
+
+    Beside the store for the same reason :func:`user_work_dir` is: under
+    ``.curio/users/<key>/`` it would be unreachable, because that tree is 0700
+    root-owned so a node cannot reach another user's datasets and projects
+    (``hardening.SENSITIVE_PATHS``).
+
+    The difference from the work directory is ownership. That one belongs to
+    the execution user because a node writes into it; this one must NOT, or
+    node code could plant a module into its own import path and shadow a later
+    import. The backend writes it as itself and the child only reads.
+    """
+    return os.path.join(
+        os.path.dirname(os.path.abspath(shared_data_dir)),
+        OVERLAY_SUBDIR, "users", str(user_key),
+    )
+
+
+def prepare_user_overlay_dir(path, *, exec_uid=None):
+    """Create the overlay directory readable by the child and writable only by
+    the backend.
+
+    0755, and deliberately NOT chowned to *exec_uid* - the asymmetry with
+    :func:`prepare_user_work_dir` is the point. ``exec_uid`` is accepted so the
+    caller does not have to know that, and so a future per-user-uid model has
+    somewhere to hook.
+    """
+    os.makedirs(path, exist_ok=True)
+    if sys.platform == "win32":
+        return path
+    try:
+        os.chmod(path, 0o755)
+    except OSError:
+        pass
+    return path
+
+
 def prepare_user_work_dir(path, *, exec_uid=None, launch_dir=None):
     """Create the user's work directory and make it usable by the child.
 
@@ -267,6 +327,32 @@ def read_child_manifest(scratch_dir):
     return protocol.parse_child_result(raw, scratch_dir=scratch_dir)
 
 
+DEATH_REASONS = ("timeout", "oom", "cpu", "signal", "refused", "exit", "unknown")
+
+
+def classify_child_death(exit_code, signal_number, timed_out):
+    """One stable token per branch of ``describe_child_death`` below.
+
+    Split out so a tally of how children die and the sentence a user reads
+    cannot drift apart: both come from this single branch order. The tokens
+    are a closed vocabulary (``DEATH_REASONS``), which is what lets a caller
+    put them in a payload without leaking anything a user typed.
+    """
+    if timed_out:
+        return "timeout"
+    if signal_number == SIGKILL:
+        return "oom"
+    if signal_number == SIGXCPU:
+        return "cpu"
+    if signal_number is not None:
+        return "signal"
+    if exit_code == 3:
+        return "refused"
+    if exit_code not in (0, None):
+        return "exit"
+    return "unknown"
+
+
 def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
                          limits):
     """Turn an abnormal child exit into a sentence a user can act on.
@@ -274,14 +360,15 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
     A bare "killed by signal 9" tells a data scientist nothing. Each branch
     names the limit that fired and what to do next.
     """
-    if timed_out:
+    reason = classify_child_death(exit_code, signal_number, timed_out)
+    if reason == "timeout":
         return (
             f"This node was stopped after {wall_timeout}s. It is still counted "
             "as a failure rather than a partial result. If the work genuinely "
             "needs longer, raise --exec-timeout; if it is stuck, look for an "
             "unbounded loop or a wait on something that never arrives."
         )
-    if signal_number == SIGKILL:
+    if reason == "oom":
         memory_mb = limits.get("memory_mb")
         return (
             "This node was killed by the operating system. The usual cause is "
@@ -289,21 +376,21 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
             "columns or filtering rows before returning, or raise "
             "--exec-memory-mb."
         )
-    if signal_number == SIGXCPU:
+    if reason == "cpu":
         return (
             f"This node exceeded its CPU allowance of {limits.get('cpu_seconds')}s. "
             "Note this counts CPU time, not wall-clock, so a busy loop hits it "
             "quickly. Raise --exec-timeout if the work is genuinely this heavy."
         )
-    if signal_number is not None:
+    if reason == "signal":
         return f"This node was killed by signal {signal_number}."
-    if exit_code == 3:
+    if reason == "refused":
         return (
             "The sandbox could not confine this execution, so it refused to run "
             "the node rather than run it unprotected. Check the sandbox log for "
             "the failing step."
         )
-    if exit_code not in (0, None):
+    if reason == "exit":
         return (
             f"This node's process exited with status {exit_code} without "
             "reporting a result. If it called os._exit or crashed a C "

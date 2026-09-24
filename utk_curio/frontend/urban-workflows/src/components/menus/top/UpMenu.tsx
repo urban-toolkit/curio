@@ -25,7 +25,6 @@ import {
     faPlus,
     faRobot,
     faUsers,
-    faTableColumns,
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
     faSitemap,
@@ -36,7 +35,7 @@ import logo from "assets/curio-2.png";
 import { UserMenu } from "components/login/UserMenu";
 import introJs from "intro.js";
 import "intro.js/introjs.css";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
@@ -52,17 +51,10 @@ import {
     UNREADABLE_FILE_MESSAGE,
 } from "../../../utils/dataflowImport";
 import ConfirmDialog from "../../ConfirmDialog";
+import ShareMenu from "./ShareMenu";
+import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 
-export default function UpMenu({
-    setDashBoardMode,
-    dashboardOn,
-}: {
-    /** The single entry point for entering and leaving dashboard mode.
-     *  There used to be a second prop wired to the SAME handler, and this menu
-     *  called both, so every click ran the toggle twice (#192). */
-    setDashBoardMode: (mode: boolean) => void;
-    dashboardOn: boolean;
-}) {
+export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -132,6 +124,12 @@ export default function UpMenu({
     } = useNodeActionsContext();
     const { loadTrill } = useCode();
     const { showToast } = useToastContext();
+    // The id the Share links are built from. A shared viewer has no
+    // ``projectId`` (the dataflow is not open for editing in their workspace),
+    // so fall back to the one in the URL, which is the project they are looking
+    // at either way.
+    const { id: routeId } = useParams<{ id?: string }>();
+    const shareId = projectId ?? (routeId && SHARE_UUID_RE.test(routeId) ? routeId : null);
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
@@ -541,23 +539,6 @@ export default function UpMenu({
                     </button>
                     {activeMenu === "view" && (
                         <div className={styles.dropDownMenu}>
-                            <div
-                                className={styles.dropDownRow}
-                                onClick={() => {
-                                    setDashBoardMode(!dashboardOn);
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faTableColumns} />
-                                <button
-                                    className={clsx(
-                                        styles.noStyleButton,
-                                        dashboardOn && styles.dashboardOn,
-                                    )}
-                                >
-                                    Dashboard Mode
-                                </button>
-                            </div>
                             <div className={styles.dropDownRow} onClick={toggleExpand}>
                                 <FontAwesomeIcon
                                     className={styles.dropDownIcon}
@@ -668,6 +649,17 @@ export default function UpMenu({
                     )}
                 </div>
 
+
+                {/* Share: the dataflow's dashboard, and a link to either. Shown
+                    to a shared viewer too - passing a link on is not an edit. */}
+                <ShareMenu
+                    id={shareId}
+                    includeOpenDashboard
+                    open={activeMenu === "share"}
+                    onToggle={() => toggleMenu("share")}
+                    onClose={() => setActiveMenu(null)}
+                    projectDirty={projectDirty}
+                />
 
                 {/* Real-time collaboration side panel toggle. Only rendered
                     when --collab is on; the badge surfaces the live peer

@@ -2,13 +2,17 @@ import React, { useEffect, useState } from "react";
 import { NodeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 
-import { fetchData } from "../services/api";
 import { formatDate, mapTypes } from "../utils/formatters";
-import { parseDataframe, parseGeoDataframe } from "../utils/parsing";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
+import { prepareVegaInput } from "../utils/vegaInput";
+import type { NodeEmptyReason } from "../utils/nodeEmptyState";
+import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
+// The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
+// like a blank Data Pool or Simple View rather than merely similar.
+import emptyStyles from "../components/nodes/NodeEmptyState.module.css";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -19,7 +23,19 @@ if (typeof window !== 'undefined') {
   (window as any).__curio_vegaLite = lite;
 }
 
-export const useVega = ({ data, code }: { data: any; code: string; }) => {
+export const useVega = ({
+  data,
+  code,
+  connected = true,
+  hasSpec = true,
+}: {
+  data: any;
+  code: string;
+  /** Is anything wired into this node's input? */
+  connected?: boolean;
+  /** Does the editor hold a spec to compile? */
+  hasSpec?: boolean;
+}) => {
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -37,6 +53,59 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   };
 
   const vgsidToIndexRef = React.useRef<Map<number, number>>(new Map());
+
+  // The spec most recently compiled. `processData` needs it to prepare rows the
+  // same way `compileGrammar` did -- hot reload never goes through the latter.
+  const lastSpecRef = React.useRef<any>(null);
+
+  // Why the node body is blank, when it is. Persistent, unlike a toast.
+  const [emptyReason, setEmptyReason] = useState<NodeEmptyReason | null>(null);
+  const [emptyDetail, setEmptyDetail] = useState<string | null>(null);
+  const hasRunRef = React.useRef(false);
+
+  const setEmptyState = (prepared: { emptyReason?: NodeEmptyReason; detail?: string }) => {
+    setEmptyReason(prepared.emptyReason ?? null);
+    setEmptyDetail(prepared.detail ?? null);
+    renderEmptyState(prepared.emptyReason ?? null, prepared.detail ?? null);
+  };
+
+  /**
+   * Write the empty state into the same div vega renders into.
+   *
+   * That div is addressed by DOM id and filled imperatively by vega, so there
+   * is no React subtree to put a component in -- NodeEditor renders either the
+   * output container or a `contentComponent`, never both. Writing the copy here
+   * keeps it in the node body where it persists, which is the whole point: the
+   * predecessor of this was a toast that vanished after a few seconds and left
+   * an unexplained blank node behind (#224).
+   *
+   * The copy itself still comes from NODE_EMPTY_COPY, so it cannot drift from
+   * what Data Pool and Simple View say for the shared states.
+   */
+  const renderEmptyState = (reason: NodeEmptyReason | null, detail: string | null) => {
+    const host = document.getElementById("vega" + data.nodeId);
+    if (!host) return;
+    if (reason == null) return;
+
+    const copy = NODE_EMPTY_COPY[reason];
+    host.replaceChildren();
+    host.setAttribute("data-curio-node-empty", reason);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = emptyStyles.root;
+
+    const title = document.createElement("span");
+    title.className = emptyStyles.title;
+    title.textContent = copy.title;
+    wrapper.appendChild(title);
+
+    const hint = document.createElement("span");
+    hint.className = emptyStyles.hint;
+    hint.textContent = detail ?? copy.hint;
+    wrapper.appendChild(hint);
+
+    host.appendChild(wrapper);
+  };
 
   // Build a tupleid → original-index map by traversing the scene graph.
   // vega-lite derives intermediate datasets (e.g. for sorting) whose items have
@@ -90,39 +159,6 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     }
     return sawScenegraph ? drawn : undefined;
   };
-
-  const parseInputData = async (input: any) => {
-    let values: any = [];
-    let parsedInput = data.input; //JSON.parse(data.input);
-    if (parsedInput == "" || parsedInput == null || parsedInput == undefined) {
-      return [];
-    }
-
-    let inputType = parsedInput.dataType; // JSON.parse(data.input)["dataType"];
-
-    if (inputType != "dataframe" && inputType !== "geodataframe") {
-      throw new Error(inputType + " is not a valid input type for the 2D Plot (Vega-Lite)");
-    }
-
-    const parserMap = {
-      "dataframe": parseDataframe,
-      "geodataframe": parseGeoDataframe,
-    };
-
-    const parser = parserMap[parsedInput.dataType as keyof typeof parserMap];
-
-    if (parser) {
-      if (parsedInput.path) {
-        values = await fetchData(parsedInput.path);
-        values = parser(values.data);
-      } else {
-        values = parser(parsedInput.data);
-      }
-    }
-
-    values.forEach((v: any, i: number) => { v.__row_index__ = i; });
-    return values;
-  }
   const processData = async () => {
     // hot reload visualizations with new incoming data
     if (currentView == null) {
@@ -131,7 +167,14 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
     // let currentViewState = currentView.getState();
 
-    let values = await parseInputData(data.input);
+    // Must go through the same preparation as compileGrammar, against the same
+    // spec. Hot reload bypasses compileGrammar entirely, so parsing the rows
+    // any other way here would insert bare, un-rewound geometry into an
+    // already-compiled view and break the map on the *second* upstream run
+    // only -- which is a miserable thing to debug.
+    const prepared = await prepareVegaInput(data.input, lastSpecRef.current);
+    setEmptyState(prepared);
+    const values = prepared.values;
 
     let changeset = vega
       .changeset()
@@ -149,14 +192,32 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   };
 
   useEffect(() => {
-    try {
-      if (currentView == null) return;
-      processData();
-    } catch (error: any) {
+    if (currentView == null) return;
+    // `processData` is async: without the catch its rejection was unhandled and
+    // the surrounding try/catch never saw it, so this error path reported
+    // nothing at all.
+    processData().catch((error: any) => {
       showToast(error.message, "error");
-    }
+    });
   }, [data.input]);
 
+
+  // The states that exist *before* anything compiles: nothing connected, an
+  // upstream that has not run, an empty editor. Nothing else would report these
+  // -- `prepareVegaInput` only runs on a compile or an input change -- so the
+  // node body would just sit blank, which is the complaint #224 was filed
+  // about, still true of the most-used visualisation node.
+  useEffect(() => {
+    if (currentViewRef.current != null) return;
+    const reason = resolveGrammarEmptyReason({
+      connected,
+      hasInput: data.input != null && data.input !== "",
+      hasSpec,
+      hasRun: hasRunRef.current,
+      inputProblem: emptyReason,
+    });
+    if (reason != null) renderEmptyState(reason, emptyDetail);
+  }, [connected, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => {
@@ -244,10 +305,27 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   };
 
   const compileGrammar = async (specObj: any) => {
-    let values: any = await parseInputData(data.input);
+    // Prepare before the spec is handed to vega-lite: resolving geometry can
+    // inject `encoding.shape` and `projection` into `specObj`, and coerces the
+    // row values those encodings will read.
+    lastSpecRef.current = specObj;
+    const prepared = await prepareVegaInput(data.input, specObj);
+    setEmptyState(prepared);
+    const values = prepared.values;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
     const usableFields = encodedFields(specObj);
     const usableRows = usableRowCount(values, usableFields);
+
+    if (prepared.emptyReason != null) {
+      // Nothing was injected and there is nothing sensible to draw. Compiling
+      // anyway would replace the explanation with a blank canvas -- a geoshape
+      // with no shape encoding still builds a projection, fits it to the raw
+      // row array and renders NaN paths, silently.
+      //
+      // dev/136: still counts, and `drawn: 0` is the truth -- the badge must
+      // not read green over the explanation this just put on the node.
+      return { rowsIn, drawn: 0, usableRows, usableFields };
+    }
 
     specObj["data"] = { values: values, name: "data" };
     // Multi-view specs keep their authored size (vega-lite discards a
@@ -256,6 +334,12 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
     applyContainerSizing(specObj);
 
     let vegaspec = lite.compile(specObj).spec;
+
+    // vega replaces the container's contents, but the marker attribute is ours
+    // and would otherwise outlive the message it described.
+    const host = document.getElementById("vega" + data.nodeId);
+    host?.removeAttribute("data-curio-node-empty");
+    hasRunRef.current = true;
 
     let view = new vega.View(vega.parse(vegaspec))
       .logLevel(vega.Warn) // set view logging level
@@ -454,6 +538,6 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
 
 
-  return { handleCompileGrammar };
+  return { handleCompileGrammar, emptyReason, emptyDetail };
 };
 

@@ -1,5 +1,7 @@
+import contextlib
 import duckdb
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -82,6 +84,70 @@ _connection: '_NonClosingConn | None' = None
 _connection_path: str | None = None
 _initialized: bool = False
 
+# The sandbox serves requests on threads, and every execution path releases the
+# shared connection when it finishes (see release_connection). Without the two
+# below, whichever request finished first closed the connection out from under
+# the ones still running: concurrent Autark data loads failed with "Connection
+# already closed!" mid-INSERT, and two threads racing init_db's migration
+# produced "Column with name session_id". Both were reproduced by the stress
+# tiers at ten users.
+#
+# ``_in_use`` counts the requests currently holding the connection open via
+# ``connection_in_use``; ``_close_pending`` remembers that somebody asked for
+# the close that had to be deferred.
+_state_lock = threading.RLock()
+_in_use: int = 0
+_close_pending: bool = False
+
+# True once this process has opened the read-write connection, i.e. it is the
+# sandbox rather than the backend. DuckDB refuses to open the same file
+# read-only in a process that already holds it read-write ("Can't open a
+# connection to same database file with a different configuration"), so the
+# read path has to know which side it is on. Inferring it from "is the shared
+# connection open right now" is not enough: between a release and the next
+# open there is a window where the sandbox looks like the backend, and a read
+# arriving in that window took out a read-only handle that then blocked the
+# next write.
+_writer_process: bool = False
+
+# DuckDB's Python client is explicit that concurrent work needs a cursor per
+# thread: several threads sharing one connection object share its transaction
+# state, and a statement can then run inside a transaction another thread
+# opened. That is not a crash, which is what made it hard to see -- it is a
+# stale read. Under the stress tiers a node would be handed "No artifact with
+# id X" for a row that was already committed and is still in the database
+# afterwards.
+#
+# ``con.cursor()`` is a duplicate over the same database instance, so the
+# cursors share the data and the file handle while each keeps its own
+# transaction. ``_cursor_generation`` invalidates the per-thread cache when
+# the master is closed, so a thread that outlives a release does not hold a
+# cursor on a dead connection.
+_thread_state = threading.local()
+_cursor_generation: int = 0
+
+
+@contextlib.contextmanager
+def connection_in_use():
+    """Hold the shared connection open for the duration of one request.
+
+    Wrap any handler that touches DuckDB. A ``release_connection()`` from
+    another thread while this is held is remembered and carried out when the
+    last holder leaves -- so the cross-process contract still holds (the
+    sandbox does not keep the write handle open between requests) without a
+    request losing its connection mid-query.
+    """
+    global _in_use
+    with _state_lock:
+        _in_use += 1
+    try:
+        yield
+    finally:
+        with _state_lock:
+            _in_use -= 1
+            if _in_use == 0 and _close_pending:
+                _close_now()
+
 
 def _ensure_data_dir() -> Path:
     """
@@ -107,6 +173,23 @@ def get_db_path() -> str:
     return str(_ensure_data_dir() / "curio_data.duckdb")
 
 
+def _thread_cursor(master: '_NonClosingConn') -> '_NonClosingConn':
+    """This thread's cursor over *master*, created on first use.
+
+    Callers get something that behaves like the connection and whose close()
+    is a no-op, exactly as before; what changed is that two threads no longer
+    share one transaction context.
+    """
+    cursor = getattr(_thread_state, "cursor", None)
+    generation = getattr(_thread_state, "generation", None)
+    if cursor is None or generation != _cursor_generation:
+        raw = object.__getattribute__(master, "_con")
+        cursor = _NonClosingConn(raw.cursor())
+        _thread_state.cursor = cursor
+        _thread_state.generation = _cursor_generation
+    return cursor
+
+
 def get_connection() -> '_NonClosingConn':
     """
     Return the shared persistent DuckDB connection for this process.
@@ -116,14 +199,16 @@ def get_connection() -> '_NonClosingConn':
     Reopens when ``CURIO_LAUNCH_CWD`` / ``CURIO_SHARED_DATA`` change — e.g.
     pytest switches per-test workspaces while reusing the same process.
     """
-    global _connection, _connection_path
+    global _connection, _connection_path, _writer_process
     path = get_db_path()
-    if _connection is not None and _connection_path != path:
-        release_connection()
-    if _connection is None:
-        _connection = _NonClosingConn(_connect_with_retry(path))
-        _connection_path = path
-    return _connection
+    with _state_lock:
+        if _connection is not None and _connection_path != path:
+            release_connection()
+        if _connection is None:
+            _connection = _NonClosingConn(_connect_with_retry(path))
+            _connection_path = path
+            _writer_process = True
+        return _thread_cursor(_connection)
 
 
 def get_read_connection():
@@ -135,23 +220,46 @@ def get_read_connection():
     Backend process: opens a fresh read-only connection (_connection is None).
       close() on the returned raw connection actually closes it.
     """
-    if _connection is not None:
-        return _connection
+    with _state_lock:
+        if _connection is not None:
+            return _thread_cursor(_connection)
+        if _writer_process:
+            # The sandbox between two runs: reopen the read-write connection
+            # rather than a read-only one it would then have to fight.
+            return get_connection()
     return _connect_with_retry(get_db_path(), read_only=True)
 
 
-def release_connection() -> None:
-    """
-    Actually close the persistent connection and reset state.
-    Call this when the current process is done with DuckDB and another
-    process (e.g., the sandbox subprocess) needs write access to the file.
-    """
-    global _connection, _connection_path, _initialized
+def _close_now() -> None:
+    """Close the connection and reset state. Callers hold ``_state_lock``."""
+    global _connection, _connection_path, _initialized, _close_pending
+    global _cursor_generation
     if _connection is not None:
         object.__getattribute__(_connection, '_con').close()
         _connection = None
     _connection_path = None
     _initialized = False
+    _close_pending = False
+    # Every per-thread cursor is dead with the master; make them be recreated.
+    _cursor_generation += 1
+
+
+def release_connection(force: bool = False) -> None:
+    """
+    Close the persistent connection and reset state.
+    Call this when the current request is done with DuckDB and another
+    process (e.g., the sandbox subprocess) needs write access to the file.
+
+    Deferred while another thread is inside ``connection_in_use``: that thread
+    closes it on the way out instead. ``force=True`` closes regardless, for
+    teardown paths that know nothing else is running.
+    """
+    global _close_pending
+    with _state_lock:
+        if _in_use > 0 and not force:
+            _close_pending = True
+            return
+        _close_now()
 
 
 def init_db() -> None:
@@ -164,8 +272,16 @@ def init_db() -> None:
     # cache via release_connection() if the dir was wiped, so a stale
     # _initialized=True after a teardown will fall through to re-DDL.
     _ensure_data_dir()
-    if _initialized:
-        return
+    # Serialized: two threads running the DESCRIBE/ALTER migration below at
+    # once is what produced "Column with name session_id" under load.
+    with _state_lock:
+        if _initialized:
+            return
+        _init_db_locked()
+
+
+def _init_db_locked() -> None:
+    global _initialized
     con = get_connection()
     con.execute("""
         CREATE TABLE IF NOT EXISTS artifacts (

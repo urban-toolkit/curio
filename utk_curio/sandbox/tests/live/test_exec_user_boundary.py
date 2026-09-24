@@ -1,8 +1,8 @@
-"""The isolation boundary, asserted against a live stack running --exec-user.
+"""The isolation boundary, asserted against a live stack with an execution user.
 
 Every other isolation test runs its children as **root**, and root ignores mode
 bits. ``test_isolation_linux.py`` builds its own workspace and drops privileges
-by hand; the ``test-gpu-isolated`` CI job boots ``--isolation fork`` with no
+by hand; the ``test-gpu-isolated`` CI job boots ``CURIO_ISOLATION=fork`` with no
 exec user at all, because setting one hardens ``.curio/data`` and the e2e
 harness writes its ground truth there from the host process. So the filesystem
 half of the boundary -- the part that only exists when the child is an
@@ -64,7 +64,7 @@ NODE_TYPE = "curio.builtin/computation-analysis"
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,
-    reason="CURIO_LIVE_SANDBOX_URL is unset; this suite needs a live --exec-user stack",
+    reason="CURIO_LIVE_SANDBOX_URL is unset; this suite needs a live stack with an execution user",
 )
 
 
@@ -313,7 +313,7 @@ def test_the_user_database_cannot_be_opened():
     outcome = printed(result).strip()
     assert outcome != "missing", (
         "%s does not exist, so this proved nothing; the stack boots with "
-        "--auth, which creates it." % target
+        "--deploy, which creates it." % target
     )
     assert outcome == "denied", "an isolated node could read " + target
 

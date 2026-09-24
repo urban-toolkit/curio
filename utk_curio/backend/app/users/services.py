@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import commit_with_retry, db
 from utk_curio.backend.app.users.models import User
 from utk_curio.backend.app.users.schemas import (
     AuthOut,
@@ -45,6 +45,7 @@ def _user_out(u: User) -> UserOut:
         llm_base_url=u.llm_base_url,
         llm_model=u.llm_model,
         has_huggingface_token=bool(u.huggingface_token),
+        has_socrata_app_token=bool(u.socrata_app_token),
     )
 
 
@@ -66,10 +67,12 @@ def _shared_guest_user() -> User:
         )
     if user:
         if user.type != "guest" or user.name != CURIO_SHARED_GUEST_NAME:
-            user.type = "guest"
-            user.name = CURIO_SHARED_GUEST_NAME
-            user.is_guest = True
-            db.session.commit()
+            def _normalize() -> None:
+                user.type = "guest"
+                user.name = CURIO_SHARED_GUEST_NAME
+                user.is_guest = True
+
+            commit_with_retry(_normalize)
         return user
     return repo.create_user(
         username=CURIO_SHARED_GUEST_USERNAME,
@@ -99,7 +102,7 @@ def signup(data: SignUpIn) -> AuthOut:
     )
     # A new account lands on an empty gallery otherwise: the examples were
     # seeded to the shared guest only, and listing is a plain owner filter, so
-    # under ``--auth`` nobody with an account ever saw them (#200). Best-effort
+    # under ``--deploy`` nobody with an account ever saw them (#200). Best-effort
     # - a failed seed must never cost the user their sign-up, and
     # ``list_projects`` back-fills on the next listing anyway.
     from utk_curio.backend.app.projects.seed import ensure_user_examples_seeded
@@ -151,6 +154,17 @@ def get_me(user: User) -> UserOut:
 
 
 def patch_me(user: User, data: UserPatchIn) -> UserOut:
+    # The assignments are inside the retried unit: a rollback reverts them
+    # along with the transaction, so committing a second time without
+    # re-applying them would silently save nothing.
+    def _apply() -> None:
+        _apply_profile_patch(user, data)
+
+    commit_with_retry(_apply)
+    return _user_out(user)
+
+
+def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
     if data.name is not None:
         user.name = data.name
     if data.email is not None:
@@ -161,6 +175,14 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
         if user.is_guest:
             raise AuthError("Guest users cannot set an API key.", 403)
         user.llm_api_key = data.llm_api_key if data.llm_api_key else None
+    if data.socrata_app_token is not None:
+        # Refused out loud rather than quietly dropped, matching the LLM key
+        # above: a guest account is shared, so a personal token saved on it
+        # would be everyone's, and a UI that accepts the value and discards it
+        # leaves the user believing they are authenticated when they are not.
+        if user.is_guest:
+            raise AuthError("Guest users cannot set a portal token.", 403)
+        user.socrata_app_token = data.socrata_app_token or None
     if not user.is_guest:
         if data.llm_api_type is not None:
             user.llm_api_type = data.llm_api_type if data.llm_api_type else None
@@ -170,5 +192,3 @@ def patch_me(user: User, data: UserPatchIn) -> UserOut:
             user.llm_model = data.llm_model if data.llm_model else None
         if data.huggingface_token is not None:
             user.huggingface_token = data.huggingface_token or None
-    db.session.commit()
-    return _user_out(user)

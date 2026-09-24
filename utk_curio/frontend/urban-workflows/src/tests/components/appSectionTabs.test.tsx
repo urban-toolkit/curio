@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the four sections as sibling links', () => {
+  test('renders the six sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -43,6 +43,8 @@ describe('AppSectionTabs', () => {
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
+      ['Data Lake Catalog', '/catalog/lakes'],
+      ['Monitor', '/monitor'],
     ]);
   });
 
@@ -50,6 +52,8 @@ describe('AppSectionTabs', () => {
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
+    ['/catalog/lakes', 'Data Lake Catalog'],
+    ['/monitor', 'Monitor'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
     expect(activeLabels(container)).toEqual([label]);
@@ -60,5 +64,26 @@ describe('AppSectionTabs', () => {
     // routes still light up their parent section.
     const { container } = renderAt('/catalog/data/some-dataset-id');
     expect(activeLabels(container)).toEqual(['Data Catalog']);
+  });
+
+  test('a portal detail route keeps Data Lake Catalog active', () => {
+    // Same reason the Data Catalog link is not `end`: /catalog/lakes/:sourceDir
+    // is a page WITHIN that section, so the tab has to stay lit on it.
+    const { container } = renderAt('/catalog/lakes/lake.uk.data-gov@1');
+    expect(activeLabels(container)).toEqual(['Data Lake Catalog']);
+  });
+
+  test('the Monitor tab is unconditional', () => {
+    // It is deliberately not gated on deploy mode: the monitor exists on every
+    // instance. This renders with no provider at all, so if someone later
+    // gates the tab on context state, this fails rather than silently hiding
+    // the page on a laptop.
+    const { getByRole } = renderAt('/projects');
+    const nav = getByRole('navigation', { name: 'Main sections' });
+    expect(
+      Array.from(nav.querySelectorAll('a')).some(
+        (a) => a.getAttribute('href') === '/monitor'
+      )
+    ).toBe(true);
   });
 });

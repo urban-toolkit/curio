@@ -397,30 +397,68 @@ class TestDistributionNameNormalisation:
     keys it the way the metadata spells it. Matching those by equality invented
     failures on the one surface whose job is naming real ones."""
 
-    def test_a_casing_mismatch_does_not_invent_a_broken_library(self):
-        # PyYAML is a base-install dependency and imports fine. A manifest
-        # (or the factory's source scanner) writes it lowercase, which is what
-        # pip accepts; packages_distributions() keys it "PyYAML".
-        pip_runner.forget_import_probes()
-        assert pip_runner._module_for_distribution("pyyaml") == "yaml"
-        assert pip_runner.import_failures(["pyyaml"]) == {}
+    #: What ``packages_distributions()`` reports for a PyYAML and a Pillow
+    #: install: the metadata spelling against a module no requirement ever
+    #: names, plus PyYAML's private accelerator. Stubbed rather than read off
+    #: the running interpreter, because neither library is a Curio dependency —
+    #: on a clean install (the CI image) the real mapping has no entry for
+    #: either, and these tests then assert against the not-installed fallback
+    #: instead of the matching rule they exist for.
+    _MAPPING = {"yaml": ["PyYAML"], "_yaml": ["PyYAML"], "PIL": ["Pillow"]}
 
-    def test_the_spelling_in_the_metadata_resolves_the_same_way(self):
-        pip_runner.forget_import_probes()
+    @pytest.fixture
+    def mapping(self, monkeypatch):
+        import importlib.metadata
+
+        monkeypatch.setattr(
+            importlib.metadata, "packages_distributions", lambda: dict(self._MAPPING)
+        )
+
+    def test_a_casing_mismatch_does_not_invent_a_broken_library(self, mapping):
+        # A manifest (or the factory's source scanner) writes "pyyaml", which
+        # is what pip accepts; packages_distributions() keys it "PyYAML".
+        assert pip_runner._module_for_distribution("pyyaml") == "yaml"
+
+    def test_the_spelling_in_the_metadata_resolves_the_same_way(self, mapping):
         assert pip_runner._module_for_distribution("PyYAML") == "yaml"
-        assert pip_runner.import_failures(["PyYAML"]) == {}
+
+    def test_a_real_installed_distribution_reports_no_failure(self):
+        """The end-to-end half, over a dependency every install really has.
+
+        ``python-dotenv`` is the witness because it fails BOTH ways under the
+        old equality lookup: its metadata spells it with hyphens while pip
+        accepts the underscore a manifest may well carry, and its module is
+        ``dotenv``, which the requirement never names. So an equality match
+        misses, the fallback yields ``python_dotenv``, and the probe reports
+        ``No module named 'python_dotenv'`` for a library that imports fine -
+        the fabricated failure #232 was about.
+
+        Flask cannot stand in here: its module is its distribution name
+        lowercased, so the buggy fallback happens to land on the right module
+        and the test would pass against the bug it exists to catch.
+
+        Unstubbed on purpose - this is the one test in the class that runs the
+        real mapping, the real ``installed_version`` and the real subprocess
+        probe end to end.
+        """
+        pip_runner.forget_import_probes()
+        assert pip_runner._module_for_distribution("python_dotenv") == "dotenv"
+        assert pip_runner.import_failures(["python_dotenv"]) == {}
+        assert pip_runner.import_failures(["python-dotenv"]) == {}
 
     def test_separators_are_normalised_the_pep_503_way(self):
         assert pip_runner._canonical_dist_name("py-yaml") == "py-yaml"
         assert pip_runner._canonical_dist_name("py_yaml") == "py-yaml"
         assert pip_runner._canonical_dist_name("Py.Yaml") == "py-yaml"
 
-    def test_a_private_accelerator_is_not_the_module_the_requirement_means(self):
+    def test_a_private_accelerator_is_not_the_module_the_requirement_means(
+        self, mapping
+    ):
         # PyYAML ships both `yaml` and `_yaml`; sorting alone picks the
         # underscore, which is an implementation detail, not the library.
         assert not pip_runner._module_for_distribution("pyyaml").startswith("_")
 
-    def test_the_known_renames_still_resolve(self):
+    def test_the_known_renames_still_resolve(self, mapping):
         assert pip_runner._module_for_distribution("pillow") == "PIL"
 
 
@@ -489,7 +527,7 @@ class TestImportFailuresIn:
         """
         seen: list[list[str]] = []
 
-        def _fake(names, search_path):
+        def _fake(names, search_path, interpreter=None):
             seen.append(list(names))
             if len(names) > 1:
                 return None                       # the batch "crashed"
@@ -506,7 +544,7 @@ class TestImportFailuresIn:
         calls: list[list[str]] = []
         monkeypatch.setattr(
             pip_runner, "_run_target_probe",
-            lambda names, path: calls.append(list(names)) or {},
+            lambda names, path, interpreter=None: calls.append(list(names)) or {},
         )
         assert pip_runner.import_failures_in(["a", "b"], str(tmp_path)) == {}
         assert calls == [["a", "b"]]
@@ -625,3 +663,130 @@ class TestImportFailures:
     def test_is_empty_for_a_healthy_set(self):
         pip_runner.forget_import_probes()
         assert pip_runner.import_failures(["flask"]) == {}
+
+
+def _dist(root, name, version, files):
+    """Write a ``--target``-style distribution: its files plus a RECORD listing them.
+
+    Hand-built rather than pip-installed so the awkward shapes - a stale second
+    dist-info, a RECORD row pointing outside the tree, no RECORD at all - are
+    reachable without a network or a contrived package on an index.
+    """
+    dist_info = root / f"{name}-{version}.dist-info"
+    dist_info.mkdir(parents=True, exist_ok=True)
+    (dist_info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf-8",
+    )
+    rows = []
+    for rel, body in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        rows.append(rel)
+    rows.append(f"{dist_info.name}/METADATA")
+    (dist_info / "RECORD").write_text(
+        "".join(f"{r},,\n" for r in rows), encoding="utf-8",
+    )
+    return dist_info
+
+
+class TestUninstallFromTarget:
+    """Removing one distribution from a ``--target`` tree.
+
+    ``pip uninstall`` cannot do this - pointed at a target tree it either
+    refuses with "outside environment" and exits 0, or removes the host copy -
+    so the files come from each distribution's own RECORD.
+    """
+
+    def test_it_removes_the_files_and_the_dist_info(self, tmp_path):
+        _dist(tmp_path, "humanize", "4.0", {"humanize/__init__.py": "X = 1\n"})
+
+        report = pip_runner.uninstall_python_deps_from_target(
+            ["humanize"], str(tmp_path),
+        )
+
+        assert report.removed == ["humanize"]
+        assert not (tmp_path / "humanize").exists()
+        assert not (tmp_path / "humanize-4.0.dist-info").exists()
+
+    def test_the_request_spelling_need_not_match_the_installed_one(self, tmp_path):
+        # PEP 503/427: pip writes scikit_learn-*.dist-info for scikit-learn.
+        _dist(tmp_path, "scikit_learn", "1.4.0", {"sklearn/__init__.py": "X = 1\n"})
+
+        report = pip_runner.uninstall_python_deps_from_target(
+            ["scikit-learn"], str(tmp_path),
+        )
+
+        assert report.removed == ["scikit-learn"]
+        assert not (tmp_path / "sklearn").exists()
+
+    def test_a_stale_second_dist_info_goes_too(self, tmp_path):
+        """An install over an existing tree can leave the old metadata behind,
+        and a survivor makes the import probe report a removed library as
+        installed."""
+        _dist(tmp_path, "humanize", "3.0", {"humanize/old.py": "X = 0\n"})
+        _dist(tmp_path, "humanize", "4.0", {"humanize/__init__.py": "X = 1\n"})
+
+        pip_runner.uninstall_python_deps_from_target(["humanize"], str(tmp_path))
+
+        assert list(tmp_path.glob("humanize-*.dist-info")) == []
+
+    def test_a_shared_namespace_directory_survives(self, tmp_path):
+        """RECORD lists only this distribution's files, and the cleanup pass
+        only ever removes a directory that is already empty."""
+        _dist(tmp_path, "ns-one", "1.0", {"ns/one.py": "X = 1\n"})
+        _dist(tmp_path, "ns-two", "1.0", {"ns/two.py": "X = 2\n"})
+
+        pip_runner.uninstall_python_deps_from_target(["ns-one"], str(tmp_path))
+
+        assert not (tmp_path / "ns" / "one.py").exists()
+        assert (tmp_path / "ns" / "two.py").exists()
+
+    def test_a_record_row_escaping_the_tree_is_skipped(self, tmp_path):
+        overlay = tmp_path / "overlay"
+        outside = tmp_path / "outside.py"
+        outside.write_text("KEEP = 1\n", encoding="utf-8")
+        dist_info = _dist(overlay, "sneaky", "1.0", {"sneaky.py": "X = 1\n"})
+        dist_info.joinpath("RECORD").write_text(
+            "sneaky.py,,\n../outside.py,,\n", encoding="utf-8",
+        )
+
+        pip_runner.uninstall_python_deps_from_target(["sneaky"], str(overlay))
+
+        assert outside.exists()
+        assert not (overlay / "sneaky.py").exists()
+
+    def test_a_dist_info_without_a_record_is_kept_but_stops_claiming_an_install(
+        self, tmp_path,
+    ):
+        """pip killed mid-install. Guessing the files would take a namespace
+        sibling with them, so only the metadata goes and the caller is told."""
+        dist_info = _dist(tmp_path, "halfway", "1.0", {"halfway.py": "X = 1\n"})
+        (dist_info / "RECORD").unlink()
+
+        report = pip_runner.uninstall_python_deps_from_target(
+            ["halfway"], str(tmp_path),
+        )
+
+        assert report.kept == ["halfway"]
+        assert not dist_info.exists()
+        assert (tmp_path / "halfway.py").exists()
+
+    def test_a_library_that_was_never_there_is_reported_not_invented(self, tmp_path):
+        report = pip_runner.uninstall_python_deps_from_target(
+            ["absent"], str(tmp_path),
+        )
+
+        assert report.removed == []
+        assert report.kept == ["absent"]
+
+    def test_an_invalid_requirement_is_refused_before_anything_is_touched(
+        self, tmp_path,
+    ):
+        _dist(tmp_path, "humanize", "4.0", {"humanize/__init__.py": "X = 1\n"})
+
+        with pytest.raises(pip_runner.PipSpecError):
+            pip_runner.uninstall_python_deps_from_target(
+                ["-r requirements.txt"], str(tmp_path),
+            )
+        assert (tmp_path / "humanize").exists()

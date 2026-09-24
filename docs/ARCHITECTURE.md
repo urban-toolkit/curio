@@ -18,6 +18,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Data Between Nodes](#data-between-nodes)
   * [Supported Data Types](#supported-data-types)
   * [DuckDB-Based Data Transfer](#duckdb-based-data-transfer)
+  * [Resolving Geometry in Vega-Lite Nodes](#resolving-geometry-in-vega-lite-nodes)
   * [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)
   * [Connection Validation](#connection-validation)
 * [Execution Pipeline](#execution-pipeline)
@@ -143,7 +144,8 @@ Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProv
 | `edges` | `Edge[]` | All connections between nodes |
 | `outputs` | `IOutput[]` | Most recent execution output per node |
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
-| `dashboardPins` | `string[]` | Node IDs pinned to the dashboard view |
+| `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
+| `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
@@ -190,7 +192,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
 | Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
-| Chart/table visualization | `vis-vega`, `vis-simple` |
+| Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
@@ -255,15 +257,14 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example: `curio.streetvision@1`** ships three custom behaviors:
+**Worked example: `curio.streetvision@1`** ships two custom behaviors:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
 | `street-view-fetcher` | `useStreetViewFetcherBehavior` | Place geocoding, bbox preview, Google Street View image batch fetch |
-| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling |
-| `cv-gallery` | `useCvGalleryBehavior` | Per-image gallery + overlay inspection UI |
+| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling, emitting a GEODATAFRAME |
 
-Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets three custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets two custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 ### UniversalNode: One Component for All Types
 
@@ -295,7 +296,7 @@ Nodes communicate using one of these typed payloads (defined as `SupportedType` 
 | Type | Python equivalent | Description |
 |---|---|---|
 | `DATAFRAME` | `pandas.DataFrame` | Tabular data |
-| `GEODATAFRAME` | `geopandas.GeoDataFrame` | Tabular data with geometry |
+| `GEODATAFRAME` | `geopandas.GeoDataFrame` | Tabular data with geometry, in one or more geometry columns |
 | `VALUE` | `int / float / bool / str` | Scalar value |
 | `LIST` | `list` | Array of values |
 | `JSON` | `dict` | Key-value object |
@@ -325,7 +326,7 @@ CREATE TABLE artifacts (
 | kind | Storage | Notes |
 |---|---|---|
 | `dataframe` | `blob` (Parquet) | Serialized with `pyarrow`; efficient columnar format |
-| `geodataframe` | `blob` (GeoParquet) | CRS preserved automatically; `.metadata` stashed in `value_json` |
+| `geodataframe` | `blob` (GeoParquet) | CRS and *every* geometry column preserved, not only the active one; `.metadata` stashed in `value_json`. A GeoDataFrame with no active geometry column is stored as `dataframe`; GeoParquet cannot represent one |
 | `bool` | `value_int` | `1` = True, `0` = False |
 | `int` | `value_int` | |
 | `float` | `value_float` | |
@@ -345,6 +346,30 @@ CREATE TABLE artifacts (
 4. The frontend stores the artifact ID in `FlowProvider.outputs` and passes it as `INodeData.input` to downstream nodes.
 5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object, with no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
+
+### Resolving Geometry in Vega-Lite Nodes
+
+The `vis-vega` node also resolves upstream data in its own way, for a narrower
+reason: Vega-Lite needs to be told *which column holds the geometry*, and a
+`GeoDataFrame` can have several.
+
+The payload carries `geometry_name` (see **Supported Data Types** above), so the
+node does not guess. [`vegaGeoSpec.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaGeoSpec.ts)
+applies one rule with three outcomes: use the declared active column; or, when
+none is declared, the single column whose values are geometry; or, when there
+are none or several, inject nothing and show the user which columns it found.
+Each geometry column keeps its own pandas name in the row, so `"field": "geom"`
+addresses it exactly as an attribute column would.
+
+Two things are then filled in that Vega-Lite would otherwise get wrong:
+`encoding.shape` on a `geoshape` mark, and an explicit `projection`:
+`identity`+`reflectY` for projected coordinates, `mercator` for lon/lat. Both
+are skipped whenever the author has written their own.
+
+This is gated on **the spec**, not the payload: a bar chart over a GeoDataFrame
+never has geometry attached, so it carries exactly the columns it always did.
+That matters because shipped dataflows chart multi-megabyte GeoJSON as bar
+charts, and the rows are re-shipped through `changeset()` on every brush.
 
 ### Referencing Upstream Data in Autark Nodes
 
@@ -409,7 +434,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    Returns: { "path": "<new_artifact_id>", "dataType": "<kind>" }
 
 5. Backend reads sandbox response
-   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType } }
+   Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType }, missingModule }
 
 6. Frontend: outputCallback(nodeId, output)
    - Updates FlowProvider.outputs[] with new artifact ID
@@ -441,16 +466,16 @@ The sandbox runs as a separate Flask process. It:
 - Binds `127.0.0.1` by default and is not published by the Docker image, so
   only the backend on the same host can reach it.
 - Requires a shared secret on every route that can run code or read artifacts
-  (`/exec`, `/execJs`, `/get`, `/install`). The secret is minted per launch by
+  (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
-  instance started with `--auth` or `--deploy` refuses to boot without one.
+  instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
-> `--isolation=fork` is passed, node code runs with `exec()` inside the sandbox
+> isolation is on, node code runs with `exec()` inside the sandbox
 > process itself (`worker.py::execute_code`), with unrestricted builtins, as the
 > same OS user, with no memory cap and no timeout. Anyone who can author or edit
 > a node can read and write everything that process can, including
@@ -459,7 +484,7 @@ The sandbox runs as a separate Flask process. It:
 
 ### Isolated node execution (opt-in, Linux only)
 
-`--isolation=fork` runs each node's Python in a short-lived child process
+Isolation runs each node's Python in a short-lived child process
 instead of in-process. `utk_curio/sandbox/isolation/`:
 
 | Module | Role |
@@ -474,6 +499,23 @@ instead of in-process. `utk_curio/sandbox/isolation/`:
 | `util/staging.py` | Artifacts in and out of a child's scratch directory |
 | `hardening.py` | Filesystem permissions, and the startup audit that verifies them |
 
+**Linux, not POSIX, and what happens elsewhere.** Three of the primitives are
+POSIX (`os.fork`, `resource.setrlimit`, `os.killpg`), but confinement also
+calls `prctl(PR_SET_NO_NEW_PRIVS)` through `libc.so.6`, and hosting needs
+seccomp on top of that. macOS has neither, Windows has none of it. Curio is
+developed on both, so the rule is deliberately asymmetric:
+
+- **Local launch** (no `--deploy`): `CURIO_ISOLATION=fork` off Linux
+  degrades to the in-process path and logs one warning naming what is missing.
+  Your nodes run **unisolated**. That is the trade, because breaking a
+  developer's laptop to enforce a boundary that only matters on a shared
+  instance would be the wrong one.
+- **Hosted launch**: the same request is fatal. The sandbox refuses to start
+  rather than serve while appearing isolated.
+
+macOS is a local development platform for Curio, not a deployment target, so it
+is not expected to isolate. Run the Docker image to exercise the isolated path.
+
 Five design points worth knowing:
 
 - **The parent keeps every privilege the child must not have.** It owns the
@@ -481,7 +523,7 @@ Five design points worth knowing:
   sees only a scratch directory of staged files. Frames are already stored as
   parquet files, so staging an input is a hardlink and persisting an output is a
   rename: the parent never parses bytes a child produced.
-- **One execution account, not one per Curio user.** `--exec-user` names a
+- **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
   single OS account that every user's nodes run as. The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
   keeps two users apart is session scoping in the parent, which the child cannot
@@ -496,7 +538,7 @@ Five design points worth knowing:
   path is child, then scratch directory, then the parent's validated
   `persist_output`, then the backend's `auto_install_node_output`. Because the
   child never writes into an indexed store, it cannot forge a manifest or a
-  catalog entry. Under `--exec-user` the child's cwd is a per-user work
+  catalog entry. With an execution account the child's cwd is a per-user work
   directory (`.curio/exec-scratch/users/<key>/`), which is the one place it may
   write: it is `0700` and owned by the execution account, it persists between
   runs, and a `docs` symlink is dropped in so the bundled examples' relative
@@ -515,7 +557,7 @@ Five design points worth knowing:
 world-readable `instance/urban_workflow.db` is readable by node code with no
 escape required. `hardening.py` tightens those paths to owner-only at startup
 and then audits them; a hosted instance that is still exposed refuses to serve
-rather than pretend. This is also why `--exec-user` matters: without an
+rather than pretend. This is also why the execution account matters: without an
 unprivileged execution account the child shares the sandbox's own filesystem
 access, and only the resource limits and syscall filter apply.
 
@@ -534,12 +576,12 @@ default.
 >   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
 >   the deadline kill, session scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
-> - `test-gpu-isolated` boots a second stack with `--isolation=fork` and runs
+> - `test-gpu-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
 >   the Python-node workflows against it. This is where *ordinary nodes still
 >   work* is demonstrated. It asserts the stack actually came up isolated
 >   before trusting the result.
-> - `test-gpu-exec-user` boots a third stack with `--isolation=fork
->   --exec-user curio-exec`, the same pair `docker-compose.deploy.yml` ships,
+> - `test-gpu-exec-user` boots a third stack with isolation and the
+>   `curio-exec` account, the same shape `docker-compose.deploy.yml` ships,
 >   and asserts the **filesystem** half over the sandbox's HTTP API
 >   (`tests/live/test_exec_user_boundary.py`). This is the only job whose
 >   children are unprivileged: everywhere else they run as root, and root reads
@@ -549,21 +591,83 @@ default.
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
 >   file named by absolute path are all denied.
 >
-> It is a separate job because `--exec-user` and the e2e harness cannot
+> It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
 > executes every code node in the test process and writes artifacts there as the
 > runner user. So that job drops the workflow comparison and asserts over the
 > API instead (see `docker-compose.ci-exec-user.yml`).
 >
-> One gap remains, deliberately: `--isolation` still defaults to `auto`, which
-> still resolves to `off`, so a local `curio start` changes nothing. The
-> deployed instances pass `--isolation=fork --exec-user curio-exec` explicitly,
-> via `docker-compose.deploy.yml`.
+> `--deploy` now turns isolation on wherever the host can provide it, so the
+> deployed instances need no flag for it. A local `curio start` still changes
+> nothing: isolation separates users from each other, and locally there is one.
 
-`POST /install` (`pip install` into the sandbox's interpreter) is off unless
-`--allow-runtime-install` is passed. It defaults on for a local single-user
-launch and off once `--auth` / `--deploy` is in play. Nothing in Curio calls
-it; library installs go through the backend's `packages/pip_runner.py`.
+**Where an install lands.** There is no switch for whether `pip install` may
+run; there is only the question of *whose* environment it changes, and that is
+decided by isolation.
+
+Without isolation the backend and the sandbox are launched from one
+interpreter, so a library installed by anyone is importable by every user's
+nodes. Under isolation it goes to the caller's own tree instead. A guest is
+refused either way (`users/capabilities.py::library_install_refusal`): the
+shared guest is every anonymous visitor at once, so one visitor's install still
+changes what the next one's nodes import, and the disk it costs has no owner.
+Without auth the one local user *is* the shared guest, so that rule applies
+only when auth is on and the everyday single-user install keeps working.
+
+The sandbox's own `POST /install` route is gone. Nothing in Curio called it,
+and it was a second, unrecorded path to `pip install` inside the interpreter
+that executes node code. Library installs go through the backend's
+`packages/pip_runner.py`, which is auth-gated and records what it installed per
+user.
+
+**Per-user node libraries.** Under isolation, a package's declared
+python deps and anything installed through the Installed-libraries dialog go to
+`.curio/exec-overlays/users/<key>/`, which the child prepends to `sys.path`
+after the fork. Three things follow, and none of them is a mode bit:
+
+- It needs the fork. The in-process worker is one process with one
+  `sys.modules`; whoever imports a library first makes it importable by
+  everybody, whatever the path says. So a local or Windows launch keeps the
+  shared interpreter, unchanged.
+- It scopes imports, not files. The execution account is still shared
+  (see above), so one user's node can read another's tree by path. What it
+  cannot do is have it on its own `sys.path`.
+- It cannot give two users different versions of the same library. pandas,
+  geopandas, shapely and duckdb are resident in the zygote before the fork;
+  additions are what this serves. Per-user versions would need a zygote each.
+
+The tree is deliberately not under `.curio/users/<key>/`, which is 0700
+root-owned so a node cannot reach another user's datasets, and unlike the
+per-user work directory it is **not** owned by the execution account: it is an
+import path, so node code writing there could shadow a later import. The
+startup audit reports it if it ever becomes writable.
+
+### DuckDB extensions come from this instance
+
+autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, and DuckDB autoloads
+`json` for the grammar's `json_object` SQL. duckdb-wasm resolves both against
+`https://extensions.duckdb.org/`, so an Autark node used to pull ~24 MB over
+the network — in the browser on **every** grammar run, since duckdb-wasm keeps
+no browser-side cache, and in the sandbox once per cold container. A CDN blip
+failed the node (#318) and an air-gapped install could not run one at all.
+
+Curio ships both extensions in `vendor/duckdb-extensions/`, laid out exactly as
+the CDN serves them (`<duckdb version>/<platform>/<name>.wasm`), and both
+runtimes read that copy:
+
+- **Browser.** `frontend/urban-workflows/webpack/duckdbExtensionMirror.js` is a
+  loader that prepends a redirect to duckdb's worker asset as webpack emits it,
+  so the worker's request goes to the backend's `/file/vendor/duckdb-extensions/`
+  instead. DuckDB's own setting for this (`custom_extension_repository`) is not
+  reachable: autk-db installs the extension inside `init()`, before Curio holds
+  a connection, and the worker has its own global scope.
+- **Sandbox.** `main.py::seed_duckdb_extensions` copies them into
+  `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
+  looks before downloading. Nothing is intercepted there.
+
+Both fall back to the CDN for a file this checkout does not carry, so bumping
+`@duckdb/duckdb-wasm` degrades to the old behaviour instead of breaking; see
+`vendor/duckdb-extensions/README.md` for how to vendor the new version.
 
 ### Portable dataset paths
 
@@ -685,6 +789,8 @@ The framework needs to boot before any manifests can be walked, so `pip install 
 
 Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data ⏷ → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
+The same route is reachable without opening that modal: when a node run ends in `ModuleNotFoundError`, `/processPythonCode` carries a `missingModule` field naming the import and the distribution that provides it (`packages/missing_import.py`, sharing `dependency_scanner`'s alias table and passing `pip_runner.validate_python_requirement` before it is offered), and the node's output panel renders an **Install** button beside the traceback. It is a click rather than an automatic install for the same reason the catalog's is: pip reaches the interpreter every node on this instance shares.
+
 ---
 
 ## Backend API Reference
@@ -699,7 +805,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
-| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it) |
+| `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
@@ -770,6 +876,31 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
+
+### Data Lake Routes
+
+Defined in `backend/app/datalakes/routes.py` over `backend/app/datalakes/service.py`.
+The **unit is a portal, not a dataset**: manifests under `datalakes/` describe
+where datasets can be fetched from, and the datasets themselves are discovered
+live. A download hands the bytes to the Data Catalog's own importer, so what
+comes out is an ordinary dataset carrying a `lakeSource` provenance block.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/datalakes/catalog` | GET | List the connected portals (`q`, `provider`, `auth`). Disk only - makes no outbound request |
+| `/api/datalakes/sources/<dir>` | GET | One portal, with its capabilities and credential state |
+| `/api/datalakes/sources/<dir>/icon` | GET | The portal's mark. Fixed `image/png`, `nosniff`, `ETag`, 256 KiB cap; 404 when absent so the UI falls back to a glyph |
+| `/api/datalakes/search` | GET | **Live, federated.** Fans out over every searchable portal (`q` required, `format`, `provider`, `limit`). A failing leg is reported in `sources[]` and never fails the request |
+| `/api/datalakes/sources/<dir>/search` | GET | **Live**, one portal. The only paginated search - a fan-out has no coherent cursor |
+| `/api/datalakes/sources/<dir>/resources/<id>` | GET | **Live** resource detail: fields, licence, provider extras |
+| `.../resources/<id>/acquire` | POST | Download into the Data Catalog. **202** with a job, or **200** with the dataset when it is already held (no portal contacted) |
+| `/api/datalakes/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
+| `/api/datalakes/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
+
+Errors map by type: 404 unknown source or resource, **428** a source needing a
+token this account does not hold, 429 rate-limited, 502 a portal that answered
+badly or an egress refusal (the policy reason, never a resolved address), 400
+an unsupported format or an oversized download.
 
 ### Agent Routes
 
@@ -932,7 +1063,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 | File | Purpose |
 |---|---|
-| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/get`) |
+| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/get`) |
 | `sandbox/python_wrapper.txt` | Execution wrapper template for user code |
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb`, `detect_kind`, and type validation |

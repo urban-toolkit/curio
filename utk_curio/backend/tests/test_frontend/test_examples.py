@@ -47,12 +47,26 @@ EXAMPLE_INVARIANTS = [
      {
          "curio.streetvision/street-view-fetcher": 1,
          "curio.streetvision/hf-cv-inference": 1,
-         "curio.streetvision/cv-gallery": 1,
+         "curio.builtin/vis-simple": 1,
          "curio.builtin/spatial-join": 1,
          "curio.builtin/vis-vega": 2,
      }, False),
     ("11-autark-pbf-loading.json", 2, 1,
      {"curio.builtin/autk-grammar": 2}, False),
+    ("12-vega-lite-geodataframe-maps.json", 5, 4,
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 1,
+      "curio.builtin/vis-vega": 3}, False),
+    ("13-vega-lite-geometry-columns.json", 14, 13,
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 6,
+      "curio.builtin/vis-vega": 7}, False),
+    ("14-vega-lite-crs-and-geometry-types.json", 15, 14,
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 7,
+      "curio.builtin/vis-vega": 7}, False),
+    ("15-vega-lite-spec-forms-and-catalogs.json", 12, 10,
+     {"curio.builtin/data-loading": 3, "curio.builtin/spatial-join": 1,
+      "curio.builtin/vis-vega": 8}, False),
+    ("16-simple-view-tables-and-images.json", 4, 2,
+     {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
 ]
 
 

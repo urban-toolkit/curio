@@ -32,9 +32,11 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
 
@@ -48,6 +50,113 @@ _IMPORT_PROBE_TIMEOUT = 60
 # a wheel cache can take ~10 minutes on a moderate connection — 30 minutes
 # is generous but not infinite.
 _PIP_TIMEOUT_SECONDS = 30 * 60
+
+#: Forbids building from source, so pip only unpacks wheels and no ``setup.py``
+#: runs (#309). Gating decides who may install; this decides what the install is
+#: allowed to execute, which gating cannot touch: ``pip install`` is a plain
+#: subprocess of the backend, so an sdist's build script runs as the backend
+#: user whatever ``CURIO_ISOLATION`` says.
+WHEEL_ONLY_ARG = "--only-binary=:all:"
+
+#: pip's wording when nothing installable was found. A wheel-only attempt that
+#: fails this way is the case the fallback exists for; any other failure is a
+#: real one and is not retried.
+_NO_DISTRIBUTION_MARKERS = (
+    "could not find a version that satisfies",
+    "no matching distribution found",
+)
+
+#: What the sdist build, if it happens, is bounded by. Deliberately not seccomp:
+#: pip needs network and fork, so a syscall filter would have to allow exactly
+#: what an attacker wants anyway. This is a uid and rlimit boundary and is worth
+#: describing as one rather than as a sandbox.
+_BUILD_CPU_SECONDS = 30 * 60
+_BUILD_MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024
+
+
+def _resolve_exec_uid(user):
+    """uid for the configured execution user, or None when not applicable."""
+    if not user:
+        return None
+    try:
+        import pwd
+
+        return pwd.getpwnam(user).pw_uid
+    except (ImportError, KeyError):
+        return None
+
+
+def _resolve_exec_gid(user):
+    """gid for the configured execution user, or None when not applicable."""
+    if not user:
+        return None
+    try:
+        import pwd
+
+        return pwd.getpwnam(user).pw_gid
+    except (ImportError, KeyError):
+        return None
+
+
+def _drops_privileges(preexec) -> bool:
+    """Whether *preexec* was built to change uid. Used by the tests."""
+    return bool(getattr(preexec, "curio_drops_privileges", False))
+
+
+def _build_preexec():
+    """A ``preexec_fn`` bounding the pip run, dropping privileges when it can.
+
+    Returns ``None`` off POSIX, where there is no ``preexec_fn`` and no uid to
+    drop to.
+
+    A local launch configures no execution user, which is not a failure: there
+    is no lesser account to become, and refusing to install without one would
+    break every local run. The limits still apply, and the returned callable
+    records whether it drops privileges so a test can tell the two apart.
+    """
+    if os.name != "posix":
+        return None
+
+    import resource
+
+    user = (os.environ.get("CURIO_EXEC_USER") or "").strip()
+    uid = _resolve_exec_uid(user)
+    gid = _resolve_exec_gid(user)
+    limits = [
+        (resource.RLIMIT_CPU, _BUILD_CPU_SECONDS),
+        (resource.RLIMIT_FSIZE, _BUILD_MAX_FILE_BYTES),
+    ]
+
+    def _preexec():  # runs in the child, pre-exec
+        for key, value in limits:
+            try:
+                resource.setrlimit(key, (value, value))
+            except (ValueError, OSError):
+                pass
+        if uid is not None and gid is not None and os.getuid() == 0:
+            # Group first: after setuid the process can no longer change it.
+            try:
+                os.setgid(gid)
+                os.setuid(uid)
+            except OSError:
+                pass
+
+    _preexec.curio_drops_privileges = bool(
+        uid is not None and gid is not None
+    )
+    return _preexec
+
+
+def _pip_child_kwargs() -> dict:
+    """Extra ``subprocess`` kwargs that harden a pip run."""
+    preexec = _build_preexec()
+    return {"preexec_fn": preexec} if preexec is not None else {}
+
+
+def _looks_like_no_wheel(output: str) -> bool:
+    lowered = (output or "").lower()
+    return any(marker in lowered for marker in _NO_DISTRIBUTION_MARKERS)
+
 
 
 class PipInstallError(RuntimeError):
@@ -235,6 +344,34 @@ def _module_for_distribution(name: str) -> str:
     return sorted(public or real or candidates)[0]
 
 
+def distributions_for_module(module: str) -> list[str]:
+    """Every installed distribution that provides top-level *module*.
+
+    The inverse of :func:`_module_for_distribution`, over the same
+    ``packages_distributions()`` map, and answering a different question: not
+    "what does this requirement import as" but "is anything already providing
+    this import". The node-run missing-import detector asks it to tell a library
+    that is genuinely absent (pip would fix it) apart from one that is installed
+    and still will not import (pip would report it satisfied and change
+    nothing) - a distinction ``test_broken_library_stub`` exists to witness.
+
+    Metadata only: it imports nothing and spawns nothing, so it is cheap enough
+    to sit on a failed execution's response path. An empty list is the common
+    case and the one that means "offer to install it".
+    """
+    try:
+        from importlib.metadata import packages_distributions
+    except ImportError:  # pragma: no cover - Python < 3.10
+        return []
+
+    try:
+        mapping = packages_distributions()
+    except Exception:  # pragma: no cover - defensive
+        return []
+
+    return sorted(dict.fromkeys(mapping.get(module, [])))
+
+
 #: Imports every requested module in ONE interpreter and reports each verdict.
 #: Reads the ``{distribution: module}`` map on stdin so no name has to survive
 #: shell quoting, and writes ``{distribution: reason}`` for the failures.
@@ -400,7 +537,8 @@ print(json.dumps(out))
 """
 
 
-def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
+def import_failures_in(deps: Iterable[str], search_path: str,
+                       interpreter: Optional[str] = None) -> dict[str, str]:
     """``{distribution: reason}`` for deps that cannot be imported with
     *search_path* on ``sys.path`` — the OVERLAY's environment, not the host's.
 
@@ -418,7 +556,7 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
     names = sorted({d for d in deps})
     if not names or not search_path:
         return {}
-    verdicts = _run_target_probe(names, search_path)
+    verdicts = _run_target_probe(names, search_path, interpreter)
     if verdicts is not None:
         return verdicts
     # The batch gave no answer. Retry one at a time, exactly as the host probe
@@ -427,13 +565,14 @@ def import_failures_in(deps: Iterable[str], search_path: str) -> dict[str, str]:
     # OTHER dep's verdict into silence — which the caller reads as "all fine".
     failures: dict[str, str] = {}
     for name in names:
-        one = _run_target_probe([name], search_path)
+        one = _run_target_probe([name], search_path, interpreter)
         if one:
             failures.update(one)
     return failures
 
 
-def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
+def _run_target_probe(names, search_path,
+                      interpreter: Optional[str] = None) -> Optional[dict[str, str]]:
     """Verdicts for *names* from one overlay-aware subprocess, or None.
 
     None means "no answer", never "all fine" — same contract as
@@ -455,9 +594,18 @@ def _run_target_probe(names, search_path) -> Optional[dict[str, str]]:
     # until someone pins it, which is exactly when it would have been wrong.
     from utk_curio.backend.app.packages import backend_runtime
 
+    # Whoever imports the tree answers for it. A HANDLER overlay is read by a
+    # package-backend worker, which runs under ``sandbox_interpreter()`` and so
+    # follows CURIO_BACKEND_SANDBOX_PYTHON if an operator pinned one. A node
+    # overlay (#332) is read by the sandbox, which the launcher starts with
+    # this process's own interpreter - so that caller passes it explicitly
+    # rather than inheriting a pin meant for handlers, which would answer for
+    # an interpreter nothing imports the tree from.
+    interpreter = interpreter or backend_runtime.sandbox_interpreter()
+
     try:
         proc = subprocess.run(
-            [backend_runtime.sandbox_interpreter(), "-c", _TARGET_PROBE_SRC],
+            [interpreter, "-c", _TARGET_PROBE_SRC],
             input=payload,
             capture_output=True,
             text=True,
@@ -618,12 +766,19 @@ def install_python_deps_to_target(
     if not deps:
         return InstallReport(installed=[], skipped=[])
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
-    cmd = [sys.executable, "-m", "pip", "install", "--no-input",
-           "--target", str(target_dir), *specs]
+    base = [sys.executable, "-m", "pip", "install", "--no-input",
+            "--target", str(target_dir)]
+
+    # Wheels first, so no setup.py runs at all in the common case (#309). A
+    # dependency with no wheel for this platform still has to install, so a
+    # wheel-only miss falls back to a build - bounded, and unprivileged where an
+    # execution user exists.
+    cmd = [*base, WHEEL_ONLY_ARG, *specs]
     log.info("Running %s", " ".join(cmd))
     if on_line is not None:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            **_pip_child_kwargs(),
         )
         last_lines: list[str] = []
         if proc.stdout is not None:
@@ -648,6 +803,15 @@ def install_python_deps_to_target(
             )
         if rc != 0:
             tail = "\n".join(last_lines)[-2000:]
+            if _looks_like_no_wheel(tail):
+                log.warning(
+                    "No wheel for %s; rebuilding from source. An sdist's "
+                    "setup.py executes, so this runs bounded and as the "
+                    "execution user where one is configured.", sorted(deps),
+                )
+                return _install_to_target_allowing_builds(
+                    base, specs, deps, on_line=on_line,
+                )
             raise PipInstallError(
                 f"pip install --target failed (exit {rc}): {tail.strip()}"
             )
@@ -655,6 +819,76 @@ def install_python_deps_to_target(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
+            **_pip_child_kwargs(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PipInstallError(
+            f"pip install --target timed out after {_PIP_TIMEOUT_SECONDS}s "
+            f"(packages: {specs})"
+        ) from exc
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        if _looks_like_no_wheel(tail):
+            log.warning(
+                "No wheel for %s; rebuilding from source. An sdist's setup.py "
+                "executes, so this runs bounded and as the execution user "
+                "where one is configured.", sorted(deps),
+            )
+            return _install_to_target_allowing_builds(base, specs, deps)
+        raise PipInstallError(
+            f"pip install --target failed (exit {proc.returncode}): {tail.strip()}"
+        )
+    return InstallReport(installed=specs, skipped=[])
+
+
+def _install_to_target_allowing_builds(base, specs, deps, *, on_line=None):
+    """The fallback: the same install with sdists permitted.
+
+    Reached only when the wheel-only attempt reported that nothing installable
+    exists, so this is the case where a build is the only way to get the
+    dependency at all. Refusing here would mean Curio could not install a
+    dependency that has no wheel for the platform, which is a real and ordinary
+    situation, not an attack.
+
+    The build inherits :func:`_pip_child_kwargs`, so it is bounded by rlimits
+    and runs as the execution user when one is configured and the backend is
+    root. That is the whole of the containment: it is a uid boundary, not a
+    sandbox, and it does not stop a malicious setup.py from using the network.
+    """
+    cmd = [*base, *specs]
+    log.info("Running %s", " ".join(cmd))
+    if on_line is not None:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            **_pip_child_kwargs(),
+        )
+        last_lines: list[str] = []
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                stripped = line.rstrip()
+                on_line(stripped)
+                last_lines.append(stripped)
+                if len(last_lines) > 40:
+                    last_lines.pop(0)
+        try:
+            rc = proc.wait(timeout=_PIP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise PipInstallError(
+                f"pip timed out after {_PIP_TIMEOUT_SECONDS}s and was killed"
+            )
+        if rc != 0:
+            tail = "\n".join(last_lines)[-2000:]
+            raise PipInstallError(
+                f"pip install --target failed (exit {rc}): {tail.strip()}"
+            )
+        return InstallReport(installed=specs, skipped=[])
+
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
+            **_pip_child_kwargs(),
         )
     except subprocess.TimeoutExpired as exc:
         raise PipInstallError(
@@ -701,3 +935,127 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
     return UninstallReport(removed=list(names), kept=[])
+
+
+def _target_dist_infos(target_dir: Path, name: str) -> list[Path]:
+    """Every ``*.dist-info`` in *target_dir* whose distribution is *name*.
+
+    Plural deliberately. ``pip install --target`` over an existing tree
+    overwrites files but can leave the previous version's dist-info behind, and
+    a surviving stale one makes :func:`import_failures_in` report a library as
+    installed after it has been removed.
+    """
+    import importlib.metadata as md
+
+    wanted = _canonical_dist_name(name)
+    found: list[Path] = []
+    for dist in md.distributions(path=[str(target_dir)]):
+        try:
+            dist_name = dist.metadata["Name"]
+        except Exception:
+            dist_name = None
+        if not dist_name:
+            # No parseable METADATA: fall back to the directory's own name,
+            # which pip writes as "<name>-<version>.dist-info".
+            base = getattr(dist, "_path", None)
+            dist_name = base.name.split("-")[0] if base is not None else None
+        if dist_name and _canonical_dist_name(dist_name) == wanted:
+            base = getattr(dist, "_path", None)
+            if base is not None:
+                found.append(Path(base))
+    return found
+
+
+def uninstall_python_deps_from_target(
+    names: Iterable[str], target_dir: str,
+) -> UninstallReport:
+    """Remove *names* from a ``--target`` tree, the way pip does it internally.
+
+    ``pip uninstall`` has no ``--target``. Pointed at one through PYTHONPATH it
+    either refuses with "outside environment" and exits 0 - a silent no-op the
+    caller reads as success - or, outside a venv, removes the HOST copy. So the
+    files come from each distribution's own ``RECORD``, which is the only thing
+    that knows which paths belong to which distribution in a target tree
+    (``pip._internal.req.req_uninstall`` does the same).
+
+    ``removed`` names distributions whose RECORD was walked; ``kept`` names
+    those not found, or found without a readable RECORD, so the caller can log
+    rather than claim something it did not do. Transitive dependencies stay, as
+    they do for ``pip uninstall``.
+    """
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    root = Path(target_dir).resolve()
+    removed: list[str] = []
+    kept: list[str] = []
+    for name in names:
+        validate_python_requirement(name)
+        dist_infos = _target_dist_infos(root, name)
+        if not dist_infos:
+            kept.append(name)
+            continue
+        complete = False
+        for dist_info in dist_infos:
+            if _remove_one_distribution(dist_info, root, is_within):
+                complete = True
+        (removed if complete else kept).append(name)
+    _prune_empty_dirs(root)
+    return UninstallReport(removed=removed, kept=kept)
+
+
+def _remove_one_distribution(dist_info: Path, root: Path, is_within) -> bool:
+    """Unlink one distribution's files, then its dist-info. True if RECORD was read.
+
+    A dist-info with no RECORD (pip killed mid-install) still gets removed, so
+    the metadata stops claiming an install, but its files are left alone: there
+    is no safe way to guess them. Deleting ``<root>/<name>/`` would take a
+    namespace sibling with it.
+    """
+    import csv
+
+    record = dist_info / "RECORD"
+    read_record = False
+    if record.is_file():
+        read_record = True
+        try:
+            rows = list(csv.reader(record.read_text(
+                encoding="utf-8", errors="replace").splitlines()))
+        except OSError:
+            rows = []
+            read_record = False
+        for row in rows:
+            if not row or not row[0]:
+                continue           # a truncated final line has no path
+            rel = row[0]
+            if os.path.isabs(rel):
+                continue
+            target = (dist_info.parent / rel)
+            try:
+                resolved = target.resolve()
+            except OSError:
+                continue
+            if not is_within(resolved, root):
+                continue           # a "../../" row never escapes the tree
+            try:
+                resolved.unlink()
+            except (OSError, IsADirectoryError):
+                pass
+    shutil.rmtree(dist_info, ignore_errors=True)
+    return read_record
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    """Drop ``__pycache__`` leftovers and any directory left empty, bottom-up.
+
+    Only ever removes a directory that is already empty, so a namespace package
+    shared with a distribution that is still installed survives.
+    """
+    for path in sorted(root.rglob("__pycache__"), key=lambda p: -len(p.parts)):
+        shutil.rmtree(path, ignore_errors=True)
+    for path in sorted(
+        (p for p in root.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)
+    ):
+        try:
+            path.rmdir()
+        except OSError:
+            pass               # not empty, which is the common case

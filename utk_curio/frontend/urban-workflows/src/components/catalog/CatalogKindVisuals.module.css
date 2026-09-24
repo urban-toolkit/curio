@@ -17,6 +17,14 @@
   color: var(--curio-text-primary);
 }
 
+/* The lake glyph is tinted rather than neutral, because it is also the
+   FALLBACK a source with no icon renders in the grid - where the neutral
+   treatment would read as a missing image rather than a deliberate mark. */
+.kindIcon_lake {
+  background: var(--curio-kind-lake-bg);
+  color: var(--curio-kind-lake-on-tint);
+}
+
 .size_sm {
   width: 22px;
   height: 22px;
@@ -183,6 +191,11 @@
 .formatBadge_osm {
   background: var(--curio-format-osm-bg);
   color: var(--curio-format-osm-on-tint);
+}
+
+.formatBadge_gpkg {
+  background: var(--curio-format-gpkg-bg);
+  color: var(--curio-format-gpkg-on-tint);
 }
 
 .categoryBadge {

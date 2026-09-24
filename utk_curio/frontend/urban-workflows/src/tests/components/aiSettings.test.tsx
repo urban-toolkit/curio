@@ -68,6 +68,18 @@ jest.mock("../../api/connectionKeysApi", () => ({
   },
 }));
 
+// Spread requireActual rather than replacing the module: a partial mock that
+// enumerates exports breaks the moment someone adds one, which has bitten this
+// suite before. Only getPublicConfig is used by the modal.
+let mockPublicConfig: Record<string, unknown> = {};
+jest.mock("../../utils/authApi", () => ({
+  ...jest.requireActual("../../utils/authApi"),
+  authApi: {
+    ...jest.requireActual("../../utils/authApi").authApi,
+    getPublicConfig: jest.fn(() => Promise.resolve(mockPublicConfig)),
+  },
+}));
+
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
     providerDefault: jest.fn(() =>
@@ -92,6 +104,7 @@ beforeEach(() => {
   mockDefaultRejects = false;
   mockModels = { models: [], listable: true };
   mockModelsRejects = null;
+  mockPublicConfig = {};
   jest.clearAllMocks();
 });
 
@@ -764,5 +777,124 @@ describe("AI Settings: Connection keys (dev/116)", () => {
     const { unmount } = open();
     expect(screen.queryByTestId("connection-keys-section")).toBeNull();
     unmount();
+  });
+});
+
+describe("AI Settings: the data-portal token", () => {
+  /**
+   * A third credential on this screen, and the first that is not about AI at
+   * all: the Data Lake Catalog sends it to Socrata portals. It lives here
+   * because this is the account's one credentials surface - the Agent
+   * Catalog's account policy was deliberately moved INTO this modal rather
+   * than living in a second one holding half the answer.
+   *
+   * It follows the same rules as the HuggingFace token beside it: stored on
+   * the user's row, reported as a boolean, blank means keep, and there is an
+   * explicit way to remove it.
+   */
+  const field = () =>
+    document.querySelector("#ai-settings-socrata-token") as HTMLInputElement;
+
+  it("is offered, and marked optional when none is saved", () => {
+    open();
+    expect(field()).toBeInTheDocument();
+    expect(field().type).toBe("password");
+    // Scoped to the label: the "Get a Socrata app token" link repeats the
+    // words, and matching either would not prove the field is labelled.
+    expect(
+      document.querySelector('label[for="ai-settings-socrata-token"]')
+    ).toBeInTheDocument();
+  });
+
+  it("says a token is saved without ever showing it", () => {
+    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    open();
+    expect(screen.getByText(/\(saved - leave blank to keep\)/)).toBeInTheDocument();
+    expect(field().value).toBe("");
+    expect(field().placeholder).toContain("unchanged");
+  });
+
+  it("saves what was typed", async () => {
+    open();
+    fireEvent.change(field(), { target: { value: "tok-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ socrataAppToken: "tok-123" })
+      )
+    );
+  });
+
+  it("leaves a saved token alone when the box is blank", async () => {
+    // Blank means keep. Re-typing a portal token to change an unrelated
+    // setting would be hostile.
+    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    open();
+    // Exact: "Remove saved token" also matches /save/i once a token is stored.
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0].socrataAppToken).toBeUndefined();
+  });
+
+  it("offers a way to remove one, which is how blank-means-keep stays escapable", async () => {
+    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    open();
+    const remove = screen
+      .getAllByRole("button", { name: /Remove saved token/ })
+      .at(-1)!;
+    fireEvent.click(remove);
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({ socrataAppToken: "" })
+    );
+  });
+
+  it("is not offered to a guest", () => {
+    // A guest account is shared, so a personal credential saved on it would be
+    // everyone's. The backend refuses it too.
+    mockUser = { is_guest: true };
+    open();
+    expect(field()).toBeNull();
+  });
+});
+
+
+describe("AI Settings: a deployment-supplied portal token", () => {
+  /**
+   * The same inheritance the LLM provider config has: a user who sets nothing
+   * uses what the operator configured, and setting their own overrides it. An
+   * operator running Curio for a class raises the rate limit for everyone with
+   * one environment variable.
+   */
+  const label = () =>
+    document.querySelector('label[for="ai-settings-socrata-token"]')!.textContent ?? "";
+
+  it("says the box is optional when nothing is configured", async () => {
+    mockPublicConfig = { has_default_socrata_app_token: false };
+    open();
+    await waitFor(() => expect(label()).toContain("(optional)"));
+  });
+
+  it("says it is inherited when the install supplies one", async () => {
+    // "(optional)" would be misleading: leaving the box blank already
+    // authenticates you.
+    mockPublicConfig = { has_default_socrata_app_token: true };
+    open();
+    await waitFor(() => expect(label()).toContain("inherited"));
+    expect(screen.getByText(/Leave this blank to use it/)).toBeInTheDocument();
+  });
+
+  it("a token you saved yourself takes precedence in the copy", async () => {
+    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    mockPublicConfig = { has_default_socrata_app_token: true };
+    open();
+    await waitFor(() => expect(label()).toContain("saved"));
+    expect(label()).not.toContain("inherited");
+  });
+
+  it("an unreadable config reports nothing rather than claiming inheritance", async () => {
+    const { authApi } = require("../../utils/authApi");
+    (authApi.getPublicConfig as jest.Mock).mockRejectedValueOnce(new Error("offline"));
+    open();
+    await waitFor(() => expect(label()).toContain("(optional)"));
   });
 });

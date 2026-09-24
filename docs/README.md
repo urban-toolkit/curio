@@ -8,6 +8,7 @@
 - [Node catalog](NODE-CATALOG.md)
 - [Data catalog](DATA-CATALOG.md)
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
+- [Data lake catalog](DATA-LAKE-CATALOG.md): the data portals this install can reach, and how a download from one becomes an ordinary dataset
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 
@@ -25,7 +26,7 @@ Each example below has a JSON dataflow you can import into Curio plus a step-by-
 
 The same examples are also seeded into the public deployments at [**curio.urbantk.org**](https://curio.urbantk.org) (stable) and [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or browse them read-only as a guest.
 
-Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_dataset_path("<id>")` rather than by a path into this repo. The four Autark examples (06, 07, 08, 11) are the exception, still reading a committed `.osm.pbf` by relative path, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
+Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_dataset_path("<id>")`. The four Autark examples (06, 07, 08, 11) read a committed `.osm.pbf` by relative path instead, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 
@@ -40,5 +41,10 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 | 07 | [Autark GPU shader](examples/07-autark-gpu-shader.md) | `autk-grammar` with a WGSL shadow-accumulation shader (minutes of shadow per road); thematic map + brushable histogram | Chicago Loop solstice shadows | 🔴 |
 | 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | `autk-grammar` loads roads from PBF, a Python node samples a 24-band LST raster, then GPU per-road OLS regression + linked scatter | Niterói per-road warming trend (2001 to 2024) | 🔴 |
 | 09 | [Heterogeneous data + linked views](examples/09-heterogeneous-data-linked-views.md) | Python UTCI pipeline fanned out via `Data Pool`; `autk-grammar` map + Vega-Lite scatter with bidirectional brushing | Milan urban heat exposure (UTCI) | 🔴 |
-| 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `curio.streetvision@1` Fetcher → HF Inference → Gallery, joined against `Data Loading` → `Data Transformation` polygons via `Spatial Join` → Vega-Lite map + bars | Chicago Lincoln Park greenery audit | 🔴 |
+| 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `curio.streetvision@1` Fetcher → HF Inference → Simple View, joined against `Data Loading` → `Data Transformation` polygons via `Spatial Join` → Vega-Lite map + bars | Chicago Lincoln Park greenery audit | 🔴 |
 | 11 | [Autark PBF loading](examples/11-autark-pbf-loading.md) | Single `autk-grammar` node loading OSM layers from a local `.pbf` file; all parsing in the browser via DuckDB-WASM | Lower Manhattan (Battery Park City + Financial District) | 🟢 |
+| 12 | [Vega-Lite GeoDataFrame maps](examples/12-vega-lite-geodataframe-maps.md) | A `GeoDataFrame` drawn straight by `mark: "geoshape"`, with no converter node; polygons plus a second `centroid` geometry column | Chicago ZIP boundaries | 🟢 |
+| 13 | [Vega-Lite geometry columns](examples/13-vega-lite-geometry-columns.md) | Which column holds the geometry: renamed columns, several at once, none at all, and the two states where the node refuses to guess | Chicago ZIP boundaries | 🟡 |
+| 14 | [Vega-Lite CRS and geometry types](examples/14-vega-lite-crs-and-geometry-types.md) | The same spec over any coordinate system and any geometry type, including derived columns, empty frames and missing geometry | Chicago ZIP boundaries | 🟡 |
+| 15 | [Vega-Lite spec forms and catalogs](examples/15-vega-lite-spec-forms-and-catalogs.md) | Writing the shape encoding and projection yourself, across layered and side-by-side maps, over geojson, GeoParquet and the output of the Spatial Join node | Chicago green roofs and sidewalk labels | 🟡 |
+| 16 | [Simple View: tables and images](examples/16-simple-view-tables-and-images.md) | Two paths into `Simple View`: a plain frame renders as a table, a frame with two generated image columns renders as a card per row | Synthetic aerial tiles, self-generating | 🟢 |

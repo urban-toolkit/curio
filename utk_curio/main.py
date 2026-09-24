@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import subprocess
+import json
 import os
+import re
 import sys
 import time
 import threading
@@ -29,6 +31,19 @@ COLOR_RESET = "\033[0m"
 COLOR_FRONTEND = "\033[96m"  # Cyan
 COLOR_BACKEND = "\033[92m"   # Green
 COLOR_SANDBOX = "\033[93m"   # Yellow
+
+# The Node.js major the project targets: the frontend build, Jest, and the
+# sandbox's Node subprocess. Keep in step with the Dockerfile, .nvmrc,
+# .node-version and both package.json "engines" fields --
+# test_launcher_node_version.py fails when they drift.
+NODE_MAJOR = 26
+
+# Recorded inside node_modules by the Node major that installed it; a tree from
+# another major (or with no stamp, i.e. any checkout from before Node 26) is
+# reinstalled once. ``npm install`` alone does not heal it: it never re-runs an
+# install script, and webpack's cache under node_modules/.cache is not keyed on
+# the Node version.
+NODE_STAMP = ".curio-node-major"
 
 shutdown_flag = threading.Event()
 processes = []
@@ -101,7 +116,74 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False, save_node_outputs=False, catalog_root=None, allow_runtime_install=None, isolation=None, exec_user=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+#: The unprivileged account isolated node code runs as. The Docker image
+#: creates it (see the Dockerfile's curio-exec note), which is what lets a
+#: deployment isolate without anyone naming it on the command line.
+DEFAULT_EXEC_USER = "curio-exec"
+
+
+def _discover_exec_user():
+    """The account isolated node code runs as, or None.
+
+    ``CURIO_EXEC_USER`` when the environment already names one - an empty value
+    means "none, deliberately", which is how a test stack asks for the
+    no-execution-user shape on a host that has the account. Otherwise the
+    conventional account the image creates.
+
+    Only meaningful as root: setuid is how the boundary is applied, so an
+    unprivileged launch has nothing to drop to. ``pwd`` is POSIX-only, which is
+    also what makes this return None on Windows.
+    """
+    if "CURIO_EXEC_USER" in os.environ:
+        return os.environ["CURIO_EXEC_USER"].strip() or None
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+
+        pwd.getpwnam(DEFAULT_EXEC_USER)
+    except (ImportError, KeyError):
+        return None
+    return DEFAULT_EXEC_USER
+
+
+def _why_not_isolated(exec_user, blockers):
+    """Why this host cannot isolate node execution."""
+    if blockers:
+        return "this host is missing " + ", ".join(blockers)
+    return (
+        f"no execution user is configured (no {DEFAULT_EXEC_USER!r} account, "
+        "or Curio is not running as root)"
+    )
+
+
+def _refuse_unisolated_deploy(exec_user, blockers):
+    """Stop a ``--deploy`` that cannot isolate, rather than serving anyway.
+
+    There are two shapes, and this is what keeps it to two: a deployment,
+    which has accounts AND isolates, or a local run, which has neither. The
+    third shape -- accounts without isolation -- is the one where every user's
+    node code shares one interpreter, so one person's ``pip install`` changes
+    what another person's nodes import and node-authoring rights are shell
+    access for everybody. It used to boot with a warning and a gate on
+    installs; the warning was easy to miss and the gate was a rule nobody
+    could see from the command they typed.
+
+    ``CURIO_TESTING`` is exempt: the e2e and stress rigs run accounts without
+    isolation deliberately, on one machine, with users they create themselves.
+    """
+    raise SystemExit(
+        "Refusing to start: --deploy needs isolated node execution, and "
+        f"{_why_not_isolated(exec_user, blockers)}.\n"
+        "\n"
+        "Without isolation every account's node code runs in one interpreter, "
+        "so one user's library install changes what everybody's nodes import. "
+        "Run Curio where it can isolate (the Docker image does: Linux, fork, "
+        "setrlimit, pyseccomp and the curio-exec account), or drop --deploy "
+        "and run it as the single-user tool it then is."
+    )
+
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -136,10 +218,20 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SANDBOX_TOKEN"] = (
         os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
     )
-    os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
+    # NOT implied by --deploy. The e2e harness boots --deploy to get the login
+    # page, and two suites exist to cover multi-user WITHOUT examples
+    # (test_examples_for_registered_users_e2e.py), so seeding has to be asked
+    # for. docker-compose.deploy.yml passes --with-examples explicitly.
+    os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
-    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
+    # No CLI flag: this only seeds the per-node "Save output dataset" toggle,
+    # which every user can flip in the UI, so it is an operator env var rather
+    # than another curio.py argument. Read, never overwritten, so setting it in
+    # a compose ``environment:`` block reaches the backend.
+    os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = os.environ.get(
+        "CURIO_DEFAULT_SAVE_NODE_OUTPUT", "0"
+    )
     if catalog_root:
         os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
@@ -152,32 +244,87 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         "CURIO_SHARED_DATA"
     ) or str(Path("./.curio/data").resolve())
 
+    # Set before anything reads it: the database URL, the testing routes and
+    # the isolation exemption below all key off this one value. A pre-set env
+    # var still wins, because the pytest rig has no command line to pass a
+    # flag on -- it imports the app in-process.
+    if testing:
+        os.environ["CURIO_TESTING"] = "1"
+
     if deploy:
         os.environ["CURIO_NO_AUTH"] = "0"
         os.environ["CURIO_NO_PROJECT"] = "0"
     else:
-        os.environ["CURIO_NO_AUTH"] = (
-            "1" if no_project else ("0" if auth else "1")
-        )
+        os.environ["CURIO_NO_AUTH"] = "1"
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
-    # Follows the --allow-publish precedent: permissive for a local single-user
-    # install, locked down once the instance is multi-user. On a local launch
-    # the endpoint grants nothing the user's own shell does not already have;
-    # on a shared one it is an unrecorded 'pip install' into the interpreter
-    # that executes node code. An explicit flag wins over both defaults.
     hosted = os.environ["CURIO_NO_AUTH"] == "0"
-    if allow_runtime_install is None:
-        allow_runtime_install = not hosted
-    os.environ["CURIO_ALLOW_RUNTIME_INSTALL"] = "1" if allow_runtime_install else "0"
 
-    # Node-execution isolation (utk_curio/sandbox/isolation/). Opt-in: 'auto'
-    # resolves to off, so nothing changes for an existing deployment until an
-    # operator asks for it with --isolation=fork.
-    os.environ["CURIO_ISOLATION"] = isolation or "auto"
-    if exec_user:
-        os.environ["CURIO_EXEC_USER"] = str(exec_user)
-    if exec_memory_mb:
+    # Node-execution isolation (utk_curio/sandbox/isolation/).
+    #
+    # A deployment is the multi-tenant shape, so it isolates by default: node
+    # libraries then land in the caller's own overlay instead of the one
+    # interpreter every user's nodes import from. Anything else is a local
+    # launch, where one user owns the interpreter already.
+    #
+    # Conditional on actually being able to, because a DEFAULT must never be
+    # the reason an instance will not boot: --deploy has to work on Windows and
+    # macOS too, where there is no fork isolation to be had. A pre-set
+    # CURIO_ISOLATION is a request rather than a default, so `fork` there still
+    # fails closed. The version badge reports whichever way this went, so a
+    # deployment that quietly declined is visible rather than assumed.
+    #
+    # RESOLVED here, not passed through. 'auto' is a request, not an answer,
+    # and it used to be decided inside the sandbox - which left every other
+    # reader holding a value that does not say what will actually happen.
+    # ``resolve_mode`` is pure and ``capabilities()`` reads only sys.platform
+    # plus importable modules, so the launcher and the sandbox it spawns reach
+    # the same verdict.
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    exec_user = _discover_exec_user()
+    requested = os.environ.get("CURIO_ISOLATION", "").strip()
+    if not requested:
+        blockers = isolation_mode.missing_requirements(
+            isolation_mode.capabilities(), hosted=hosted,
+        )
+        if deploy and exec_user and not blockers:
+            requested = isolation_mode.FORK
+        else:
+            requested = isolation_mode.AUTO
+            if deploy and not _is_testing():
+                _refuse_unisolated_deploy(exec_user, blockers)
+
+    isolation_resolved, isolation_reason = isolation_mode.resolve_mode(
+        requested, hosted=hosted,
+    )
+    os.environ["CURIO_ISOLATION"] = isolation_resolved
+    if isolation_reason:
+        log_warning(isolation_reason)
+    # Always exported, including empty: a discovered account has to reach the
+    # sandbox, and an explicit empty value has to survive as "none, deliberately".
+    os.environ["CURIO_EXEC_USER"] = exec_user or ""
+    # ``is not None``, unlike the flags around it: 0 is a value an operator can
+    # type, and it has to hit the clamp rather than fall through to the default.
+    if exec_memory_mb is not None:
+        from utk_curio.sandbox.isolation.supervisor import MIN_EXEC_MEMORY_MB
+
+        # Clamped, not just warned about, because the number is spent by code
+        # that cannot see it: codec.py sizes DuckDB's memory_limit against this
+        # budget, and that write happens inside the child's RLIMIT_AS cap.
+        # Below the floor there is nothing left to size against, and a writer
+        # reserving address space the child does not have is #334 all over
+        # again. The floor is on the headroom, not on the child's total -
+        # child._apply_rlimits adds the interpreter's own footprint on top.
+        if int(exec_memory_mb) < MIN_EXEC_MEMORY_MB:
+            log_warning(
+                f"--exec-memory-mb {exec_memory_mb} is below the "
+                f"{MIN_EXEC_MEMORY_MB}MB floor and was raised to it. Node code "
+                "needs room to allocate beyond the interpreter the child starts "
+                "with. To fit more concurrent nodes on a small host, lower "
+                "--exec-parallelism instead."
+            )
+            exec_memory_mb = MIN_EXEC_MEMORY_MB
         os.environ["CURIO_EXEC_MEMORY_MB"] = str(exec_memory_mb)
     if exec_parallelism:
         os.environ["CURIO_EXEC_PARALLELISM"] = str(exec_parallelism)
@@ -230,13 +377,50 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
     log_always(f"CURIO_DEFAULT_SAVE_NODE_OUTPUT={os.environ['CURIO_DEFAULT_SAVE_NODE_OUTPUT']}")
-    log_always(f"CURIO_ALLOW_RUNTIME_INSTALL={os.environ['CURIO_ALLOW_RUNTIME_INSTALL']}")
     log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
     # The token itself is deliberately not logged.
     log_always("CURIO_SANDBOX_TOKEN=<set>")
     if catalog_root:
         log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
+
+def seed_duckdb_extensions():
+    """Put Curio's copy of DuckDB's spatial extension where duckdb-wasm looks.
+
+    autk-db's ``init()`` runs ``INSTALL spatial; LOAD spatial;``. In Node,
+    duckdb-wasm keeps installed extensions under
+    ``~/.duckdb/extensions/<repository>/<version>/<platform>/`` and only
+    downloads one that is not there — so seeding that directory from
+    ``vendor/duckdb-extensions/`` means a node never reaches
+    extensions.duckdb.org: no 23 MB download on a cold container, nothing to
+    flake (#318), and an offline install still runs Autark nodes.
+
+    Copies only what is missing, and never fails a launch: without it the
+    extension is downloaded exactly as before.
+    """
+    import shutil
+    from pathlib import Path
+
+    source_root = Path(__file__).resolve().parent.parent / "vendor" / "duckdb-extensions"
+    if not source_root.is_dir():
+        return
+    target_root = Path.home() / ".duckdb" / "extensions" / "extensions.duckdb.org"
+    seeded = []
+    try:
+        for source in source_root.rglob("*.wasm"):
+            target = target_root / source.relative_to(source_root)
+            if target.is_file() and target.stat().st_size == source.stat().st_size:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            seeded.append(str(target.relative_to(target_root)))
+    except OSError as exc:
+        log_warning(f"[DuckDB] could not seed the spatial extension ({exc}); "
+                    f"it will be downloaded on demand instead")
+        return
+    if seeded:
+        log_always(f"[DuckDB] seeded extension(s) into {target_root}: {', '.join(seeded)}")
+
 
 def logger():
     """
@@ -262,6 +446,11 @@ def run_spa_static_server(directory: str, port: int) -> None:
     dist_dir = os.path.abspath(directory)
 
     class SpaStaticHandler(SimpleHTTPRequestHandler):
+        # The 1.0 default closes the socket after every response, so one page
+        # load opens hundreds of connections. Safe: every response here carries
+        # a Content-Length.
+        protocol_version = "HTTP/1.1"
+
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=dist_dir, **kwargs)
 
@@ -288,6 +477,98 @@ def run_spa_static_server(directory: str, port: int) -> None:
     with ThreadingHTTPServer(("0.0.0.0", port), SpaStaticHandler) as httpd:
         httpd.serve_forever()
 
+def _read_node_version():
+    """``(raw, major)`` for the ``node`` on PATH; ``(None, 0)`` when unreadable."""
+    try:
+        raw = subprocess.check_output(
+            ["node", "--version"], text=True, shell=shell_required,
+        ).strip()
+    except Exception as e:
+        log_error(f"Could not determine Node.js version: {e}")
+        return None, 0
+    major = 0
+    if raw.startswith("v"):
+        try:
+            major = int(raw[1:].split(".", 1)[0])
+        except ValueError:
+            pass
+    return raw, major
+
+
+def _node_tree_is_stale(root, major):
+    """True when ``root``'s node_modules was installed by a different Node major.
+
+    See ``NODE_STAMP``. A missing tree is not stale -- there is nothing to wipe
+    and the install that follows is a fresh one.
+    """
+    node_modules = os.path.join(root, "node_modules")
+    if not os.path.isdir(node_modules):
+        return False
+    try:
+        with open(os.path.join(node_modules, NODE_STAMP), encoding="utf-8") as fh:
+            return fh.read().strip() != str(major)
+    except OSError:
+        return True
+
+
+def _require_supported_node():
+    """Refuse to start on a Node older than the project targets.
+
+    Serving a prebuilt bundle would survive it, but the sandbox runs autk-db in
+    this Node, where Autark data nodes die mid-download (the undici regression
+    nodejs/undici#5360), and every npm script fails against it. That is a broken
+    install rather than a degraded one, and the failures it produces read as
+    bugs in Curio. No Node at all is a different case: nothing to be wrong, and
+    a Python-only session still works.
+
+    Exits non-zero rather than through clean_shutdown, whose 0 would tell a
+    script that the stack came up. Nothing is running yet to shut down.
+    """
+    if shutil.which("node") is None:
+        return
+    raw, major = _read_node_version()
+    if raw is None or major >= NODE_MAJOR:
+        return
+    log_error(
+        f"Node.js {raw} detected; Curio requires Node.js {NODE_MAJOR} or newer. "
+        f"Upgrade with 'conda install -c conda-forge nodejs={NODE_MAJOR}' or "
+        f"from https://nodejs.org, then retry."
+    )
+    sys.exit(1)
+
+
+def _frontend_tree_is_stale():
+    """node_modules belongs to another Node major, and Node is here to tell.
+
+    Nothing to check without a tree (the container and pip ship none) or
+    without Node on PATH. A *missing* tree is not stale: it fails obviously,
+    one npm install away, and conjuring 1.6 GB nobody asked for would undo a
+    deliberate delete.
+    """
+    if shutil.which("npm") is None or shutil.which("node") is None:
+        return False
+    if not os.path.isfile(os.path.join(_frontend_dir(), "package.json")):
+        return False  # nothing to reinstall from, so nothing to report
+    _, major = _read_node_version()
+    return bool(major) and _node_tree_is_stale(_frontend_dir(), major)
+
+
+def _write_node_stamp(root, major):
+    """Record the Node major that installed ``root``'s node_modules.
+
+    Called after a successful install only, so a failed one does not leave a
+    stamp claiming the tree is current.
+    """
+    node_modules = os.path.join(root, "node_modules")
+    try:
+        os.makedirs(node_modules, exist_ok=True)
+        with open(os.path.join(node_modules, NODE_STAMP), "w", encoding="utf-8") as fh:
+            fh.write(str(major))
+    except OSError as exc:
+        # Unstamped counts as stale, so the only cost is one extra reinstall.
+        log_warning(f"Could not record the installing Node.js major: {exc}")
+
+
 def check_install_build(dir, force_rebuild=False):
     # Determine the absolute path whether it is provided as relative or absolute
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -299,43 +580,44 @@ def check_install_build(dir, force_rebuild=False):
     os.chdir(abs_dir)
     log_info(f"[Frontend] Current working directory for npm commands: {os.getcwd()}", COLOR_FRONTEND, 0)
     
+    if shutil.which("npm") is None:
+        log_error(f"[Frontend] npm not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'npm' is available in your terminal, then retry.")
+        clean_shutdown()
+        return
+
+    if shutil.which("node") is None:
+        log_error(f"[Frontend] node not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'node' is available in your terminal, then retry.")
+        clean_shutdown()
+        return
+    node_version_raw, node_major = _read_node_version()
+    if node_version_raw is None:
+        clean_shutdown()
+        return
+    if node_major < NODE_MAJOR:
+        log_error(
+            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js {NODE_MAJOR} or newer. "
+            f"Upgrade with 'conda install -c conda-forge nodejs={NODE_MAJOR}' or from https://nodejs.org, then retry."
+        )
+        clean_shutdown()
+        return
+
+    # A tree from another Node major is reinstalled (see NODE_STAMP), and only
+    # the tree: which Node ran webpack does not change the JavaScript it emits,
+    # so the bundle is judged by its own stamp below and usually survives.
+    if not force_rebuild and _node_tree_is_stale(abs_dir, node_major):
+        log_info(
+            f"[Frontend] node_modules was installed by a different Node.js major; "
+            f"reinstalling for Node.js {node_major}...",
+            COLOR_FRONTEND, 0,
+        )
+        shutil.rmtree(os.path.join(abs_dir, "node_modules"), ignore_errors=True)
+
     if force_rebuild:
         log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
         for subdir in ("node_modules", "dist", "build"):
             full_path = os.path.join(abs_dir, subdir)
             if os.path.exists(full_path):
                 shutil.rmtree(full_path)
-    
-    if shutil.which("npm") is None:
-        log_error("[Frontend] npm not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'npm' is available in your terminal, then retry.")
-        clean_shutdown()
-        return
-
-    if shutil.which("node") is None:
-        log_error("[Frontend] node not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'node' is available in your terminal, then retry.")
-        clean_shutdown()
-        return
-    try:
-        node_version_raw = subprocess.check_output(
-            ["node", "--version"], text=True, shell=shell_required,
-        ).strip()
-    except Exception as e:
-        log_error(f"[Frontend] Could not determine Node.js version: {e}")
-        clean_shutdown()
-        return
-    node_major = 0
-    if node_version_raw.startswith("v"):
-        try:
-            node_major = int(node_version_raw[1:].split(".", 1)[0])
-        except ValueError:
-            pass
-    if node_major < 24:
-        log_error(
-            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js 24 or newer. "
-            f"Upgrade with 'conda install -c conda-forge nodejs=24' or from https://nodejs.org, then retry."
-        )
-        clean_shutdown()
-        return
 
     # Run npm install unconditionally. It's idempotent and fast (~1 s) when
     # the lockfile is already satisfied, and it self-heals when package.json
@@ -351,34 +633,16 @@ def check_install_build(dir, force_rebuild=False):
     except Exception as e:
         log_error(f"[Frontend] Failed to run 'npm install': {e}")
         clean_shutdown()
-
-    # Check if dist/build directory exists (depending on your setup)
-    build_dir = "dist" if os.path.exists("dist") else "build"
-    # ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an
-    # existing build is only reusable if it was built for the backend we are
-    # about to start. Without this, changing --backend-port reused the old
-    # bundle and the UI kept calling the previous port -- which, when another
-    # Curio owns it, means a session quietly driving someone else's backend.
-    # The stamp records what the current build was made for.
-    stamp_path = os.path.join(build_dir, ".curio-backend-url")
-    wanted_url = os.environ.get("BACKEND_URL", "")
-    built_url = None
-    if os.path.exists(stamp_path):
-        try:
-            with open(stamp_path, encoding="utf-8") as fh:
-                built_url = fh.read().strip()
-        except OSError:
-            built_url = None
-
-    if not os.path.exists(build_dir):
-        reason = f"{build_dir} directory not found"
-    elif built_url != wanted_url:
-        reason = (
-            f"built for {built_url or 'an unrecorded backend'}, "
-            f"need {wanted_url or 'the .env default'}"
-        )
     else:
-        reason = None
+        _write_node_stamp(abs_dir, node_major)
+
+    # The only output there is: webpack writes it and start_frontend serves it by
+    # name. A ``"dist" if exists else "build"`` fallback used to stamp a build/
+    # this function created itself, which then stood in for a deleted dist and
+    # skipped the build (test_leftover_build_dir_does_not_suppress_the_build).
+    # Same check start_frontend gates on, so the two never disagree about
+    # whether the existing build is reusable.
+    reason = _build_stamp_reason(abs_dir)
 
     if reason is not None:
         log_info(f"[Frontend] Running npm run build ({reason})...", COLOR_FRONTEND, 0)
@@ -393,33 +657,126 @@ def check_install_build(dir, force_rebuild=False):
         else:
             # Written after a successful build only, so a failed one does not
             # leave a stamp claiming the bundle matches.
-            try:
-                os.makedirs(build_dir, exist_ok=True)
-                with open(stamp_path, "w", encoding="utf-8") as fh:
-                    fh.write(wanted_url)
-            except OSError as exc:
-                log_info(
-                    f"[Frontend] Could not record the built backend URL ({exc}); "
-                    f"the next start will rebuild.",
-                    COLOR_FRONTEND,
-                    0,
-                )
+            _write_build_stamp(abs_dir)
     else:
-        log_info(f"[Frontend] {build_dir} is current for {wanted_url}. Skipping npm run build.", COLOR_FRONTEND, 0)
+        log_info(
+            f"[Frontend] dist is current for "
+            f"{os.environ.get('BACKEND_URL', '') or 'the .env default'}. "
+            f"Skipping npm run build.",
+            COLOR_FRONTEND, 0,
+        )
 
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
     check_install_build("frontend/urban-workflows/", force_rebuild=True)
     log_info(f"[Frontend] Force rebuild complete.", COLOR_FRONTEND, 0)
 
+def _frontend_dir() -> str:
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "frontend", "urban-workflows"
+    )
+
+
+def _frontend_is_built(root: str = "") -> bool:
+    return os.path.isfile(os.path.join(root or _frontend_dir(), "dist", "index.html"))
+
+
+def _frontend_build_mode(root: str = "") -> str:
+    """The webpack mode ``npm run build`` uses, read from package.json.
+
+    Read rather than pinned so the stamp follows the script: flip the script
+    between development and production and the next start rebuilds by itself.
+    """
+    try:
+        pkg = os.path.join(root or _frontend_dir(), "package.json")
+        with open(pkg, encoding="utf-8") as fh:
+            script = json.load(fh).get("scripts", {}).get("build", "")
+    except (OSError, ValueError):
+        return "unknown"
+    found = re.search(r"--mode\s+(\S+)", script)
+    return found.group(1) if found else "unknown"
+
+
+def _build_stamp_reason(root: str = "") -> str | None:
+    """Why the built frontend cannot be reused, or None when it can.
+
+    ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an existing
+    build is only reusable if it was built for the backend we are about to
+    start. Without this, changing --backend-port reused the old bundle and the
+    UI kept calling the previous port -- which, when another Curio owns it,
+    means a session quietly driving someone else's backend. The webpack mode is
+    stamped beside it: every checkout built before the move to a production
+    build carries a development bundle, three times the size, and nothing else
+    would ever notice.
+    """
+    dist = os.path.join(root or _frontend_dir(), "dist")
+    if not _frontend_is_built(root):
+        return "dist directory not found"
+
+    wanted_url = os.environ.get("BACKEND_URL", "")
+    wanted_mode = _frontend_build_mode(root)
+    built_mode = built_url = None
+    try:
+        with open(os.path.join(dist, ".curio-backend-url"), encoding="utf-8") as fh:
+            # Two lines: mode, then URL. A one-line stamp is the old format,
+            # which only a development-mode build ever wrote, so it rebuilds.
+            lines = fh.read().splitlines()
+        if len(lines) >= 2:
+            built_mode, built_url = lines[0].strip(), lines[1].strip()
+    except OSError:
+        pass
+
+    if built_mode != wanted_mode:
+        return f"built in {built_mode or 'an unrecorded'} mode, need {wanted_mode}"
+    if built_url != wanted_url:
+        return (
+            f"built for {built_url or 'an unrecorded backend'}, "
+            f"need {wanted_url or 'the .env default'}"
+        )
+    return None
+
+
+def _write_build_stamp(root: str = "") -> None:
+    dist = os.path.join(root or _frontend_dir(), "dist")
+    try:
+        os.makedirs(dist, exist_ok=True)
+        with open(os.path.join(dist, ".curio-backend-url"), "w", encoding="utf-8") as fh:
+            fh.write(f"{_frontend_build_mode(root)}\n{os.environ.get('BACKEND_URL', '')}\n")
+    except OSError as exc:
+        log_info(
+            f"[Frontend] Could not record what the build was made for ({exc}); "
+            f"the next start will rebuild.",
+            COLOR_FRONTEND, 0,
+        )
+
+
+def _frontend_needs_build() -> bool:
+    """The built frontend is missing or stale, and the source to fix it is here.
+
+    Checked before npm is: a checkout whose dist/ is current must start without
+    needing a toolchain, and only the build itself requires one.
+    """
+    if not os.path.isfile(os.path.join(_frontend_dir(), "package.json")):
+        return False
+    return _build_stamp_reason() is not None
+
+
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
     log_info(f"Starting frontend on {host}:{port}...", COLOR_FRONTEND, 0)
 
     _kill_port(int(port))
 
-    # Only check if running dev mode
+    # Build from source when something needs it: --dev compiles through
+    # webpack-dev-server, --force-rebuild was asked for, and a checkout with no
+    # dist/ has nothing for the static server to serve. A pip install and the
+    # shipped container both arrive with dist/ already built, so neither runs npm.
     original_dir = os.getcwd()
-    if os.getenv("CURIO_DEV") == "1":
+    if (
+        os.getenv("CURIO_DEV") == "1"
+        or force_rebuild
+        or _frontend_needs_build()
+        or _frontend_tree_is_stale()
+    ):
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
 
@@ -461,6 +818,18 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                 clean_shutdown()
 
         else:
+            if not _frontend_is_built():
+                # Without this the static server answers 404 to every request
+                # and the browser shows a blank page with no explanation.
+                log_error(
+                    "[Frontend] Nothing built to serve at "
+                    f"{os.path.join(_frontend_dir(), 'dist')}. Build it with "
+                    "'python curio.py --force-rebuild', or run with --dev to "
+                    "compile through the webpack dev server."
+                )
+                clean_shutdown()
+                return None
+
             env = os.environ.copy()
             env = {
                 **env,
@@ -719,6 +1088,19 @@ def _ensure_root_node_modules(project_root: str) -> None:
             "until 'npm install' is run at the repo root."
         )
         return
+
+    # An unreadable version leaves the tree alone rather than wiping it on a
+    # guess. An out-of-date one never reaches here: _require_supported_node
+    # stops the launch before any server starts.
+    node_version_raw, node_major = _read_node_version()
+    if node_version_raw and _node_tree_is_stale(project_root, node_major):
+        log_info(
+            f"[Sandbox] Root node_modules was installed by a different Node.js "
+            f"major; reinstalling for Node.js {node_major}...",
+            COLOR_SANDBOX, 0,
+        )
+        shutil.rmtree(os.path.join(project_root, "node_modules"), ignore_errors=True)
+
     # Run npm install unconditionally (mirrors the frontend's check_install_build):
     # it's idempotent and fast when the lockfile is already satisfied, and it
     # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
@@ -743,6 +1125,9 @@ def _ensure_root_node_modules(project_root: str) -> None:
         )
     except Exception as e:
         log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
+    else:
+        if node_major:
+            _write_node_stamp(project_root, node_major)
 
 
 def start_sandbox(host, port):
@@ -844,6 +1229,44 @@ def install_framework_requirements() -> None:
     )
 
 
+def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
+    """Provision one user's node libraries into their own tree (#332).
+
+    Best-effort per user, unlike the host install below, which exits non-zero.
+    One account's unsatisfiable manifest must not stop an instance booting for
+    everybody else - the failure belongs to whoever installed that package, and
+    they get a plain ImportError naming it the first time a node runs.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.resolver import merge_python_deps
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps_to_target,
+    )
+
+    merged, conflicts = merge_python_deps(entries)
+    for c in conflicts:
+        log_warning(
+            f"Dependency range conflict for {c.package} (user {user_key}): "
+            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
+        )
+    if not merged:
+        return
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    log_info(
+        f"[Setup] Installing node deps for user {user_key}: "
+        + ", ".join(sorted(merged)),
+        COLOR_BACKEND, 0,
+    )
+    try:
+        install_python_deps_to_target(
+            merged, str(overlay),
+            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+        )
+    except PipInstallError as exc:
+        log_error(f"[Setup] Node dep install failed for user {user_key}: {exc}")
+
+
 def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
@@ -880,6 +1303,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
         install_python_deps,
     )
     from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages import backend_runtime
     from utk_curio.backend.app.packages.backend_runtime import dep_destinations
     from utk_curio.backend.app.common.user_storage import users_base
 
@@ -900,7 +1324,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
     # per-user-store walk below. When example seeding is on
-    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk the
+    # (--with-examples => CURIO_SEED_EXAMPLES=1), also walk the
     # packages the bundled examples declare as dependencies — derived from
     # their dataflow.packages lockfiles (see example_dep_package_ids in
     # backend/app/packages/seed.py), NOT a full catalog walk. This
@@ -937,13 +1361,22 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     # The glob is narrowed to the package-store layout for the same reason it is
     # walked at all: rglob would also match manifests nested inside a package's
     # own payload, which are not installed packages.
+    #
+    # #332: under fork isolation a node's libraries live in the calling
+    # user's own tree, so this walk stops being one merged host install and
+    # becomes one install per user. The dedupe below has to go with it: two
+    # users who both installed curio.weather each need rasterio, in two
+    # different directories, and ``seen`` would have given it to whichever of
+    # them the glob reached first.
+    per_user: dict[str, list[tuple[str, dict]]] = {}
+    scoped = backend_runtime.per_user_node_envs()
     if users.is_dir():
         for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
                 m = load_packageage_manifest(mf.parent)
             except ManifestError:
                 continue
-            if m.dir_name in seen:
+            if not scoped and m.dir_name in seen:
                 continue
             seen.add(m.dir_name)
             destination, why = dep_destinations(m)
@@ -953,8 +1386,18 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
                     COLOR_BACKEND, 2,
                 )
                 continue
-            if m.python_deps:
+            if not m.python_deps:
+                continue
+            if scoped:
+                user_key = mf.parent.parent.parent.name
+                per_user.setdefault(user_key, []).append(
+                    (m.dir_name, dict(m.python_deps))
+                )
+            else:
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
+
+    for user_key, entries in sorted(per_user.items()):
+        _install_user_node_deps_at_boot(user_key, entries)
 
     if not per_pkg:
         return
@@ -1137,6 +1580,10 @@ def run_tests(argv, command_prefix="curio") -> None:
 
 
 def main():
+    # Local, like every other utk_curio import in this file: the launcher must
+    # stay importable without the sandbox stack. Needed here so --help can
+    # quote the floor rather than restate it.
+    from utk_curio.sandbox.isolation import supervisor
 
     global processes
     global verbosity
@@ -1204,10 +1651,6 @@ def main():
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
-        "--auth", action="store_true", default=False,
-        help="Enable authentication (sets CURIO_NO_AUTH=0). Default: off (CURIO_NO_AUTH=1)"
-    )
-    parser.add_argument(
         "--no-project", action="store_true", default=False,
         help=(
             "Skip login and projects pages "
@@ -1217,7 +1660,23 @@ def main():
     )
     parser.add_argument(
         "--deploy", action="store_true", default=False,
-        help="Enable authentication and projects (sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0)"
+        help=(
+            "Run as a multi-user instance: enable authentication and projects "
+            "(sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0). This is the only way "
+            "to turn auth on, so use it locally too when you need the login "
+            "page. Also isolates node execution where the host supports it."
+        ),
+    )
+    parser.add_argument(
+        "--testing", action="store_true",
+        help=(
+            "Run against the dedicated test database under .curio/test/ and "
+            "mount the test-only /api/testing routes (sets CURIO_TESTING=1). "
+            "Also the one exemption to --deploy requiring isolated execution: "
+            "a rig that creates its own accounts on one machine may run them "
+            "unisolated. Not for a real instance: the testing routes reset the "
+            "database and sign in as any user without a password."
+        ),
     )
     parser.add_argument(
         "--with-examples", action="store_true", default=False,
@@ -1239,41 +1698,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--allow-runtime-install", action=argparse.BooleanOptionalAction, default=None,
-        help=(
-            "Allow the sandbox's POST /install endpoint (sets "
-            "CURIO_ALLOW_RUNTIME_INSTALL=1). Defaults to on for a local "
-            "single-user launch and off once user auth is enabled (--auth / "
-            "--deploy), where it would be a second, unrecorded path to "
-            "'pip install' inside the interpreter that executes node code. "
-            "Pass either form to override the default explicitly."
-        ),
-    )
-    parser.add_argument(
-        "--isolation", choices=["auto", "fork", "off"], default=None,
-        help=(
-            "Run each node's Python in an isolated child process instead of "
-            "in-process (sets CURIO_ISOLATION). 'fork' opts in; 'off' forces "
-            "the in-process path; 'auto' (the default) currently resolves to "
-            "off. Requires Linux. On a hosted instance (--auth / --deploy) "
-            "'fork' is fail-closed: the sandbox refuses to start rather than "
-            "run unisolated."
-        ),
-    )
-    parser.add_argument(
-        "--exec-user", default=None,
-        help=(
-            "Unprivileged OS user to run isolated node code as (sets "
-            "CURIO_EXEC_USER). Only takes effect when the sandbox runs as "
-            "root, i.e. inside the Docker image."
-        ),
-    )
-    parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
-            "Memory ceiling per isolated node, in MB (sets "
-            "CURIO_EXEC_MEMORY_MB, default 4096). Note the real host ceiling "
-            "is this times --exec-parallelism."
+            "Memory a node may allocate, in MB, on top of the interpreter the "
+            "isolated child starts with (sets CURIO_EXEC_MEMORY_MB, default "
+            f"4096, floor {supervisor.MIN_EXEC_MEMORY_MB}). Note the real host "
+            "ceiling is this times --exec-parallelism."
         ),
     )
     parser.add_argument(
@@ -1288,16 +1718,9 @@ def main():
         "--exec-parallelism", type=int, default=None,
         help=(
             "How many isolated nodes may run at once (sets "
-            "CURIO_EXEC_PARALLELISM, default 2)."
-        ),
-    )
-    parser.add_argument(
-        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=False,
-        help=(
-            "Persist every node run's output as a Computed dataset in the "
-            "account Data Catalog (sets CURIO_DEFAULT_SAVE_NODE_OUTPUT=1). "
-            "Saving is opt-in per node by default (via each node's Save output "
-            "toggle); pass this to turn it on for every node instead."
+            "CURIO_EXEC_PARALLELISM). Defaults to half the host's cores, "
+            "capped at 8, with a floor of 2: the ceiling is memory, roughly "
+            "this times --exec-memory-mb."
         ),
     )
     parser.add_argument(
@@ -1368,15 +1791,22 @@ def main():
             "Experimental, LAN-only. Default: off"
         ),
     )
-    if os.getenv("CURIO_DEV") == "1":
-        parser.add_argument(
-            "--force-rebuild", action="store_true",
-            help="Force rebuild of the frontend"
-        )
-        parser.add_argument(
-            "--force-db-init", action="store_true",
-            help="Force re-initialization of the backend database"
-        )
+    parser.add_argument(
+        "--dev", action="store_true", default=False,
+        help=(
+            "Serve the frontend from the webpack dev server, with hot reload "
+            "and a development bundle (sets CURIO_DEV=1). Default: off -- the "
+            "built bundle in dist/ is served instead, which loads far faster."
+        ),
+    )
+    parser.add_argument(
+        "--force-rebuild", action="store_true",
+        help="Force rebuild of the frontend"
+    )
+    parser.add_argument(
+        "--force-db-init", action="store_true",
+        help="Force re-initialization of the backend database"
+    )
 
     # Display help if no arguments are given
     if len(sys.argv) == 1:
@@ -1384,6 +1814,14 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    # CURIO_DEV stays the mechanism every other launcher already sets -- the
+    # Dockerfile pins it to 0, scripts/test.sh and the e2e fixtures to 1 -- so an
+    # inherited value still applies when the flag is absent. The flag wins.
+    if args.dev:
+        os.environ["CURIO_DEV"] = "1"
+    else:
+        os.environ.setdefault("CURIO_DEV", "0")
 
     setup_logging(args.server)
     verbosity = int(args.verbose)
@@ -1393,18 +1831,14 @@ def main():
         backend_port=args.backend_port,
         sandbox_host=args.sandbox_host,
         sandbox_port=args.sandbox_port,
-        auth=args.auth,
         no_project=args.no_project,
         deploy=args.deploy,
         with_examples=args.with_examples,
         reseed=args.reseed,
         allow_publish=args.allow_publish,
+        testing=args.testing,
         collab=args.collab,
-        save_node_outputs=args.save_node_outputs,
         catalog_root=args.catalog_root,
-        allow_runtime_install=args.allow_runtime_install,
-        isolation=args.isolation,
-        exec_user=args.exec_user,
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,
         exec_parallelism=args.exec_parallelism,
@@ -1416,23 +1850,17 @@ def main():
         huggingface_token=args.huggingface_token,
     )
 
-    # if os.getenv("CURIO_DEV") != "1":
-        # if args.force_rebuild or args.force_db_init:
-            # print("Error: --force-rebuild and --force-db-init are not available when running Curio from pip. If you really need it, refer to the documentation to run Curio from curio.py.")
-            # sys.exit(1)
-    if os.getenv("CURIO_DEV") == "1":
-        # Handle standalone rebuild or db init without starting servers
-        if not args.command:
-            if args.force_rebuild:
-                log_info("Rebuilding frontend...", COLOR_FRONTEND, 0)
-                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
-            if args.force_db_init:
-                log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
-                start_backend(args.backend_host, args.backend_port, no_server=True)
-            sys.exit(0)
-    else:
-        args.force_rebuild = False
-        args.force_db_init = False
+    # Handle standalone rebuild or db init without starting servers. Neither
+    # depends on --dev: --force-rebuild rebuilds the dist/ the default mode
+    # serves, so it matters most when --dev is off.
+    if not args.command:
+        if args.force_rebuild:
+            log_info("Rebuilding frontend...", COLOR_FRONTEND, 0)
+            start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
+        if args.force_db_init:
+            log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
+            start_backend(args.backend_host, args.backend_port, no_server=True)
+        sys.exit(0)
 
     if args.command == "setup":
         install_framework_requirements()
@@ -1442,6 +1870,7 @@ def main():
         sys.exit(0)
 
     if args.command == "start":
+        _require_supported_node()
         # Mirror the ``shutil.which("npm")`` check at the top of
         # ``start_frontend``: catch drifted Python envs at launch instead
         # of crashing the sandbox/backend on its first module-level import.
@@ -1451,6 +1880,12 @@ def main():
         if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
             install_framework_requirements()
             install_manifest_dependencies()
+
+        # Autark's data path runs autk-db in the sandbox's Node, which installs
+        # DuckDB's spatial extension. Seed it from the copy Curio ships so that
+        # never becomes a download (#318).
+        if args.server in ("all", "sandbox"):
+            seed_duckdb_extensions()
 
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")

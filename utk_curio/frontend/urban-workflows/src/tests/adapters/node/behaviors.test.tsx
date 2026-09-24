@@ -1,5 +1,5 @@
 import React from 'react';
-import { renderHook, render, act } from '@testing-library/react';
+import { renderHook, render, act, waitFor } from '@testing-library/react';
 import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
@@ -30,6 +30,7 @@ jest.mock('../../../providers/ToastProvider', () => ({
 
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
+  fetchPreviewData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
 }));
 
 jest.mock('../../../components/editing/OutputContent', () => {
@@ -56,6 +57,9 @@ jest.mock('../../../providers/StarterProvider', () => ({
 }));
 
 jest.mock('../../../utils/parsing', () => ({
+  // The real geometry-name resolver: the Vega fill depends on it, and a stub
+  // returning undefined would make every geo case below silently fall back.
+  activeGeometryName: jest.requireActual('../../../utils/parsing').activeGeometryName,
   shortenString: (s: string) => s,
 }));
 
@@ -76,6 +80,7 @@ const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
 const mockAutkDbGetLayerTables = jest.fn(
   (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
 );
+const mockAutkDbSpatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
@@ -83,6 +88,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     loadGeojson: jest.fn().mockResolvedValue(undefined),
     loadCsv: jest.fn().mockResolvedValue(undefined),
     loadJson: jest.fn().mockResolvedValue(undefined),
+    spatialQuery: (...a: any[]) => mockAutkDbSpatialQuery(...a),
     getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
     getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
   })),
@@ -255,6 +261,122 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const result = await callBehavior(useVegaBehavior);
       assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
+    });
+
+    // ── default spec on connect ──────────────────────────────────────────
+    //
+    // The safety property throughout: a default is only ever offered into an
+    // empty buffer. A wrong default the user has to notice and undo is worse
+    // than no default at all.
+
+    const geoInput = {
+      dataType: 'geodataframe',
+      data: {
+        type: 'FeatureCollection',
+        geometry_name: 'geometry',
+        schema: { zip: 'str', pop: 'int64', geometry: 'geometry' },
+        features: [{ properties: { zip: '60601', pop: 1 }, geometry: null }],
+      },
+    } as any;
+
+    const frameInput = {
+      dataType: 'dataframe',
+      data: { zone: ['N', 'S'], pop: [1, 2] },
+      schema: { zone: 'str', pop: 'int64' },
+    } as any;
+
+    test('an empty buffer plus an arriving input populates', async () => {
+      const result = await callBehavior(useVegaBehavior, { input: geoInput });
+
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('an artifact input is classified from the preview envelope, geometry included', async () => {
+      // What the app actually hands a downstream node is an artifact reference,
+      // never the data (normalizeFlowInput). The preview fetched for it is
+      // parseOutput's envelope, with the dtypes BESIDE the FeatureCollection.
+      // Reading them off the FeatureCollection, which has none, left the
+      // classifier with the feature properties, where the geometry column never
+      // appears, and a GeoDataFrame of string attributes became a bar of counts.
+      const { fetchPreviewData } = require('../../../services/api');
+      (fetchPreviewData as jest.Mock).mockResolvedValueOnce({
+        dataType: 'geodataframe',
+        data: {
+          type: 'FeatureCollection',
+          geometry_name: 'geometry',
+          features: Array.from({ length: 12 }, (_, i) => ({
+            type: 'Feature',
+            properties: { zip: String(60600 + (i % 11)), shape_area: String(i) },
+            geometry: null,
+          })),
+        },
+        schema: { zip: 'str', shape_area: 'str', geometry: 'geometry' },
+        filename: 'artifact-1',
+        preview: true,
+      });
+
+      const result = await callBehavior(useVegaBehavior, {
+        input: { path: 'artifact-1', dataType: 'geodataframe' } as any,
+      });
+
+      expect(fetchPreviewData).toHaveBeenCalledWith('artifact-1');
+      await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('an inline FeatureCollection with no geometry_name still starts as a map', async () => {
+      // Spatial Join hands its consumer plain GeoJSON, inline and undeclared.
+      const result = await callBehavior(useVegaBehavior, {
+        input: {
+          dataType: 'geodataframe',
+          data: {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: { zip: '60601' }, geometry: { type: 'Point', coordinates: [0, 0] } }],
+          },
+        } as any,
+      });
+
+      await waitFor(() => expect(result.current.defaultValueOverride).toBeDefined());
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('geoshape');
+      expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+    });
+
+    test('a plain DataFrame gets a chart from the ladder, not a map', async () => {
+      const result = await callBehavior(useVegaBehavior, { input: frameInput });
+
+      const spec = JSON.parse(result.current.defaultValueOverride as string);
+      expect(spec.mark).toBe('bar');
+      expect(spec.encoding.x.field).toBe('zone');
+    });
+
+    test('a non-empty buffer is never touched', async () => {
+      // The whole safety property.
+      const result = await callBehavior(
+        useVegaBehavior,
+        { input: geoInput, defaultCode: '{"mark": "bar"}' },
+      );
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    test('no input leaves the buffer empty', async () => {
+      // An edge alone carries no schema, so there is nothing to fill from.
+      const result = await callBehavior(useVegaBehavior, { input: '' as any });
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
+    test('an input with nothing chartable in it fills nothing', async () => {
+      const result = await callBehavior(useVegaBehavior, {
+        input: { dataType: 'dataframe', data: {}, schema: {} } as any,
+      });
+
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
   });
 
@@ -793,6 +915,96 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
     });
 
+    // The rest of #248. When the backend load fails (in CI: undici's
+    // assert(!this.paused) in the sandbox's Node) and the in-browser fallback
+    // succeeds, the node went green but handed downstream a bare layer array.
+    // A Data Pool cannot read that shape, so it sat on "No data yet" and
+    // test_node_execution timed out waiting for its table.
+    const FALLBACK_SPEC = JSON.stringify({
+      data: [{
+        type: 'osm',
+        pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+        outputTableName: 'table_osm',
+        autoLoadLayers: { layers: ['surface', 'roads'] },
+      }],
+      // no map / plot => data-only node
+    });
+    const isPersist = (code: string) => code.startsWith('const __wrapper = ');
+    const persistedWrapper = (code: string) =>
+      JSON.parse(code.slice('const __wrapper = '.length, code.lastIndexOf(';\nreturn')));
+
+    test('data-only node: an in-browser fallback hands the Data Pool a persisted wrapper, not bare layers (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, code, _input, _inputTypes, cb) => cb(isPersist(code)
+          ? { stdout: [], stderr: '', output: { path: 'art-fallback', dataType: 'dict' } }
+          : { stdout: [], stderr: 'undici assert(!this.paused)', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_roads', type: 'roads' },
+      ]);
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(FALLBACK_SPEC);
+      });
+
+      // Two backend load attempts, then the fallback's layers are persisted.
+      expect(interpretCode).toHaveBeenCalledTimes(3);
+      const persisted = persistedWrapper(interpretCode.mock.calls[2][1]);
+      expect(persisted.dataType).toBe('outputs');
+      expect(persisted.data.map((d: any) => d.layerName))
+        .toEqual(['table_osm_surface', 'table_osm_roads']);
+      // Downstream gets the artifact ref the Data Pool fetches, never the bare array.
+      expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-fallback', dataType: 'dict' });
+      expect(outputCallback.mock.calls.some((c: any[]) => Array.isArray(c[1]))).toBe(false);
+      expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
+
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    test('data-only node: if persisting the fallback fails too, the Data Pool still gets the wrapper inline (#248)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([
+        { name: 'table_osm_surface', type: 'surface' },
+        { name: 'table_osm_roads', type: 'roads' },
+      ]);
+
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(FALLBACK_SPEC);
+      });
+
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      const [, out] = outputCallback.mock.calls[0];
+      expect(Array.isArray(out)).toBe(false);
+      expect(out.dataType).toBe('outputs');
+      expect(out.data.map((d: any) => d.layerName)).toEqual(['table_osm_surface', 'table_osm_roads']);
+
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
     // The other side of the predicate: missing WITHOUT a recorded error is a
     // genuinely empty query area (autk-db creates a layer table even at zero
     // features), so it must warn rather than fail. This is what keeps the
@@ -896,6 +1108,120 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(errCall![0].content).not.toContain('table_osm_surface');
       expect(errCall![0].content).not.toContain('table_osm_roads');
 
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue([]);
+    });
+
+    // #319. A join rewrites a table another source created, so the missing-table
+    // check can never see it fail: Regression.json's join died with a DuckDB
+    // Binder Error on every run while its node reported Done.
+    const JOIN_SPEC = {
+      data: [
+        {
+          type: 'osm',
+          pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+          outputTableName: 'table_osm',
+          autoLoadLayers: { layers: ['surface', 'roads'] },
+        },
+        {
+          type: 'join',
+          tableRootName: 'table_osm_roads',
+          tableJoinName: 'table_osm_surface',
+          near: { distance: 50 },
+          groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
+        },
+      ],
+    };
+    const BINDER_ERROR = 'Binder Error: Referenced column "osm_id" not found in FROM clause!';
+    const JOIN_TABLES = [
+      { name: 'table_osm_surface', type: 'surface' },
+      { name: 'table_osm_roads', type: 'roads' },
+    ];
+
+    // The script the sandbox runs, captured from the first interpretCode call.
+    async function captureSandboxScript(spec: object): Promise<string> {
+      let sent = '';
+      const interpretCode = jest.fn((_u, code, _i, _t, cb) => {
+        if (!sent) sent = code;
+        cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } });
+      });
+      const result = await callBehavior(useAutkGrammarBehavior, {
+        jsInterpreter: { interpretCode } as any,
+      });
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      return sent;
+    }
+
+    // Run that script the way the sandbox does (an async function body), with a
+    // stand-in for the autk-db module its one import names.
+    function runSandboxScript(code: string, db: Record<string, any>): Promise<any> {
+      const body = code.replace(/^import \* as __autkDbMod from '@urban-toolkit\/autk-db';/, '');
+      const mod = { AutkDb: function AutkDb() { return db; }, DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395' };
+      // Built from source text rather than `AsyncFunction`: the test transform
+      // compiles `async` arrows down, so their constructor is plain Function.
+      return new Function('__autkDbMod', `return (async () => {\n${body}\n})();`)(mod);
+    }
+
+    function fakeSandboxDb(spatialQuery?: (...a: any[]) => Promise<unknown>) {
+      return {
+        init: async () => {},
+        loadOsm: async () => {},
+        ...(spatialQuery ? { spatialQuery } : {}),
+        getLayerTables: () => JOIN_TABLES,
+        getLayer: async () => ({ type: 'FeatureCollection', features: [] }),
+      };
+    }
+
+    test('sandbox script: a failed spatial join fails the run (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const db = fakeSandboxDb(() => Promise.reject(new Error(BINDER_ERROR)));
+      await expect(runSandboxScript(code, db)).rejects.toThrow(/join.*osm_id/s);
+    });
+
+    test('sandbox script: a join autk-db cannot run fails the run (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      await expect(runSandboxScript(code, fakeSandboxDb())).rejects.toThrow(/join/);
+    });
+
+    test('sandbox script: a join that succeeds still returns every layer (#319)', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const out = await runSandboxScript(code, fakeSandboxDb(() => Promise.resolve(undefined)));
+      expect(out.map((l: any) => l.name)).toEqual(['table_osm_surface', 'table_osm_roads']);
+    });
+
+    test('in-browser load: a failed spatial join fails the node instead of reporting Done (#319)', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayerTables.mockReset();
+      mockAutkDbGetLayerTables.mockReturnValue(JOIN_TABLES);
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockRejectedValue(new Error(BINDER_ERROR));
+
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(JOIN_SPEC));
+      });
+
+      const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+      expect(errCall).toBeTruthy();
+      expect(errCall![0].content).toContain('join');
+      expect(errCall![0].content).toContain('osm_id');
+      expect(outputCallback).not.toHaveBeenCalled();
+
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockResolvedValue(undefined);
       mockAutkDbGetLayerTables.mockReset();
       mockAutkDbGetLayerTables.mockReturnValue([]);
     });

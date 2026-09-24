@@ -29,6 +29,7 @@ from typing import Iterable
 
 from utk_curio.backend.app.packages import defaults as defaults_io
 from utk_curio.backend.app.packages.locks import package_seed_lock
+from utk_curio.backend.app.packages.target_locks import target_lock
 from utk_curio.backend.app.packages.installer import (
     InstallerError,
     install_packageage_from_directory,
@@ -43,6 +44,7 @@ from utk_curio.backend.app.packages.spec_packages import (
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
     PackageIdError,
+    catalog_root as storage_catalog_root,
     list_user_packageages,
     package_dir,
     user_packageages_dir,
@@ -51,6 +53,10 @@ from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
+
+#: ``target_locks`` name for a user's node overlay. An install and a delete
+#: both rewrite one tree, so they take the same lock rather than racing.
+_NODE_OVERLAY_LOCK = "_node-overlay"
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +71,7 @@ def catalog_root() -> Path:
     future cleanup can centralise these three copies in one place.
     """
     # services.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-    return Path(__file__).resolve().parents[4] / "packages"
+    return storage_catalog_root()
 
 
 class PackageServiceError(Exception):
@@ -262,6 +268,151 @@ def _overlay_import_failures(user_key: str, dir_name: str, deps):
     return _import_failures_or_silence(deps, overlay_dir=overlay)
 
 
+def install_user_library(user_key: str, name: str, version: str):
+    """Install one standalone library for *user_key*, wherever their nodes
+    import from.
+
+    The libraries dialog's half of the #332 split, and the same rule
+    :func:`provision_python_deps` follows: the calling user's own tree under
+    isolation, the shared interpreter without it. Raises what pip raises - the
+    route turns a bad requirement into a 400 and a failed install into a 502.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        install_python_deps, install_python_deps_to_target,
+    )
+
+    deps = {name: version}
+    if not backend_runtime.per_user_node_envs():
+        return install_python_deps(deps)
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    with target_lock(user_key, _NODE_OVERLAY_LOCK):
+        return install_python_deps_to_target(deps, str(overlay))
+
+
+def uninstall_user_library(user_key: str, name: str):
+    """Remove one standalone library from wherever *user_key*'s nodes import it.
+
+    The mirror of :func:`install_user_library`, and it has to be: under
+    isolation the library lives in that user's own overlay, so running
+    ``pip uninstall`` against the shared interpreter would both fail to remove
+    their copy and risk removing a host-level package something else needs.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        UninstallReport, uninstall_python_deps,
+        uninstall_python_deps_from_target,
+    )
+
+    if not backend_runtime.per_user_node_envs():
+        return uninstall_python_deps([name])
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    if not overlay.is_dir():
+        # Nothing was ever installed for this user; saying so beats raising.
+        return UninstallReport(removed=[], kept=[name])
+    with target_lock(user_key, _NODE_OVERLAY_LOCK):
+        return uninstall_python_deps_from_target([name], str(overlay))
+
+
+def user_library_import_failure(user_key: str, name: str):
+    """Why *name* cannot be imported by *user_key*'s nodes, or None.
+
+    pip exiting 0 does not mean the library works, and asking the wrong
+    environment is its own way of being wrong: under isolation the host
+    interpreter has never heard of a library that installed perfectly well into
+    the user's tree, and reporting that as a broken install would be a
+    fabricated failure.
+    """
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    if backend_runtime.per_user_node_envs():
+        return _node_overlay_import_failures(user_key, [name]).get(name)
+    return pip_runner.import_failures([name]).get(name)
+
+
+def _provision_user_node_deps(
+    user_key: str, py_deps: dict, failures: dict,
+) -> list[str]:
+    """Install *py_deps* into *user_key*'s node overlay; report what broke.
+
+    Incremental, unlike the per-package handler overlay: that one is derived
+    state rebuilt from one manifest, so wiping it is cheap and correct. This
+    tree is the sum of everything a user has installed, and wiping it to add
+    one library would re-run pip over their whole environment - and leave them
+    with nothing at all if that run failed offline.
+
+    So the probe decides the work: only names that cannot already be imported
+    from the tree are handed to pip. That is also what keeps a re-install of an
+    already-satisfied package from making pip rewrite a tree it is happy with.
+    """
+    from utk_curio.backend.app.packages import backend_runtime
+    from utk_curio.backend.app.packages.pip_runner import (
+        install_python_deps_to_target,
+    )
+
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    overlay.mkdir(parents=True, exist_ok=True)
+    before = _node_overlay_import_failures(user_key, py_deps)
+    missing = {name: spec for name, spec in py_deps.items() if name in before}
+    installed: list[str] = []
+    if missing:
+        report = install_python_deps_to_target(missing, str(overlay))
+        installed = sorted(report.installed)
+    failures.update(_node_overlay_import_failures(user_key, py_deps))
+    return installed
+
+
+def _node_overlay_import_failures(user_key: str, deps) -> dict[str, str]:
+    """The user's node overlay's verdict on *deps*.
+
+    Probed with THIS process's interpreter, not ``sandbox_interpreter()``: the
+    consumer of a node overlay is the sandbox, which the launcher starts with
+    the interpreter the backend is running under. ``CURIO_BACKEND_SANDBOX_PYTHON``
+    pins the handler-worker interpreter, and following it here would answer for
+    one that never imports this tree.
+    """
+    import sys
+
+    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+
+    if not deps:
+        return {}
+    overlay = backend_runtime.user_node_overlay_dir(user_key)
+    if not overlay.is_dir():
+        return {name: "not installed" for name in deps}
+    try:
+        return pip_runner.import_failures_in(deps, str(overlay), sys.executable)
+    except Exception:  # noqa: BLE001 - a probe failure must not fail the install
+        log.warning("node overlay probe failed for %s", sorted(deps), exc_info=True)
+        return {}
+
+
+def assert_may_install() -> None:
+    """Refuse the caller if this instance must not run pip for them (#332).
+
+    Placed at the funnel rather than on each route on purpose. Eight routes
+    reach pip and only the two ``/libraries`` ones were gated; a gate per route
+    is a gate a ninth route will be added without. Everything that installs goes
+    through :func:`provision_python_deps`, so this is the one place that cannot
+    be bypassed by adding an endpoint.
+
+    The caller comes from the request context rather than a parameter, because
+    the functions here take a ``user_key`` string and the predicate needs the
+    account. Outside a request there is no user, which is the launcher
+    installing manifests at boot, and ``package_install_refusal(None)`` passes
+    that deliberately.
+    """
+    from flask import g, has_request_context
+
+    from utk_curio.backend.app.users.capabilities import package_install_refusal
+
+    user = getattr(g, "user", None) if has_request_context() else None
+    refusal = package_install_refusal(user)
+    if refusal:
+        raise PackageServiceError(refusal, 403)
+
+
 def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutcome:
     """pip-install *manifest*'s declared python deps, then check they IMPORT.
 
@@ -302,12 +453,21 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
             verdict = _overlay_import_failures(user_key, dir_name, py_deps) or {}
         failures.update(verdict)
     if destination in ("host", "both"):
-        pip_report = install_python_deps(py_deps)
-        host_installed = sorted(pip_report.installed)
-        # Host last, deliberately: for a "both" package a broken host copy is
-        # the one the user can repair with a plain pip, so it is the reason
-        # worth surfacing when both environments are broken.
-        failures.update(_import_failures_or_silence(py_deps))
+        # "host" names the environment NODE code runs in, and #332 moved where
+        # that is. Under fork isolation a node runs in a forked child that
+        # can be given its own sys.path, so the deps go to the calling user's
+        # own tree and stop being importable by everybody. Without isolation
+        # there is one warm worker with one sys.modules and nothing to scope
+        # into, so this stays the shared interpreter exactly as before.
+        if backend_runtime.per_user_node_envs():
+            host_installed = _provision_user_node_deps(user_key, py_deps, failures)
+        else:
+            pip_report = install_python_deps(py_deps)
+            host_installed = sorted(pip_report.installed)
+            # Host last, deliberately: for a "both" package a broken host copy
+            # is the one the user can repair with a plain pip, so it is the
+            # reason worth surfacing when both environments are broken.
+            failures.update(_import_failures_or_silence(py_deps))
     # Deliberately NOT _declared_import_failures: it would route and probe all
     # over again, and the overlay half is unmemoised, so a healthy overlay paid
     # two full cold-import subprocesses for one install.
@@ -336,6 +496,8 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     ``dependencyError`` when pip itself failed, ``restartRecommended`` when pip
     changed a shared library under the running server.
     """
+    assert_may_install()
+
     from utk_curio.backend.app.packages import backend_runtime
     from utk_curio.backend.app.packages.pip_runner import PipInstallError, PipSpecError
 
@@ -1096,6 +1258,8 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     overlay is rebuilt rather than its deps being quietly redirected at the
     host interpreter its handlers never import from.
     """
+    assert_may_install()
+
     if not PACKAGE_DIR_RE.match(dir_name):
         raise PackageServiceError(f"invalid dirName: {dir_name!r}")
     if not _is_installed_in_user_store(user_key, dir_name):
@@ -1148,6 +1312,37 @@ def install_to_project(
         "addedToUserStore": outcome.copied,
         **extra,
     }
+
+
+def detach_from_all_projects(user_key: str, dir_name: str) -> list[str]:
+    """Drop *dir_name* from every one of this user's project lockfiles.
+
+    A lockfile entry is a reference Curio manages, not something the user
+    typed, so removing the package it names is Curio's job too. Leaving them
+    behind gave every dataflow that had ever installed the package a
+    permanent dangling entry: ``useEnsureWorkflowDeps`` tries to reinstall
+    anything in the lockfile that is not in the store, so each open of that
+    dataflow retried an install that cannot succeed and ended in "Could not
+    install <coordinate>".
+
+    Best-effort per project: a spec that cannot be read or written is skipped
+    rather than failing the uninstall, since the package is already gone from
+    the store by the time this runs. Returns the project ids it changed.
+    """
+    detached: list[str] = []
+    for project_id in projects_storage.list_project_ids(user_key):
+        try:
+            current = get_project_lockfile(user_key, project_id)
+        except Exception:  # noqa: BLE001 - an unreadable spec is not this call's problem
+            continue
+        if dir_name not in current:
+            continue
+        try:
+            _write_lockfile(user_key, project_id, current - {dir_name})
+        except Exception:  # noqa: BLE001 - same
+            continue
+        detached.append(project_id)
+    return detached
 
 
 def uninstall_from_project(

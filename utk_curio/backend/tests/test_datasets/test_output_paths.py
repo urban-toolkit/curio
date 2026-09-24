@@ -27,15 +27,18 @@ def test_computed_output_format_uses_data_type():
     assert _computed_output_format("1780603508213_out.parquet", "dataframe") == "parquet"
 
 
-def test_resolve_duckdb_artifact_path_ignores_lock_errors(monkeypatch):
+def test_resolve_duckdb_artifact_path_survives_an_unreadable_artifact(monkeypatch):
+    """An artifact the backend cannot read resolves to nothing, not an error.
+
+    The read goes through the sandbox now, so "cannot read" is an unreachable
+    or unhappy sandbox rather than a locked file; either way the resolver has
+    no path to offer and must say so quietly.
+    """
     from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
-    def _boom():
-        raise OSError("Could not set lock on file")
-
     monkeypatch.setattr(
-        "utk_curio.sandbox.util.db.get_read_connection",
-        _boom,
+        "utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts.artifact_row",
+        lambda _art_id: None,
     )
 
     # Extensionless id with no artifacts/*.parquet on disk falls through to DuckDB.
@@ -59,19 +62,12 @@ def test_str_artifact_value_is_not_treated_as_a_path(app, monkeypatch):
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "cities.csv").write_text("name\nChicago\n", encoding="utf-8")
 
-    # Stand in for the DuckDB read: kind 'str', value_str = the returned string.
-    class _Con:
-        def execute(self, *_a, **_k):
-            class _R:
-                @staticmethod
-                def fetchone():
-                    return ("str", "cities.csv")
-            return _R()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("utk_curio.sandbox.util.db.get_read_connection", lambda: _Con())
+    # Stand in for the artifact read: kind 'str', value_str = the returned
+    # string. The tuple is the row shape the sandbox reports.
+    monkeypatch.setattr(
+        "utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts.artifact_row",
+        lambda _art_id: ("str", None, None, "cities.csv", None),
+    )
 
     assert output_paths._resolve_duckdb_artifact_path("1790000000000_cafebabe") is None
 
@@ -89,17 +85,9 @@ def test_dict_artifact_resolves_its_json_zlib_without_value_str(app, monkeypatch
     blob = shared / "artifacts" / (art + ".json.zlib")
     blob.write_bytes(b"\x78\x9c")
 
-    class _Con:
-        def execute(self, *_a, **_k):
-            class _R:
-                @staticmethod
-                def fetchone():
-                    return ("dict", None)  # no value_str, older sandbox
-            return _R()
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr("utk_curio.sandbox.util.db.get_read_connection", lambda: _Con())
+    monkeypatch.setattr(
+        "utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts.artifact_row",
+        lambda _art_id: ("dict", None, None, None, None),  # no value_str, older sandbox
+    )
 
     assert output_paths._resolve_duckdb_artifact_path(art) == blob.resolve()

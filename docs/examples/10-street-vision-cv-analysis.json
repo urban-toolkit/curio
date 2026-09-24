@@ -17,7 +17,7 @@
       {
         "id": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
         "type": "curio.streetvision/hf-cv-inference",
-        "x": 600,
+        "x": 645,
         "y": 0,
         "content": "",
         "out": "DEFAULT",
@@ -29,13 +29,13 @@
       },
       {
         "id": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
-        "type": "curio.streetvision/cv-gallery",
-        "x": 1200,
-        "y": 0,
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 215,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Inspect the per-image overlays and stats, then click 'Push to Downstream' to emit a GEODATAFRAME.",
+        "goal": "Inspect the panoramas the model scored. Each card shows the street view beside its segmentation overlay, with that image's dominant class underneath.",
         "metadata": {
           "keywords": []
         }
@@ -44,8 +44,8 @@
         "id": "408e6f23-7b85-4470-9c91-f0c58c5769dd",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 600,
-        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),\n# vendored in the Data Catalog so this example runs offline. Any polygon\n# FeatureCollection with a string name property works here.\ndataset_path = curio_dataset_path(\"data.cityofchicago.neighborhoods\")\ngdf = gpd.read_file(dataset_path)\n\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "y": 430,
+        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),\n# vendored in the Data Catalog so this example runs offline. Any polygon\n# FeatureCollection with a string name property works here.\ndataset_path = curio_dataset_path(\"data.cityofchicago.neighborhoods\")\ngdf = gpd.read_file(dataset_path)\n\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load a polygon GeoDataFrame with a `pri_neigh` column (Chicago's neighborhood name field).",
@@ -56,9 +56,9 @@
       {
         "id": "1cbd2725-458f-4617-86cd-2fd9d190f908",
         "type": "curio.builtin/data-transformation",
-        "x": 600,
-        "y": 600,
-        "content": "# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses\n# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,\n# for OSM admin polygons use `name` directly (this step becomes a no-op).\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"name\"})\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "x": 645,
+        "y": 430,
+        "content": "# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses\n# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,\n# for OSM admin polygons use `name` directly (this step becomes a no-op).\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"name\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Rename the polygon name field to `name` so Spatial Join picks it up.",
@@ -69,12 +69,12 @@
       {
         "id": "7541416c-a960-4d64-b7f8-175b8978c563",
         "type": "curio.builtin/spatial-join",
-        "x": 1500,
-        "y": 300,
+        "x": 1935,
+        "y": 240,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Tag each image point with the polygon it falls in. Wire CV Gallery to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "goal": "Tag each image point with the polygon it falls in. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
         "metadata": {
           "keywords": []
         }
@@ -82,9 +82,9 @@
       {
         "id": "8aaff248-9894-4ca8-b9a3-3b79216ce592",
         "type": "curio.builtin/vis-vega",
-        "x": 2000,
+        "x": 2515,
         "y": 0,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"data\": {\"name\": \"table\"},\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"properties.nbhd_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"properties.neighborhood_name\", \"title\": \"neighborhood\"},\n          {\"field\": \"properties.nbhd_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"properties.nbhd_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"name_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"name\", \"title\": \"neighborhood\"},\n          {\"field\": \"name_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"name_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Polygon map: each neighborhood colored by its dominant detected class.",
@@ -95,9 +95,9 @@
       {
         "id": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
         "type": "curio.builtin/vis-vega",
-        "x": 2000,
-        "y": 600,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"data\": {\"name\": \"table\"},\n  \"transform\": [\n    {\"filter\": \"datum.properties.neighborhood_name != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"properties.neighborhood_name\", \"properties.dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"properties.neighborhood_name\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\n      \"field\": \"properties.dominant_class\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n        \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n      }\n    }\n  }\n}",
+        "x": 2515,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"transform\": [\n    {\"filter\": \"datum.name != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"name\", \"dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"name\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\n      \"field\": \"dominant_class\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n        \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n      }\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Per-neighborhood image count, segmented by modal dominant class.",
@@ -158,7 +158,7 @@
       }
     ],
     "name": "Street-level computer vision",
-    "description": "curio.streetvision@1 Fetcher to HF Inference to Gallery to Spatial Join to Vega-Lite polygons + bars.",
+    "description": "curio.streetvision@1 Fetcher to HF Inference to Simple View to Spatial Join to Vega-Lite polygons + bars.",
     "task": "",
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",

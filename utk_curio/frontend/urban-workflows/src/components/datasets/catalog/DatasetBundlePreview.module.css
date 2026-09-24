@@ -43,10 +43,40 @@
   color: var(--text-muted, #6b7280);
 }
 
+/* `overflow: hidden` clipped a wide bundle table with no way to reach the
+   right-hand columns (#345) - the #203 defect on a sibling surface. `auto`
+   keeps the border-radius clipping this rule was also doing, and the table
+   inside is TabularPreviewTable, which already carries the other two thirds of
+   the fix (`overflowX: visible` on its container, `minWidth: max-content` on
+   the table). Scrollbar styling mirrors DatasetTablePreview.module.css, which
+   is the same component getting this right. */
 .tableWrap {
   border: 1px solid var(--border-subtle, #e2e4e8);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+}
+
+.tableWrap::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tableWrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrap::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.tableWrap:hover::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.28);
+  background-clip: padding-box;
 }
 
 .tableRefreshing {

@@ -3,9 +3,9 @@ import { useEdges } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
-import { IPropagation } from '../../providers/FlowProvider';
+import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
-import { hasIncomingEdge, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { hasIncomingEdge, incomingSourceIds, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
 import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
@@ -15,7 +15,13 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // only the graph knows (#224).
   const poolEdges = useEdges();
   const connected = hasIncomingEdge(poolEdges, data.nodeId);
-  const { projectId: flowProjectId } = useFlowContext();
+  // A failed upstream node propagates nothing, so "no input" is ambiguous
+  // between never-run and ran-and-failed. The exec status is the only place
+  // that difference is recorded (#347).
+  const { projectId: flowProjectId, nodeExecStatus } = useFlowContext();
+  const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
+    (sourceId) => nodeExecStatus?.[sourceId] === "errored",
+  );
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const [plotResolutionMode, setPlotResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts are solved in the context of one plot
   const [resolutionMode, setResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts between plots are resolved
@@ -542,11 +548,19 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
     const hasInput = data.input != null && data.input !== "";
     const reason = resolveNodeEmptyReason({
       connected,
+      upstreamErrored,
       hasInput,
       tabular: tabData.length > 0,
       rowCount: tableData.length,
     });
-    if (reason === "disconnected" || reason === "upstream-not-run") return;
+    // An upstream failure is the upstream's to report, like a node that has
+    // not run yet (#347).
+    if (
+      reason === "disconnected" ||
+      reason === "upstream-not-run" ||
+      reason === "upstream-errored"
+    )
+      return;
     const projectId = (data as { projectId?: string }).projectId ?? flowProjectId;
     if (!projectId) return;
     if (reason === null) {
@@ -564,7 +578,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       message: `${copy.title} — ${copy.hint}`,
       kind: `bad-input:${reason}`,
     });
-  }, [connected, data, tabData.length, tableData.length, flowProjectId]);
+  }, [connected, upstreamErrored, data, tabData.length, tableData.length, flowProjectId]);
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes
@@ -579,9 +593,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
         tableData={tableData}
         data={data}
         connected={connected}
+        upstreamErrored={upstreamErrored}
       />
     ),
-    [activeTab, setActiveTab, tabData, tableData, data, connected],
+    [activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored],
   );
 
   return {

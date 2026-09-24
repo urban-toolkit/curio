@@ -2,8 +2,8 @@
 # (.github/workflows/docker-compose.yml, job `test-gpu-exec-user`).
 #
 # This is the ONLY job that boots the configuration the deploy actually ships:
-# `--isolation fork --exec-user curio-exec` with auth on, byte-for-byte the
-# flags in docker-compose.deploy.yml. Everything else about isolation is
+# isolation plus the curio-exec account with auth on, the same shape
+# docker-compose.deploy.yml ships. Everything else about isolation is
 # tested either as a unit (test_isolation_linux.py, against a workspace the
 # test builds itself) or with children running as root
 # (docker-compose.ci-isolated.yml), and root ignores mode bits -- so the whole
@@ -12,7 +12,7 @@
 #
 # Deliberate differences from docker-compose.ci-isolated.yml, each forced.
 #
-# 1. --exec-user, and therefore NO host-side e2e. Setting it makes the sandbox
+# 1. An execution user, and therefore NO host-side e2e. Setting one makes the sandbox
 #    chmod ./instance and ./.curio/data to 0700/0600 root-owned at boot. The
 #    e2e harness computes its ground truth by executing every code node IN THE
 #    HOST TEST PROCESS (test_frontend/utils.py::execute_workflow_programmatically)
@@ -23,7 +23,7 @@
 #    (utk_curio/sandbox/tests/live/test_exec_user_boundary.py), which runs
 #    nothing on the host that touches the hardened paths.
 #
-# 2. --auth, which ci-isolated.yml had to drop. A hosted instance asking for
+# 2. --deploy, which ci-isolated.yml had to drop. A hosted instance asking for
 #    fork isolation without an exec user is fatal by design
 #    (isolation/hardening.py::apply_and_report). With one, that combination is
 #    the supported deployment shape, so this job can run it -- and the boot
@@ -49,6 +49,13 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # What this whole job exists to exercise. --deploy makes the instance
+      # hosted, and the launcher discovers the curio-exec account the image
+      # creates, so isolation and the execution user both come from that --
+      # the same way docker-compose.deploy.yml gets them. Pinned explicitly
+      # so a runner that cannot confine fails the job rather than running
+      # in-process and asserting a boundary that is not there.
+      - CURIO_ISOLATION=fork
     ports:
       # The sandbox, published to the runner's loopback only (never 0.0.0.0).
       # The boundary assertions are host-side pytest calling /exec directly,
@@ -59,7 +66,7 @@ services:
       - curio.py
       - start
       - all
-      - --auth
+      - --deploy
       - --with-examples
       - --backend-host
       - 0.0.0.0
@@ -71,9 +78,3 @@ services:
       - 0.0.0.0
       - --sandbox-port
       - "2000"
-      # The two flags this whole job exists to exercise. Kept identical to
-      # docker-compose.deploy.yml; if that pair changes there, change it here.
-      - --isolation
-      - fork
-      - --exec-user
-      - curio-exec

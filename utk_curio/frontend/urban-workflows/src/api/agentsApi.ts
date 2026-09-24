@@ -241,7 +241,14 @@ export interface AgentCardPart {
  * bounded and scheme-allowlisted server-side, sanitized again at render. */
 export interface AgentDatasetCandidateRow {
   name: string;
-  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database";
+  sourceType:
+    | "api"
+    | "endpoint"
+    | "portal"
+    | "catalog"
+    | "document"
+    | "database"
+    | "lake";
   url?: string;
   provider?: string;
   format?: string;
@@ -263,6 +270,14 @@ export interface AgentDatasetCandidateRow {
   /** dev/132: a catalog row the user imported themselves after the card was
    * minted — its file is here, so nothing needs installing first. */
   imported?: boolean;
+  /** External lane only: the portal coordinate a datalake.acquire proposal
+   *  references. Both or neither - half a coordinate is dropped server-side. */
+  sourceId?: string;
+  resourceId?: string;
+  /** Whether Curio can actually download this row. **Set by the runtime**
+   *  against the real source roster, never by the model: it may name a source,
+   *  it may not claim the run can act on one. */
+  acquirable?: boolean;
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {

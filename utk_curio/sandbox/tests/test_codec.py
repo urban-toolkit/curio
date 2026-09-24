@@ -12,6 +12,9 @@ things:
 """
 
 import json
+import re
+
+import duckdb
 import math
 import sys
 import unittest
@@ -205,6 +208,172 @@ class TestParquetWriting(unittest.TestCase):
             self.assertEqual(len(pd.read_parquet(path)), 0)
 
 
+class TestParquetWriterFootprint(unittest.TestCase):
+    """The writer runs inside an address-space-capped child (#334).
+
+    ``child._apply_rlimits`` caps RLIMIT_AS at the interpreter's footprint plus
+    the operator's budget, and serialization happens inside that cap. DuckDB's
+    defaults are sized for owning the machine: ``threads`` follows the host's
+    core count and ``memory_limit`` is ~80% of system RAM, so writing three
+    integers on a 64-core runner reserved enough address space to fail with
+    ``OutOfMemoryException: Failed to allocate block of 32768 bytes``. Measured
+    locally on 8 cores: default 7040 KB of peak RSS for one write, against
+    496 KB constrained — and a runner has far more cores than that.
+
+    Nothing here needs parallelism: it is one COPY of one frame.
+    """
+
+    @staticmethod
+    def _limit_mb(config):
+        return int(re.match(r"^(\d+)\s*(MB|MiB)$", config["memory_limit"]).group(1))
+
+    def test_the_writer_budget_fits_inside_the_child_budget(self):
+        """The two numbers have to stay in a sane relation (#358).
+
+        The writer's ``memory_limit`` is spent INSIDE the RLIMIT_AS cap that
+        ``--exec-memory-mb`` sets, so a writer budget at or above the child's
+        budget puts the failure back exactly where #334 found it - DuckDB
+        reserving address space the child does not have. Neither value is
+        pinned to a literal here; what is pinned is that one leaves room for
+        the other.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        child_mb = supervisor.DEFAULT_LIMITS["memory_mb"]
+        writer_mb = self._limit_mb(codec._writer_config({}))
+
+        self.assertLess(
+            writer_mb, child_mb,
+            f"the writer may reserve {writer_mb}MB inside a {child_mb}MB child "
+            "budget - that is #334's shape again",
+        )
+        # Half is arbitrary as a number and not as an idea: the writer is one
+        # of several things sharing the child's address space, so it must not
+        # be most of it.
+        self.assertLessEqual(writer_mb, child_mb // 2, (writer_mb, child_mb))
+
+    def test_the_relation_holds_at_every_budget_an_operator_can_set(self):
+        """The real #334 fix, rather than the default-only version above.
+
+        ``--exec-memory-mb`` is a documented knob and USAGE.md sells the host
+        ceiling as budget x parallelism, which actively invites lowering it to
+        fit more parallelism on a small host. While the writer's limit was a
+        module constant it did not move when the budget did, so a low enough
+        budget handed the child less headroom than DuckDB had been told it
+        could spend - #334 again with the host swapped for a stale constant.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        for child_mb in (supervisor.MIN_EXEC_MEMORY_MB, 100, 256, 512, 1024,
+                         supervisor.DEFAULT_LIMITS["memory_mb"], 65536):
+            with self.subTest(child_mb=child_mb):
+                writer_mb = self._limit_mb(
+                    codec._writer_config({"CURIO_EXEC_MEMORY_MB": str(child_mb)})
+                )
+                self.assertLessEqual(
+                    writer_mb, child_mb // 2,
+                    f"a {child_mb}MB child budget let the writer claim "
+                    f"{writer_mb}MB",
+                )
+
+    def test_the_launcher_floor_keeps_the_writer_floor_from_biting(self):
+        """Why ``MIN_EXEC_MEMORY_MB`` is the number it is.
+
+        The writer will not derive below ``_WRITER_MEMORY_FLOOR_MB``, because
+        under that DuckDB has no workable arena. That floor is only safe while
+        the launcher refuses budgets small enough for it to bind: below twice
+        the writer's floor, the clamp stops holding and the writer starts
+        claiming most of the child's address space.
+        """
+        from utk_curio.sandbox.isolation import supervisor
+
+        self.assertGreaterEqual(
+            supervisor.MIN_EXEC_MEMORY_MB,
+            codec._WRITER_MEMORY_FLOOR_MB * codec._WRITER_BUDGET_DIVISOR,
+        )
+
+    def test_an_unset_or_unusable_budget_falls_back_to_the_cap(self):
+        """codec also runs where no budget is set - the in-process path.
+
+        An unparseable value means "unset", not "zero", which is how
+        ``IsolationConfig.from_environment`` reads the same variable. Reading
+        it as zero would derive a limit of nothing at all.
+        """
+        for env in ({}, {"CURIO_EXEC_MEMORY_MB": ""},
+                    {"CURIO_EXEC_MEMORY_MB": "lots"},
+                    {"CURIO_EXEC_MEMORY_MB": "-1"}):
+            with self.subTest(env=env):
+                self.assertEqual(
+                    self._limit_mb(codec._writer_config(env)),
+                    codec._WRITER_MEMORY_CAP_MB,
+                )
+
+    def test_a_large_budget_does_not_raise_the_writer_above_its_cap(self):
+        """The derivation lowers the limit; it never raises it.
+
+        #334 was DuckDB sizing itself against a machine it did not own. A
+        256GB host must not walk that back in through the budget.
+        """
+        config = codec._writer_config({"CURIO_EXEC_MEMORY_MB": "262144"})
+        self.assertEqual(self._limit_mb(config), codec._WRITER_MEMORY_CAP_MB)
+
+    def _captured_config(self, frame=None):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        seen = {}
+        real_connect = duckdb.connect
+
+        def spy(*args, **kwargs):
+            seen.update(kwargs.get("config") or {})
+            return real_connect(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.parquet"
+            with mock.patch.object(duckdb, "connect", spy):
+                codec._write_dataframe_parquet(
+                    frame if frame is not None else pd.DataFrame({"a": [1, 2, 3]}), path
+                )
+            self.assertTrue(path.exists())
+        return seen
+
+    def test_the_writer_runs_single_threaded(self):
+        self.assertEqual(self._captured_config().get("threads"), 1)
+
+    def test_the_writer_declares_a_bounded_memory_limit(self):
+        limit = self._captured_config().get("memory_limit")
+        self.assertIsNotNone(limit, "no memory_limit: DuckDB would size itself from host RAM")
+        # A number plus a unit, and not gigabytes of it.
+        self.assertRegex(str(limit), r"^\d+\s*(MB|MiB)$")
+
+    def test_a_lowered_budget_reaches_the_real_write(self):
+        """End to end through os.environ, not just the pure helper.
+
+        The child inherits ``CURIO_EXEC_MEMORY_MB`` from the sandbox (the
+        zygote is spawned without an ``env=``, and nothing scrubs it), so this
+        is the path that actually runs under RLIMIT_AS.
+        """
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {"CURIO_EXEC_MEMORY_MB": "128"}):
+            config = self._captured_config()
+        self.assertEqual(config.get("memory_limit"), "64MB")
+        self.assertEqual(config.get("threads"), 1)
+
+    def test_a_large_frame_still_writes_under_that_limit(self):
+        # The bound must not turn a big output into a failure: `register` is
+        # zero-copy and COPY streams row groups, so the limit is not a ceiling
+        # on the frame. 150 MB of frame through a 256 MB limit, locally 0.5 s.
+        import numpy as np
+
+        rows = 2_000_000
+        frame = pd.DataFrame({"a": np.arange(rows), "b": np.random.rand(rows)})
+        config = self._captured_config(frame)
+        self.assertEqual(config.get("threads"), 1)
+
+
 class TestStoreIndependence(unittest.TestCase):
     """The property that makes codec.py usable from an isolated process."""
 
@@ -269,3 +438,67 @@ class TestParsersReExports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── shapely geometry in an ordinary cell ───────────────────────────────────
+
+def test_make_serializable_converts_a_shapely_geometry_to_geojson():
+    from shapely.geometry import Point
+
+    result = codec._make_serializable(Point(0.5, 1.5))
+
+    assert result == {"type": "Point", "coordinates": [0.5, 1.5]}
+
+
+def test_make_serializable_uses_lists_not_tuples_for_coordinates():
+    """shapely hands back tuples; JSON has no tuple, and callers compare
+    against lists. The conversion has to happen here, not at dump time."""
+    from shapely.geometry import Polygon
+
+    result = codec._make_serializable(
+        Polygon([(0, 0), (0, 1), (1, 1), (0, 0)])
+    )
+
+    assert result["type"] == "Polygon"
+    assert isinstance(result["coordinates"], list)
+    assert all(isinstance(ring, list) for ring in result["coordinates"])
+    assert result["coordinates"][0][0] == [0.0, 0.0]
+
+
+def test_make_serializable_handles_nested_geometry():
+    from shapely.geometry import Point
+
+    result = codec._make_serializable({"where": Point(1, 2), "n": 3})
+
+    assert result == {"where": {"type": "Point", "coordinates": [1.0, 2.0]}, "n": 3}
+
+
+def test_a_plain_dataframe_holding_shapely_survives_normalization():
+    """D2: a plain DataFrame carrying shapely objects.
+
+    `pd.DataFrame(gdf)` produces exactly this, and it used to emit the raw
+    shapely object and die at `jsonify`.
+    """
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from utk_curio.sandbox.util.parsers import normalize_dataframe_for_json, parseOutput
+
+    df = pd.DataFrame({"name": ["A"], "where": [Point(1, 2)]})
+
+    normalized = normalize_dataframe_for_json(df)
+    assert normalized["where"].iloc[0] == {"type": "Point", "coordinates": [1.0, 2.0]}
+
+    out = parseOutput(df)
+    assert out["dataType"] == "dataframe"
+    assert out["data"]["where"][0]["type"] == "Point"
+
+
+def test_existing_containers_are_untouched_by_the_geometry_branch():
+    """The geometry branch sits ahead of the dict/list cases; ordinary
+    containers must reach them unchanged."""
+    import numpy as np
+
+    assert codec._make_serializable({"a": [1, 2]}) == {"a": [1, 2]}
+    assert codec._make_serializable([{"b": (1, 2)}]) == [{"b": [1, 2]}]
+    assert codec._make_serializable(np.array([1, 2])) == [1, 2]

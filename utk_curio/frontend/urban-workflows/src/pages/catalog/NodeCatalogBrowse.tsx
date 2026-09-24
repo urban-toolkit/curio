@@ -11,6 +11,12 @@ import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
 import { useNodeCatalogBrowse } from "./useNodeCatalogBrowse";
 import { CatalogHeaderImport } from "./CatalogHeaderImport";
 import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
+import type { PackagePayload } from "../../api/packagesApi";
+import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import {
+  packageCardActions,
+  type CatalogCardActionId,
+} from "../../components/catalog/catalogCardActions";
 
 export const NodeCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
@@ -58,6 +64,42 @@ export const NodeCatalogBrowse: React.FC = () => {
   // and it is exactly what the Node card's did: it called `onSelect`, so on a
   // card whose drawer was already open the click changed nothing.
   const [detailDirName, setDetailDirName] = useState<string | null>(null);
+
+  // Right-click. The card reports the event, the grid owns the menu - the same
+  // division the projects page has used all along (#285). `hasUpdate` rides in
+  // the state because it is computed per row in the grid below.
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    pkg: PackagePayload;
+    isInstalled: boolean;
+    hasUpdate: boolean;
+    catalogRow: PackagePayload | undefined;
+  } | null>(null);
+
+  const runPackageAction = (
+    id: CatalogCardActionId,
+    menu: { pkg: PackagePayload; catalogRow: PackagePayload | undefined },
+  ) => {
+    switch (id) {
+      case "add-to-all-projects":
+        void onInstall(menu.pkg);
+        return;
+      case "update-all-projects":
+        // The catalog's row, not the installed one - installing the version
+        // already in the user's store would be a no-op update. Same fallback
+        // the drawer's button uses.
+        void onInstall(menu.catalogRow ?? menu.pkg);
+        return;
+      case "view-details":
+        setDetailDirName(menu.pkg.dirName);
+        return;
+      // A package's defaults entry is dropped from the drawer, not from here:
+      // the browse card has never offered it.
+      case "remove-from-all-projects":
+        return;
+    }
+  };
   const detailPkg = detailDirName
     ? (filtered.find((p) => p.dirName === detailDirName) ?? null)
     : null;
@@ -259,6 +301,20 @@ export const NodeCatalogBrowse: React.FC = () => {
                   catalogRow={catalogRow}
                   onSelect={() => setSelectedDirName(pkg.dirName)}
                   onViewDetails={() => setDetailDirName(pkg.dirName)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    // Select first: the menu acts on this package, so the
+                    // drawer beside it should not still describe another one.
+                    setSelectedDirName(pkg.dirName);
+                    setContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      pkg,
+                      isInstalled: isInstalledGlobally,
+                      hasUpdate,
+                      catalogRow,
+                    });
+                  }}
                 />
               );
             })}
@@ -291,6 +347,20 @@ export const NodeCatalogBrowse: React.FC = () => {
         onClose={() => setSelectedDirName(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {contextMenu ? (
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          ariaLabel="Package actions"
+          items={packageCardActions({
+            isInstalled: contextMenu.isInstalled,
+            hasUpdate: contextMenu.hasUpdate,
+          })}
+          onSelect={(id) => runPackageAction(id as CatalogCardActionId, contextMenu)}
+          onDismiss={() => setContextMenu(null)}
+        />
+      ) : null}
 
       {detailPkg ? (
         <PackageDetailModal

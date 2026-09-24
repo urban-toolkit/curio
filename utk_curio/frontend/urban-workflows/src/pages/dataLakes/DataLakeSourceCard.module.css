@@ -1,0 +1,66 @@
+/*
+ * The parts of the lake browse card keyed off its kind.
+ *
+ * The layout is ../catalog/CatalogBrowseLayout.module.css, shared with the
+ * other three browse pages; only kind-keyed rules live here, the same split
+ * AgentCatalogBrowseCard.module.css and PackageBrowseCard.module.css use.
+ *
+ * There is ONE key, not one per provider. On this page every card is a portal,
+ * so a per-provider colour would carry no information while costing four new
+ * hues in a palette that has no room left - see --curio-kind-lake-fg. The
+ * provider is a neutral badge instead, which is legible without learning a
+ * code.
+ */
+
+.strip_lake { background: var(--curio-kind-lake-fg); }
+
+/* Declared here so `.cardActive.card_lake` is a valid compound WITHIN this
+   module: CSS modules hash per file, so the shared `.cardActive` cannot
+   satisfy it. Both classes are applied together and agree, because both read
+   the one token. Same reason AgentCatalogBrowseCard.module.css does it. */
+.cardActive { box-shadow: var(--curio-shadow-browse-card-raised); }
+.cardActive.card_lake { border-color: var(--curio-kind-lake-fg); }
+
+/* The source's mark, sitting where the other catalogs' cards start their
+   title block. Pulled up into the body's own padding so the icon and the
+   title share a baseline grid with the peer pages. */
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  min-width: 0;
+}
+
+.identityText {
+  min-width: 0;
+  flex: 1;
+}
+
+.identityText .cardTitle {
+  margin-top: 0;
+}
+
+/* A token-present / token-needed marker. Deliberately not the danger colour:
+   a source needing a token is a next step, not an error. */
+.authChip {
+  height: 16px;
+  border-radius: 8px;
+  padding: 0 7px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.authChipReady {
+  background: var(--curio-role-installed-bg);
+  color: var(--curio-role-installed-fg);
+}
+
+.authChipNeeded {
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+}

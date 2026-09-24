@@ -73,13 +73,14 @@ curio/
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
+├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
 ├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -97,8 +98,11 @@ This installs the CLI and a pre-built version of the frontend. You won’t be ab
 ```bash
 git clone https://github.com/urban-toolkit/curio.git
 cd curio
-python curio.py start
+python curio.py start           # serves the built bundle; builds it once on a fresh clone
+python curio.py start --dev     # webpack dev server instead, with hot reload
 ```
+
+Add `--dev` whenever you are editing anything under `utk_curio/frontend/`, or your changes will not show up until you rebuild. Without it Curio serves the production bundle from `dist/`, which loads much faster but is a build artifact.
 
 Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 
@@ -163,8 +167,11 @@ After forking:
 4. **Run the system**
 
    ```bash
-   python curio.py start
+   python curio.py start --dev
    ```
+
+   `--dev` serves the frontend through the webpack dev server so source edits
+   reload. Drop it to serve the built bundle instead.
 
 5. **Create a feature branch**
 
@@ -232,6 +239,33 @@ playwright install chromium
 pytest utk_curio/backend/tests/
 pytest utk_curio/sandbox/tests/
 ```
+
+#### Tests do not reach the network
+
+The backend suite refuses outbound connections. Loopback is allowed, because the
+sandbox, the backend health polls and the Playwright stack all need it; anything
+else raises `NetworkAccessDenied` naming the host it blocked. The guard lives in
+`utk_curio/backend/tests/netguard.py`, which explains how it works and what it
+cannot cover.
+
+A test that talks to a third party fails when that third party is slow, down, or
+answers differently than it did yesterday. Rather than trust every author to
+remember to inject a fake, the suite makes forgetting a loud, immediate failure.
+If you hit it, the fix is almost always to inject a fake transport -- most
+network-touching code in this repo already takes one (`egress.fetch`'s
+`request_fn` and `resolver`, `RegistryFetcher`, `LakeTransport`).
+
+Two markers opt out, and they mean different things:
+
+| Marker | Runs by default | Use it for |
+|---|---|---|
+| `@pytest.mark.contract` | **yes**, including CI | Checking that a third party's response *shape* still matches what our parser expects. Must skip -- never fail -- when the endpoint is unreachable, returns a non-2xx, or answers something other than the expected content type. The only permitted failure is a successful response whose shape changed. |
+| `@pytest.mark.externalapi` | no, needs `--longrun` | Anything else that genuinely needs the network. |
+
+Writing a contract test that can fail for a reason outside our control puts a
+third party in the critical path of every PR, which is the problem the guard
+exists to solve. Skip generously; a contract test that skips has cost nothing,
+and its skip reason is printed under `pytest -v`.
 
 ### Agent Reconstruction Tests
 
@@ -318,7 +352,7 @@ npm test -- --watchAll=false
 
 Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
-Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24, so run `conda activate curio` before `npm test`, or use a system install of Node 24+.
+The project uses **Node 26**. Jest needs a Node that can `require()` an ES module (transitive dep `html-encoding-sniffer@6` does), and older Node fails every suite with `ERR_REQUIRE_ESM`. Install it into the `curio` conda env with `conda install -c conda-forge nodejs=26` and run `conda activate curio` before `npm test`, or use a system install of Node 26 (`.nvmrc` and `.node-version` pin it for nvm/fnm/asdf). A checkout whose `node_modules` was installed under an older Node reinstalls itself on the next `curio.py start` -- the launcher stamps the installing major into `node_modules/.curio-node-major` and wipes the tree when it changes, so there is no folder to delete by hand.
 
 ### Frontend E2E Tests
 

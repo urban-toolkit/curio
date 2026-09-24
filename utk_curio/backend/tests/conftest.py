@@ -41,7 +41,7 @@ _REPO_ROOT = os.path.abspath(
 # Under xdist every worker attaches to its own backend+sandbox pair. Derive this
 # worker's ports and state root before anything below (or any backend import)
 # reads the environment. A no-op in a serial run. See shards.py.
-from .shards import apply_shard_env  # noqa: E402
+from .shards import apply_shard_env, seed_package_catalog  # noqa: E402
 apply_shard_env()
 
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
@@ -93,6 +93,15 @@ os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
 os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(_TEST_DB_DIR, "data"))
 os.makedirs(os.environ["CURIO_SHARED_DATA"], exist_ok=True)
 
+# The package catalog too, seeded from the committed one. It defaults to
+# <repo_root>/packages,
+# so a test that publishes writes into a git-tracked directory and every other
+# process on the machine sees it: a publish on one stack showed up in a second
+# stack's catalog listing, with nothing shared between them but this path.
+os.environ.setdefault("CURIO_PACKAGES_ROOT", os.path.join(_TEST_DB_DIR, "packages"))
+os.makedirs(os.environ["CURIO_PACKAGES_ROOT"], exist_ok=True)
+seed_package_catalog(os.environ["CURIO_PACKAGES_ROOT"])
+
 # Point the backend (and any subprocess that inherits this env — e.g. the
 # ``curio start`` child spawned by test_frontend/fixtures.py) at the test
 # DB. DATABASE_URL_TEST takes precedence inside config._resolve_database_uri
@@ -106,6 +115,7 @@ os.environ["DATABASE_URL"] = os.environ["DATABASE_URL_TEST"]
 # Phase 2: imports (now safe — config.py sees the test env).
 # ---------------------------------------------------------------------------
 
+from . import netguard  # noqa: E402
 from .test_frontend.fixtures import *  # noqa: E402,F401,F403
 import pytest  # noqa: E402
 
@@ -165,6 +175,25 @@ def _reset_computed_id_migration_guard():
     migrations._migrated_users.clear()
     yield
     migrations._migrated_users.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_external_network(request):
+    """Refuse outbound network access for the duration of every test.
+
+    A flag flip rather than a patch per test: ``netguard.install()`` patches
+    socket once per process from ``pytest_configure``, so the per-test cost
+    here is two assignments across a suite of thousands.
+
+    See ``netguard`` for why this exists, why its exception derives from
+    ``BaseException``, and what it cannot cover (the e2e backend subprocess and
+    the browser are separate processes).
+    """
+    netguard.set_allowed(netguard.allowed_by(request.node))
+    try:
+        yield
+    finally:
+        netguard.set_allowed(False)
 
 
 def _find_system_chrome() -> str | None:
@@ -369,6 +398,19 @@ def pytest_addoption(parser):
             "time; scripts/test.sh passes this by default)"
         ),
     )
+    parser.addoption(
+        "--mint-baselines",
+        action="store_true",
+        dest="mint_baselines",
+        default=False,
+        help=(
+            "write a screenshot baseline where none exists, instead of failing. "
+            "Creating one is a deliberate act: whatever the app renders that day "
+            "becomes the definition of correct, so it has to be a build you "
+            "trust, on a machine whose rendering matches CI's, and you have to "
+            "look at the PNG before committing it"
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -389,6 +431,28 @@ def pytest_configure(config):
         "live_eval: calls a real model and reports on it; needs --live-eval "
         "and CURIO_EVAL_LIVE=1 (memo dev/121 — a report, not a gate)",
     )
+    # Registered here so applying them stops emitting PytestUnknownMarkWarning.
+    # ``externalapi`` has been referenced by the exclusion list below since
+    # before this comment and was never registered or applied to anything;
+    # ``netguard`` gives it its first users. ``contract`` is deliberately NOT
+    # in the exclusion list: those tests run in CI and are written so that an
+    # unreachable endpoint skips rather than fails.
+    config.addinivalue_line(
+        "markers",
+        "externalapi: may reach the network; needs --longrun",
+    )
+    config.addinivalue_line(
+        "markers",
+        "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
+    )
+    netguard.install()
+    # Imported only when the flag is passed, so an ordinary run never pays for
+    # (or is broken by) importing the e2e helper module.
+    if getattr(config.option, "mint_baselines", False):
+        from utk_curio.backend.tests.test_frontend import utils as e2e_utils
+
+        e2e_utils.MINT_BASELINES = True
+
     excluded = []
     if not config.option.longrun:
         excluded.append("not externalapi")

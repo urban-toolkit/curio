@@ -53,7 +53,7 @@ export function NodeSaveAsModal({
   const { setNodes } = useReactFlow();
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
-  const { projectId } = useFlowContext();
+  const { ensureProjectId } = useFlowContext();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -178,12 +178,26 @@ export function NodeSaveAsModal({
       // Until the install started honouring it, "Save and install" could
       // report success over a package whose very first run raises.
       const depNotice = dependencyFailureNotice(`Saved ${nodeLabel}`, result);
-      // When creating a brand-new package via Save As, the package is only in
-      // the user store after factoryInstall. refreshPackageRegistry filters
-      // by the project lockfile, so the new descriptor would be invisible.
-      // Add it to the project lockfile first so the descriptor gets registered.
-      if (targetKey === SAVE_AS_NEW_PACK && projectId) {
-        const projResult = await packagesApi.installToProject(projectId, result.package.dirName);
+      // The package is only in the USER STORE after factoryInstall.
+      // refreshPackageRegistry filters by the project lockfile, so without this
+      // the new descriptor is invisible - and worse, the backend listings that
+      // feed the node catalog scope by store-intersect-lockfile and do not even
+      // report a package they skip, so an agent is told the template does not
+      // exist.
+      //
+      // ``ensureProjectId`` rather than ``projectId`` (#346): on an unsaved
+      // dataflow this button is reachable with no project id, and the old guard
+      // silently skipped the scoping while still showing a success toast. The
+      // package landed in the user store belonging to no project at all. Same
+      // auto-save-first treatment the catalog drawer got for #220/#256; the
+      // shared helper de-dupes concurrent callers and toasts on failure itself.
+      //
+      // Not gated on SAVE_AS_NEW_PACK any more either: saving into an already
+      // INSTALLED package that this project's lockfile does not list leaves the
+      // node just as unresolvable.
+      const scopedProjectId = await ensureProjectId();
+      if (scopedProjectId) {
+        const projResult = await packagesApi.installToProject(scopedProjectId, result.package.dirName);
         setCurrentProjectPackages(projResult.packages);
       }
       await refreshPackageRegistry();
@@ -234,7 +248,7 @@ export function NodeSaveAsModal({
       setBusy(false);
       setBusyKind(null);
     }
-  }, [buildDraft, busy, canvasNode, nodeId, nodeLabel, onClose, projectId, setNodes, showToast, targetKey]);
+  }, [buildDraft, busy, canvasNode, ensureProjectId, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
 
   // Export the same draft as a .curio.zip without installing it. Shares the
   // `busy` flag with Save so the two can never run concurrently, and leaves

@@ -1,14 +1,19 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm";
+export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm" | "gpkg";
 
 export type DatasetSortMode = "recent" | "name";
 
 /**
  * File extensions the dataset importer can ingest. Mirrors the backend
- * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus OSM PBF, which
- * the backend converts to a single GeoParquet on import
- * (``install/osm_pbf.py``). Keep in lockstep with the backend.
+ * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus the two
+ * multi-layer formats the backend converts on import rather than storing
+ * verbatim: OSM PBF (``install/osm_pbf.py``) and GeoPackage
+ * (``install/gpkg.py``).
+ *
+ * Kept in lockstep with the backend by ``importExtensionsMatchBackend.test.ts``,
+ * which reads the Python and compares. Offering a file the server then rejects,
+ * or rejecting one it would have taken, is invisible until a user hits it.
  */
 export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".csv",
@@ -20,18 +25,28 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".shp",
   ".pbf",
   ".osm.pbf",
+  ".gpkg",
 ] as const;
 
 /** ``accept`` attribute for the Data Catalog import picker. */
 export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
-/** Prefix of a synthetic OSM layer-group id (mirrors the backend). The group
- * is a bundle-shaped catalog entry whose id addresses all its member layers. */
+/** Prefixes of a synthetic layer-group id (mirrors the backend). The group is a
+ * bundle-shaped catalog entry whose id addresses all its member layers. Two
+ * importers make them: OSM PBF extracts and GeoPackages. */
 export const OSM_GROUP_ID_PREFIX = "osm.";
+export const GPKG_GROUP_ID_PREFIX = "gpkg.";
+export const LAYER_GROUP_ID_PREFIXES = [
+  OSM_GROUP_ID_PREFIX,
+  GPKG_GROUP_ID_PREFIX,
+] as const;
 
-/** True when an id addresses a synthetic OSM layer group. */
-export function isOsmGroupId(id: string | null | undefined): boolean {
-  return typeof id === "string" && id.startsWith(OSM_GROUP_ID_PREFIX);
+/** True when an id addresses a synthetic multi-layer group. */
+export function isLayerGroupId(id: string | null | undefined): boolean {
+  return (
+    typeof id === "string" &&
+    LAYER_GROUP_ID_PREFIXES.some((prefix) => id.startsWith(prefix))
+  );
 }
 
 /**
@@ -52,6 +67,31 @@ export interface PendingInstall {
   format?: DatasetFormat;
   /** Epoch ms when the install started (used only for the safety timeout). */
   startedAt: number;
+  /**
+   * Whether this install is still running or is known to have failed (#352).
+   *
+   * Absent means "installing", so every existing caller keeps its behaviour.
+   * A placeholder used to be cleared unconditionally when the install-save
+   * settled, however that save went - so a producer whose dataset did not
+   * install saw its entry flash and vanish, which is #217's exact symptom with
+   * nothing left on screen to explain it.
+   */
+  status?: "installing" | "failed";
+}
+
+/**
+ * What one install-sync save actually achieved (#352).
+ *
+ * ``failedNodeIds`` are the producers whose dataset did not install - the
+ * ``dataset_install_warnings`` the save returned, scoped to the nodes this sync
+ * covered. On a save that threw, every covered node is failed: nothing was
+ * written, so nothing succeeded.
+ */
+export interface InstallSyncOutcome {
+  /** False when the save itself failed (network, refused, backend error). */
+  saved: boolean;
+  /** Producers that did NOT get their dataset installed. */
+  failedNodeIds: string[];
 }
 
 /** A dataflow that uses a dataset, as returned by ``GET /datasets/<id>/usage``. */
@@ -61,6 +101,14 @@ export interface DatasetDataflowUsageRef {
   nodeCount: number;
   /** Consumer nodes within this dataflow (downstream of the dataset). */
   nodes?: Array<{ nodeId: string; nodeType?: string | null }>;
+  /** True when this dataflow uses the dataset ONLY through a node's source
+   *  (a literal `curio_dataset_path("<id>")`), with no ref or binding.
+   *
+   *  The backend's destructive gate ignores these, so they do not keep an
+   *  uploaded file alive on uninstall - but the code stays behind and will
+   *  raise a per-id error the next time that node runs. Anything predicting or
+   *  warning about a deletion has to tell the two apart. */
+  codeOnly?: boolean;
 }
 
 export interface DatasetSchemaField {
@@ -85,6 +133,24 @@ export interface DatasetLoaderSnippet {
   pathVariable: string;
   /** Variable name that should be returned from a standalone Data Loading node (e.g. "df"). */
   returnVariable?: string | null;
+}
+
+/**
+ * Where a dataset downloaded from the Data Lake Catalog came from.
+ *
+ * Mirrors the `lakeSource` block on the dataset manifest. Null for every
+ * dataset that did not come from a portal, which is most of them. Such a
+ * dataset's `origin` is still `"imported"` - this block is what distinguishes
+ * it, rather than a fifth origin value.
+ */
+export interface DatasetLakeSource {
+  lakeId: string;
+  lakeName: string;
+  resourceId: string;
+  resourceUrl: string;
+  finalUrl?: string;
+  fetchedAt?: string;
+  contentSha256?: string;
 }
 
 export interface DatasetCatalogItem {
@@ -157,6 +223,7 @@ export interface DatasetCatalogItem {
   tags: string[];
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
+  lakeSource?: DatasetLakeSource | null;
   installed?: boolean;
   /** In the user's account-level "all projects" list. Independent of
    *  `installed`, which is one dataflow's spec refs. */
@@ -568,4 +635,5 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   shp: "SHP",
   bundle: "Bundle",
   osm: "OSM PBF",
+  gpkg: "GeoPackage",
 };

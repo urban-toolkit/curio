@@ -17,6 +17,7 @@
  */
 import React, { useState } from "react";
 
+import type { AgentCard } from "../../api/agentsApi";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import type { SortMode } from "../../components/packages/publishing/packageTypes";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
@@ -26,6 +27,11 @@ import { useAgentCatalogBrowse } from "./useAgentCatalogBrowse";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
+import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import {
+  agentCardActions,
+  type CatalogCardActionId,
+} from "../../components/catalog/catalogCardActions";
 
 export const AgentCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
@@ -35,6 +41,13 @@ export const AgentCatalogBrowse: React.FC = () => {
   // (#189). The Data Catalog keeps the same two surfaces apart.
   const [detailCoord, setDetailCoord] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  // Right-click. The card reports the event, the grid owns the menu - the same
+  // division the projects page has used all along (#285).
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    agent: AgentCard;
+  } | null>(null);
   const {
     search,
     setSearch,
@@ -62,6 +75,23 @@ export const AgentCatalogBrowse: React.FC = () => {
     onUnpublish,
     reload,
   } = useAgentCatalogBrowse();
+
+  const runAgentAction = (id: CatalogCardActionId, agent: AgentCard) => {
+    switch (id) {
+      case "add-to-all-projects":
+        void onImport(agent);
+        return;
+      case "remove-from-all-projects":
+        void onRemoveImport(agent);
+        return;
+      case "view-details":
+        setDetailCoord(agent.dirName);
+        return;
+      // An agent is never offered the package catalog's update.
+      case "update-all-projects":
+        return;
+    }
+  };
 
   // From the unfiltered roster on purpose - the modal outlives a filter change.
   const detailAgent = detailCoord
@@ -228,6 +258,13 @@ export const AgentCatalogBrowse: React.FC = () => {
                 selected={selectedAgent?.dirName === agent.dirName}
                 onSelect={() => setSelectedCoord(agent.dirName)}
                 onViewDetails={() => setDetailCoord(agent.dirName)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  // Select first: the menu acts on this agent, so the drawer
+                  // beside it should not still be describing another one.
+                  setSelectedCoord(agent.dirName);
+                  setContextMenu({ x: e.clientX, y: e.clientY, agent });
+                }}
               />
             ))}
           </section>
@@ -246,6 +283,17 @@ export const AgentCatalogBrowse: React.FC = () => {
         onClose={() => setSelectedCoord(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {contextMenu ? (
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          ariaLabel="Agent actions"
+          items={agentCardActions({ imported: contextMenu.agent.imported })}
+          onSelect={(id) => runAgentAction(id as CatalogCardActionId, contextMenu.agent)}
+          onDismiss={() => setContextMenu(null)}
+        />
+      ) : null}
 
       {detailAgent ? (
         <AgentDetailModal agent={detailAgent} onClose={() => setDetailCoord(null)} />

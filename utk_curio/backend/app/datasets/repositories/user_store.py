@@ -66,6 +66,56 @@ class UserDatasetRepository:
     def __init__(self, user: Any | None):
         self.user = user
 
+    def find_by_lake_resource(
+        self, lake_id: str, resource_id: str, fmt: str | None = None
+    ) -> dict[str, Any] | None:
+        """A dataset this account already downloaded from that portal resource.
+
+        What makes "do I already hold this?" answerable without a network call,
+        and so what stops the same file arriving twice under two generated ids.
+        Matched on the ``lakeSource`` block rather than on content, because the
+        point is to answer BEFORE downloading anything.
+
+        ``fmt`` narrows it: the same resource downloaded as CSV and as GeoJSON
+        is two datasets, and holding one is not holding the other.
+        """
+        if self.user is None or not lake_id or not resource_id:
+            return None
+        for item in self.list_items():
+            lake = item.get("lakeSource") or {}
+            if lake.get("lakeId") != lake_id or lake.get("resourceId") != resource_id:
+                continue
+            if fmt and item.get("format") != fmt:
+                continue
+            return item
+        return None
+
+    def lake_resource_index(self) -> dict[tuple[str, str], str]:
+        """Everything this account holds from a portal, keyed by what it came from.
+
+        The batch form of :meth:`find_by_lake_resource`, and the reason it
+        exists: a page of search results asks "do I already hold this?" once
+        per row, and answering each with its own call walks the whole store
+        again - twenty passes to render twenty rows. This walks it once.
+
+        Keyed on ``(lakeId, resourceId)`` and not on the format, because a
+        search row has not chosen one yet: it offers every format the portal
+        does. That is the same question :meth:`find_by_lake_resource` answers
+        with ``fmt=None``. The acquire path still asks with a format, where the
+        distinction matters - the same resource as CSV and as GeoJSON is two
+        datasets, and holding one is not holding the other.
+        """
+        index: dict[tuple[str, str], str] = {}
+        if self.user is None:
+            return index
+        for item in self.list_items():
+            lake = item.get("lakeSource") or {}
+            lake_id, resource_id = lake.get("lakeId"), lake.get("resourceId")
+            if not lake_id or not resource_id:
+                continue
+            index.setdefault((lake_id, resource_id), item["id"])
+        return index
+
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
             return []

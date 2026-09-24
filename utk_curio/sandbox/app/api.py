@@ -1,9 +1,10 @@
 from flask import request, abort, jsonify, Response
+from functools import wraps
 import json
-import re
 import sys
 import geopandas as gpd
 import pandas as pd
+from utk_curio.sandbox import metrics
 from utk_curio.sandbox.app import app, cache
 from utk_curio.sandbox.app.auth import require_sandbox_token
 from utk_curio.sandbox.app.utils.cache import make_key
@@ -14,16 +15,39 @@ from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util.secrets import shape_secrets
+from utk_curio.sandbox.util.db import connection_in_use
+
+
+def holds_duckdb(view):
+    """Keep the shared DuckDB connection open for one whole request.
+
+    Every execution path releases the connection when it finishes, because
+    DuckDB allows a single cross-process writer and the backend needs to open
+    the file read-only between runs. On a threaded server that release lands
+    while other requests are still using the connection: concurrent Autark
+    data loads failed mid-INSERT with "Connection already closed!" at ten
+    simultaneous users. Under this decorator the release is deferred to
+    whichever request leaves last, so the cross-process contract is unchanged
+    and no request loses its connection halfway through.
+
+    Note what this is not: a lock. Requests still run in parallel -- N Node
+    subprocesses for N Autark loads, exactly as before.
+    """
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        with connection_in_use():
+            return view(*args, **kwargs)
+
+    return wrapper
 from utk_curio.sandbox.util.parsers import (
     load_from_duckdb,
+    load_shared_output_file,
     load_tabular_arrow_from_duckdb,
     load_tabular_preview_from_duckdb,
     parseOutput,
 )
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
-
-_VALID_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-]*(\[[\w,\s]+\])?(===?|~=|!=|>=?|<=?[a-zA-Z0-9._\-*]+)?$')
 
 # Pre-load heavy libraries once at sandbox startup so every /exec call is fast.
 _worker_init()
@@ -74,6 +98,37 @@ def _isolation_label():
     return _resolved_isolation_label
 
 
+def _isolation_active_label():
+    """What node execution is actually DOING, not what was resolved.
+
+    ``_isolation_label`` answers "what did this instance resolve to". That is a
+    configuration question and it is settled before any node runs, which makes
+    it the wrong thing to check when the question is "did this workload go
+    through the confined path".
+
+    The two can disagree, and nothing used to report it. The zygote is started
+    lazily, on the first ``/exec`` (``_isolation_runner`` below is the only
+    caller of ``lifecycle.ensure_running`` in the tree; ``server.py`` hardens
+    at boot but starts nothing). A spawn that fails is not fatal by design -
+    the node still has to run - so the sandbox degrades to in-process and
+    caches that for the life of the process, while the resolved label goes on
+    saying ``fork``.
+
+    - ``pending``: no node has executed yet, so there is nothing to report.
+    - ``fork``: executions are being dispatched to the zygote.
+    - ``off``: node code is running in this process.
+
+    Deliberately reports the decision rather than ``lifecycle.is_running()``.
+    Liveness answers "is a zygote up right now", which flaps: the zygote can
+    die after a workload finishes and be respawned on the next request, and
+    neither changes the fact that the executions went through the fork path.
+    """
+    state = _isolation_state
+    if state is None:
+        return 'pending'
+    return 'fork' if state else 'off'
+
+
 @app.route('/version', methods=['GET'])
 def version():
     from utk_curio import __version__
@@ -83,10 +138,70 @@ def version():
     return jsonify({
         'version': __version__,
         'isolation': _isolation_label(),
+        'isolation_active': _isolation_active_label(),
     })
+
+@app.route('/monitor', methods=['GET'])
+@require_sandbox_token
+def monitor():
+    """Execution counters, live capacity and recent failures, for the backend.
+
+    Gated, unlike /version. /version discloses nothing; this route reports how
+    much capacity is free and carries raw failure text, and its only caller is
+    the backend, which already holds the shared secret. Nothing else should be
+    able to read it directly.
+
+    The isolation labels come from the same two helpers the version badge uses,
+    so the badge and the monitor page can never disagree about what this
+    sandbox is doing.
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    payload = metrics.snapshot()
+    payload['isolation'] = _isolation_label()
+    payload['isolation_active'] = _isolation_active_label()
+    payload['errors'] = metrics.errors()
+
+    # The limits actually in force when a zygote is up, else the ones this
+    # process would use if one started. Both are worth reporting: an operator
+    # comparing a configured budget against a running one is exactly how the
+    # "I set --exec-memory-mb and nothing changed" question gets answered.
+    config = None
+    state = _isolation_state
+    if isinstance(state, tuple):
+        config = state[1]
+    else:
+        try:
+            config = runner.IsolationConfig.from_environment()
+        except Exception:  # noqa: BLE001 - a monitor never fails over config
+            config = None
+
+    if config is not None:
+        payload['parallelism'] = config.parallelism
+        payload['memory_limit_mb'] = config.limits.get('memory_mb')
+        payload['cpu_seconds_limit'] = config.limits.get('cpu_seconds')
+        payload['wall_timeout_seconds'] = config.wall_timeout
+    else:
+        payload['parallelism'] = None
+        payload['memory_limit_mb'] = None
+        payload['cpu_seconds_limit'] = None
+        payload['wall_timeout_seconds'] = None
+
+    try:
+        payload['zygote_running'] = bool(lifecycle.is_running())
+    except Exception:  # noqa: BLE001
+        payload['zygote_running'] = None
+
+    # This process's own resident memory. It is the one running node code, so
+    # it is the number an operator chasing an OOM actually wants.
+    payload['rss_bytes'] = metrics.process_rss_bytes()
+
+    return jsonify(payload)
+
 
 @app.route('/get', methods=['GET'])
 @require_sandbox_token
+@holds_duckdb
 def get_artifact():
     import pandas as _pd
     import traceback as _tb
@@ -104,30 +219,61 @@ def get_artifact():
     # chdir_locked serializes against execute_code() so a concurrent /exec
     # can't restore cwd out from under us (or vice versa).
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    max_rows = int(max_rows_param) if max_rows_param is not None else None
     try:
         with chdir_locked(launch_dir):
             total_rows = None
             raw = None
-            if max_rows_param is not None:
-                max_rows = int(max_rows_param)
-                preview = load_tabular_preview_from_duckdb(
-                    art_id,
-                    max_rows,
-                    session_id=session_id,
-                )
-                if preview is not None:
-                    raw, total_rows = preview
-            if raw is None:
-                raw = load_from_duckdb(art_id, session_id=session_id)
-                if max_rows_param is not None:
-                    max_rows = int(max_rows_param)
-                    if isinstance(raw, _pd.DataFrame):
+            try:
+                if max_rows is not None:
+                    preview = load_tabular_preview_from_duckdb(
+                        art_id,
+                        max_rows,
+                        session_id=session_id,
+                    )
+                    if preview is not None:
+                        raw, total_rows = preview
+                if raw is None:
+                    raw = load_from_duckdb(art_id, session_id=session_id)
+                    if max_rows is not None and isinstance(raw, _pd.DataFrame):
                         total_rows = len(raw)
                         raw = raw.head(max_rows)
+            except Exception as store_error:
+                # The store could not serve it. Three ways that happens and all
+                # three mean the same thing to a caller holding a project's
+                # saved output: no such row, a row this session may not read
+                # (rows are session-tagged), or no readable database at all -
+                # the file is created on first write and can be locked by a
+                # concurrent /exec. So try the shared data directory, where a
+                # project load hydrates every output the manifest records. That
+                # file carries no session tag, which is what lets a dashboard -
+                # or any second viewer - read an output the producing session no
+                # longer owns.
+                try:
+                    raw = load_shared_output_file(art_id)
+                except KeyError:
+                    # Nothing hydrated under that name either. Report what the
+                    # STORE said rather than what the fallback said: for a
+                    # genuinely missing artifact that is the same KeyError this
+                    # route has always returned, and for a locked or missing
+                    # database it keeps the diagnostic instead of replacing it
+                    # with a misleading "no artifact with id".
+                    raise store_error
+                total_rows = None
+                if max_rows is not None and isinstance(raw, _pd.DataFrame):
+                    total_rows = len(raw)
+                    raw = raw.head(max_rows)
             data = parseOutput(raw)
     except Exception as e:
         # Surface the underlying exception in the response body so callers
         # see *why* the load failed instead of an empty 500 page.
+        #
+        # ...and in the log as well. The backend does not relay this body (it
+        # answers "Error loading artifact: 500 Server Error"), so a load that
+        # fails under load left no account of itself anywhere a CI run could
+        # read afterwards.
+        print(f"[sandbox /get] failed  fileName={art_id}  session={session_id}\n"
+              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
         return jsonify({
             'error': type(e).__name__,
             'message': str(e),
@@ -266,6 +412,10 @@ def _isolated_runner():
                 f"to in-process execution: {exc}",
                 file=sys.stderr, flush=True,
             )
+            metrics.record_error(
+                summary="Could not start the execution zygote",
+                detail=f"{exc}\n\nNode execution fell back to the in-process path.",
+            )
             _isolation_state = False
             return None
 
@@ -283,62 +433,52 @@ def _isolated_runner():
         return _isolation_state
 
 
-def _runtime_install_enabled() -> bool:
-    """Whether ``POST /install`` is permitted at all.
-
-    Off by default. Nothing in Curio calls this route: library installs go
-    through the backend (``packages/pip_runner.py``), which is auth-gated and
-    records what it installed per user. This endpoint is a second, unrecorded
-    path to ``pip install`` inside the interpreter that executes node code, so
-    it stays disabled unless an operator explicitly asks for it with
-    ``--allow-runtime-install``.
-    """
-    return os.environ.get("CURIO_ALLOW_RUNTIME_INSTALL", "0").strip().lower() in (
-        "1", "true", "yes", "on",
-    )
-
-
-@app.route('/install', methods=['POST'])
+@app.route('/artifact-meta', methods=['GET'])
 @require_sandbox_token
-def install_packages():
-    import subprocess
-    if not _runtime_install_enabled():
-        return jsonify({
-            "error": "runtime_install_disabled",
-            "message": (
-                "Sandbox runtime package installation is disabled. Install "
-                "libraries through the Library Manager, which goes through the "
-                "backend. To re-enable this endpoint, launch with "
-                "--allow-runtime-install."
-            ),
-        }), 403
-    packages = request.json.get('packages', [])
-    if not packages:
-        abort(400, "No packages specified")
+@holds_duckdb
+def artifact_meta():
+    """The stored row for one artifact, without opening the database file.
 
-    results = []
-    for package in packages:
-        package = package.strip()
-        if not package:
-            continue
-        if not _VALID_PACKAGE_RE.match(package):
-            results.append({"package": package, "success": False, "stdout": "", "stderr": f"Invalid package name: {package}"})
-            continue
-        result = subprocess.run(
-            [sys.executable, '-m', 'pip', 'install', package],
-            capture_output=True, text=True
-        )
-        results.append({
-            "package": package,
-            "success": result.returncode == 0,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        })
+    This exists so the backend never opens curio_data.duckdb itself. DuckDB
+    allows a single cross-process writer, so every backend read-only open had
+    to be fitted around the sandbox closing its write handle between runs --
+    which is why the handle was released after every execution, and why an
+    auto-install that happened to collide with a node run silently read
+    nothing and moved on. With the read served here, the sandbox keeps one
+    connection for its lifetime and nothing contends for the file.
 
-    return jsonify({"results": results})
+    Returns the same columns the backend used to SELECT for itself; a missing
+    artifact is a 404 rather than an error, because "not there" is an ordinary
+    answer for a caller resolving an id it merely hopes is an artifact.
+    """
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+
+    from utk_curio.sandbox.util.db import get_read_connection
+
+    con = get_read_connection()
+    row = con.execute(
+        "SELECT kind, value_int, value_float, value_str, value_json "
+        "FROM artifacts WHERE id = ?",
+        [art_id],
+    ).fetchone()
+    if row is None:
+        return jsonify({'error': 'not found', 'fileName': art_id}), 404
+
+    kind, value_int, value_float, value_str, value_json = row
+    return jsonify({
+        'kind': kind,
+        'value_int': value_int,
+        'value_float': value_float,
+        'value_str': value_str,
+        'value_json': value_json,
+    })
+
 
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
+@holds_duckdb
 # @cache.cached(make_cache_key=make_key)
 def exec():
     import time
@@ -381,6 +521,7 @@ def exec():
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     isolated = _isolated_runner()
+    metrics.record_dispatch(isolated is not None)
     if isolated is not None:
         run, config = isolated
         # launch_dir is passed to both paths in the same position: it is the
@@ -404,6 +545,7 @@ def exec():
 
 @app.route('/execJs', methods=['POST'])
 @require_sandbox_token
+@holds_duckdb
 def exec_js():
     import time
     import sys
@@ -423,6 +565,8 @@ def exec_js():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
+    # JS has no isolated path at all, so this is always an in-process dispatch.
+    metrics.record_dispatch(False)
     result = execute_js_code(
         code, str(file_path), str(node_type), str(data_type), launch_dir,
         session_id=session_id, save_dataset=bool(save_dataset),

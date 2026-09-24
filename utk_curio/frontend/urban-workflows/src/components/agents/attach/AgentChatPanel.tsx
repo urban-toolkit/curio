@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faArrowUp,
@@ -58,9 +58,10 @@ const INTENT_CLAMP_CHARS = 280;
  *
  * Per DEC-042 (dev/21) the opened agent view has ONE dark top header carrying
  * the master agent identity, the ‹ › agent-cycling arrows (walking all
- * attachments in the dataflow), the identification details (attached target +
- * session chip), and Close — no Pin, and no static "Agent Catalog" bar (that
- * chrome is exclusive to the Agents Roster drawer). Below the header: the
+ * attachments in the dataflow), the name of what it is attached to (its ids
+ * are on that line's tooltip, see below), and Close — no Pin, and no
+ * static "Agent Catalog" bar (that chrome is exclusive to the Agents Roster
+ * drawer). Below the header: the
  * intent-as-first-message transcript and pill input, unchanged.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
@@ -84,6 +85,14 @@ export const AgentChatPanel: React.FC<{
   /** Cycle to the previous/next attachment; omitted → that arrow is disabled. */
   onPrev?: () => void;
   onNext?: () => void;
+  /**
+   * At its resting transform (#295). False mounts the panel off-screen so the
+   * slide has somewhere to come from, and flips back to false for the exit
+   * while the panel stays mounted.
+   */
+  presented?: boolean;
+  /** The exit slide finished; the owner may unmount the panel now. */
+  onExitComplete?: () => void;
   /** True while the session history is loading from the server. */
   loadingHistory?: boolean;
   /** History-load failure message; `onRetryHistory` retries the fetch. */
@@ -172,6 +181,8 @@ export const AgentChatPanel: React.FC<{
   total = 1,
   onPrev,
   onNext,
+  presented = true,
+  onExitComplete,
   loadingHistory = false,
   historyError = null,
   onRetryHistory,
@@ -364,6 +375,10 @@ export const AgentChatPanel: React.FC<{
   // Escape dismisses the chat (close only — the attachment is untouched);
   // while renaming, Escape cancels the edit instead (handled on the input).
   useEffect(() => {
+    // A no-op while the panel is sliding out (#295): it is still mounted, so
+    // the listener is still attached, and closing something already closing
+    // would restart the fallback timer against a panel nobody can see.
+    if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
       // An open modal owns Escape. AI Settings and agent import are raised
       // over this panel, and this listener is on window in the bubble phase,
@@ -374,7 +389,22 @@ export const AgentChatPanel: React.FC<{
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, editingTitle]);
+  }, [onClose, editingTitle, presented]);
+
+  // The exit settles on the PANEL's own transform and nothing else. This panel
+  // is full of inner transitions (bubbles, chips, the run status line), and
+  // every one of them bubbles a transitionend to this element - so an
+  // unguarded handler unmounted the panel the moment any child finished
+  // animating, mid-slide.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const handlePanelTransitionEnd = useCallback(
+    (e: React.TransitionEvent<HTMLElement>) => {
+      if (e.target !== panelRef.current || e.propertyName !== "transform") return;
+      if (presented) return;
+      onExitComplete?.();
+    },
+    [onExitComplete, presented],
+  );
 
   // Cycling to another agent discards any in-progress rename state.
   useEffect(() => {
@@ -482,8 +512,18 @@ export const AgentChatPanel: React.FC<{
   });
 
   return (
-    <div className={styles.panel} role="dialog" aria-label={`Chat with ${displayName}`}>
-      <div className={styles.header}>
+    <div
+      ref={panelRef}
+      className={`${styles.panel} ${presented ? styles.panelPresented : ""}`}
+      onTransitionEnd={handlePanelTransitionEnd}
+      role="dialog"
+      aria-label={`Chat with ${displayName}`}
+      aria-hidden={!presented}
+    >
+      {/* Addressable from outside the CSS-module hash, so the #228 baseline can
+          clip to the header rather than spend its diff budget on an empty
+          transcript (agent-chat-names-its-node). */}
+      <div className={styles.header} data-curio-chat-header="true">
         <div className={styles.headerRow}>
           <button
             type="button"

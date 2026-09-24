@@ -484,3 +484,60 @@ class TestAgentReviewCard:
         save_workflow_test_screenshot(
             page, REVIEW_STEM, test_name="applied",
         )
+
+
+class TestNodeAttachedChatHeader:
+    """What the header of a node-attached chat says it is attached to (#228).
+
+    The panel used to compose that line from the attachment alone -
+    ``Attached to node 6bea6863-…`` beside a ``session 8f2a1c33`` chip. Both
+    ids are diagnostic, and a canvas holds several nodes of one type, so
+    neither told the user which node they were talking to. The name now comes
+    from ``resolveNodeDisplayLabel``, the same function the node's own header
+    renders.
+    """
+
+    # Node-only by roster, so the server cannot answer a node attachment with
+    # a canvas one and leave this reading the wrong header.
+    SPEC = next(
+        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-explainer"
+    )
+
+    def test_the_header_names_the_node_and_keeps_the_ids_on_the_tooltip(
+        self, agent_chat_session,
+    ):
+        require_project_page()
+        require_user_auth()
+        page = agent_chat_session["page"]
+
+        _open_dataflow_with_agent(
+            agent_chat_session, self.SPEC,
+            project_name="Chat header names its node", replies=(),
+        )
+        node_id = _mint_node_id(self.SPEC)
+        panel = _open_chat(page, self.SPEC)
+
+        subtitle = panel.get_by_text(re.compile(r"^Attached to "))
+        expect(subtitle).to_be_visible(timeout=20000)
+        header = subtitle.inner_text().strip()
+        label = header[len("Attached to "):].strip()
+
+        # The id itself, not just a uuid shape: this fixture mints readable
+        # node ids ("agent-e2e-code"), so a regex over 36-char uuids would pass
+        # here no matter what the header said. Both checks earn their place -
+        # the uuid one is what a real project's ids look like.
+        assert node_id not in header, f"the node id is still in the header: {header!r}"
+        assert not re.search(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", header
+        ), f"a uuid reached the header: {header!r}"
+        assert label and label != "node", f"the header names nothing: {header!r}"
+
+        # The canvas is the authority on what that node is called; the point of
+        # the fix is that both surfaces read the same function.
+        node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+        expect(node).to_contain_text(label, timeout=20000)
+
+        # Diagnostic, not gone: support still has to be able to recover both.
+        tooltip = subtitle.get_attribute("title") or ""
+        assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
+        assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"

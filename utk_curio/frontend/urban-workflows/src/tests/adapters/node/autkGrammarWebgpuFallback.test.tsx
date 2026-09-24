@@ -46,7 +46,11 @@ jest.mock(
 );
 
 import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavior';
-import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
+import {
+  __resetWebGpuSupportCache,
+  __setWebGpuAdapterRetryBudget,
+  WEBGPU_ADAPTER_RETRY_BUDGET_MS,
+} from '../../../utils/webgpuSupport';
 
 const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const COMPUTE_SPEC = JSON.stringify({
@@ -105,7 +109,16 @@ function withoutGpu() {
 beforeEach(() => {
   jest.clearAllMocks();
   __resetWebGpuSupportCache();
+  // The subject here is the fallback panel and the node's output, not the
+  // retry policy - which has its own suite (webgpuSupport.test.ts) and its own
+  // fake-timer harness. Without this every "no adapter" case below would sit
+  // through the real budget on real timers (#272).
+  __setWebGpuAdapterRetryBudget(0);
   withoutGpu();
+});
+
+afterEach(() => {
+  __setWebGpuAdapterRetryBudget(WEBGPU_ADAPTER_RETRY_BUDGET_MS);
 });
 
 describe('an Autark node on a browser without WebGPU', () => {
@@ -227,6 +240,9 @@ describe('an Autark node on a browser that does have WebGPU', () => {
 
 describe('Firefox: the adapter arrives on the second ask (#272)', () => {
   test('null on the first requestAdapter, an adapter on the retry, and the grammar runs', async () => {
+    // The one case here that IS about the retry, so it needs a budget to retry
+    // within. One backoff step (150 ms) on real timers is the whole cost.
+    __setWebGpuAdapterRetryBudget(500);
     Object.defineProperty(navigator, 'gpu', {
       configurable: true,
       value: {
@@ -340,5 +356,60 @@ describe('the run always ends (#271)', () => {
 
     expect(terminal(h)).toHaveLength(1);
     expect(terminal(h)[0].code).toBe('error');
+  });
+});
+
+describe('the duckdb spatial extension (#318)', () => {
+  const terminal = (h: Harness) => h.outputs.filter((o) => o.code === 'success' || o.code === 'error');
+  const EXTENSION_ERROR = new Error(
+    "Failed to execute 'send' on 'XMLHttpRequest': Failed to load "
+    + "'https://extensions.duckdb.org/v1.5.1/wasm_eh/spatial.duckdb_extension.wasm'.",
+  );
+
+  test('a failed extension fetch is retried, and the node ends green', async () => {
+    // autk-db downloads the spatial extension into every fresh in-browser
+    // DuckDB, so one network flake failed a map node that had nothing to do
+    // with the network.
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValueOnce(EXTENSION_ERROR);
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(mockGrammarRun).toHaveBeenCalledTimes(2);
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('success');
+  });
+
+  test('an extension fetch that keeps failing reports it, once', async () => {
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValue(EXTENSION_ERROR);
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0]).toEqual({
+      code: 'error',
+      content: expect.stringContaining('extensions.duckdb.org'),
+    });
+  });
+
+  test('an error with no message still says something', async () => {
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValueOnce(new TypeError(''));
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('error');
+    expect(terminal(h)[0].content.trim()).not.toBe('');
   });
 });

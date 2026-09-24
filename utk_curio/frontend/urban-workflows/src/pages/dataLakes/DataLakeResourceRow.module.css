@@ -1,0 +1,247 @@
+/*
+ * One search result. A ROW, not a card: a portal answers with tens of these
+ * and a grid of tiles would make ten results feel like a wall. The cards on
+ * /catalog/lakes are for the five things you choose between; this is for the
+ * many things you scan.
+ *
+ * Colours, type and geometry come from ../../styles/curioTokens.css, as
+ * everywhere else.
+ */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row:hover {
+  background: var(--curio-page-bg);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 2px;
+  font-size: var(--curio-font-size-md);
+  font-weight: 700;
+  color: var(--curio-text-primary);
+  line-height: 1.3;
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+}
+
+.description {
+  margin: 6px 0 0;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* The portal a federated row came from. Neutral, because the provider axis is
+   a name here rather than a colour - see --curio-kind-lake-fg. */
+.sourceTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  border-radius: 10px;
+  padding: 0 8px 0 4px;
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.formatSelect {
+  height: 30px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  padding: 0 6px;
+}
+
+/* Dark filled = an action, matching every other catalog surface. */
+.download {
+  height: 30px;
+  border: 0;
+  border-radius: var(--curio-radius-lg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.download:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.download:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.held {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--curio-role-installed-bg);
+  color: var(--curio-role-installed-fg);
+  padding: 0 10px;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.landing {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
+/* ── A download in flight ─────────────────────────────────────────────── */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--curio-surface-muted);
+  overflow: hidden;
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  /* The role that exists for exactly this: work in flight. */
+  background: var(--curio-role-running-fg);
+  transition: width 0.2s ease-out;
+}
+
+/* No Content-Length, so there is no percentage to show. A bar stuck at 0%
+   reads as broken; a moving one reads as working. */
+.progressIndeterminate {
+  width: 40%;
+  animation: lakeIndeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes lakeIndeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+.progressLabel {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+  white-space: nowrap;
+  min-width: 56px;
+  text-align: right;
+}
+
+/* Light with a border: the destructive treatment every catalog surface uses. */
+.cancel {
+  height: 26px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancel:hover {
+  background: var(--curio-page-bg);
+}
+
+/* Navigation, so neither the action nor the destructive treatment fits. */
+.viewDataset {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  color: var(--curio-text-primary);
+  white-space: nowrap;
+}
+
+.failure {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--curio-danger-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-sm);
+}
+
+.dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}

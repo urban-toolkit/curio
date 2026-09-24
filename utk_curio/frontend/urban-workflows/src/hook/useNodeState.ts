@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NodeType } from '../constants';
 import { NodeTemplateId } from '../registry/types';
-import { ICodeDataContent } from '../types';
+import { ICodeDataContent, MissingModuleNotice } from '../types';
 import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
 import { useFlowContext } from '../providers/FlowProvider';
@@ -11,6 +11,8 @@ export interface NodeOutput {
   code: string;
   content: ICodeDataContent | string;
   outputType?: string;
+  /** Set only on a failed run that ended in a ModuleNotFoundError (#299). */
+  missingModule?: MissingModuleNotice | null;
 }
 
 export function useNodeState(data: any, nodeType: NodeTemplateId) {

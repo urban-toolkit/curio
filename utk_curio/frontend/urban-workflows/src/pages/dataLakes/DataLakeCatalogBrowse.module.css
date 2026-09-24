@@ -1,0 +1,18 @@
+/*
+ * The federated result list, which replaces the card grid while searching.
+ *
+ * It reuses `.cardGrid` for the scroll behaviour, gutters and scrollbar - the
+ * shared stylesheet owns all of that - and overrides only the track, because
+ * results are rows rather than tiles.
+ */
+.resultList {
+  display: block;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  padding: 0;
+  margin: var(--catalogBrowseCardGridPadding, 24px);
+  height: auto;
+  max-height: calc(100vh - 290px);
+  overflow: hidden auto;
+}

@@ -121,51 +121,92 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None,
     }
 
 
-# Socrata URL shapes: /resource/<4x4>.<ext> or /api/views/<4x4>…
-_SOCRATA_ID_RE = re.compile(r"/(?:resource|api/views)/([a-z0-9]{4}-[a-z0-9]{4})\b")
+def _refine_with(provider_module):
+    """Build the refinement for one provider family.
+
+    The shape is always the same - recognise the id, probe that provider's
+    metadata endpoint, read evidence out of the body the probe already
+    fetched - so it is written once here rather than once per provider. What
+    varies (the URL shape, the metadata endpoint, what counts as evidence)
+    lives in the provider module, which is the only place that knows it.
+    """
+
+    def _refine(url: str, *, request_fn=None, resolver=None, budget=None,
+                headers=None, params=None) -> dict:
+        resource_id = provider_module.recognize(url)
+        meta_url = provider_module.metadata_url(url, resource_id) if resource_id else None
+        if not meta_url:
+            return verify_endpoint(
+                url, request_fn=request_fn, resolver=resolver, budget=budget,
+                headers=headers, params=params
+            )
+        outcome = verify_endpoint(
+            meta_url, request_fn=request_fn, resolver=resolver, budget=budget,
+            headers=headers, params=params
+        )
+        outcome["provider"] = provider_module.PROVIDER_TYPE
+        outcome["datasetId"] = resource_id
+        if outcome["status"] != "verified":
+            return outcome
+        try:
+            # Reuse the probe's body. This used to re-fetch the identical URL
+            # and throw the first response away, doubling the request count for
+            # every Socrata row and its whole redirect chain with it.
+            body = outcome.get("_body") or ""
+            payload = body if provider_module.EVIDENCE_TAKES_TEXT else json.loads(body)
+            outcome.update(provider_module.metadata_evidence(payload))
+        except Exception:
+            pass  # the generic verdict stands; the refinement is best-effort
+        return outcome
+
+    return _refine
 
 
 def verify_socrata(url: str, *, request_fn=None, resolver=None, budget=None,
                    headers=None, params=None) -> dict:
-    """The Socrata refinement: probe the dataset's metadata endpoint and
-    extract its real name and columns — richer evidence over the same gate."""
-    match = _SOCRATA_ID_RE.search(url)
-    parsed_host = re.match(r"^(https?://[^/]+)", url)
-    if not match or not parsed_host:
-        return verify_endpoint(url, request_fn=request_fn, resolver=resolver, budget=budget,
-                               headers=headers, params=params)
-    dataset_id = match.group(1)
-    meta_url = f"{parsed_host.group(1)}/api/views/{dataset_id}.json"
-    outcome = verify_endpoint(
-        meta_url, request_fn=request_fn, resolver=resolver, budget=budget,
-        headers=headers, params=params,
+    """Kept as a name because tests and callers refer to it; the Socrata URL
+    knowledge itself now lives in ``datalakes/providers/socrata.py``."""
+    from utk_curio.backend.app.datalakes.providers import socrata
+
+    return _refine_with(socrata)(
+        url, request_fn=request_fn, resolver=resolver, budget=budget,
+        headers=headers, params=params
     )
-    outcome["provider"] = "socrata"
-    outcome["datasetId"] = dataset_id
-    if outcome["status"] != "verified":
-        return outcome
-    try:
-        # Reuse the probe's body. This used to re-fetch the identical URL and
-        # throw the first response away, doubling the request count for every
-        # Socrata row and its whole redirect chain with it.
-        meta = json.loads(outcome.get("_body") or "")
-        outcome["datasetName"] = str(meta.get("name") or "")[:120]
-        columns = meta.get("columns") or []
-        outcome["columns"] = [
-            str(c.get("fieldName") or c.get("name") or "")[:60]
-            for c in columns[:_SAMPLE_KEYS_MAX]
-            if isinstance(c, dict)
-        ]
-    except Exception:
-        pass  # the generic verdict stands; the refinement is best-effort
-    return outcome
 
 
-# The registry: URL-shape predicate → refinement. The GENERIC probe is the
-# fallback for everything — the gate covers ANY dataset API connection.
-_VALIDATORS: list[tuple] = [
-    (lambda url: bool(_SOCRATA_ID_RE.search(url)), verify_socrata),
-]
+def _validators() -> list[tuple]:
+    """URL-shape recogniser → refinement, one entry per provider family.
+
+    Imported lazily so ``agents`` does not pull the datalakes package in at
+    import time. The dependency direction (agents → datalakes.providers) is the
+    right way round: agents already reaches into ``packages`` and ``datasets``
+    the same way, per ADR-AG-007.
+    """
+    from utk_curio.backend.app.datalakes.providers import RECOGNISERS
+
+    return [(module.recognize, _refine_with(module)) for module in RECOGNISERS]
+
+
+class _LazyValidators(list):
+    """``_VALIDATORS`` stayed a module-level list for the sake of anything that
+    reads it; it fills itself on first use so the import stays lazy."""
+
+    def _ensure(self):
+        if not list.__len__(self):
+            self.extend(_validators())
+        return self
+
+    def __iter__(self):
+        return list.__iter__(self._ensure())
+
+    def __len__(self):
+        return list.__len__(self._ensure())
+
+
+# The registry: URL-shape recogniser → refinement. The GENERIC probe is the
+# fallback for everything - the gate covers ANY dataset API connection, and a
+# provider only ever adds richer evidence on top of the same verdict.
+_VALIDATORS: list = _LazyValidators()
 
 
 def verify_external_source(url: str | None, *, request_fn=None, resolver=None, budget=None,
@@ -181,9 +222,11 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
         }
     url = url.strip()
     outcome = None
-    for predicate, validator in _VALIDATORS:
+    for recognize, validator in _VALIDATORS:
         try:
-            if predicate(url):
+            # A recogniser returns the provider-native id, or None. Truthiness
+            # is the predicate.
+            if recognize(url):
                 outcome = validator(
                     url, request_fn=request_fn, resolver=resolver, budget=budget,
                     headers=headers, params=params,

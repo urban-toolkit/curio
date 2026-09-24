@@ -1,12 +1,18 @@
 """The parts of isolation that only exist on Linux: fork, confine, kill.
 
-**These tests have never run.** They were written on a Windows host with no
-container runtime, so CI is their first execution. If something here fails, the
-most likely explanation is a bug in
+**Run by the ``test-gpu`` CI job, and by nothing else.** Not by
+``test-gpu-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
+runs ``scripts/test.sh --e2e-only`` against it, and not by
+``test-gpu-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
+a running stack: each test builds its own ``IsolationConfig`` and starts its
+own zygote, so the ambient ``CURIO_ISOLATION`` is not consulted and a green run
+of either other job says nothing about this file.
+
+If something here fails, the most likely explanation is a bug in
 ``utk_curio/sandbox/isolation/{child,zygote,supervisor,lifecycle}.py`` rather
 than in the test, and the failure is doing its job.
 
-Everything platform-independent is covered elsewhere and does run today:
+Everything platform-independent is covered elsewhere:
 ``test_isolation_protocol.py`` (the trust boundary), ``test_isolation_child.py``
 (execution logic, input rebuild, output serialization),
 ``test_isolation_staging.py`` (the full store round trip), and
@@ -25,6 +31,7 @@ reported as an ordinary node error, at HTTP 200, never as a crash or a hang.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +65,21 @@ MEMORY_HEADROOM_MB = 256
 
 # Created by the Dockerfile. Only exists inside the image.
 EXEC_USER = "curio-exec"
+
+
+def _memory_bytes(text):
+    """Parse a DuckDB memory_limit reading into bytes.
+
+    DuckDB does not echo the string it was given: "256MB" comes back as
+    "244.1 MiB", because it reads MB as 10^6 and reports in MiB. Comparing
+    magnitudes is the only way to assert a budget rather than a formatting
+    detail.
+    """
+    m = re.match(r"^\s*([\d.]+)\s*(B|KB|MB|GB|KiB|MiB|GiB)\s*$", str(text))
+    assert m, f"unparseable memory_limit: {text!r}"
+    scale = {"B": 1, "KB": 10 ** 3, "MB": 10 ** 6, "GB": 10 ** 9,
+             "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30}[m.group(2)]
+    return float(m.group(1)) * scale
 
 
 def _all_process_cmdlines():
@@ -98,22 +120,27 @@ def workspace(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def isolated(workspace, monkeypatch):
+def isolated(request, workspace, monkeypatch):
     """A live zygote plus the config to talk to it.
 
     Deliberately does not require seccomp: the network tests assert it
     separately, and the rest should pass on a host without libseccomp so a
     failure there is unambiguous.
+
+    Parametrize indirectly to run a test at a different memory budget; the
+    tests that care read it back off ``config.limits`` rather than the module
+    constant, so they stay true whichever budget they were given.
     """
     from utk_curio.sandbox.isolation import lifecycle, runner
 
+    budget_mb = getattr(request, "param", MEMORY_HEADROOM_MB)
     socket_path = str(workspace / "zygote.sock")
     monkeypatch.setenv("CURIO_EXEC_SOCKET", socket_path)
     monkeypatch.setenv("CURIO_EXEC_TIMEOUT", "20")
     # Headroom above the warm interpreter's own footprint, not a total: see
     # child._apply_rlimits. Small, so a runaway allocation is caught quickly,
     # but the interpreter's baseline is excluded so ordinary pandas work fits.
-    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(MEMORY_HEADROOM_MB))
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(budget_mb))
 
     config = runner.IsolationConfig.from_environment()
     lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
@@ -129,7 +156,7 @@ def isolated_dropped(tmp_path_factory, monkeypatch):
 
     The default ``isolated`` fixture configures no execution user, so inside the
     container the child runs as root, exactly as a launch without
-    ``--exec-user`` would. That is the right default to test, but it means the
+    an execution user would. That is the right default to test, but it means the
     filesystem half of the boundary is not exercised: root ignores mode bits.
 
     This fixture drops to ``curio-exec`` (created by the Dockerfile) so the
@@ -365,7 +392,7 @@ def test_one_user_does_not_land_in_anothers_directory(isolated, workspace):
 def test_the_user_database_is_unreachable(isolated_dropped, tmp_path):
     """instance/urban_workflow.db holds every password hash and session token.
 
-    Uses the dropped-privilege fixture deliberately. Without an ``--exec-user``
+    Uses the dropped-privilege fixture deliberately. Without an execution user
     the child runs as the sandbox's own user, and inside the container that is
     root, which ignores mode bits: the test would pass or fail for reasons that
     have nothing to do with the boundary.
@@ -461,7 +488,7 @@ def test_the_child_actually_runs_as_the_execution_user(isolated_dropped):
 def test_regaining_privilege_is_denied(isolated_dropped):
     """setuid back to root must fail once privileges are dropped.
 
-    Needs the dropped fixture: with no --exec-user the child runs as the
+    Needs the dropped fixture: with no execution user the child runs as the
     sandbox's own user, which inside the container is root, and setuid(0)
     trivially succeeds. That is correct behaviour for that configuration, not a
     boundary failure, so asserting it there tested nothing.
@@ -526,7 +553,7 @@ def test_the_limits_are_actually_applied_in_the_child(isolated):
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     limits = load_from_duckdb(result["output"]["path"])
-    headroom = MEMORY_HEADROOM_MB * 1024 * 1024
+    headroom = isolated.limits["memory_mb"] * 1024 * 1024
 
     # RLIMIT_AS is the interpreter's own footprint plus the configured budget
     # (child._apply_rlimits), so it must exceed the budget but stay sane. An
@@ -550,6 +577,189 @@ def resource_unlimited():
     return resource.RLIM_INFINITY
 
 
+def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
+    """#334's actual failure mode, exercised rather than approximated (#358).
+
+    Writing three integers to parquet used to fail with "Failed to allocate
+    block of 32768 bytes" inside the isolated child: ``codec`` opened DuckDB
+    with its defaults - ``threads`` = host cores, ``memory_limit`` ~80% of
+    system RAM - and DuckDB sized its buffers against the HOST while the child
+    ran under an RLIMIT_AS cap. On a many-core CI runner that was enough to
+    exhaust the cap before any data was written.
+
+    ``test_codec.py::TestParquetWriterFootprint`` verifies the fix by spying on
+    the kwargs handed to ``duckdb.connect`` and asserting the two literals. That
+    cannot catch a regression that breaks the cap/DuckDB interaction for any
+    other reason - a new extension, a different default, a change to how the
+    child computes its budget - because it never runs the writer under a cap at
+    all. This does: real zygote, real RLIMIT_AS, real parquet write.
+
+    Deliberately a tiny frame. The claim is not "big frames fit", it is "the
+    writer's own footprint fits", which is what #334 broke.
+
+    Runs at the fixture's budget only, which is 256MB. Deriving the writer's
+    limit is what moved this off the boundary it used to sit on: 256 was both
+    the fixture's budget and the writer's fixed ``memory_limit``, so the test
+    could not distinguish a writer sized against the child's budget from one
+    that ignores it. The writer now gets 128MB here, so it can.
+
+    **Do not parametrize this over other budgets without reading #376.** Three
+    CI runs showed 128 and 1024 both failing here with an ArrowMemoryError in
+    user code, before serialization, while 256 passed - in one run 1024 failed
+    running first, so it is not an ordering effect either. The probe below
+    proves the cap itself is applied correctly at those budgets, so whatever is
+    wrong is downstream of ``_apply_rlimits`` and is not this test's subject.
+    """
+    # Read the cap the child is actually running under FIRST, so a failure
+    # below comes with the numbers rather than just a traceback. An
+    # ArrowMemoryError here is indistinguishable between "the budget is too
+    # small" and "the cap is not what the budget says", and those want
+    # opposite fixes.
+    probe = run_isolated(
+        isolated,
+        "    import os, resource\n"
+        "    from utk_curio.sandbox.util import codec\n"
+        "    with open('/proc/self/statm') as h:\n"
+        "        pages = int(h.read().split()[0])\n"
+        "    return {\n"
+        "        'as_mb': resource.getrlimit(resource.RLIMIT_AS)[0] // (1024 * 1024),\n"
+        "        'baseline_mb': (pages * os.sysconf('SC_PAGE_SIZE')) // (1024 * 1024),\n"
+        "        'budget_env': os.environ.get('CURIO_EXEC_MEMORY_MB', '<unset>'),\n"
+        "        'writer': codec._writer_config()['memory_limit'],\n"
+        "    }\n",
+    )
+    assert probe["stderr"] == "", probe["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    seen = load_from_duckdb(probe["output"]["path"])
+    diagnostics = (
+        f"budget={isolated.limits['memory_mb']}MB env={seen['budget_env']} "
+        f"RLIMIT_AS={seen['as_mb']}MB baseline={seen['baseline_mb']}MB "
+        f"writer={seen['writer']}"
+    )
+    # The cap has to be the baseline plus the budget, within a page or two of
+    # drift between the two reads. If this is wrong, nothing below means
+    # anything.
+    expected_as = seen["baseline_mb"] + isolated.limits["memory_mb"]
+    assert abs(seen["as_mb"] - expected_as) <= 8, diagnostics
+
+    result = run_isolated(
+        isolated,
+        "    import pandas as pd\n"
+        "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n",
+    )
+    assert result["stderr"] == "", f"{diagnostics}\n{result['stderr']}"
+    assert result["output"]["path"], f"the writer produced no artifact ({diagnostics})"
+
+    frame = load_from_duckdb(result["output"]["path"])
+    # Round-tripped, not merely written: a truncated file would still exist.
+    assert len(frame["a"]) == 3, frame
+    assert list(frame["a"]) == [1, 2, 3], frame
+
+
+def test_the_writer_tracks_a_lowered_budget_into_the_child(isolated):
+    """The writer's limit follows ``--exec-memory-mb`` down.
+
+    While it was a module constant it did not. An operator lowering the budget
+    to fit more parallelism on a small host - which USAGE.md invites - left
+    DuckDB sizing its buffers against 256MB inside a child that had less, which
+    is #334's shape with the host swapped for a stale constant.
+
+    The fixture's default budget is the launcher's floor, and the writer
+    derives 128MB from it, so this runs where the derivation is what decides
+    the number rather than the cap.
+
+    Read from inside the child, so what is asserted is the value DuckDB
+    actually adopted under the cap, not what the parent computed.
+    """
+    from utk_curio.sandbox.util import codec
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    budget_mb = isolated.limits["memory_mb"]
+    expected_mb = codec._writer_memory_limit_mb(
+        {"CURIO_EXEC_MEMORY_MB": str(budget_mb)}
+    )
+    assert expected_mb < codec._WRITER_MEMORY_CAP_MB, (
+        "this budget does not exercise the derivation - it is still capped"
+    )
+
+    result = run_isolated(
+        isolated,
+        "    import duckdb\n"
+        "    from utk_curio.sandbox.util import codec\n"
+        "    con = duckdb.connect(database=':memory:', config=codec._writer_config())\n"
+        "    try:\n"
+        "        value = con.execute(\n"
+        "            \"SELECT value FROM duckdb_settings() WHERE name = 'memory_limit'\"\n"
+        "        ).fetchone()[0]\n"
+        "    finally:\n"
+        "        con.close()\n"
+        "    return str(value)\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    adopted = load_from_duckdb(result["output"]["path"])
+    got = _memory_bytes(adopted)
+    want = expected_mb * 10 ** 6
+    assert abs(got - want) / want < 0.02, (
+        f"the child adopted {adopted!r} against a {budget_mb}MB budget, not "
+        f"the derived {expected_mb}MB"
+    )
+
+    # And it is genuinely below the child's own budget, which is the invariant
+    # #334 broke. A derivation that tracked the budget upward but not downward
+    # would satisfy the comparison above and still fail here.
+    assert expected_mb <= budget_mb // 2, (expected_mb, budget_mb)
+
+
+def test_the_writer_is_configured_for_a_capped_child(isolated):
+    """The other half of #334, read from INSIDE the child.
+
+    ``test_codec.py`` asserts the two values in the parent process, where the
+    cap does not apply. This reads the values DuckDB actually adopted in the
+    child, so a config that is silently ignored under RLIMIT_AS - or overridden
+    by an environment variable the child inherits - shows up here.
+    """
+    result = run_isolated(
+        isolated,
+        "    import duckdb\n"
+        "    from utk_curio.sandbox.util import codec\n"
+        "    con = duckdb.connect(database=':memory:', config=codec._writer_config())\n"
+        "    try:\n"
+        "        rows = con.execute(\n"
+        "            \"SELECT name, value FROM duckdb_settings() \"\n"
+        "            \"WHERE name IN ('threads', 'memory_limit')\"\n"
+        "        ).fetchall()\n"
+        "    finally:\n"
+        "        con.close()\n"
+        "    return {name: str(value) for name, value in rows}\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    settings = load_from_duckdb(result["output"]["path"])
+    adopted = dict(zip(settings["name"], settings["value"])) if "name" in settings else settings
+    assert str(adopted.get("threads")) == "1", adopted
+
+    # Compare the MAGNITUDE, derived from the writer's own config rather than
+    # from a literal, or this test pins a formatting detail instead of a
+    # budget. The config is computed against the same budget the child runs
+    # under, so this stays true at whatever budget the fixture was given.
+    from utk_curio.sandbox.util import codec
+
+    want_config = codec._writer_config(
+        {"CURIO_EXEC_MEMORY_MB": str(isolated.limits["memory_mb"])}
+    )
+    want = _memory_bytes(want_config["memory_limit"])
+    got = _memory_bytes(adopted.get("memory_limit"))
+    assert abs(got - want) / want < 0.02, (
+        f"the child adopted {adopted.get('memory_limit')!r}, which is not the "
+        f"configured {want_config['memory_limit']!r}"
+    )
+
+
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 
@@ -564,7 +774,7 @@ def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     # Derived from the configured headroom so the two cannot drift apart: if
     # someone raises the fixture's budget above this allocation, the test would
     # silently start asserting that a legal allocation fails.
-    over_budget_mb = 2 * MEMORY_HEADROOM_MB
+    over_budget_mb = 2 * isolated.limits["memory_mb"]
     result = run_isolated(
         isolated,
         f"    x = bytearray({over_budget_mb} * 1024 * 1024)\n    return len(x)\n",
@@ -615,7 +825,7 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
     reason=(
         "fork bomb: opt in with CURIO_ISOLATION_DESTRUCTIVE_TESTS=1. "
         "RLIMIT_NPROC is per-uid and root bypasses it, and inside the container "
-        "these run as root, so without --exec-user this forks until the "
+        "these run as root, so without an execution user this forks until the "
         "container's pids_limit. docker-compose.ci.yml caps that, but the "
         "self-hosted runner shares a host with the live instances and the limit "
         "being configured is already covered by "
@@ -661,6 +871,62 @@ def test_the_zygote_holds_no_duckdb_handle(isolated, workspace):
         except OSError:
             continue
     assert not any("duckdb" in target for target in targets), targets
+
+
+def _thread_names_of(pid):
+    task_dir = f"/proc/{pid}/task"
+    names = []
+    for thread_id in os.listdir(task_dir):
+        try:
+            with open(os.path.join(task_dir, thread_id, "comm")) as handle:
+                names.append(handle.read().strip())
+        except OSError:
+            continue
+    return names
+
+
+def test_the_zygote_is_single_threaded_once_it_has_forked(isolated):
+    """After its first fork, only the accept loop may be left running.
+
+    ``import duckdb`` opens a connection with a pool of threads, and children
+    forked with that pool alive crashed inside DuckDB, so the zygote closes it
+    before serving (``zygote._release_import_time_duckdb``). numpy's OpenBLAS
+    pool is still there when serving starts but tears itself down on the first
+    fork, hence one execution before counting.
+
+    pyarrow's jemalloc background thread ("jemalloc_bg_thd") is allowed: it is
+    fork-aware, and no child crashed in 1,200 repro executions with it alive.
+    Anything else left running is named in the failure.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    names = _thread_names_of(lifecycle._process.pid)
+    others = [name for name in names if name != "jemalloc_bg_thd"]
+    assert len(others) == 1, f"the zygote has {len(names)} threads after forking: {names}"
+
+
+def test_node_code_can_still_use_duckdb(isolated, workspace):
+    """The zygote closed DuckDB's default connection; node code must not notice.
+
+    Runs at the sandbox's default memory headroom, not the fixture's 256 MB. A
+    connection opened in the child starts one thread per core, and at 8 MB of
+    stack each that is about 0.5 GB of address space on a 64-core runner. At
+    256 MB it failed intermittently with DuckDB's "Out of Memory Error".
+    """
+    import copy
+
+    from utk_curio.sandbox.isolation import supervisor
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    config = copy.copy(isolated)
+    config.limits = dict(isolated.limits,
+                         memory_mb=supervisor.DEFAULT_LIMITS["memory_mb"])
+    result = run_isolated(
+        config, "    return duckdb.sql('select 42').fetchall()[0][0]\n"
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42
 
 
 def test_the_zygote_is_replaced_if_it_dies(isolated):

@@ -30,6 +30,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
+  // No routed dataflow and nothing loading: saves take their id from the
+  // hook's own state, as they do once a load has landed.
+  getCurrentProjectId: jest.fn(() => undefined),
+  whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
   setCurrentProjectPackages: jest.fn(),
   subscribe: jest.fn(() => jest.fn()),
@@ -54,8 +58,6 @@ const makeDeps = () => {
     outputsRef: { current: [] },
     setInteractions: jest.fn(),
     setDashboardPins: jest.fn(),
-    setPositionsInDashboard: jest.fn(),
-    setPositionsInWorkflow: jest.fn(),
     setWorkflowName: jest.fn((n: string) => {
       workflowNameRef.current = n;
     }),
@@ -227,6 +229,58 @@ describe("queued saves (#270)", () => {
       "proj-1",
       expect.objectContaining({ name: "New name" }),
     );
+  });
+
+  it("a rename made while a save is in flight leaves the project unsaved", async () => {
+    // Keeping the name in the client is only half of it. The rename is not in
+    // the payload that save already sent, so it is not on disk - and clearing
+    // the dirty flag on that response says it is. Everything downstream trusts
+    // the flag: the 30s auto-save is gated on it, the beforeunload handler
+    // unbinds without it, and the in-app leave guard stops prompting - so the
+    // next navigation drops the rename silently, which is what #270 reported.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await loadedProject(result);
+    const finishFirst = deferredUpdate();
+
+    let first!: Promise<unknown>;
+    act(() => {
+      first = result.current.requestProjectSave();
+    });
+    act(() => {
+      result.current.renameDataflow("New name");
+    });
+    expect(result.current.projectDirty).toBe(true);
+
+    await act(async () => {
+      finishFirst("Loaded name");
+      await first;
+    });
+
+    expect(result.current.projectName).toBe("New name");
+    expect(result.current.projectDirty).toBe(true);
+  });
+
+  it("a save with nothing edited behind it still clears the dirty flag", async () => {
+    // The control: the guard above must not leave every project permanently
+    // dirty, or the auto-save would run for ever and the leave guard would
+    // prompt on a saved dataflow.
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await loadedProject(result);
+    const finishFirst = deferredUpdate();
+
+    let first!: Promise<unknown>;
+    act(() => {
+      result.current.renameDataflow("New name");
+    });
+    act(() => {
+      first = result.current.requestProjectSave();
+    });
+    await act(async () => {
+      finishFirst("New name");
+      await first;
+    });
+
+    expect(result.current.projectDirty).toBe(false);
   });
 
   it("a rename made while a save is in flight is not undone by that save's echo", async () => {

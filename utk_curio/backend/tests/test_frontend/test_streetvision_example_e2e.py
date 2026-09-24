@@ -1,6 +1,6 @@
 """Playwright E2E for #233: the Street Vision example explains itself.
 
-The report: three nodes in the "Street-level computer vision" example sit on
+The report: the package nodes in the "Street-level computer vision" example sit on
 "Loading node…" indefinitely, and "connections involving these nodes also fail
 to render".
 
@@ -46,7 +46,6 @@ EXAMPLE = "10-street-vision-cv-analysis.json"
 PACKAGE_NODE_TYPES = {
     "curio.streetvision/street-view-fetcher",
     "curio.streetvision/hf-cv-inference",
-    "curio.streetvision/cv-gallery",
 }
 
 
@@ -98,7 +97,7 @@ def test_unresolved_nodes_say_what_is_missing(street_vision_canvas):
         for node in _example_spec()["dataflow"]["nodes"]
         if node["type"] in PACKAGE_NODE_TYPES
     ]
-    assert len(node_ids) == 3, "the example should carry three streetvision nodes"
+    assert len(node_ids) == 2, "the example should carry two streetvision nodes"
 
     for node_id in node_ids:
         node = page.locator(f'.react-flow__node[data-id="{node_id}"]')

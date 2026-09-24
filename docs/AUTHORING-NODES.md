@@ -47,7 +47,7 @@ git clone https://github.com/urban-toolkit/curio.git
 cd curio
 
 pip install -r requirements.txt
-conda install -c conda-forge nodejs=24
+conda install -c conda-forge nodejs=26
 
 python curio.py start
 ```
@@ -208,9 +208,6 @@ is meant to be forked.
 
 ## Reading upstream data
 
-This deserves its own section because it is the one part of a custom-UI node
-that is not guessable.
-
 `data.input` usually holds a **reference** to a sandbox artifact, not the data:
 
 ```js
@@ -259,18 +256,65 @@ instead, where each column is an object keyed by row index:
 ```
 
 **Accept both.** A node that requires the row-map form silently sees no data
-from any real Curio DataFrame - it has nothing to render and nothing to throw,
-so it just shows its "connect something upstream" hint forever. That is exactly
-how #194 happened, in the example package this document describes. Read a cell
+from any real Curio DataFrame: it has nothing to render and nothing to throw,
+so it shows its "connect something upstream" hint forever. Read a cell
 through a helper rather than indexing directly:
 
 ```js
 const cell = (column, key) => (Array.isArray(column) ? column[Number(key)] : column[key]);
 ```
 
-A `geodataframe` payload is a GeoJSON `FeatureCollection`.
+A `geodataframe` payload is a GeoJSON `FeatureCollection` with three extra
+keys the sandbox adds, and one rule about `properties` that is easy to miss:
+
+```js
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "geometry": { "type": "Polygon", "coordinates": [...] },   // the ACTIVE column
+      "properties": { "zip": "60601",
+                      "centroid": { "type": "Point", ... } } }   // everything else
+  ],
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::4326" } },
+  "geometry_name": "geom"     // the active geometry column's pandas name, or null
+}
+```
+
+- **`geometry_name`** is the active geometry column's real name. It is not
+  always `"geometry"` - `gdf.rename_geometry("geom")` is legal and common - so
+  read this rather than assuming. It is `null` when the frame has no active
+  geometry column at all.
+- **The active column is excluded from `properties`.** geopandas puts it in
+  `feature.geometry` instead, which is why a geometry column can keep its own
+  name without ever colliding with a real property of the same name.
+- **Secondary geometry columns are ordinary properties**, carrying a GeoJSON
+  geometry *object* (the `__geo_interface__` mapping), not a `Feature` and not
+  WKT. A frame with `gdf["centroid"] = gdf.centroid` has two geometry columns
+  and only the first is in `feature.geometry`.
+- **`crs`** is absent when the frame has no CRS.
+
+Both payload kinds also carry a top-level **`schema`** alongside `dataType`:
+a `{column: dtype}` map straight from `df.dtypes`, e.g.
+`{"zip": "str", "pop": "int64", "geom": "geometry"}`. Read it rather than
+sniffing values. pandas 3 reports a string column as `"str"` where pandas 2
+said `"object"`, so accept both.
+
+A GeoDataFrame with **no active geometry column** arrives as a `dataframe`,
+not an empty `geodataframe`.
 
 ---
+
+### Pre-filling your editor from the input
+
+A grammar node can offer a starter spec once it knows what the data looks like.
+The hook is `defaultValueOverride` in your behavior, which
+[`UniversalNode`](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx)
+gives top priority in the `defaultValue` chain. Gate it on an **empty buffer**
+and fill at most once: `useMonacoExternalValue` no-ops when the value is
+unchanged, so re-asserting is safe for the cursor and undo stack, but that is
+not licence to overwrite what someone has typed. `vegaBehavior.ts` is the
+worked example.
 
 ## Things that will trip you up
 

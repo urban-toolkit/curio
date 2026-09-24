@@ -72,11 +72,13 @@ jest.mock("@monaco-editor/react", () => {
 });
 
 const mockMarkNodeStale = jest.fn();
+const mockPlayNodesUpTo = jest.fn();
 jest.mock("../../../providers/FlowProvider", () => ({
     useFlowContext: () => ({
         workflowNameRef: { current: "wf" },
         markNodeExecuted: jest.fn(),
         markNodeStale: mockMarkNodeStale,
+        playNodesUpTo: mockPlayNodesUpTo,
         signalNodeExecDone: jest.fn(),
         projectId: null,
         defaultSaveOutputDataset: false,
@@ -292,5 +294,34 @@ describe("CodeEditor credential hint (dev/117)", () => {
         expect(hint()).toHaveAttribute("role", "status");
         expect(hint()).toHaveAttribute("aria-live", "polite");
         expect(lastEditor().getValue()).toBe(KEYED);
+    });
+});
+
+/**
+ * #354: the editor half of Ctrl/Cmd+Enter was registered on mount and nothing
+ * ever checked it. The fake above has recorded ``__actions`` since #223 with a
+ * comment saying "so a test can assert the binding" - and no test read it.
+ */
+describe("the run-node shortcut is bound to the editor (#223)", () => {
+    test("registers the action on mount", () => {
+        renderCodeEditor(SAVED_CODE);
+        const action = lastEditor().__actions.find((a: any) => a.id === "curio.runNode");
+        expect(action).toBeDefined();
+        expect(action.label).toBe("Run this node");
+    });
+
+    test("binds it to Ctrl/Cmd+Enter", () => {
+        // CtrlCmd | Enter, from the KeyMod/KeyCode values the fake supplies on
+        // mount. A keybinding that drifts off this chord is the regression.
+        renderCodeEditor(SAVED_CODE);
+        const action = lastEditor().__actions.find((a: any) => a.id === "curio.runNode");
+        expect(action.keybindings).toEqual([2048 | 3]);
+    });
+
+    test("running it plays this node", () => {
+        renderCodeEditor(SAVED_CODE);
+        const action = lastEditor().__actions.find((a: any) => a.id === "curio.runNode");
+        act(() => { action.run(); });
+        expect(mockPlayNodesUpTo).toHaveBeenCalledWith("n1");
     });
 });

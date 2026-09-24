@@ -98,7 +98,7 @@ def _install_seccomp_filter(*, required):
             raise ChildSetupError(
                 "pyseccomp is not installed, so the child cannot be prevented "
                 "from opening sockets. Install it (pip install pyseccomp) or "
-                "run with --isolation=off."
+                "run with CURIO_ISOLATION=off."
             ) from exc
         return False
 
@@ -226,7 +226,7 @@ def _apply_rlimits(limits):
 
 
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
-            work_dir=None, keep_fds=()):
+            work_dir=None, overlay_dir=None, keep_fds=()):
     """Apply every confinement step, in the order the module docstring sets out.
 
     Raises :class:`ChildSetupError` if any step fails. The caller must treat
@@ -273,7 +273,34 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
     # user by the time it gets here. Falls back to the scratch directory when
     # no work_dir was sent, so an older parent still lands somewhere it owns.
     os.chdir(work_dir or scratch_dir)
+    _add_overlay_to_path(overlay_dir)
     return {"seccomp": seccomp_active}
+
+
+def _add_overlay_to_path(overlay_dir):
+    """Put the calling user's node libraries on ``sys.path`` (#332).
+
+    Here, in the child, and never in the zygote: the zygote is forked once per
+    execution for whoever asks next, so a path installed there would be every
+    user's path. After the fork it is this execution's alone and dies with it.
+
+    Prepended, so a user's own copy of a library wins over one that happens to
+    be in the shared interpreter. That only affects what has not been imported
+    yet -- pandas, geopandas, shapely and duckdb are already resident from the
+    zygote's warm-up, and a per-user VERSION of those would need a zygote per
+    user. Additions are the case this serves, and the common one.
+    """
+    if not overlay_dir:
+        return
+    try:
+        if os.path.isdir(overlay_dir) and overlay_dir not in sys.path:
+            sys.path.insert(0, overlay_dir)
+    except OSError:
+        # A missing or unreadable overlay is a user with nothing installed, or
+        # a permissions problem the operator has to fix. Neither is a reason to
+        # refuse to run the node: it fails later with a plain ImportError
+        # naming the library, which is the message that helps.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +344,7 @@ def rebuild_input(spec, scratch_dir):
         frame = codec._restore_frame_from_parquet(
             frame,
             spec.get("encoded_object_columns") or [],
-            geometry_col=frame.geometry.name,
+            geometry_col=codec.active_geometry_name(frame),
         )
         frame_metadata = spec.get("frame_metadata")
         if frame_metadata:
@@ -381,7 +408,7 @@ def serialize_output(value, scratch_dir, *, slot="out"):
     if kind == "geodataframe":
         name = f"{slot}.parquet"
         prepared, encoded = codec._prepare_frame_for_parquet(
-            value, geometry_col=value.geometry.name
+            value, geometry_col=codec.active_geometry_name(value)
         )
         prepared.to_parquet(os.path.join(scratch_dir, name))
         meta = {"encoded_object_columns": encoded}
@@ -414,6 +441,38 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # ---------------------------------------------------------------------------
 # Running the node
 # ---------------------------------------------------------------------------
+
+def _code_reads_arg(code):
+    """Whether the node's code actually *reads* the ``arg`` parameter.
+
+    Mirrors ``worker._code_reads_arg`` for the same reason
+    ``_hoisted_import_statements`` mirrors ``worker._hoist_user_imports``: the
+    child is a forked process and keeps its own copy rather than importing the
+    in-process module.
+
+    The tripwire below used to ask ``'arg' in code``, a substring test over the
+    whole source. That fires on any occurrence of those three letters - a word
+    in a comment, a URL query string, or an identifier such as ``target``,
+    ``large``, ``margin`` or ``args`` - so a deliberately input-free loader like
+    ``gpd.read_file(<url>)`` was refused for referencing an input it never
+    mentions (#273). The in-process path was fixed; this one was not, so the
+    original bug survived on exactly the deployments that run isolated.
+    """
+    import ast
+
+    try:
+        tree = ast.parse("def userCode(arg):" + chr(10) + code)
+    except SyntaxError:
+        # Unreachable in practice; fall back to the old test rather than
+        # deciding that a node we cannot parse is input-free.
+        return "arg" in code
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == "arg"
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    )
+
 
 def _hoisted_import_statements(code):
     """Top-level import statements in *code*, as source lines.
@@ -515,10 +574,10 @@ def run_node(request, namespace_factory):
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
 
-            # Same tripwire as the in-process path: code that mentions `arg`
-            # with nothing wired upstream otherwise fails deep inside user code
-            # with an unhelpful TypeError.
-            if argument is None and "arg" in code:
+            # Same tripwire as the in-process path, and the same AST walk: a
+            # node that never reads an input is not refused for merely
+            # containing the letters "arg" (#273).
+            if argument is None and _code_reads_arg(code):
                 raise RuntimeError(
                     "This node's code refers to 'arg' but no input was "
                     "delivered. Check that an upstream node is connected and "
@@ -614,6 +673,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             scratch_dir=scratch_dir,
             require_seccomp=require_seccomp,
             work_dir=request.get("work_dir"),
+            overlay_dir=request.get("overlay_dir"),
         )
     except BaseException:
         import traceback

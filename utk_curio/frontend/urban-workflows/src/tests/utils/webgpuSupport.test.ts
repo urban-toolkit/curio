@@ -40,6 +40,25 @@ async function settle<T>(promise: Promise<T>, advanceMs: number): Promise<T> {
   return promise;
 }
 
+/**
+ * Drive the retry loop to its end under fake timers.
+ *
+ * The probe keeps asking until its budget runs out (#272), so a single advance
+ * is not enough: each attempt arms the next timer only after its own
+ * requestAdapter() has resolved. Pump microtasks and the clock together until
+ * the probe answers.
+ */
+async function drain<T>(promise: Promise<T>, stepMs = 250, steps = 80): Promise<T> {
+  let pending = true;
+  const settled = promise.then((value) => { pending = false; return value; });
+  for (let i = 0; i < steps && pending; i += 1) {
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(stepMs);
+  }
+  return settled;
+}
+
 beforeEach(() => {
   jest.useFakeTimers();
   __resetWebGpuSupportCache();
@@ -63,14 +82,49 @@ describe("detectWebGpuSupport", () => {
     expect(requestAdapter).toHaveBeenCalledTimes(2);
   });
 
-  test("null twice is a missing adapter, and says to check again", async () => {
-    gpuWith(jest.fn().mockResolvedValue(null));
+  test("null for the whole budget is a missing adapter, and says to check again", async () => {
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(null));
 
-    const result = await settle(detectWebGpuSupport(), WEBGPU_ADAPTER_RETRY_DELAY_MS);
+    const result = await drain(detectWebGpuSupport());
 
     expect(result.supported).toBe(false);
     expect(result.reasonCode).toBe("no-adapter");
     expect(result.reason).toMatch(/Check again/);
+    // It asked more than the one early retry that used to be the whole policy.
+    expect(requestAdapter.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  test("an adapter that only appears after several retries is still found", async () => {
+    // The #272 residue: the GPU process starts lazily, and on a cold session it
+    // can take a second or more. Two calls 150 ms apart answered "no adapter"
+    // for precisely the browsers the retry exists for.
+    const requestAdapter = gpuWith(
+      jest.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(ADAPTER),
+    );
+
+    const result = await drain(detectWebGpuSupport());
+
+    expect(result.supported).toBe(true);
+    expect(requestAdapter.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  test("the probe stops asking once its budget is spent", async () => {
+    // The loop has to end on its own: the outer timeout only fires when
+    // requestAdapter never settles, and this one answers null promptly for ever.
+    const requestAdapter = gpuWith(jest.fn().mockResolvedValue(null));
+
+    const result = await drain(detectWebGpuSupport());
+    const askedByTheEnd = requestAdapter.mock.calls.length;
+
+    expect(result.reasonCode).toBe("no-adapter");
+    jest.advanceTimersByTime(WEBGPU_PROBE_TIMEOUT_MS * 2);
+    await Promise.resolve();
+    expect(requestAdapter.mock.calls.length).toBe(askedByTheEnd);
   });
 
   test("a rejecting requestAdapter is reported as the failure it is, with its message", async () => {
@@ -138,7 +192,7 @@ describe("detectWebGpuSupport", () => {
 
   test("a negative answer is NOT cached: the next call asks again", async () => {
     gpuWith(jest.fn().mockResolvedValue(null));
-    const first = await settle(detectWebGpuSupport(), WEBGPU_ADAPTER_RETRY_DELAY_MS);
+    const first = await drain(detectWebGpuSupport());
     expect(first.supported).toBe(false);
 
     // The GPU process has come up in the meantime.

@@ -109,6 +109,8 @@ describe('projects page chrome', () => {
       'Node Catalog',
       'Data Catalog',
       'Agent Catalog',
+      'Data Lake Catalog',
+      'Monitor',
     ]);
   });
 
@@ -387,12 +389,38 @@ describe('projects detail drawer', () => {
     });
 
     // Open is the drawer's primary action ("Open dataflow"), so compare the rest.
+    // The menu is the shared `CardContextMenu` since #285, so its rows announce
+    // as menu items while the drawer's announce as buttons - one of each is the
+    // assertion, not two buttons.
     for (const label of ['Rename', 'Duplicate', 'Delete']) {
-      expect(
-        screen.getAllByRole('button', { name: label }).length,
-      ).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('menuitem', { name: label })).toBeTruthy();
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
+  });
+
+  test('a seeded example offers no Delete on either surface', async () => {
+    // Curio put it in the list; the user did not, and cannot take it back out.
+    // The same rule the Data Catalog applies to shared-catalog datasets, and it
+    // matters more here: since #270 a deleted example is never re-seeded, so
+    // the mis-click had no undo. The server refuses the request too.
+    mockList.mockResolvedValue([{ ...PROJECTS[0], id: 'ex1', is_example: true }]);
+    const { container, queryByRole, getByRole } = await renderPage();
+
+    // The drawer, open on the only card.
+    expect(queryByRole('button', { name: 'Delete' })).toBeNull();
+    // Everything else it could always do.
+    for (const label of ['Rename', 'Duplicate']) {
+      expect(getByRole('button', { name: label })).toBeTruthy();
+    }
+
+    // And the right-click menu, which renders the same list.
+    const card = container.querySelector('[data-project-id="ex1"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.contextMenu(card);
+    });
+    expect(queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+    expect(getByRole('menuitem', { name: 'Rename' })).toBeTruthy();
   });
 
   test('closing the drawer collapses it', async () => {

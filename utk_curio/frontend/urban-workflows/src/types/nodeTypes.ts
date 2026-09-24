@@ -17,10 +17,38 @@ export interface ICodeDataContent {
 /**
  * Represents code with its associated content
  */
+/**
+ * A library a failed node run turned out to be missing (#299), as reported by
+ * ``/processPythonCode``. Null on every run that did not end in a
+ * ``ModuleNotFoundError``.
+ *
+ * ``installable`` is the whole decision: it means the name is a legal
+ * distribution name, is not stdlib, is not Curio's own, and nothing installed
+ * already provides it. It does NOT mean the distribution exists on PyPI - the
+ * backend deliberately does not ask, so the install is an attempt and pip's own
+ * failure is what the user sees when the guess is wrong.
+ */
+export interface MissingModuleNotice {
+  module: string;
+  distribution: string | null;
+  installable: boolean;
+  reason:
+    | "stdlib"
+    | "curio-provided"
+    | "unsafe-name"
+    | "installed-but-broken"
+    | "installed-not-visible"
+    // The instance does not allow installs, or this caller may not ask for one.
+    | "install-disabled"
+    | null;
+  detail: string | null;
+}
+
 export interface ICodeData {
   code: string;
   content: ICodeDataContent | string;
   outputType?: string;
+  missingModule?: MissingModuleNotice | null;
 }
 
 /**

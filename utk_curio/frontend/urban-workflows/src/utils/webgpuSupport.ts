@@ -48,6 +48,26 @@ export interface WebGpuSupport {
  *  The value autk-compute uses; a cold Firefox GPU process is well inside it. */
 export const WEBGPU_ADAPTER_RETRY_DELAY_MS = 150;
 
+/** Ceiling for the backoff between adapter requests. */
+export const WEBGPU_ADAPTER_RETRY_MAX_DELAY_MS = 1_000;
+
+/**
+ * How long the probe keeps asking for an adapter before calling it missing
+ * (#272).
+ *
+ * Distinct from WEBGPU_PROBE_TIMEOUT_MS, which bounds a requestAdapter() that
+ * never settles at all. This one bounds a browser answering "null" promptly and
+ * repeatedly - a GPU process that is still coming up - and it is a UX trade, not
+ * a safety margin: every second here is a second a browser that genuinely has no
+ * adapter waits before its fallback panel appears, on every run. Three seconds
+ * covers the "a second or more" cold start the report describes; anything slower
+ * is what the panel's "Check again" is for.
+ */
+export const WEBGPU_ADAPTER_RETRY_BUDGET_MS = 3_000;
+
+/** Overridable so suites about the fallback UI need not spend the budget. */
+let adapterRetryBudgetMs = WEBGPU_ADAPTER_RETRY_BUDGET_MS;
+
 /** Upper bound on the whole probe. A healthy adapter answers in milliseconds
  *  and a software adapter in CI within two or three seconds, so anything past
  *  this is a GPU process that is not coming back; far below the ten-minute
@@ -70,9 +90,9 @@ const COPY: Record<WebGpuUnsupportedReason, string> = {
     "This browser does not expose WebGPU. Use Chrome or Edge; in Firefox, set " +
     "dom.webgpu.enabled to true in about:config and reload the page.",
   "no-adapter":
-    "WebGPU is present but the browser returned no graphics adapter, even after a " +
-    "retry. This is usually a blocklisted driver, a headless session, or a GPU " +
-    "process that is still starting." + CHECK_AGAIN,
+    "WebGPU is present but the browser returned no graphics adapter, after " +
+    "retrying while the GPU process might still have been starting. This is " +
+    "usually a blocklisted driver or a headless session." + CHECK_AGAIN,
   "request-failed":
     "WebGPU is present but requesting a graphics adapter failed." + CHECK_AGAIN,
   "timed-out":
@@ -94,21 +114,34 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function requestAdapterWithRetry(gpu: GpuLike): Promise<WebGpuSupport> {
-  try {
-    let adapter = await gpu.requestAdapter!();
-    if (!adapter) {
-      // Firefox: the GPU process is still coming up. Ask once more.
-      await sleep(WEBGPU_ADAPTER_RETRY_DELAY_MS);
-      adapter = await gpu.requestAdapter!();
+async function requestAdapterUntil(gpu: GpuLike, deadline: number): Promise<WebGpuSupport> {
+  // Keep asking until the probe's own budget runs out, rather than once more
+  // after 150 ms (#272). The premise of the retry is a GPU process that starts
+  // lazily, and on a cold session it can take a second or more to come up -
+  // Firefox on Linux with a discrete card is the reported case. A single early
+  // retry answers "no adapter" for exactly the browsers the retry exists for,
+  // while WEBGPU_PROBE_TIMEOUT_MS sits unused because requestAdapter() did
+  // answer - with null, promptly, every time.
+  //
+  // Backs off so a slow start is not billed dozens of adapter requests: 150 ms,
+  // then doubling to a 1 s ceiling.
+  let wait = WEBGPU_ADAPTER_RETRY_DELAY_MS;
+  for (;;) {
+    try {
+      const adapter = await gpu.requestAdapter!();
+      if (adapter) return { supported: true };
+    } catch (err) {
+      // A rejection is a different answer from "not yet": the call failed
+      // rather than reporting no adapter, and retrying it says the same thing
+      // more slowly.
+      return unsupported(
+        "request-failed",
+        (err as Error)?.message || "requestAdapter rejected",
+      );
     }
-    if (!adapter) return unsupported("no-adapter");
-    return { supported: true };
-  } catch (err) {
-    return unsupported(
-      "request-failed",
-      (err as Error)?.message || "requestAdapter rejected",
-    );
+    if (Date.now() + wait >= deadline) return unsupported("no-adapter");
+    await sleep(wait);
+    wait = Math.min(wait * 2, WEBGPU_ADAPTER_RETRY_MAX_DELAY_MS);
   }
 }
 
@@ -137,7 +170,10 @@ async function probe(): Promise<WebGpuSupport> {
     timer = setTimeout(() => resolve(unsupported("timed-out")), WEBGPU_PROBE_TIMEOUT_MS);
   });
   try {
-    return await Promise.race([requestAdapterWithRetry(gpu), timeout]);
+    return await Promise.race([
+      requestAdapterUntil(gpu, Date.now() + adapterRetryBudgetMs),
+      timeout,
+    ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -168,4 +204,11 @@ export function reprobeWebGpuSupport(): Promise<WebGpuSupport> {
  *  `navigator.gpu` and be probed afresh. */
 export function __resetWebGpuSupportCache(): void {
   cached = null;
+}
+
+/** Test-only: shorten (or restore) the adapter retry budget. A suite whose
+ *  subject is the fallback UI rather than the retry policy sets this to 0 so it
+ *  is not billed the real wait for every "no adapter" case. */
+export function __setWebGpuAdapterRetryBudget(ms: number): void {
+  adapterRetryBudgetMs = ms;
 }

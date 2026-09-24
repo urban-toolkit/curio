@@ -402,7 +402,7 @@ class TestStoreHelpersAreNotReachable(unittest.TestCase):
             stub("some-artifact-id")
         message = str(caught.exception)
         self.assertIn("load_from_duckdb", message)
-        self.assertIn("--isolation=off", message)
+        self.assertIn("CURIO_ISOLATION=off", message)
 
 
 class TestDeathDescriptions(unittest.TestCase):
@@ -441,6 +441,46 @@ class TestDeathDescriptions(unittest.TestCase):
     def test_an_unexpected_exit_code_still_says_something(self):
         message = self.describe(exit_code=42, signal_number=None, timed_out=False)
         self.assertIn("42", message)
+
+
+class TestNoInputTripwire(unittest.TestCase):
+    """The isolated path must use the same AST walk as the in-process one (#273).
+
+    #273 was fixed in ``worker.py`` but not here, so a node that merely spells
+    the letters "arg" in a comment, a URL or an identifier was still refused on
+    every deployment that runs isolated - which is the shipped image and any
+    Linux ``--deploy`` instance. These guard the AST walk itself, so they run
+    everywhere rather than only where a fork can be taken.
+    """
+
+    def test_a_loader_that_never_reads_arg_is_not_refused(self):
+        code = (
+            "    # pull the target layer, large extent, no upstream needed\n"
+            "    import geopandas as gpd\n"
+            "    return gpd.read_file('https://example.org/x?margin=2&args=1')\n"
+        )
+        self.assertFalse(child._code_reads_arg(code))
+
+    def test_reading_arg_is_still_caught(self):
+        self.assertTrue(child._code_reads_arg("    return arg\n"))
+
+    def test_binding_arg_without_reading_it_is_not_refused(self):
+        self.assertFalse(child._code_reads_arg("    arg = 1\n    return 2\n"))
+
+    def test_it_matches_the_in_process_implementation(self):
+        from utk_curio.sandbox.app import worker
+
+        for code in (
+            "    # margin target args\n    return 1\n",
+            "    return arg\n",
+            "    arg = 1\n    return 2\n",
+            "    return arg['x']\n",
+        ):
+            self.assertEqual(
+                child._code_reads_arg(code),
+                worker._code_reads_arg(code),
+                code,
+            )
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
+import { deoverlapNodes } from "../utils/deoverlapLayout";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -52,11 +53,24 @@ type CreateCodeNodeOptions = {
     // #237: persisted per-node comments (canonical shape metadata.comments).
     // Opaque here - utils/nodeComments owns the mapping to live IComment.
     comments?: unknown[];
+    // #262: the Spatial Join's polygon property (canonical shape
+    // metadata.spatialJoin). #276: Simple View's image column
+    // (metadata.simpleVis). Both were read off the spec in loadTrill and then
+    // dropped here, because this factory builds node data from an explicit
+    // list: the setting survived a save and never a load.
+    spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
+    simpleVis?: { imageColumn?: string };
 };
+
+/** What a load built, so a caller can hydrate against it. */
+export interface LoadedGraph {
+    nodes: any[];
+    edges: any[];
+}
 
 interface IUseCode {
     createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
-    loadTrill: (trill: any, suggestionType?: string) => void;
+    loadTrill: (trill: any, suggestionType?: string) => LoadedGraph;
 }
 
 export function useCode(): IUseCode {
@@ -101,8 +115,15 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    // suggestionType: "workflow" | "connection" | "none"
-    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean) => {
+    /**
+     * Turn a spec into canvas nodes and edges and hand them to the provider.
+     *
+     * Returns them as well. Restoring a saved output means pushing it into the
+     * nodes downstream of its producer, and the only reliable statement of who
+     * those are, at this moment, is the edge list this function just built:
+     * React Flow's own store is written from an effect and is a render behind.
+     */
+    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean): LoadedGraph => {
 
         let nodes = [];
         let edges = [];
@@ -179,6 +200,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.spatialJoin != undefined)
                 nodeMeta.spatialJoin = node.metadata.spatialJoin;
 
+            // #276: the Simple View's chosen image column round-trips too.
+            if(node.metadata != undefined && node.metadata.simpleVis != undefined)
+                nodeMeta.simpleVis = node.metadata.simpleVis;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -209,6 +234,25 @@ export function useCode(): IUseCode {
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
 
+        }
+
+        // Nothing else corrects layout: the loop above copies the spec's x/y
+        // straight onto the canvas, so a legacy file or a hand-edited spec can
+        // render with its boxes on top of each other. Separating them here
+        // covers every way a dataflow reaches the canvas - opening a project,
+        // a shared link, File -> Load, and the revert branch below - because
+        // all four build their nodes through this one loop.
+        //
+        // It must happen BEFORE loadParsedTrill: rewriting positions after the
+        // nodes are in the React Flow store would emit `position` changes,
+        // which MainCanvas treats as an edit and would mark every project dirty
+        // on open (#229). Pre-mount there is no change to emit.
+        //
+        // Skipped for a suggestion, which is a subset merged into a live graph:
+        // separating it in isolation would miss every collision with what is
+        // already on canvas and drag the suggestion off the node it explains.
+        if (suggestionType === undefined) {
+            nodes = deoverlapNodes(nodes);
         }
 
         for(const edge of trill.dataflow.edges){
@@ -273,6 +317,7 @@ export function useCode(): IUseCode {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
         }
 
+        return { nodes, edges };
     }
 
     const generateCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
@@ -305,6 +350,8 @@ export function useCode(): IUseCode {
             appearance = undefined,
             title = undefined,
             comments = undefined,
+            spatialJoin = undefined,
+            simpleVis = undefined,
         } = options;
 
         const node: Node = {
@@ -346,6 +393,8 @@ export function useCode(): IUseCode {
                 appearance,
                 title,
                 comments,
+                spatialJoin,
+                simpleVis,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

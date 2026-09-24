@@ -4,6 +4,7 @@ import json
 import time
 import secrets
 import sqlite3
+from pathlib import Path
 import tempfile
 import pytest
 import subprocess
@@ -14,6 +15,7 @@ try:  # POSIX only; the Windows branch of _terminate_process_tree never uses it.
 except ImportError:  # pragma: no cover - Windows
     SIGKILL = SIGINT
 from playwright.sync_api import Page
+from . import diagnostics
 from .utils import (
     FrontendPage,
     debug_log,
@@ -53,6 +55,9 @@ _SHARED_SESSION_CLASSES = (
     "TestPaletteShowsWhatWasProvisioned",
     "TestReviewCardAndApply",
     "TestSolveProgressAndReconnection",
+    # The browser stress tier stubs several accounts up front and drives them
+    # all from one test; truncating would log every one of them out.
+    "TestBrowserStressTier",
 )
 
 _SQLA_MUTABLE_TABLES = (
@@ -199,6 +204,21 @@ def _truncate_sqlite(db_path: str, tables: tuple) -> None:
         conn.close()
 
 
+def _clear_test_stores() -> None:
+    """Delete the per-user files the truncate above would otherwise orphan.
+
+    The same call ``/api/testing/reset-db`` makes; it refuses any root that is
+    not ``.curio/test/``. Best-effort: a store that cannot be removed must not
+    fail the test that was about to run, and the next boot rewrites it anyway.
+    """
+    try:
+        from utk_curio.backend.app.common.user_storage import clear_test_stores
+
+        clear_test_stores()
+    except Exception as exc:  # pragma: no cover - diagnostics only
+        print(f"[fixtures] could not clear test user stores: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures – shared across all tests
 # ---------------------------------------------------------------------------
@@ -254,6 +274,7 @@ def curio_servers(session_app, request):
         "CURIO_TESTING",
         "CURIO_LAUNCH_CWD",
         "CURIO_SHARED_DATA",
+        "CURIO_PACKAGES_ROOT",
         "DATABASE_URL",
         "DATABASE_URL_TEST",
     ):
@@ -276,13 +297,19 @@ def curio_servers(session_app, request):
     # ``CURIO_NO_AUTH=1`` (auto-guest mode, no login UI), which would send the
     # browser straight to ``/projects`` and make every auth-gated test time
     # out looking for ``Sign in`` / ``Create an account`` / ``Continue as
-    # Guest``. ``--auth`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
+    # Guest``. ``--deploy`` flips ``CURIO_NO_AUTH=0`` so the login UI renders;
     # tests that opt out (e.g. ``test_frontend_server``) branch on
     # ``auth_enabled_env()`` and will follow the no-auth path only when the
     # caller sets ``CURIO_NO_AUTH=1`` in the pytest process env as well.
     extra_args: list[str] = []
     if env.get("CURIO_NO_AUTH", "0") not in ("1", "true", "yes", "on"):
-        extra_args.append("--auth")
+        extra_args.append("--deploy")
+        # Says out loud what this stack is. It puts the child on the test DB
+        # and mounts /api/testing/*, both of which the suite depends on, and
+        # it is the exemption that lets --deploy run without isolation -- on
+        # a developer's macOS laptop there is none to be had, and without it
+        # the child would refuse to start.
+        extra_args.append("--testing")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
     # Saving a node's output to the Data Catalog is opt-in per node by default
@@ -294,9 +321,26 @@ def curio_servers(session_app, request):
     # test_computed_json_output_e2e.py deliberately does NOT rely on this: it
     # flips the per-node toggle in the UI, because "the user turned it on" is the
     # scenario #180 reports.
-    extra_args.append("--save-node-outputs")
+    # An env var, not a flag: this only seeds a per-node UI toggle, so curio.py
+    # deliberately has no argument for it and reads the environment instead.
+    env["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1"
+    # Point the Data Lake Catalog at the recorded portal corpus, so the e2e
+    # stack answers portal searches and downloads from disk.
+    #
+    # This is what lets the lake specs drive the REAL backend - routes,
+    # providers, format detection, the download, the hand-off into the Data
+    # Catalog - while opening no socket. Stubbing at ``page.route`` instead
+    # would test the page against a fiction and leave every one of those
+    # layers uncovered in e2e, which is where they actually meet.
+    #
+    # Honoured only because the harness also passes ``--testing``: the
+    # transport refuses a fixture corpus in any process that is not a test rig
+    # (see datalakes/infrastructure/transport.py::build_transport).
+    env["CURIO_DATALAKE_FIXTURES"] = str(
+        Path(__file__).resolve().parents[1] / "test_datalakes" / "fixtures"
+    )
     # The examples are what #200 was about, and the gap that let it through:
-    # this harness launched with ``--auth`` but never ``--with-examples``, so
+    # this harness launched with ``--deploy`` but never ``--with-examples``, so
     # the one configuration where the gallery came up empty was the one
     # configuration never tested. Opt-in rather than always-on because seeding
     # eleven dataflows (and provisioning the datasets they reference) costs
@@ -308,16 +352,25 @@ def curio_servers(session_app, request):
     if request.config.getoption("examples", default=False):
         extra_args.append("--with-examples")
     # Replay the whole e2e suite against isolated node execution by setting
-    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: the
-    # confinement path is not yet verified anywhere, so turning it on for every
-    # run would make an unrelated failure look like an isolation bug. Pair it
-    # with CURIO_E2E_EXEC_USER on a host that has an unprivileged account.
+    # CURIO_E2E_ISOLATION=fork. Off by default, and deliberately so: turning it
+    # on for every run would make an unrelated failure look like an isolation
+    # bug. Pair it with CURIO_E2E_EXEC_USER on a host that has an unprivileged
+    # account.
+    #
+    # Passed through the child's environment rather than as flags: isolation
+    # has no CLI flag any more. It is CURIO_ISOLATION/CURIO_EXEC_USER that the
+    # launcher reads, and a separate CURIO_E2E_* name keeps a developer's own
+    # CURIO_ISOLATION from silently steering the harness.
     _e2e_isolation = os.environ.get("CURIO_E2E_ISOLATION", "").strip()
     if _e2e_isolation:
-        extra_args += ["--isolation", _e2e_isolation]
-        _exec_user = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
-        if _exec_user:
-            extra_args += ["--exec-user", _exec_user]
+        env["CURIO_ISOLATION"] = _e2e_isolation
+        env["CURIO_EXEC_USER"] = os.environ.get("CURIO_E2E_EXEC_USER", "").strip()
+    else:
+        # env is a copy of the developer's shell, and the launcher honours a
+        # pre-set CURIO_ISOLATION. Clear it so the harness boots the same way
+        # for everyone rather than inheriting whatever is exported locally.
+        env.pop("CURIO_ISOLATION", None)
+        env.pop("CURIO_EXEC_USER", None)
 
     # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
     # buffer fills, and a file in the repo trips webpack-dev-server's
@@ -509,6 +562,12 @@ def _clean_db(request, test_db_paths) -> None:
         _reset_db_via_http(_e2e_backend_base_url())
     else:
         _truncate_sqlite(test_db_paths["sqla"], _SQLA_MUTABLE_TABLES)
+        # The same clear ``/api/testing/reset-db`` does above, and for the same
+        # reason: truncating ``user`` frees ids that SQLite reissues from 1, so
+        # a store left on disk is handed to the next account a test creates
+        # (#308). Done on the files rather than over HTTP because this fixture
+        # also runs before the stack is up.
+        _clear_test_stores()
 
 
 @pytest.fixture(scope="session")
@@ -537,6 +596,9 @@ def workflow_page(browser):
     next to ``*_actual.png``).
     """
     context = browser.new_context(viewport=VIEWPORT)
+    # With CURIO_E2E_TRACE=1, record a trace; each test cuts a chunk from it,
+    # kept only when the test fails (see diagnostics.py).
+    diagnostics.start_tracing(context)
     page = context.new_page()
     page._curio_browser_log = []  # type: ignore[attr-defined]
 
@@ -568,6 +630,7 @@ def workflow_page(browser):
         "H3",
     )
     yield page
+    diagnostics.stop_tracing(context)
     page.close()
     context.close()
 

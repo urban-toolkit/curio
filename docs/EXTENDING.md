@@ -37,7 +37,7 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `cv-gallery` | None. The behavior hook does its work in the browser. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar` | None. The behavior hook does its work in the browser. |
 | **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. |
 | **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
 
@@ -67,18 +67,18 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
 
-Two things the per-account pattern has to get right, and both bit us:
+Two rules the per-account pattern has to follow:
 
 **Resolve in the request, use it downstream.** Street Vision runs inference on a
 detached worker thread, where `g` is gone. The route resolves the token and
 passes it into the job; resolving it inside the worker would silently fall back
 to the deployment value.
 
-**Put the credential in any cache key it affects.** The model cache was keyed on
-`model_id` alone. The first user to download a gated model would seed an entry
-every later caller hit for free, including one whose account had never accepted
-that licence. The key is now `(model_id, token fingerprint)`, hashed rather than
-raw so the token is not sitting where a traceback could print it.
+**Put the credential in any cache key it affects.** The model cache is keyed on
+`(model_id, token fingerprint)`, hashed rather than raw so the token is not
+sitting where a traceback could print it. Keyed on `model_id` alone, the first
+user to download a gated model would seed an entry every later caller hit for
+free, including one whose account had never accepted that licence.
 
 Surface presence, never the value, in `/health` so the frontend can warn before
 an action that needs the credential:
@@ -160,7 +160,7 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory let anyone who could guess an image id fetch somebody else's imagery. That is why this cache moved, and why the previous `STREETVISION_CACHE_DIR` override no longer exists.
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory would let anyone who could guess an image id fetch somebody else's imagery.
 
 ### 3.7 The error contract back to the frontend
 
@@ -168,8 +168,15 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 |---|---|---|
 | `200` | OK | Render the result |
 | `400` | Bad input (missing field, malformed body) | Surface inline message |
+| `403` | Refused (not yours, or not permitted) | Surface the reason; do not retry |
+| `404` | No such route or resource | Surface "not found"; do not retry |
+| `405` | Wrong method for this route | A client bug; surface it in development |
 | `503` | Service / extras unavailable | Show "install hint" / "backend offline" banner |
 | `5xx` | Unhandled backend error | Generic "Lost connection to backend" toast |
+
+`403`, `404` and `405` are what `abort()` and werkzeug's own routing errors
+produce; `create_app` registers an `HTTPException` handler alongside the
+catch-all, so only genuine unhandled exceptions are `500`.
 
 Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 responses; the frontend reads `hint` to give the user an actionable next step. Don't return plain-text 500s.
 
@@ -222,18 +229,16 @@ def inference_run():
 
 ## 4. Walked example: the Street Vision package
 
-The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into four small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
+The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into three small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
 
-### 4.1 Three templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+### 4.1 Two templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
 
 ```jsonc
 "templates": [
   { "id": "street-view-fetcher", "behavior": "street-view-fetcher",
     "inputPorts": [],                                                  "outputPorts": [{"types":["GEODATAFRAME"]}] },
   { "id": "hf-cv-inference",     "behavior": "hf-cv-inference",
-    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["JSON"]}] },
-  { "id": "cv-gallery",          "behavior": "cv-gallery",
-    "inputPorts": [{"types":["JSON"]}],                                "outputPorts": [{"types":["GEODATAFRAME"]}] }
+    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["GEODATAFRAME"]}] }
 ]
 ```
 
@@ -241,7 +246,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 
 ### 4.2 Plus a fourth template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
-A generic Spatial Join that takes points + polygons and tags each point with the containing polygon's properties:
+A generic Spatial Join that takes points + polygons and tags each point with a column of the containing polygon (or emits the polygons with a count of points inside each):
 
 ```jsonc
 { "id": "spatial-join", "behavior": "spatial-join",
@@ -255,13 +260,12 @@ A generic Spatial Join that takes points + polygons and tags each point with the
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-### 4.3 Four behavior hooks
+### 4.3 Three behavior hooks
 
-The three Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
+The two Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
 
 - [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx): place picker, bbox preview, and fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
-- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
-- [`cvGalleryBehavior.tsx`](../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx): a pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
+- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5. Converts the finished run into a GEODATAFRAME with [`resultsToFeatureCollection.ts`](../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts), kept as a separate pure module so the shape every downstream node depends on can be tested without React.
 - [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
 
 Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
@@ -269,11 +273,10 @@ Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](
 ```typescript
 registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
 registerBehavior('hf-cv-inference',     useHfCvInferenceBehavior);
-registerBehavior('cv-gallery',          useCvGalleryBehavior);
 registerBehavior('spatial-join',        useSpatialJoinBehavior);
 ```
 
-Even though three of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally; packages reference behavior keys by name, not by import.
+Even though two of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally; packages reference behavior keys by name, not by import.
 
 ### 4.4 The backend Flask blueprint at [`utk_curio/backend/app/streetvision/`](../utk_curio/backend/app/streetvision/)
 

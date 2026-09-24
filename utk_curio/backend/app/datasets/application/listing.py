@@ -22,11 +22,15 @@ from utk_curio.backend.app.datasets.application.export import (
     _download_name,
     _serialize_parquet_for_export,
 )
+from utk_curio.backend.app.datasets.domain.code_refs import (
+    dataset_ids_in_code,
+    node_code,
+)
 from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexer
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, is_osm_group_id
-from utk_curio.backend.app.datasets.domain.osm_group import (
-    build_osm_group_item,
-    collapse_osm_groups,
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, is_layer_group_id
+from utk_curio.backend.app.datasets.domain.layer_group import (
+    build_layer_group_item,
+    collapse_layer_groups,
     sort_group_members,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
@@ -318,7 +322,7 @@ class CatalogListing:
         # Other surfaces (e.g. the node palette) keep the individual layers so
         # each stays independently draggable/installable.
         if group_osm:
-            items = collapse_osm_groups(items)
+            items = collapse_layer_groups(items)
 
         # Surrounding whitespace is not part of the needle (#231). Settled here,
         # the single chokepoint, because the two callers disagreed: the HTTP route
@@ -417,11 +421,11 @@ class CatalogListing:
     ) -> dict[str, Any]:
         # A synthetic OSM group id resolves to a bundle-shaped item built from
         # its member layers (which the un-collapsed listing still exposes).
-        if is_osm_group_id(dataset_id):
-            members = self._osm_group_members(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs)
+        if is_layer_group_id(dataset_id):
+            members = self._layer_group_members(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs)
             if not members:
                 raise DatasetCatalogError("Dataset not found", 404)
-            return build_osm_group_item(dataset_id, members)
+            return build_layer_group_item(dataset_id, members)
 
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id -
@@ -591,8 +595,8 @@ class CatalogListing:
         part_index: int | None = None,
     ) -> dict[str, Any]:
         # An OSM group previews as a bundle: one tab (part) per member layer.
-        if is_osm_group_id(dataset_id):
-            return self._preview_osm_group(
+        if is_layer_group_id(dataset_id):
+            return self._preview_layer_group(
                 dataset_id,
                 dataflow_id=dataflow_id,
                 live_outputs=live_outputs,
@@ -615,7 +619,7 @@ class CatalogListing:
             item, row_limit=row_limit, offset=offset, part_index=part_index
         )
 
-    def _osm_group_members(
+    def _layer_group_members(
         self,
         group_id: str,
         *,
@@ -641,7 +645,7 @@ class CatalogListing:
         item["path"] = self._paths._resolve_item_path(item)
         return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
 
-    def _preview_osm_group(
+    def _preview_layer_group(
         self,
         group_id: str,
         *,
@@ -651,7 +655,7 @@ class CatalogListing:
         offset: int,
         part_index: int | None,
     ) -> dict[str, Any]:
-        members = self._osm_group_members(
+        members = self._layer_group_members(
             group_id, dataflow_id=dataflow_id, live_outputs=live_outputs
         )
         if not members:
@@ -744,7 +748,9 @@ class CatalogListing:
             "path": resolved,
         }
 
-    def dataset_usage(self, dataset_id: str) -> list[dict[str, Any]]:
+    def dataset_usage(
+        self, dataset_id: str, *, include_code_refs: bool = True
+    ) -> list[dict[str, Any]]:
         """Dataflows across the user's projects that use *dataset_id*.
 
         Powers the standalone catalog detail page, which has no live canvas:
@@ -763,6 +769,15 @@ class CatalogListing:
         row, so there is no longer a class of project this scan can miss. **If
         a soft-deleted or hidden project state is ever reintroduced, this scan
         must see it** - that is what #176 was about.
+
+        *include_code_refs* is what the destructive gates turn off. Reporting a
+        dataset as used because a node's source names it is right for the detail
+        page, but applying a dataset writes ``curio_dataset_path("<id>")`` into
+        that source, so counting it as usage made uninstall a no-op for the
+        ordinary apply-then-uninstall flow: the folder stayed, the card stayed,
+        and the promise that uninstalling removes every trace stopped being
+        true. The gate asks about bindings and refs only; the UI warns about the
+        code mentions first instead (see ``uninstall_dataset``).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
@@ -773,14 +788,31 @@ class CatalogListing:
         usages: list[dict[str, Any]] = []
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
-            consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
+            consumers = _dataset_consumer_nodes_in_spec(
+                spec, dataset_id, project.id, include_code_refs=include_code_refs
+            )
             if consumers is None:
                 continue
+            # ``codeOnly`` is what tells a caller whether the destructive gate
+            # will see this usage at all: the gate ignores code mentions, so a
+            # dataflow that uses the dataset *only* through a node's source does
+            # not keep the store folder alive. The uninstall confirmation needs
+            # both halves - which dataflows block deletion, and which merely
+            # have code that will dangle - and one request should answer both.
+            code_only = False
+            if include_code_refs:
+                code_only = (
+                    _dataset_consumer_nodes_in_spec(
+                        spec, dataset_id, project.id, include_code_refs=False
+                    )
+                    is None
+                )
             usages.append({
                 "dataflowId": project.id,
                 "dataflowName": project.name,
                 "nodeCount": len(consumers),
                 "nodes": consumers,
+                "codeOnly": code_only,
             })
         usages.sort(key=lambda u: (u["dataflowName"] or "").casefold())
         return usages
@@ -810,8 +842,20 @@ class CatalogListing:
         counts: dict[str, int] = {}
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
+            # Scan each node's source once per spec rather than once per
+            # (node, dataset). This loop is over the whole filtered catalog, so
+            # the code scan inside the consumer helper used to be repeated for
+            # every dataset id; on the shipped examples that was ~2.7x the work
+            # of the pre-#250 body, and it grows with node code size.
+            code_ids_by_node = {
+                node.get("id") or "": set(dataset_ids_in_code(node_code(node)))
+                for node in (spec.get("dataflow") or {}).get("nodes") or []
+                if isinstance(node, dict)
+            }
             for dataset_id in dataset_ids:
-                consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
+                consumers = _dataset_consumer_nodes_in_spec(
+                    spec, dataset_id, project.id, code_ids_by_node
+                )
                 if consumers:
                     counts[dataset_id] = counts.get(dataset_id, 0) + len(consumers)
         return counts

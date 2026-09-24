@@ -25,15 +25,18 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { dashboardSourceNodeIds, prepareDashboardNodes } from "../utils/dashboardLayout";
 import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
-import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
+import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
+    getCurrentProjectId,
     getCurrentProjectPackagesList,
     setCurrentProject,
     setCurrentProjectPackages,
     subscribe as subscribeProjectPackages,
+    whenProjectSettled,
 } from "../registry/projectPackagesStore";
 
 export interface WorkflowOperationsDeps {
@@ -49,8 +52,14 @@ export interface WorkflowOperationsDeps {
     outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: unknown }>>;
     setInteractions: any;
     setDashboardPins: (value: any) => void;
-    setPositionsInDashboard: (data: any) => void;
-    setPositionsInWorkflow: (data: any) => void;
+    /**
+     * True while this tree is the dashboard page rather than the canvas.
+     *
+     * Two things turn on it: a load lays the graph out as tiles, and nothing
+     * saves on its own. A dashboard's only write is an explicit Save layout, so
+     * a viewer who never touches it cannot rewrite the owner's dataflow.
+     */
+    presentation?: boolean;
     setWorkflowName: (name: string) => void;
     workflowNameRef: React.MutableRefObject<string>;
     setWorkflowDescription: (description: string) => void;
@@ -70,7 +79,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         nodes, edges,
         setNodes, setEdges,
         setOutputs, setInteractions,
-        setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
+        setDashboardPins,
+        presentation = false,
         setWorkflowName,
         workflowNameRef,
         setWorkflowDescription,
@@ -166,7 +176,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     projectNameRef.current = projectName;
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
-    const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
+    const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed" | "errored">>({});
     const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
     // True only while ``loadParsedTrill`` replays a persisted dataflow onto the
@@ -181,8 +191,23 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // made a millisecond after the load still marks the dataflow dirty.
     const hydratingRef = useRef(false);
 
+    // Bumped by every edit. A save captures it before its request and clears the
+    // dirty flag on return only if it has not moved (#270).
+    //
+    // Without that check the flag was cleared by whichever save happened to
+    // return last, including one whose request predated the edit. The edit was
+    // then live in the client and absent from disk while the UI said "saved":
+    // the 30s auto-save stands down (it is gated on ``projectDirty``), the
+    // beforeunload guard unbinds, and the in-app leave guard stops prompting -
+    // so the next navigation dropped the change with no warning. A rename is
+    // the way it was reported, but a node or code edit made mid-save was lost
+    // the same way, which is why this counts edits rather than watching the
+    // name.
+    const dirtyGenerationRef = useRef(0);
+
     const markDirty = useCallback(() => {
         if (hydratingRef.current) return;
+        dirtyGenerationRef.current += 1;
         setProjectDirty(true);
     }, []);
 
@@ -294,6 +319,22 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setNodes(() => []);
         }
 
+        // Pins come off the spec, so they are known before anything is added.
+        const pins: Record<string, boolean> = {};
+        for (const node of loaded_nodes) {
+            if (node.data?.dashboardPinned) pins[node.id] = true;
+        }
+
+        // On the dashboard page the graph enters provider state already laid out
+        // as tiles. Done here rather than in the page for two reasons: the page
+        // has no "the load finished" signal to react to, and a transform applied
+        // afterwards would fight React Flow over `position` on every tile drag.
+        if (!merge && presentation) {
+            const prepared = prepareDashboardNodes(loaded_nodes, loaded_edges, pins);
+            loaded_nodes = prepared.nodes;
+            loaded_edges = prepared.edges;
+        }
+
         // Provenance is recorded below, from these local arrays, NOT by addNode /
         // onConnect. Those two snapshot `reactFlow.getNodes()`, and React Flow only
         // syncs `useNodesState` into its zustand store from a useEffect - so inside
@@ -400,17 +441,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             if (!merge) {
                 setOutputs([]);
                 setInteractions([]);
-                // Restore dashboard pins from persisted node data
-                const pins: Record<string, boolean> = {};
-                for (const node of loaded_nodes) {
-                    if (node.data?.dashboardPinned) pins[node.id] = true;
-                }
                 setDashboardPins(pins);
-                setPositionsInDashboard({});
-                setPositionsInWorkflow({});
             }
 
-            setFitViewOnLoad(true);
+            // The dashboard page frames its own tiles (`useDashboardFit`); the
+            // canvas fit would fight it, and it cannot even complete there since
+            // an unpinned node is `display: none` and never gets measured.
+            if (!presentation) setFitViewOnLoad(true);
             return prevNodes;
         });
 
@@ -486,8 +523,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setOutputs([]);
         setInteractions([]);
         setDashboardPins({});
-        setPositionsInDashboard({});
-        setPositionsInWorkflow({});
         setSuggestionsLeft(0);
         setPackages([]);
     }
@@ -712,6 +747,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 deps.outputsRef.current,
                 reactFlow.getNodes(),
                 defaultSaveOutputDataset,
+                // Whatever feeds a pinned tile is recorded too, whatever its
+                // toggle says: the ref is what lets a reload hand that tile its
+                // data instead of an empty box.
+                dashboardSourceNodeIds(
+                    reactFlow.getNodes() as any, reactFlow.getEdges() as any,
+                ),
             ) ?? [];
         // Attach each producing node's friendly display label so the save-time
         // installer (``_auto_install_computed_outputs``) titles computed datasets
@@ -797,13 +838,67 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // every endpoint that writes the spec; only from the two points that sync.
     const baseRevisionRef = useRef<number | null>(null);
 
-    const saveCurrentProject = useCallback(async (nameOverride?: string) => {
+    /**
+     * A route load that has not delivered an id yet, or ``null`` when there is
+     * nothing to wait for.
+     *
+     * ``null`` rather than a resolved promise, and checked rather than awaited,
+     * because the common cases are both "nothing to wait for" -- a dataflow
+     * that has loaded, and one that genuinely has no id because it has never
+     * been saved (``/dataflow/new`` leaves the store's project id undefined,
+     * which is what tells the two apart). Awaiting a resolved promise still
+     * costs a microtask, and the request would no longer leave in the tick its
+     * caller ran in: ``requestProjectSave`` chains on that, and two saves
+     * queued in one tick would each see an idle chain and race.
+     *
+     * The promise rejects rather than letting the caller create when the load
+     * settles without an id: a 404 that fell through to the shared endpoint, a
+     * load that overran {@link PROJECT_LOAD_WAIT_MS}, a failure ProjectLoader
+     * has already toasted. Creating there is what duplicated the dataflow.
+     */
+    const settleRoutedLoad = useCallback((): Promise<void> | null => {
+        if (projectIdRef.current) return null;
+        if (!getCurrentProjectId()) return null;
+        return (async () => {
+            await whenProjectSettled();
+            if (projectIdRef.current) return;
+            throw new Error(
+                "This dataflow is still opening. Wait for it to finish loading, then try again.",
+            );
+        })();
+    }, []);
+
+    /**
+     * Save the open dataflow.
+     *
+     * ``omitOutputs`` leaves the outputs out of the request, so the manifest the
+     * backend holds is untouched. The dashboard's Save layout uses it: that page
+     * writes tile geometry, and it has no business re-recording which outputs a
+     * dataflow has - its own nodes never ran.
+     */
+    const saveCurrentProject = useCallback(async (
+        nameOverride?: string,
+        options?: { omitOutputs?: boolean },
+    ) => {
         if (viewerMode === "shared") {
             throw new Error("Shared dataflows are read-only; use Save a copy");
         }
         if (blockGuestSaves) {
             throw new Error("Guest users cannot save projects");
         }
+        // A routed dataflow is never unsaved; at most it has not loaded YET.
+        //
+        // ``projectIdRef`` fills in when ``loadProject`` answers, which is well
+        // after the route resolved, so anything that saves in that window - the
+        // catalog drawer's import, install and remove all do - used to fall
+        // into the create branch below and mint a SECOND dataflow, installing
+        // into it while the URL still named the first (#340).
+        //
+        // Before the canvas is read, not after: the spec is serialized from
+        // whatever the canvas holds at that moment, so waiting later would
+        // persist the empty pre-load canvas over the stored dataflow.
+        const routedLoad = settleRoutedLoad();
+        if (routedLoad) await routedLoad;
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         // Read packages directly from the store (always up-to-date) rather than
@@ -818,10 +913,16 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
-        const outputRefs: OutputRef[] = buildOutputRefs();
+        const outputRefs: OutputRef[] | undefined =
+            options?.omitOutputs ? undefined : buildOutputRefs();
 
         // The ref, not the closure (#270): see projectNameRef.
         const name = nameOverride || projectNameRef.current || workflowNameRef.current;
+
+        // Everything this request carries has now been read out of the store.
+        // Anything the user changes from here on is NOT in the payload, so it
+        // must survive the response as unsaved work (#270).
+        const dirtyAtSend = dirtyGenerationRef.current;
 
         // Read the live id from the ref, not the closure: a save chained right
         // after a create (serialized install saves) must take the update branch.
@@ -829,7 +930,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (existingId) {
             const detail = await projectsApi.update(existingId, {
                 spec,
-                outputs: outputRefs,
+                // Absent, not empty: the backend keeps the stored manifest when
+                // the field is missing and replaces it when it is [].
+                ...(outputRefs ? { outputs: outputRefs } : {}),
                 name,
                 ...(baseRevisionRef.current !== null
                     ? { baseRevision: baseRevisionRef.current }
@@ -853,13 +956,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // without a reload. Mirrors the dataset-catalog refresh above.
             notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            // A save did complete, so the timestamp stands - but the flag only
+            // clears if nothing was edited while the request was in flight.
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             return detail;
         } else {
             const detail = await projectsApi.create({
                 name,
                 spec,
-                outputs: outputRefs,
+                // A create always sends them: there is no stored manifest to keep.
+                outputs: outputRefs ?? [],
             });
             // Pin the ref synchronously so a save chained immediately after this
             // create sees the new id and updates instead of creating a duplicate
@@ -873,7 +981,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 setProjectName(detail.name);
             }
             setProjectSavedAt(new Date());
-            setProjectDirty(false);
+            if (dirtyGenerationRef.current === dirtyAtSend) {
+                setProjectDirty(false);
+            }
             // The backend merges the user's defaults (e.g. ``curio.builtin@1``)
             // into the spec's lockfile on first save. We need to:
             //  1. Pin the store's `projectId` to the freshly-created id —
@@ -891,7 +1001,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
+    }, [projectId, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, settleRoutedLoad, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     // Serialize project saves so concurrent callers (e.g. two producing nodes
     // finishing back-to-back) can never run two creates in parallel and POST
@@ -1027,14 +1137,28 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // ``nodeIds`` scopes the warning toast to the producers this save was run
     // for; omit it to surface every warning the response carries (see
     // surfaceInstallWarnings).
+    //
+    // Returns which producers did NOT get their dataset, so the caller can
+    // decide what to do with their "Adding…" placeholders (#352). This used to
+    // resolve ``void`` and swallow its own errors, so every caller saw the same
+    // success-shaped settle whether the datasets installed, failed to install,
+    // or the save itself threw - and FlowProvider's ``.finally`` cleared every
+    // placeholder unconditionally on the strength of it.
     const persistDataflowForInstall = useCallback(
-        async (nodeIds?: readonly string[]): Promise<void> => {
+        async (nodeIds?: readonly string[]): Promise<InstallSyncOutcome> => {
             try {
                 const detail = await requestProjectSave();
                 surfaceInstallWarnings(detail, nodeIds);
+                const scope = nodeIds ? new Set(nodeIds) : null;
+                const failed = ((detail?.dataset_install_warnings ?? []) as DatasetInstallWarning[])
+                    .map((w: DatasetInstallWarning) => w.node_id)
+                    .filter((id: string) => !scope || scope.has(id));
+                return { saved: true, failedNodeIds: failed };
             } catch (err) {
                 showToast((err as Error)?.message || "Could not save the dataflow.", "error");
                 notifyDatasetCatalogRefresh();
+                // Nothing was installed, so nothing this sync covered succeeded.
+                return { saved: false, failedNodeIds: [...(nodeIds ?? [])] };
             }
         },
         [requestProjectSave, showToast, surfaceInstallWarnings],
@@ -1044,6 +1168,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Upper bound on how long a placeholder can linger if its clear never fires
     // (crashed/aborted run). Matches the client execution timeout ceiling.
     const PENDING_INSTALL_TIMEOUT_MS = 600_000;
+    // How long a FAILED placeholder stays on screen before it is dropped. Long
+    // enough to be noticed beside its toast, short enough not to look like a row.
+    const FAILED_INSTALL_VISIBLE_MS = 30_000;
 
     const endPendingInstall = useCallback((key: string): void => {
         const timer = pendingInstallTimersRef.current[key];
@@ -1072,6 +1199,27 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         [endPendingInstall],
     );
 
+    // Mark a placeholder as failed rather than clearing it (#352). The toast
+    // from surfaceInstallWarnings says what to do; the placeholder stays put
+    // long enough to be seen next to the row that never appeared, instead of
+    // flashing and vanishing the way #217 described.
+    //
+    // Still on a timer, a much shorter one: a failed placeholder is a notice,
+    // not a permanent row, and the user re-running the node replaces it via
+    // beginPendingInstall anyway.
+    const failPendingInstall = useCallback((key: string): void => {
+        const existing = pendingInstallTimersRef.current[key];
+        if (existing !== undefined) clearTimeout(existing);
+        if (!pendingInstallsRef.current.some((p) => p.key === key)) return;
+        pendingInstallTimersRef.current[key] = setTimeout(
+            () => endPendingInstall(key),
+            FAILED_INSTALL_VISIBLE_MS,
+        );
+        setPendingInstalls((prev) =>
+            prev.map((p) => (p.key === key ? { ...p, status: "failed" as const } : p)),
+        );
+    }, [endPendingInstall]);
+
     // Drop every placeholder + timer when the dataflow is swapped/discarded so a
     // pending install from the previous project can't leak into the next one.
     useEffect(() => {
@@ -1084,6 +1232,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
         if (!projectId || !projectDirty || blockGuestSaves || viewerMode === "shared") return;
+        // Never from the dashboard: its writes are explicit (Save layout), so a
+        // page left open cannot save on a timer.
+        if (presentation) return;
         const id = window.setInterval(async () => {
             try {
                 await saveCurrentProject();
@@ -1092,7 +1243,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode]);
+    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode, presentation]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         if (blockGuestSaves) {
@@ -1137,6 +1288,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const result = await projectsApi.get(id);
         const { project, spec, outputs } = result;
 
+        // Pin the ref here rather than letting the next render carry it over,
+        // for the same reason the create branch of ``saveCurrentProject`` does:
+        // ``settleRoutedLoad`` reads it the moment ProjectLoader releases the
+        // latch, which is sooner than React is obliged to re-render.
+        projectIdRef.current = project.id;
         setProjectId(project.id);
         setProjectName(project.name);
         setProjectDirty(false);
@@ -1161,6 +1317,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Deliberately leave projectId=null: this dataflow is not "open for
         // editing" in the visitor's workspace. Save-a-copy goes through
         // saveAsNewProject, which creates a fresh project owned by them.
+        // Pinned on the ref too, so a save racing this load is refused for
+        // being read-only rather than waiting out the latch first.
+        projectIdRef.current = null;
         setProjectId(null);
         setProjectName(project.name);
         setProjectDirty(false);
@@ -1202,6 +1361,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         );
     }, []);
 
+    // A node that ran and failed (#347). Previously indistinguishable from one
+    // that was never run: the failure branch produces no artifact, so it never
+    // calls outputCallback, so nothing downstream changed at all - and the
+    // downstream node told the user to run the node they had just watched fail.
+    // Same no-op-when-unchanged shape as the two above (dev/70).
+    const markNodeErrored = useCallback((nodeId: string) => {
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "errored" ? prev : { ...prev, [nodeId]: "errored" },
+        );
+    }, []);
+
     // ---------------------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------------------
@@ -1224,6 +1394,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         pendingInstalls,
         beginPendingInstall,
         endPendingInstall,
+        failPendingInstall,
 
         // Project state
         projectId,
@@ -1260,5 +1431,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         markDirty,
         markNodeExecuted,
         markNodeStale,
+        markNodeErrored,
     };
 }

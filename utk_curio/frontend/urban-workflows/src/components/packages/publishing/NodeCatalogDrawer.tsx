@@ -348,19 +348,40 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       // put the package on every dataflow's palette and none of their
       // lockfiles, which is the "imported packages are not scoped to a project"
       // half of #220.
-      if ((await ensureSavedProjectId("Couldn't save dataflow before importing")) === null) {
+      const intoProjectId = await ensureSavedProjectId(
+        "Couldn't save dataflow before importing",
+      );
+      if (intoProjectId === null) {
         return;
       }
       // The drawer's own busy/error chrome; the shared hook owns the call.
       setBusy(true);
       setActionError(null);
       try {
-        await importArchive(file);
+        // Hand the id over rather than letting the hook read the one it
+        // captured when it rendered. When the save above is what minted it,
+        // that captured value is still null and the hook skipped
+        // ``installToProject`` entirely: the package landed in the account
+        // store and never in this dataflow's lockfile, so it never reached
+        // the palette (#340). ``performInstall`` reads the ref at call time
+        // for the same reason; this path used to be the odd one out.
+        await importArchive(file, intoProjectId);
+      } catch (err) {
+        // Every other action in this drawer reports through here; this one
+        // used to have only a `finally`, so anything thrown after the upload
+        // became an unhandled rejection. Both `finally` blocks then tidied the
+        // UI back to its resting state, leaving a failed import that looked
+        // exactly like a successful one: no toast, no error chrome, the footer
+        // button back to "Import package", and the package in the account
+        // store but not in the lockfile. That is unreadable for a user and it
+        // is why #340 could only ever be seen as an e2e waiting out its
+        // timeout on an install request nobody could prove was sent.
+        reportActionError(`Couldn't import ${file.name}`, err);
       } finally {
         setBusy(false);
       }
     },
-    [ensureSavedProjectId, importArchive],
+    [ensureSavedProjectId, importArchive, reportActionError],
   );
 
   const performUninstall = useCallback(async (pkg: PackagePayload) => {

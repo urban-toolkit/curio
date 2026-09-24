@@ -1,3 +1,4 @@
+import "./styles/fonts.css";
 import "./styles/curioTokens.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -63,20 +64,11 @@ export { refreshPackageRegistry };
 //   would only 401 on the sign-up page. Sign-in refreshes the registry itself.
 void refreshPackageRegistry();
 
-import FlowProvider from "./providers/FlowProvider";
-import { CollaborationProvider } from "./providers/CollaborationProvider";
-import StarterProvider from "./providers/StarterProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
-import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
-import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
-import { AgentCatalogDrawerProvider } from "./providers/AgentCatalogDrawerProvider";
 import { listenForPeerDatasetCatalogRefresh } from "./services/datasetCatalog";
-import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
-import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
-import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import { RequireAuth } from "./components/RequireAuth";
@@ -90,44 +82,39 @@ import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
 import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
+import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
+import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
 import DataHubPage from "./pages/dataHub/DataHubPage";
-import { ProjectLoader } from "./components/ProjectLoader";
+import { DataflowProviders } from "./components/DataflowProviders";
+import DashboardPage from "./pages/dashboard/DashboardPage";
+import { SHARE_UUID_RE } from "./utils/shareLinks";
+import MonitorPage from "./pages/monitor/MonitorPage";
+import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
 const MainCanvasRoute: React.FC = () => (
-  // CollaborationProvider must wrap FlowProvider: FlowProvider's mutation
-  // handlers call ``useCollab()`` to broadcast graph changes, and a
-  // context only reaches *descendants*. Putting it on the inside would
-  // hand FlowProvider the no-op default value and silently drop every
-  // broadcast.
-  <DialogProvider>
-    <CollaborationProvider>
-      <FlowProvider>
-        {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider — the drawer
-            calls useFlowContext to auto-save unsaved dataflows on Install, and
-            a portal preserves React tree context, not DOM position. Outside
-            FlowProvider, useFlowContext returns no-op defaults and Install
-            silently does nothing. The drawer is only ever opened from canvas
-            components (UpMenu, PackagesPaletteDropdown), so scoping it here
-            doesn't reduce reach. */}
-        <NodeCatalogDrawerProvider>
-          <DatasetCatalogDrawerProvider>
-            <AgentCatalogDrawerProvider>
-              <StarterProvider>
-                <ProjectLoader>
-                  <PackagePaletteProvider>
-                    <DatasetPaletteProvider>
-                      <MainCanvas />
-                    </DatasetPaletteProvider>
-                  </PackagePaletteProvider>
-                </ProjectLoader>
-              </StarterProvider>
-            </AgentCatalogDrawerProvider>
-          </DatasetCatalogDrawerProvider>
-        </NodeCatalogDrawerProvider>
-      </FlowProvider>
-    </CollaborationProvider>
-  </DialogProvider>
+  <DataflowProviders>
+    <MainCanvas />
+  </DataflowProviders>
 );
+
+/**
+ * A dataflow's dashboard: the same project, the same id, rendered as a page.
+ *
+ * Only a real project id reaches the page. ``/dashboard/new`` would otherwise
+ * take ProjectLoader's unsaved-dataflow branch and render a blank canvas with a
+ * dashboard's chrome, which is a state nothing can act on.
+ */
+const DashboardRoute: React.FC = () => {
+  const { id } = useParams<{ id?: string }>();
+
+  if (!id || !SHARE_UUID_RE.test(id)) return <Navigate to="/projects" replace />;
+
+  return (
+    <DataflowProviders presentation>
+      <DashboardPage />
+    </DataflowProviders>
+  );
+};
 
 const LegacyWorkflowRedirect: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
@@ -181,6 +168,14 @@ const App: React.FC = () => {
                       }
                     />
                     <Route
+                      path="/dashboard/:id"
+                      element={
+                        <RequireAuth>
+                          <DashboardRoute />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
                       path="/catalog"
                       element={
                         <RequireAuth>
@@ -193,6 +188,11 @@ const App: React.FC = () => {
                       <Route path="data" element={<DataCatalogBrowse />} />
                       <Route path="data/:datasetId" element={<DataCatalogDetail />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
+                      <Route path="lakes" element={<DataLakeCatalogBrowse />} />
+                      <Route
+                        path="lakes/:sourceDir"
+                        element={<DataLakeSourceDetail />}
+                      />
                     </Route>
                     <Route
                       path="/data-hub/:datasetId?"
@@ -202,6 +202,10 @@ const App: React.FC = () => {
                         </RequireAuth>
                       }
                     />
+                    {/* Deliberately outside RequireAuth: the monitor is
+                        public, so whoever is hitting a problem can read it and
+                        share it without an account. */}
+                    <Route path="/monitor" element={<MonitorPage />} />
                     <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}
@@ -241,6 +245,10 @@ window.addEventListener("unhandledrejection", (event) => {
 // dataset to all projects from `/catalog` in one tab left a dataflow open in
 // another serving a listing cached from before the mutation.
 listenForPeerDatasetCatalogRefresh();
+
+// Installed before the first render so a crash during mount is reported too.
+// The reporter caps itself and never throws; see clientErrorReporter.ts.
+installClientErrorReporter();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

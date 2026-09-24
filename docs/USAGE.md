@@ -48,33 +48,44 @@ curio setup                  # install deps and exit
 | Flag | Effect |
 |---|---|
 | *(none)* | Auto sign-in as shared guest, projects page shown |
-| `--auth` | Require login (`CURIO_NO_AUTH=0`) |
 | `--no-project` | Skip both login and projects; open the canvas directly |
-| `--deploy` | Auth **and** projects on. Use for anything reachable by others |
+| `--deploy` | Auth **and** projects on, and isolated node execution where the host supports it. The only way to turn auth on, so use it locally too when you need the login page |
 | `--collab` | Real-time collaborative editing. Experimental, LAN-only |
+
+**Frontend**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--dev` | off | Serve the frontend from the webpack dev server, with hot reload and a development bundle. Use it when you are editing frontend source |
+
+Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
+
+A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout built in development mode, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
+
+Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_modules/` carries the Node major that installed it and is reinstalled when that changes; the bundle beside it is kept unless its own stamp calls for a rebuild.
 
 **Catalogs**
 
 | Flag | Default | Effect |
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
-| `--save-node-outputs` / `--no-save-node-outputs` | off | Default state of every node's save-output toggle |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--isolation auto\|fork\|off` | `auto` (resolves to off) | Run each node's Python in an isolated child process. Linux only. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only) |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` / `--exec-user` | 4096 / 300 / 2 / none | Limits for isolated execution. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
-| `--allow-runtime-install` / `--no-allow-runtime-install` | on locally, off with `--auth` / `--deploy` | Whether the sandbox's `POST /install` endpoint accepts `pip install` requests |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+
+Node-execution isolation has no flag of its own: `--deploy` turns it on wherever the host can provide it (Linux, plus an unprivileged execution account, which the Docker image creates as `curio-exec`). Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed, so a host that cannot provide isolation refuses to start rather than run without it. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 
 **Hosts, ports, and diagnostics**
 
 `--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
 
 > [!WARNING]
-> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it now requires a shared secret, there is no reason to offer that surface to the network.
+> Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it requires a shared secret, there is no reason to offer that surface to the network.
 
 > [!NOTE]
-> `--force-rebuild` and `--force-db-init` exist only in dev mode, which `curio.py` sets and the pip entry point does not. From a pip install or inside Docker they are rejected as unknown arguments; rebuild by other means there.
+> `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
 Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
@@ -83,9 +94,9 @@ The three startup modes control which pages are shown when a user first opens Cu
 | Mode | Login page | Project page | Typical use |
 |------|-----------|--------------|-------------|
 | *(default)* | No (auto sign-in as shared guest) | Yes | Local single-user development |
-| `--auth` / `--deploy` | Yes | Yes | Multi-user or production deployment |
+| `--deploy` | Yes | Yes | Multi-user instance, locally or on a server |
 | `--no-project` | No (auto sign-in as shared guest) | No, opens the canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
+| `--collab` | Stackable with other modes (pairs naturally with `--deploy`) | n/a | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
@@ -172,7 +183,7 @@ To install all requirements, inside the root folder:
 
 ```console
 pip install -r requirements.txt
-conda install -c conda-forge nodejs=24
+conda install -c conda-forge nodejs=26
 ```
 
 You can now use `curio.py` to start everything:
@@ -220,7 +231,7 @@ npm run build
 
 Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) all answer through one provider, configured in **AI Settings**.
 
-Curio ships no endpoint of its own, so an instance whose operator configures nothing resolves no provider and says so rather than sending prompts somewhere nobody chose. Each user can connect their own account, or you can configure a shared key for guest users.
+Curio ships no endpoint of its own. Each user can connect their own account, or you can configure a shared key for guest users; until one of those is set, the AI surfaces report that no provider is configured.
 
 ### Logged-in users
 
@@ -228,7 +239,7 @@ Logged-in users configure their own connection in **AI Settings**, reachable fro
 
 The panel sets the provider, base URL, API key, model, and a HuggingFace token (used only for gated models in the Street Vision node). Each field falls back to the deployment default when you leave it blank, so filling in only one box keeps the rest of the operator's configuration. Key and base URL are not inherited across providers: switching to Anthropic does not lend you the deployment's OpenAI-compatible endpoint.
 
-**An account holds one API key, against one provider.** The provider tabs pick which provider that is; they are not four separate slots. So the saved-key markers show only on the tab the key was saved under, and saving from a different tab replaces it. Before this was made explicit, every tab claimed a saved key, and saving from one of them kept the previous provider's key under the new provider's name.
+**An account holds one API key, against one provider.** The provider tabs pick which provider that is. The saved-key markers show only on the tab the key was saved under, and saving from a different tab replaces it.
 
 The following providers are supported:
 
@@ -275,7 +286,7 @@ detected text never leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. The backend loads its `.env` relative to its own package directory ([`config.py`](../utk_curio/backend/config.py)), so a `.env` at the repo root is not read by the app. (Docker Compose does read a root `.env`, but only for interpolating values like `BACKEND_URL` into `docker-compose.yml`.)
+Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
 ```bash
 # Required
@@ -309,7 +320,7 @@ GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
-If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.
+If `GUEST_LLM_API_KEY` is not set, the LLM Assistant returns an error for guest users.
 
 ## Node Catalog
 
@@ -326,6 +337,119 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 
 For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
+## Vega-Lite node
+
+The `Vega-Lite` node takes the rows of an upstream `DataFrame` or `GeoDataFrame`
+and renders a spec against them. Columns are addressed by their bare pandas
+names: a column `pop` is `{"field": "pop"}`.
+
+### Drawing a GeoDataFrame
+
+Return a `GeoDataFrame` from a Python node and draw it with `mark: "geoshape"`.
+No conversion step is needed:
+
+```python
+import geopandas as gpd
+
+gdf = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+return gdf
+```
+
+```json
+{
+  "mark": "geoshape",
+  "encoding": { "color": { "field": "zip", "type": "nominal" } }
+}
+```
+
+Two things are filled in for you, and only when you have not written them
+yourself:
+
+- **`encoding.shape`** is wired to the frame's *active* geometry column.
+- **`projection`** is added and fitted to the data: `mercator` for lon/lat
+  coordinates, `{"type": "identity", "reflectY": true}` for a projected CRS
+  such as EPSG:3395. An explicit `projection` of your own is never replaced.
+
+### Several geometry columns
+
+A `GeoDataFrame` can hold more than one geometry column, each under its own
+pandas name. The active column is wired automatically; name any other
+explicitly:
+
+```json
+{ "shape": { "field": "centroid", "type": "geojson" } }
+```
+
+A `geoshape` mark draws a `Point` as a small filled circle. If a spec asks for
+`geoshape` and the node cannot tell which column to draw, it says so in the node
+body and lists the candidates.
+
+If you paste a spec into a vanilla Vega editor, add the projection yourself.
+Interval brushing over a projection does not propagate downstream:
+Vega-Lite rewrites those selections to internal row ids, so no named columns
+reach the Data Pool. Point selection works normally.
+
+Geometry is attached only when the spec draws it; a bar chart over a
+`GeoDataFrame` sees its non-geometry columns.
+
+Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodataframe-maps.md).
+
+### The starter spec
+
+A newly dropped `Vega-Lite` node opens **empty**. When an input arrives, and
+only while the spec buffer is still empty, the editor fills with a complete
+starter spec chosen from the input's column types. It never overwrites anything
+you have typed, and it never runs the node: you still press play.
+
+Connecting an edge is not enough on its own. An edge carries no column types
+until the upstream node has actually produced output, so a connected-but-unrun
+node stays empty and says *"Run the node feeding this one"*. The spec appears
+the moment that run finishes.
+
+Columns are classified by pandas dtype:
+
+| pandas dtype | role |
+|---|---|
+| `geometry`, or the frame's active geometry column | geometry |
+| `datetime64[*]`, `period[*]`, `timedelta64[*]` | temporal |
+| `int*`, `uint*`, `float*` | quantitative |
+| `bool`, `object`, `str`, `string`, `category` | nominal |
+| `__row_index__`, and nominal columns with one distinct value per row (identifiers) | ignored |
+
+The first matching rule wins:
+
+| the input has | you get |
+|---|---|
+| geometry + at least one quantitative | `geoshape` choropleth, coloured by the first quantitative column |
+| geometry only | `geoshape`, no colour |
+| temporal + quantitative | `line`, time on x |
+| nominal + quantitative | `bar`, **explicitly aggregated** with `mean` |
+| two or more quantitative | `point` scatter of the first two |
+| one quantitative | `bar` histogram: binned x, `count` y |
+| one nominal | `bar` of counts |
+| nothing usable | the editor stays empty |
+
+
+## Dashboards
+
+A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`: the nodes you
+pinned, and nothing else. Anyone with the link can open it, and the tiles draw without
+running anything.
+
+- **Pin** the nodes to show, with the pin control in each node's header. Pinning also
+  saves the outputs feeding those nodes to your Data Catalog, which is what the page
+  draws from later.
+- **Open** it from **Share ⏷ → Open dashboard**, which opens a new tab. The same menu
+  copies either link.
+- **Save the dataflow** after pinning or rearranging: the page shows what is on disk.
+- **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
+  and **Save layout** records where they sit, without touching the canvas positions.
+- **Sharing** works like a `/dataflow/<id>` link: read-only for everyone but the owner,
+  and a visitor without an account needs guest sign-in (on unless `CURIO_ENV=prod`).
+
+An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
+console output is not restored: no saved dataset carries it.
+
 ## Data Catalog
 
 Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
@@ -336,19 +460,25 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
 
-A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere. This is off by default, so turn the toggle on for the nodes whose output you want to keep; set `CURIO_DEFAULT_SAVE_NODE_OUTPUT=1` to turn it on for every node instead.
+A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is always `<install_root>/packages/`, resolved relative to
-> the installed `utk_curio` package with no env override. On a pip install that
-> is inside `site-packages`, so publishing a node package there is at best
-> non-persistent. That is one more reason to author node packages from a git
-> checkout (see [Authoring nodes](AUTHORING-NODES.md)).
+> package* catalog is always `<install_root>/packages/`, with no env override.
+> On a pip install that path is inside `site-packages`, so author node packages
+> from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
 For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+
+## Data Lake Catalog
+
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach - Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback - so you can browse one and download into your Data Catalog rather than hand-writing fetch code.
+
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They are operator-authored: there is no import route, because a source declares a host the server makes outbound requests to on your behalf.
+
+See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 
@@ -356,7 +486,7 @@ Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of
 them, covering chat, debugging, node authoring, dataset discovery, planning and
 evaluation. Which model answers is the provider set in **AI Settings** above.
 
-There are two scopes, and they are different writes:
+There are two scopes:
 
 - **`/catalog/agents`**, the third tab beside the node and data catalogs, is
   your **account**. Adding an agent here makes it available to every dataflow.
@@ -374,7 +504,7 @@ drop it is what it attaches to:
 - **the canvas**, for agents that work over the whole dataflow.
 
 An agent only accepts the targets its manifest declares, so dropping one
-somewhere it does not belong is refused rather than silently rebound. Node
+somewhere it does not belong is refused. Node
 agents appear as a badge on their node; canvas and connection agents appear in
 the dock at the top of the canvas.
 
@@ -441,7 +571,7 @@ and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default. Passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
+`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default and needs no rebuild to turn on.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

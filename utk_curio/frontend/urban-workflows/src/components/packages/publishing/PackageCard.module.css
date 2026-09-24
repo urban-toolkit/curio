@@ -334,4 +334,5 @@
 .avatar_shp { background: var(--curio-format-shp-bg) !important; color: var(--curio-format-shp-on-tint); }
 .avatar_bundle { background: var(--curio-format-bundle-bg) !important; color: var(--curio-format-bundle-on-tint); }
 .avatar_osm { background: var(--curio-format-osm-bg) !important; color: var(--curio-format-osm-on-tint); }
+.avatar_gpkg { background: var(--curio-format-gpkg-bg) !important; color: var(--curio-format-gpkg-on-tint); }
 

@@ -53,3 +53,61 @@ def can_manage_shared_catalog(user) -> bool:
     account is behind the call.
     """
     return not is_shared_guest(user)
+
+
+def install_refusal(user, *, noun: str = "packages") -> str | None:
+    """Why *user* may not trigger a pip run here, or ``None`` if they may.
+
+    One rule for every install path. It used to be two: the ``/libraries``
+    routes checked the guest rule (#309) and the eight package routes that reach
+    the same chokepoint checked nothing at all (#332). The question is the same
+    either way, because the interpreter is the same.
+
+    Two parts, in this order, and the order matters:
+
+    1. **No auth means a local run, and a local run always may.** Without
+       ``--deploy`` there is no auth, the single local user is signed in as the
+       guest, and there is no isolation. One person, one interpreter, their own
+       machine: nothing to scope, and nobody to protect them from. Installing
+       and removing libraries there is the everyday path.
+    2. **A hosted guest may not.** Every anonymous visitor resolves to one
+       account, so one visitor's install changes what every other visitor's
+       nodes import, and the disk it costs has no owner to account it to.
+
+    There used to be a third: nobody may on a hosted instance that cannot scope
+    installs. That instance no longer exists. ``--deploy`` now requires isolated
+    node execution and refuses to start without it
+    (``main.py::_refuse_unisolated_deploy``), so a signed-in user's install
+    always lands in their own overlay. The rule had an escape hatch
+    (``--allow-shared-installs``) which went with it: a configuration nobody can
+    boot needs no flag to permit it.
+
+    ``None`` passes, as it does for :func:`can_manage_shared_catalog`: that is
+    the launcher installing every manifest's dependencies at boot, which has no
+    request and no user, and refusing it would refuse startup.
+
+    Read at call time so tests and a reloaded config are honoured.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH:
+        return None
+    if user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            f"Installing {noun} is not available for guest users, because every "
+            f"guest shares one account. Sign in with an account to install one."
+        )
+
+    return None
+
+
+def library_install_refusal(user) -> str | None:
+    """Why *user* may not install or remove a library. See :func:`install_refusal`."""
+    return install_refusal(user, noun="libraries")
+
+
+def package_install_refusal(user) -> str | None:
+    """Why *user* may not install a package. See :func:`install_refusal`."""
+    return install_refusal(user, noun="packages")

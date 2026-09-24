@@ -1,0 +1,29 @@
+{
+  "id": "lake.esri.hub-opendata",
+  "name": "ArcGIS Hub Open Data",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Esri's open data hub, aggregating the public feature layers that cities, counties and agencies publish through ArcGIS.",
+  "publisher": "Esri",
+  "homepage": "https://hub.arcgis.com",
+  "license": "See each dataset's own terms",
+  "tags": ["geospatial", "arcgis", "global"],
+  "icon": "icon.png",
+  "provider": {
+    "type": "arcgis",
+    "baseUrl": "https://hub.arcgis.com",
+    "options": { "apiPath": "/api/v3/datasets" }
+  },
+  "auth": { "mode": "public" },
+  "capabilities": {
+    "search": true,
+    "describe": true,
+    "download": true,
+    "formats": ["geojson", "csv"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": false
+  },
+  "limits": { "requestsPerMinute": 20 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

@@ -16,29 +16,38 @@ requires-python = ">=3.12,<3.13"
 # pip-installed by the launcher at ``curio start`` — see
 # ``packages/curio.builtin@1/manifest.json`` for the worked example.
 dependencies = [
-  "requests==2.33.1",
-  "python-dotenv==1.2.2",
-  "Flask==3.1.3",
-  "Flask-Caching==2.4.0",
-  "Flask-Migrate==4.1.0",
-  "Flask-SQLAlchemy==3.1.1",
-  "openai==2.36.0",
+  "requests>=2.33.1",
+  "python-dotenv>=1.2.2",
+  "Flask>=3.1.3",
+  "Flask-Caching>=2.4.0",
+  "Flask-Migrate>=4.1.0",
+  "Flask-SQLAlchemy>=3.1.1",
+  "openai>=2.36.0",
   "anthropic>=0.100.0",
   "google-generativeai>=0.8.6",
   "altair>=6.1.0",
   "tqdm>=4.67.3",
   "pygments>=2.20.0",
+  "flask-socketio>=5.6.0",
+  "python-socketio>=5.16.2",
+  "python-engineio>=4.13.2",
   # Validates manifests and dataflow specs against docs/schemas/*.json.
   # See requirements.txt for why this is a floor and not an exact pin.
   "jsonschema>=4.18",
+  # Detects the encoding of text dataset imports so they can be stored as
+  # UTF-8. See requirements.txt for why this is declared and not left
+  # transitive.
+  "charset-normalizer>=3.3",
   "psutil>=5.9",
   "pyseccomp>=0.1.2; sys_platform == 'linux'",
-  "pytest==9.0.3",
-  "pytest-cov==7.1.0",
-  "pytest-playwright==0.7.2",
-  "pytest-xdist==3.8.0",
-  "pytest-flask==1.3.0",
-  "allure-pytest==2.16.0"
+  "pytest>=9.0.3",
+  "pytest-cov>=7.1.0",
+  "pytest-playwright>=0.7.2",
+  "pytest-xdist>=3.8.0",
+  "pytest-flask>=1.3.0",
+  "allure-pytest>=2.16.0",
+  "Pillow>=10.0",
+  "numpy>=1.26"
 ]
 
 [project.scripts]

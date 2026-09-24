@@ -64,9 +64,10 @@ def _guard():
 
     A ``before_request`` returning a response rather than a per-handler
     ``abort(404)``: it covers every route in the blueprint including any added
-    later, and it does not go through ``create_app``'s
-    ``@app.errorhandler(Exception)``, which catches ``HTTPException`` too and
-    would turn this refusal into a 500 that reads as a server fault. Same
+    later. It was also written this way to walk past ``create_app``'s
+    ``@app.errorhandler(Exception)``, which used to rewrite every
+    ``HTTPException`` to a 500; that is fixed (#279) and ``abort(404)`` would
+    now answer 404, but the blanket coverage is reason enough to keep it. Same
     reasoning as :func:`_scripted_guard` below.
     """
     if not _is_dev() or not _is_testing():
@@ -232,40 +233,19 @@ def dataset_paths():
 def _clear_test_user_stores() -> list[str]:
     """Delete the on-disk trees that :func:`reset_db`'s truncate would orphan.
 
-    Emptying ``user`` and leaving ``.curio/test/users/`` behind is not a clean
-    slate, it is a trap: the store path contains ``user.id``, SQLite reissues
-    ids from 1 after a delete, and so the next account created by a test opens
-    onto the previous one's imported agents, installed packages, datasets and
-    projects. Four separate failures in the #186-#203 follow-ups were that,
-    each of them reading as a product bug until the store was listed by hand.
+    The work lives in ``common.user_storage.clear_test_stores`` so the e2e
+    harness's own truncate path can call it without going through HTTP (#308);
+    see its docstring for why leaving the stores behind is a trap.
 
-    Removes the per-user tree and its sibling published-agents catalog, which
-    ``agents/publications.py`` derives from the same root and which leaks the
-    same way.
-
-    Refuses to touch anything outside ``.curio/test/``. The blueprint guard
-    already requires ``CURIO_TESTING``, but this function deletes user data, so
-    it re-checks rather than trusting a caller to have been routed correctly:
-    without the flag ``users_base()`` is a developer's real store.
+    The blueprint guard already requires ``CURIO_TESTING``, but this deletes
+    user data, so it re-checks rather than trusting a caller to have been
+    routed correctly.
     """
-    from utk_curio.backend.app.common.user_storage import curio_root, users_base
+    from utk_curio.backend.app.common.user_storage import clear_test_stores
 
     if not _is_testing():  # pragma: no cover - the blueprint guard precedes us
         return []
-    root = curio_root().resolve()
-    if root.name != "test":
-        log.warning("refusing to clear stores: %s is not a test root", root)
-        return []
-
-    cleared = []
-    for target in (users_base(), (root / "agents-catalog").resolve()):
-        if not is_within(target, root):  # pragma: no cover - both are children
-            continue
-        if not target.exists():
-            continue
-        shutil.rmtree(target, ignore_errors=True)
-        cleared.append(target.name)
-    return cleared
+    return clear_test_stores()
 
 
 @testing_bp.route("/reset-db", methods=["POST"])
@@ -385,11 +365,11 @@ def stub_project():
 def _scripted_guard():
     """A 404 response when these routes must not exist, else ``None``.
 
-    Deliberately not ``abort(404)`` like :func:`_guard`. ``create_app`` installs
-    an ``@app.errorhandler(Exception)`` that catches ``HTTPException`` too and
-    rewrites it to a 500, so an aborting guard here would answer 500 and the
-    refusal would read as a server fault. Returning the response walks past that
-    handler and says what it means.
+    Returns the response rather than ``abort(404)``, matching :func:`_guard`.
+    The original reason was that ``create_app``'s ``@app.errorhandler(Exception)``
+    rewrote every ``HTTPException`` to a 500; since #279 an ``HTTPException``
+    keeps its own code, so either form would answer 404 now. Left as-is because
+    the two guards should look alike.
     """
     if not _is_dev() or not testing_provider.enabled():
         return jsonify({"error": "not found"}), 404

@@ -19,6 +19,12 @@ from playwright.sync_api import (
     expect,
 )
 
+# Code-shaping helpers live in workflow_spec (no pytest/playwright imports)
+# so the non-browser runners -- this module and tests/stress -- can share
+# them. Re-exported here because call sites across the suite import them
+# from utils.
+from .workflow_spec import resolve_widget_placeholders, seed_node_code  # noqa: F401
+
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -175,44 +181,6 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     # re-parsed copy at once, on top of the programmatic run's expected map.
     result.pop('filename', None)  # artifact ID varies per execution run
     return result
-
-
-# ---------------------------------------------------------------------------
-# Deterministic seeding for reproducible programmatic execution
-# ---------------------------------------------------------------------------
-
-_SEED_PREFIX = (
-    "import numpy as _np; _np.random.seed({seed}); "
-    "import random as _rnd; _rnd.seed({seed})\n"
-)
-
-
-def seed_node_code(code: str, seed: int = 42) -> str:
-    """Prepend deterministic random-seed lines to *code*.
-
-    Uses underscore-prefixed aliases (``_np``, ``_rnd``) so the seed
-    imports never shadow the user's own ``import numpy as np``.
-    """
-    return _SEED_PREFIX.format(seed=seed) + code
-
-
-_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
-
-
-def resolve_widget_placeholders(code: str) -> str:
-    """Replace ``[!! name$type$default !!]`` widget markers with defaults.
-
-    The frontend resolves these before sending code to the sandbox; the
-    programmatic executor must do the same.
-    """
-    def _replace(m):
-        parts = m.group(1).split("$")
-        if len(parts) >= 3:
-            return parts[2]
-        return m.group(0)
-    return _WIDGET_RE.sub(_replace, code)
-
-
 
 
 def state_root() -> str:
@@ -689,7 +657,11 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 
     sandbox_url = sandbox_base_url()
 
-    from .workflow_spec import PY_CODE_TYPES
+    from .workflow_spec import (
+        PY_CODE_TYPES,
+        propagate_node_input,
+        resolve_node_input,
+    )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
@@ -699,33 +671,20 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         # (JS_COMPUTATION) — propagate upstream output without execution: the
         # Python-exec path below would parse-error on JS source.
         if node.category != "code" or node.type not in PY_CODE_TYPES:
-            upstreams = spec.upstream_nodes(node.id)
-            if len(upstreams) == 1 and upstreams[0] in outputs:
-                outputs[node.id] = outputs[upstreams[0]]
-            elif len(upstreams) > 1:
-                outputs[node.id] = {
-                    "path": [outputs[uid] for uid in upstreams if uid in outputs],
-                    "dataType": "outputs",
-                }
+            propagated = propagate_node_input(spec, node.id, outputs)
+            if propagated is not None:
+                outputs[node.id] = propagated
             continue
 
         # Resolve input (mirrors process_python_code in backend routes.py)
-        upstreams = spec.upstream_nodes(node.id)
-        if not upstreams:
-            file_path = ""
-            data_type = ""
-        elif len(upstreams) == 1:
-            up = outputs[upstreams[0]]
-            if up.get("dataType") == "outputs":
-                # Pass as stringified list; worker.py eval()s it back
-                file_path = str(up["path"])
-                data_type = "outputs"
-            else:
-                file_path = up["path"]
-                data_type = up["dataType"]
-        else:
-            file_path = str([outputs[uid] for uid in upstreams])
+        ref = resolve_node_input(spec, node.id, outputs)
+        if ref["dataType"] == "outputs":
+            # Pass as stringified list; worker.py eval()s it back
+            file_path = str(ref["path"])
             data_type = "outputs"
+        else:
+            file_path = ref["path"]
+            data_type = ref["dataType"]
 
         # Sandbox /exec expects code already indented as a function body
         resolved = resolve_widget_placeholders(node.content)
@@ -994,6 +953,9 @@ def dismiss_toasts(
     Safe to call when there are none. Bounded by *max_rounds*, so a toast that
     genuinely re-fires forever costs a few seconds rather than hanging - it just
     ends up in the screenshot, which is the honest outcome.
+
+    Closes the stack from the bottom up; see the comment on the click for why
+    the top of it may be unreachable.
     """
     container = page.locator('[aria-label="Notifications"]')
     dismissed = 0
@@ -1005,11 +967,27 @@ def dismiss_toasts(
             buttons = container.locator("button.btn-close")
             if buttons.count() == 0:
                 break
+            # From the BOTTOM of the stack, not the top. The region is anchored
+            # to the bottom of the viewport and grows upward, so once enough
+            # toasts are up the oldest is clipped off the TOP of the screen -
+            # and a position:fixed element off-screen cannot be scrolled into
+            # view, so clicking `first` times out and the sweep returns having
+            # closed nothing. `run-all-survives-a-failed-node` ends with five
+            # error toasts and lost 26.87% of its frame to exactly that. The
+            # last toast is always on screen, and closing it brings the rest
+            # down one slot.
             try:
-                buttons.first.click(timeout=1000)
+                buttons.last.click(timeout=1000)
                 dismissed += 1
             except PlaywrightTimeoutError:
-                break
+                # Still unreachable - covered, or mid-transition. Close it the
+                # way its own button would, so one stuck toast cannot wedge the
+                # sweep for every toast behind it.
+                try:
+                    buttons.last.evaluate("el => el.click()")
+                    dismissed += 1
+                except Exception:
+                    break
 
         # Did another arrive during the quiet window? wait_for_function resolving
         # means one showed up, so loop and clear it; a timeout means quiet.
@@ -1024,6 +1002,89 @@ def dismiss_toasts(
     return dismissed
 
 
+#: Whether a missing baseline may be created by this run. Off unless
+#: ``--mint-baselines`` was passed (see ``tests/conftest.py``), so no ordinary
+#: run - local or CI, serial or parallel - can mint one as a side effect.
+#:
+#: A module global rather than an environment variable on purpose: an env var
+#: survives in a shell and gets inherited by the next run, which is exactly how
+#: someone mints without meaning to. A CLI flag has to be typed each time and is
+#: recorded in the command.
+MINT_BASELINES = False
+
+#: The app's first font is Rubik, fetched from Google Fonts at runtime
+#: (src/index.html). Everything after it in the stack is a system fallback, so
+#: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
+#: baseline minted during a CDN hiccup is rendered in Liberation Sans or
+#: Helvetica and then disagrees with every later run forever, for a reason no
+#: diff percentage explains.
+WEBFONT_FAMILY = "Rubik"
+WEBFONT_TIMEOUT_MS = 15000
+
+
+def _wait_for_webfont(page) -> bool:
+    """Wait for the app's webfont to finish loading. Returns whether it did.
+
+    Never raises. On a comparison run a missing font will show up as a diff,
+    which is the honest outcome; it is the MINT path that must refuse (see
+    :func:`_assert_mintable`). Waiting here rather than only when minting means
+    both sides of a comparison are quiesced the same way.
+    """
+    try:
+        page.wait_for_function(
+            "document.fonts && document.fonts.status === 'loaded'",
+            timeout=WEBFONT_TIMEOUT_MS,
+        )
+    except Exception:  # noqa: BLE001 - a font wait must never fail a test
+        pass
+    # NOT document.fonts.check(): it answers "would this render?", and with the
+    # stylesheet missing there is no @font-face for Rubik at all, so the family
+    # resolves straight to a system fallback and check() reports true. Verified
+    # by blackholing fonts.googleapis.com: check() said true while the capture
+    # came out in a different typeface, 9% off the real baseline.
+    #
+    # The honest signal is whether a FontFace for the family is actually loaded,
+    # which is empty when the stylesheet never arrived.
+    try:
+        return bool(page.evaluate(
+            "(family) => !!document.fonts && "
+            "[...document.fonts].some(f => "
+            "  (f.family || '').replace(/[\"\']/g, '').includes(family) "
+            "  && f.status === 'loaded')",
+            WEBFONT_FAMILY,
+        ))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _assert_mintable(image, expected_path: str, page) -> None:
+    """Refuse to write a baseline that is obviously not what we came for.
+
+    Two ways a mint goes wrong silently, both of which pass the comparison that
+    immediately follows because it compares the capture against itself:
+
+    * the webfont did not load, so the text is in a fallback typeface;
+    * the capture is blank - a renderer starved of memory, or an element that
+      was 'visible' but not yet painted, yields a single flat colour.
+
+    A wrong baseline is worse than no baseline: it enshrines the defect as
+    expected output, which is the whole complaint behind #308 and #333.
+    """
+    if not _wait_for_webfont(page):
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the "
+            f"{WEBFONT_FAMILY} webfont did not load, so this capture is in a "
+            f"fallback typeface and would disagree with every later run. Check "
+            f"network access to fonts.googleapis.com and re-run."
+        )
+    if len(image.convert("RGB").getcolors(maxcolors=2) or []) == 1:
+        raise AssertionError(
+            f"refusing to mint {os.path.basename(expected_path)}: the capture "
+            f"is a single flat colour, i.e. blank. The element was reported "
+            f"visible but nothing was painted."
+        )
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -1033,6 +1094,7 @@ def save_workflow_test_screenshot(
     max_diff_ratio: float = 0.20,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
+    sweep_toasts: bool = False,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1047,17 +1109,23 @@ def save_workflow_test_screenshot(
     Allure report so that reviewers can inspect the regression directly
     from the GitHub Actions artifact.
 
-    If the file does **not** exist yet the screenshot is saved as the new
-    baseline. Note that a first run therefore *always* passes - generate a
-    baseline deliberately, against a build where the behaviour is already
-    correct, and eyeball the PNG before committing it. A baseline captured
-    against a broken build enshrines the bug as expected output.
+    If the file does **not** exist the run FAILS. Creating a baseline is a
+    deliberate act, ``pytest --mint-baselines``, because whatever the app renders
+    that day becomes the definition of correct for every run afterwards.
 
-    That minting happens in serial runs only. Under xdist (``PYTEST_XDIST_WORKER``
-    set), or whenever ``CURIO_E2E_REQUIRE_BASELINES=1``, a missing baseline is a
-    failure instead: with several workers a mis-derived environment or a grouping
-    bug can change what renders, and a silently written baseline would turn that
-    into a pass. Set ``CURIO_E2E_REQUIRE_BASELINES=0`` to mint anyway.
+    It used to mint implicitly, which meant a first run always passed. Two ways
+    that bites, both seen: a baseline captured against a broken build enshrines
+    the bug as expected output and the suite then *defends* it; and a baseline
+    captured on the wrong machine enshrines that machine. The second is not
+    hypothetical - the macOS captures of the two #333 scenes looked perfect and
+    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
+    because macOS rasterizes text with grayscale antialiasing and the runner uses
+    LCD subpixel.
+
+    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
+    minting in a serial run and refusing under xdist. That was the wrong axis:
+    serialness says nothing about whether a capture deserves to become the
+    reference, and the one that would have broken CI was minted serially.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
@@ -1068,6 +1136,16 @@ def save_workflow_test_screenshot(
     than the page. The capture is then that element's box, so every pixel is
     about the thing under test and the diff budget is spent on it instead of on
     surrounding chrome.
+
+    Pass *sweep_toasts* instead of calling :func:`dismiss_toasts` yourself
+    beforehand - and never as well as, each sweep costs its own quiet window.
+    Sweeping outside this helper leaves a gap between the region going quiet and
+    the shutter: the viewport wait below is seconds on a loaded runner, and an
+    error toast now stays until it is dismissed, so anything arriving in that gap
+    is in the baseline for good. `run-all-survives-a-failed-node` collected five
+    of them that way on CI - 26.87% of a frame whose budget is 5% - while the two
+    earlier captures of the same walkthrough, taken before the run that raised
+    them, passed.
 
     Returns the path to the expected screenshot file.
     """
@@ -1085,21 +1163,30 @@ def save_workflow_test_screenshot(
     if fit_reactflow:
         _wait_for_reactflow_ready(page)
 
+    # After the viewport wait, not before it: this is the last moment the page
+    # can be quieted, so it is the only sweep that holds until the capture.
+    if sweep_toasts:
+        dismiss_toasts(page)
+
+    _wait_for_webfont(page)
+
     def _capture():
         if clip_selector is not None:
             return _capture_element(page, clip_selector)
         return _capture_full_page(page)
 
     if not os.path.isfile(expected_path):
-        if env_flag("CURIO_E2E_REQUIRE_BASELINES",
-                    default=bool(os.environ.get("PYTEST_XDIST_WORKER"))):
+        if not MINT_BASELINES:
             raise AssertionError(
-                f"no baseline at {expected_path}. Parallel runs never mint "
-                "baselines: generate it with a serial run (or set "
-                "CURIO_E2E_REQUIRE_BASELINES=0) and eyeball the PNG before "
-                "committing it."
+                f"no baseline at {expected_path}. Run with --mint-baselines to "
+                "create it, on a build you trust and a machine whose rendering "
+                "matches CI's, then look at the PNG before committing it. A "
+                "baseline is the definition of correct for every later run, so "
+                "it is not something a test run should produce as a side effect."
             )
-        _capture().save(expected_path)
+        minted = _capture()
+        _assert_mintable(minted, expected_path, page)
+        minted.save(expected_path)
 
     expected_img = Image.open(expected_path).convert("RGB")
     actual_img = _capture()
@@ -1435,12 +1522,12 @@ def require_owner_view(page, *, timeout: float = 4000) -> None:
     them, so a browser that lands as the shared guest sees empty catalogs -
     which means every test guarded by this is testing nothing. Skipping made
     that invisible: ``scripts/test.sh`` booted its shared stack without
-    ``--auth``, and 43 tests across 22 files - the whole agent-catalog suite
+    ``--deploy``, and 43 tests across 22 files - the whole agent-catalog suite
     among them - quietly skipped while the run reported green.
 
     The environment being wrong is a setup bug, and a setup bug should be loud.
     Detection is unchanged; only the consequence is. The fix when this fires is
-    to boot with ``--auth`` (which ``scripts/test.sh`` and the
+    to boot with ``--deploy`` (which ``scripts/test.sh`` and the
     ``curio_servers`` fixture both now do), never to tolerate the state.
     """
     banner = page.get_by_test_id("shared-view-banner")
@@ -1451,9 +1538,9 @@ def require_owner_view(page, *, timeout: float = 4000) -> None:
     raise AssertionError(
         "Dataflow opened read-only as the shared guest, so this test would "
         "assert against empty catalogs. The stack is running without user "
-        "auth: boot it with `--auth` (scripts/test.sh does, and so does the "
+        "auth: boot it with `--deploy` (scripts/test.sh does, and so does the "
         "curio_servers fixture), or unset CURIO_NO_AUTH in the pytest "
-        "environment so the fixture passes --auth for you."
+        "environment so the fixture passes --deploy for you."
     )
 
 
@@ -1492,6 +1579,39 @@ def open_tools_palette(page, kind: str):
         trigger.click(force=True)
     panel.wait_for(state="visible", timeout=10000)
     return panel
+
+
+def click_package_summary_action(page, anchor, title: str):
+    """Click one of a package row's summary actions ("Export package", "Edit
+    package metadata") only once the row has stopped moving.
+
+    Not a plain ``click(force=True)``, because that is issue #334's "download
+    never arrives".
+
+    The palette renders its rows from the installed-package registry, but the
+    ``CatalogPublishPill`` in each row's summary waits on a separate catalog
+    snapshot (three parallel API calls behind one ``setState``). The summary's
+    actions live in a flex cluster whose title is ``flex: 1``, so it absorbs the
+    slack: when that pill finally mounts, every button to its left jumps ~65px
+    left - measured, not estimated.
+
+    ``force=True`` turns off Playwright's hit-target check, so a click aimed at
+    Export and dispatched just after that jump lands on Publish instead. The
+    confirm dialog opens, its overlay covers the palette, the export is never
+    requested, and the test sits out its whole budget waiting for a download
+    that was never going to come. Under CI load the snapshot lands later, which
+    is why it read as "CI load".
+
+    Two guards, so neither has to be perfect: wait for the palette to report
+    its catalog snapshot in, and then click WITHOUT ``force`` so Playwright
+    verifies the button is what actually receives the click.
+    """
+    expect(
+        page.locator('#packages-palette [data-curio-palette-catalog]')
+    ).to_have_attribute("data-curio-palette-catalog", "loaded", timeout=30000)
+    button = anchor.locator(f'button[title="{title}"]')
+    expect(button).to_be_visible(timeout=20000)
+    button.click()
 
 
 def close_tools_palette(page, kind: str) -> None:
@@ -1821,6 +1941,122 @@ _DRAG_TO_CANVAS_JS = r"""({ source, targetSelector, clientX, clientY }) => {
 }"""
 
 
+def edge_client_point(page, *, on_miss=None) -> tuple[float, float] | None:
+    """A point that ``pickEdgeAtPoint`` will actually resolve to an edge.
+
+    React Flow draws a wide invisible ``.react-flow__edge-interaction`` path
+    under every edge precisely so a pointer can land on a curve, and
+    ``pickEdgeAtPoint`` hit-tests it with ``elementFromPoint``
+    (``agentCatalogEvents.ts``). Two things make the obvious "take the midpoint"
+    version wrong:
+
+    * a bezier's bounding-box centre is usually empty space, so the point has to
+      come from ``getPointAtLength`` on the path itself; and
+    * the open agent palette is a ~545px strip floating *over* the left of the
+      canvas, so a point that is geometrically on the edge can still be occluded
+      - and ``elementFromPoint`` would return the palette, which resolves to no
+      edge and silently attaches to the canvas instead.
+
+    So this samples along the curve and returns the first point that
+    ``elementFromPoint`` resolves to an edge, which is the same question the drop
+    handler asks. ``None`` means no such point exists right now, and the caller
+    skips the beat rather than recording a mislabelled one.
+
+    "The same question" is meant literally, and it has to be kept that way: an
+    edge that already carries agent badges resolves through them as well as
+    through its own group (``EDGE_AGENT_BADGES_ATTR``, #296), because the badges
+    sit on React Flow's label layer and cover the midpoint this walk starts
+    from. Before that branch was mirrored here, every caller on a canvas with a
+    connection agent attached simply found nothing and skipped.
+    """
+    point = page.evaluate(
+        """() => {
+            const path = document.querySelector(
+                '.react-flow__edge .react-flow__edge-interaction'
+            ) || document.querySelector('.react-flow__edge path');
+            if (!path || !path.getPointAtLength) return null;
+            const total = path.getTotalLength();
+            if (!total) return null;
+            const svg = path.ownerSVGElement;
+            const ctm = path.getScreenCTM();
+            const rf = window.__curio_reactFlow;
+            if (!svg || !ctm || !rf) return null;
+
+            const toFlow = (x, y) => (
+                rf.screenToFlowPosition
+                    ? rf.screenToFlowPosition({ x, y })
+                    : rf.project({ x, y })
+            );
+            // handleDrop's precedence, restated: pickNodeAtPoint runs first and
+            // a hit there wins, so a point that is visually on the curve still
+            // attaches to a NODE if it falls inside that node's box. React
+            // Flow's boxes are generous - a node is 525x350 - and the bezier
+            // dips back over them near its ends.
+            const nodes = rf.getNodes();
+            const insideANode = (flow) => nodes.some((n) => {
+                const o = n.positionAbsolute ?? n.position;
+                if (!o) return false;
+                const w = n.width ?? 0;
+                const h = n.height ?? 0;
+                return flow.x >= o.x && flow.x <= o.x + w
+                    && flow.y >= o.y && flow.y <= o.y + h;
+            });
+
+            // Walk outwards from the midpoint, which is the part of the curve
+            // furthest from both node bodies.
+            const fractions = [
+                0.5, 0.48, 0.52, 0.45, 0.55, 0.42, 0.58, 0.4, 0.6, 0.35, 0.65,
+                0.3, 0.7, 0.25, 0.75, 0.2, 0.8,
+            ];
+            for (const f of fractions) {
+                const at = path.getPointAtLength(total * f);
+                const pt = svg.createSVGPoint();
+                pt.x = at.x;
+                pt.y = at.y;
+                const screen = pt.matrixTransform(ctm);
+                const hit = document.elementFromPoint(screen.x, screen.y);
+                if (!hit || !hit.closest) continue;
+                // Occluded (the palette strip floats over the pane), so
+                // pickEdgeAtPoint would miss it. An edge's own agent badges are
+                // NOT occlusion: pickEdgeAtPoint resolves them back to their
+                // edge, so a point on them is a real drop target for it.
+                if (!hit.closest('.react-flow__edge')
+                    && !hit.closest('[data-curio-edge-badges]')) continue;
+                // Inside a node's box, so pickNodeAtPoint would claim it first.
+                if (insideANode(toFlow(screen.x, screen.y))) continue;
+                return { point: [screen.x, screen.y] };
+            }
+            // Nothing qualified. Hand back what was measured so the caller can
+            // say why rather than just skipping the beat.
+            const mid = path.getPointAtLength(total / 2);
+            const mpt = svg.createSVGPoint();
+            mpt.x = mid.x;
+            mpt.y = mid.y;
+            const mscreen = mpt.matrixTransform(ctm);
+            const hit = document.elementFromPoint(mscreen.x, mscreen.y);
+            return { why: {
+                midScreen: [Math.round(mscreen.x), Math.round(mscreen.y)],
+                midFlow: toFlow(mscreen.x, mscreen.y),
+                topmost: hit ? (hit.className && hit.className.baseVal !== undefined
+                    ? hit.className.baseVal : String(hit.className || hit.tagName)) : null,
+                nodes: nodes.map((n) => {
+                    const o = n.positionAbsolute ?? n.position;
+                    return { id: n.id, x: o && o.x, y: o && o.y,
+                             w: n.width, h: n.height };
+                }),
+            } };
+        }"""
+    )
+    if not point:
+        return None
+    if point.get("point"):
+        found = point["point"]
+        return (found[0], found[1])
+    if on_miss is not None:
+        on_miss(point.get("why"))
+    return None
+
+
 def canvas_nodes(page) -> list[dict]:
     """Every node on the canvas as ``{"id", "nodeType"}``.
 
@@ -2004,7 +2240,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
         raise AssertionError(
             "Drop produced no node. Either the drag payload was empty (the "
             "source's own onDragStart did not run) or the canvas is refusing "
-            "drops (dashboard mode / shared read-only view)."
+            "drops (a shared read-only view)."
         ) from None
 
     created = [n for n in canvas_nodes(page) if n["id"] not in before]
@@ -2209,6 +2445,23 @@ def connect_nodes(page, source_id: str, target_id: str, *,
     return edge_id
 
 
+#: How long to wait for a browser download of an archive the server builds
+#: on click (#334).
+#:
+#: Exporting a package or a dataset is not "save a file the browser already
+#: has": the click makes the backend assemble a zip, and only then does
+#: Chromium fire ``download``. On a shared runner under other jobs that took
+#: longer than the 60 s these waits used to allow, so
+#: ``test_save_export_import_and_run_package_nodes`` failed with
+#: ``TimeoutError: ... waiting for event "download"`` on a branch that touched
+#: neither export nor packaging.
+#:
+#: Raising the ceiling costs nothing when the machine is idle - the wait ends
+#: when the event arrives, which is ~2 s locally - and it is the difference
+#: between a red build and a slow one when it is not. A hang still fails,
+#: two minutes later.
+EXPORT_DOWNLOAD_TIMEOUT_MS = 120000
+
 _HEAVY_NODE_TYPES = {
     "AUTK_GRAMMAR",
     "DATA_LOADING",
@@ -2240,19 +2493,30 @@ def node_execution_timeout_ms(node_type: str) -> int:
 
 
 def read_node_error_text(node_el) -> str | None:
-    """Return the error message text from a code node's inline output
-    area. Returns ``None`` if it cannot be read.
+    """Return a failed node's error message, or ``None`` if it cannot be read.
 
-    Works for both autk behavior nodes and Python/JS code nodes:
-    CodeEditor renders any output (success or error) into the same output box,
-    the one carrying the ``[N]:`` counter. For autk,
-    ``autkBehaviorFactory``'s catch block sets
-    ``output = { code: 'error', content: err.message }``; for
-    COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
-    sandbox's stderr/exception traceback is routed there too. We
-    switch to the code tab so that area is in the layout, then read
-    it.
+    Two sources, in order:
+
+    ``data-curio-node-error`` carries the message for EVERY node type, because
+    it is rendered from the same output the status attribute reads. It is the
+    only source for an AUTK_GRAMMAR node: the grammar editor has no output box,
+    so an Autark failure used to reach this helper as ``None`` and an assertion
+    read "execution failed with Error" with nothing after it (#318).
+
+    Otherwise the inline output area, where CodeEditor renders any output
+    (success or error) into the box carrying the ``[N]:`` counter — the
+    sandbox's stderr/traceback for COMPUTATION_ANALYSIS / DATA_LOADING /
+    DATA_TRANSFORMATION. We switch to the code tab so that area is in the
+    layout, then read it.
     """
+    try:
+        attr = node_el.locator("[data-curio-node-error]").first
+        if attr.count():
+            text = attr.get_attribute("data-curio-node-error")
+            if text and text.strip():
+                return text
+    except Exception:
+        pass
     try:
         code_tab = node_el.locator(
             '.nav-link[data-rr-ui-event-key="code"]'
@@ -2427,6 +2691,212 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     return read_node_output_text(page, node_id)
 
 
+# ---------------------------------------------------------------------------
+# Whole-run (Run All) state
+# ---------------------------------------------------------------------------
+
+#: The Run All control is ONE button whose accessible name flips with the run
+#: (``ToolsMenu.tsx``: ``aria-label={isRunActive ? "Cancel run" : "Run all nodes"}``).
+#: A locator written for one of the two names stops matching the moment the run
+#: changes state, so a click on it can wait out its whole budget for an element
+#: that is right there - the CI signature is a timeout with no "locator resolved
+#: to" line in the call log. Match either name and read the state from
+#: ``data-run-active``, never from which locator happens to resolve.
+RUN_ALL_BUTTON_NAME = re.compile(r"^(Run all nodes|Cancel run)$")
+
+#: The same element, for JS that has to reach it inside the page.
+RUN_ALL_BUTTON_SELECTOR = (
+    '#tools-menu button[aria-label="Run all nodes"], '
+    '#tools-menu button[aria-label="Cancel run"]'
+)
+
+
+def run_all_button(page):
+    """The Run All / Cancel button, in whichever state it currently is."""
+    return page.get_by_role("button", name=RUN_ALL_BUTTON_NAME)
+
+
+# Record every transition of the run guard, so a test can prove a run STARTED
+# without having to catch it mid-flight. A run whose nodes all report in the
+# tick they were triggered is over before any locator can resolve - there is no
+# minimum in-flight window (FlowProvider sets isRunActive true in playAllNodes
+# and false in finishPlayAll, which fires as soon as the last node of the last
+# level reports). Mutation records survive that; a locator cannot.
+#
+# Counted off ``record.oldValue`` rather than the live attribute: several
+# mutations can arrive in one callback, and reading the DOM then reports only
+# the final state. The attribute is either absent or "true", so a record whose
+# oldValue was "true" is an end and any other record is a start.
+#
+# Observed on ``#tools-menu`` with subtree, so a re-created button is still
+# watched.
+_WATCH_RUN_ALL_JS = """() => {
+    const root = document.querySelector('#tools-menu');
+    if (!root) return false;
+    if (window.__curioRunWatch) window.__curioRunWatch.observer.disconnect();
+    const watch = { started: 0, ended: 0 };
+    watch.observer = new MutationObserver((records) => {
+        for (const record of records) {
+            if (record.attributeName !== 'data-run-active') continue;
+            if (record.oldValue === 'true') watch.ended += 1;
+            else watch.started += 1;
+        }
+    });
+    watch.observer.observe(root, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-run-active'],
+        attributeOldValue: true,
+    });
+    window.__curioRunWatch = watch;
+    return true;
+}"""
+
+_READ_RUN_WATCH_JS = """() => window.__curioRunWatch
+    ? { started: window.__curioRunWatch.started,
+        ended: window.__curioRunWatch.ended }
+    : null"""
+
+
+def watch_run_all(page) -> None:
+    """Start recording run-guard transitions. Call BEFORE clicking Run All."""
+    assert page.evaluate(_WATCH_RUN_ALL_JS), (
+        "#tools-menu is not on the page; there is nothing to watch a run on"
+    )
+
+
+def wait_for_run_all_to_end(page, *, timeout_ms: int = 180000,
+                            start_timeout_ms: int = 15000) -> dict:
+    """Wait for the run :func:`watch_run_all` is watching to start and end.
+
+    Returns ``{"started": n, "ended": n}``. Both halves of #271 without catching
+    the run mid-flight: ``started`` says the click was accepted, so the guard
+    had been released, and the wait says the run ended on its own rather than
+    wedging every later click.
+
+    The two waits are separate so a refused click fails in *start_timeout_ms*
+    rather than sitting out the whole run budget - a guard that was never
+    released is not going to release itself three minutes later.
+    """
+    try:
+        page.wait_for_function(
+            "() => (window.__curioRunWatch?.started || 0) > 0",
+            timeout=start_timeout_ms,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            "Run All was never accepted: the run guard never went active "
+            f"within {start_timeout_ms} ms of the click. That is #271 - the "
+            "click was refused or silently dropped."
+        ) from None
+    try:
+        page.wait_for_function(
+            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r});"
+            " return !!b && b.getAttribute('data-run-active') !== 'true'; }",
+            timeout=timeout_ms,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the run did not end within {timeout_ms} ms (guard transitions: "
+            f"{page.evaluate(_READ_RUN_WATCH_JS)}); a node is holding its level"
+        ) from None
+    return page.evaluate(_READ_RUN_WATCH_JS)
+
+
+def run_all_and_wait(page, *, timeout_ms: int = 180000) -> dict:
+    """Click Run All, prove the run started, and wait for it to end."""
+    watch_run_all(page)
+    run_all_button(page).click()
+    return wait_for_run_all_to_end(page, timeout_ms=timeout_ms)
+
+
+# ---------------------------------------------------------------------------
+# Holding a run open on purpose
+# ---------------------------------------------------------------------------
+
+# Every node execution leaves the browser as one POST: Python and data-loading
+# nodes through ``/processPythonCode`` (PythonInterpreter.ts) and an Autark data
+# section through ``/processJavaScriptCode`` (JavaScriptInterpreter.ts). A level
+# cannot advance until its nodes report, so holding those requests holds the
+# run - which is how a test that needs the button to say "Cancel run" gets a
+# window it owns instead of one it races.
+#
+# Wrapped in the page rather than through ``page.route``: the sync API runs a
+# route handler on the dispatcher thread, so blocking in one blocks the very
+# wait it was supposed to make winnable.
+_HOLD_NODE_EXEC_JS = r"""() => {
+    if (window.__curioHeldExec) return true;
+    const real = window.fetch.bind(window);
+    const state = { real, held: [], seen: 0 };
+    window.__curioHeldExec = state;
+    window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (!/\/process(Python|JavaScript)Code/.test(url)) return real(input, init);
+        state.seen += 1;
+        return new Promise((resolve, reject) => {
+            state.held.push(() => real(input, init).then(resolve, reject));
+        });
+    };
+    return true;
+}"""
+
+_RELEASE_NODE_EXEC_JS = """() => {
+    const state = window.__curioHeldExec;
+    if (!state) return 0;
+    window.fetch = state.real;
+    window.__curioHeldExec = null;
+    const waiting = state.held.length;
+    for (const send of state.held) send();
+    return waiting;
+}"""
+
+
+def hold_node_execution(page) -> None:
+    """Hold every node-execution request in the page until it is released.
+
+    Gives the caller a run that provably cannot end: the level's nodes are
+    waiting on a request that has not been sent yet. Always pair it with
+    :func:`release_node_execution`, including on the failure path - a hold left
+    standing costs the run its whole timeout.
+    """
+    page.evaluate(_HOLD_NODE_EXEC_JS)
+
+
+def wait_for_held_node_execution(page, *, count: int = 1,
+                                 timeout_ms: int = 60000) -> None:
+    """Wait until at least *count* node executions are being held.
+
+    Also the tripwire for the hold itself: if node execution ever stops going
+    through ``fetch``, this fails loudly instead of quietly leaving the test
+    racing the run again.
+    """
+    try:
+        page.wait_for_function(
+            "(n) => (window.__curioHeldExec?.held.length || 0) >= n",
+            arg=count,
+            timeout=timeout_ms,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"no run was held: {held_node_executions(page)} of {count} node "
+            "execution(s) are waiting. Either the run never started, or node "
+            "execution no longer goes out over window.fetch as "
+            "/processPythonCode or /processJavaScriptCode."
+        ) from None
+
+
+def held_node_executions(page) -> int:
+    """How many node executions are held right now (0 when not holding)."""
+    return int(page.evaluate(
+        "() => window.__curioHeldExec ? window.__curioHeldExec.held.length : 0"
+    ))
+
+
+def release_node_execution(page) -> int:
+    """Send every held request and stop holding. Returns how many were let go."""
+    return int(page.evaluate(_RELEASE_NODE_EXEC_JS))
+
+
 # Shared by the wait_for_function poll and the final evaluate in
 # ``assert_vega_canvas_rendered``; returns {width, height, nonBlank} or null.
 VEGA_CANVAS_PROBE_JS = """(containerId) => {
@@ -2458,7 +2928,9 @@ VEGA_CANVAS_PROBE_JS = """(containerId) => {
 }"""
 
 
-def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -> None:
+def assert_vega_canvas_rendered(
+    page, node_id: str, *, timeout: float = 30000, expect_blank: bool = False
+) -> None:
     """Assert a VIS_VEGA node actually drew marks from its upstream data.
 
     Vega-Lite renders to a ``<canvas>`` (the renderer switched from SVG in
@@ -2471,6 +2943,11 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
     single pixel sample would race the paint. Poll until the probe reports drawn
     content, then take one final sample so a timeout still produces the detailed
     assertion message below rather than a bare Playwright timeout.
+
+    ``expect_blank`` is for the handful of views that legitimately draw nothing:
+    an empty frame, or a geometry column that is null in every row. There the
+    canvas still has to exist and be sized, but demanding marks would assert the
+    opposite of what the view is demonstrating.
     """
     container_id = f"vega{node_id}"
     node_el = node_locator(page, node_id)
@@ -2481,20 +2958,21 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
         f"#{container_id}"
     )
 
-    try:
-        page.wait_for_function(
-            "(containerId) => {"
-            f" const probe = {VEGA_CANVAS_PROBE_JS};"
-            "  const info = probe(containerId);"
-            "  return !!(info && info.width > 0"
-            "        && info.height > 0 && info.nonBlank);"
-            "}",
-            arg=container_id,
-            timeout=timeout,
-            polling=500,
-        )
-    except PlaywrightTimeoutError:
-        pass
+    if not expect_blank:
+        try:
+            page.wait_for_function(
+                "(containerId) => {"
+                f" const probe = {VEGA_CANVAS_PROBE_JS};"
+                "  const info = probe(containerId);"
+                "  return !!(info && info.width > 0"
+                "        && info.height > 0 && info.nonBlank);"
+                "}",
+                arg=container_id,
+                timeout=timeout,
+                polling=500,
+            )
+        except PlaywrightTimeoutError:
+            pass
 
     info = page.evaluate(VEGA_CANVAS_PROBE_JS, container_id)
     assert info is not None, (
@@ -2504,9 +2982,32 @@ def assert_vega_canvas_rendered(page, node_id: str, *, timeout: float = 30000) -
         f"Vega node {node_id}: canvas has zero backing size "
         f"({info['width']}x{info['height']})"
     )
-    assert info["nonBlank"], (
-        f"Vega node {node_id}: canvas rendered blank — no chart marks drawn "
-        f"from the upstream data"
+    if not expect_blank:
+        assert info["nonBlank"], (
+            f"Vega node {node_id}: canvas rendered blank, no chart marks drawn "
+            f"from the upstream data"
+        )
+
+
+def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: float = 30000) -> None:
+    """Assert a VIS_VEGA node explains why it has nothing to draw.
+
+    The counterpart to ``assert_vega_canvas_rendered``: some specs cannot be
+    drawn at all, and the node is supposed to say so in its body rather than
+    leave a blank rectangle behind (#224). ``useVega`` marks the container with
+    ``data-curio-node-empty="<reason>"``, so the assertion is on the reason
+    rather than merely on the presence of some text.
+    """
+    marker = page.locator(f'#vega{node_id}[data-curio-node-empty="{reason}"]')
+    marker.wait_for(state="attached", timeout=timeout)
+    assert marker.count() == 1, (
+        f"Vega node {node_id}: expected the node body to report "
+        f"{reason!r}, found nothing"
+    )
+    text = page.locator(f"#vega{node_id}").inner_text().strip()
+    assert text, (
+        f"Vega node {node_id}: reported {reason!r} but rendered no message for "
+        f"the user to read"
     )
 
 

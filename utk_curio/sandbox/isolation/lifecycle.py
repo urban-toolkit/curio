@@ -5,7 +5,7 @@ NOT VERIFIED. Needs Linux; never executed.
 The zygote is a child process of the sandbox, started lazily on the first
 isolated execution rather than at import time. Lazy matters for two reasons:
 
-- With ``--isolation=off`` (the default) nothing extra is ever spawned, so the
+- With isolation off (``CURIO_ISOLATION=off``, and the default for a local launch) nothing extra is ever spawned, so the
   in-process path carries none of this cost or risk.
 - ``sandbox/app/api.py`` runs ``_worker_init()`` at import, and starting a
   second heavyweight process there would double sandbox startup for every

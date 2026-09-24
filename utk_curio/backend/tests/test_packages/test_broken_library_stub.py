@@ -171,8 +171,12 @@ def test_teardown_preserves_an_empty_pythonpath_entry(client, monkeypatch):
     """
     import os
 
-    monkeypatch.setenv("PYTHONPATH", f"C:{os.pathsep}{os.pathsep}D:")
+    # The entries must not contain os.pathsep themselves. "C:" and "D:" read as
+    # paths on Windows, but on the Linux CI image the separator IS the colon, so
+    # the fixture split into five entries there and the assertion never held.
+    entries = ["first", "", "second"]
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(entries))
     _post(client, action="install")
     _post(client, action="remove")
 
-    assert os.environ["PYTHONPATH"].split(os.pathsep) == ["C:", "", "D:"]
+    assert os.environ["PYTHONPATH"].split(os.pathsep) == entries

@@ -58,7 +58,7 @@ SENSITIVE_PATHS = (
 # meant to read. ``.curio/data/artifacts/<id>.parquet`` is hardlinked into the
 # scratch directory by ``staging.stage_input``; at 0600 root-owned the child
 # could not read its own input, and every dataframe node would have failed
-# under an --exec-user. (CI never saw it: the isolated job runs without one, so
+# under an execution user. (CI never saw it: the isolated job runs without one, so
 # its children are root and root ignores mode bits.)
 #
 # So the *directory* is the control. At 0700 root-owned, nothing under it can
@@ -102,7 +102,7 @@ def describe_exposure(path, path_stat, *, uid, gid, reason):
     if uid == 0:
         return (
             f"the execution user is root, so it can read {path} ({reason}) "
-            "regardless of permissions. Configure --exec-user with an "
+            "regardless of permissions. Set CURIO_EXEC_USER to an "
             "unprivileged account."
         )
     if can_access(path_stat, uid=uid, gid=gid):
@@ -206,6 +206,55 @@ def prepare_scratch_root(shared_data_dir, *, exec_uid=None):
     return root
 
 
+def audit_node_overlays(shared_data_dir, *, uid, gid):
+    """Report every user's node-library tree the execution user could WRITE.
+
+    The inverse of :func:`audit`, and deliberately so. Those paths are findings
+    because node code can read them; this one has to be readable - it is on the
+    child's ``sys.path``, and a user's nodes cannot import their own libraries
+    otherwise. What must not happen is node code WRITING there: the tree is an
+    import path, so a planted module would shadow a real one for that user's
+    every subsequent execution.
+
+    ``prepare_user_overlay_dir`` creates them 0755 and does not chown, so this
+    only fires if something else made one, or an operator changed it by hand.
+    """
+    from utk_curio.sandbox.isolation import supervisor
+
+    root = os.path.join(
+        os.path.dirname(os.path.abspath(shared_data_dir)),
+        supervisor.OVERLAY_SUBDIR, "users",
+    )
+    findings = []
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return findings
+    for name in entries:
+        target = os.path.join(root, name)
+        try:
+            path_stat = os.stat(target)
+        except OSError:
+            continue
+        if not stat_module.S_ISDIR(path_stat.st_mode):
+            continue
+        writable = bool(path_stat.st_mode & stat_module.S_IWOTH) or (
+            uid is not None and path_stat.st_uid == uid
+            and bool(path_stat.st_mode & stat_module.S_IWUSR)
+        ) or (
+            gid is not None and path_stat.st_gid == gid
+            and bool(path_stat.st_mode & stat_module.S_IWGRP)
+        )
+        if writable:
+            findings.append(
+                f"the execution user can write {target}, which is on the "
+                f"import path of that user's nodes. Node code could plant a "
+                f"module there and shadow a real one on every later run. Mode "
+                f"is {stat_module.filemode(path_stat.st_mode)}."
+            )
+    return findings
+
+
 def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
     """Harden, then audit, and say what is left. Returns (findings, fatal).
 
@@ -219,11 +268,11 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
         # user and shares all its access. Isolation still bounds resources and
         # syscalls, but not the filesystem, and that should be said plainly.
         return ([
-            "No --exec-user is configured, so isolated node code runs as the "
+            "No execution user is configured, so isolated node code runs as the "
             "same OS user as the sandbox and can read whatever the sandbox can, "
             "including the artifact store and the user database. Resource "
-            "limits and syscall filtering still apply. Configure --exec-user "
-            "with an unprivileged account for a filesystem boundary."
+            "limits and syscall filtering still apply. Set CURIO_EXEC_USER "
+            "to an unprivileged account for a filesystem boundary."
         ], hosted)
 
     # Order matters: harden first, then prepare. `harden_paths` skips the
@@ -233,4 +282,7 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
     harden_paths(launch_dir)
     prepare_scratch_root(shared_data_dir, exec_uid=uid)
     findings = audit(launch_dir, uid=uid, gid=gid)
+    # #332: the node-library trees are the one place that must stay readable,
+    # so they are asked the opposite question.
+    findings += audit_node_overlays(shared_data_dir, uid=uid, gid=gid)
     return findings, bool(findings and hosted)

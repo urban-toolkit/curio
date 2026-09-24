@@ -1,0 +1,34 @@
+{
+  "id": "lake.uk.data-gov",
+  "name": "data.gov.uk",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "The United Kingdom's national open data portal: datasets published by central government, local authorities and public bodies.",
+  "publisher": "UK Government Digital Service",
+  "homepage": "https://data.gov.uk",
+  "license": "Mostly Open Government Licence; see each dataset",
+  "tags": ["united-kingdom", "national", "government", "ckan"],
+  "icon": "icon.png",
+  "provider": {
+    "type": "ckan",
+    "baseUrl": "https://ckan.publishing.service.gov.uk",
+    "options": {
+      "apiPath": "/api/3/action",
+      "searchAction": "package_search",
+      "showAction": "package_show",
+      "landingBase": "https://data.gov.uk"
+    }
+  },
+  "auth": { "mode": "public" },
+  "capabilities": {
+    "search": true,
+    "describe": true,
+    "download": true,
+    "formats": ["csv", "geojson", "json", "parquet"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": true
+  },
+  "limits": { "requestsPerMinute": 20 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

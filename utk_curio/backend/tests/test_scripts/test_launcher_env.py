@@ -41,46 +41,252 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_NO_PROJECT",
         "ENABLE_COLLAB",
         "BACKEND_URL",
+        "CURIO_ISOLATION",
+        "CURIO_EXEC_USER",
+        "CURIO_EXEC_MEMORY_MB",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
 
 
+@pytest.fixture
+def linux_host(monkeypatch):
+    """Make the launcher resolve isolation as a complete Linux host would.
+
+    ``resolve_mode`` is exercised for real; only the capability probe is
+    replaced, so these tests answer "what does the launcher decide", not "what
+    can this laptop do". Without it the whole fork half of the table is
+    unreachable from macOS and Windows, which is where Curio is developed.
+    """
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "linux", "fork": True, "rlimit": True,
+        "seccomp": True, "linux": True,
+    })
+
+
+# ── Isolation is resolved by the launcher, not passed through ───────────────
+
+
+def test_auto_is_exported_as_the_decision_it_resolves_to(linux_host):
+    """'auto' is a request. Every reader downstream needs the answer.
+
+    It used to be exported verbatim and decided later inside the sandbox, so
+    the backend and the launcher's own runtime-install default were both
+    holding a value that did not say what would actually happen.
+    """
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_preset_isolation_is_a_request_and_is_honoured(linux_host, monkeypatch):
+    """The CLI flag is gone; CURIO_ISOLATION is how a test stack still asks."""
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    monkeypatch.setenv("CURIO_EXEC_USER", "somebody")
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+
+
+def test_fork_that_the_platform_cannot_give_is_exported_as_off(monkeypatch):
+    """A local launch degrades rather than breaking the developer's laptop,
+    and the exported value says so, instead of claiming an isolation that is
+    not happening."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
+    """Fail-closed, and now one process earlier: the launcher raises instead of
+    the sandbox refusing to start after everything else is already up.
+
+    Only for an EXPLICIT request. The --deploy default degrades instead, which
+    is what keeps `curio.py start --deploy` working on Windows and macOS.
+    """
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    with pytest.raises(isolation_mode.IsolationUnavailable):
+        set_environment_variables(**BASE, deploy=True)
+
+
+# ── A deployment isolates by default, where it can ──────────────────────────
+
+
+@pytest.fixture
+def has_exec_account(monkeypatch):
+    """A root launch on a host carrying the conventional execution account."""
+    import utk_curio.main as main_mod
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(main_mod, "_discover_exec_user",
+                        lambda: main_mod.DEFAULT_EXEC_USER)
+
+
+def test_a_deployment_that_can_isolate_does(linux_host, has_exec_account):
+    """The point of the change, and the configuration the image ships."""
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+    assert os.environ["CURIO_EXEC_USER"] == "curio-exec"
+
+
+def test_a_local_launch_does_not_isolate_even_where_it_could(
+    linux_host, has_exec_account,
+):
+    """Isolation separates users from each other; locally there is one."""
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_deployment_not_running_as_root_still_boots(linux_host, monkeypatch):
+    """setuid is how the boundary is applied, so an unprivileged launch has
+    nothing to drop to and the default must decline rather than hand the
+    sandbox a mode it will refuse to serve."""
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_deployment_without_the_account_still_boots(linux_host, monkeypatch):
+    """Same decline, the other way to get there: root, but no such account.
+
+    BOTH halves are forced, because the answer otherwise depends on the host
+    this suite runs on. CI runs as root inside an image that HAS curio-exec,
+    a developer laptop is neither, and a test that reads the real environment
+    passes in one and fails in the other.
+    """
+    import pwd
+
+    def _no_such_account(name):
+        raise KeyError(name)
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(pwd, "getpwnam", _no_such_account)
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_deployment_on_a_platform_that_cannot_isolate_still_boots(
+    monkeypatch, has_exec_account,
+):
+    """--deploy has to work on Windows. A DEFAULT never refuses to boot."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "win32", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_an_empty_exec_user_forces_none_even_as_root(linux_host, monkeypatch):
+    """How a test stack asks for the no-execution-user shape on a host that
+    has the account: docker-compose.ci-isolated.yml runs as root in an image
+    containing curio-exec and exists to exercise exactly that."""
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_USER", "")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+    assert os.environ["CURIO_EXEC_USER"] == ""
+
+
+def test_a_preset_exec_user_beats_discovery(linux_host, monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_USER", "someone-else")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_EXEC_USER"] == "someone-else"
+
+
+def test_isolation_off_beats_the_deploy_default(linux_host, has_exec_account,
+                                                monkeypatch):
+    monkeypatch.setenv("CURIO_ISOLATION", "off")
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
 def test_auth_and_examples_together_is_the_combination_200_needed():
-    """`--auth --with-examples` must turn both on at once.
+    """`--deploy --with-examples` must turn both on at once.
 
     This pair is the reported configuration for #200: a signed-in account with
-    the examples seeded. The e2e harness launched with ``--auth`` but never
+    the examples seeded. The e2e harness booted multi-user but never
     ``--with-examples``, which is why nothing caught the empty gallery.
     """
-    set_environment_variables(**BASE, auth=True, with_examples=True)
+    set_environment_variables(**BASE, deploy=True, with_examples=True)
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
     assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
 
 
 def test_examples_are_off_unless_asked_for():
-    set_environment_variables(**BASE, auth=True)
+    set_environment_variables(**BASE, deploy=True)
 
     assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
 
-def test_deploy_seeds_examples_without_the_flag():
-    # --deploy is the "give me a working install" switch, so it implies both.
+def test_deploy_alone_does_not_seed_examples():
+    """It used to, and that is now the harness's configuration.
+
+    The e2e stack boots --deploy because that is the only way to get a login
+    page, and two suites exist to cover multi-user WITHOUT examples. Seeding
+    has to be asked for; docker-compose.deploy.yml asks.
+    """
     set_environment_variables(**BASE, deploy=True)
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
-    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
 
-def test_save_node_outputs_defaults_off_and_can_be_turned_on():
+def test_deploy_is_the_only_way_to_turn_auth_on():
+    set_environment_variables(**BASE)
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+
+    set_environment_variables(**BASE, deploy=True)
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+
+
+def test_no_project_still_skips_both_pages():
+    set_environment_variables(**BASE, no_project=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+    assert os.environ["CURIO_NO_PROJECT"] == "1"
+
+
+def test_save_node_outputs_defaults_off_and_honours_the_env_var(monkeypatch):
     # Opt-in per node (#180): a dataflow should not accumulate a Computed
-    # dataset for every node the user happens to run.
+    # dataset for every node the user happens to run. There is no curio.py flag
+    # for this - it only seeds a toggle every user can flip in the UI - so the
+    # env var is the whole interface and must survive a launch through curio.py.
     set_environment_variables(**BASE)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
 
-    set_environment_variables(**BASE, save_node_outputs=True)
+    monkeypatch.setenv("CURIO_DEFAULT_SAVE_NODE_OUTPUT", "1")
+    set_environment_variables(**BASE)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
 
 
@@ -132,7 +338,7 @@ def test_a_plain_start_skips_auth():
 
 
 def test_auth_flag_requires_login_without_deploy():
-    set_environment_variables(**BASE, auth=True)
+    set_environment_variables(**BASE, deploy=True)
     assert os.environ["CURIO_NO_AUTH"] == "0"
     assert os.environ["CURIO_NO_PROJECT"] == "0"
 
@@ -143,15 +349,17 @@ def test_no_project_implies_no_auth():
     assert os.environ["CURIO_NO_AUTH"] == "1"
 
 
-def test_deploy_seeds_examples_like_with_examples():
+def test_only_with_examples_seeds_examples():
     set_environment_variables(**BASE)
     assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
     set_environment_variables(**BASE, with_examples=True)
     assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
 
+    # --deploy used to imply this. It cannot any more: the e2e harness boots
+    # --deploy for the login page and must not seed.
     set_environment_variables(**BASE, deploy=True)
-    assert os.environ["CURIO_SEED_EXAMPLES"] == "1"
+    assert os.environ["CURIO_SEED_EXAMPLES"] == "0"
 
 
 # --------------------------------------------------------------------------- #
@@ -335,3 +543,171 @@ def test_an_explicit_backend_url_wins(monkeypatch):
     monkeypatch.setenv("BACKEND_URL", "https://curio.example.org")
     set_environment_variables(**{**BASE, "backend_port": 5102})
     assert os.environ["BACKEND_URL"] == "https://curio.example.org"
+
+
+class TestExecMemoryFloor:
+    """``--exec-memory-mb`` is clamped, not just passed through (#334).
+
+    The number is spent by code that never sees the flag: ``codec`` sizes
+    DuckDB's ``memory_limit`` against it, and that write happens inside the
+    child's RLIMIT_AS cap. While the writer's limit was a fixed 256MB, an
+    operator lowering the budget - which USAGE.md invites, since it sells the
+    host ceiling as budget x parallelism - handed the child less headroom than
+    DuckDB had been told it could spend. Deriving the writer's limit fixes the
+    drift; this floor is the other half, enforced where the value enters.
+    """
+
+    def _floor(self):
+        from utk_curio.sandbox.isolation.supervisor import MIN_EXEC_MEMORY_MB
+
+        return MIN_EXEC_MEMORY_MB
+
+    def test_a_workable_budget_is_passed_through_untouched(self):
+        set_environment_variables(**BASE, exec_memory_mb=1024)
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == "1024"
+
+    def test_the_floor_itself_is_not_clamped(self):
+        """An off-by-one here would move the documented floor."""
+        set_environment_variables(**BASE, exec_memory_mb=self._floor())
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor())
+
+    def test_a_budget_below_the_floor_is_raised_to_it(self):
+        set_environment_variables(**BASE, exec_memory_mb=16)
+        assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor())
+
+    def test_a_nonsense_budget_is_raised_too(self):
+        """Nothing else rejects this: argparse takes any int.
+
+        A negative budget reached ``child._apply_rlimits`` as a cap below the
+        interpreter's own footprint, which fails every allocation the child
+        makes - and, as the module docstring records, once made a
+        runaway-allocation test pass for the wrong reason.
+        """
+        for value in (-1, 0):
+            set_environment_variables(**BASE, exec_memory_mb=value)
+            assert os.environ["CURIO_EXEC_MEMORY_MB"] == str(self._floor()), value
+
+    def test_the_clamp_says_so_rather_than_silently_moving_the_number(self, capsys):
+        """An operator who asked for 16 and got 64 has to find out here.
+
+        Silently honouring a different limit than the one asked for is how a
+        host ends up over-committed: the ceiling USAGE.md quotes is budget x
+        parallelism, and both factors have to be the real ones.
+        """
+        set_environment_variables(**BASE, exec_memory_mb=16)
+        warning = capsys.readouterr().err
+        assert "--exec-memory-mb" in warning
+        assert "16" in warning and str(self._floor()) in warning
+        # And points at the knob that actually solves the problem they had.
+        assert "--exec-parallelism" in warning
+
+    def test_an_omitted_flag_leaves_the_variable_unset(self):
+        """The clamp must not start exporting a default nobody asked for.
+
+        ``runner.IsolationConfig.from_environment`` supplies
+        ``DEFAULT_LIMITS["memory_mb"]`` when the variable is absent, so writing
+        one here would duplicate that default in a second place.
+        """
+        set_environment_variables(**BASE)
+        assert "CURIO_EXEC_MEMORY_MB" not in os.environ
+
+
+# ── --deploy requires isolation, or it does not start ───────────────────────
+
+
+def _cannot_isolate(monkeypatch):
+    """A host with no fork isolation to be had: macOS, Windows, a bare Linux."""
+    from utk_curio.sandbox.isolation import mode as isolation_mode
+
+    monkeypatch.setattr(isolation_mode, "capabilities", lambda: {
+        "platform": "darwin", "fork": False, "rlimit": False,
+        "seccomp": False, "linux": False,
+    })
+
+
+def test_deploy_refuses_to_start_where_it_cannot_isolate(monkeypatch):
+    """Two shapes, not three.
+
+    A deployment has accounts AND isolates; a local run has neither. The third
+    shape -- accounts sharing one interpreter -- used to boot with a warning,
+    which meant one user's ``pip install`` could change what another user's
+    nodes import and the only protection was a gate on installs that nobody
+    could see from the command they typed. Refusing is the honest answer: the
+    operator asked for something this host cannot give.
+    """
+    _cannot_isolate(monkeypatch)
+    # The suite runs under CURIO_TESTING, which is the exemption itself: clear
+    # it to stand in for an operator's shell.
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    with pytest.raises(SystemExit) as exit_info:
+        set_environment_variables(**BASE, deploy=True)
+
+    message = str(exit_info.value)
+    assert "--deploy needs isolated node execution" in message
+    # It has to say what to do next, not just what it refused.
+    assert "drop --deploy" in message
+
+
+def test_a_test_rig_may_still_run_accounts_without_isolation(monkeypatch):
+    """The exemption, and the only one.
+
+    The e2e and stress harnesses boot ``--deploy`` to get the login page, on
+    whatever machine the developer has, and create every account themselves.
+    """
+    _cannot_isolate(monkeypatch)
+    monkeypatch.setenv("CURIO_TESTING", "1")
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_local_run_on_the_same_host_is_untouched(monkeypatch):
+    """No --deploy, no refusal: this is the everyday developer path."""
+    _cannot_isolate(monkeypatch)
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE)
+
+    assert os.environ["CURIO_NO_AUTH"] == "1"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_deploy_that_can_isolate_starts_and_isolates(linux_host, monkeypatch):
+    """The supported deployment shape still resolves to fork."""
+    monkeypatch.setattr("utk_curio.main._discover_exec_user", lambda: "curio-exec")
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "fork"
+
+
+def test_the_testing_flag_declares_the_rig(monkeypatch):
+    """``--testing`` is the flag form of what was an env var only.
+
+    It has to be set before anything reads it: the database URL, the
+    /api/testing routes and the isolation exemption all key off the same
+    value, and two of those are decided while this function runs.
+    """
+    _cannot_isolate(monkeypatch)
+    monkeypatch.delenv("CURIO_TESTING", raising=False)
+
+    set_environment_variables(**BASE, deploy=True, testing=True)
+
+    assert os.environ["CURIO_TESTING"] == "1"
+    assert os.environ["CURIO_NO_AUTH"] == "0"
+    assert os.environ["CURIO_ISOLATION"] == "off"
+
+
+def test_a_preset_testing_env_var_still_counts(monkeypatch):
+    """The pytest rig imports the app in-process and has no command line."""
+    _cannot_isolate(monkeypatch)
+    monkeypatch.setenv("CURIO_TESTING", "1")
+
+    set_environment_variables(**BASE, deploy=True)
+
+    assert os.environ["CURIO_NO_AUTH"] == "0"

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback, ReactNode } from "react";
+import React, { createContext, useState, useContext, useCallback, useMemo, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Toast } from "react-bootstrap";
 
@@ -6,6 +6,16 @@ export type ToastVariant = "error" | "warning" | "info" | "success";
 
 interface ToastItem {
     id: number;
+    /** The slot this message holds in the stack, shared by every occurrence. */
+    seq: number;
+    message: string;
+    variant: ToastVariant;
+}
+
+/** Every outstanding occurrence of one message, rendered as a single toast. */
+interface ToastGroup {
+    seq: number;
+    ids: number[];
     message: string;
     variant: ToastVariant;
 }
@@ -49,7 +59,20 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
 
     const showToast = useCallback((message: string, variant: ToastVariant = "error") => {
         const id = _nextId++;
-        setToasts((prev) => [...prev, { id, message, variant }]);
+        setToasts((prev) => {
+            // A repeat joins the slot its message already holds. Derive the
+            // slot from the occurrences still outstanding instead and a toast
+            // the user can see moves: when the first of two "Saved" toasts
+            // expires, the second would re-enter the stack below an error
+            // raised between them, swapping two live toasts under the pointer.
+            const sibling = prev.find(
+                (t) => t.variant === variant && t.message === message,
+            );
+            const seq = sibling
+                ? sibling.seq
+                : prev.reduce((highest, t) => Math.max(highest, t.seq), -1) + 1;
+            return [...prev, { id, seq, message, variant }];
+        });
         const after = AUTO_DISMISS_MS[variant];
         if (after !== undefined) {
             setTimeout(() => {
@@ -58,9 +81,38 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
-    const dismiss = useCallback((id: number) => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
+    const dismiss = useCallback((ids: readonly number[]) => {
+        setToasts((prev) => prev.filter((t) => !ids.includes(t.id)));
     }, []);
+
+    /**
+     * One entry per distinct message, in the order the first of them arrived.
+     *
+     * Repeats collapse instead of stacking. A failure that fans out raises the
+     * same sentence once per occurrence - one per Autark node that probes
+     * WebGPU, one per library in a batch install - and since an error stays
+     * until it is dismissed, five of them were taller than the window: the
+     * oldest was clipped off the TOP of the screen, close button and all, and
+     * could not be dismissed at all.
+     *
+     * Grouped at render rather than counted at insert, so each occurrence keeps
+     * its own id and its own auto-dismiss timer (a repeated info toast counts
+     * back down as they expire) and the state updater stays a pure function of
+     * the previous state.
+     */
+    const groups = useMemo(() => {
+        const bySlot = new Map<number, ToastGroup>();
+        for (const toast of toasts) {
+            const seen = bySlot.get(toast.seq);
+            if (seen) seen.ids.push(toast.id);
+            else bySlot.set(toast.seq, {
+                seq: toast.seq, ids: [toast.id],
+                message: toast.message, variant: toast.variant,
+            });
+        }
+        // By slot, not by whichever occurrence happens to still be outstanding.
+        return [...bySlot.values()].sort((a, b) => a.seq - b.seq);
+    }, [toasts]);
 
     const toastContainer = (
         <div
@@ -86,11 +138,15 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                 maxWidth: "360px",
             }}
         >
-            {toasts.map((toast) => (
+            {groups.map((toast) => (
                     <Toast
-                        key={toast.id}
+                        // The slot, not `ids[0]`: that changes when the oldest
+                        // occurrence expires, and React would then tear down a
+                        // toast still on screen - dropping keyboard focus from
+                        // its close button to <body> mid-interaction.
+                        key={toast.seq}
                         show
-                        onClose={() => dismiss(toast.id)}
+                        onClose={() => dismiss(toast.ids)}
                         role={toast.variant === "error" ? "alert" : "status"}
                         aria-live={toast.variant === "error" ? "assertive" : "polite"}
                         aria-atomic="true"
@@ -114,6 +170,25 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                             <strong className="me-auto">
                                 {VARIANT_TITLE[toast.variant]}
                             </strong>
+                            {toast.ids.length > 1 && (
+                                // How many times it happened, rather than one
+                                // toast per time. Reads as a tally, so the
+                                // sentence underneath is still read once.
+                                <span
+                                    data-testid="toast-count"
+                                    title={`Reported ${toast.ids.length} times`}
+                                    style={{
+                                        marginRight: "8px",
+                                        padding: "0 6px",
+                                        borderRadius: "10px",
+                                        backgroundColor: "rgba(255,255,255,0.25)",
+                                        fontSize: "11px",
+                                        fontVariantNumeric: "tabular-nums",
+                                    }}
+                                >
+                                    &times;{toast.ids.length}
+                                </span>
+                            )}
                         </Toast.Header>
                         <Toast.Body style={{ fontSize: "13px", padding: "8px 12px" }}>
                             {toast.message}

@@ -19,7 +19,7 @@ import {
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
   datasetDisplayTitle,
-  isOsmGroupId,
+  isLayerGroupId,
   isInThisDataflow,
   notifyDatasetCatalogRefresh,
   useDatasetImport,
@@ -28,6 +28,7 @@ import {
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
 
@@ -186,7 +187,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         format: dataset.format,
       });
       try {
-        const isGroup = isOsmGroupId(dataset.id);
+        const isGroup = isLayerGroupId(dataset.id);
         // An OSM group's id is synthetic — install each real per-layer dataset
         // so their dataflow refs (which feed the saved spec) stay accurate.
         const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
@@ -235,7 +236,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const onInstall = useCallback(
     (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
-      const isGroup = isOsmGroupId(dataset.id);
+      const isGroup = isLayerGroupId(dataset.id);
       const layerCount = isGroup ? (dataset.groupLayerIds ?? []).length : 0;
       setConfirmAction({
         title: `Add ${title}?`,
@@ -256,7 +257,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       if (!id) return;
       setBusyId(dataset.id);
       try {
-        const isGroup = isOsmGroupId(dataset.id);
+        const isGroup = isLayerGroupId(dataset.id);
         const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
         for (const memberId of memberIds) {
           try {
@@ -303,7 +304,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       if (dataset.origin === "computed" || dataset.origin === "source_node") return false;
       try {
         const usage = await datasetCatalogApi.datasetUsage(dataset.id);
-        return usage.length <= 1;
+        // Only the usages the backend's gate actually counts. It ignores a
+        // dataflow that names the dataset in node source alone, so counting
+        // those here would promise the file survives while the backend deletes
+        // it - the confirmation has to predict what really happens.
+        return usage.filter((u) => !u.codeOnly).length <= 1;
       } catch {
         // If usage cannot be resolved the backend keeps the folder, so the
         // honest answer is "no deletion" rather than a warning that may be
@@ -317,25 +322,60 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   // #197 gave the other two catalogs a confirmation for this and left the Data
   // drawer performing it on a single click - the one of the three that can
   // permanently delete a file from the account while doing it.
+  /** Dataflows whose nodes name this dataset in code but hold no ref to it.
+   *
+   *  Nothing rewrites node source on removal, so those calls stay behind and
+   *  raise a per-id error on the node's next run. That is worth saying BEFORE
+   *  the removal, because applying a dataset is what wrote the call in the
+   *  first place - so this is the ordinary flow, not a corner case.
+   */
+  const codeOnlyUsers = useCallback(
+    async (dataset: DatasetCatalogItem): Promise<string[]> => {
+      try {
+        const usage = await datasetCatalogApi.datasetUsage(dataset.id);
+        return usage
+          .filter((u) => u.codeOnly)
+          .map((u) => u.dataflowName || "Untitled dataflow");
+      } catch {
+        return [];
+      }
+    },
+    [],
+  );
+
   const onUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const title = datasetDisplayTitle(dataset);
-      const alsoDeletes = await uninstallAlsoDeletes(dataset);
+      const [alsoDeletes, codeUsers] = await Promise.all([
+        uninstallAlsoDeletes(dataset),
+        codeOnlyUsers(dataset),
+      ]);
+      const codeWarning = codeUsers.length
+        ? `
+
+${codeUsers.length === 1 ? "A node in" : "Nodes in"} ${codeUsers.join(", ")} ${
+            codeUsers.length === 1 ? "loads" : "load"
+          } this dataset in code. That code is left as it is and will fail the next time ${
+            codeUsers.length === 1 ? "it runs" : "those nodes run"
+          }.`
+        : "";
       setConfirmAction({
         title: `Remove ${title}?`,
-        body: alsoDeletes
-          ? `Remove ${title} from this project?
+        body:
+          (alsoDeletes
+            ? `Remove ${title} from this project?
 
 No other dataflow uses it, so the uploaded file is also deleted from your Data Catalog.`
-          : `Remove ${title} from this project?
+            : `Remove ${title} from this project?
 
-The dataset stays in your Data Catalog and in any other dataflow using it.`,
+The dataset stays in your Data Catalog and in any other dataflow using it.`) +
+          codeWarning,
         confirmLabel: alsoDeletes ? "Remove and delete" : "Remove",
         destructive: true,
         run: () => performUninstall(dataset),
       });
     },
-    [performUninstall, uninstallAlsoDeletes],
+    [codeOnlyUsers, performUninstall, uninstallAlsoDeletes],
   );
 
   const onPublish = useCallback(
@@ -486,7 +526,12 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
       // The prefetch above runs *before* the dialog opens, so the body is
       // complete the moment it appears rather than filling in under the user.
       setConfirmAction({
-        title: `Delete ${title}?`,
+        // Same sentence the projects page asks, for the same act: both surfaces
+        // used to word the verb differently once the button copy converged on
+        // plain "Delete" (#285). The permanence moved off the button, so it has
+        // to be somewhere - and the title is where the projects page already
+        // put it.
+        title: `Permanently delete "${title}"?`,
         // The every-dataflow scope is stated unconditionally. It used to depend
         // on `usageNote`, which is empty whenever the usage lookup returns
         // nothing or fails — so the case where the user knows least about the
@@ -495,7 +540,12 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`,
           `Delete ${title} from your Data Catalog?\n\n` +
           `This deletes the dataset itself, and removes it from every dataflow ` +
           `that uses it, not just this one.` +
-          usageNote,
+          usageNote +
+          // The live-store scope and the operator's backup posture, in the one
+          // sentence every permanent-deletion confirmation carries. The title
+          // now claims permanence, so the body has to qualify it exactly as
+          // the projects page's does.
+          `\n\n${permanentDeletionNotice()}`,
         // Plain "Delete": the projects page dropped its "forever" when Archive
         // went (#261), and one destructive verb across both surfaces beats two
         // wordings for the same act (#285). The permanence is stated in the

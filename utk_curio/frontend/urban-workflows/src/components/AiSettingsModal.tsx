@@ -8,6 +8,7 @@ import { ConnectionKeysSection } from "./connectionKeys/ConnectionKeysSection";
 import { EvaluationModeSection } from "./evaluation/EvaluationModeSection";
 import { ModelTrainingSection } from "./training/ModelTrainingSection";
 import type { ConnectionKeysFocus } from "./connectionKeys/connectionKeysRequest";
+import { authApi } from "../utils/authApi";
 
 interface Props {
   isOpen: boolean;
@@ -102,6 +103,16 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
   // models behind a licence you accept with your own account, so the token is
   // per user rather than one the operator holds for everybody.
   const [hfToken, setHfToken] = useState("");
+  // A third credential, for a non-AI surface: the Data Lake Catalog sends it
+  // to Socrata portals. It lives here because this is the account's one
+  // credentials screen, and a second modal holding half the answer is exactly
+  // what the Agent Catalog's account policy was moved OUT of.
+  const [socrataToken, setSocrataToken] = useState("");
+  // Whether this install supplies a Socrata token everyone inherits. Fetched
+  // here the same way the LLM provider default is, and for the same reason:
+  // "(optional)" is misleading when leaving the box blank already
+  // authenticates you.
+  const [socrataInherited, setSocrataInherited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -228,14 +239,36 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
   // Revoking a stored secret. The backend clears on an empty string, and a
   // test already pinned that, but nothing in the UI could send one: the field
   // treats blank as "keep", so "saved" was a state with no exit.
-  const [removing, setRemoving] = useState<null | "apiKey" | "hfToken">(null);
+  const [removing, setRemoving] = useState<null | "apiKey" | "hfToken" | "socrataToken">(
+    null
+  );
 
-  const handleRemoveSecret = async (which: "apiKey" | "hfToken") => {
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    authApi
+      .getPublicConfig()
+      .then((cfg) => {
+        if (!cancelled) setSocrataInherited(Boolean(cfg.has_default_socrata_app_token));
+      })
+      // A deployment fact we could not read is reported as "not set": saying
+      // nothing is better than claiming an inheritance that may not exist.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const handleRemoveSecret = async (which: "apiKey" | "hfToken" | "socrataToken") => {
     setRemoving(which);
     setError(null);
     try {
       await updateLlmConfig(
-        which === "apiKey" ? { apiKey: "" } : { huggingfaceToken: "" },
+        which === "apiKey"
+          ? { apiKey: "" }
+          : which === "hfToken"
+            ? { huggingfaceToken: "" }
+            : { socrataAppToken: "" },
       );
       if (which === "apiKey") setApiKey("");
       else setHfToken("");
@@ -273,6 +306,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
         // silently re-attributed a Gemini key to Anthropic and sent it there.
         apiKey: keyBelongsHere ? (apiKey || undefined) : apiKey,
         huggingfaceToken: hfToken || undefined,
+        socrataAppToken: socrataToken || undefined,
       });
       setSuccess(true);
       setApiKey("");
@@ -315,6 +349,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
             <p className={styles.guestNotice}>
               AI features for guest accounts are configured by whoever runs this
               Curio. If they are unavailable, ask them to set a guest API key.
+              Personal credentials cannot be saved on a shared guest account.
             </p>
             {/* dev/116: the shared guest (auth off) may still save connection
                 keys — into the one store every guest shares; said plainly. */}
@@ -555,6 +590,60 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
               )}
             </div>
 
+            <div className={modal.field}>
+              <label className={modal.label} htmlFor="ai-settings-socrata-token">
+                Socrata app token{" "}
+                <span className={styles.optional}>
+                  {user?.has_socrata_app_token
+                    ? "(saved - leave blank to keep)"
+                    : socrataInherited
+                      ? "(inherited - leave blank to use it)"
+                      : "(optional)"}
+                </span>
+              </label>
+              <input
+                id="ai-settings-socrata-token"
+                className={modal.input}
+                type="password"
+                value={socrataToken}
+                onChange={(e) => setSocrataToken(e.target.value)}
+                placeholder={
+                  user?.has_socrata_app_token ? "••••••••  (unchanged)" : "Your app token"
+                }
+                autoComplete="new-password"
+              />
+              <span className={modal.hint}>
+                Used by the <strong>Data Lake Catalog</strong> for Socrata
+                portals, such as Chicago&apos;s. They answer without one; a
+                token raises the rate limit, and it is issued to you rather
+                than to this install, so it lives on your account.
+                {socrataInherited ? (
+                  <>
+                    {" "}Whoever runs this Curio set one for everyone. Leave
+                    this blank to use it, or fill it in to override it for your
+                    account.
+                  </>
+                ) : null}
+              </span>
+              <a
+                href="https://evergreen.data.socrata.com/signup"
+                target="_blank"
+                rel="noreferrer"
+                className={styles.keyLink}
+              >
+                Get a Socrata app token →
+              </a>
+              {user?.has_socrata_app_token && (
+                <button
+                  type="button"
+                  className={styles.removeSecretBtn}
+                  onClick={() => void handleRemoveSecret("socrataToken")}
+                  disabled={removing !== null}
+                >
+                  {removing === "socrataToken" ? "Removing…" : "Remove saved token"}
+                </button>
+              )}
+            </div>
             {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
             <ConnectionKeysSection focus={focus} />
             {/* dev/123 (DEC-079): run one of Curio's own examples through the

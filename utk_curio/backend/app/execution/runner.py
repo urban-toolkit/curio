@@ -20,7 +20,6 @@ blaming the node under validation.
 from __future__ import annotations
 
 import os
-import re
 import textwrap
 import time
 
@@ -30,6 +29,8 @@ from utk_curio.backend.app.execution.workflow_spec import (
     PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
+    resolve_widget_placeholders,
+    seed_node_code,
 )
 
 SANDBOX_CONNECT_TIMEOUT_S = 30
@@ -163,37 +164,6 @@ def load_artifact_preview(
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
-
-
-_SEED_PREFIX = (
-    "import numpy as _np; _np.random.seed({seed}); "
-    "import random as _rnd; _rnd.seed({seed})\n"
-)
-
-
-def seed_node_code(code: str, seed: int = 42) -> str:
-    """Prepend deterministic random-seed lines to *code*.
-
-    Underscore-prefixed aliases (``_np``, ``_rnd``) never shadow the user's
-    own ``import numpy as np``.
-    """
-    return _SEED_PREFIX.format(seed=seed) + code
-
-
-_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
-
-
-def resolve_widget_placeholders(code: str) -> str:
-    """Replace ``[!! name$type$default !!]`` widget markers with defaults —
-    exactly as the frontend does before posting to the sandbox."""
-
-    def _replace(m):
-        parts = m.group(1).split("$")
-        if len(parts) >= 3:
-            return parts[2]
-        return m.group(0)
-
-    return _WIDGET_RE.sub(_replace, code)
 
 
 #: The sandbox answered 401: the two processes disagree about the shared

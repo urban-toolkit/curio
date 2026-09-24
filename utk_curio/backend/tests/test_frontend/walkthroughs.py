@@ -37,19 +37,27 @@ from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    dismiss_toasts,
     assert_vega_canvas_rendered,
     canvas_nodes,
     close_tools_palette,
     connect_nodes,
     drag_to_canvas,
     frame_node,
+    hold_node_execution,
     node_locator,
     open_tools_palette,
     play_node,
+    release_node_execution,
     require_owner_view,
+    run_all_and_wait,
+    run_all_button,
     run_node_and_wait,
     set_node_code,
+    wait_for_held_node_execution,
     wait_for_node_done,
+    wait_for_run_all_to_end,
+    watch_run_all,
     signup_e2e_user,
     wait_for_projects_page,
 )
@@ -177,6 +185,15 @@ class Ctx:
         self.narrator.beat(ms)
 
 
+#: Smallest diff budget a FULL-PAGE capture is compared at (#333).
+#:
+#: 2x the worst cross-platform cost measured over this file's captures (7.66%),
+#: so a developer on a machine that is not the baseline's does not read a
+#: platform difference as a regression. Clipped captures keep their own,
+#: tighter budgets. See ``Walkthrough.effective_max_diff_ratio``.
+FULL_PAGE_DIFF_FLOOR = 0.15
+
+
 @dataclass
 class Walkthrough:
     """One journey through the app, plus how to capture it."""
@@ -208,6 +225,10 @@ class Walkthrough:
     #: Fraction of pixels allowed to differ. The helper's 0.20 default is blind
     #: to a restored 1.5px border or a button that grew one line, so the small
     #: visual fixes tighten it hard.
+    #:
+    #: A tight value only means something on a CLIPPED capture, where the
+    #: subject fills the frame. On a full page it is raised to
+    #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
     max_diff_ratio: float = 0.20
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
@@ -227,6 +248,33 @@ class Walkthrough:
     @property
     def stem(self) -> str:
         return self.slug
+
+    @property
+    def effective_max_diff_ratio(self) -> float:
+        """The budget to compare with, floored for a full-page capture (#333).
+
+        The committed baselines are captured by CI, on Linux. Everywhere else
+        the same page renders text slightly differently, and on a full 1280x720
+        viewport that alone costs **4.5-7.7% of pixels** (measured across all 86
+        captures in this file on macOS, 2026-09-15: `catalog-tag-chips-are-plain`
+        4.85% against its 5% budget, `project-drawer-offers-delete` 7.66%
+        against 8%). Seven captures sat above 90% of budget, so any local run
+        was one restyle away from a red that looks exactly like a regression --
+        the attribution cost #308 was filed about.
+
+        Tightening below that floor buys nothing on a full page anyway: 3% of
+        1280x720 is 27,600 pixels, and a button is ~3,000. A full-page budget
+        cannot see a missing control at ANY setting a cross-platform run could
+        pass; what it catches is a page that changed wholesale, which 15% still
+        catches. A claim that needs finer resolution needs ``clip_selector``
+        (which keeps the subject filling the frame, where a tight budget bites)
+        or an assertion in code, which every one of these scenes already has.
+
+        Clipped captures are left exactly as declared.
+        """
+        if self.clip_selector is not None:
+            return self.max_diff_ratio
+        return max(self.max_diff_ratio, FULL_PAGE_DIFF_FLOOR)
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +621,16 @@ AGENT_DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 #: actions live here, not on a card and not in the canvas.
 BROWSE_DRAWER_ROOT = '[data-curio-browse-drawer="true"]'
 
+#: The tag row inside a browse card, on any of the three catalog pages. Every
+#: page renders many cards, and a clip must resolve to exactly one element, so
+#: the scene takes the first: the claim is about chips *within one card*, and any
+#: card demonstrates it.
+TAG_ROW_FIRST_CARD = '[data-curio-tag-row="true"] >> nth=0'
+
+#: The browse drawer's CTA row, where the long "Remove from all projects" label
+#: lives. One drawer is open at a time, so this is unambiguous.
+BROWSE_DRAWER_CTAS = '[data-curio-drawer-ctas="true"]' 
+
 
 def open_agent_drawer(ctx: Ctx):
     """Data menu -> Agent Catalog, returning the drawer dialog."""
@@ -803,13 +861,25 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
          "the claim is unchanged, only its address.",
     tests=["src/tests/styles/agentDrawerButtonGeometry.test.ts",
            "test_frontend/test_walkthrough_baselines.py"],
-    clip_selector=BROWSE_DRAWER_ROOT,
+    # The claim is whether one label fits one button, so the capture is that
+    # button's row rather than the whole 320x607 drawer (#333). At the drawer
+    # size the CTA row was a few percent of the frame, so a 10% budget could not
+    # have seen the label wrap that this scene exists to catch. On the row
+    # itself, a wrap is most of the picture.
+    clip_selector=BROWSE_DRAWER_CTAS,
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (5.1% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.10,
+    # Measured, not guessed. The baseline was minted on Linux and compared
+    # against the render CI actually produced (recovered from the full-page
+    # baseline this PR replaces, 9f27df5e): 5.89%. The same crop taken on macOS
+    # scores 10.05% against that render, i.e. a macOS baseline would have failed
+    # here outright, which is why these are minted on Linux.
+    #
+    # 5.89% leaves less headroom than the sibling scene below, so this one keeps
+    # the wider budget. Part of that 5.89% is probably drift in the drawer since
+    # that baseline was recorded rather than platform, but it cannot be
+    # separated from here, and a budget set from the pessimistic reading is the
+    # one that does not page someone at 3am.
+    max_diff_ratio=0.08,
 )
 def agent_catalog_action_labels_fit(ctx: Ctx) -> None:
     page = ctx.page
@@ -1073,7 +1143,7 @@ EXAMPLE_TITLES = [
     title="A new account arrives to a gallery of examples",
     premise="Create an account and read what is waiting on the projects page.",
     note="The examples were seeded to exactly one user - the shared guest - "
-         "and project listing is a plain owner filter, so under `--auth` every "
+         "and project listing is a plain owner filter, so under `--deploy` every "
          "account signed in to an empty gallery; `--deploy` carried the same "
          "defect. Each account now gets its own copies, seeded at sign-up and "
          "back-filled on first listing for anyone who registered earlier.",
@@ -1145,82 +1215,121 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
 AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
 
 
-def open_view_menu_dashboard(ctx: Ctx) -> None:
-    """View -> Dashboard. ``force`` because the canvas chrome overlaps the bar."""
+def save_from_the_status_icon(ctx: Ctx) -> None:
+    """Save the open dataflow and wait until the indicator says it is on disk.
+
+    The status icon rather than File > Save: it is one click, it is the control
+    a user reaches for, and its ``data-curio-save-state`` is the one signal that
+    the request actually finished rather than merely started.
+    """
     page = ctx.page
-    ctx.click(top_menu(page, "View"), force=True)
-    ctx.click(page.get_by_text("Dashboard Mode", exact=True).first)
+    ctx.click(page.locator("[data-curio-save-state]").first, force=True)
+    page.wait_for_function(
+        "() => document.querySelector('[data-curio-save-state]')"
+        "?.getAttribute('data-curio-save-state') === 'saved'",
+        timeout=30000,
+    )
+
+
+def dataflow_id_from_url(page) -> str:
+    """The project id of the dataflow open in *page*, read off its route."""
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    assert match, f"not on a saved dataflow: {page.url}"
+    return match.group(1)
 
 
 @walkthrough(
-    slug="dashboard-mode-refuses-a-blank-screen",
+    slug="dashboard-page-renders-pinned-charts",
     example=PROVENANCE_EXAMPLE,
-    refs=[192],
-    title="Dashboard Mode says what it needs",
-    premise="Enter Dashboard Mode with nothing pinned, then with one node pinned.",
-    note="Entering with nothing pinned hid every node and every edge, and "
-         "`{!dashboardOn && <UpMenu>}` took the top bar with them - so the "
-         "screen went blank with only the dashboard panel's close button left. "
-         "The menu also ran the toggle twice per click, because MainCanvas "
-         "passed the same handler to two props and UpMenu called both.",
-    tests=["src/tests/providers/dashboardModeGuard.test.tsx"],
+    refs=[125, 192],
+    title="A dashboard is a page of its own",
+    premise="Pin a chart, save, open the dashboard: the chart is there without "
+            "pressing Run. Unpin it and the page says what is missing.",
+    note="Dashboard Mode was a state of the canvas: no URL to share, and nothing "
+         "on it after a reload, because a chart only drew when Play was pressed "
+         "and its data was readable only by the session that ran it. The "
+         "dashboard is now its own route, the outputs behind a pinned tile are "
+         "saved to the Data Catalog, and the tile draws from them on load.",
+    tests=[
+        "src/tests/pages/dashboardPage.test.tsx",
+        "src/tests/components/universalNodeAutoRender.test.tsx",
+        "src/tests/utils/dashboardLayout.test.ts",
+        "src/tests/providers/dashboardPresentation.test.tsx",
+        "utk_curio/sandbox/tests/test_get_shared_file_fallback.py",
+    ],
 )
-def dashboard_mode_refuses_a_blank_screen(ctx: Ctx) -> None:
+def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     page = ctx.page
 
-    ctx.say("Dashboard Mode, with nothing pinned",
-            "This used to empty the screen with no way back but one ✕.")
-    open_view_menu_dashboard(ctx)
-
-    toast = page.locator(TOAST_REGION).get_by_text(
-        "Pin at least one node to the dashboard first.", exact=True
-    )
-    toast.first.wait_for(state="visible", timeout=15000)
-    ctx.focus(toast.first, hold=1600)
-
-    # The canvas is untouched: still here, still showing its nodes.
-    nodes = page.locator(".react-flow__node")
-    assert nodes.count() > 0, "the canvas emptied despite the refusal"
-    expect(page.locator("#tools-menu")).to_be_visible()
-    ctx.capture("refused-with-nothing-pinned")
-
-    # RUN a node that renders, and pin that one. `.react-flow__node.first` is
-    # the Data Loading node, which has no visual output and, unrun, no output
-    # at all - so Dashboard Mode laid out an empty tile and the capture was a
-    # flat grey box that would still be a flat grey box if the mode broke.
-    # `play_node` runs the not-yet-successful ancestors too, so playing the
-    # chart at the tail runs the chain behind it.
-    ctx.say("Run the chart", "Dashboard Mode needs something to lay out.")
+    # RUN the chart, so there is an output behind it to save. `play_node` runs
+    # the not-yet-successful ancestors too, so this runs the chain feeding it.
+    ctx.say("Run the chart", "A dashboard shows what a run produced.")
     node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
     node.scroll_into_view_if_needed()
-    # Not `run_node_and_wait`: that returns the output text and so waits for
-    # `[data-curio-node-output]`, the code node's text pane, which a chart node
-    # does not have. Wait on the status attribute, then on drawn marks.
+    # Not `run_node_and_wait`: that waits for a code node's text pane, which a
+    # chart does not have. Wait on the status attribute, then on drawn marks.
     play_node(page, node_id)
     wait_for_node_done(page, node_id, node_type="vis-vega", timeout_ms=180000)
     assert_vega_canvas_rendered(page, node_id, timeout=60000)
 
-    ctx.say("Pin it", "Now the mode has something to show.")
+    ctx.say("Pin it, and save", "Pinning saves the output behind the chart.")
     pin = node.get_by_role("button", name="Pin to dashboard")
     pin.wait_for(state="visible", timeout=15000)
     ctx.click(pin.first)
-    ctx.beat(700)
+    save_from_the_status_icon(ctx)
+    project_id = dataflow_id_from_url(page)
 
-    ctx.say("And it opens", "One pinned node, laid out on its own.")
-    open_view_menu_dashboard(ctx)
-    page.wait_for_timeout(1200)
-    # The pinned node is the subject, so prove the chart came with it rather
-    # than photographing whatever the panel put on screen. Scoped to the Vega
-    # mount (`"vega" + nodeId`, the convention useVega.ts owns) - a bare
-    # `canvas` locator finds Monaco's hidden decorationsOverviewRuler first.
-    dash_canvas = page.locator(f"#vega{node_id} canvas").first
-    dash_canvas.wait_for(state="visible", timeout=45000)
-    assert dash_canvas.evaluate("c => c.width > 0 && c.height > 0"), (
-        "Dashboard Mode laid out the pinned node but its chart drew nothing"
+    ctx.say("Share", "The dashboard and the dataflow each have a link.")
+    # Clear the pin and save toasts BEFORE opening the menu. The capture helper
+    # sweeps toasts by clicking their close buttons, and a click anywhere else
+    # on the page is what closes this dropdown - so an unswept toast at capture
+    # time photographs a menu that has just shut.
+    dismiss_toasts(page)
+    ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
+    page.get_by_test_id("open-dashboard-link").wait_for(state="visible", timeout=10000)
+    ctx.capture("share-menu")
+    # Close it again: the capture is the only thing that needed it open.
+    ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
+
+    # The menu's link opens a NEW tab, which `test_dashboard_page_e2e.py` asserts.
+    # A walkthrough records one page, so it navigates this one instead - a full
+    # load, which is the point: nothing the canvas held in memory comes along.
+    ctx.say("Open the dashboard", "A full page load: nothing is kept from the canvas.")
+    page.goto(f"{ctx.frontend}/dashboard/{project_id}")
+    page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
+
+    # The pinned chart drew, and nothing pressed Play on this page to make it.
+    # Scoped to the Vega mount (`"vega" + nodeId`): a bare `canvas` finds
+    # Monaco's hidden overview ruler first.
+    chart = page.locator(f"#vega{node_id} canvas").first
+    chart.wait_for(state="visible", timeout=90000)
+    assert chart.evaluate("c => c.width > 0 && c.height > 0"), (
+        "the dashboard laid out the pinned chart but it drew nothing: the output "
+        "behind it was not restored from the Data Catalog"
     )
-    ctx.capture("entered-with-one-pin")
+    # A page, not the canvas: no palette, no node chrome to pin or run with.
+    assert page.locator("#tools-menu").count() == 0, "the editor's palette is on the dashboard"
+    assert page.get_by_role("button", name="Pin to dashboard").count() == 0, (
+        "a tile is showing the canvas node header"
+    )
+    ctx.capture("dashboard-page")
+
+    ctx.say("And with nothing pinned", "The page says what is missing, and where to fix it.")
+    ctx.click(page.get_by_test_id("open-dataflow-link"))
+    node = node_locator(page, node_id)
+    node.wait_for(state="visible", timeout=45000)
+    unpin = node.get_by_role("button", name="Unpin from dashboard")
+    unpin.wait_for(state="visible", timeout=15000)
+    ctx.click(unpin.first)
+    save_from_the_status_icon(ctx)
+
+    page.goto(f"{ctx.frontend}/dashboard/{project_id}")
+    empty = page.get_by_test_id("dashboard-empty")
+    empty.wait_for(state="visible", timeout=45000)
+    expect(empty).to_contain_text("Nothing is pinned to this dashboard yet.")
+    ctx.capture("empty-state")
 
 
 @walkthrough(
@@ -1351,30 +1460,57 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     autark = page.locator(f'.react-flow__node[data-id="{node_id}"]')
     autark.wait_for(state="visible", timeout=45000)
 
-    run_all = page.get_by_role("button", name="Run all nodes")
+    # One button in two states, so the locator matches either name and the
+    # assertions read the state off data-run-active.
+    run_all = run_all_button(page)
     ctx.focus(run_all, hold=900)
     ctx.say("Run all nodes", "One of them cannot run here.")
+
+    # Hold the run open on purpose. The only node here that leaves the browser
+    # is the Autark DATA node in level 0; every other node needs WebGPU and
+    # refuses in the tick it is triggered. So the window in which the button
+    # reads "Cancel run" is exactly the length of that one request - fine on a
+    # quiet machine, and nothing this scene controls on a loaded one. Held, the
+    # in-flight state it photographs is a fact rather than a lucky shot.
+    hold_node_execution(page)
+    watch_run_all(page)
     run_all.click()
 
     # While the run is in flight the same button offers to cancel it.
-    cancel = page.get_by_role("button", name="Cancel run")
-    cancel.wait_for(state="visible", timeout=15000)
+    expect(run_all).to_have_attribute("data-run-active", "true", timeout=15000)
+    expect(run_all).to_have_attribute("aria-label", "Cancel run")
+    wait_for_held_node_execution(page)
     ctx.capture("run-in-flight")
+    release_node_execution(page)
 
     # The Autark node refuses, and reports it - which is what releases its level.
     autark.locator('[role="alert"]').first.wait_for(state="visible", timeout=45000)
 
     # The run ends on its own: the button is Run All again, not a dead control.
-    run_all.wait_for(state="visible", timeout=180000)
+    wait_for_run_all_to_end(page, timeout_ms=180000)
+    expect(run_all).to_have_attribute("aria-label", "Run all nodes")
     ctx.focus(run_all, hold=1200)
     ctx.say("The run ended", "A failed node no longer holds every later run hostage.")
     ctx.capture("run-ended")
 
     # And a second run is accepted - the guard was released, not wedged.
-    run_all.click()
-    cancel.wait_for(state="visible", timeout=15000)
-    cancel.click()
-    expect(run_all).to_be_visible()
+    #
+    # Not by catching that run in flight: nothing in this dataflow can be slow
+    # the second time. The data node answers from its own cache, so the second
+    # run makes no request at all, and every other node refuses at the WebGPU
+    # probe. The run can be over before a locator resolves, and clicking
+    # "Cancel run" then waits out its whole budget for a button that has gone
+    # back to saying "Run all nodes" (CI run 35275085327). What is watched
+    # instead is the guard's own transitions, which a run that starts and ends
+    # within one frame still leaves behind. Cancelling a run is a click this
+    # scene cannot make honestly; test_run_lock_release_e2e.py makes it with a
+    # run held open, and toolsMenuRunAll / playAllRelease cover the handler.
+    ctx.say("Run all again", "The second run is accepted, and it ends too.")
+    second = run_all_and_wait(page, timeout_ms=180000)
+    assert second["started"] >= 1, (
+        "the second Run All was refused: the run guard never went active (#271)"
+    )
+    expect(run_all).to_have_attribute("aria-label", "Run all nodes")
     assert not errors, f"an uncaught page error escaped: {errors}"
 
 
@@ -1511,11 +1647,23 @@ DATA_POOL_EXAMPLE = "02-vega-lite-spatial-density.json"
     tests=["src/tests/catalog/tagChipsArePlain.test.ts",
            "src/tests/catalog/datasetFormatStyles.test.ts"],
     fit_reactflow=False,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline (2.0% of pixels on CI, run to run stable), so the pin
-    # must leave room for that without waving through a real change.
-    max_diff_ratio=0.05,
+    # The claim is that the chips in one card share a background, so the capture
+    # is that chip row rather than a 1280x720 page (#333). Full page, 5% was
+    # ~46,000 pixels of slack: more than the entire chip row, so a chip going
+    # coloured again passed with room to spare. The row is 301x26, so 4% is
+    # ~313 pixels and one re-tinted chip is thousands. It also stops the
+    # baseline being hostage to the rest of the page: the footer version string
+    # and the "15h ago" freshness labels drift on their own and forced
+    # re-captures that had nothing to do with chips.
+    #
+    # 4% rather than the sibling's 8% because this frame was measured against
+    # the render CI actually produced (recovered from the full-page baseline at
+    # c906947b) and scored 0.88%, so 4% is still ~4.5x the observed
+    # cross-machine cost. The same crop taken on macOS scores 6.11% against that
+    # render: three quarters of an 8% budget spent on platform alone, which is
+    # what makes minting these on Linux load-bearing rather than tidy.
+    clip_selector=TAG_ROW_FIRST_CARD,
+    max_diff_ratio=0.04,
 )
 def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     """The tints lived on the BROWSE PAGE cards, not the canvas drawer cards.
@@ -1903,10 +2051,15 @@ def empty_nodes_say_why(ctx: Ctx) -> None:
     clip_selector='[data-curio-modal-shell="true"]',
     fit_reactflow=False,
     # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline - here a text-heavy modal clip, 5.4% on CI - so the pin
-    # leaves room for that without waving through a real change.
-    max_diff_ratio=0.08,
+    # Linux runner's glyph advances differ from the Windows machine that mints
+    # the baseline by enough to wrap the description paragraph one word
+    # earlier, and from that line down every row carries different words: the
+    # same text scored 9.3% on CI (5.4% when the paragraph was shorter), a
+    # rewritten description 10.0%, so the pixel share cannot tell content
+    # from wrapping here anyway. The wrap point moves with the text, so the
+    # pin leaves room for the whole paragraph to differ; a missing or empty
+    # modal still fails by a wide margin.
+    max_diff_ratio=0.15,
     # The baseline harness waits for ``.react-flow__node`` before handing over
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
     # even when it brings its own node.
@@ -1991,7 +2144,8 @@ def data_export_is_one_button(ctx: Ctx) -> None:
          "handed to every agent that reads it - and it looked like a chat box "
          "because it sat among the agent chips with no label except a "
          "placeholder too long to fit.",
-    tests=["src/tests/attach/AgentDock.test.tsx"],
+    tests=["src/tests/attach/AgentDock.test.tsx",
+           "src/tests/styles/agentDockGoalGeometry.test.ts"],
     clip_selector='[role="toolbar"][aria-label="Canvas agents"]',
     fit_reactflow=False,
     # The baseline harness waits for ``.react-flow__node`` before handing over
@@ -2027,12 +2181,16 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
-    attached = page.request.post(
-        f"{base}/attachments",
-        headers=headers,
-        data={"coord": coord, "target": {"kind": "canvas"}},
-    )
-    assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    def attach_one() -> None:
+        attached = page.request.post(
+            f"{base}/attachments",
+            headers=headers,
+            data={"coord": coord, "target": {"kind": "canvas"}},
+        )
+        assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    attach_one()
 
     # The dock is rendered from the attachment list the page fetches, so reload
     # rather than wait for a push that may never come.
@@ -2057,6 +2215,77 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     goal.blur()
     ctx.beat(500)
     ctx.capture("goal-filled")
+
+    # The measurement, rather than the pixels (#355). The PNG documents this
+    # scene at a 0.20 diff ratio, which its own note admits is loose enough for
+    # re-clipped text to pass; scrollWidth vs clientWidth is the same claim
+    # stated so a CSS regression cannot slip through a tolerance.
+    #
+    # Checked with the placeholder AND with a value, because they crop for
+    # different reasons: the placeholder is fixed-length copy, the value is
+    # whatever the user typed.
+    # The measurement, rather than the pixels (#355). This scene's PNG sits at a
+    # 0.20 diff ratio, which its own note admits is loose enough for re-clipped
+    # text to pass, so the claim is stated as geometry instead.
+    #
+    # Two more agents, attached AFTER both captures: the squeeze is the reported
+    # condition and one avatar does not squeeze anything, but crowding the dock
+    # before the captures would leave the baseline PNGs documenting a state this
+    # scene no longer produces. The pictures keep their subject; the assertions
+    # get the harder case.
+    attach_one()
+    attach_one()
+    page.reload()
+    require_owner_view(page)
+    goal = page.get_by_label("Dataflow goal")
+    expect(goal).to_be_visible(timeout=30000)
+    ctx.beat(400)
+
+    avatars = page.locator(
+        '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
+    ).count()
+    assert avatars >= 3, (
+        f"the dock shows {avatars} avatars; the goal is not being squeezed by "
+        "anything, so this measurement proves nothing"
+    )
+
+    # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
+    #    precisely so it would, and it is the only thing naming the field
+    #    before anything is typed. 1px of slack for sub-pixel rounding.
+    goal.fill("")
+    goal.blur()
+    ctx.beat(200)
+    empty = goal.evaluate(
+        "el => ({ scroll: el.scrollWidth, client: el.clientWidth })"
+    )
+    assert empty["scroll"] <= empty["client"] + 1, (
+        f"the goal placeholder is cropped with {avatars} agents attached: "
+        f"scrollWidth {empty['scroll']} > clientWidth {empty['client']} "
+        "(#227/#355)"
+    )
+
+    # 2. A long VALUE is allowed to overflow - a goal longer than the field is
+    #    the normal case, and the fix's own comment says so - but it must
+    #    ellipsize rather than be cut mid-word, and the field must still be
+    #    wide enough to read. Squeezed to nothing is the regression here, not
+    #    overflow itself.
+    goal.fill("Find heat islands in Chicago and rank them by population exposure")
+    goal.blur()
+    ctx.beat(200)
+    filled = goal.evaluate(
+        "el => ({ client: el.clientWidth,"
+        " overflow: getComputedStyle(el).textOverflow,"
+        " minWidth: getComputedStyle(el.parentElement).minWidth })"
+    )
+    assert filled["overflow"] == "ellipsis", (
+        "a goal longer than the field would be cut mid-word rather than "
+        f"ellipsized (text-overflow: {filled['overflow']})"
+    )
+    assert filled["client"] >= 120, (
+        f"the goal field collapsed to {filled['client']}px with {avatars} "
+        "agents attached - the placeholder cannot fit in that"
+    )
+
     ctx.say("Named, and readable end to end",
             "Who sees it is on the tooltip, not in the width budget.")
 
@@ -2101,7 +2330,11 @@ def project_drawer_offers_delete(ctx: Ctx) -> None:
     expect(page.get_by_role("button", name="Archive", exact=True)).to_have_count(0)
     ctx.capture("drawer-actions")
 
-    ctx.say("Delete, on every project",
+    # "On every project" until #285: a dataflow Curio seeded offers no Delete,
+    # because there is no way to get it back (the #270 marker never re-seeds a
+    # deleted one). This scene opens on the dataflow the harness created, which
+    # is the user's own and therefore still deletable.
+    ctx.say("Delete, on the dataflows you made",
             "The confirm is what makes deleting deliberate.")
 
 
@@ -2245,7 +2478,13 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
 
     # The edge is what the replay processes; before it renders, the bug has not
     # had its chance to happen.
-    page.locator(".react-flow__edge").first.wait_for(state="visible", timeout=45000)
+    #
+    # `attached`, not `visible`: an edge between two nodes the layout has aligned
+    # is a perfectly horizontal line, whose SVG geometry box is zero-height. The
+    # stroke is drawn and a human sees it, but Playwright measures the box and
+    # calls it hidden. Example 01's first edge is exactly that case. Existence is
+    # what this wait is actually about.
+    page.locator(".react-flow__edge").first.wait_for(state="attached", timeout=45000)
 
     disk = page.locator("[data-curio-save-state]")
     state = disk.get_attribute("data-curio-save-state")
@@ -2452,3 +2691,178 @@ def column_filter_reads_a_dataframe(ctx: Ctx) -> None:
     ctx.capture("reading-the-frame")
     ctx.say("It found the column and counted the rows",
             "The same payload it used to reject.")
+
+
+AGENT_CHAT_EXAMPLE = "01-vega-lite-chained-transforms.json"
+AGENT_CHAT_NODE_NAME = "Crash counts by hour"
+
+
+@walkthrough(
+    slug="agent-chat-names-its-node",
+    refs=[228],
+    title="A node-attached chat names its node",
+    premise="Rename a node, attach an agent to it, then read the chat header.",
+    note="The header composed its subtitle from the attachment alone - "
+         "\"Attached to node cd3b6afc-900d-417c-8064-375ed01a912f\", beside a "
+         "\"session 8f2a1c33\" chip. Neither id says which node the user is "
+         "talking to, and a canvas can hold several nodes of the same type. "
+         "The name now comes from resolveNodeDisplayLabel, the function the "
+         "node's own header renders, so the chat and the canvas say the same "
+         "thing - including after a rename, because the overlay reads it off "
+         "the React Flow store rather than a snapshot. Both ids moved to the "
+         "subtitle's tooltip, where support can still recover them.",
+    tests=["src/tests/attach/AgentChatPanel.test.tsx",
+           "test_frontend/test_agent_chat_e2e.py"],
+    example=AGENT_CHAT_EXAMPLE,
+    # The header, not the canvas and not the whole panel: the claim is one line
+    # of it. A full-page capture would spend the budget on six nodes that are
+    # not the subject, and the panel itself is mostly empty transcript - the
+    # header line was under 3% of it, so a budget loose enough for a Linux
+    # runner would have waved a reverted header straight through. Every capture
+    # in this scene therefore has to happen with the chat open.
+    clip_selector='[data-curio-chat-header="true"]',
+    fit_reactflow=False,
+    # Text on a dark ground, recorded on Windows and policed on the Linux
+    # runner, which antialiases it differently - the sibling #227 clip measured
+    # 14.6% on CI for exactly that, and this crop is almost entirely text. 0.20
+    # is not loose here the way it would be on a full panel: the subject fills
+    # the frame, so a header that went back to a uuid moves far more than a
+    # fifth of it. The claim is asserted in code below either way.
+    max_diff_ratio=0.20,
+)
+def agent_chat_names_its_node(ctx: Ctx) -> None:
+    page = ctx.page
+    node_id = first_node_of_type(AGENT_CHAT_EXAMPLE, "curio.builtin/vis-vega")
+    node = page.locator(f'.react-flow__node[data-id="{node_id}"]')
+    node.wait_for(state="visible", timeout=45000)
+
+    # Attaching goes over HTTP, as in dataflow-goal-is-readable: dragging an
+    # agent from the roster onto a node is a different journey, and this scene
+    # is about what the header says once one is attached.
+    token = page.evaluate(
+        "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
+    )
+    assert token, "no session cookie; the scene cannot attach an agent"
+    project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
+    base = f"{ctx.backend}/api/agents/projects/{project_id}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    # Node-only by roster, so the server cannot quietly fall back to a canvas
+    # attachment and leave this scene photographing the wrong header.
+    coord = "agent.node-explainer@1.0.0"
+
+    installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
+    assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
+    attached = page.request.post(
+        f"{base}/attachments",
+        headers=headers,
+        data={"coord": coord, "target": {"kind": "node", "targetId": node_id}},
+    )
+    assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
+
+    # The badge is rendered from the attachment list the page fetches, so
+    # reload rather than wait for a push that may never come.
+    page.reload()
+    require_owner_view(page)
+    # React Flow rebuilds the canvas after the reload; the scene needs the node
+    # back before it can rename it.
+    node.wait_for(state="visible", timeout=45000)
+    ctx.beat(800)
+
+    # Rename AFTER the reload. A type label ("Vega-Lite") would appear in the
+    # header whether or not the lookup reached the canvas, so a name only this
+    # node carries is what proves it did - and renaming here proves the second
+    # half too: the overlay reads the label off the React Flow store, so an
+    # open chat follows a rename without a round trip. Renaming BEFORE the
+    # reload proved neither: the save is debounced, the reload beat it, and the
+    # header came back reading "Attached to Vega-Lite".
+    rename = node.get_by_role("button", name=re.compile("^Edit node title: "))
+    ctx.focus(rename, hold=700)
+    ctx.say("Name the node", "The chat header should follow this, not a uuid.")
+    rename.click()
+    title_input = node.get_by_role("textbox", name="Node title")
+    title_input.fill(AGENT_CHAT_NODE_NAME)
+    title_input.press("Enter")
+    expect(node).to_contain_text(AGENT_CHAT_NODE_NAME)
+
+    opener = page.get_by_role(
+        "button", name=re.compile("^Open chat with Node Explainer")
+    ).first
+    ctx.focus(opener, hold=700)
+    ctx.say("Open its chat", "One agent, attached to that one node.")
+    opener.click()
+
+    panel = page.get_by_role("dialog", name=re.compile("^Chat with Node Explainer"))
+    expect(panel).to_be_visible(timeout=20000)
+
+    subtitle = panel.get_by_text(re.compile(r"^Attached to "))
+    expect(subtitle).to_have_text(f"Attached to {AGENT_CHAT_NODE_NAME}")
+    # Both ids are still recoverable, just not in the reading line.
+    tooltip = subtitle.get_attribute("title") or ""
+    assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
+    assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
+
+    ctx.say("It names the node", "The ids are on the tooltip, not in the header.")
+    ctx.capture("names-the-node")
+
+
+IMAGE_URLS_EXAMPLE = "dataflows/ImageUrls.json"
+
+
+@walkthrough(
+    slug="simple-view-shows-a-frames-images",
+    refs=[276],
+    title="Simple View shows the pictures a frame carries",
+    premise="Run a node that emits a GeoDataFrame of images, and read the node below it.",
+    note="Simple View decided it was looking at images by testing `input.data.image_id`, "
+         "which is a DataFrame column map - so a GeoDataFrame, whose columns live under "
+         "each feature's properties, could never reach image mode however it was shaped, "
+         "and a column of image URLs had no path at all. It now derives rows first and "
+         "reads the image columns off them, and draws a card per row: the picture, then "
+         "the rest of that row. That is what let the CV-specific gallery node retire.",
+    tests=["src/tests/adapters/node/simpleVisImages.test.tsx",
+           "src/tests/utils/imageColumns.test.ts"],
+    example=IMAGE_URLS_EXAMPLE,
+    # The scene frames the Simple View node itself; the harness must not re-fit.
+    fit_reactflow=False,
+)
+def simple_view_shows_a_frames_images(ctx: Ctx) -> None:
+    page = ctx.page
+
+    producer = first_node_of_type(
+        IMAGE_URLS_EXAMPLE, "computation-analysis", containing="image_url",
+    )
+    viewer = first_node_of_type(IMAGE_URLS_EXAMPLE, "vis-simple")
+
+    node = node_locator(page, viewer)
+    node.wait_for(state="visible", timeout=45000)
+    ctx.focus(node, hold=900)
+    ctx.say("A Simple View, waiting on the node above it",
+            "The frame it is about to receive carries a column of pictures.")
+
+    text = run_node_and_wait(page, producer, node_type="computation-analysis",
+                             timeout_ms=180000)
+    assert "Saved to file" in text, (
+        f"the producer should have written an artifact, got {text!r}"
+    )
+
+    # The claim: one card per row, each with its image and the row it came from.
+    # A GeoDataFrame took the table branch before this fix, so `img` was 0.
+    cards = node.locator(f'[id^="imageBox_content_{viewer}_"]')
+    cards.first.wait_for(state="visible", timeout=45000)
+    assert cards.count() == 3, (
+        f"expected one card per row, got {cards.count()} (#276)"
+    )
+    images = page.locator(f'#imageBox_content_{viewer} img')
+    assert images.count() == 3, (
+        f"expected one image per card, got {images.count()}; a GeoDataFrame of "
+        f"image URLs used to render as a table (#276)"
+    )
+    assert "dominant_class: vegetation" in (node.inner_text() or ""), (
+        "each card should caption the row that produced its image"
+    )
+
+    frame_node(page, viewer, zoom=1.1)
+    ctx.focus(node, hold=1200)
+    ctx.say("One card per row",
+            "The picture, and the values that describe it.")
+    ctx.capture("cards-rendered")

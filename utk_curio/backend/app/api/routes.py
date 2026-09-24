@@ -1,4 +1,7 @@
 from flask import request, abort, jsonify, g, Response, current_app
+
+from utk_curio.backend.app.monitor import counters as _monitor_counters
+from utk_curio.backend.app.monitor import errors as _monitor_errors
 import re
 import requests
 import json
@@ -137,21 +140,38 @@ def version():
     against what the platform can actually do, so `CURIO_ISOLATION` here would
     report an intention, not a fact. Degrades to 'unknown' rather than failing
     -- the version badge must still render when the sandbox is slow or down.
+
+    Both fields are passed through, because the resolved mode alone can
+    overstate the boundary. The zygote is started lazily on the first node
+    execution, and a spawn that fails degrades to in-process for the life of
+    the sandbox process without changing what `isolation` reports;
+    `isolation_active` is what the sandbox actually did. The badge needs both
+    to avoid claiming a confinement that is not there.
     """
     from utk_curio import __version__
 
     isolation = 'unknown'
+    isolation_active = 'unknown'
     try:
         response = _sandbox_session.get(
             api_address + ":" + str(api_port) + '/version',
             timeout=SANDBOX_VERSION_TIMEOUT,
         )
         if response.status_code == 200:
-            isolation = response.json().get('isolation', 'unknown')
+            payload = response.json()
+            isolation = payload.get('isolation', 'unknown')
+            # An older sandbox does not send this. 'unknown' rather than 'off':
+            # the badge only downgrades on an explicit 'off', so a missing
+            # field must not be read as evidence of a failed zygote.
+            isolation_active = payload.get('isolation_active', 'unknown')
     except (requests.RequestException, ValueError):
         pass
 
-    return jsonify({'version': __version__, 'isolation': isolation})
+    return jsonify({
+        'version': __version__,
+        'isolation': isolation,
+        'isolation_active': isolation_active,
+    })
 
 @bp.route('/file/<path:filename>', methods=['GET'])
 def serve_launch_cwd_file(filename: str):
@@ -269,16 +289,15 @@ def get_file_preview():
         return f'Error loading preview: {str(e)}', 500
 
 
-# Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
-# stay in sync with _SAFE_DATASET_ID_RE in datasets/domain/catalog_item.py (the
-# backend snippet generator) and the frontend datasetLoaderSnippets.ts - the
-# generators only ever emit ids this scan can find. Single or double quotes are
-# accepted because users edit the generated code.
-_DATASET_PATH_CALL_RE = re.compile(
-    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+# The scan moved to datasets/domain/code_refs.py so the lineage path and this
+# execution path cannot drift: a dataset referenced only in code used to be
+# resolvable here and invisible to the catalog's usage helper (#250). The names
+# stay re-exported because tests and callers import them from this module.
+from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
+    DATASET_PATH_CALL_RE as _DATASET_PATH_CALL_RE,
+    MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
+    dataset_ids_in_code,
 )
-# Bound the per-execution resolution work against pathological/generated code.
-MAX_EXEC_DATASET_IDS = 32
 
 
 def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
@@ -289,15 +308,7 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
     anything missing. Only ids appearing as literal calls are found; a
     dynamically built id simply won't be in the mapping.
     """
-    if "curio_dataset_path" not in code:
-        return {}
-    ids: list[str] = []
-    for match in _DATASET_PATH_CALL_RE.finditer(code):
-        dataset_id = match.group(2)
-        if dataset_id not in ids:
-            ids.append(dataset_id)
-        if len(ids) >= MAX_EXEC_DATASET_IDS:
-            break
+    ids = dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
     if not ids:
         return {}
     try:
@@ -381,24 +392,28 @@ def process_python_code():
     exec_user_key = _exec_user_key()
     exec_secrets = _resolve_exec_secrets(code)
     t1 = _time.perf_counter()
-    response = _sandbox_call(
-        'post', '/exec',
-        label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
-        data=json.dumps({
-            "code": code,
-            "file_path": input['path'],
-            "nodeType": nodeType,
-            "dataType": input['dataType'],
-            "session_id": session_id,
-            "save_dataset": bool(save_output_dataset),
-            "dataset_paths": dataset_paths,
-            "user_key": exec_user_key,
-            # dev/116: present only when the code names a saved key — the
-            # request body is otherwise byte-identical to before.
-            **({"secrets": exec_secrets} if exec_secrets else {}),
-        }),
-        headers={"Content-Type": "application/json"},
-    )
+    # The gauge wraps only the sandbox round trip, which is where a node
+    # actually spends its time. Counting the surrounding parse and JSON work
+    # would report nodes as "running" that are really just being serialised.
+    with _monitor_counters.in_flight():
+        response = _sandbox_call(
+            'post', '/exec',
+            label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
+            data=json.dumps({
+                "code": code,
+                "file_path": input['path'],
+                "nodeType": nodeType,
+                "dataType": input['dataType'],
+                "session_id": session_id,
+                "save_dataset": bool(save_output_dataset),
+                "dataset_paths": dataset_paths,
+                "user_key": exec_user_key,
+                # dev/116: present only when the code names a saved key — the
+                # request body is otherwise byte-identical to before.
+                **({"secrets": exec_secrets} if exec_secrets else {}),
+            }),
+            headers={"Content-Type": "application/json"},
+        )
     if isinstance(response, tuple):
         return response
     t2 = _time.perf_counter()
@@ -465,6 +480,47 @@ def process_python_code():
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
 
+    # Deliberately a SIBLING of the journal call, not a line inside it:
+    # _record_runtime_outcome returns early whenever node/dataflow/user is
+    # missing, which is every execution from an unsaved canvas. Counters placed
+    # in there would silently under-count exactly the runs a new user makes.
+    _monitor_counters.record_execution(
+        language="python",
+        node_type=nodeType,
+        ok=bool(isinstance(output, dict) and output.get("path")),
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+    if not (isinstance(output, dict) and output.get("path")):
+        # Same canonical predicate as above: an EMPTY output path. A non-empty
+        # stderr is NOT the predicate, because benign warnings land there too
+        # and logging those as errors would bury the real ones.
+        _monitor_errors.record(
+            "node",
+            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
+            detail=str(stderr or ""),
+            context={"nodeType": nodeType, "language": "python"},
+        )
+
+    # Which library the run was missing, when that is why it failed (#299).
+    # Gated on the canonical failure contract - an EMPTY output path, not a
+    # non-empty stderr, because warnings land in stderr too. `detect` never
+    # raises: a diagnostic that turned one failure into two would be worse than
+    # none, and the traceback is reported either way.
+    missing_module = None
+    if isinstance(output, dict) and not output.get('path'):
+        from utk_curio.backend.app.packages import missing_import
+        from utk_curio.backend.app.users.capabilities import library_install_refusal
+        missing_module = missing_import.detect(stderr)
+        # Never offer an install the libraries route would refuse (#309).
+        refusal = library_install_refusal(g.user)
+        if missing_module and missing_module.get("installable") and refusal:
+            missing_module = {
+                **missing_module,
+                "installable": False,
+                "reason": "install-disabled",
+                "detail": refusal,
+            }
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -472,6 +528,7 @@ def process_python_code():
         'output': output,
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
+        'missingModule': missing_module,
     }
 
 
@@ -621,19 +678,23 @@ def process_javascript_code():
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
-    response = _sandbox_call(
-        'post', '/execJs',
-        label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
-        data=json.dumps({
-            "code": code,
-            "file_path": input['path'],
-            "nodeType": nodeType,
-            "dataType": input['dataType'],
-            "session_id": session_id,
-            "save_dataset": bool(save_output_dataset),
-        }),
-        headers={"Content-Type": "application/json"},
-    )
+    # The gauge wraps only the sandbox round trip, which is where a node
+    # actually spends its time. Counting the surrounding parse and JSON work
+    # would report nodes as "running" that are really just being serialised.
+    with _monitor_counters.in_flight():
+        response = _sandbox_call(
+            'post', '/execJs',
+            label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
+            data=json.dumps({
+                "code": code,
+                "file_path": input['path'],
+                "nodeType": nodeType,
+                "dataType": input['dataType'],
+                "session_id": session_id,
+                "save_dataset": bool(save_output_dataset),
+            }),
+            headers={"Content-Type": "application/json"},
+        )
     if isinstance(response, tuple):
         return response
     t2 = _time.perf_counter()
@@ -698,6 +759,27 @@ def process_javascript_code():
         code=code, stdout=stdout, stderr=stderr, output=output,
         duration_ms=(_time.perf_counter() - t0) * 1000.0,
     )
+
+    # Deliberately a SIBLING of the journal call, not a line inside it:
+    # _record_runtime_outcome returns early whenever node/dataflow/user is
+    # missing, which is every execution from an unsaved canvas. Counters placed
+    # in there would silently under-count exactly the runs a new user makes.
+    _monitor_counters.record_execution(
+        language="javascript",
+        node_type=nodeType,
+        ok=bool(isinstance(output, dict) and output.get("path")),
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+    if not (isinstance(output, dict) and output.get("path")):
+        # Same canonical predicate as above: an EMPTY output path. A non-empty
+        # stderr is NOT the predicate, because benign warnings land there too
+        # and logging those as errors would bury the real ones.
+        _monitor_errors.record(
+            "node",
+            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
+            detail=str(stderr or ""),
+            context={"nodeType": nodeType, "language": "javascript"},
+        )
 
     return {
         'stdout': stdout,
@@ -785,16 +867,22 @@ def spatial_join():
         {
           "points":        FeatureCollection (Point features),
           "polygons":      FeatureCollection (Polygon/MultiPolygon features),
-          "name_property": optional, defaults to "name". Which property on
+          "name_property": optional, defaults to "name". Which column on
                            each polygon to use as the tag (e.g. "pri_neigh"
                            for Chicago neighborhoods, "BoroName" for NYC).
+          "output":        optional, "points" (default) or "polygons".
         }
 
     Response:
         {
           "type": "FeatureCollection",
-          "features": [...]   # input points augmented with `neighborhood_name`
-                              # (and `nbhd_*` aggregates) on properties
+          "features": [...]   # output "points" (default): the input points plus
+                              # the polygon's tag under the polygon column's own
+                              # name, a `<tag>_point_count` and the
+                              # `<tag>_dominant_*` roll-ups when the points carry
+                              # a dominant class. Output "polygons": the input
+                              # polygons, each with `point_count` (and the
+                              # dominant_* roll-ups when present).
           "metadata": { "aggregates": [...],   # per-polygon roll-up
                         "warnings": [...] }     # only when non-empty (#262)
         }
@@ -830,8 +918,11 @@ def spatial_join():
 
     warnings: list = []
     try:
-        from utk_curio.backend.app.common.spatial import enrich_points_with_polygons
-        enriched, aggregates = enrich_points_with_polygons(
+        from utk_curio.backend.app.common.spatial import (
+            enrich_points_with_polygons,
+            polygons_with_counts,
+        )
+        enriched, aggregates, tag_column = enrich_points_with_polygons(
             points=point_dicts,
             polygon_fc=polygons_fc,
             name_property=name_property,
@@ -845,6 +936,17 @@ def spatial_join():
         }), 503
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+    output = body.get("output") or "points"
+    if output not in ("points", "polygons"):
+        return jsonify({"error": "output must be one of points, polygons"}), 400
+    if output == "polygons":
+        out_features = polygons_with_counts(polygons_fc, aggregates, tag_column, name_property)
+        metadata = {"name": "spatial_join_result", "aggregates": aggregates,
+                    "tag_column": tag_column, "output": output}
+        if warnings:
+            metadata["warnings"] = warnings
+        return jsonify({"type": "FeatureCollection", "features": out_features, "metadata": metadata})
 
     # Re-pack enriched points as Features so downstream consumers see the
     # same shape they sent in.
@@ -863,7 +965,8 @@ def spatial_join():
             "properties": p,
         })
 
-    metadata = {"name": "spatial_join_result", "aggregates": aggregates}
+    metadata = {"name": "spatial_join_result", "aggregates": aggregates,
+                "tag_column": tag_column, "output": output}
     if warnings:
         metadata["warnings"] = warnings
     return jsonify({

@@ -10,8 +10,10 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { fetchData } from '../../services/api';
 import { formatDate, mapTypes } from '../../utils/formatters';
 import { ICodeDataContent } from '../../types';
+import { resolveImageColumns } from '../../utils/imageColumns';
 import ContentTable from './components/ContentTable';
-import ImageGrid from './components/ImageGrid';
+import { CopyButton } from '../../components/CopyButton';
+import ImageCardGrid from './components/ImageCardGrid';
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
   if (!parsedOutput || !parsedOutput.data) return [];
@@ -38,6 +40,9 @@ function buildTableRows(parsedOutput: ICodeDataContent): any[] {
 
 type SimpleVisMode = 'table' | 'image' | 'text';
 
+/** Sentinel for "show every image column", the default. */
+export const ALL_IMAGE_COLUMNS = 'all';
+
 function toDisplayString(input: any): string {
   const value = input?.data !== undefined ? input.data : input;
   try {
@@ -47,13 +52,47 @@ function toDisplayString(input: any): string {
   }
 }
 
-function getMode(input: any): SimpleVisMode {
+function isFrame(input: any): boolean {
   const dt = input?.dataType;
-  if (dt === 'dataframe' || dt === 'geodataframe') {
-    if (input?.data?.image_id) return 'image';
-    return 'table';
+  return dt === 'dataframe' || dt === 'geodataframe';
+}
+
+/** The node's persisted image-column choice; see the picker below. */
+export function resolveImageColumnChoice(data: any): string {
+  const raw = data?.simpleVis?.imageColumn;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed || ALL_IMAGE_COLUMNS;
+}
+
+/**
+ * What to render, derived once from a resolved payload.
+ *
+ * Rows come first and the mode follows from them. That ordering is the fix for
+ * #276: the previous check read `input.data.image_id`, a DataFrame *column
+ * map*, so a GeoDataFrame, whose columns live under `features[i].properties`,
+ * could never be images however it was shaped, and a column of image URLs had
+ * no path at all. `buildTableRows` already flattened both shapes; now one
+ * answer serves the table, the images and the interaction flags alike.
+ */
+function deriveView(parsedInput: any): {
+  mode: SimpleVisMode;
+  rows: any[];
+  imageColumns: string[];
+  textContent: string;
+} {
+  // Nothing wired in yet, or an upstream that has not run. There is no payload
+  // to describe, so every branch stays empty and the caller falls through to
+  // the empty state that says which of those it is (#224). Without this guard a
+  // freshly dropped node has `input === ''`, whose JSON is the two-character
+  // string `""`, which is truthy and renders as a text payload.
+  if (parsedInput == null || parsedInput === '') {
+    return { mode: 'text', rows: [], imageColumns: [], textContent: '' };
   }
-  return 'text';
+  const rows = isFrame(parsedInput) ? buildTableRows(parsedInput) : [];
+  const imageColumns = resolveImageColumns(rows);
+  if (imageColumns.length > 0) return { mode: 'image', rows, imageColumns, textContent: '' };
+  if (isFrame(parsedInput)) return { mode: 'table', rows, imageColumns: [], textContent: '' };
+  return { mode: 'text', rows: [], imageColumns: [], textContent: toDisplayString(parsedInput) };
 }
 
 export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -62,13 +101,13 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
-  // mode so the first render already produces a contentComponent. The effect
+  // view so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.
-  const [currentMode, setCurrentMode] = useState<SimpleVisMode>(() => getMode(data.input));
-  const [outputTable, setOutputTable] = useState<any[]>([]);
-  const [images, setImages] = useState<string[]>([]);
-  const [interacted, setInteracted] = useState<string[]>([]);
-  const [textContent, setTextContent] = useState<string>('');
+  const initial = useMemo(() => deriveView(data.input), []);
+  const [currentMode, setCurrentMode] = useState<SimpleVisMode>(initial.mode);
+  const [rows, setRows] = useState<any[]>(initial.rows);
+  const [imageColumns, setImageColumns] = useState<string[]>(initial.imageColumns);
+  const [textContent, setTextContent] = useState<string>(initial.textContent);
   const [interactions, _setInteractions] = useState<any>({});
   const interactionsRef = useRef(interactions);
   const dataInputBypass = useRef(false);
@@ -79,7 +118,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
 
   const { nodeExecProv } = useProvenanceContext();
-  const { workflowNameRef } = useFlowContext();
+  const { workflowNameRef, updateDataNode } = useFlowContext();
   const { showToast } = useToastContext();
 
   useEffect(() => {
@@ -105,32 +144,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
       nodeExecProv(startTime, startTime, workflowNameRef.current, execId, mapTypes(typesInput), mapTypes(typesInput), '');
 
-      const mode = getMode(parsedInput);
-      setCurrentMode(mode);
-
-      if (mode === 'text') {
-        setTextContent(toDisplayString(parsedInput));
-      } else if (mode === 'image') {
-        if (!parsedInput.data?.image_id || !parsedInput.data?.image_content) {
-          showToast("Image needs a DataFrame with 'image_id' and 'image_content' columns.", 'error');
-          return;
-        }
-        const newImages: string[] = [];
-        const newInteracted: string[] = [];
-        for (const key of Object.keys(parsedInput.data.image_content)) {
-          const iterator: string[] = Array.isArray(parsedInput.data.image_content[key])
-            ? [...parsedInput.data.image_content[key]]
-            : [parsedInput.data.image_content[key]];
-          for (const base64ImageContent of iterator) {
-            newInteracted.push(parsedInput.data.interacted != undefined ? parsedInput.data.interacted[key] : '0');
-            newImages.push('data:image/png;base64,' + base64ImageContent);
-          }
-        }
-        setImages(newImages);
-        setInteracted(newInteracted);
-      } else if (mode === 'table') {
-        setOutputTable(buildTableRows(parsedInput));
-      }
+      const view = deriveView(parsedInput);
+      setCurrentMode(view.mode);
+      setRows(view.rows);
+      setImageColumns(view.imageColumns);
+      setTextContent(view.textContent);
 
       nodeState.setOutput({ code: 'success', content: parsedInput });
       if (typeof data.outputCallback === 'function') {
@@ -147,40 +165,123 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   }, [interactions]);
 
-  const clickImage = useCallback((index: number) => {
+  // A card is a row, so the index sent downstream is the row index. It used to
+  // be the position in a flattened image list, which only matched when every
+  // cell held exactly one image.
+  const clickRow = useCallback((rowIndex: number) => {
     setInteractions({
       images_click: {
         type: VisInteractionType.POINT,
-        data: [index],
+        data: [rowIndex],
         priority: 1,
         source: NodeType.VIS_SIMPLE,
       },
     });
   }, []);
 
+  // Written back by a linked Data Pool, onto the row itself for both frame
+  // shapes, so this no longer has to know which shape it came from.
+  const interacted = useMemo(
+    () => rows.map((row) => (row?.interacted === '1' ? '1' : '0')),
+    [rows],
+  );
+
+  const choice = resolveImageColumnChoice(data);
+  const shownImageColumns = useMemo(() => {
+    if (choice === ALL_IMAGE_COLUMNS) return imageColumns;
+    const pinned = imageColumns.filter((c) => c === choice);
+    // A pinned column the current frame does not carry falls back to all,
+    // rather than rendering an empty node and blaming the data.
+    return pinned.length > 0 ? pinned : imageColumns;
+  }, [choice, imageColumns]);
+
+  const pickColumn = useCallback(
+    (value: string) => {
+      updateDataNode(data.nodeId, {
+        ...data,
+        simpleVis: { ...(data as any).simpleVis, imageColumn: value },
+      });
+    },
+    [data, updateDataNode],
+  );
+
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes
   // identity — without this, any re-render (e.g. React Flow deselecting the
   // node on a pane click) would yank the user out of the code editor.
   const contentComponent = useMemo<React.ReactNode | undefined>(() => {
-    if (currentMode === 'table' && outputTable.length > 0) {
-      return <ContentTable tableData={outputTable} nodeId={data.nodeId} />;
+    if (currentMode === 'table' && rows.length > 0) {
+      return <ContentTable tableData={rows} nodeId={data.nodeId} />;
     }
-    if (currentMode === 'image' && images.length > 0) {
+    if (currentMode === 'image' && rows.length > 0 && shownImageColumns.length > 0) {
       return (
-        <ImageGrid
-          nodeId={data.nodeId}
-          images={images}
-          interacted={interacted}
-          onClickImage={clickImage}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {imageColumns.length > 1 && (
+            <label
+              className="nodrag"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', fontSize: 11 }}
+            >
+              <span>Image column</span>
+              <select
+                aria-label="Image column"
+                data-curio-image-column="true"
+                value={choice}
+                onChange={(e) => pickColumn(e.target.value)}
+                style={{ fontSize: 11 }}
+              >
+                <option value={ALL_IMAGE_COLUMNS}>all</option>
+                {imageColumns.map((column) => (
+                  <option key={column} value={column}>{column}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ImageCardGrid
+              nodeId={data.nodeId}
+              rows={rows}
+              imageColumns={shownImageColumns}
+              interacted={interacted}
+              onClickRow={clickRow}
+            />
+          </div>
+        </div>
       );
     }
     if (currentMode === 'text' && textContent) {
+      // This pane is where an upstream error's text lands, so it is the string
+      // a user most often needs to hand to an agent (#267). `.react-flow__node`
+      // sets `user-select: none` so a drag pans the node, which made it
+      // unselectable; `nodrag` releases the gesture and `userSelect` re-enables
+      // the selection, the same pairing CodeEditor's output pane uses. `nowheel`
+      // because the pane scrolls horizontally on its own.
       return (
-        <pre style={{ margin: 0, padding: '8px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-          {textContent}
-        </pre>
+        <div style={{ position: 'relative', height: '100%' }}>
+          {/* Floated over the pane rather than above it: the node body is
+              short, and a header row would cost a line of the text itself. */}
+          <div
+            className="nodrag"
+            style={{ position: 'absolute', top: 4, right: 4, zIndex: 1 }}
+          >
+            <CopyButton value={textContent} label="Copy text" />
+          </div>
+          <pre
+            className="nodrag nowheel"
+            data-curio-node-text="true"
+            style={{
+              margin: 0,
+              padding: '8px',
+              fontSize: '12px',
+              overflowX: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              userSelect: 'text',
+              cursor: 'text',
+            }}
+          >
+            {textContent}
+          </pre>
+        </div>
       );
     }
     // Every branch above now requires actual content, so this is reached
@@ -197,12 +298,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
             // 'text' is the fallback mode for anything that is not a frame,
             // so a text mode with no content is a payload we cannot show.
             tabular: currentMode !== 'text',
-            rowCount: currentMode === 'image' ? images.length : outputTable.length,
+            rowCount: rows.length,
           }) ?? 'not-tabular'
         }
       />
     );
-  }, [currentMode, outputTable, images, interacted, textContent, data.nodeId, data.input, connected, clickImage]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, clickRow, pickColumn]);
 
   return {
     contentComponent,

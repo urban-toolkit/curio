@@ -1,10 +1,12 @@
 """Deciding whether node execution runs isolated, and what to do if it cannot.
 
-Isolation needs primitives that only exist on POSIX: ``os.fork`` to get a warm
-child cheaply, ``resource.setrlimit`` to cap it, and ``os.killpg`` to reap it.
-Windows has none of them, and Curio is developed on Windows, so the in-process
-path has to remain a first-class supported configuration rather than a broken
-leftover.
+Isolation needs primitives that only exist on Linux. Three are POSIX --
+``os.fork`` to get a warm child cheaply, ``resource.setrlimit`` to cap it, and
+``os.killpg`` to reap it -- but confinement also calls
+``prctl(PR_SET_NO_NEW_PRIVS)`` through ``libc.so.6``, which macOS does not have.
+Windows has none of them, and Curio is developed on Windows and macOS, so the
+in-process path has to remain a first-class supported configuration rather than
+a broken leftover.
 
 The rule that matters is asymmetric, and deliberately so:
 
@@ -12,7 +14,7 @@ The rule that matters is asymmetric, and deliberately so:
   in-process path with one loud warning. Breaking a developer's laptop to
   enforce a boundary that only matters for shared instances would be the wrong
   trade.
-- On a **hosted launch** (``--auth`` / ``--deploy``), the same missing
+- On a **hosted launch** (``--deploy``), the same missing
   capability is fatal. A production instance that silently ran unisolated
   would be the exact failure this work exists to prevent, and it would be
   invisible: everything would appear to work.
@@ -78,21 +80,27 @@ def capabilities(platform=None, module_probe=None):
 def missing_requirements(caps, *, hosted):
     """Return the capabilities needed but absent, most fundamental first.
 
-    Hosting additionally requires Linux and seccomp, because without a syscall
-    filter the child keeps unrestricted network access, and an isolated child
-    that can still open sockets is not isolated in the sense a hosted instance
-    needs.
+    Linux is required outright, not only for hosting. ``child.confine`` opens
+    ``libc.so.6`` to call ``prctl(PR_SET_NO_NEW_PRIVS)`` on every child it
+    confines, hosted or not. fork and setrlimit are POSIX and macOS has both,
+    which is why this used to read as "macOS can isolate locally" - it resolved
+    to FORK and then every node died at confinement with "the sandbox could not
+    confine this execution", which is the opposite of the local-launch degrade
+    this module exists to guarantee.
+
+    Hosting additionally requires seccomp: without a syscall filter the child
+    keeps unrestricted network access, and an isolated child that can still
+    open sockets is not isolated in the sense a hosted instance needs.
     """
     missing = []
+    if not caps["linux"]:
+        missing.append("Linux (prctl and seccomp have no equivalent elsewhere)")
     if not caps["fork"]:
         missing.append("os.fork")
     if not caps["rlimit"]:
         missing.append("the resource module (setrlimit)")
-    if hosted:
-        if not caps["linux"]:
-            missing.append("Linux (seccomp has no equivalent elsewhere)")
-        elif not caps["seccomp"]:
-            missing.append("pyseccomp (pip install pyseccomp)")
+    if hosted and caps["linux"] and not caps["seccomp"]:
+        missing.append("pyseccomp (pip install pyseccomp)")
     return missing
 
 
@@ -123,7 +131,11 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
             return OFF, (
                 "Isolation is explicitly disabled on an instance with user auth "
                 "enabled. Node code runs in-process with full privileges; treat "
-                "node-authoring rights as shell access."
+                "node-authoring rights as shell access. It also serializes "
+                "them: in-process execution holds one process-wide lock, so "
+                "users' Python nodes run strictly one at a time however many "
+                "cores the host has. Isolation is what makes them concurrent "
+                "(CURIO_EXEC_PARALLELISM)."
             )
         return OFF, None
 
@@ -133,38 +145,42 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
         if missing:
             if hosted:
                 raise IsolationUnavailable(
-                    "Isolation was requested (--isolation=fork) on an instance "
+                    "Isolation was requested (CURIO_ISOLATION=fork) on an instance "
                     "with user auth enabled, but this platform is missing: "
                     + ", ".join(missing)
                     + ". Refusing to start unisolated. Run the Docker image, or "
-                    "pass --isolation=off to accept the risk explicitly."
+                    "set CURIO_ISOLATION=off to accept the risk explicitly."
                 )
             return OFF, (
                 "Isolation was requested but is unavailable here ("
                 + ", ".join(missing)
                 + "). Falling back to in-process execution, which is the normal "
-                "local-development path."
+                "local-development path -- and a single-user one: node runs "
+                "serialize behind one process-wide lock."
             )
         return FORK, None
 
-    # AUTO resolves to OFF, deliberately, and will keep doing so until the
-    # fork path has actually run somewhere.
+    # AUTO resolves to OFF: it means "nobody asked", and the answer to that is
+    # the in-process path.
     #
-    # The tempting behaviour is "isolate wherever it is possible", which would
-    # switch every hosted Linux instance over the moment this ships. That is
-    # the wrong default for code whose confinement step (child.confine) has
-    # never executed: a silent switch would move every hosted deployment onto
-    # an untested execution path, and CI (Linux, --auth) would be the first
-    # thing to discover it.
+    # This used to be a stronger claim -- that isolating wherever possible was
+    # the WRONG default, because child.confine had never executed anywhere.
+    # That is no longer true: docker-compose.ci-isolated.yml and
+    # docker-compose.ci-exec-user.yml boot the fork path on every CI run, the
+    # workflow asserts the mode /version reports, and test-gpu-exec-user runs a
+    # real workload through it with an unprivileged execution account.
     #
-    # Isolation is therefore opt-in via --isolation=fork. When the fork path is
-    # verified, this branch becomes `return FORK` for hosted instances and the
-    # decision table in test_isolation_fallback.py changes with it.
+    # So the decision moved up rather than changing here. The launcher defaults
+    # --deploy to FORK when the host can deliver it (utk_curio/main.py), which
+    # is the "isolate wherever it is possible" behaviour, scoped to the
+    # instances that have more than one user to separate. AUTO stays OFF so
+    # that a local launch, and anything that never went through the launcher,
+    # keeps its existing behaviour.
     if hosted and not missing:
         return OFF, (
             "Node execution is NOT isolated: it runs in-process with the "
             "sandbox's full privileges. This platform supports isolation, so "
-            "consider --isolation=fork. Until then, treat node-authoring "
+            "consider CURIO_ISOLATION=fork. Until then, treat node-authoring "
             "rights on this instance as equivalent to shell access."
         )
     return OFF, None

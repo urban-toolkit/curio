@@ -24,7 +24,6 @@ import pytest
 
 from .walkthroughs import WALKTHROUGHS, Ctx, SilentNarrator
 from .utils import (
-    dismiss_toasts,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -83,15 +82,14 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
 
     def snapshot(label: str) -> None:
         """One committed PNG per pinned step of the journey."""
-        if not subject_is_a_toast:
-            dismiss_toasts(page)
         save_workflow_test_screenshot(
             page,
             walk.stem,
             test_name=label,
             clip_selector=walk.clip_selector,
             fit_reactflow=walk.fit_reactflow,
-            max_diff_ratio=walk.max_diff_ratio,
+            max_diff_ratio=walk.effective_max_diff_ratio,
+            sweep_toasts=not subject_is_a_toast,
         )
 
     ctx = Ctx(
@@ -106,13 +104,15 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
 
     # Toasts are timed, so one still fading would make the diff depend on how
     # fast the machine got here — except where the toast is what we came for.
-    if not subject_is_a_toast:
-        dismiss_toasts(page)
+    # The sweep is the helper's (sweep_toasts) rather than a call here: it has
+    # to happen after the viewport wait, or a toast raised by the last step of
+    # the scene lands between the sweep and the shutter and stays there.
     save_workflow_test_screenshot(
         page,
         walk.stem,
         test_name="walkthrough",
         clip_selector=walk.clip_selector,
         fit_reactflow=walk.fit_reactflow,
-        max_diff_ratio=walk.max_diff_ratio,
+        max_diff_ratio=walk.effective_max_diff_ratio,
+        sweep_toasts=not subject_is_a_toast,
     )

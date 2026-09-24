@@ -387,5 +387,118 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(resp.get_json()['error'], 'sandbox_unauthorized')
 
 
+class TestMissingModuleReporting(unittest.TestCase):
+    """A failed run says which library it was missing (#299).
+
+    The response field is what turns a raw ``ModuleNotFoundError`` into an
+    offer to install the thing. Mocked at the sandbox session so the claim
+    under test is the ROUTE's - that it reads the traceback, gates on the right
+    signal, and does not leak onto paths where an install button would be
+    useless.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = app.test_client()
+        cls._user_patch = patch(
+            "utk_curio.backend.app.users.dependencies.get_current_user",
+            return_value=MagicMock(is_guest=False),
+        )
+        cls._user_patch.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._user_patch.stop()
+
+    def _auth_headers(self):
+        return {"Authorization": "Bearer test-token"}
+
+    def _run(self, mock_session, *, stderr, path, route="/processPythonCode"):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "stdout": [], "stderr": stderr,
+            "output": {"path": path, "dataType": "dataframe"},
+        }
+        mock_session.post.return_value = mock_response
+        resp = self.client.post(
+            route,
+            json={"code": "    import sklearn", "nodeType": "COMPUTATION_ANALYSIS",
+                  "input": {}},
+            headers=self._auth_headers(),
+        )
+        return resp.get_json()
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_a_failed_run_names_the_missing_library(self, mock_session):
+        body = self._run(
+            mock_session,
+            stderr="ModuleNotFoundError: No module named 'sklearn'",
+            path="",
+        )
+        self.assertEqual(body["missingModule"]["module"], "sklearn")
+        self.assertEqual(body["missingModule"]["distribution"], "scikit-learn")
+        self.assertTrue(body["missingModule"]["installable"])
+        # The traceback is still reported in full: the notice is additional, not
+        # a replacement for what the user was already shown.
+        self.assertIn("ModuleNotFoundError", body["stderr"])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_install_is_offered_to_a_caller_who_may_not_install(
+        self, mock_session,
+    ):
+        # An Install button the libraries route would refuse is a dead end
+        # (#309): name the library, and say why it cannot be installed here.
+        from utk_curio.backend import config
+
+        guest = patch(
+            "utk_curio.backend.app.users.dependencies.get_current_user",
+            return_value=MagicMock(is_guest=True),
+        )
+        with guest, patch.object(config, "CURIO_NO_AUTH", False):
+            body = self._run(
+                mock_session,
+                stderr="ModuleNotFoundError: No module named 'sklearn'",
+                path="",
+            )
+        self.assertEqual(body["missingModule"]["distribution"], "scikit-learn")
+        self.assertFalse(body["missingModule"]["installable"])
+        self.assertEqual(body["missingModule"]["reason"], "install-disabled")
+        self.assertIn("guest", body["missingModule"]["detail"].lower())
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_a_successful_run_reports_nothing_even_with_that_text_on_stderr(
+        self, mock_session
+    ):
+        # Failure is an EMPTY output path, not a non-empty stderr - warnings
+        # land there too, and a node that printed the phrase while succeeding
+        # must not be offered an install.
+        body = self._run(
+            mock_session,
+            stderr="ModuleNotFoundError: No module named 'sklearn'",
+            path="art_x",
+        )
+        self.assertIsNone(body["missingModule"])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_an_ordinary_failure_reports_nothing(self, mock_session):
+        body = self._run(
+            mock_session, stderr="ValueError: not a number", path="",
+        )
+        self.assertIsNone(body["missingModule"])
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_the_javascript_route_never_carries_the_field(self, mock_session):
+        # The libraries route answers 501 for kind "js", so a button there
+        # could only ever fail.
+        body = self._run(
+            mock_session,
+            stderr="ModuleNotFoundError: No module named 'sklearn'",
+            path="",
+            route="/processJavaScriptCode",
+        )
+        self.assertNotIn("missingModule", body)
+
+
 if __name__ == "__main__":
     unittest.main()

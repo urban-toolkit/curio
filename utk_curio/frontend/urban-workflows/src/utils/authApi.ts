@@ -64,6 +64,9 @@ export interface UserData {
   /** Whether a HuggingFace token is stored. The token itself never leaves the
    * server; this is what AI Settings shows instead. */
   has_huggingface_token?: boolean;
+  /** Whether a Socrata app token is stored, for the Data Lake Catalog. Same
+   * rule: a boolean, never the value. */
+  has_socrata_app_token?: boolean;
 }
 
 export interface PublicConfig {
@@ -75,6 +78,9 @@ export interface PublicConfig {
   shared_guest_username: string;
   enable_collab: boolean;
   default_save_node_output: boolean;
+  /** Whether this install supplies a Socrata app token that users inherit.
+   * A boolean; the token itself never leaves the server. */
+  has_default_socrata_app_token?: boolean;
 }
 
 export const authApi = {
@@ -125,6 +131,7 @@ export const authApi = {
     llm_api_key?: string;
     llm_model?: string;
     huggingface_token?: string;
+    socrata_app_token?: string;
   }): Promise<UserData> {
     return apiFetch("/api/auth/me", {
       method: "PATCH",

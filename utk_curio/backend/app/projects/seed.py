@@ -90,6 +90,31 @@ def _example_id(stem: str, user=None) -> str:
     return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{stem}"))
 
 
+def example_project_ids(user) -> set[str]:
+    """The project ids this user's seeded examples occupy.
+
+    Derived, not stored: ``Project`` has no "this one shipped with Curio"
+    column, and it does not need one - an example's id is ``uuid5`` of its
+    filename (scoped to the account since #200), so the set can be recomputed
+    from ``docs/examples/`` whenever it is asked for.
+
+    Callers use it to keep a shipped dataflow out of reach of Delete. That rule
+    matches the one the Data Catalog has had since "hide delete for anything
+    that came from the shared catalog": you may edit and rename what Curio
+    seeded for you, but removing it is not yours to do - and since #270 a
+    deleted example never comes back, so the mis-click was permanent.
+    """
+    examples_dir = _repo_root() / "docs" / "examples"
+    if not examples_dir.exists():
+        return set()
+    return {_example_id(p.stem, user) for p in _example_files(examples_dir)}
+
+
+def is_example_project(user, project_id: str) -> bool:
+    """Is ``project_id`` one of the examples Curio seeded for ``user``?"""
+    return project_id in example_project_ids(user)
+
+
 def seed_example_projects(
     user, *, prune: bool | None = None, overwrite: bool | None = None,
 ) -> int:
@@ -100,7 +125,7 @@ def seed_example_projects(
     (overwrite semantics) without ever colliding with user-created
     projects (which use random uuid4s).
     """
-    # Registered accounts get their own copies (#200). Under ``--auth`` the
+    # Registered accounts get their own copies (#200). Under ``--deploy`` the
     # signed-in user is not the guest that owned the seeded rows, so the
     # gallery came up empty for everyone with an account; ``--deploy`` carried
     # the identical defect. The dataset half of this was already fixed in
@@ -281,7 +306,7 @@ def ensure_user_examples_seeded(user) -> int:
 def _prune_non_example_projects(user, ukey: str, keep_ids: set[str]) -> int:
     """Delete every guest project that isn't part of the seeded set.
 
-    Mirrors the overwrite posture: ``--with-examples`` / ``--deploy`` always
+    Mirrors the overwrite posture: ``--with-examples`` always
     lands on exactly the curated examples, with leftover scratch projects
     (e.g. "DefaultDataflow", auto-generated test fixtures) cleaned up.
     """

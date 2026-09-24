@@ -35,8 +35,8 @@ registerBehavior('merge-flow', useMergeFlowBehavior);
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);
 //
-// The curio.streetvision@1 behaviors (street-view-fetcher, hf-cv-inference,
-// cv-gallery) are NOT registered here — they ship as a pre-built `behaviors.js`
+// The curio.streetvision@1 behaviors (street-view-fetcher, hf-cv-inference)
+// are NOT registered here — they ship as a pre-built `behaviors.js`
 // bundle inside the package directory and self-register via the dynamic
 // loader at `loadPackageBehaviorScripts` in packagesClient. See
 // docs/EXTENDING.md §5 for the contract.

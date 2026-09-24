@@ -119,6 +119,33 @@ def spec_revision(user_key: str, project_id: str) -> int:
     except (OSError, ValueError):
         return 0
 
+def _write_json_atomically(path: Path, payload: dict) -> None:
+    """Write *payload* so a concurrent reader never sees a half-written file.
+
+    ``Path.write_text`` truncates first and writes second, so any reader that
+    arrives between the two gets zero bytes. Readers here take no lock (the
+    spec lock serializes writers against writers only), so this is reachable
+    from ordinary use: it surfaced as the Agent Catalog 500ing with
+    ``Expecting value: line 1 column 1 (char 0)`` while a save was in flight,
+    which is ``json.loads("")``.
+
+    A temp file in the SAME directory plus ``os.replace`` makes the swap
+    atomic on POSIX and on Windows, so a reader sees either the whole old file
+    or the whole new one.
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        # A crash between write and replace would otherwise leave the temp
+        # behind; replace() has already consumed it on the happy path.
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
 
 def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     """Persist *spec* and bump the project's write counter.
@@ -131,7 +158,7 @@ def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     d = ensure_project_dir(user_key, project_id)
     _bump_spec_revision(d)
     p = d / "spec.trill.json"
-    p.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    _write_json_atomically(p, spec)
     return p
 
 
@@ -303,6 +330,22 @@ def _account_store_computed_file(
         return None
 
 
+def installed_dataset_file_for_node(
+    user_key: str,
+    spec: Optional[dict],
+    node_id: str,
+) -> Optional[Path]:
+    """The installed dataset file *node_id* reads, or ``None``.
+
+    Public name for the resolver :func:`_durable_source_for` uses. The dataset
+    installers call it to tell "this node's output IS a dataset the account
+    already holds" from "this node computed something new". The first needs no
+    computed copy: a reload restores its output from the very dataset the node
+    reads, so installing one would leave the user with two rows for one file.
+    """
+    return _installed_file_for_node(user_key, spec, node_id)
+
+
 def _durable_source_for(
     user_key: str,
     project_id: str,
@@ -449,7 +492,7 @@ def write_manifest(
         "spec_revision": spec_revision,
         "outputs": entries,
     }
-    p.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _write_json_atomically(p, manifest)
     return p
 
 

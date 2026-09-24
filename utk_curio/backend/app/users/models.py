@@ -23,6 +23,13 @@ class User(db.Model):
     # accept a model's licence with your own account), so this is an
     # account setting rather than one shared deployment secret.
     huggingface_token = db.Column(db.String(255), nullable=True)
+    # A Socrata app token, for the Data Lake Catalog. Optional - the portals
+    # answer without one - but it is issued to a person and raises that
+    # person's rate limit, so one shared deployment token would mean everyone
+    # on an install spending the same allowance and being throttled together.
+    # The slot registry in datalakes/infrastructure/credentials.py maps a
+    # manifest's auth.secretId onto this column.
+    socrata_app_token = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

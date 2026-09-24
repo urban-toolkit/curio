@@ -19,13 +19,17 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     looks_like_generated_filename,
 )
 from utk_curio.backend.app.datasets.domain.constants import (
+    GPKG_GROUP_ID_PREFIX,
+    GPKG_SUFFIXES,
     JUNK_SOURCE_LABELS,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
-    is_osm_group_id,
+    TEXT_FORMATS,
+    is_layer_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
+from utk_curio.backend.app.datasets.infrastructure.text_encoding import TextDecodeError, to_utf8
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
@@ -78,6 +82,13 @@ class CatalogMutations:
                 file_bytes, filename, title=title, source_updated_at=source_updated_at
             )
 
+        # A GeoPackage is multi-layer for the same reason a PBF is, so it takes
+        # the same route rather than becoming a stored format of its own (#268).
+        if suffix in GPKG_SUFFIXES:
+            return self._import_gpkg_layers(
+                file_bytes, filename, title=title, source_updated_at=source_updated_at
+            )
+
         if suffix not in SUPPORTED_SUFFIXES:
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
         return self._install_imported_bytes(
@@ -99,6 +110,7 @@ class CatalogMutations:
         group_id: str | None = None,
         layer_name: str | None = None,
         source_updated_at: str | None = None,
+        lake_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -110,6 +122,21 @@ class CatalogMutations:
         from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
         user_key = self._paths._user_key()
+
+        # Normalise text formats to UTF-8 before anything reads them (#280). The
+        # row counter, the preview and the generated loader all assume UTF-8 and
+        # cannot be told otherwise - loader_snippet emits a bare pd.read_csv with
+        # nowhere to put an encoding= - so a cp1252 upload used to import with a
+        # 201 and no row count, then raise UnicodeDecodeError the first time its
+        # node ran. Deciding once, here, is the same move the catalog already
+        # makes for delimiters.
+        source_encoding: str | None = None
+        if fmt in TEXT_FORMATS:
+            try:
+                file_bytes, source_encoding = to_utf8(file_bytes, what=filename)
+            except TextDecodeError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+
         try:
             result = install_imported_file(
                 user_key,
@@ -120,6 +147,8 @@ class CatalogMutations:
                 group_id=group_id,
                 layer_name=layer_name,
                 source_updated_at=source_updated_at,
+                source_encoding=source_encoding,
+                lake_source=lake_source,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -202,6 +231,72 @@ class CatalogMutations:
         # The import route returns a single item. Report how many datasets the
         # PBF produced so the client can message "registered N datasets"; the
         # rest are surfaced by the account-level catalog listing on reload.
+        primary = items[0]
+        primary["importedDatasetCount"] = len(items)
+        return primary
+
+    def _import_gpkg_layers(
+        self,
+        gpkg_bytes: bytes,
+        filename: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Import a GeoPackage as one parquet dataset per layer."""
+        import uuid
+
+        from utk_curio.backend.app.datasets.install.gpkg import (
+            GpkgError,
+            convert_gpkg_layers,
+            safe_layer_name,
+        )
+
+        base = filename
+        if base.lower().endswith(".gpkg"):
+            base = base[: -len(".gpkg")]
+        base = base or "geopackage"
+
+        try:
+            layers = convert_gpkg_layers(gpkg_bytes)
+        except GpkgError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+
+        prefix = title.strip() if title and title.strip() else base
+
+        # One layer is not a group. Wrapping it in a card the user has to expand
+        # to reach a single dataset is worse than not having a card, so it lands
+        # as an ordinary import and the group machinery never sees it.
+        if len(layers) == 1:
+            only = layers[0]
+            return self._install_imported_bytes(
+                only.parquet_bytes,
+                f"{base}.parquet",
+                "parquet",
+                title=prefix,
+                feature_count_override=only.feature_count,
+                source_updated_at=source_updated_at,
+            )
+
+        # One unique group id per *import*, never derived from content, so the
+        # layers of one upload share it while re-importing the same file forms a
+        # separate group. The prefix is what tells the card it is a GeoPackage.
+        group_id = f"{GPKG_GROUP_ID_PREFIX}x{uuid.uuid4().hex[:8]}"
+        items: list[dict[str, Any]] = []
+        for layer in layers:
+            items.append(
+                self._install_imported_bytes(
+                    layer.parquet_bytes,
+                    f"{base}_{safe_layer_name(layer.name)}.parquet",
+                    "parquet",
+                    title=f"{prefix} ({layer.name})",
+                    feature_count_override=layer.feature_count,
+                    group_id=group_id,
+                    layer_name=layer.name,
+                    source_updated_at=source_updated_at,
+                )
+            )
+
         primary = items[0]
         primary["importedDatasetCount"] = len(items)
         return primary
@@ -412,8 +507,8 @@ class CatalogMutations:
         node_title: str | None = None,
     ) -> dict[str, Any]:
         # "Install all layers": an OSM group id installs every member layer.
-        if is_osm_group_id(dataset_id):
-            return self._install_osm_group(dataflow_id, dataset_id)
+        if is_layer_group_id(dataset_id):
+            return self._install_layer_group(dataflow_id, dataset_id)
         item = deepcopy(source_item or self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id))
         # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
         # ``dataset_id`` is authoritative, so backfill it rather than KeyError
@@ -697,7 +792,7 @@ class CatalogMutations:
             "projects": results,
         }
 
-    def _osm_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
+    def _layer_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
         result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
         return [
             i["id"]
@@ -705,8 +800,8 @@ class CatalogMutations:
             if i.get("groupId") == group_id and i.get("id")
         ]
 
-    def _install_osm_group(self, dataflow_id: str, group_id: str) -> dict[str, Any]:
-        member_ids = self._osm_group_member_ids(dataflow_id, group_id)
+    def _install_layer_group(self, dataflow_id: str, group_id: str) -> dict[str, Any]:
+        member_ids = self._layer_group_member_ids(dataflow_id, group_id)
         if not member_ids:
             raise DatasetCatalogError("Dataset not found", 404)
         for member_id in member_ids:
@@ -735,8 +830,8 @@ class CatalogMutations:
         criticised for.
         """
         # An OSM group id uninstalls every member layer.
-        if is_osm_group_id(dataset_id):
-            member_ids = self._osm_group_member_ids(dataflow_id, dataset_id)
+        if is_layer_group_id(dataset_id):
+            member_ids = self._layer_group_member_ids(dataflow_id, dataset_id)
             removed = False
             for member_id in member_ids:
                 try:
@@ -800,9 +895,16 @@ class CatalogMutations:
 
         Best-effort: any failure (still-referenced, usage lookup error, or a
         locked file) leaves the folder in place and never fails the uninstall.
-        Every project the user has counts as a user of the dataset (#176)."""
+        Every project the user has counts as a user of the dataset (#176).
+
+        Bindings and refs only. A node's source counts as usage everywhere else,
+        but applying a dataset writes ``curio_dataset_path("<id>")`` into that
+        source, so honouring it here meant the ordinary apply-then-uninstall
+        flow never deleted anything: the folder survived, the Data Hub card
+        survived, and the docstring above was simply false. The caller warns
+        about code mentions before it gets here."""
         try:
-            still_used = self._owner.dataset_usage(dataset_id)
+            still_used = self._owner.dataset_usage(dataset_id, include_code_refs=False)
         except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
             return
         if still_used:

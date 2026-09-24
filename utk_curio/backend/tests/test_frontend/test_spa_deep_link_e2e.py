@@ -36,12 +36,19 @@ DIST = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "dist
 #: A dotted id from the committed catalog — the shape that used to 404.
 DOTTED_DATASET = "data.urbanlab.acs-neighborhood-profile"
 
+#: Any project id: the route only has to reach the app, and the loader's own
+#: failure path is covered by test_dashboard_page_e2e.py.
+SOME_PROJECT = "11111111-2222-3333-4444-555555555555"
+
 DEEP_LINKS = [
     f"/catalog/data/{DOTTED_DATASET}",
     f"/data-hub/{DOTTED_DATASET}",
     # Undotted routes, which always worked and must keep working.
     "/catalog/data",
     "/projects",
+    # A shared dashboard link is a deep link someone else opens cold, which is
+    # the case this server's fallback exists for.
+    f"/dashboard/{SOME_PROJECT}",
 ]
 
 

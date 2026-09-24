@@ -72,6 +72,7 @@ from .utils import (
     _DRAG_TO_CANVAS_JS,
     activate_header_icon,
     canvas_nodes,
+    edge_client_point,
     close_tools_palette,
     connect_nodes,
     dismiss_toasts,
@@ -611,107 +612,15 @@ def _empty_canvas_point(page) -> tuple[float, float] | None:
 
 
 def _edge_client_point(page) -> tuple[float, float] | None:
-    """A point that ``pickEdgeAtPoint`` will actually resolve to an edge.
+    """The tour's view of the shared sampler, logging why when it finds nothing.
 
-    React Flow draws a wide invisible ``.react-flow__edge-interaction`` path
-    under every edge precisely so a pointer can land on a curve, and
-    ``pickEdgeAtPoint`` hit-tests it with ``elementFromPoint``
-    (``agentCatalogEvents.ts``). Two things make the obvious "take the midpoint"
-    version wrong:
-
-    * a bezier's bounding-box centre is usually empty space, so the point has to
-      come from ``getPointAtLength`` on the path itself; and
-    * the open agent palette is a ~545px strip floating *over* the left of the
-      canvas, so a point that is geometrically on the edge can still be occluded
-      - and ``elementFromPoint`` would return the palette, which resolves to no
-      edge and silently attaches to the canvas instead.
-
-    So this samples along the curve and returns the first point that
-    ``elementFromPoint`` resolves to an edge, which is the same question the drop
-    handler asks. ``None`` means no such point exists right now, and the caller
-    skips the beat rather than recording a mislabelled one.
+    The sampler itself moved to ``utils.py`` so the connection-affordance module
+    can ask the same question this scene does (#296): which point on this curve
+    would ``pickEdgeAtPoint`` actually resolve to an edge.
     """
-    point = page.evaluate(
-        """() => {
-            const path = document.querySelector(
-                '.react-flow__edge .react-flow__edge-interaction'
-            ) || document.querySelector('.react-flow__edge path');
-            if (!path || !path.getPointAtLength) return null;
-            const total = path.getTotalLength();
-            if (!total) return null;
-            const svg = path.ownerSVGElement;
-            const ctm = path.getScreenCTM();
-            const rf = window.__curio_reactFlow;
-            if (!svg || !ctm || !rf) return null;
-
-            const toFlow = (x, y) => (
-                rf.screenToFlowPosition
-                    ? rf.screenToFlowPosition({ x, y })
-                    : rf.project({ x, y })
-            );
-            // handleDrop's precedence, restated: pickNodeAtPoint runs first and
-            // a hit there wins, so a point that is visually on the curve still
-            // attaches to a NODE if it falls inside that node's box. React
-            // Flow's boxes are generous - a node is 525x350 - and the bezier
-            // dips back over them near its ends.
-            const nodes = rf.getNodes();
-            const insideANode = (flow) => nodes.some((n) => {
-                const o = n.positionAbsolute ?? n.position;
-                if (!o) return false;
-                const w = n.width ?? 0;
-                const h = n.height ?? 0;
-                return flow.x >= o.x && flow.x <= o.x + w
-                    && flow.y >= o.y && flow.y <= o.y + h;
-            });
-
-            // Walk outwards from the midpoint, which is the part of the curve
-            // furthest from both node bodies.
-            const fractions = [
-                0.5, 0.48, 0.52, 0.45, 0.55, 0.42, 0.58, 0.4, 0.6, 0.35, 0.65,
-            ];
-            for (const f of fractions) {
-                const at = path.getPointAtLength(total * f);
-                const pt = svg.createSVGPoint();
-                pt.x = at.x;
-                pt.y = at.y;
-                const screen = pt.matrixTransform(ctm);
-                const hit = document.elementFromPoint(screen.x, screen.y);
-                if (!hit || !hit.closest) continue;
-                // Occluded (the palette strip floats over the pane), so
-                // pickEdgeAtPoint would miss it.
-                if (!hit.closest('.react-flow__edge')) continue;
-                // Inside a node's box, so pickNodeAtPoint would claim it first.
-                if (insideANode(toFlow(screen.x, screen.y))) continue;
-                return { point: [screen.x, screen.y] };
-            }
-            // Nothing qualified. Hand back what was measured so the caller can
-            // say why rather than just skipping the beat.
-            const mid = path.getPointAtLength(total / 2);
-            const mpt = svg.createSVGPoint();
-            mpt.x = mid.x;
-            mpt.y = mid.y;
-            const mscreen = mpt.matrixTransform(ctm);
-            const hit = document.elementFromPoint(mscreen.x, mscreen.y);
-            return { why: {
-                midScreen: [Math.round(mscreen.x), Math.round(mscreen.y)],
-                midFlow: toFlow(mscreen.x, mscreen.y),
-                topmost: hit ? (hit.className && hit.className.baseVal !== undefined
-                    ? hit.className.baseVal : String(hit.className || hit.tagName)) : null,
-                nodes: nodes.map((n) => {
-                    const o = n.positionAbsolute ?? n.position;
-                    return { id: n.id, x: o && o.x, y: o && o.y,
-                             w: n.width, h: n.height };
-                }),
-            } };
-        }"""
-    )
-    if not point:
-        return None
-    if point.get("point"):
-        found = point["point"]
-        return (found[0], found[1])
-    _log(f"[tour] no usable point on the edge: {point.get('why')}")
-    return None
+    return edge_client_point(page, on_miss=lambda why: _log(
+        f"[tour] no usable point on the edge: {why}"
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -1540,7 +1449,7 @@ def scene_dashboard(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.say(
         "Pin the views you want to present",
-        "Dashboard Mode keeps node state, edges and positions intact.",
+        "Pinned views make a dashboard: a page of its own, with its own link.",
         hold=2600,
     )
     for node_id in (ctx.state.get("vega_ids") or _node_ids_by_type(page, "vis-vega"))[:2]:
@@ -1560,17 +1469,37 @@ def scene_dashboard(ctx: Ctx) -> None:
         activate_header_icon(pin)
         tour.beat(700)
     tour.hush()
-    tour.click(_menu(page, "View"), force=True)
-    tour.click(page.get_by_role("button", name="Dashboard Mode", exact=True))
+
+    # Pins live in the saved spec, and the dashboard renders what is on disk.
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url
+        and r.request.method in ("POST", "PUT") and r.ok,
+        timeout=40000,
+    ):
+        tour.click(page.locator("[data-curio-save-state]").first, force=True)
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    if not match:
+        _log(f"[tour] no saved dataflow to open a dashboard for: {page.url}")
+        return
+    project_id = match.group(1)
+
+    tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+    tour.focus(page.get_by_test_id("open-dashboard-link"), hold=1400)
+    # The menu opens the dashboard in a new tab. A recording follows one page,
+    # so the tour opens it in this one; the tab itself is covered by
+    # test_dashboard_page_e2e.py.
+    tour.click(page.get_by_test_id("share-menu-btn"), force=True)
+    page.goto(f"{page.url.split('/dataflow/')[0]}/dashboard/{project_id}")
+    page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
     tour.beat(3200)
     tour.say(
         "The same dataflow, presented",
-        "Toggle back and the canvas is exactly where you left it.",
+        "Charts draw from the saved outputs, with nothing to press. Share the link.",
         hold=2600,
     )
     tour.hush()
-    exit_btn = page.locator('button[title="Exit Dashboard Mode"]')
-    tour.click(exit_btn)
+    tour.click(page.get_by_test_id("open-dataflow-link"))
+    page.wait_for_selector(".react-flow__node", timeout=45000)
     tour.beat(1200)
     _fit_view(page)
 

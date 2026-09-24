@@ -1,0 +1,202 @@
+/* Shell for /monitor. The .pageShell rules are copied verbatim from
+   CatalogMasterPage.module.css, comments included, because the constraint they
+   encode is the same one. */
+
+.pageShell {
+  /* Bounded height, not min-height: html/body never scroll (overflow:hidden in
+     MainCanvas.css, injected app-wide), so each region must own its scroll
+     within the viewport or overflowing content is simply unreachable (#161). */
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--curio-font-family);
+  background: var(--curio-page-bg);
+  color: var(--curio-text-primary);
+  /* Reserve the bottom-right corner for the fixed VersionBadge (#236).
+     Bounded height means border-box is load-bearing: the padding has to come
+     out of the 100vh, not add to it. */
+  box-sizing: border-box;
+  padding-bottom: var(--curio-version-badge-reserve);
+}
+
+/* Unlike /catalog and /projects, this page's own content scrolls rather than a
+   nested drawer, so the scroll region is here instead of inside a child. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 32px;
+}
+
+/* ── Public header (no signed-in user) ───────────────────────────────── */
+
+.publicBar {
+  height: 65px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--curio-top-bar-bg);
+  border-bottom: 1px solid var(--curio-top-bar-border);
+}
+
+.publicBarLink {
+  display: contents;
+}
+
+.publicBarLogo {
+  max-height: 100%;
+  width: auto;
+  margin-left: 15px;
+}
+
+.publicBarTitle {
+  color: var(--curio-text-on-dark);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.toolbarStatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 8px;
+}
+
+.updated {
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.staleBanner {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+}
+
+.button {
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--curio-radius-md);
+  border: 1px solid var(--curio-border-strong);
+  background: #fff;
+  color: var(--curio-text-primary);
+}
+
+.button:hover {
+  background: var(--curio-surface-muted);
+}
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+
+.section {
+  margin-bottom: 26px;
+}
+
+.heading {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--curio-text-secondary);
+}
+
+.subHeading {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.tileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.chipGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0 24px;
+  background: #fff;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-card);
+  padding: 4px 16px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-card);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table td {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--curio-border);
+  color: var(--curio-text-primary);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
+.caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+}
+
+.empty {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--curio-text-secondary);
+}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./LibraryManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { packagesApi } from "../../../api/packagesApi";
+import { MIN_PROGRESS_MS, readInstallResponse } from "../../../utils/libraryInstall";
 
 /**
  * Installed libraries modal.
@@ -53,12 +54,6 @@ type Status =
       heading?: string; badge?: string;
     };
 
-// Floor on the visible duration of the progress bar. Pip's "already
-// satisfied" path returns in microseconds; without this gate the bar
-// would flash too fast to register. 800 ms is short enough to not feel
-// laggy but long enough that the user actually sees the install motion.
-const MIN_PROGRESS_MS = 800;
-
 // Referenced by the disabled spec input's aria-describedby, so a screen reader
 // reaching a dead control is told why it is dead.
 const JS_NOTE_ID = "installed-libraries-js-note";
@@ -83,6 +78,10 @@ export default function LibraryManagerWindow({
   const [error, setError] = useState<string | null>(null);
   const [newSpec, setNewSpec] = useState("");
   const [newKind, setNewKind] = useState<Kind>("python");
+  // Why this instance refuses installs for this caller, or null if it does not
+  // (#309). The controls are hidden rather than left to fail: the route is the
+  // authority, and a click it would 403 is an invitation to a red row.
+  const [installRefusal, setInstallRefusal] = useState<string | null>(null);
   // Per-row status. Keyed by `${kind}::${spec}` so the install/remove of
   // one row doesn't lock out actions on every other row simultaneously.
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
@@ -104,6 +103,13 @@ export default function LibraryManagerWindow({
       const data = await packagesApi.listLibraries();
       setStandalone(data.standalone);
       setFromPackages(data.fromPackages);
+      // An older backend sends neither field; absent means allowed, which is
+      // what that backend does.
+      setInstallRefusal(
+        data.installAllowed === false
+          ? (data.installDisabledReason ?? "Installing libraries is turned off on this instance.")
+          : null,
+      );
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -174,23 +180,24 @@ export default function LibraryManagerWindow({
         await new Promise((r) => window.setTimeout(r, MIN_PROGRESS_MS - elapsed));
       }
       setStandalone(data.standalone);
-      // A library can install cleanly and still not import - a wheel whose
-      // native extension cannot load reports a good version, so pip skips it
-      // and the two lists below read as success. Reporting that as "Already
-      // installed" is how a broken library stayed invisible until a node
-      // touched it, so the backend's verdict overrides both lists.
-      if (data.importError) {
+      // The three answers and what they mean are shared with the node error
+      // panel (utils/libraryInstall), so neither surface can drift on the one
+      // that matters: a library can install cleanly, satisfy pip, and still
+      // raise on import, and reporting that as "Already installed" is how a
+      // broken library stayed invisible until a node touched it.
+      const verdict = readInstallResponse(data);
+      if (verdict.kind === "cannot-import") {
         setStatus(newKind, spec, {
           kind: "error", spec, libKind: newKind,
           badge: "Cannot import",
           heading: `${spec} installed, but it cannot be imported`,
-          message: data.importError,
+          message: verdict.reason,
         });
         return;
       }
-      const alreadyInstalled = (data.installed?.length ?? 0) === 0 && (data.skipped?.length ?? 0) > 0;
       setStatus(newKind, spec, {
-        kind: "success", spec, libKind: newKind, alreadyInstalled,
+        kind: "success", spec, libKind: newKind,
+        alreadyInstalled: verdict.kind === "already-installed",
       });
       // Auto-clear the success badge after 4 s so the row settles back
       // to the default state without lingering visual chrome.
@@ -282,7 +289,11 @@ export default function LibraryManagerWindow({
           packages that declare them.
         </p>
 
-        <div className={styles.addRow}>
+        {installRefusal && (
+          <p className={styles.kindNote}>{installRefusal}</p>
+        )}
+
+        {!installRefusal && <div className={styles.addRow}>
           <select
             className={styles.input}
             style={{ width: 110, flex: "0 0 auto" }}
@@ -313,7 +324,7 @@ export default function LibraryManagerWindow({
           >
             Add
           </button>
-        </div>
+        </div>}
 
         {jsSelected && (
           <p id={JS_NOTE_ID} className={styles.kindNote}>
@@ -407,7 +418,7 @@ export default function LibraryManagerWindow({
                       </td>
                       <td>{renderStatusCell(r.kind, fullSpec)}</td>
                       <td>
-                        {r.source === "standalone" ? (
+                        {r.source === "standalone" && !installRefusal ? (
                           <button
                             className={styles.removeButton}
                             disabled={status?.kind === "installing" || status?.kind === "removing"}

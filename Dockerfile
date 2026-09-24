@@ -6,9 +6,12 @@ FROM python:3.12-slim AS runtime_base
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app
 
+# Node 26, not 24: from 24.17 on, Node 24's bundled undici crashes the sandbox's
+# PBF downloads with assert(!this.paused) (nodejs/undici#5360, fixed in undici
+# 8.6; see utk_curio/sandbox/app/worker.py). Node 26 bundles undici 8.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gdal-bin libsm6 libxext6 ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,9 +33,17 @@ COPY pyproject.toml MANIFEST.in ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY datasets/ datasets/
+# The Data Lake Catalog's source manifests. Needed for the same reason
+# datasets/ is: the catalog root is read from the image, and without this the
+# roster is empty and every source is a 404.
+COPY datalakes/ datalakes/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/
+# DuckDB's spatial and json extensions, which the backend seeds into
+# ~/.duckdb for node runs and serves to the browser worker (#318). Without
+# them here every fresh database reaches extensions.duckdb.org.
+COPY vendor/ vendor/
 
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt
@@ -40,7 +51,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS frontend_builder
+FROM node:26-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 COPY packages/ /src/packages/
@@ -60,10 +71,40 @@ RUN if [ -n "$BACKEND_URL" ]; then \
 WORKDIR /src/utk_curio/frontend/urban-workflows
 RUN npm install && npm run build
 
+# Record what the bundle was built for, in the exact format curio.py's launcher
+# reads (utk_curio/main.py::_build_stamp_reason): webpack mode, then the backend
+# URL. The launcher writes this stamp itself, but only when IT runs the build --
+# this stage runs webpack directly, so the image used to ship a dist/ with no
+# stamp, which reads as "built in an unrecorded mode" and forced a full rebuild
+# of the 9 MB bundle on every container start. The mode is parsed from
+# package.json the same way _frontend_build_mode does, so the two cannot drift.
+RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-backend-url',(m?m[1]:'unknown')+'\n'+(process.env.BACKEND_URL||'')+'\n')"
+
+# Jest runs in this stage too (`docker build --target frontend_builder`, then
+# `npm test`, in .github/workflows/docker-compose.yml), and
+# src/tests/utils/deoverlapExamples.test.ts reads the shipped examples from
+# <repo>/docs/examples. Only the specs, not the PNG baselines beside them, and
+# after the build so an example edit does not invalidate the npm layers.
+COPY docs/examples/*.json /src/docs/examples/
+# importExtensionsMatchBackend.test.ts reads the backend's format list to
+# prove the two agree. Same reason as the examples above: the frontend test
+# image needs the file, not just the frontend source.
+COPY utk_curio/backend/app/datasets/domain/constants.py /src/utk_curio/backend/app/datasets/domain/constants.py
+
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
 FROM runtime_base AS runtime
+
+# The address the bundle copied in below was built for. Build args do not cross
+# stages, so without re-declaring it here BACKEND_URL is unset at runtime and
+# set_environment_variables() falls back to its http://localhost:5002 default --
+# which dotenv-webpack then bakes into the bundle (systemvars: true makes the
+# environment beat the .env file). A deployment behind a public URL served a
+# frontend calling http://localhost:5002 for every request: the health banner
+# claimed the backend was down and guest sign-in failed as mixed content.
+ARG BACKEND_URL
+ENV BACKEND_URL=$BACKEND_URL
 
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0
@@ -71,8 +112,8 @@ ENV CURIO_DEV=0
 # Unprivileged account for isolated node execution
 # (utk_curio/sandbox/isolation/). Creating it changes nothing on its own: the
 # container still runs as root and no process uses this account unless a launch
-# passes --isolation=fork --exec-user curio-exec. It exists here because the
-# account has to be in the image for that flag to work at all.
+# turns isolation on, which --deploy does by discovering this very account. It exists here because the
+# account has to be in the image for isolation to have anything to drop to.
 #
 # Deliberately NOT adding a `USER` directive or chowning anything. CI depends on
 # the container running as root and works around bind-mount ownership with
