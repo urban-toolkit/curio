@@ -214,7 +214,6 @@ class DataLakeService:
         # and discover the limit fifty jobs later.
         ratelimit.download_slots.acquire(self.user_key)
         job = job_store.jobs.create(self.user_key, manifest.dir_name, resource_id)
-        acquire = self._acquire
         user_key = self.user_key
         # The worker reads the dataset index and writes through the datasets
         # service, both of which need an app context. Captured here, on the
@@ -224,9 +223,30 @@ class DataLakeService:
         # quietly, so a missing context showed up as a dataset that could not
         # be found again rather than as an error.
         app = current_app._get_current_object()
+        # The user's ID, never the ORM instance. A ``User`` row belongs to the
+        # session that loaded it, and reading an attribute off it can emit a
+        # query - so handing this object to another thread puts two threads on
+        # one session and one connection. That surfaces as SQLAlchemy failing
+        # to decode a row ("tuple index out of range") in whichever thread
+        # loses the race, which is a plain 500 on an unrelated request, with a
+        # traceback pointing at auth rather than at the download that caused
+        # it. Intermittent by nature: it needs the poll and the worker to
+        # overlap.
+        user_id = getattr(self.user, "id", None)
+        transport, budget = self._transport, self._budget
 
         def _run() -> None:
             with app.app_context():
+                # Re-loaded inside this context, so the worker's user belongs
+                # to the worker's own session. Everything downstream (the
+                # credential lookup, the install) hangs off it.
+                worker = DataLakeService(
+                    user_key,
+                    user=_user_by_id(user_id),
+                    transport=transport,
+                    budget=budget,
+                )
+                acquire = worker._acquire
                 try:
                     job.status = "running"
                     job.stage_message = "Contacting the portal…"
@@ -293,6 +313,15 @@ class DataLakeService:
         if not job_store.jobs.cancel(self.user_key, job_id):
             raise JobNotFound(f"no download job {job_id!r} to cancel")
 
+
+
+def _user_by_id(user_id: int | None):
+    """The ``User`` row, loaded in whatever session is current here."""
+    if user_id is None:
+        return None
+    from utk_curio.backend.app.users import repositories as user_repo
+
+    return user_repo.user_by_id(user_id)
 
 
 def _query(q: str, fmt: str | None, limit: int | None, cursor: str | None) -> SearchQuery:

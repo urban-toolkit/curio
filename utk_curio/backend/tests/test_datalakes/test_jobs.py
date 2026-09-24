@@ -8,6 +8,8 @@ finished ones are swept. The isolation one matters most: that store's
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from utk_curio.backend.app.datalakes.application import jobs as J
@@ -125,3 +127,56 @@ class TestConcurrencyCap:
         slots = DownloadSlots(limit=1)
         slots.acquire("alice")
         slots.acquire("bob")  # no raise
+
+
+class TestTheWorkerDoesNotShareTheRequestsSession:
+    """A ``User`` row belongs to the session that loaded it.
+
+    Handing the request's instance to the download thread puts two threads on
+    one session and one connection, and reading any attribute off it there can
+    emit a query. The loser of that race gets a decode failure from SQLAlchemy
+    ("tuple index out of range"), which surfaces as a 500 on whatever request
+    was in flight - in CI, on the job poll's auth check, with a traceback
+    naming ``get_current_user`` and nothing pointing at the download.
+
+    It needs the poll and the worker to overlap, so it is intermittent: it
+    passed locally and in one CI run before failing in the next, on a commit
+    that touched none of this.
+    """
+
+    def test_the_worker_loads_its_own_user(
+        self, app, user_and_token, shipped_root, fixture_corpus, monkeypatch
+    ):
+        from utk_curio.backend.app.datalakes import service as service_mod
+
+        seen: dict = {}
+        real = service_mod.LakeAcquire.acquire
+
+        def _spy(self, *a, **k):
+            seen["worker_user"] = self.user
+            return real(self, *a, **k)
+
+        monkeypatch.setattr(service_mod.LakeAcquire, "acquire", _spy)
+
+        user, _token = user_and_token
+        with app.app_context():
+            from utk_curio.backend.app.users import repositories as user_repo
+
+            request_user = user_repo.user_by_id(user.id)
+            svc = service_mod.DataLakeService(str(user.id), user=request_user)
+            try:
+                svc.start_acquire(
+                    "lake.cityofchicago.data-portal@1", "ijzp-q8t2", fmt="csv"
+                )
+            except Exception:  # noqa: BLE001 - the download itself is not the point
+                pass
+            deadline = time.time() + 5
+            while "worker_user" not in seen and time.time() < deadline:
+                time.sleep(0.01)
+
+        assert "worker_user" in seen, "the worker never ran"
+        assert seen["worker_user"] is not None
+        assert seen["worker_user"] is not request_user, (
+            "the worker is using the request thread's User instance - two "
+            "threads, one session, one connection"
+        )
