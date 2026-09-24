@@ -87,7 +87,7 @@ def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
 
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
                  profile: str = "burst", exec_lock: dict | None = None,
-                 artifact_format: str = "json") -> dict:
+                 artifact_format: str = "arrow") -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -256,9 +256,11 @@ def markdown(report: dict) -> str:
         lines += ["", peak_line + "."]
 
     for tier in report["tiers"]:
-        fmt = tier.get("artifact_format", "json")
-        suffix = "" if fmt == "json" else f" ({fmt} artifacts)"
-        lines += ["", f"### {tier['tier']} users{suffix}", ""]
+        # Always named, never inferred from a default: two tiers measured in
+        # different formats are not comparable, and a reader should not have
+        # to know which way the flag pointed on the day.
+        fmt = tier.get("artifact_format", "arrow")
+        lines += ["", f"### {tier['tier']} users ({fmt} artifacts)", ""]
         lines.append("| Endpoint | Calls | Errors | p50 | p95 | max |")
         lines.append("| -------- | ----: | -----: | --: | --: | --: |")
         for endpoint, stat in tier["endpoints"].items():

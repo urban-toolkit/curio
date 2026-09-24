@@ -193,10 +193,10 @@ class VirtualUser:
         register_gate=None,
         start_gate=None,
         pacing: "Pacing" = BURST,
-        artifact_format: str = "json",
+        artifact_format: str = "arrow",
     ):
         self.backend_url = backend_url.rstrip("/")
-        # "json" is what the canvas sends today; "arrow" is what it could send.
+        # "arrow" is what the canvas asks for; "json" is the fallback path.
         self.artifact_format = artifact_format
         self.name = name
         self.example = example

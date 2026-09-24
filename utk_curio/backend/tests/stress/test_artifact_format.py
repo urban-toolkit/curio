@@ -86,13 +86,19 @@ class ArtifactFormatPlumbingTest(unittest.TestCase):
             **kwargs,
         )
 
-    def test_json_is_the_default(self):
-        """What the canvas sends today stays what the job measures by default."""
-        self.assertEqual(self._user().artifact_format, "json")
+    def test_arrow_is_the_default(self):
+        """The job measures what the canvas asks for.
 
-    def test_arrow_is_carried_to_the_user(self):
+        `fetchData` requests Arrow on every artifact fetch, so a harness
+        defaulting to JSON would be measuring a path users no longer take.
+        """
+        self.assertEqual(self._user().artifact_format, "arrow")
+
+    def test_json_is_still_reachable(self):
+        """It is the fallback for kinds Arrow cannot serve, so it is still
+        worth being able to measure on its own."""
         self.assertEqual(
-            self._user(artifact_format="arrow").artifact_format, "arrow"
+            self._user(artifact_format="json").artifact_format, "json"
         )
 
 
@@ -196,16 +202,17 @@ class ReportRecordsTheFormatTest(unittest.TestCase):
         })
         self.assertIn("(arrow artifacts)", rendered)
 
-    def test_a_json_tier_reads_as_it_always_did(self):
+    def test_a_tier_always_names_its_format(self):
+        """Never inferred from whatever the default was on the day: two tiers
+        measured in different formats are not comparable, and the report is
+        read long after the flag was set."""
         from utk_curio.backend.tests.stress.report import markdown, tier_summary
 
-        tier = tier_summary(100, [], 1.0, "burst")
         rendered = markdown({
             "run_id": "x", "backend_url": "u", "profile": "burst",
-            "tiers": [tier], "failed": False,
+            "tiers": [tier_summary(100, [], 1.0, "burst")], "failed": False,
         })
-        self.assertIn("### 100 users", rendered)
-        self.assertNotIn("artifacts)", rendered)
+        self.assertIn("### 100 users (arrow artifacts)", rendered)
 
 
 if __name__ == "__main__":

@@ -223,11 +223,12 @@ def main(argv: list[str] | None = None) -> int:
                              "out (the gated worst case). session: arrivals "
                              "over a ramp, with pauses between node runs")
     parser.add_argument(
-        "--artifact-format", choices=("json", "arrow"), default="json",
-        help="how users fetch node outputs. json is what the canvas sends "
-             "today; arrow asks for the Arrow IPC stream the sandbox already "
-             "serves, which skips the pandas materialisation and the JSON "
-             "encode. Baseline and tiers always use the same one, so their "
+        "--artifact-format", choices=("json", "arrow"), default="arrow",
+        help="how users fetch node outputs. arrow is the default because it "
+             "is what the canvas asks for, so the job measures what people "
+             "actually hit; json is the fallback path, still reachable for "
+             "artifact kinds Arrow cannot serve and worth measuring on its "
+             "own. Baseline and tiers always use the same one, so their "
              "digests stay comparable within a run -- but an arrow digest and "
              "a json digest are not comparable to each other.")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
