@@ -73,5 +73,37 @@ class ArrowProxyHeadersTest(unittest.TestCase):
         self.assertNotIn(GEOMETRY_ACCEPT_HEADER, self.sent[-1])
 
 
+class CorsCoversTheRequestHeadersTest(unittest.TestCase):
+    """The browser has to be allowed to send what the client sends.
+
+    Two different CORS lists and they are easy to confuse: Expose-Headers is
+    what a cross-origin page may read off the response, Allow-Headers is what
+    it may put on the request. Getting the first right and the second wrong
+    produced a rejected preflight, a thrown fetch, and a silent fallback to
+    JSON -- with every unit test still green.
+    """
+
+    def test_the_geometry_opt_in_may_be_sent_cross_origin(self):
+        from utk_curio.backend.app import CORS_HEADERS
+
+        allowed = {
+            name.strip().lower()
+            for name in CORS_HEADERS["Access-Control-Allow-Headers"].split(",")
+        }
+        self.assertIn(GEOMETRY_ACCEPT_HEADER.lower(), allowed)
+
+    def test_the_two_cors_lists_are_not_confused_for_each_other(self):
+        """A request header in Expose, or a response header in Allow, is a
+        symptom of exactly the mistake above."""
+        from utk_curio.backend.app import CORS_HEADERS
+
+        exposed = {
+            n.strip().lower()
+            for n in CORS_HEADERS["Access-Control-Expose-Headers"].split(",")
+        }
+        self.assertNotIn(GEOMETRY_ACCEPT_HEADER.lower(), exposed)
+        self.assertIn("x-curio-kind", exposed)
+
+
 if __name__ == "__main__":
     unittest.main()

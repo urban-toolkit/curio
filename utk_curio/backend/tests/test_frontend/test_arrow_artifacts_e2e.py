@@ -63,11 +63,18 @@ GEOFRAME_CODE = (
 
 
 class ArtifactFetches:
-    """Every /get the browser made, and what came back."""
+    """Every /get the browser made, and what came back.
+
+    Registered on the page rather than a single navigation, so it keeps
+    recording across the reload below.
+    """
 
     def __init__(self, page):
         self.responses: list[dict] = []
         page.on("response", self._record)
+
+    def reset(self) -> None:
+        self.responses.clear()
 
     def _record(self, response) -> None:
         url = response.url
@@ -90,6 +97,15 @@ class ArtifactFetches:
 
 
 def _run_and_open_pool(page, code: str):
+    """Build loading -> pool, run it, then reopen the saved dataflow.
+
+    The reload is what makes this deterministic. Straight after a run the Data
+    Pool already holds its upstream's output in memory and renders from that
+    plus the JSON preview, so it may never call /get at all -- the first
+    version of this test saw exactly that for a geodataframe and failed
+    claiming no fetch happened. Reopening the dataflow is the ordinary way a
+    user reaches saved outputs, and it is the path that resolves them by id.
+    """
     loading = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_UP)
     pool = drag_to_canvas(page, page.locator(POOL_TILE), at=POS_DOWN)
     connect_nodes(page, loading, pool)
@@ -97,6 +113,11 @@ def _run_and_open_pool(page, code: str):
     run_node_and_wait(page, loading, node_type=LOADING_TYPE)
     node_locator(page, pool).locator(TAB_STRIP).first.wait_for(
         state="visible", timeout=30000
+    )
+
+    page.reload(wait_until="domcontentloaded")
+    node_locator(page, pool).locator(TAB_STRIP).first.wait_for(
+        state="visible", timeout=60000
     )
     return pool
 

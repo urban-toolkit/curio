@@ -12,7 +12,18 @@ from utk_curio.backend.extensions import db, migrate
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    # Allow-Headers is what a browser may SEND, and is not the same list as
+    # Expose-Headers below, which is what it may READ. X-Curio-Accept-Geometry
+    # is a custom request header, so sending it makes the request non-simple
+    # and the browser preflights it; a preflight this list does not cover is
+    # rejected, the fetch throws, and the canvas falls back to JSON. That
+    # failure is invisible from the outside -- the data still arrives -- which
+    # is exactly how it shipped green until an e2e test watched the wire.
+    "Access-Control-Allow-Headers": ",".join((
+        "Content-Type",
+        "Authorization",
+        "X-Curio-Accept-Geometry",
+    )),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
     # can read the friendly download filename returned by send_file.
