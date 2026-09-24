@@ -134,6 +134,20 @@ def test_every_provider_we_implement_has_a_shipped_example():
     )
 
 
+def _packaging_file(name: str) -> str:
+    """Read a packaging file from the checkout, or skip.
+
+    These checks only mean anything where the source tree is: a built image
+    does not ship its own Dockerfile, and asserting against a file that is
+    legitimately absent tests the environment rather than the packaging. This
+    is the second thing this pair caught, the first being the bug itself.
+    """
+    path = SHIPPED_ROOT.parent / name
+    if not path.is_file():
+        pytest.skip(f"no {name} here - a packaging check needs a source checkout")
+    return path.read_text(encoding="utf-8")
+
+
 def test_the_image_ships_the_catalog():
     """The Dockerfile copies ``datalakes/`` into the image.
 
@@ -147,8 +161,7 @@ def test_the_image_ships_the_catalog():
     directories one at a time. A new shipped root has to be added to both, and
     forgetting either is invisible until something is built.
     """
-    dockerfile = (SHIPPED_ROOT.parent / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY datalakes/" in dockerfile, (
+    assert "COPY datalakes/" in _packaging_file("Dockerfile"), (
         "Dockerfile does not copy datalakes/ - the built image would serve an "
         "empty Data Lake Catalog"
     )
@@ -160,5 +173,4 @@ def test_the_wheel_ships_the_catalog():
     The twin of the above, and the reason both exist: these are two separate
     packaging paths, and a source that reaches one does not reach the other.
     """
-    manifest_in = (SHIPPED_ROOT.parent / "MANIFEST.in").read_text(encoding="utf-8")
-    assert "recursive-include datalakes" in manifest_in
+    assert "recursive-include datalakes" in _packaging_file("MANIFEST.in")
