@@ -86,10 +86,38 @@ def user_dir(user_key: str) -> Path:
 # Spec I/O
 # ---------------------------------------------------------------------------
 
+def _write_json_atomically(path: Path, payload: dict) -> None:
+    """Write *payload* so a concurrent reader never sees a half-written file.
+
+    ``Path.write_text`` truncates first and writes second, so any reader that
+    arrives between the two gets zero bytes. Readers here take no lock (the
+    spec lock serializes writers against writers only), so this is reachable
+    from ordinary use: it surfaced as the Agent Catalog 500ing with
+    ``Expecting value: line 1 column 1 (char 0)`` while a save was in flight,
+    which is ``json.loads("")``.
+
+    A temp file in the SAME directory plus ``os.replace`` makes the swap
+    atomic on POSIX and on Windows, so a reader sees either the whole old file
+    or the whole new one.
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        # A crash between write and replace would otherwise leave the temp
+        # behind; replace() has already consumed it on the happy path.
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 def write_spec(user_key: str, project_id: str, spec: dict) -> Path:
     d = ensure_project_dir(user_key, project_id)
     p = d / "spec.trill.json"
-    p.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    _write_json_atomically(p, spec)
     return p
 
 
@@ -407,7 +435,7 @@ def write_manifest(
         "spec_revision": spec_revision,
         "outputs": entries,
     }
-    p.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _write_json_atomically(p, manifest)
     return p
 
 
