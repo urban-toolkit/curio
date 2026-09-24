@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -524,6 +525,46 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               ) : null}
             </dl>
           </div>
+
+          {dataset.lakeSource ? (
+            // Where the bytes came from. Without it a downloaded dataset is
+            // indistinguishable from a hand-uploaded one, and the question it
+            // answers - "which portal is this, and can I go back to it?" - has
+            // no other home on this page.
+            <div className={styles.infoSection}>
+              <p className={styles.infoSectionLabel}>Downloaded from</p>
+              <dl className={styles.infoRows}>
+                <div>
+                  <dt>Portal</dt>
+                  <dd>
+                    <Link to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}>
+                      {dataset.lakeSource.lakeName}
+                    </Link>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Resource</dt>
+                  <dd>
+                    <a
+                      href={dataset.lakeSource.resourceUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      {dataset.lakeSource.resourceId}
+                    </a>
+                  </dd>
+                </div>
+                {dataset.lakeSource.fetchedAt ? (
+                  <div>
+                    <dt>Downloaded</dt>
+                    <dd title={absoluteDate(dataset.lakeSource.fetchedAt)}>
+                      {relativeTime(dataset.lakeSource.fetchedAt)}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+          ) : null}
 
           <div className={styles.infoSection}>
             <p className={styles.infoSectionLabel}>

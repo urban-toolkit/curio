@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
+import { MemoryRouter } from "react-router-dom";
 
 jest.mock("../../services/datasetLineage/useDatasetLineage", () => ({
   useDatasetLineage: jest.fn(),
@@ -414,5 +415,56 @@ describe("DatasetDetailPanel lineage", () => {
       screen.getByText("Dataflows that generate or consume this dataset"),
     ).toBeInTheDocument();
     expect(screen.getByText("Consumed by (1)")).toBeInTheDocument();
+  });
+});
+
+describe("DatasetDetailPanel provenance for a portal download", () => {
+  beforeEach(() => {
+    mockUseDatasetLineage.mockReset();
+  });
+
+  const lakeSource = {
+    lakeId: "lake.cityofchicago.data-portal@1",
+    lakeName: "City of Chicago Data Portal",
+    resourceId: "ijzp-q8t2",
+    resourceUrl: "https://data.cityofchicago.org/resource/ijzp-q8t2.csv",
+    fetchedAt: new Date().toISOString(),
+  };
+
+  function renderWithRouter(dataset: DatasetCatalogItem) {
+    mockUseDatasetLineage.mockReturnValue(lineageFixture());
+    return render(
+      <MemoryRouter>
+        <DatasetDetailPanel dataset={dataset} variant="modal" dataflowId="flow-1" />
+      </MemoryRouter>,
+    );
+  }
+
+  it("names the portal it came from, and links back to it", () => {
+    // The dataset is `origin: "imported"` like any upload, so without this
+    // block nothing on the page says it came from a portal at all - which was
+    // the state a full-stack run found it in.
+    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+
+    const portal = screen.getByRole("link", { name: "City of Chicago Data Portal" });
+    expect(portal).toHaveAttribute(
+      "href",
+      "/catalog/lakes/lake.cityofchicago.data-portal%401",
+    );
+  });
+
+  it("links the resource out to the portal's own page", () => {
+    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+
+    const resource = screen.getByRole("link", { name: "ijzp-q8t2" });
+    expect(resource).toHaveAttribute("href", lakeSource.resourceUrl);
+    // An outbound link to a third party: no window handle back to this tab.
+    expect(resource).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
+  it("says nothing at all for a dataset that did not come from a portal", () => {
+    renderWithRouter(catalogItem({ origin: "imported" }));
+
+    expect(screen.queryByText("Downloaded from")).not.toBeInTheDocument();
   });
 });
