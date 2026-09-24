@@ -135,6 +135,55 @@ REGISTRY: dict[str, ToolContract] = {
             "these results only."
         ),
     ),
+    # Data Lake Catalog — consumer: agent.dataset-finder. Three contracts, not
+    # two, and deliberately the same roster/detail/reviewed-mutate shape
+    # packages.catalog + packages.resolve + package.install already has: it is
+    # the shape that stops the model inventing a source id.
+    "datalake.sources": ToolContract(
+        id="datalake.sources",
+        contract_version="1",
+        effect="read",
+        description=(
+            "List the data portals and lakes this deployment connects to. "
+            "Params: none. Returns rows with sourceId, name, provider, "
+            "publisher, the formats it can deliver, whether it can be "
+            "searched, and whether this account holds the credential the "
+            "source needs - never the credential itself. Reads no network and "
+            "costs no web budget. External-lane dataset candidates must name a "
+            "sourceId from these results."
+        ),
+    ),
+    "datalake.search": ToolContract(
+        id="datalake.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search connected data portals LIVE. Params: "
+            '{"q": "<text>", "sourceId": "<sourceId@major from '
+            'datalake.sources, optional>", "format": "<fmt, optional>"}. '
+            "PREFER naming a sourceId: without one this searches every portal "
+            "at once and is charged one web call PER PORTAL, which can spend "
+            "the whole per-run budget of 4 in a single request. Returns "
+            "resource rows with sourceId, resourceId, name, publisher, formats "
+            "and last-updated date - candidates must carry the sourceId and "
+            "resourceId these results returned, never an invented one."
+        ),
+    ),
+    "datalake.acquire": ToolContract(
+        id="datalake.acquire",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose downloading ONE resource from a connected data portal "
+            "into the Data Catalog, where it becomes an ordinary dataset. "
+            'Params: {"sourceId": "<sourceId@major>", "resourceId": "<id from '
+            'datalake.search results>", "format": "<one of the formats that '
+            'result listed, optional>"}. The user reviews the proposal; '
+            "nothing is downloaded and nothing is added to the catalog without "
+            "their approval. This never writes fetch code, and it never "
+            "installs a dataset into a dataflow - that is dataset.install."
+        ),
+    ),
     # dev/84 — consumer: agent.package-recommendation. Grounds package
     # recommendations in the real Nodes Catalog + this project's lockfile
     # (the packages domain owns the data; this module owns none of its own).
@@ -330,6 +379,11 @@ def _truncate(text: str) -> str:
 
 # catalog.search bounds (dev/50): plenty for ranking, small enough to never
 # crowd the context; description is display metadata, not a document.
+#: Bounds for the lake tools, matching the catalog ones above. A portal can
+#: answer with hundreds; a model needs the first handful.
+_DATALAKE_MAX_ROWS = 20
+_DATALAKE_DESC_MAX_CHARS = 200
+
 _CATALOG_SEARCH_MAX_ROWS = 40
 _CATALOG_DESC_MAX_CHARS = 200
 _CATALOG_PARAM_MAX_CHARS = 200
@@ -477,6 +531,112 @@ def _resolve_node_id(target: dict | None, params: dict) -> str | None:
     return None
 
 
+def _datalake_service():
+    """The lake service for the acting user.
+
+    Thin wrapper over the datalakes domain (`ADR-AG-007`), the same way
+    ``_catalog_search_rows`` wraps the datasets one: the user rides the request
+    context, and the service is the same one the Data Lake Catalog pages use.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.datalakes.service import DataLakeService
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    return DataLakeService(
+        _user_dir_key(user) if user is not None else None, user=user
+    )
+
+
+def _datalake_source_rows() -> list[dict]:
+    """The roster. Disk only - no portal is contacted."""
+    listing = _datalake_service().list_catalog()
+    rows = []
+    for source in (listing.get("sources") or [])[:_DATALAKE_MAX_ROWS]:
+        auth = source.get("auth") or {}
+        rows.append(
+            {
+                "sourceId": source.get("dirName"),
+                "name": source.get("name"),
+                "provider": source.get("provider"),
+                "publisher": source.get("publisher"),
+                "description": (source.get("description") or "")[:_DATALAKE_DESC_MAX_CHARS],
+                "formats": (source.get("capabilities") or {}).get("formats") or [],
+                "searchable": bool((source.get("capabilities") or {}).get("search")),
+                # Whether a token will be sent, never the token. A model that
+                # knows a source is unusable can say so instead of proposing it.
+                "credentialReady": not auth.get("required") or bool(auth.get("present")),
+            }
+        )
+    return rows
+
+
+def _datalake_search_rows(params: dict) -> list[dict]:
+    def _param(name: str) -> str | None:
+        value = params.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
+        return None
+
+    service = _datalake_service()
+    query = _param("q") or ""
+    source_id = _param("sourceId")
+    fmt = _param("format")
+    if source_id:
+        payload = service.search_source(
+            source_id, q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS
+        )
+    else:
+        payload = service.search_all(q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS)
+    rows = []
+    for row in (payload.get("resources") or [])[:_DATALAKE_MAX_ROWS]:
+        rows.append(
+            {
+                "sourceId": row.get("sourceId"),
+                "sourceName": row.get("sourceName"),
+                "resourceId": row.get("resourceId"),
+                "name": row.get("name"),
+                "publisher": row.get("publisher"),
+                "description": (row.get("description") or "")[:_DATALAKE_DESC_MAX_CHARS],
+                "formats": row.get("formats") or [],
+                "updatedAt": row.get("updatedAt"),
+                "alreadyInDataCatalog": bool(row.get("alreadyHeldDatasetId")),
+            }
+        )
+    # The per-source statuses ride along: a model told that one portal did not
+    # answer can say so, instead of reporting a short list as the whole truth.
+    return rows, [
+        {"sourceId": leg.get("sourceId"), "status": leg.get("status")}
+        for leg in (payload.get("sources") or [])
+        if leg.get("status") != "ok"
+    ]
+
+
+def datalake_sources_contacted(params: dict) -> int:
+    """How many portals a ``datalake.search`` with these params will contact.
+
+    The budget is charged per portal, so a fan-out costs what it costs. Counted
+    here rather than assumed to be one: charging a fan-out a single tick would
+    let one tool call issue five requests against a budget of four.
+    """
+    source_id = params.get("sourceId")
+    if isinstance(source_id, str) and source_id.strip():
+        return 1
+    try:
+        listing = _datalake_service().list_catalog()
+    except Exception:  # noqa: BLE001 - a count must never fail a run
+        return 1
+    return max(
+        1,
+        sum(
+            1
+            for s in (listing.get("sources") or [])
+            if (s.get("capabilities") or {}).get("search")
+        ),
+    )
+
+
 def execute_read_tool(
     tool_id: str, *, user_key: str, project_id: str, target: dict | None, params: dict
 ) -> tuple[str, str]:
@@ -500,6 +660,19 @@ def execute_read_tool(
             return _execute_web_search(params)
         # dev/84: the package tools read through the packages domain (which
         # does its own project/lockfile reads) — handled before the spec read.
+        # The lake tools read the datalakes domain, which does its own
+        # manifest reads — handled before the project spec read, like the
+        # package tools below.
+        if tool_id == "datalake.sources":
+            return "ok", _truncate(
+                json.dumps({"sources": _datalake_source_rows()}, ensure_ascii=False)
+            )
+        if tool_id == "datalake.search":
+            rows, unavailable = _datalake_search_rows(params)
+            payload = {"resources": rows}
+            if unavailable:
+                payload["unavailableSources"] = unavailable
+            return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
         if tool_id == "packages.catalog":
             rows = _packages_catalog_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))

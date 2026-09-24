@@ -7,10 +7,8 @@ The Data Catalog holds datasets you already have. This one holds the **places
 you can get more**: open data portals and lakes. You browse a portal, download
 what you want, and it lands in your Data Catalog as an ordinary dataset.
 
-> **Status.** The catalog works end to end: browse the portals, search across
-> them, and download a resource into your Data Catalog. What remains is the
-> agent seam - letting the Dataset Finder propose a download - and the
-> end-to-end browser tests.
+> **Status.** The catalog works end to end, by hand and through the agents.
+> What remains is the end-to-end browser tests.
 
 ## 1. A source is a portal, not a dataset
 
@@ -355,6 +353,54 @@ actually answered. `test_provider_contracts.py` is the drift detector: it hits
 the real portals in CI, asserts only response *shape*, and **skips** whenever
 anything is unreachable, non-2xx or not JSON - so it can tell you a portal
 changed without ever failing a build for someone else's outage.
+
+## 9. The agents
+
+The Dataset Finder's candidate card has always had two lanes: datasets already
+in your Data Catalog, and external ones it found elsewhere. **The external lane
+used to dead-end.** It could name a portal dataset, and Curio could verify the
+URL was real, but nothing could act on it - so the only move was a handoff to
+Node Builder to write fetch code.
+
+Three tool contracts change that:
+
+| Tool | Effect | What it does |
+|---|---|---|
+| `datalake.sources` | read | The roster. Disk only, so it costs no web budget. |
+| `datalake.search` | read | Searches portals live. |
+| `datalake.acquire` | **mutate** | Proposes a download. |
+
+A download writes bytes into your store and mints a catalog row, so it is a
+**mutate**: it goes through the review path and **cannot be executed by the
+model loop at all**. The read executor has no branch for it. Nothing is
+downloaded without your explicit approval, and the proposal card is grounded in
+a real `describe()` call - it shows the portal's own name, format and size
+rather than the model's claim about them.
+
+`agent.node-builder` stays among the Dataset Finder's delegates: a source no
+provider covers is still real, and writing fetch code is still the right answer
+for it. It just stops being the only answer.
+
+### Only the runtime says a row is actionable
+
+A candidate row may carry a `sourceId` and `resourceId` copied from a
+`datalake.search` result. Whether Curio can actually download it is decided
+**server-side**, against the real roster and the run's own grants - the model
+may name a source, it may not claim the run can act on one. Any `acquirable`
+the model sets is stripped before the check.
+
+This is the same discipline the catalog lane already has, where a row without a
+`datasetId` from `catalog.search` is dropped.
+
+### What a fan-out costs
+
+`datalake.search` without a `sourceId` contacts every searchable portal, and
+the per-run web budget is charged **per portal** rather than per tool call. A
+flat tick would let one call issue five requests against a budget of four. The
+tool's own description says so, so a model can choose to name a source and
+spend one instead.
+
+`datalake.sources` is free: it reads manifests off disk.
 
 ## Operator notes
 
