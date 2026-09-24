@@ -167,3 +167,65 @@ class TestCredentialHandling:
         it could be logged."""
         assert T._merge(None, "no-colon-here") == {}
         assert T._merge(None, ":novalue") == {}
+
+
+class TestTheCorpusAnswersWhatTheAppAsks:
+    """A recording is only useful at the limit a real request carries.
+
+    Socrata, CKAN and ArcGIS all put the page size in the request URL, and the
+    corpus is keyed on the exact URL. So a corpus recorded at one limit is
+    simply absent when the app asks at another, and the symptom is not an
+    error anyone reads: the browser renders "nothing matches" and the test
+    that only checks the page loaded still passes. That is how this went
+    unnoticed until the browser specs ran for the first time.
+    """
+
+    def test_the_recorder_records_at_the_limit_the_app_uses(self):
+        import ast
+        from pathlib import Path
+
+        from utk_curio.backend.app.datalakes.service import DEFAULT_SEARCH_LIMIT
+
+        recorder = (
+            Path(__file__).resolve().parents[4] / "scripts" / "record_datalake_fixtures.py"
+        )
+        tree = ast.parse(recorder.read_text(encoding="utf-8"))
+        limits = [
+            kw.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "SearchQuery"
+            for kw in node.keywords
+            if kw.arg == "limit"
+        ]
+        assert limits, "the recorder no longer passes a limit - check it still records at the app's"
+        for value in limits:
+            assert isinstance(value, ast.Name) and value.id == "DEFAULT_SEARCH_LIMIT", (
+                "the recorder must record at the app's own default, not a literal: "
+                "a corpus at any other limit answers a question the app never asks"
+            )
+        assert DEFAULT_SEARCH_LIMIT == 20
+
+    def test_every_shipped_search_is_recorded_at_that_limit(self):
+        """And the corpus on disk actually holds those recordings."""
+        import json
+        from pathlib import Path
+
+        from utk_curio.backend.app.datalakes.service import DEFAULT_SEARCH_LIMIT
+
+        index = json.loads(
+            (Path(__file__).resolve().parent / "fixtures" / "index.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        # The three page-size spellings the providers use, one per portal API.
+        wanted = (
+            f"limit={DEFAULT_SEARCH_LIMIT}",
+            f"rows={DEFAULT_SEARCH_LIMIT}",
+            f"page[size]={DEFAULT_SEARCH_LIMIT}",
+        )
+        for spelling in wanted:
+            assert any(spelling in url for url in index), (
+                f"no recorded search carries {spelling!r} - a portal's search is "
+                "recorded at a page size the app never requests"
+            )

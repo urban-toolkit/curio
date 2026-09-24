@@ -1,5 +1,5 @@
 {
-  "https://ckan.publishing.service.gov.uk/api/3/action/package_search?rows=5&start=0&q=cycling": {
+  "https://ckan.publishing.service.gov.uk/api/3/action/package_search?rows=20&start=0&q=cycling": {
     "file": "ckan/01.json",
     "headers": {
       "Content-Type": "application/json"
@@ -13,7 +13,7 @@
     },
     "status": 200
   },
-  "https://data.cityofchicago.org/api/catalog/v1?search_context=data.cityofchicago.org&only=dataset&limit=5&offset=0&q=crimes": {
+  "https://data.cityofchicago.org/api/catalog/v1?search_context=data.cityofchicago.org&only=dataset&limit=20&offset=0&q=crimes": {
     "file": "socrata/01.json",
     "headers": {
       "Content-Type": "application/json"
@@ -42,7 +42,7 @@
     },
     "status": 200
   },
-  "https://hub.arcgis.com/api/v3/datasets?page[size]=5&page[number]=1&q=bike%20lanes": {
+  "https://hub.arcgis.com/api/v3/datasets?page[size]=20&page[number]=1&q=bike%20lanes": {
     "file": "arcgis/01.json",
     "headers": {
       "Content-Type": "application/json"

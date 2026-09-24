@@ -49,6 +49,7 @@ from utk_curio.backend.app.datalakes.infrastructure.transport import (  # noqa: 
     HttpLakeTransport,
 )
 from utk_curio.backend.app.datalakes.providers import build_provider  # noqa: E402
+from utk_curio.backend.app.datalakes.service import DEFAULT_SEARCH_LIMIT  # noqa: E402
 
 FIXTURES = REPO / "utk_curio" / "backend" / "tests" / "test_datalakes" / "fixtures"
 
@@ -107,7 +108,12 @@ def record(slug_filter: str | None) -> None:
         transport = RecordingTransport(plan["slug"], index)
         provider = build_provider(manifest, transport)
         try:
-            page = provider.search(SearchQuery(text=plan["q"], limit=5))
+            # The app's own default, imported rather than restated. A corpus
+            # recorded at any other limit answers a question the app never
+            # asks: the limit is in the Socrata and CKAN request URLs, so a
+            # recording at 5 is simply missing when the browser asks for 20,
+            # and the only symptom is an empty result list in a browser test.
+            page = provider.search(SearchQuery(text=plan["q"], limit=DEFAULT_SEARCH_LIMIT))
         except Exception as exc:  # noqa: BLE001 - a portal being down is not a crash
             print(f"    search failed: {type(exc).__name__}: {exc}")
             continue

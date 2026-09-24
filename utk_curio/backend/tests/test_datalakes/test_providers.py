@@ -59,7 +59,7 @@ def _provider(dir_name: str):
 class TestEveryRecordedProvider:
     def test_search_returns_usable_rows(self, dir_name, query):
         provider, _, manifest = _provider(dir_name)
-        page = provider.search(SearchQuery(text=query, limit=5))
+        page = provider.search(SearchQuery(text=query))
         assert page.resources, f"{dir_name} returned nothing for {query!r}"
         for row in page.resources:
             assert row.source_id == manifest.id
@@ -70,14 +70,14 @@ class TestEveryRecordedProvider:
 
     def test_describe_resolves_the_first_row(self, dir_name, query):
         provider, _, _ = _provider(dir_name)
-        first = provider.search(SearchQuery(text=query, limit=5)).resources[0]
+        first = provider.search(SearchQuery(text=query)).resources[0]
         detail = provider.describe(first.resource_id)
         assert detail.resource.resource_id == first.resource_id
         assert detail.resource.name
 
     def test_download_url_is_on_a_declared_format(self, dir_name, query):
         provider, _, manifest = _provider(dir_name)
-        first = provider.search(SearchQuery(text=query, limit=5)).resources[0]
+        first = provider.search(SearchQuery(text=query)).resources[0]
         target = provider.download_url(first.resource_id, None)
         assert target.url.startswith("https://")
         if target.declared_format is not None:
@@ -85,7 +85,7 @@ class TestEveryRecordedProvider:
 
     def test_an_undeclared_format_is_refused_by_name(self, dir_name, query):
         provider, _, manifest = _provider(dir_name)
-        first = provider.search(SearchQuery(text=query, limit=5)).resources[0]
+        first = provider.search(SearchQuery(text=query)).resources[0]
         missing = next(
             f for f in ("csv", "geojson", "parquet", "geotiff")
             if f not in manifest.capabilities.formats
@@ -111,7 +111,7 @@ class TestEveryRecordedProvider:
 class TestSocrata:
     def test_it_reads_the_real_chicago_catalogue(self):
         provider, _, _ = _provider("lake.cityofchicago.data-portal@1")
-        page = provider.search(SearchQuery(text="crimes", limit=5))
+        page = provider.search(SearchQuery(text="crimes"))
         names = [r.name for r in page.resources]
         assert any("Crimes" in n for n in names), names
         assert page.resources[0].resource_id == "ijzp-q8t2"
@@ -144,13 +144,13 @@ class TestCkan:
         Flattening to one row per package would mean asking the user to pick a
         file after choosing a result, from a list we already had."""
         provider, _, _ = _provider("lake.uk.data-gov@1")
-        page = provider.search(SearchQuery(text="cycling", limit=5))
+        page = provider.search(SearchQuery(text="cycling"))
         packages = {r.resource_id.split(":")[0] for r in page.resources}
         assert len(page.resources) > len(packages), "expected several files per package"
 
     def test_a_row_id_is_the_package_file_pair(self):
         provider, _, _ = _provider("lake.uk.data-gov@1")
-        row = provider.search(SearchQuery(text="cycling", limit=5)).resources[0]
+        row = provider.search(SearchQuery(text="cycling")).resources[0]
         assert row.resource_id.count(":") == 1
         assert provider.resource_id_re.match(row.resource_id)
 
@@ -159,7 +159,7 @@ class TestCkan:
         Requests go straight to the API - a redirect is charged per hop against
         the egress budget - but a human gets sent to the site they know."""
         provider, _, _ = _provider("lake.uk.data-gov@1")
-        row = provider.search(SearchQuery(text="cycling", limit=5)).resources[0]
+        row = provider.search(SearchQuery(text="cycling")).resources[0]
         assert row.landing_url.startswith("https://data.gov.uk/dataset/")
 
     def test_describe_and_download_share_one_package_fetch(self):
@@ -167,7 +167,7 @@ class TestCkan:
         operation is the bug CallBudget's docstring records being fixed once
         already for Socrata verification."""
         provider, transport, _ = _provider("lake.uk.data-gov@1")
-        row = provider.search(SearchQuery(text="cycling", limit=5)).resources[0]
+        row = provider.search(SearchQuery(text="cycling")).resources[0]
         before = len(transport.calls)
         provider.describe(row.resource_id)
         assert len(transport.calls) - before == 1
@@ -177,7 +177,7 @@ class TestCkan:
 
     def test_an_off_base_distribution_is_allowed_only_when_the_manifest_says_so(self):
         provider, _, manifest = _provider("lake.uk.data-gov@1")
-        row = provider.search(SearchQuery(text="cycling", limit=5)).resources[0]
+        row = provider.search(SearchQuery(text="cycling")).resources[0]
         target = provider.download_url(row.resource_id, None)
         assert manifest.capabilities.allow_off_base_distributions
         assert target.url.startswith("https://")
@@ -186,7 +186,7 @@ class TestCkan:
         from dataclasses import replace
 
         provider, _, manifest = _provider("lake.uk.data-gov@1")
-        row = provider.search(SearchQuery(text="cycling", limit=5)).resources[0]
+        row = provider.search(SearchQuery(text="cycling")).resources[0]
         target = provider.download_url(row.resource_id, None)
         if target.url.startswith(manifest.provider.base_url):
             pytest.skip("this recorded row happens to be hosted on the portal itself")
@@ -202,7 +202,7 @@ class TestCkan:
 class TestArcgis:
     def test_it_reads_the_hub_dataset_list(self):
         provider, _, _ = _provider("lake.esri.hub-opendata@1")
-        page = provider.search(SearchQuery(text="bike lanes", limit=5))
+        page = provider.search(SearchQuery(text="bike lanes"))
         assert any("Bike" in r.name for r in page.resources)
         assert page.total_hint and page.total_hint > 1000
 
@@ -210,20 +210,20 @@ class TestArcgis:
         """Hub descriptions are HTML; a card renders text, so markup would read
         as tag soup."""
         provider, _, _ = _provider("lake.esri.hub-opendata@1")
-        page = provider.search(SearchQuery(text="bike lanes", limit=5))
+        page = provider.search(SearchQuery(text="bike lanes"))
         for row in page.resources:
             assert "<" not in row.description, row.description[:80]
 
     def test_a_layer_suffixed_id_is_accepted(self):
         provider, _, _ = _provider("lake.esri.hub-opendata@1")
-        ids = [r.resource_id for r in provider.search(SearchQuery(text="bike lanes", limit=5)).resources]
+        ids = [r.resource_id for r in provider.search(SearchQuery(text="bike lanes")).resources]
         assert any("_" in i for i in ids), ids
 
 
 class TestWfs:
     def test_it_parses_the_real_geosampa_capabilities(self):
         provider, _, _ = _provider("lake.saopaulo.geosampa@1")
-        page = provider.search(SearchQuery(text="", limit=5))
+        page = provider.search(SearchQuery(text=""))
         assert page.total_hint == 483, "GeoSampa published 483 feature types when recorded"
 
     def test_search_filters_locally_against_the_catalogue(self):
@@ -240,20 +240,20 @@ class TestWfs:
         layer and changes only when an operator publishes one. Caching it is
         what makes a WFS source nearly free inside a federated fan-out."""
         provider, transport, _ = _provider("lake.saopaulo.geosampa@1")
-        provider.search(SearchQuery(text="ciclo", limit=5))
+        provider.search(SearchQuery(text="ciclo"))
         assert len(transport.calls) == 1
-        provider.search(SearchQuery(text="onibus", limit=5))
+        provider.search(SearchQuery(text="onibus"))
         assert len(transport.calls) == 1, "the second search should issue no request"
 
     def test_the_cache_expires_so_a_new_layer_is_findable(self, monkeypatch):
         provider, transport, _ = _provider("lake.saopaulo.geosampa@1")
-        provider.search(SearchQuery(text="ciclo", limit=5))
+        provider.search(SearchQuery(text="ciclo"))
         assert len(transport.calls) == 1
         monkeypatch.setattr(
             wfs_mod.time, "monotonic",
             lambda: 1e9,  # far past the TTL
         )
-        provider.search(SearchQuery(text="ciclo", limit=5))
+        provider.search(SearchQuery(text="ciclo"))
         assert len(transport.calls) == 2
 
     def test_describe_reads_the_feature_type_schema(self):
@@ -332,4 +332,4 @@ class TestTheRegistry:
     def test_an_unrecorded_url_is_a_loud_miss(self):
         provider, _, _ = _provider("lake.cityofchicago.data-portal@1")
         with pytest.raises(FixtureMissing, match="record"):
-            provider.search(SearchQuery(text="something never recorded", limit=5))
+            provider.search(SearchQuery(text="something never recorded"))

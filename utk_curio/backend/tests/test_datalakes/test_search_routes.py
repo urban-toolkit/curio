@@ -26,7 +26,7 @@ def live(app, shipped_root, fixture_corpus):
 class TestScopedSearch:
     def test_it_returns_rows_from_the_portal(self, client, auth, live):
         res = client.get(
-            "/api/datalakes/sources/lake.cityofchicago.data-portal@1/search?q=crimes&limit=5",
+            "/api/datalakes/sources/lake.cityofchicago.data-portal@1/search?q=crimes",
             headers=auth,
         )
         assert res.status_code == 200

@@ -68,7 +68,7 @@ class TestTheHappyFanOut:
             "lake.curio.direct-url@1",
             "lake.cityofchicago.data-portal@1",
         )
-        _rows, legs = browse().search_all(sources, SearchQuery(text="ciclo", limit=5))
+        _rows, legs = browse().search_all(sources, SearchQuery(text="ciclo"))
         by_id = {leg["sourceId"]: leg for leg in legs}
         assert set(by_id) == {m.id for m in sources}
         assert by_id["lake.saopaulo.geosampa"]["status"] == "ok"
@@ -76,8 +76,8 @@ class TestTheHappyFanOut:
 
     def test_legs_are_returned_in_a_stable_order(self):
         sources = manifests("lake.saopaulo.geosampa@1", "lake.cityofchicago.data-portal@1")
-        _r, first = browse().search_all(sources, SearchQuery(text="ciclo", limit=5))
-        _r, second = browse().search_all(sources, SearchQuery(text="ciclo", limit=5))
+        _r, first = browse().search_all(sources, SearchQuery(text="ciclo"))
+        _r, second = browse().search_all(sources, SearchQuery(text="ciclo"))
         assert [x["sourceId"] for x in first] == [x["sourceId"] for x in second]
 
 
@@ -91,7 +91,7 @@ class TestPartialFailureIsData:
                 raise failure
 
         _rows, legs = browse(transport_for=lambda _m: Boom()).search_all(
-            manifests("lake.cityofchicago.data-portal@1"), SearchQuery(text="x", limit=5)
+            manifests("lake.cityofchicago.data-portal@1"), SearchQuery(text="x")
         )
         return legs[0]
 
@@ -153,7 +153,7 @@ class TestWhatIsNotEvenTried:
                 raise NotImplementedError
 
         _rows, legs = browse(transport_for=lambda _m: Spy()).search_all(
-            manifests("lake.curio.direct-url@1"), SearchQuery(text="x", limit=5)
+            manifests("lake.curio.direct-url@1"), SearchQuery(text="x")
         )
         assert legs[0]["status"] == "unsupported"
         assert contacted == [], "a link-only source must not be asked"
@@ -163,7 +163,7 @@ class TestWhatIsNotEvenTried:
 
         base = load_source_manifest(SHIPPED_ROOT / "lake.cityofchicago.data-portal@1")
         gated = replace(base, auth=replace(base.auth, mode="required-token"))
-        _rows, legs = browse().search_all([gated], SearchQuery(text="crimes", limit=5))
+        _rows, legs = browse().search_all([gated], SearchQuery(text="crimes"))
         assert legs[0]["status"] == "needs-token"
         assert "token" in legs[0]["detail"]
 
@@ -173,7 +173,7 @@ class TestWhatIsNotEvenTried:
         base = load_source_manifest(SHIPPED_ROOT / "lake.cityofchicago.data-portal@1")
         gated = replace(base, auth=replace(base.auth, mode="required-token"))
         _rows, legs = browse(credential_for=lambda _m: "X-App-Token:secret").search_all(
-            [gated], SearchQuery(text="crimes", limit=5)
+            [gated], SearchQuery(text="crimes")
         )
         assert legs[0]["status"] == "ok"
 
@@ -186,7 +186,7 @@ class TestBounds:
         # than the fan-out being a way around the per-source bound.
         for _ in range(source.requests_per_minute):
             ratelimit.limiter.check("alice", source.dir_name, source.requests_per_minute)
-        _rows, legs = b.search_all([source], SearchQuery(text="ciclo", limit=5))
+        _rows, legs = b.search_all([source], SearchQuery(text="ciclo"))
         assert legs[0]["status"] == "rate-limited"
 
     def test_the_merge_respects_the_limit(self):
@@ -220,7 +220,7 @@ class TestBounds:
         assert [r.resource_id for r in rows] == ["a0", "b0", "b1", "b2"]
 
     def test_no_sources_is_an_empty_result_not_a_crash(self):
-        rows, legs = browse().search_all([], SearchQuery(text="x", limit=5))
+        rows, legs = browse().search_all([], SearchQuery(text="x"))
         assert rows == [] and legs == []
 
 
