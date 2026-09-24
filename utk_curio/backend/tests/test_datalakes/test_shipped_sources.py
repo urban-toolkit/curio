@@ -132,3 +132,33 @@ def test_every_provider_we_implement_has_a_shipped_example():
     assert shipped == set(M.PROVIDER_TYPES), (
         f"providers without a shipped source: {sorted(set(M.PROVIDER_TYPES) - shipped)}"
     )
+
+
+def test_the_image_ships_the_catalog():
+    """The Dockerfile copies ``datalakes/`` into the image.
+
+    It did not, and nothing local noticed: every test here reads the catalog
+    from the working tree, so the suite was green while the built image had no
+    sources at all and every portal 404'd. CI caught it, 112 failures deep and
+    an image build later.
+
+    ``MANIFEST.in`` is not the same question and does not cover this: that
+    governs the sdist and the wheel, while the container copies named
+    directories one at a time. A new shipped root has to be added to both, and
+    forgetting either is invisible until something is built.
+    """
+    dockerfile = (SHIPPED_ROOT.parent / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY datalakes/" in dockerfile, (
+        "Dockerfile does not copy datalakes/ - the built image would serve an "
+        "empty Data Lake Catalog"
+    )
+
+
+def test_the_wheel_ships_the_catalog():
+    """And ``MANIFEST.in`` covers it for a pip install.
+
+    The twin of the above, and the reason both exist: these are two separate
+    packaging paths, and a source that reaches one does not reach the other.
+    """
+    manifest_in = (SHIPPED_ROOT.parent / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "recursive-include datalakes" in manifest_in
