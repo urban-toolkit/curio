@@ -135,7 +135,7 @@ REGISTRY: dict[str, ToolContract] = {
             "these results only."
         ),
     ),
-    # Data Lake Catalog — consumer: agent.dataset-finder. Three contracts, not
+    # Data Lake Catalog - consumer: agent.dataset-finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
     # packages.catalog + packages.resolve + package.install already has: it is
     # the shape that stops the model inventing a source id.
@@ -661,7 +661,7 @@ def execute_read_tool(
         # dev/84: the package tools read through the packages domain (which
         # does its own project/lockfile reads) — handled before the spec read.
         # The lake tools read the datalakes domain, which does its own
-        # manifest reads — handled before the project spec read, like the
+        # manifest reads - handled before the project spec read, like the
         # package tools below.
         if tool_id == "datalake.sources":
             return "ok", _truncate(

@@ -8,8 +8,7 @@ fallback is exercised by the shipped set rather than only by a test.
 
 ## What ships, and where it came from
 
-Each mark is the portal's own, fetched from the portal, and used to identify
-that portal in a list of portals.
+Each mark is the portal's own, fetched from the portal.
 
 | Source | Mark | Fetched from | Date |
 |---|---|---|---|
@@ -17,31 +16,12 @@ that portal in a list of portals.
 | `lake.uk.data-gov@1` | data.gov.uk mark | `data.gov.uk/assets/images/favicon.<hash>.png`, 48×48 | 2026-09-23 |
 | `lake.esri.hub-opendata@1` | ArcGIS mark | `www.arcgis.com/favicon.ico`, 48×48 frame | 2026-09-23 |
 | `lake.saopaulo.geosampa@1` | São Paulo coat of arms | cropped from `geosampa.prefeitura.sp.gov.br/css/img/cabecalhoProdam.png`, the site header banner; there is no standalone asset | 2026-09-23 |
-| `lake.curio.direct-url@1` | none - renders the glyph | — | — |
+| `lake.curio.direct-url@1` | none - renders the glyph | - | - |
 
 Normalised to PNG at 256px on the long edge, transparent margin trimmed, aspect
 preserved. The card renders them at 48px and the drawer at 112px, both with
 `object-fit: contain` on a neutral panel - `contain` rather than `cover`
 because cropping a square out of a wordmark cuts somebody's name in half.
-
-## On using the marks
-
-These are trademarks of the organisations that own them. They are used here
-**nominatively**: to identify the portal a card refers to, in a catalog whose
-entire purpose is to point at those portals. Nothing here claims affiliation,
-sponsorship or endorsement, the marks are unmodified apart from scaling and
-trimming, and each appears only beside the name of the thing it identifies.
-The project maintainers have made this call; it is recorded here so it is a
-decision on the record rather than an assumption.
-
-Two consequences worth knowing:
-
-- **A rights holder who objects should be accommodated, not argued with.**
-  Removing a mark is deleting one PNG and the manifest's `icon` line; the card
-  then renders the glyph and nothing else changes.
-- **A fork or a rebrand inherits the question, not the answer.** If you ship
-  Curio under another name or in another jurisdiction, this is yours to
-  re-decide.
 
 ## Adding one
 

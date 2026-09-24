@@ -89,7 +89,7 @@ a node output rather than anything a portal serves.
 | data.gov.uk | CKAN | Public |
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
-| Direct URL | — | Public; no search, takes a link to a file |
+| Direct URL | none | Public; no search, takes a link to a file |
 
 **Not data.gov.** The US federal portal's CKAN API was retired: every
 `/api/3/action/*` endpoint 404s and `/dataset` now redirects to the homepage.
@@ -248,12 +248,10 @@ icon is the only file in this feature whose bytes are rendered rather than
 parsed. The file is served with a fixed content type, `nosniff`, an `ETag` and
 a 256 KiB cap, and is resolved inside its own source folder.
 
-The shipped marks are the portals' own, fetched from each portal and used
-nominatively - to identify the portal a card refers to, in a catalog that
-exists to point at those portals.
-[`datalakes/ICONS.md`](../datalakes/ICONS.md) records where each came from,
-when, and the reasoning; removing one is deleting a PNG and a manifest line,
-after which the card renders the glyph.
+Each shipped mark is the portal's own, and
+[`datalakes/ICONS.md`](../datalakes/ICONS.md) records where it was fetched from
+and when. Replacing or removing one is a PNG and a manifest line; remove it and
+the card renders the glyph.
 
 ## 7. Credentials
 

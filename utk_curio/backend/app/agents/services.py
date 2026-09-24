@@ -2438,7 +2438,7 @@ def _mint_datalake_acquire(
         return (
             "refused",
             f"{held.get('title')!r} is already in the user's Data Catalog from "
-            "this resource — tell them instead of proposing a second copy",
+            "this resource - tell them instead of proposing a second copy",
             None,
         )
 
@@ -2448,7 +2448,7 @@ def _mint_datalake_acquire(
         help_url = manifest.auth.help_url
         return (
             "refused",
-            f"{exc} — ask the user to add the {manifest.auth.secret_id} token in "
+            f"{exc} - ask the user to add the {manifest.auth.secret_id} token in "
             f"AI Settings{f' ({help_url})' if help_url else ''}. Never ask them "
             "to paste it to you.",
             None,
@@ -2504,7 +2504,7 @@ def _mint_datalake_acquire(
     return (
         "proposed",
         f"proposal {proposal_id} created to download {name!r} from "
-        f"{manifest.name}; it awaits the user's explicit review — do NOT assume "
+        f"{manifest.name}; it awaits the user's explicit review - do NOT assume "
         "it was downloaded",
         part,
     )
@@ -3186,7 +3186,7 @@ def _apply_datalake_acquire(
     except DataLakeError as exc:
         raise _mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"that data lake source is no longer available ({exc}) — ask the "
+            f"that data lake source is no longer available ({exc}) - ask the "
             "agent to search again",
         )
     try:

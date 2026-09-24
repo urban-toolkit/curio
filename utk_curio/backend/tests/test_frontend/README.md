@@ -669,6 +669,14 @@ Things worth knowing before adding to these:
 - **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
   `agent.researcher` declare them and `app/agents/egress.py` really opens
   sockets. Both also declare a local read tool, which is what the suite uses.
+- **`datalake.search` is the exception, and only because of the corpus.**
+  `agent.dataset-finder` declares it, and it too really opens sockets - but the
+  harness exports `CURIO_DATALAKE_FIXTURES`, so in this stack the lake
+  transport answers from recorded responses instead. That is what makes an
+  agent-driven download testable at all. It holds only while that variable is
+  set: if you copy a lake spec into a harness that does not export it, the
+  stack will reach a real portal. `datalake.sources` is safe unconditionally -
+  it reads manifests off disk.
 - **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
   most-specific-first because an agent that declares several gets the first
   match: `dataflow.plan.write` (so the Dataflow Builder plans rather than

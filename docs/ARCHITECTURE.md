@@ -877,6 +877,31 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
+### Data Lake Routes
+
+Defined in `backend/app/datalakes/routes.py` over `backend/app/datalakes/service.py`.
+The **unit is a portal, not a dataset**: manifests under `datalakes/` describe
+where datasets can be fetched from, and the datasets themselves are discovered
+live. A download hands the bytes to the Data Catalog's own importer, so what
+comes out is an ordinary dataset carrying a `lakeSource` provenance block.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/datalakes/catalog` | GET | List the connected portals (`q`, `provider`, `auth`). Disk only - makes no outbound request |
+| `/api/datalakes/sources/<dir>` | GET | One portal, with its capabilities and credential state |
+| `/api/datalakes/sources/<dir>/icon` | GET | The portal's mark. Fixed `image/png`, `nosniff`, `ETag`, 256 KiB cap; 404 when absent so the UI falls back to a glyph |
+| `/api/datalakes/search` | GET | **Live, federated.** Fans out over every searchable portal (`q` required, `format`, `provider`, `limit`). A failing leg is reported in `sources[]` and never fails the request |
+| `/api/datalakes/sources/<dir>/search` | GET | **Live**, one portal. The only paginated search - a fan-out has no coherent cursor |
+| `/api/datalakes/sources/<dir>/resources/<id>` | GET | **Live** resource detail: fields, licence, provider extras |
+| `.../resources/<id>/acquire` | POST | Download into the Data Catalog. **202** with a job, or **200** with the dataset when it is already held (no portal contacted) |
+| `/api/datalakes/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
+| `/api/datalakes/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
+
+Errors map by type: 404 unknown source or resource, **428** a source needing a
+token this account does not hold, 429 rate-limited, 502 a portal that answered
+badly or an egress refusal (the policy reason, never a resolved address), 400
+an unsupported format or an oversized download.
+
 ### Agent Routes
 
 Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all

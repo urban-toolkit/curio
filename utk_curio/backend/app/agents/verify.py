@@ -87,9 +87,9 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None) ->
 def _refine_with(provider_module):
     """Build the refinement for one provider family.
 
-    The shape is always the same — recognise the id, probe that provider's
+    The shape is always the same - recognise the id, probe that provider's
     metadata endpoint, read evidence out of the body the probe already
-    fetched — so it is written once here rather than once per provider. What
+    fetched - so it is written once here rather than once per provider. What
     varies (the URL shape, the metadata endpoint, what counts as evidence)
     lives in the provider module, which is the only place that knows it.
     """
@@ -162,7 +162,7 @@ class _LazyValidators(list):
 
 
 # The registry: URL-shape recogniser → refinement. The GENERIC probe is the
-# fallback for everything — the gate covers ANY dataset API connection, and a
+# fallback for everything - the gate covers ANY dataset API connection, and a
 # provider only ever adds richer evidence on top of the same verdict.
 _VALIDATORS: list = _LazyValidators()
 

@@ -7,7 +7,7 @@ import type { AgentDatasetCandidateRow } from '../../api/agentsApi';
 /**
  * The external lane used to mean exactly one thing: hand it to Node Builder.
  * A row Curio can actually download now says so, and composes a different
- * confirmation — while a row it cannot still goes to Node Builder, which is
+ * confirmation - while a row it cannot still goes to Node Builder, which is
  * the right answer for a source no provider covers.
  */
 
