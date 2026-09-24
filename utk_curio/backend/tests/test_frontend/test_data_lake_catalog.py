@@ -254,8 +254,20 @@ def test_downloading_lands_a_real_dataset_in_the_data_catalog(
 
     link.click()
     page.wait_for_load_state("networkidle")
-    # It is an ordinary dataset now, on the Data Catalog's own detail page.
-    expect(page.get_by_text("Crimes", exact=False).first).to_be_visible(timeout=30000)
+    # It is an ordinary dataset now, on the Data Catalog's own detail page,
+    # under the name the PORTAL gave it. Asserting the title and not merely
+    # "a page loaded" is the point: it arrived named "ijzp-q8t2.csv" after the
+    # remote file, because the download never sent the resource title.
+    expect(
+        page.get_by_role("heading", name="Crimes - 2001 to Present")
+    ).to_be_visible(timeout=30000)
+    # And it still says where it came from. Its origin is "imported", exactly
+    # like a hand-uploaded file, so this block is the only thing on the page
+    # that distinguishes the two.
+    expect(page.get_by_text("Downloaded from")).to_be_visible(timeout=15000)
+    expect(
+        page.get_by_role("link", name="City of Chicago Data Portal")
+    ).to_be_visible(timeout=15000)
 
 
 def test_a_second_download_offers_the_dataset_instead_of_a_copy(
