@@ -61,6 +61,21 @@ CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
 # Seed example projects from docs/examples/ on startup.
 CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
 
+# Flask debug mode on the backend's dev server. Off by default, and the reason
+# is throughput rather than safety: Flask's DefaultJSONProvider pretty-prints
+# every jsonify with indent=2 whenever app.debug is true, which measured 1.00s
+# against 0.25s to encode and 30.8MB against 19.2MB on a 200k-row frame. /get
+# pays that on every artifact fetch, and artifact fetches are 42% of the
+# blocked time in the 100-user stress run.
+#
+# Nothing is lost by it. The interactive debugger debug mode also enables never
+# fired anyway: app/__init__.py registers a catch-all errorhandler, so every
+# in-request fault is answered there and the response bodies are identical
+# either way. Reloading is a separate switch (FLASK_USE_RELOADER in server.py).
+#
+# The sandbox has always run debug=False; this makes the two processes match.
+CURIO_BACKEND_DEBUG = _env_flag("CURIO_BACKEND_DEBUG", False)
+
 # Real-time collaboration (opt-in). When False, the SocketIO server is never
 # instantiated and the flask-socketio package is never imported — installs
 # without this feature pay zero runtime cost.
