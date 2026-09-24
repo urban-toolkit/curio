@@ -519,3 +519,75 @@ class TestDownload:
                 "bytes": 7,
             }
         ]
+
+
+class TestTheBodyBoundReachesTheTransport:
+    """``max_bytes`` has to stop the READ, not just truncate what arrived.
+
+    Reading a fixed 256 KiB while the caller asked for more made the parameter
+    a lie: the body came back pre-cut, and ``truncated`` then compared that
+    short body against the larger bound and reported False. A caller got a
+    silently truncated document with no indication - which is how a 425 KB WFS
+    capabilities response became an XML parse error a long way from here.
+    """
+
+    def test_the_default_request_fn_honours_the_callers_bound(self):
+        seen = {}
+
+        def _request(method, url, *, trusted_host=None, max_bytes=None):
+            seen["max_bytes"] = max_bytes
+            return 200, {"Content-Type": "text/plain"}, b"x" * 10, None
+
+        egress.fetch(
+            "https://big.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=2 * 1024 * 1024,
+        )
+        assert seen["max_bytes"] == 2 * 1024 * 1024
+
+    def test_the_default_is_passed_when_the_caller_says_nothing(self):
+        seen = {}
+
+        def _request(method, url, *, trusted_host=None, max_bytes=None):
+            seen["max_bytes"] = max_bytes
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert seen["max_bytes"] == egress.MAX_BODY_BYTES
+
+    def test_a_two_argument_double_is_still_called_with_two_arguments(self):
+        """Every existing test double takes ``(method, url)``. Widening the
+        call unconditionally would break all of them."""
+        calls = []
+
+        def _request(method, url):
+            calls.append((method, url))
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=999,
+        )
+        assert calls == [("GET", "https://ok.example")]
+
+    def test_a_kwargs_double_receives_both_extras(self):
+        seen = {}
+
+        def _request(method, url, **kwargs):
+            seen.update(kwargs)
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=4096,
+        )
+        assert seen == {"trusted_host": None, "max_bytes": 4096}

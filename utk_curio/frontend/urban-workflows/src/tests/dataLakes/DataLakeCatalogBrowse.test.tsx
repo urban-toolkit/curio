@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { DataLakeCatalogBrowse } from '../../pages/dataLakes/DataLakeCatalogBrowse';
@@ -62,12 +62,48 @@ function card(dirName: string): HTMLElement {
   return el as HTMLElement;
 }
 
-function renderPage() {
+function renderPage(entry = '/catalog/lakes') {
   return render(
-    <MemoryRouter initialEntries={['/catalog/lakes']}>
+    <MemoryRouter initialEntries={[entry]}>
       <DataLakeCatalogBrowse />
     </MemoryRouter>
   );
+}
+
+const searchResponse = (over: Record<string, unknown> = {}) => ({
+  resources: [],
+  sources: [],
+  nextCursor: null,
+  totalHint: null,
+  truncated: false,
+  ...over,
+});
+
+const resourceRow = (over: Record<string, unknown> = {}) => ({
+  sourceId: 'lake.a.portal',
+  sourceName: 'Alpha Portal',
+  resourceId: 'abcd-1234',
+  name: 'Bike Routes',
+  description: '',
+  publisher: 'Alpha City',
+  formats: ['geojson'],
+  updatedAt: null,
+  landingUrl: null,
+  sizeHint: null,
+  acquirable: true,
+  alreadyHeldDatasetId: null,
+  ...over,
+});
+
+/** Route the mocked client by path, so one test can serve both the roster and
+ *  a search without caring which order the page asks in. */
+function routeApi(handlers: Record<string, unknown>) {
+  apiFetch.mockImplementation((path: string) => {
+    for (const [fragment, value] of Object.entries(handlers)) {
+      if (path.includes(fragment)) return Promise.resolve(value);
+    }
+    return Promise.reject(new Error(`unexpected call: ${path}`));
+  });
 }
 
 beforeEach(() => {
@@ -151,5 +187,103 @@ describe('DataLakeCatalogBrowse', () => {
     renderPage();
     await screen.findByText('Alpha Portal');
     expect(apiFetch).toHaveBeenCalledWith('/api/datalakes/catalog');
+  });
+});
+
+
+describe('DataLakeCatalogBrowse: federated search mode', () => {
+  test('a query in the URL swaps the card grid for portal results', async () => {
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/datalakes/search': searchResponse({
+        resources: [resourceRow(), resourceRow({ resourceId: 'x', name: 'Cycle Parking' })],
+        sources: [{ sourceId: 'lake.a.portal', status: 'ok', count: 2 }],
+      }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    expect(await screen.findByText('Bike Routes')).toBeInTheDocument();
+    expect(screen.getByText('Cycle Parking')).toBeInTheDocument();
+    // The source CARDS are gone while results are showing.
+    expect(document.querySelector('[data-lake-source]')).toBeNull();
+  });
+
+  test('each result is tagged with the portal it came from', async () => {
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/datalakes/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [{ sourceId: 'lake.a.portal', status: 'ok' }],
+      }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    await screen.findByText('Bike Routes');
+    const row = document.querySelector('[data-lake-resource]') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(within(row).getByText('Alpha Portal')).toBeInTheDocument();
+  });
+
+  test('a portal that did not answer is named, and the rest still render', async () => {
+    // The property that matters: one portal having a bad afternoon must not
+    // empty the page.
+    routeApi({
+      '/catalog': response([
+        source(),
+        source({ sourceId: 'lake.b.other', dirName: 'lake.b.other@1', name: 'Beta Portal' }),
+      ]),
+      '/api/datalakes/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [
+          { sourceId: 'lake.a.portal', status: 'ok' },
+          { sourceId: 'lake.b.other', status: 'failed', detail: 'timed out' },
+        ],
+      }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    expect(await screen.findByText(/Beta Portal did not answer/)).toBeInTheDocument();
+    expect(screen.getByText('Bike Routes')).toBeInTheDocument();
+  });
+
+  test('a link-only source reporting unsupported is not called a failure', async () => {
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/datalakes/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [
+          { sourceId: 'lake.a.portal', status: 'ok' },
+          { sourceId: 'lake.curio.direct-url', status: 'unsupported' },
+        ],
+      }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    await screen.findByText('Bike Routes');
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  test('no matches anywhere says so', async () => {
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/datalakes/search': searchResponse({
+        sources: [{ sourceId: 'lake.a.portal', status: 'ok', count: 0 }],
+      }),
+    });
+    renderPage('/catalog/lakes?q=nothing');
+    expect(
+      await screen.findByText(/No portal returned anything/)
+    ).toBeInTheDocument();
+  });
+
+  test('the roster is not filtered by the search text', async () => {
+    // That text is a question for the portals, not for the roster - the rail
+    // counts and the source names beside results both come from the roster.
+    routeApi({
+      '/catalog': response([source()]),
+      '/api/datalakes/search': searchResponse({ sources: [] }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    await screen.findByText(/No portal returned anything/);
+    const rosterCalls = apiFetch.mock.calls
+      .map((c) => c[0])
+      .filter((p) => p.includes('/datalakes/catalog'));
+    expect(rosterCalls.every((p) => !p.includes('q='))).toBe(true);
   });
 });

@@ -1,0 +1,1138 @@
+{
+  "results" :
+    [
+      {
+        "resource" :
+          {
+            "name" : "Crimes - 2001 to Present",
+            "id" : "ijzp-q8t2",
+            "resource_name" : "crimes",
+            "parent_fxf" : [],
+            "description" : "This dataset reflects reported incidents of crime (with the exception of murders where data exists for each victim) that occurred in the City of Chicago from 2001 to present, minus the most recent seven days. Data is extracted from the Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. In order to protect the privacy of crime victims, addresses are shown at the block level only and specific locations are not identified. Should you have questions about this dataset, you may contact the Data Fulfillment and Analysis Division of the Chicago Police Department at DFA@ChicagoPolice.org.  Disclaimer: These crimes may be based upon preliminary information supplied to the Police Department by the reporting parties that have not been verified. The preliminary crime classifications may be changed at a later date based upon additional investigation and there is always the possibility of mechanical or human error. Therefore, the Chicago Police Department does not guarantee (either expressed or implied) the accuracy, completeness, timeliness, or correct sequencing of the information and the information should not be used for comparison purposes over time. The Chicago Police Department will not be responsible for any error or omission, or for the use of, or the results obtained from the use of this information. All data visualizations on maps should be considered approximate and attempts to derive specific addresses are strictly prohibited. The Chicago Police Department is not responsible for the content of any off-site pages that are referenced by or that reference this web page other than an official City of Chicago or Chicago Police Department web page. The user specifically acknowledges that the Chicago Police Department is not responsible for any defamatory, offensive, misleading, or illegal conduct of other users, links, or third parties and that the risk of injury from the foregoing rests entirely with the user.  The unauthorized use of the words \"Chicago Police Department,\" \"Chicago Police,\" or any colorable imitation of these words or the unauthorized use of the Chicago Police Department logo is unlawful. This web page does not, in any way, authorize such use. Data are updated daily. To access a list of Chicago Police Department - Illinois Uniform Crime Reporting (IUCR) codes, go to http://data.cityofchicago.org/Public-Safety/Chicago-Police-Department-Illinois-Uniform-Crime-R/c7ck-438e",
+            "attribution" : "Chicago Police Department",
+            "attribution_link" : "https://www.chicagopolice.org/data-statistics/",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-09-23T11:30:00.000Z",
+            "createdAt" : "2011-09-30T17:59:31.000Z",
+            "metadata_updated_at" : "2026-09-08T18:32:36.000Z",
+            "data_updated_at" : "2026-09-23T11:30:00.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 2781,
+                "page_views_last_month" : 11904,
+                "page_views_total" : 1320695,
+                "page_views_last_week_log" : 11.44190670454224,
+                "page_views_last_month_log" : 13.539280000157696,
+                "page_views_total_log" : 20.33286699218067
+              },
+            "columns_name" :
+              [
+                "Arrest",
+                "Date",
+                "Beat",
+                "Wards 2023-",
+                "Location (state)",
+                "Domestic",
+                "Block",
+                "Location Description",
+                "FBI Code",
+                "Case Number",
+                "Updated On",
+                "Latitude",
+                "Longitude",
+                "Census Tracts",
+                "Police Beats",
+                "Wards",
+                "ID",
+                "Boundaries - ZIP Codes",
+                "Police Districts",
+                "X Coordinate",
+                "Location (address)",
+                "Community Area",
+                "Zip Codes",
+                "Ward",
+                "Historical Wards 2003-2015",
+                "Community Areas",
+                "Location (zip)",
+                "Year",
+                "Y Coordinate",
+                "Description",
+                "Location (city)",
+                "District",
+                "Primary Type",
+                "IUCR",
+                "Location"
+              ],
+            "columns_field_name" :
+              [
+                "arrest",
+                "date",
+                "beat",
+                ":@computed_region_8hcu_yrd4",
+                "location_state",
+                "domestic",
+                "block",
+                "location_description",
+                "fbi_code",
+                "case_number",
+                "updated_on",
+                "latitude",
+                "longitude",
+                ":@computed_region_bdys_3d7i",
+                ":@computed_region_d3ds_rm58",
+                ":@computed_region_43wa_7qmu",
+                "id",
+                ":@computed_region_rpca_8um6",
+                ":@computed_region_d9mm_jgwp",
+                "x_coordinate",
+                "location_address",
+                "community_area",
+                ":@computed_region_6mkv_f3dw",
+                "ward",
+                ":@computed_region_awaf_s7ux",
+                ":@computed_region_vrxf_vc4k",
+                "location_zip",
+                "year",
+                "y_coordinate",
+                "description",
+                "location_city",
+                "district",
+                "primary_type",
+                "iucr",
+                "location"
+              ],
+            "columns_datatype" :
+              [
+                "Checkbox",
+                "Calendar date",
+                "Text",
+                "Number",
+                "Text",
+                "Checkbox",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Point"
+              ],
+            "columns_description" :
+              [
+                "Indicates whether an arrest was made.",
+                "Date when the incident occurred. this is sometimes a best estimate. ",
+                "Indicates the beat where the incident occurred.  A beat is the smallest police geographic area – each beat has a dedicated police beat car.  Three to five beats make up a police sector, and three sectors make up a police district.  The Chicago Police Department has 22 police districts.  \n\nSee the beats at https://data.cityofchicago.org/d/aerh-rz74.\n",
+                "This column was automatically created in order to record in what polygon from the dataset 'Wards 2023-' (8hcu-yrd4) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+                "",
+                "Indicates whether the incident was domestic-related as defined by the Illinois Domestic Violence Act.",
+                "The partially redacted address where the incident occurred, placing it on the same block as the actual address. ",
+                "Description of the location where the incident occurred.",
+                "Indicates the crime classification as outlined in the FBI's National Incident-Based Reporting System (NIBRS).See the Chicago Police Department listing of these classifications at https://gis.chicagopolice.org/pages/crime_details.",
+                "The Chicago Police Department RD Number (Records Division Number), which is unique to the incident. ",
+                "Date and time the record was last updated.",
+                "The latitude of the location where the incident occurred. This location is shifted from the actual location for partial redaction but falls on the same block.",
+                "The longitude of the location where the incident occurred. This location is shifted from the actual location for partial redaction but falls on the same block.",
+                "",
+                "",
+                "",
+                "Unique identifier for the record.",
+                "",
+                "",
+                "The x coordinate of the location where the incident occurred in State Plane Illinois East NAD 1983 projection.  This location is shifted from the actual location for partial redaction but falls on the same block.",
+                "",
+                "Indicates the community area where the incident occurred.  Chicago has 77 community areas. \n\nSee the community areas at https://data.cityofchicago.org/d/cauq-8yn6.\n",
+                "",
+                "The ward (City Council district) where the incident occurred.  See the wards at https://data.cityofchicago.org/d/sp34-6z76.",
+                "",
+                "",
+                "",
+                "Year the incident occurred.",
+                "The y coordinate of the location where the incident occurred in State Plane Illinois East NAD 1983 projection. This location is shifted from the actual location for partial redaction but falls on the same block.",
+                "The secondary description of the IUCR code, a subcategory of the primary description.",
+                "",
+                "Indicates the police district where the incident occurred.  See the districts at https://data.cityofchicago.org/d/fthy-xz3r.",
+                "The primary description of the IUCR code.",
+                "The Illinois Uniform Crime Reporting code. This is directly linked to the Primary Type and Description. See the list of IUCR codes at https://data.cityofchicago.org/d/c7ck-438e.",
+                "The location where the incident occurred in a format that allows for creation of maps and other geographic operations on this data portal. This location is shifted from the actual location for partial redaction but falls on the same block."
+              ],
+            "columns_format" :
+              [
+                { "align" : "center" },
+                { "view" : "date_time", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                {},
+                { "align" : "center" },
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                {
+                  "displayStyle" : "plain",
+                  "align" : "left",
+                  "aggregate" : "count"
+                },
+                { "view" : "date_time", "align" : "left" },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "false",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "false",
+                  "align" : "right"
+                },
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "false",
+                  "align" : "right"
+                },
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                { "view" : "coords", "align" : "left" }
+              ],
+            "download_count" : 923864,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-09-15T03:58:21.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Public Safety",
+            "domain_tags" : [ "crime", "police" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Metadata_Frequency",
+                  "value" : "Data are updated daily."
+                },
+                { "key" : "Metadata_Data-Owner", "value" : "Police" },
+                {
+                  "key" : "Metadata_Time-Period",
+                  "value" : "2001 to present, minus the most recent seven days"
+                },
+                {
+                  "key" : "Metadata_Changes-and-Other-Historical-Information-Useful-to-Understanding-This-Dataset",
+                  "value" : "https://www.google.com/search?q=site:data.cityofchicago.org/stories+\"Related+dataset+ID+s\"+\"ijzp-q8t2\""
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.cityofchicago.org",
+            "license" : "See Terms of Use"
+          },
+        "permalink" : "https://data.cityofchicago.org/d/ijzp-q8t2",
+        "link" : "https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2",
+        "owner" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          },
+        "creator" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Crimes - One Year Prior to Present",
+            "id" : "x2n5-8w5q",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "This dataset reflects reported incidents of crime (with the exception of murders where data exists for each victim) that have occurred in the City of Chicago over the past year, minus the most recent seven days of data. Data is extracted from the Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. In order to protect the privacy of crime victims, addresses are shown at the block level only and specific locations are not identified. Should you have questions about this dataset, you may contact the Research & Development Division of the Chicago Police Department at 312.745.6071 or RandD@chicagopolice.org.\r\nDisclaimer: These crimes may be based upon preliminary information supplied to the Police Department by the reporting parties that have not been verified. The preliminary crime classifications may be changed at a later date based upon additional investigation and there is always the possibility of mechanical or human error. Therefore, the Chicago Police Department does not guarantee (either expressed or implied) the accuracy, completeness, timeliness, or correct sequencing of the information and the information should not be used for comparison purposes over time. The Chicago Police Department will not be responsible for any error or omission, or for the use of, or the results obtained from the use of this information. All data visualizations on maps should be considered approximate and attempts to derive specific addresses are strictly prohibited. \r\n\r\nThe Chicago Police Department is not responsible for the content of any off-site pages that are referenced by or that reference this web page other than an official City of Chicago or Chicago Police Department web page. The user specifically acknowledges that the Chicago Police Department is not responsible for any defamatory, offensive, misleading, or illegal conduct of other users, links, or third parties and that the risk of injury from the foregoing rests entirely with the user.  The unauthorized use of the words \"Chicago Police Department,\" \"Chicago Police,\" or any colorable imitation of these words or the unauthorized use of the Chicago Police Department logo is unlawful. This web page does not, in any way, authorize such use.\r\nData is updated daily Tuesday through Sunday. The dataset contains more than 65,000 records/rows of data and cannot be viewed in full in Microsoft Excel. Therefore, when downloading the file, select CSV from the Export menu. Open the file in an ASCII text editor, such as Wordpad, to view and search. To access a list of Chicago Police Department - Illinois Uniform Crime Reporting (IUCR) codes, go to http://bit.ly/rk5Tpc.",
+            "attribution" : "City of Chicago",
+            "attribution_link" : "http://www.chicagopolice.org/",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-09-23T10:01:50.000Z",
+            "createdAt" : "2011-09-30T10:01:02.000Z",
+            "metadata_updated_at" : "2026-09-08T18:31:57.000Z",
+            "data_updated_at" : "2026-09-23T10:01:50.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 575,
+                "page_views_last_month" : 1309,
+                "page_views_total" : 152982,
+                "page_views_last_week_log" : 9.169925001442314,
+                "page_views_last_month_log" : 10.355351096424812,
+                "page_views_total_log" : 17.22301181899957
+              },
+            "columns_name" :
+              [
+                "Wards",
+                "CASE#",
+                " SECONDARY DESCRIPTION",
+                "Historical Wards 2003-2015",
+                "BLOCK",
+                "X COORDINATE",
+                "Boundaries - ZIP Codes",
+                "LOCATION (address)",
+                " IUCR",
+                "LOCATION (city)",
+                "Zip Codes",
+                "LONGITUDE",
+                " LOCATION DESCRIPTION",
+                "FBI CD",
+                "LOCATION",
+                "DOMESTIC",
+                "Y COORDINATE",
+                "LOCATION (state)",
+                "ARREST",
+                "Community Areas",
+                "LATITUDE",
+                "Census Tracts",
+                "DATE  OF OCCURRENCE",
+                "LOCATION (zip)",
+                "WARD",
+                "BEAT",
+                " PRIMARY DESCRIPTION"
+              ],
+            "columns_field_name" :
+              [
+                ":@computed_region_43wa_7qmu",
+                "case_",
+                "_secondary_description",
+                ":@computed_region_awaf_s7ux",
+                "block",
+                "x_coordinate",
+                ":@computed_region_rpca_8um6",
+                "location_address",
+                "_iucr",
+                "location_city",
+                ":@computed_region_6mkv_f3dw",
+                "longitude",
+                "_location_description",
+                "fbi_cd",
+                "location",
+                "domestic",
+                "y_coordinate",
+                "location_state",
+                "arrest",
+                ":@computed_region_vrxf_vc4k",
+                "latitude",
+                ":@computed_region_bdys_3d7i",
+                "date_of_occurrence",
+                "location_zip",
+                "ward",
+                "beat",
+                "_primary_decsription"
+              ],
+            "columns_datatype" :
+              [
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Point",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Calendar date",
+                "Text",
+                "Number",
+                "Number",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "",
+                "The Chicago Police Department RD Number (Records Division Number), which is unique to the incident.  ",
+                "The secondary description of the IUCR code, a subcategory of the primary description.",
+                "",
+                "The partially redacted address where the incident occurred, placing it on the same block as the actual address. ",
+                "The x coordinate of the location where the incident occurred in State Plane Illinois East NAD 1983 projection. This location is shifted from the actual location for partial redaction but falls on the same block. ",
+                "",
+                "",
+                "The Illinois Uniform Crime Reporting Code. This is directly linked to the Primary Type and Description. See the list of IUCR codes at https://data.cityofchicago.org/d/c7ck-438e.",
+                "",
+                "",
+                "The longitude of the location where the incident occurred. This location is shifted from the actual location for partial redaction but falls on the same block. ",
+                "Description of the location where the incident occurred. ",
+                "Indicates the crime classification as outlined in the FBI's National Incident-Based Reporting System (NIBRS). See the Chicago Police Department listing of these classifications at https://gis.chicagopolice.org/pages/crime_details.",
+                "The location where the incident occurred in a format that allows for creation of maps and other geographic operations on this data portal. This location is shifted from the actual location for partial redaction but falls on the same block.",
+                "Indicates whether the incident was domestic-related as defined by the Illinois Domestic Violence Act. ",
+                "The y coordinate of the location where the incident occurred in State Plane Illinois East NAD 1983 projection. This location is shifted from the actual location for partial redaction but falls on the same block. ",
+                "",
+                "Indicates whether an arrest was made. ",
+                "",
+                "The latitude of the location where the incident occurred. This location is shifted from the actual location for partial redaction but falls on the same block. ",
+                "",
+                "Date when the incident occurred. This is sometimes a best estimate. ",
+                "",
+                "The ward (City Council district) where the incident occurred. See the wards at https://data.cityofchicago.org/d/sp34-6z76.",
+                "Indicates the beat where the incident occurred. A beat is the smallest police geographic area - each beat has a dedicated police beat car. Three to five beats make up a police sector, and three sectors make up a police district. The Chicago Police Department has 22 police districts. See the beats at https://data.cityofchicago.org/d/aerh-rz74.",
+                "The primary description of the IUCR code. "
+              ],
+            "columns_format" :
+              [
+                {},
+                {
+                  "displayStyle" : "plain",
+                  "align" : "left",
+                  "aggregate" : "count"
+                },
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                {},
+                { "displayStyle" : "plain", "align" : "right" },
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                { "displayStyle" : "plain", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "right" },
+                { "view" : "coords", "align" : "left" },
+                { "displayStyle" : "plain", "align" : "center" },
+                { "displayStyle" : "plain", "align" : "left" },
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                { "view" : "date_time", "align" : "left" },
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "false",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                { "displayStyle" : "plain", "align" : "left" }
+              ],
+            "download_count" : 74573,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2019-09-12T20:52:54.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Public Safety",
+            "domain_tags" : [ "police", "crime" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Metadata_Frequency",
+                  "value" : "Data are updated daily."
+                },
+                {
+                  "key" : "Metadata_Data-Owner",
+                  "value" : "Chicago Police Department"
+                },
+                {
+                  "key" : "Metadata_Time-Period",
+                  "value" : "One year minus the most recent seven days"
+                },
+                {
+                  "key" : "Metadata_Changes-and-Other-Historical-Information-Useful-to-Understanding-This-Dataset",
+                  "value" : "https://www.google.com/search?q=site:data.cityofchicago.org/stories+\"Related+dataset+ID+s\"+\"x2n5-8w5q\""
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.cityofchicago.org",
+            "license" : "See Terms of Use"
+          },
+        "permalink" : "https://data.cityofchicago.org/d/x2n5-8w5q",
+        "link" : "https://data.cityofchicago.org/Public-Safety/Crimes-One-Year-Prior-to-Present/x2n5-8w5q",
+        "owner" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          },
+        "creator" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Chicago Police Department - Illinois Uniform Crime Reporting (IUCR) Codes",
+            "id" : "c7ck-438e",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Illinois Uniform Crime Reporting (IUCR) codes are four digit codes that law enforcement agencies use to classify criminal incidents when taking individual reports. These codes are also used to aggregate types of cases for statistical purposes.  In Illinois, the Illinois State Police establish IUCR codes, but the agencies can add codes to suit their individual needs.  The Chicago Police Department currently uses more than 400 IUCR codes to classify criminal offenses, divided into “Index” and “Non-Index” offenses.  Index offenses are the offenses that are collected nation-wide by the Federal Bureaus of Investigation’s Uniform Crime Reports program to document crime trends over time (data released semi-annually), and include murder, criminal sexual assault, robbery, aggravated assault & battery, burglary, theft, motor vehicle theft, and arson.  Non-index offenses are all other types of criminal incidents, including vandalism, weapons violations, public peace violations, etc.\n\nSee <a href=\"https://data.cityofchicago.org/d/qimd-vs49\" target=\"_blank\">this filtered view</a> for only IUCR codes marked as Active.",
+            "attribution" : "Chicago Police Department",
+            "attribution_link" : "https://portal.chicagopolice.org/portal/page/portal/ClearPath",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-06-02T21:08:34.000Z",
+            "createdAt" : "2011-09-15T19:58:55.000Z",
+            "metadata_updated_at" : "2026-06-02T21:08:33.000Z",
+            "data_updated_at" : "2026-06-02T21:08:34.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 413,
+                "page_views_last_month" : 1758,
+                "page_views_total" : 166209,
+                "page_views_last_week_log" : 8.693486957499326,
+                "page_views_last_month_log" : 10.78053976747196,
+                "page_views_total_log" : 17.34264765868949
+              },
+            "columns_name" :
+              [
+                "INDEX CODE",
+                "PRIMARY DESCRIPTION",
+                "SECONDARY DESCRIPTION",
+                "IUCR",
+                "ACTIVE"
+              ],
+            "columns_field_name" :
+              [
+                "index_code",
+                "primary_description",
+                "secondary_description",
+                "iucr",
+                "active"
+              ],
+            "columns_datatype" : [
+                                   "Text",
+                                   "Text",
+                                   "Text",
+                                   "Text",
+                                   "Checkbox"
+                                 ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "Whether the code is active. Retired codes (No) are present in this dataset for historical reference. There is a filtered view for this dataset showing only active codes."
+              ],
+            "columns_format" :
+              [
+                { "align" : "left" },
+                { "align" : "left" },
+                { "align" : "left" },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                { "displayStyle" : "yesno" }
+              ],
+            "download_count" : 71139,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2021-12-07T22:51:38.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Public Safety",
+            "domain_tags" : [ "crime", "police" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Metadata_Frequency",
+                  "value" : "Data are updated as needed"
+                },
+                {
+                  "key" : "Metadata_Data-Owner",
+                  "value" : "Chicago Police Department"
+                },
+                {
+                  "key" : "Metadata_Time-Period",
+                  "value" : "Current list as of June 2026"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.cityofchicago.org",
+            "license" : "See Terms of Use"
+          },
+        "permalink" : "https://data.cityofchicago.org/d/c7ck-438e",
+        "link" : "https://data.cityofchicago.org/Public-Safety/Chicago-Police-Department-Illinois-Uniform-Crime-R/c7ck-438e",
+        "owner" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          },
+        "creator" :
+          {
+            "id" : "scy9-9wg4",
+            "user_type" : "interactive",
+            "display_name" : "cocadmin"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Violence Reduction - Victims of Homicides and Non-Fatal Shootings",
+            "id" : "gumc-mgzr",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "This dataset contains individual-level homicide and non-fatal shooting victimizations, including homicide data from 1991 to the present, and non-fatal shooting data from 2010 to the present (2010 is the earliest available year for shooting data). This dataset includes a \"GUNSHOT_INJURY_I \" column to indicate whether the victimization involved a shooting, showing either Yes (\"Y\"), No (\"N\"), or Unknown (\"UKNOWN.\") For homicides, injury descriptions are available dating back to 1991, so the \"shooting\" column will read either \"Y\" or \"N\" to indicate whether the homicide was a fatal shooting or not. For non-fatal shootings, data is only available as of 2010. As a result, for any non-fatal shootings that occurred from 2010 to the present, the shooting column will read as “Y.” Non-fatal shooting victims will not be included in this dataset prior to 2010; they will be included in the authorized-access dataset, but with \"UNKNOWN\" in the shooting column.\n\nEach row represents a single victimization, i.e., a unique event when an individual became the victim of a homicide or non-fatal shooting. Each row does not represent a unique victim—if someone is victimized multiple times there will be multiple rows for each of those distinct events. \n\nThe dataset is refreshed daily, but excludes the most recent complete day to allow the Chicago Police Department (CPD) time to gather the best available information. Each time the dataset is refreshed, records can change as CPD learns more about each victimization, especially those victimizations that are most recent. The data on the Mayor's Office Violence Reduction Dashboard is updated daily with an approximately 48-hour lag. As cases are passed from the initial reporting officer to the investigating detectives, some recorded data about incidents and victimizations may change once additional information arises. Regularly updated datasets on the City's public portal may change to reflect new or corrected information.\n\nA version of this dataset with additional crime types is available by request. To make a request, please email <a href=\"mailto:dataportal@cityofchicago.org?subject=Violence Reduction Victims Access Request\">dataportal@cityofchicago.org</a> with the subject line: <b>Violence Reduction Victims Access Request</b>. Access will require an account on this site, which you may create at https://data.cityofchicago.org/signup. No specific text in the body of the e-mail is formally required but any brief information you feel comfortable providing about your reason for making the request, institutional affiliation (if any), and/or other context is helpful in the review process. If you are making the request as an employee, student, or other role at a company, university, or other institution, it is preferable that you use your institutional e-mail address, rather than a personal one.\n\nHow does this dataset classify victims?\n\nThe methodology by which this dataset classifies victims of violent crime differs by victimization type:\n\nHomicide and non-fatal shooting victims: A victimization is considered a homicide victimization or non-fatal shooting victimization depending on its presence in CPD's homicide victims data table or its shooting victims data table. A victimization is considered a homicide only if it is present in CPD's homicide data table, while a victimization is considered a non-fatal shooting only if it is present in CPD's shooting data tables and absent from CPD's homicide data table.\n\nTo determine the IUCR code of homicide and non-fatal shooting victimizations, we defer to the incident IUCR code available in CPD's Crimes, 2001-present dataset (available on the City's open data portal). If the IUCR code in CPD's Crimes dataset is inconsistent with the homicide/non-fatal shooting categorization, we defer to CPD's Victims dataset. \nFor a criminal homicide, the only sensible IUCR codes are 0110 (first-degree murder) or 0130 (second-degree murder). For a non-fatal shooting, a sensible IUCR code",
+            "attribution" : "City of Chicago",
+            "attribution_link" : "https://www.chicago.gov",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-09-23T12:38:11.000Z",
+            "createdAt" : "2021-05-05T20:04:20.000Z",
+            "metadata_updated_at" : "2026-07-02T17:34:08.000Z",
+            "data_updated_at" : "2026-09-23T12:38:11.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 835,
+                "page_views_last_month" : 3769,
+                "page_views_total" : 136384,
+                "page_views_last_week_log" : 9.707359132080883,
+                "page_views_last_month_log" : 11.880348808156025,
+                "page_views_total_log" : 17.05732545592788
+              },
+            "columns_name" :
+              [
+                "HOMICIDE_VICTIM_MI",
+                "DATE",
+                "COMMUNITY_AREA",
+                "HOMICIDE_VICTIM_LAST_NAME",
+                "MONTH",
+                "STATE_HOUSE_DISTRICT",
+                "SEX",
+                "VICTIMIZATION_PRIMARY",
+                "BLOCK",
+                "INCIDENT_IUCR_SECONDARY",
+                "LATITUDE",
+                "VICTIMIZATION_IUCR_CD",
+                "VICTIMIZATION_FBI_CD",
+                "DISTRICT",
+                "BEAT",
+                "GUNSHOT_INJURY_I",
+                "WARD",
+                "VICTIMIZATION_IUCR_SECONDARY",
+                "RACE",
+                "HOMICIDE_VICTIM_FIRST_NAME",
+                "INCIDENT_IUCR_CD",
+                "LOCATION_DESCRIPTION",
+                "STREET_OUTREACH_ORGANIZATION",
+                "STATE_SENATE_DISTRICT",
+                "UNIQUE_ID",
+                "AREA",
+                "LONGITUDE",
+                "UPDATED",
+                "ZIP_CODE",
+                "LOCATION",
+                "INCIDENT_FBI_DESCR",
+                "HOUR",
+                "Boundaries - ZIP Codes",
+                "Wards",
+                "DAY_OF_WEEK",
+                "INCIDENT_FBI_CD",
+                "Police Districts",
+                "CASE_NUMBER",
+                "AGE",
+                "INCIDENT_PRIMARY",
+                "Community Areas",
+                "VICTIMIZATION_FBI_DESCR",
+                "Police Beats"
+              ],
+            "columns_field_name" :
+              [
+                "homicide_victim_mi",
+                "date",
+                "community_area",
+                "homicide_victim_last_name",
+                "month",
+                "state_house_district",
+                "sex",
+                "victimization_primary",
+                "block",
+                "incident_iucr_secondary",
+                "latitude",
+                "victimization_iucr_cd",
+                "victimization_fbi_cd",
+                "district",
+                "beat",
+                "gunshot_injury_i",
+                "ward",
+                "victimization_iucr_secondary",
+                "race",
+                "homicide_victim_first_name",
+                "incident_iucr_cd",
+                "location_description",
+                "street_outreach_organization",
+                "state_senate_district",
+                "unique_id",
+                "area",
+                "longitude",
+                "updated",
+                "zip_code",
+                "location",
+                "incident_fbi_descr",
+                "hour",
+                ":@computed_region_rpca_8um6",
+                ":@computed_region_43wa_7qmu",
+                "day_of_week",
+                "incident_fbi_cd",
+                ":@computed_region_d9mm_jgwp",
+                "case_number",
+                "age",
+                "incident_primary",
+                ":@computed_region_vrxf_vc4k",
+                "victimization_fbi_descr",
+                ":@computed_region_d3ds_rm58"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Calendar date",
+                "Text",
+                "Point",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "(For homicide victims only) Victim's middle initial.",
+                "Date when the victimization occurred. This is sometimes a best estimate.",
+                "The community area where the victimization occurred. Chicago has 77 community areas. See the full list of Chicago’s community areas at https://data.cityofchicago.org/d/cauq-8yn6.",
+                "(For homicide victims only) Victim's last name.",
+                "Month when the victimization occurred.",
+                "Illinois House of Representatives Legislative District where the victimization occurred, using the boundaries in place as of 11/1/2021, represented by members elected to the Illinois House of Representatives.",
+                "Sex of the victims. Victimization demographic data shown here are captured by CPD and limited to information included in the police report, which may not often be supported by individual self-identification including for sex/gender. In particular, CPD has historically recorded a victim’s sex rather than gender although has added a field for collecting gender as of January 2021. ",
+                "Text description of the IUCR Code that describes the major crime category it falls into. VICTIMIZATION_PRIMARY represents only the crime that this specific victim within the incident experienced. In rare instances when we were not able to establish whether a non-fatal shooting victimization was an aggravated battery, robbery, or criminal sexual assault, we set this field equal to “NON-FATAL.”",
+                "The partially redacted address where the victimization occurred, placing it on the same block as the actual address.",
+                "Text description of the IUCR code that describes the sub category of the primary category. The column represents the incident as whole by conveying the most serious victimization according to IUCR hierarchy guidelines.",
+                "The latitude of the victimization location. In order to preserve anonymity, the given coordinates are not the actual location of the crime. To produce slightly altered coordinates, a circle roughly the size of an average city block was drawn around the original point location, and a new location was picked randomly from a spot around the circumference of that circle.",
+                "Based on the Illinois Uniform Crime Reporting code. This is directly linked to the Primary Type and Description. See the list of IUCR codes at https://data.cityofchicago.org/d/c7ck-438e.",
+                "Crime classification as outlined in the FBI's Uniform Crime Reporting (UCR). See the Chicago Police Department listing of these classifications at http://gis.chicagopolice.org/clearmap_crime_sums/crime_type.",
+                "The current CPD district where the victimization occurred, using the boundaries in place as of 11/1/2021. Please refer to the City of Chicago’s Data Portal for a map of districts.",
+                "The CPD beat where the victimization occurred, using the boundaries in place as of 11/1/2021. A beat is the smallest CPD geographic area. Each beat has a dedicated police beat car. Three to five beats make up a police sector, and three sectors make up a police district. The Chicago Police Department has 22 police districts. Please refer to the City of Chicago’s Data Portal for a map of beats.",
+                "Indicator field describing whether or not a victim was injured by gunfire. Non-fatal shooting data is not available before 2010 so all non-homicide victimizations will be recorded as “UNKNOWN.”",
+                "The City Council district in which the victimization occurred, using the boundaries in place as of 11/1/2021. Please refer to the city of Chicago’s Data Portal for a map of the 50 wards.",
+                "IUCR Secondary adds more description to the Primary category.",
+                "Crime classification as outlined in the FBI's Uniform Crime Reporting (UCR). See the Chicago Police Department listing of these classifications at http://gis.chicagopolice.org/clearmap_crime_sums/crime_type.",
+                "(For homicide victims only) Victim's first name.",
+                "The IUCR code that represents the most serious victimization experienced in this incident according to IUCR hierarchy guidelines. When we were not able to establish whether a homicide victimization was in the first or second degree, we set this field to “01XX.” When we were not able to establish whether a non-fatal shooting victimization was an aggravated battery, robbery, or criminal sexual assault, we set this field equal to “UNK.”",
+                "Describes the location where a crime occurred, such as alley, sidewalk, etc.",
+                "Street outreach organization refers to organizations that actively work in “the streets” to engage individuals who are at immediate or high risk of being either victims or perpetrators of violence. Each organization has specific geographic boundaries where they focus their activities. This indicates which organization(s) is (are) currently active in the location where the victimization occurred, using the boundaries in place as of 11/1/2021, and may contain more than one organization as several outreach organizations’ boundaries overlap.",
+                "Illinois State Senate Legislative Districts (SLDs) where the victimization occurred, using the boundaries in place as of 11/1/2021, represented by members elected to the Illinois State Senate.",
+                "ID unique to each victimization.",
+                "The CPD area where the victimization occurred, using the boundaries in place as of 11/1/2021. There are 5 CPD areas. Each area includes 3-4 police districts.",
+                "The longitude of the victimization location. This has been slightly altered to preserve anonymity. (see details under LATITUDE).",
+                "Records the most recent date the source table was updated.",
+                "ZIP code where the victimization occurred, using the boundaries in place as of 11/1/2021.",
+                "A slightly altered location of the victimization in a form that allows for mapping and other geographic analysis on this data portal.",
+                "FBI Description connects a text description of the category to FBI Code, but only pertains to the most serious victimization in the incident.",
+                "Hour of the day when the victimization occurred.",
+                "",
+                "",
+                "Day of the week when the victimization occurred. Sunday=1",
+                "Crime classification as outlined in the FBI's Uniform Crime Reporting (UCR), but only pertains to the most serious victimization in the incident. See the Chicago Police Department listing of these classifications at http://gis.chicagopolice.org/clearmap_crime_sums/crime_type.",
+                "",
+                "The Chicago Police Department RD Number (Records Division Number), which is a unique ID assigned to each incident. Due to an incident sometimes involving multiple victimizations, this number is repeated in this dataset for some incidents.",
+                "Age of the victims grouped by decade. ",
+                "Text description of the IUCR Code that describes the major crime category it falls into. INCIDENT_PRIMARY represents the incident as a whole by conveying the most serious victimization according to IUCR hierarchy guidelines. In rare instances when we were not able to establish whether a non-fatal shooting victimization was an aggravated battery, robbery, or criminal sexual assault, we set this field equal to “NON-FATAL.”",
+                "",
+                "FBI Description connects a text description of the category to FBI Code.",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                { "view" : "date_time" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 51477,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2021-11-17T18:51:31.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Public Safety",
+            "domain_tags" :
+              [
+                "shooting",
+                "crime",
+                "homicide",
+                "violence reduction",
+                "violence"
+              ],
+            "domain_metadata" :
+              [
+                { "key" : "Metadata_Frequency", "value" : "Updated Daily" },
+                {
+                  "key" : "Metadata_Data-Owner",
+                  "value" : "Chicago Police Department"
+                },
+                {
+                  "key" : "Metadata_Time-Period",
+                  "value" : "Homicide data from 1991 to the present. Non-fatal shooting data from 2010 to the present. (2010 is the earliest available year for shooting data.) The most recent complete day is excluded."
+                },
+                {
+                  "key" : "Metadata_Changes-and-Other-Historical-Information-Useful-to-Understanding-This-Dataset",
+                  "value" : "https://www.google.com/search?q=site:data.cityofchicago.org/stories+\"Related+dataset+ID+s\"+\"gumc-mgzr\""
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.cityofchicago.org",
+            "license" : "See Terms of Use"
+          },
+        "permalink" : "https://data.cityofchicago.org/d/gumc-mgzr",
+        "link" : "https://data.cityofchicago.org/Public-Safety/Violence-Reduction-Victims-of-Homicides-and-Non-Fa/gumc-mgzr",
+        "owner" :
+          {
+            "id" : "vewm-vupz",
+            "user_type" : "interactive",
+            "display_name" : "Jonathan Levy"
+          },
+        "creator" :
+          {
+            "id" : "vewm-vupz",
+            "user_type" : "interactive",
+            "display_name" : "Jonathan Levy"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Violence Reduction - Victim Demographics - Aggregated",
+            "id" : "gj7a-742p",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "This dataset contains aggregate data on violent index victimizations at the quarter level of each year (i.e., January – March, April – June, July – September, October – December), from 2001 to the present (1991 to present for Homicides), with a focus on those related to gun violence. Index crimes are 10 crime types selected by the FBI (codes 1-4) for special focus due to their seriousness and frequency. This dataset includes only those index crimes that involve bodily harm or the threat of bodily harm and are reported to the Chicago Police Department (CPD). Each row is aggregated up to victimization type, age group, sex, race, and whether the victimization was domestic-related. Aggregating at the quarter level provides large enough blocks of incidents to protect anonymity while allowing the end user to observe inter-year and intra-year variation. Any row where there were fewer than three incidents during a given quarter has been deleted to help prevent re-identification of victims. For example, if there were three domestic criminal sexual assaults during January to March 2020, all victims associated with those incidents have been removed from this dataset. Human trafficking victimizations have been aggregated separately due to the extremely small number of victimizations.\r\n\r\nThis dataset includes a \" GUNSHOT_INJURY_I \" column to indicate whether the victimization involved a shooting, showing either Yes (\"Y\"), No (\"N\"), or Unknown (\"UKNOWN.\") For homicides, injury descriptions are available dating back to 1991, so the \"shooting\" column will read either \"Y\" or \"N\" to indicate whether the homicide was a fatal shooting or not. For non-fatal shootings, data is only available as of 2010. As a result, for any non-fatal shootings that occurred from 2010 to the present, the shooting column will read as “Y.” Non-fatal shooting victims will not be included in this dataset prior to 2010; they will be included in the authorized dataset, but with \"UNKNOWN\" in the shooting column.\r\n\r\nThe dataset is refreshed daily, but excludes the most recent complete day to allow CPD time to gather the best available information. Each time the dataset is refreshed, records can change as CPD learns more about each victimization, especially those victimizations that are most recent. The data on the Mayor's Office Violence Reduction Dashboard is updated daily with an approximately 48-hour lag. As cases are passed from the initial reporting officer to the investigating detectives, some recorded data about incidents and victimizations may change once additional information arises. Regularly updated datasets on the City's public portal may change to reflect new or corrected information.\r\n\r\nHow does this dataset classify victims?\r\n\r\nThe methodology by which this dataset classifies victims of violent crime differs by victimization type:\r\n\r\nHomicide and non-fatal shooting victims: A victimization is considered a homicide victimization or non-fatal shooting victimization depending on its presence in CPD's homicide victims data table or its shooting victims data table. A victimization is considered a homicide only if it is present in CPD's homicide data table, while a victimization is considered a non-fatal shooting only if it is present in CPD's shooting data tables and absent from CPD's homicide data table. \r\n\r\nTo determine the IUCR code of homicide and non-fatal shooting victimizations, we defer to the incident IUCR code available in CPD's Crimes, 2001-present dataset (available on the City's open data portal). If the IUCR code in CPD's Crimes dataset is inconsistent with the homicide/non-fatal shooting categorization, we defer to CPD's Victims dataset. \r\n\r\nFor a criminal homicide, the only sensible IUCR codes are 0110 (first-degree murder) or 0130 (second-degree murder). For a non-fatal shooting, a sensible IUCR code must signify a criminal sexual assault, a robbery, or, most commonly, an aggravated battery. In rare instances, the IUCR code in CPD's Crimes and Vi",
+            "attribution" : "City of Chicago",
+            "attribution_link" : "https://www.chicago.gov",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-09-23T12:39:04.000Z",
+            "createdAt" : "2021-05-05T20:46:02.000Z",
+            "metadata_updated_at" : "2024-06-21T17:37:43.000Z",
+            "data_updated_at" : "2026-09-23T12:39:04.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 264,
+                "page_views_last_month" : 1268,
+                "page_views_total" : 27545,
+                "page_views_last_week_log" : 8.049848549450562,
+                "page_views_last_month_log" : 10.309476353841106,
+                "page_views_total_log" : 14.749555217433523
+              },
+            "columns_name" :
+              [
+                "PRIMARY_TYPE",
+                "SEX",
+                "TIME_PERIOD_END",
+                "TIME_PERIOD_START",
+                "RACE",
+                "GUNSHOT_INJURY_I",
+                "TIME_PERIOD",
+                "JUVENILE_I",
+                "AGE",
+                "DOMESTIC_I",
+                "NUMBER_OF_VICTIMS"
+              ],
+            "columns_field_name" :
+              [
+                "primary_type",
+                "sex",
+                "time_period_end",
+                "time_period_start",
+                "race",
+                "gunshot_injury_i",
+                "time_period",
+                "juvenile_i",
+                "age",
+                "domestic_i",
+                "number_of_victims"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Calendar date",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Text",
+                "Checkbox",
+                "Text",
+                "Checkbox",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "Text description of the IUCR Code that describes the major crime category for the corresponding victimization it falls into. This column represents only the crime that this specific victim within the incident experienced.",
+                "The sex of the victims. Victimization demographic data shown here are captured by CPD and limited to information included in the police report, which sometimes is not supported by individual self-identification including for sex/gender. In particular, CPD has historically recorded a victim’s sex rather than gender although has added an additional field for collecting gender as of January 2021.",
+                "All victimizations have been aggregated to the quarter level. This time stamp reflects the end of the quarter.",
+                "All victimizations have been aggregated to the quarter level. This time stamp reflects the start of the quarter.",
+                "The race of the victims. Victimization demographic data shown here are captured by CPD and limited to information included in the police report, which may not often be supported by individual self-identification including for race and ethnicity.",
+                "Indicator field describing whether or not a victim was injured by gunfire. Shooting data is not available before 2010 so all non-homicide victimizations prior to 2010 will be recorded as “UNKNOWN.”",
+                "The time period aggregated.",
+                "Whether the victims were juveniles (under age 18). A blank value means Unknown.",
+                "The age of the victims grouped by decade.",
+                "Indicates whether the aggregated number of victimizations were domestic-related as determined by the initial reporting officer or the investigating detective.",
+                "The number of victims matching the unique combination of all other columns."
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                { "view" : "date" },
+                { "view" : "date" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "displayStyle" : "default" },
+                {}
+              ],
+            "download_count" : 12899,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2021-11-17T15:53:06.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Public Safety",
+            "domain_tags" : [ "violence", "violence reduction", "crime" ],
+            "domain_metadata" :
+              [
+                { "key" : "Metadata_Frequency", "value" : "Updated Daily" },
+                {
+                  "key" : "Metadata_Data-Owner",
+                  "value" : "Chicago Police Department"
+                },
+                {
+                  "key" : "Metadata_Time-Period",
+                  "value" : "Homicide data from 1991 to present. Non-fatal shooting data from 2010 to present. (2010 is the earliest available year for shooting data.) All other violent index victimization types from 2001-present. In all cases the most recent complete day is excluded."
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.cityofchicago.org",
+            "license" : "See Terms of Use"
+          },
+        "permalink" : "https://data.cityofchicago.org/d/gj7a-742p",
+        "link" : "https://data.cityofchicago.org/Public-Safety/Violence-Reduction-Victim-Demographics-Aggregated/gj7a-742p",
+        "owner" :
+          {
+            "id" : "vewm-vupz",
+            "user_type" : "interactive",
+            "display_name" : "Jonathan Levy"
+          },
+        "creator" :
+          {
+            "id" : "vewm-vupz",
+            "user_type" : "interactive",
+            "display_name" : "Jonathan Levy"
+          }
+      }
+    ],
+  "resultSetSize" : 10,
+  "timings" : { "serviceMillis" : 24, "searchMillis" : [ 10, 6 ] },
+  "warnings" : []
+}

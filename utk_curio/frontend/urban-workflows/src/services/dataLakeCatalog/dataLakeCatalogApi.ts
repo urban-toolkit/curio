@@ -3,6 +3,9 @@ import { invalidateLakeCatalogCache } from "./dataLakeCatalogCache";
 import type {
   LakeCatalogQuery,
   LakeCatalogResponse,
+  LakeResourceDetail,
+  LakeSearchQuery,
+  LakeSearchResponse,
   LakeSourceRow,
 } from "./dataLakeCatalogTypes";
 
@@ -32,7 +35,51 @@ export const dataLakeCatalogApi = {
     // not every proxy agrees, and encoding costs nothing.
     return apiFetch<LakeSourceRow>(`/api/datalakes/sources/${encodeURIComponent(dirName)}`);
   },
+
+  /** Search every searchable portal at once. A leg that fails comes back in
+   *  `sources[]` rather than failing the call. */
+  searchAll(params: LakeSearchQuery, signal?: AbortSignal): Promise<LakeSearchResponse> {
+    return apiFetch<LakeSearchResponse>(`/api/datalakes/search${searchQuery(params)}`, {
+      signal,
+    });
+  },
+
+  /** Search one portal. The only paginated search: a fan-out has no coherent
+   *  cursor across portals that paginate independently. */
+  searchSource(
+    dirName: string,
+    params: LakeSearchQuery,
+    signal?: AbortSignal
+  ): Promise<LakeSearchResponse> {
+    return apiFetch<LakeSearchResponse>(
+      `/api/datalakes/sources/${encodeURIComponent(dirName)}/search${searchQuery(params)}`,
+      { signal }
+    );
+  },
+
+  describeResource(
+    dirName: string,
+    resourceId: string,
+    signal?: AbortSignal
+  ): Promise<LakeResourceDetail> {
+    return apiFetch<LakeResourceDetail>(
+      `/api/datalakes/sources/${encodeURIComponent(dirName)}/resources/` +
+        encodeURIComponent(resourceId),
+      { signal }
+    );
+  },
 };
+
+function searchQuery(params: LakeSearchQuery): string {
+  const search = new URLSearchParams();
+  if (params.q?.trim()) search.set("q", params.q.trim());
+  if (params.format) search.set("format", params.format);
+  if (params.provider) search.set("provider", params.provider);
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.cursor) search.set("cursor", params.cursor);
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
 
 /** Drop the cached roster. Call after anything that could change it. */
 export function notifyLakeCatalogRefresh(): void {

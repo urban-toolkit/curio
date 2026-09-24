@@ -1,0 +1,58 @@
+{
+  "https://ckan.publishing.service.gov.uk/api/3/action/package_search?rows=5&start=0&q=cycling": {
+    "file": "ckan/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://ckan.publishing.service.gov.uk/api/3/action/package_show?id=00bb666d-8952-49a2-8784-b2625ff5442d": {
+    "file": "ckan/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/api/catalog/v1?search_context=data.cityofchicago.org&only=dataset&limit=5&offset=0&q=crimes": {
+    "file": "socrata/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/api/views/ijzp-q8t2.json": {
+    "file": "socrata/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://hub.arcgis.com/api/v3/datasets/a971ab89a5ca4da2ae44b5f55b06edfd": {
+    "file": "arcgis/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://hub.arcgis.com/api/v3/datasets?page[size]=5&page[number]=1&q=bike%20lanes": {
+    "file": "arcgis/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=DescribeFeatureType&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo": {
+    "file": "wfs/02.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetCapabilities&version=2.0.0": {
+    "file": "wfs/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  }
+}

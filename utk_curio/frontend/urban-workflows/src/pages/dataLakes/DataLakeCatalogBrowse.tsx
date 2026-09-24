@@ -1,17 +1,21 @@
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import {
+  partialFailureMessage,
   useLakeCatalog,
+  useLakeSearch,
   type LakeAuthMode,
   type LakeProviderType,
   type LakeSourceRow,
 } from "../../services/dataLakeCatalog";
 import { AUTH_FILTERS, PROVIDER_FILTERS } from "./dataLakeBrowseConstants";
 import { DataLakeSourceCard } from "./DataLakeSourceCard";
+import { DataLakeResourceRow } from "./DataLakeResourceRow";
 import { DataLakeCatalogBrowseDrawer } from "./DataLakeCatalogBrowseDrawer";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
+import resultStyles from "./DataLakeCatalogBrowse.module.css";
 
 type SortMode = "name" | "provider";
 
@@ -33,17 +37,32 @@ type SortMode = "name" | "provider";
  */
 export const DataLakeCatalogBrowse: React.FC = () => {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  // The query lives in the URL so a federated search is linkable and survives
+  // a reload - the same reason the source page does it.
+  const [params, setParams] = useSearchParams();
+  const search = params.get("q") ?? "";
+  const setSearch = (next: string) => {
+    const updated = new URLSearchParams(params);
+    if (next) updated.set("q", next);
+    else updated.delete("q");
+    setParams(updated, { replace: true });
+  };
   const [provider, setProvider] = useState<LakeProviderType | "">("");
   const [auth, setAuth] = useState<LakeAuthMode | "">("");
   const [sort, setSort] = useState<SortMode>("name");
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
 
-  // Filtering server-side keeps one implementation of "does this match?", so
-  // the chips and the search box cannot disagree with each other the way two
-  // filter surfaces on one page otherwise do.
-  const { data, loading, error, reload } = useLakeCatalog({ q: search, provider, auth });
+  // The roster is always loaded: the rail counts and the source names shown
+  // beside federated rows both come from it, and it is disk-backed and cheap.
+  // It is NOT filtered by the search box - that text is a question for the
+  // portals, not for the roster.
+  const { data, loading, error, reload } = useLakeCatalog({ provider, auth });
+
+  // Two modes in one page, switched by whether the search box has anything in
+  // it. Idle lists the portals; a query fans out across them.
+  const searching = search.trim().length > 0;
+  const results = useLakeSearch({ q: searching ? search : "", provider });
 
   const sources = useMemo(() => {
     const rows = [...data.sources];
@@ -56,6 +75,19 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const selected = useMemo(
     () => sources.find((s) => s.dirName === selectedDir) ?? null,
     [sources, selectedDir]
+  );
+
+  const sourcesById = useMemo(
+    () => new Map(data.sources.map((s) => [s.sourceId, s])),
+    [data.sources]
+  );
+  const partialFailure = useMemo(
+    () =>
+      partialFailureMessage(
+        results.data.sources,
+        (id) => sourcesById.get(id)?.name ?? ""
+      ),
+    [results.data.sources, sourcesById]
   );
 
   const openSource = (source: LakeSourceRow) =>
@@ -114,20 +146,24 @@ export const DataLakeCatalogBrowse: React.FC = () => {
           <div className={browseStyles.titleRow}>
             <CatalogKindIcon kind="lake" size="md" title="Data lake catalog" />
             <h1>Data Lake Catalog</h1>
-            <span className={browseStyles.titleCount}>{sources.length}</span>
+            <span className={browseStyles.titleCount}>
+              {searching ? results.data.resources.length : sources.length}
+            </span>
           </div>
           <p className={browseStyles.pageIntro}>
-            Data portals and lakes this deployment can reach. Open one to search it, then
-            download what you need into your <strong>Data Catalog</strong>, where it
-            behaves like any other dataset.
+            Data portals and lakes this deployment can reach. Type to search{" "}
+            <strong>all of them at once</strong>, or open one to browse it. What you
+            download lands in your <strong>Data Catalog</strong> and behaves like any
+            other dataset.
           </p>
           <div className={browseStyles.headerTools}>
             <input
               className={browseStyles.hubSearch}
               type="search"
-              placeholder="Search portals…"
+              placeholder="Search every portal…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search every portal"
             />
           </div>
         </section>
@@ -182,9 +218,41 @@ export const DataLakeCatalogBrowse: React.FC = () => {
           </div>
         ) : null}
 
-        {!loading && sources.length === 0 ? (
+        {partialFailure ? (
+          <div className={browseStyles.browseBanner} role="status">
+            <span>{partialFailure}</span>
+          </div>
+        ) : null}
+
+        {searching ? (
+          /* Federated results replace the card grid. Each row is tagged with
+             the portal it came from, because on this page that is not implied. */
+          <div
+            className={[
+              browseStyles.cardGrid,
+              resultStyles.resultList,
+              results.loading ? browseStyles.cardGridRefreshing : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {results.data.resources.map((resource) => (
+              <DataLakeResourceRow
+                key={`${resource.sourceId}:${resource.resourceId}`}
+                resource={resource}
+                showSource
+                iconUrl={sourcesById.get(resource.sourceId)?.iconUrl ?? null}
+              />
+            ))}
+            {!results.loading && results.searched && results.data.resources.length === 0 ? (
+              <div className={browseStyles.empty}>
+                No portal returned anything for “{search}”.
+              </div>
+            ) : null}
+          </div>
+        ) : !loading && sources.length === 0 ? (
           <div className={browseStyles.empty}>
-            {search || provider || auth
+            {provider || auth
               ? "No portal matches those filters."
               : "This deployment has no data lake sources configured."}
           </div>

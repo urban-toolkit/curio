@@ -1,21 +1,22 @@
 {
-  "id": "lake.us.data-gov",
-  "name": "Data.gov",
+  "id": "lake.uk.data-gov",
+  "name": "data.gov.uk",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "The United States federal open data catalog, aggregating datasets from federal, state and local agencies.",
-  "publisher": "U.S. General Services Administration",
-  "homepage": "https://catalog.data.gov",
-  "license": "Mostly U.S. Government Works; see each dataset",
-  "tags": ["united-states", "federal", "national", "ckan"],
+  "description": "The United Kingdom's national open data portal: datasets published by central government, local authorities and public bodies.",
+  "publisher": "UK Government Digital Service",
+  "homepage": "https://data.gov.uk",
+  "license": "Mostly Open Government Licence; see each dataset",
+  "tags": ["united-kingdom", "national", "government", "ckan"],
   "icon": "icon.png",
   "provider": {
     "type": "ckan",
-    "baseUrl": "https://catalog.data.gov",
+    "baseUrl": "https://ckan.publishing.service.gov.uk",
     "options": {
       "apiPath": "/api/3/action",
       "searchAction": "package_search",
-      "showAction": "package_show"
+      "showAction": "package_show",
+      "landingBase": "https://data.gov.uk"
     }
   },
   "auth": { "mode": "public" },

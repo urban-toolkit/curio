@@ -69,7 +69,7 @@ describe('AppSectionTabs', () => {
   test('a portal detail route keeps Data Lake Catalog active', () => {
     // Same reason the Data Catalog link is not `end`: /catalog/lakes/:sourceDir
     // is a page WITHIN that section, so the tab has to stay lit on it.
-    const { container } = renderAt('/catalog/lakes/lake.us.data-gov@1');
+    const { container } = renderAt('/catalog/lakes/lake.uk.data-gov@1');
     expect(activeLabels(container)).toEqual(['Data Lake Catalog']);
   });
 

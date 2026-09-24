@@ -116,3 +116,93 @@ export function unsearchableReason(source: LakeSourceRow): string | null {
   }
   return null;
 }
+
+
+// ── Live search ────────────────────────────────────────────────────────────
+
+/** Why one portal's leg of a federated search did not return rows.
+ *  Mirrors `LEG_STATUSES` in `datalakes/application/browse.py`. */
+export type LakeLegStatus =
+  | "ok"
+  | "failed"
+  | "refused"
+  | "rate-limited"
+  | "unsupported"
+  | "needs-token";
+
+export interface LakeSearchLeg {
+  sourceId: string;
+  status: LakeLegStatus;
+  /** Present on anything but `ok`. Written for a user, not a log. */
+  detail?: string;
+  count?: number;
+}
+
+export interface LakeResourceRow {
+  sourceId: string;
+  sourceName: string;
+  resourceId: string;
+  name: string;
+  description: string;
+  publisher: string;
+  formats: LakeAcquirableFormat[];
+  updatedAt: string | null;
+  landingUrl: string | null;
+  sizeHint: number | null;
+  acquirable: boolean;
+  /** Set when this account already downloaded this resource, so the row links
+   *  to the dataset instead of offering a second copy. */
+  alreadyHeldDatasetId: string | null;
+}
+
+export interface LakeResourceField {
+  name: string;
+  type: string | null;
+  description: string;
+}
+
+export interface LakeResourceDetail extends LakeResourceRow {
+  fields: LakeResourceField[];
+  license: string;
+  /** Provider-specific extras, e.g. a WFS layer's crs and bbox. */
+  extra: Record<string, string | number | boolean | unknown[]>;
+}
+
+export interface LakeSearchResponse {
+  resources: LakeResourceRow[];
+  sources: LakeSearchLeg[];
+  nextCursor: string | null;
+  totalHint: number | null;
+  truncated: boolean;
+}
+
+export interface LakeSearchQuery {
+  q: string;
+  format?: LakeAcquirableFormat | "";
+  limit?: number;
+  cursor?: string;
+  /** Narrow a federated search to one provider family. */
+  provider?: LakeProviderType | "";
+}
+
+/** The legs worth telling the user about: everything that is not a plain `ok`,
+ *  and not the "this source has nothing to browse" that a link-only source
+ *  reports every single time and which is not news. */
+export function notableLegs(legs: LakeSearchLeg[]): LakeSearchLeg[] {
+  return legs.filter((leg) => leg.status !== "ok" && leg.status !== "unsupported");
+}
+
+/** One line naming the portals that did not answer. Null when all did. */
+export function partialFailureMessage(
+  legs: LakeSearchLeg[],
+  nameOf: (sourceId: string) => string
+): string | null {
+  const notable = notableLegs(legs);
+  if (notable.length === 0) return null;
+  const names = notable.map((leg) => nameOf(leg.sourceId) || leg.sourceId);
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} did not answer. Showing what the other portals returned.`;
+}

@@ -49,6 +49,39 @@ def shipped_root(monkeypatch):
     return SHIPPED_ROOT
 
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture()
+def fixture_corpus(monkeypatch):
+    """Point the backend at the recorded corpus, as the e2e harness does.
+
+    Double-gated: CURIO_TESTING must also be set, which conftest already
+    exports for the whole suite.
+    """
+    from utk_curio.backend.app.datalakes.infrastructure import transport
+
+    monkeypatch.setenv(transport.ENV_FIXTURES, str(FIXTURES))
+    monkeypatch.setenv("CURIO_TESTING", "1")
+    return FIXTURES
+
+
+@pytest.fixture(autouse=True)
+def _reset_lake_process_state():
+    """The rate limiter and the WFS capabilities cache are module-level by
+    design (both bound a PROCESS), so they leak between tests unless cleared."""
+    from utk_curio.backend.app.datalakes.infrastructure import ratelimit
+    from utk_curio.backend.app.datalakes.providers import wfs
+
+    ratelimit.limiter.reset()
+    ratelimit.download_slots.reset()
+    wfs.WfsProvider.clear_cache()
+    yield
+    ratelimit.limiter.reset()
+    ratelimit.download_slots.reset()
+    wfs.WfsProvider.clear_cache()
+
+
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     from utk_curio.sandbox.util.db import release_connection

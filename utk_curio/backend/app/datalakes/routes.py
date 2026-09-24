@@ -11,8 +11,11 @@ from __future__ import annotations
 import functools
 import hashlib
 
+from urllib.parse import unquote
+
 from flask import Blueprint, jsonify, request, send_file, url_for
 
+from utk_curio.backend.app.agents import egress
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.datalakes.domain.errors import DataLakeError, SourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
@@ -28,12 +31,24 @@ MAX_ICON_BYTES = 256 * 1024
 
 
 def _map_lake_errors(view):
+    """Turn a typed failure into its own status.
+
+    Applied BELOW ``@require_auth`` so an auth failure is never swallowed and
+    reported as a catalog problem.
+    """
+
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         try:
             return view(*args, **kwargs)
         except DataLakeError as exc:
             return jsonify({"error": str(exc)}), getattr(exc, "status", 400)
+        except egress.EgressRefused as exc:
+            # 502: the failure is about a host we were asked to reach, not
+            # about the request. The policy reason is included because it is
+            # actionable ("not https", "resolves to a private address"); a
+            # resolved ADDRESS never is, and is not in the message.
+            return jsonify({"error": f"refused by the egress policy: {exc}"}), 502
 
     return wrapper
 
@@ -116,3 +131,64 @@ def source_icon(source_dir: str):
     response.headers["Content-Disposition"] = "inline"
     response.set_etag(etag)
     return response
+
+
+def _int_arg(name: str, default: int | None = None) -> int | None:
+    raw = request.args.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+@datalakes_bp.route("/search", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def search_datalakes():
+    """Search every searchable portal at once. **Live.**
+
+    A leg that fails is reported in ``sources[]`` and does not fail the
+    request: one slow portal must not make the whole search look broken.
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "a search needs a query"}), 400
+    payload = _service().search_all(
+        q=q,
+        fmt=request.args.get("format"),
+        limit=_int_arg("limit"),
+        provider=request.args.get("provider"),
+    )
+    return jsonify(payload), 200
+
+
+@datalakes_bp.route("/sources/<source_dir>/search", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def search_datalake_source(source_dir: str):
+    """Search one portal. **Live.** The only paginated search - a fan-out has
+    no coherent cursor across five independently paginating portals."""
+    payload = _service().search_source(
+        source_dir,
+        q=(request.args.get("q") or "").strip(),
+        fmt=request.args.get("format"),
+        limit=_int_arg("limit"),
+        cursor=request.args.get("cursor"),
+    )
+    return jsonify(payload), 200
+
+
+@datalakes_bp.route("/sources/<source_dir>/resources/<path:resource_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def describe_datalake_resource(source_dir: str, resource_id: str):
+    """One resource in full. **Live.**
+
+    ``<path:>`` because a direct-URL source's resource id IS a URL. It is
+    unquoted here and validated against the provider's own ``resource_id_re``
+    before any URL is built from it.
+    """
+    payload = _service().describe_resource(source_dir, unquote(resource_id))
+    return jsonify(payload), 200

@@ -100,9 +100,18 @@ class DownloadResult:
     audit: dict = field(default_factory=dict)
 
 
-def _default_request(method: str, url: str, *, trusted_host=None):
+def _default_request(method: str, url: str, *, trusted_host=None, max_bytes=MAX_BODY_BYTES):
     """One non-redirecting HTTP request; returns (status, headers, body_bytes,
-    location). Import stays local so tests never need requests installed."""
+    location). Import stays local so tests never need requests installed.
+
+    ``max_bytes`` is the caller's bound, not this module's. Reading a fixed
+    256 KiB here while :func:`fetch` was asked for more made ``max_bytes`` a
+    lie for the default transport: the body arrived pre-truncated, and
+    ``truncated`` then compared a 256 KiB body against a larger bound and
+    reported False. A caller got a silently cut document and no indication of
+    it - which is how a 425 KB WFS capabilities response turned into an XML
+    parse error a long way from here.
+    """
     import requests
 
     resp = requests.request(
@@ -114,9 +123,11 @@ def _default_request(method: str, url: str, *, trusted_host=None):
         for chunk in resp.iter_content(chunk_size=8192):
             # Checked BEFORE appending: appending first let a whole extra chunk
             # past the bound on every iteration, so the cap overshot by up to a
-            # chunk (and ``chunk_size`` is only a hint, so possibly more).
-            if len(body) + len(chunk) > MAX_BODY_BYTES:
-                body += chunk[: max(0, MAX_BODY_BYTES + 1 - len(body))]
+            # chunk (and ``chunk_size`` is only a hint, so possibly more). One
+            # byte past the bound is read deliberately, so ``fetch`` can tell
+            # "exactly at the bound" from "truncated".
+            if len(body) + len(chunk) > max_bytes:
+                body += chunk[: max(0, max_bytes + 1 - len(body))]
                 break
             body += chunk
         return resp.status_code, dict(resp.headers), body, resp.headers.get("Location")
@@ -174,23 +185,28 @@ class _ResponseStream:
         self._resp.close()
 
 
-def _accepts_trusted_host(request_fn) -> bool:
-    """Whether *request_fn* takes a ``trusted_host`` keyword.
+def _accepted_kwargs(request_fn, candidates: dict) -> dict:
+    """The subset of *candidates* that *request_fn* will actually accept.
 
-    Test doubles and older injected callables take ``(method, url)`` only.
-    Decided by signature rather than by catching TypeError, which would also
-    swallow a TypeError raised inside the callable and then call it a second
-    time.
+    Test doubles take ``(method, url)``; the real transport takes keyword-only
+    extras. Decided by signature rather than by catching TypeError, which would
+    also swallow a TypeError raised INSIDE the callable and then call it a
+    second time.
     """
     import inspect
 
     try:
         params = inspect.signature(request_fn).parameters
     except (TypeError, ValueError):
-        return False
-    if "trusted_host" in params:
-        return True
-    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+        return {}
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return dict(candidates)
+    return {k: v for k, v in candidates.items() if k in params}
+
+
+def _accepts_trusted_host(request_fn) -> bool:
+    """Kept because it reads clearly at its one remaining call site."""
+    return "trusted_host" in _accepted_kwargs(request_fn, {"trusted_host": None})
 
 
 def _policy_hop(url: str, *, resolver, trusted_host, budget) -> None:
@@ -250,14 +266,15 @@ def fetch(
     redirects = 0
     while True:
         _policy_hop(current, resolver=resolver, trusted_host=trusted_host, budget=budget)
-        # ``trusted_host`` is threaded through so the peer check knows which
-        # host the operator exempted.
-        if _accepts_trusted_host(request_fn):
-            status, headers, body, location = request_fn(
-                method, current, trusted_host=trusted_host
-            )
-        else:
-            status, headers, body, location = request_fn(method, current)
+        # ``trusted_host`` so the peer check knows which host the operator
+        # exempted; ``max_bytes`` so the transport stops reading at the bound
+        # the CALLER set rather than this module's default. Only the kwargs a
+        # given request_fn declares are passed, so every two-argument test
+        # double keeps working unchanged.
+        extra = _accepted_kwargs(
+            request_fn, {"trusted_host": trusted_host, "max_bytes": max_bytes}
+        )
+        status, headers, body, location = request_fn(method, current, **extra)
         following = _next_redirect(status, location, current, redirects)
         if following is not None:
             redirects += 1

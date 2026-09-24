@@ -19,3 +19,29 @@
   color: var(--curio-text-secondary);
   line-height: 1.5;
 }
+
+.identityText {
+  min-width: 0;
+}
+
+.homepage {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.count {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-meta);
+}
+
+/* The result list: rows on a card surface, bounded so the page scrolls its
+   results rather than the whole document. */
+.results {
+  background: var(--curio-card-bg);
+  border-top: 1px solid var(--curio-border);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}

@@ -7,11 +7,11 @@ The Data Catalog holds datasets you already have. This one holds the **places
 you can get more**: open data portals and lakes. You browse a portal, download
 what you want, and it lands in your Data Catalog as an ordinary dataset.
 
-> **Status.** This document describes the catalog as it stands today: the
-> source roster, the manifest format and the browse page. Live search of a
-> portal, downloading, and per-user tokens arrive with the provider
-> connectors. Sections describing those are marked *(not yet wired)* rather
-> than omitted, so the shape is reviewable before the code lands.
+> **Status.** The source roster, the manifest format, the browse page and
+> **live search across portals** all work today. Downloading a resource into
+> the Data Catalog, and per-user tokens, are the remaining pieces; the
+> sections describing those are marked *(not yet wired)* rather than omitted,
+> so the shape is reviewable before the code lands.
 
 ## 1. A source is a portal, not a dataset
 
@@ -26,7 +26,7 @@ datalakes/
   lake.cityofchicago.data-portal@1/
     manifest.json
     icon.png              # optional
-  lake.us.data-gov@1/
+  lake.uk.data-gov@1/
   lake.esri.hub-opendata@1/
   lake.saopaulo.geosampa@1/
   lake.curio.direct-url@1/
@@ -89,10 +89,17 @@ a node output rather than anything a portal serves.
 | Source | Provider | Access |
 |---|---|---|
 | City of Chicago Data Portal | Socrata | Public; a token raises the rate limit |
-| Data.gov | CKAN | Public |
+| data.gov.uk | CKAN | Public |
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
 | Direct URL | — | Public; no search, takes a link to a file |
+
+**Not data.gov.** The US federal portal's CKAN API was retired: every
+`/api/3/action/*` endpoint 404s and `/dataset` now redirects to the homepage.
+Shipping it would ship a card that cannot answer. data.gov.uk is the CKAN
+example instead - it serves its API from `ckan.publishing.service.gov.uk`,
+which is why that manifest carries a `landingBase` option so links still point
+at the site people know.
 
 **Direct URL** is the escape hatch: for a portal Curio has no connector for,
 paste the link to the file itself.
@@ -102,10 +109,57 @@ That is why the `wfs` provider exists, and it is worth more than one portal:
 GeoServer and MapServer are what most municipal geospatial portals outside the
 US run, so one connector reaches a great many of them.
 
-## 4. Browsing and downloading *(not yet wired)*
+## 4. Browsing
 
-The browse page lists sources. Opening one gives you its own page, where a
-search box queries the portal live and each result offers a download.
+**Two levels, because a manifest describes a portal and the datasets inside it
+are discovered live.**
+
+`/catalog/lakes` lists the sources when idle. Type in the search box and it
+**fans out across every searchable portal at once**, replacing the cards with
+results tagged by the portal each came from - so you can find a dataset without
+first guessing which site holds it. Opening a source gives you
+`/catalog/lakes/<sourceId>@<major>`, the same search scoped to one portal, and
+the only place that paginates: five portals paginate independently and
+interleaving them past page one would repeat and drop rows.
+
+The query lives in the URL in both places, so a search is linkable and survives
+a reload.
+
+### Partial failure is a result, not an error
+
+A federated search asks several third parties at once, and sometimes one of
+them is slow, rate-limiting, or simply down. That must not empty the page. Each
+leg reports its own status (`ok`, `failed`, `refused`, `rate-limited`,
+`unsupported`, `needs-token`), the rows that arrived are shown, and a line
+names the portals that did not answer. The request is a 200 either way.
+
+A link-only source reporting `unsupported` is not surfaced: it says that on
+every search, and showing it would train people to ignore the line that also
+carries real failures.
+
+### Bounds
+
+- One request per searchable source, run concurrently, at most four at a time.
+- The per-source rate limit applies to each leg independently, so a fan-out
+  cannot be used to multiply one user's rate past a portal's bucket.
+- The search box debounces, and each new keystroke aborts the request in
+  flight, so a typed word is one fan-out rather than one per letter.
+- Results are interleaved round-robin across portals, so the first screen is
+  not monopolised by whichever site returned the most.
+
+### Caching
+
+The source roster is cached; **search results never are**. A portal can
+publish, withdraw or rename a dataset between two searches, and serving a stale
+row leads to a download that 404s against something the user was just shown.
+
+The one exception is a WFS server's capabilities document, which is a
+*catalogue* rather than a query result: it lists every published layer, changes
+only when an operator publishes one, and runs to hundreds of kilobytes.
+It is cached per source with a short TTL, which also makes a WFS source nearly
+free inside a fan-out.
+
+## 5. Downloading *(not yet wired)*
 
 Downloading fetches the bytes server-side and hands them to the same import
 path a file upload uses, so the result is an **ordinary Data Catalog dataset**
@@ -128,7 +182,7 @@ a download leaves the portal's base URL, so it is opt-in per manifest
 widens what a hostile search response could aim a request at, which makes it
 an operator's decision. Those URLs still pass the full address policy.
 
-## 5. Icons
+## 6. Icons
 
 A source may ship an `icon.png`. A source without one, or whose icon is
 missing or oversized, renders the shared lake glyph instead - so a broken icon
@@ -139,13 +193,14 @@ icon is the only file in this feature whose bytes are rendered rather than
 parsed. The file is served with a fixed content type, `nosniff`, an `ETag` and
 a 256 KiB cap, and is resolved inside its own source folder.
 
-The shipped marks are neutral lettermarks, **not** the portals' logos: a
-portal's logo is that portal's trademark and this repo cannot verify
-redistribution rights for one. An operator may well be in a different position,
-and replacing one is a matter of dropping in a PNG.
-[`datalakes/ICONS.md`](../datalakes/ICONS.md) records each one's origin.
+The shipped marks are the portals' own, fetched from each portal and used
+nominatively - to identify the portal a card refers to, in a catalog that
+exists to point at those portals.
+[`datalakes/ICONS.md`](../datalakes/ICONS.md) records where each came from,
+when, and the reasoning; removing one is deleting a PNG and a manifest line,
+after which the card renders the glyph.
 
-## 6. Credentials *(not yet wired)*
+## 7. Credentials *(not yet wired)*
 
 Some portals take an API token: Socrata app tokens raise rate limits, some
 CKAN instances require a key. A manifest names a **slot** (`auth.secretId`),
@@ -159,12 +214,42 @@ responses report only whether a slot is filled, never its contents.
 enters a URL, which in turn makes the egress audit record, every refusal
 message and every job record safe to store verbatim.
 
-## 7. Adding a provider
+## 8. Adding a provider
 
-A provider is one entry in `datalakes/providers/`, implementing search,
+A provider is one module in `datalakes/providers/`, implementing search,
 describe and download-url against the `LakeProvider` protocol, plus one line in
 the registry. The manifest format, the roster, the routes and the UI need no
 changes.
+
+Each module also exports a transport-free `recognize(url)` and
+`metadata_evidence(payload)`. Those are what `agents/verify.py` uses to add
+richer evidence to an agent's external-source check, so a provider's URL
+knowledge lives in one place rather than being half-copied into the verifier.
+
+Two invariants a provider is held to, because they are what stops a hostile or
+merely broken portal response from steering a request:
+
+1. a `resourceId` is validated against the provider's own pattern **before** it
+   is interpolated into any URL - ids arrive from search results, saved agent
+   proposals and URLs people typed, so none is trusted;
+2. every URL a provider builds starts with the manifest's `baseUrl`. Redirects
+   *off* the base are fine and each hop is re-checked; it is request
+   *construction* that is pinned.
+
+### Testing one
+
+No test in this package opens a socket. Providers take their transport as a
+required constructor argument, so forgetting to inject a fake is a `TypeError`
+rather than a real request, and the suite-wide guard in
+`utk_curio/backend/tests/netguard.py` catches anything that slips past.
+
+The fixture corpus under `tests/test_datalakes/fixtures/` was recorded by
+driving the real providers against the live portals
+(`scripts/record_datalake_fixtures.py`), so tests assert against what the sites
+actually answered. `test_provider_contracts.py` is the drift detector: it hits
+the real portals in CI, asserts only response *shape*, and **skips** whenever
+anything is unreachable, non-2xx or not JSON - so it can tell you a portal
+changed without ever failing a build for someone else's outage.
 
 ## Operator notes
 
