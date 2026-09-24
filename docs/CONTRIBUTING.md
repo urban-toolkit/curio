@@ -238,6 +238,33 @@ pytest utk_curio/backend/tests/
 pytest utk_curio/sandbox/tests/
 ```
 
+#### Tests do not reach the network
+
+The backend suite refuses outbound connections. Loopback is allowed, because the
+sandbox, the backend health polls and the Playwright stack all need it; anything
+else raises `NetworkAccessDenied` naming the host it blocked. The guard lives in
+`utk_curio/backend/tests/netguard.py`, which explains how it works and what it
+cannot cover.
+
+A test that talks to a third party fails when that third party is slow, down, or
+answers differently than it did yesterday. Rather than trust every author to
+remember to inject a fake, the suite makes forgetting a loud, immediate failure.
+If you hit it, the fix is almost always to inject a fake transport -- most
+network-touching code in this repo already takes one (`egress.fetch`'s
+`request_fn` and `resolver`, `RegistryFetcher`, `LakeTransport`).
+
+Two markers opt out, and they mean different things:
+
+| Marker | Runs by default | Use it for |
+|---|---|---|
+| `@pytest.mark.contract` | **yes**, including CI | Checking that a third party's response *shape* still matches what our parser expects. Must skip -- never fail -- when the endpoint is unreachable, returns a non-2xx, or answers something other than the expected content type. The only permitted failure is a successful response whose shape changed. |
+| `@pytest.mark.externalapi` | no, needs `--longrun` | Anything else that genuinely needs the network. |
+
+Writing a contract test that can fail for a reason outside our control puts a
+third party in the critical path of every PR, which is the problem the guard
+exists to solve. Skip generously; a contract test that skips has cost nothing,
+and its skip reason is printed under `pytest -v`.
+
 ### Frontend Unit Tests
 
 The frontend uses Jest and React Testing Library for component and TypeScript unit tests.
