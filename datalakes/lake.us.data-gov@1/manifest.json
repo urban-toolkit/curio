@@ -1,0 +1,33 @@
+{
+  "id": "lake.us.data-gov",
+  "name": "Data.gov",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "The United States federal open data catalog, aggregating datasets from federal, state and local agencies.",
+  "publisher": "U.S. General Services Administration",
+  "homepage": "https://catalog.data.gov",
+  "license": "Mostly U.S. Government Works; see each dataset",
+  "tags": ["united-states", "federal", "national", "ckan"],
+  "icon": "icon.png",
+  "provider": {
+    "type": "ckan",
+    "baseUrl": "https://catalog.data.gov",
+    "options": {
+      "apiPath": "/api/3/action",
+      "searchAction": "package_search",
+      "showAction": "package_show"
+    }
+  },
+  "auth": { "mode": "public" },
+  "capabilities": {
+    "search": true,
+    "describe": true,
+    "download": true,
+    "formats": ["csv", "geojson", "json", "parquet"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": true
+  },
+  "limits": { "requestsPerMinute": 20 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

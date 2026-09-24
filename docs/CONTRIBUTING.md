@@ -72,13 +72,14 @@ curio/
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
+├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
 ├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 

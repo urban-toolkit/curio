@@ -1,0 +1,21 @@
+/*
+ * The source's identity block inside the shared detail header.
+ *
+ * Only what the header does not already own: the header supplies the title,
+ * subtitle, actions and all of the surrounding geometry.
+ */
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.blurb {
+  margin: 0;
+  max-width: 720px;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  line-height: 1.5;
+}
