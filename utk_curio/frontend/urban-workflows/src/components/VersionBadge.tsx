@@ -5,12 +5,13 @@ import { backendUrl } from "../utils/backendUrl";
  * How node code is being executed, in the words the docs use.
  *
  * The backend reports the mode the sandbox *resolved*, not the one it was
- * asked for, so this reflects what is actually happening: `auto` resolves to
- * `off`, and a `fork` the platform cannot support degrades to `off`. Anything
+ * asked for: `auto` resolves to `off`, and a `fork` the platform cannot
+ * support degrades to `off`. It also reports what execution actually did,
+ * which is not the same question -- see `resolveIsolationKey` below. Anything
  * unrecognised is treated as unknown rather than guessed at -- claiming a
  * boundary that is not there is the one failure mode worth avoiding here.
  */
-const ISOLATION_LABELS: Record<string, { label: string; title: string }> = {
+export const ISOLATION_LABELS: Record<string, { label: string; title: string }> = {
   fork: {
     label: "isolated",
     title:
@@ -35,11 +36,45 @@ const ISOLATION_LABELS: Record<string, { label: string; title: string }> = {
       "Isolation was requested but this platform cannot provide it, so node " +
       "code is running with the sandbox's full privileges.",
   },
+  // Configured for isolation, not delivering it. The confined child is started
+  // on the first node run, and a failure there is not fatal -- the node still
+  // has to execute -- so the sandbox falls back to running it in-process and
+  // stays that way. `isolation` keeps reporting `fork`, which is why this
+  // state cannot be read off it.
+  degraded: {
+    label: "not isolated",
+    title:
+      "This instance is configured for isolation, but the confined child " +
+      "could not be started, so node code is running with the sandbox's full " +
+      "privileges. Check the sandbox log for 'falling back to in-process " +
+      "execution'.",
+  },
 };
+
+/**
+ * Which of the labels above to show, from the two fields `/version` reports.
+ *
+ * `isolation` is the mode the sandbox RESOLVED and `isolation_active` is what
+ * execution actually did, so only the second can reveal a stack that resolved
+ * `fork` and is running in-process anyway. An explicit `off` there overrides
+ * the resolved mode; nothing else does.
+ *
+ * Deliberately narrow. `pending` means no node has run yet, which is the
+ * normal state on a freshly loaded page and is not evidence of anything, and
+ * an older sandbox or an unreachable one sends `unknown`. Treating either as
+ * a downgrade would show "not isolated" on a perfectly isolated instance,
+ * which is the mirror of the bug this exists to prevent and would teach
+ * operators to distrust the badge.
+ */
+export const resolveIsolationKey = (
+  isolation: string,
+  isolationActive: string,
+): string => (isolationActive === "off" ? "degraded" : isolation);
 
 const VersionBadge: React.FC = () => {
   const [version, setVersion] = useState<string>("");
   const [isolation, setIsolation] = useState<string>("");
+  const [isolationActive, setIsolationActive] = useState<string>("");
 
   useEffect(() => {
     fetch(backendUrl() + "/version", { cache: "no-store" })
@@ -48,13 +83,14 @@ const VersionBadge: React.FC = () => {
         if (!d) return;
         setVersion(d.version);
         setIsolation(d.isolation ?? "");
+        setIsolationActive(d.isolation_active ?? "");
       })
       .catch(() => {});
   }, []);
 
   if (!version) return null;
 
-  const mode = ISOLATION_LABELS[isolation];
+  const mode = ISOLATION_LABELS[resolveIsolationKey(isolation, isolationActive)];
 
   return (
     <div

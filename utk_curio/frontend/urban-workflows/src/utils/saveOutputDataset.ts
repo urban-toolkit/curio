@@ -29,6 +29,27 @@ export function isNonProducingNodeType(nodeType: string): boolean {
 /** Workflow-wide default when a node has no explicit ``saveOutputDataset`` (env + UI). */
 export const DEFAULT_SAVE_OUTPUT_DATASET = defaultSaveOutputDatasetFromEnv();
 
+/**
+ * Whether a node's output must be saved because a dashboard tile needs it.
+ *
+ * A pinned tile renders from its input, so the node feeding it has to have its
+ * output in the Data Catalog for the dashboard to draw without a run
+ * (``dashboardSourceNodeIds`` picks those nodes). This is on top of the per-node
+ * Save toggle, never instead of it.
+ *
+ * A dataset-palette node is the exception and stays off: its output IS an
+ * installed dataset, so a reload restores it from the dataset it reads and a
+ * computed copy would just duplicate it (the backend installers refuse it too).
+ */
+export function shouldSaveOutputOnRun(
+  data: { saveOutputDataset?: boolean } | null | undefined,
+  defaultSave: boolean = DEFAULT_SAVE_OUTPUT_DATASET,
+  isDashboardSource: boolean = false,
+): boolean {
+  if (isDatasetPaletteNode(data)) return false;
+  return resolveSaveOutputDataset(data, defaultSave) || isDashboardSource;
+}
+
 /** Whether a node run should write catalog parquet + auto-install. */
 export function resolveSaveOutputDataset(
   data: { saveOutputDataset?: boolean } | null | undefined,
@@ -61,22 +82,38 @@ interface SaveableNode {
 /**
  * Build the catalog ``liveOutputs`` list from in-session node outputs, keeping
  * only the nodes whose "Save output dataset" toggle is enabled (which defaults
- * to ``CURIO_DEFAULT_SAVE_NODE_OUTPUT``). Nodes that don't save their output are
- * ephemeral and must not surface as Computed datasets in the catalog/palette.
+ * to ``CURIO_DEFAULT_SAVE_NODE_OUTPUT``) or which feed a pinned dashboard tile
+ * (*dashboardSources*). Nodes that don't save their output are ephemeral and
+ * must not surface as Computed datasets in the catalog/palette.
  */
 export function buildSaveableLiveOutputs(
   outputs: SaveableOutput[] | null | undefined,
   nodes: SaveableNode[] | null | undefined,
   defaultSave: boolean = DEFAULT_SAVE_OUTPUT_DATASET,
+  dashboardSources?: ReadonlySet<string> | null,
 ): FlowOutputRef[] | undefined {
   if (!outputs || outputs.length === 0) return undefined;
+
+  const feedsADashboardTile = (node: SaveableNode): boolean => {
+    if (!dashboardSources || dashboardSources.size === 0) return false;
+    if (typeof node?.id === "string" && dashboardSources.has(node.id)) return true;
+    const dataNodeId = node?.data?.nodeId;
+    return typeof dataNodeId === "string" && dashboardSources.has(dataNodeId);
+  };
 
   const saveByNodeId = new Map<string, boolean>();
   for (const node of nodes || []) {
     // Visualization/sink nodes never produce a new dataset — they pass their
     // input through — so never save them, regardless of the per-node toggle.
     const isSink = isNonProducingNodeType(getFlowNodeCanonicalType(node));
-    const enabled = !isSink && resolveSaveOutputDataset(node?.data, defaultSave);
+    // A node feeding a pinned dashboard tile is recorded whatever its toggle
+    // says: the ref is what lets a reload hand the tile its data. Unlike the
+    // toggle, this also records a dataset-palette node, whose ref resolves
+    // against the dataset it reads rather than a computed copy.
+    const enabled =
+      !isSink
+      && (feedsADashboardTile(node)
+        || resolveSaveOutputDataset(node?.data, defaultSave));
     if (typeof node?.id === "string") saveByNodeId.set(node.id, enabled);
     const dataNodeId = node?.data?.nodeId;
     if (typeof dataNodeId === "string") saveByNodeId.set(dataNodeId, enabled);

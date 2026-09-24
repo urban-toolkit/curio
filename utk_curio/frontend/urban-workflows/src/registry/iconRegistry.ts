@@ -17,7 +17,6 @@ import {
   faCubes,
   faDatabase,
   faDownload,
-  faEye,
   faMap,
   faMapLocationDot,
   faObjectGroup,
@@ -72,6 +71,5 @@ registerIcon('fa-solid:code-merge', faCodeMerge);
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
-registerIcon('fa-solid:eye', faEye);
 registerIcon('fa-brands:js', faJs);
 registerIcon('fa-brands:python', faPython);

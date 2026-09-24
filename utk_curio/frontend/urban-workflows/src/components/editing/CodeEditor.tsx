@@ -13,7 +13,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
-import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
+import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
@@ -56,9 +56,11 @@ function CodeEditor({
         workflowNameRef,
         markNodeExecuted,
         markNodeStale,
+        markNodeErrored,
         signalNodeExecDone,
         projectId,
         defaultSaveOutputDataset,
+        isDashboardSource,
         playNodesUpTo,
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
@@ -249,6 +251,11 @@ function CodeEditor({
                 content: errorContent,
                 missingModule: result.missingModule ?? null,
             });
+            // No artifact, so deliberately no outputCallback - nothing is
+            // propagated downstream. That left every downstream node unable to
+            // tell this apart from "never run", so it advised running the node
+            // the user had just watched fail (#347). Record the failure instead.
+            markNodeErrored(data.nodeId);
             signalNodeExecDone(data.nodeId);
         }
     };
@@ -294,7 +301,12 @@ function CodeEditor({
             workflowNameRef.current,
             nodeExecProv,
             projectId,
-            resolveSaveOutputDataset(data, defaultSaveOutputDataset),
+            // A node feeding a pinned dashboard tile saves its output whatever
+            // its own toggle says: that saved dataset is what lets the tile draw
+            // when someone opens the dashboard later.
+            shouldSaveOutputOnRun(
+                data, defaultSaveOutputDataset, isDashboardSource(data.nodeId),
+            ),
             resolveNodeDisplayLabel(data),
         );
     }, [replacedCodeDirty]);

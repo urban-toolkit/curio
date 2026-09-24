@@ -32,6 +32,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
+  // No routed dataflow and nothing loading: saves take their id from the
+  // hook's own state, as they do once a load has landed.
+  getCurrentProjectId: jest.fn(() => undefined),
+  whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
   setCurrentProjectPackages: jest.fn(),
   subscribe: jest.fn(() => jest.fn()),
@@ -53,8 +57,6 @@ const makeDeps = () =>
     outputsRef: { current: [] },
     setInteractions: jest.fn(),
     setDashboardPins: jest.fn(),
-    setPositionsInDashboard: jest.fn(),
-    setPositionsInWorkflow: jest.fn(),
     setWorkflowName: jest.fn(),
     workflowNameRef: { current: "wf" },
     setWorkflowDescription: jest.fn(),
@@ -304,6 +306,139 @@ describe("persistDataflowForInstall (no execution-time install payload)", () => 
       await result.current.persistDataflowForInstall();
     });
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+});
+
+describe("persistDataflowForInstall reports what it achieved (#352)", () => {
+  // The placeholder clear used to hang off `.finally`, so it fired identically
+  // whether the datasets installed, failed to install, or the save threw. This
+  // return value is what lets the caller tell those apart.
+  it("names the producers whose dataset did not install", async () => {
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: [
+        { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
+      ],
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.persistDataflowForInstall(["n1", "n2"]);
+    });
+    expect(outcome).toEqual({ saved: true, failedNodeIds: ["n1"] });
+  });
+
+  it("names none when every dataset installed", async () => {
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: [],
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.persistDataflowForInstall(["n1"]);
+    });
+    expect(outcome).toEqual({ saved: true, failedNodeIds: [] });
+  });
+
+  it("ignores a warning about a node this sync did not cover", async () => {
+    // Same scoping rule the toast uses (#180): a save re-sends refs for every
+    // toggle-enabled node, so an unscoped list would fail placeholders for
+    // nodes the user never ran.
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: [
+        { node_id: "other", filename: "x.parquet", reason: "stale" },
+      ],
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.persistDataflowForInstall(["n1"]);
+    });
+    expect(outcome.failedNodeIds).toEqual([]);
+  });
+
+  it("fails every covered producer when the save itself throws", async () => {
+    // Nothing was written, so nothing succeeded - and the old code cleared all
+    // of them anyway, on a path that had already swallowed the error.
+    (projectsApi.create as jest.Mock).mockRejectedValue(new Error("network down"));
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    let outcome: any;
+    await act(async () => {
+      outcome = await result.current.persistDataflowForInstall(["n1", "n2"]);
+    });
+    expect(outcome).toEqual({ saved: false, failedNodeIds: ["n1", "n2"] });
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining("network down"),
+      "error",
+    );
+  });
+});
+
+describe("a failed install placeholder (#352)", () => {
+  it("is marked failed rather than cleared", () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    act(() => {
+      result.current.beginPendingInstall({ key: "n1", producerNodeId: "n1", label: "Node 1" });
+    });
+    act(() => {
+      result.current.failPendingInstall("n1");
+    });
+    // Still on screen - this is the whole point. #217's symptom was the entry
+    // flashing and disappearing with nothing to explain it.
+    expect(result.current.pendingInstalls).toHaveLength(1);
+    expect(result.current.pendingInstalls[0].status).toBe("failed");
+  });
+
+  it("goes away on its own, sooner than the in-flight safety timeout", () => {
+    jest.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+      act(() => {
+        result.current.beginPendingInstall({ key: "n1", producerNodeId: "n1", label: "Node 1" });
+      });
+      act(() => {
+        result.current.failPendingInstall("n1");
+      });
+      act(() => {
+        jest.advanceTimersByTime(29_000);
+      });
+      expect(result.current.pendingInstalls).toHaveLength(1);
+      act(() => {
+        jest.advanceTimersByTime(2_000);
+      });
+      expect(result.current.pendingInstalls).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("is replaced by a fresh placeholder when the node is re-run", () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    act(() => {
+      result.current.beginPendingInstall({ key: "n1", producerNodeId: "n1", label: "Node 1" });
+      result.current.failPendingInstall("n1");
+    });
+    act(() => {
+      result.current.beginPendingInstall({ key: "n1", producerNodeId: "n1", label: "Node 1" });
+    });
+    expect(result.current.pendingInstalls).toHaveLength(1);
+    expect(result.current.pendingInstalls[0].status).toBeUndefined();
+  });
+
+  it("does nothing for a key that has no placeholder", () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    act(() => {
+      result.current.failPendingInstall("ghost");
+    });
+    expect(result.current.pendingInstalls).toHaveLength(0);
   });
 });
 

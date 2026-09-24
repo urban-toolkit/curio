@@ -58,7 +58,26 @@ log = logging.getLogger(__name__)
 
 #: Concurrency bound (memo dev/91 §3.3): the sandbox never multiplies load
 #: unboundedly. Waiters past the slot wait are refused loudly (503).
-MAX_CONCURRENT_WORKERS = 2
+#:
+#: Two was a single-user number: on a multi-user instance the third person to
+#: run a package node gets a 503 after ten seconds, however idle the host is.
+#: Sized to the machine instead, with the same cap-and-refuse behaviour, and
+#: overridable with CURIO_PACKAGE_WORKERS for an operator who has measured
+#: their own workload.
+
+
+def _default_worker_slots() -> int:
+    try:
+        configured = int(os.environ.get("CURIO_PACKAGE_WORKERS", ""))
+    except (TypeError, ValueError):
+        configured = 0
+    if configured > 0:
+        return configured
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 8))
+
+
+MAX_CONCURRENT_WORKERS = _default_worker_slots()
 _SLOT_WAIT_SECONDS = 10.0
 _worker_slots = threading.BoundedSemaphore(MAX_CONCURRENT_WORKERS)
 
@@ -79,6 +98,12 @@ _DATA_DIRNAME = "package-backend-data"
 # PYTHONPATH, swept at uninstall. Derived state: rebuilt from the manifest
 # at every promote, never edited in place.
 _OVERLAY_DIRNAME = "package-backend-overlays"
+# #332: the per-USER node-library tree. Sibling to the isolation supervisor's
+# ``exec-scratch/``, and named for the same reason - it lives beside the store
+# rather than under the 0700 user tree, because an isolated node child must be
+# able to read it. ``isolation.supervisor`` spells this too; the two are pinned
+# together by test.
+_USER_NODE_OVERLAY_SUBDIR = "exec-overlays"
 
 #: dev/92 B-3 — the crash-loop quarantine breaker. Counted per
 #: (user, package, handler): only INFRASTRUCTURE failures count
@@ -182,6 +207,46 @@ def overlay_max_bytes() -> int:
     except ValueError:
         mb = OVERLAY_DEFAULT_MAX_MB
     return max(1, mb) * 1024 * 1024
+
+
+def per_user_node_envs() -> bool:
+    """Whether node dependencies are scoped to the user who asked for them.
+
+    True exactly when node execution is isolated. A forked child can be handed
+    its own ``sys.path`` after the fork; the warm in-process worker cannot - it
+    is one process with one ``sys.modules``, so whoever imports a library first
+    makes it importable by everybody, whatever the path says.
+
+    Reads the mode the LAUNCHER resolved (``main.set_environment_variables``),
+    not the raw request: ``auto`` is a question, and ``fork`` on a platform
+    that cannot fork is a local launch quietly degrading to ``off``. Answering
+    from the unresolved value would scope a package's deps into a per-user tree
+    on an instance that is in fact still sharing one interpreter, and its nodes
+    would stop finding their libraries.
+    """
+    return (os.environ.get("CURIO_ISOLATION") or "").strip().lower() == "fork"
+
+
+def user_node_overlay_dir(user_key: str) -> Path:
+    """#332: the user's own node-library tree - their half of ``"host"``.
+
+    Beside the artifact store, NOT under ``.curio/users/<key>/`` where the
+    per-package handler overlays live. The user store is 0700 root-owned so a
+    node cannot reach another user's datasets and projects
+    (``isolation.hardening.SENSITIVE_PATHS``); handlers read overlays there
+    because the backend process is not setuid, and a node child is. So this
+    follows ``isolation.supervisor.user_work_dir``'s reasoning and its
+    location, one directory over.
+
+    Unlike the work directory it is NOT owned by the execution user: pip writes
+    it as the backend and the child only reads it. An import path the child
+    could write to would let node code plant a module that shadows a later
+    import.
+    """
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_data = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    return ((launch_dir / shared_data).resolve().parent
+            / _USER_NODE_OVERLAY_SUBDIR / "users" / str(user_key))
 
 
 def _dep_route(has_backend: bool, has_warm_python: bool) -> tuple[str, str]:

@@ -8,7 +8,7 @@ This example combines three different data sources, a high-resolution thermal ra
 
 > [!NOTE]
 > **Python dependencies**
-> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package, installed automatically when Curio starts with `--with-examples` (or `--deploy`), or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
+> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package, installed automatically when Curio starts with `--with-examples`, or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
 
 ## Pipeline overview
 

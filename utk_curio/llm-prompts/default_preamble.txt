@@ -152,7 +152,7 @@ Here is a description of the available types of node:
 - AUTK_MAP: used to render Autark urban 3D map layers (autk-map). Visualize geospatial data.
 - MERGE_FLOW: used to merge two or more flows into a single flow. When nodes are connected into a MERGE_FLOW it will output it as a tuple. Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.
 - DATA_POOL: used as a data repository for multiple visualizations. Is represented to the user as a table. Changes made to DATA_POOL are seen by all connected boxes. Useful to link interaction between visualizations.
-- VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
+- VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images if it is named "image_url", "image_content", "image", "thumbnail" or "overlay_url" and holds image values, otherwise if its values are data: URIs or URLs ending in an image extension. "image_content" is raw Base64; the others are URLs. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
 Nodes are uncontrollable, controllable through python code or controllable through grammar:
 
@@ -286,6 +286,74 @@ Number of outputs possible for each node (if you want to output more than one da
 - DATA_POOL: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
+
+### The starter spec a VIS_VEGA node writes for itself
+
+When a VIS_VEGA node is connected to a node that has already run, and its editor
+is still empty, Curio fills it with a starter spec chosen from the input's
+column types. Generate specs that agree with this ladder unless the user asks
+for something else -- otherwise the AI and the node produce different charts for
+the same input, which is worse than either alone. First match wins:
+
+- geometry + at least one quantitative column -> geoshape choropleth, colored by
+  the first quantitative column
+- geometry only -> geoshape, no color
+- temporal + quantitative -> line, time on x
+- nominal + quantitative -> bar, with an EXPLICIT "aggregate": "mean" on y
+- two or more quantitative -> point scatter of the first two
+- one quantitative -> bar histogram, binned x and "aggregate": "count" on y
+- one nominal -> bar of counts
+- nothing usable -> no spec at all
+
+Column roles come from pandas dtypes: `geometry` is geometry; `datetime64`,
+`period` and `timedelta` are temporal; `int`, `uint` and `float` are
+quantitative; `bool`, `object`, `str`, `string` and `category` are nominal.
+Never chart `__row_index__`, and avoid a nominal column that has one distinct
+value per row -- it is an identifier and produces one bar per row.
+
+Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
+one bar per row.
+
+### Maps in Vega-Lite
+
+A node that returns a GeoDataFrame can be charted as a map directly. Do NOT
+write a conversion helper: no shapely.geometry.mapping, no manual x/y centroid
+columns, no flattening the GeoDataFrame into a plain DataFrame. Just
+`return gdf`, and in the VIS_VEGA spec use `"mark": "geoshape"`.
+
+Attribute columns are addressed by their bare pandas names, exactly as for a
+bar chart over the same frame.
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "mark": "geoshape",
+  "encoding": { "color": {"field": "pop", "type": "quantitative"} }
+}
+```
+
+Curio fills in two things, and only when the spec does not already have them:
+the `shape` encoding for the frame's active geometry column, and a `projection`
+fitted to the data (`mercator` for lon/lat, `{"type": "identity",
+"reflectY": true}` for a projected CRS). Do not write these yourself unless you
+want a specific projection; if you do write one, it is respected.
+
+A GeoDataFrame may have MORE THAN ONE geometry column, and each keeps its own
+pandas name. The active column is wired automatically; any other must be named
+explicitly, because with several present there is no single right answer:
+
+```json
+{
+  "layer": [
+    {"mark": "geoshape"},
+    {"mark": "geoshape",
+     "encoding": {"shape": {"field": "centroid", "type": "geojson"}}}
+  ]
+}
+```
+
+A `geoshape` mark draws a Point as a small circle, so a centroid layer needs no
+special mark type.
 
 ### Interactions
 

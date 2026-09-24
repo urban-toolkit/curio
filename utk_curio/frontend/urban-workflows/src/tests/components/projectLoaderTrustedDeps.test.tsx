@@ -45,8 +45,15 @@ jest.mock("../../TrillGenerator", () => ({
 jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn().mockResolvedValue(undefined),
 }));
+// ProjectLoader reports load failures through a toast now (#350); without a
+// provider in the tree `useToastContext` throws by design.
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock("../../registry/projectPackagesStore", () => ({
   clearCurrentProject: jest.fn(),
+  beginProjectLoad: jest.fn(),
+  settleProjectLoad: jest.fn(),
   setCurrentProject: jest.fn(),
   // An unsaved dataflow now gets a real scope seeded from the account defaults
   // rather than "no project, show everything" (#204).

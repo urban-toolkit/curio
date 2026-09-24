@@ -332,6 +332,7 @@ def build_exec_request(
     scratch_dir,
     input_spec,
     work_dir=None,
+    overlay_dir=None,
     dataset_paths=None,
     session_imports=None,
     limits=None,
@@ -351,6 +352,12 @@ def build_exec_request(
     by permissions, not by cwd -- the launch tree is root-owned and the child
     has dropped to the execution user.
 
+    ``overlay_dir`` is the calling user's node-library directory (#332). It is
+    prepended to the child's ``sys.path`` AFTER the fork, so one user's install
+    is importable by their nodes and nobody else's. None means the shared
+    interpreter, which is what an unisolated instance and an older parent both
+    mean.
+
     ``wall_timeout`` is enforced by the zygote, not by the parent. The zygote is
     the child's parent process, so while it holds an unreaped child the pid
     cannot be recycled and a kill is guaranteed to hit the right process. The
@@ -363,6 +370,7 @@ def build_exec_request(
         "data_type": data_type,
         "scratch_dir": str(scratch_dir),
         "work_dir": str(work_dir) if work_dir else None,
+        "overlay_dir": str(overlay_dir) if overlay_dir else None,
         "input": input_spec,
         "dataset_paths": dict(dataset_paths or {}),
         "session_imports": list(session_imports or []),

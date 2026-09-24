@@ -97,9 +97,60 @@ describe("UnresolvedNode", () => {
     expect(screen.getByText("Streetvision")).toBeInTheDocument();
   });
 
-  it("keeps waiting when the type names no package to blame", () => {
+  it("says so when the type names no package to blame (#349)", () => {
+    // This used to keep saying "Loading node…" for ever. The registry has
+    // settled and a legacy plain-string type names no package, so waiting can
+    // never resolve it - the same dead end #233 fixed for installable
+    // packages, on a node-type shape that fix did not recognise.
     render(<UnresolvedNode nodeId="n1" nodeType="DATA_LOADING" registryReady />);
+    expect(screen.queryByText("Loading node…")).toBeNull();
+    expect(screen.getByText("Unrecognized node type")).toBeInTheDocument();
+    expect(screen.getByText("DATA_LOADING")).toBeInTheDocument();
+  });
+
+  it("offers no install button for a type nothing can provide", () => {
+    // Amber + Install means "one click fixes this". Here the type itself is
+    // the problem, so an install button would send the user looking for a
+    // package that does not exist.
+    render(<UnresolvedNode nodeId="n1" nodeType="DATA_LOADING" registryReady />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText("Missing node package")).toBeNull();
+  });
+
+  it.each([
+    ["an empty type", ""],
+    ["a type with no package prefix", "computation-analysis"],
+    ["a prefix that is not a dotted package id", "curio/thing"],
+    ["a leading slash", "/thing"],
+  ])("is terminal for %s", (_label, nodeType) => {
+    // Every way packageIdFromNodeType returns null, since they are all equally
+    // unresolvable once the registry is ready.
+    render(<UnresolvedNode nodeId="n1" nodeType={nodeType} registryReady />);
+    expect(screen.queryByText("Loading node…")).toBeNull();
+    expect(screen.getByText("Unrecognized node type")).toBeInTheDocument();
+  });
+
+  it("keeps waiting on an unknown type while the registry is still loading", () => {
+    // The state the old guard conflated with the one above: not ready yet, so
+    // the registry may still deliver. Waiting is right here.
+    render(<UnresolvedNode nodeId="n1" nodeType="DATA_LOADING" registryReady={false} />);
     expect(screen.getByText("Loading node…")).toBeInTheDocument();
+    expect(screen.queryByText("Unrecognized node type")).toBeNull();
+  });
+
+  it("renders handles on the unrecognized-type card too", () => {
+    // React Flow reads port bounds from `.react-flow__handle` children; a card
+    // without them drops every incident edge with error008. Every branch of
+    // this component has to carry them - that is the #233 half people forget.
+    mockEdges = [
+      { id: "e1", source: "up", target: "n1", targetHandle: "in" },
+      { id: "e2", source: "n1", target: "join", sourceHandle: "out" },
+    ];
+    const { container } = render(
+      <UnresolvedNode nodeId="n1" nodeType="DATA_LOADING" registryReady />,
+    );
+    expect(handleIds(container, "target")).toEqual(["in"]);
+    expect(handleIds(container, "source")).toEqual(["out"]);
   });
 
   it("opens the catalog drawer on the package it needs", () => {

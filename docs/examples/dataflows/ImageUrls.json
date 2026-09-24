@@ -1,0 +1,46 @@
+{
+  "dataflow": {
+    "name": "Simple View images",
+    "task": "Show that Simple View renders a frame that carries images.",
+    "timestamp": 0,
+    "provenance_id": "image-urls-1",
+    "packages": [
+      "curio.builtin@1"
+    ],
+    "nodes": [
+      {
+        "id": "images-1",
+        "type": "curio.builtin/computation-analysis",
+        "x": 0,
+        "y": 0,
+        "content": "# A frame that carries pictures. The images are inline data: URIs so the node\n# runs offline and renders identically on every machine; in a real dataflow the\n# column would hold URLs, as the Street Vision pipeline's does.\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\nROWS = [\n    (\"CAoSL1\", \"vegetation\", 31.2, -87.6478, 41.9211, \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQO1OIFTEMLQkAZRVaweOB+WcAAAAASUVORK5CYII=\"),\n    (\"CAoSL2\", \"road\", 44.8, -87.6402, 41.9265, \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPwmnATK2IYWhIAWn5swZXi+JcAAAAASUVORK5CYII=\"),\n    (\"CAoSL3\", \"building\", 27.5, -87.6351, 41.9302, \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGP4ukwZK2IYWhIAxc1vgZmDLb0AAAAASUVORK5CYII=\"),\n]\n\ngdf = gpd.GeoDataFrame(\n    [\n        {\n            \"image_id\": image_id,\n            \"image_url\": image_url,\n            \"dominant_class\": dominant_class,\n            \"dominant_pct\": dominant_pct,\n        }\n        for image_id, dominant_class, dominant_pct, lon, lat, image_url in ROWS\n    ],\n    geometry=[Point(lon, lat) for _, _, _, lon, lat, _ in ROWS],\n    crs=\"EPSG:4326\",\n)\ngdf.metadata = {\"name\": \"street_images\"}\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Emit a GeoDataFrame whose image_url column holds pictures.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "simple-view-1",
+        "type": "curio.builtin/vis-simple",
+        "x": 700,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "One card per row: the image, then the rest of that row.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-images-1out-simple-view-1in",
+        "source": "images-1",
+        "target": "simple-view-1"
+      }
+    ]
+  }
+}

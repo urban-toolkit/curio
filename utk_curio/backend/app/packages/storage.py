@@ -131,6 +131,31 @@ from utk_curio.backend.app.common.user_storage import (
 )
 
 
+#: Where the shared package catalog lives.
+#:
+#: ``<repo_root>/packages/`` by default, resolved from this file rather than
+#: the launch CWD so a dev server finds it wherever it was started.
+#:
+#: Overridable because that default is one directory for every process on the
+#: machine, whatever else they have been given their own copy of. Two backends
+#: with separate ``CURIO_STATE_DIR``, ``CURIO_SHARED_DATA`` and databases still
+#: shared this one: publishing on the first made the package appear in the
+#: second's catalog, and left it untracked in a git-managed directory. Under
+#: pytest-xdist that is one worker's fixture showing up in another worker's
+#: catalog listing mid-test. The e2e shards set this per shard
+#: (``backend/tests/shards.py``); nothing else should need to.
+_CATALOG_ROOT_ENV = "CURIO_PACKAGES_ROOT"
+
+
+def catalog_root() -> Path:
+    """The shared package catalog directory for this process."""
+    override = os.environ.get(_CATALOG_ROOT_ENV, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    # storage.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
+    return Path(__file__).resolve().parents[4] / "packages"
+
+
 def user_packageages_dir(user_key: str) -> Path:
     """Return ``.../users/<user_key>/packages/``.
 

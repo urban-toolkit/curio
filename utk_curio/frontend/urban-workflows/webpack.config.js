@@ -111,6 +111,22 @@ module.exports = {
         test: /\.(png|jpe?g|gif|svg)$/i,
         type: 'asset/resource',
       },
+      {
+        // Rubik is self-hosted (src/styles/fonts.css) rather than fetched from
+        // fonts.googleapis.com, so the typeface no longer depends on a CDN
+        // being reachable at page load.
+        test: /\.woff2?$/i,
+        type: 'asset/resource',
+      },
+      {
+        // duckdb's worker downloads DuckDB's spatial extension from
+        // extensions.duckdb.org on every fresh database. Curio ships the
+        // extension, so the worker is taught to ask this instance for it
+        // instead (#318); see webpack/duckdbExtensionMirror.js.
+        test: /duckdb-browser-[\w.-]*worker[\w.-]*\.js$/,
+        type: 'asset/resource',
+        use: [require.resolve('./webpack/duckdbExtensionMirror.js')],
+      },
     ],
   },
   plugins: [

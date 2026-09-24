@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from utk_curio.backend.extensions import db
+from utk_curio.backend.extensions import db, retry_on_write_conflict
 from utk_curio.backend.app.projects.models import Project
 from utk_curio.backend.app.projects.schemas import _slugify
 
@@ -60,44 +60,60 @@ def upsert_project(
     thumbnail_accent: str = "peach",
     project_id: Optional[str] = None,
 ) -> Project:
-    """Insert a new project or update an existing one (bumps spec_revision)."""
-    if project_id:
-        project = get_for_user(project_id, user_id)
-        if name:
-            project.name = name
-            project.slug = _unique_slug(user_id, _slugify(name), exclude_id=project_id)
-        if description is not None:
-            project.description = description
-        if thumbnail_accent:
-            project.thumbnail_accent = thumbnail_accent
-        project.folder_path = folder_path
-        project.spec_revision = (project.spec_revision or 0) + 1
-        project.updated_at = datetime.now(timezone.utc)
-    else:
-        slug = _unique_slug(user_id, _slugify(name))
-        project = Project(
-            user_id=user_id,
-            name=name,
-            slug=slug,
-            description=description,
-            folder_path=folder_path,
-            thumbnail_accent=thumbnail_accent,
-        )
-        db.session.add(project)
+    """Insert a new project or update an existing one (bumps spec_revision).
 
-    db.session.flush()
-    return project
+    The whole body is retried on a lost write race rather than just the flush:
+    a rollback throws away the pending row along with the transaction, and the
+    row has to be rebuilt from these arguments to be written at all. Saving a
+    dataflow while other people are saving theirs is the commonest way to hit
+    that -- 25 of the failures in the first 100-user run were this flush.
+    """
+    def _apply() -> Project:
+        if project_id:
+            project = get_for_user(project_id, user_id)
+            if name:
+                project.name = name
+                project.slug = _unique_slug(user_id, _slugify(name), exclude_id=project_id)
+            if description is not None:
+                project.description = description
+            if thumbnail_accent:
+                project.thumbnail_accent = thumbnail_accent
+            project.folder_path = folder_path
+            project.spec_revision = (project.spec_revision or 0) + 1
+            project.updated_at = datetime.now(timezone.utc)
+        else:
+            slug = _unique_slug(user_id, _slugify(name))
+            project = Project(
+                user_id=user_id,
+                name=name,
+                slug=slug,
+                description=description,
+                folder_path=folder_path,
+                thumbnail_accent=thumbnail_accent,
+            )
+            db.session.add(project)
+
+        db.session.flush()
+        return project
+
+    return retry_on_write_conflict(_apply)
 
 
 def delete_project_row(project_id: str, user_id: int) -> Project:
-    project = get_for_user(project_id, user_id)
-    db.session.delete(project)
-    db.session.flush()
-    return project
+    def _apply() -> Project:
+        project = get_for_user(project_id, user_id)
+        db.session.delete(project)
+        db.session.flush()
+        return project
+
+    return retry_on_write_conflict(_apply)
 
 
 def touch_last_opened(project_id: str, user_id: int) -> Project:
-    project = get_for_user(project_id, user_id)
-    project.last_opened_at = datetime.now(timezone.utc)
-    db.session.flush()
-    return project
+    def _apply() -> Project:
+        project = get_for_user(project_id, user_id)
+        project.last_opened_at = datetime.now(timezone.utc)
+        db.session.flush()
+        return project
+
+    return retry_on_write_conflict(_apply)

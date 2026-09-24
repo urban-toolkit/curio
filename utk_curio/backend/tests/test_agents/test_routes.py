@@ -2619,10 +2619,10 @@ class TestOutputCapReachesTheProvider:
         # A guard on the removal: re-adding one should be a decision, not a
         # symbol that quietly reappears.
         #
-        # Asserted against the URL map rather than a request, because this app
-        # registers a catch-all ``@app.errorhandler(Exception)`` that turns
-        # werkzeug's NotFound into a 500 - so an unregistered route answers 500
-        # and a status assertion here would prove nothing about routing.
+        # Asserted against the URL map rather than a request. Since #279 an
+        # unregistered route does answer 404, so a status assertion would work
+        # now - but the map is the more direct statement of "this rule is gone",
+        # and it cannot be satisfied by a 404 that came from somewhere else.
         rules = {str(r.rule) for r in app.url_map.iter_rules()}
         for gone in (
             "/api/agents/settings",

@@ -251,6 +251,11 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "createdAt": None,
         "updatedAt": iso_from_timestamp(),
         "sourceUpdatedAt": None,
+        # What the file's bytes were decoded from when it was imported (#280).
+        # ``"utf-8"`` when nothing had to be transcoded, ``None`` for datasets
+        # that predate the normalisation. Surfaced because charset detection can
+        # be confidently wrong, and the user is the only one who can tell.
+        "sourceEncoding": None,
         # When this dataset was installed into the current dataflow (from the
         # project ref's ``installedAt``). Distinct from ``createdAt`` (import /
         # record creation). ``None`` for datasets not installed in a dataflow.
@@ -339,6 +344,7 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         createdAt=created_at,
         updatedAt=updated_at,
         sourceUpdatedAt=manifest.source_updated_at,
+        sourceEncoding=manifest.source_encoding,
         sourceLabel=manifest.source_label or manifest.publisher,
         license=manifest.license or None,
         tags=manifest.tags,

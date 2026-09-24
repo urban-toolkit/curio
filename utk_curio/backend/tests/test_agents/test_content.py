@@ -459,6 +459,94 @@ class TestDelegationInstruction:
         assert '"delegateRequest"' in text
 
 
+class TestCandidatesSurviveTheirOwnSchema:
+    """#356 — a block the instruction invites must reach the user as a card.
+
+    The schema says "at most 8 rows each", but datasetCandidates was on neither
+    big-tail allowance list in ``parse_parts``, so a block that obeyed the
+    instruction exactly blew ``TAIL_MAX_BYTES`` and fell out to visible text.
+    That is #269's user-visible symptom, reached by following the documented
+    shape - and no test saw it, because the shape test uses one small row.
+
+    Built from the published bounds rather than from literals: widen a field or
+    raise the row cap and these fail here, not in a transcript.
+    """
+
+    @staticmethod
+    def _maximal_row(lane: str, index: int) -> dict:
+        """One row with every bounded field present and at its documented max."""
+        name = ("n" * (content._CANDIDATE_NAME_MAX_CHARS - 2)) + f"{index:02d}"
+        text = "t" * content._CANDIDATE_TEXT_MAX_CHARS
+        row = {
+            "name": name,
+            "fit": {"score": 99, "rationale": text},
+        }
+        if lane == "external":
+            row["sourceType"] = "portal"
+            row["url"] = "https://example.org/" + "u" * (
+                content._CANDIDATE_URL_MAX_CHARS - len("https://example.org/"))
+            for key in ("provider", "format", "coverage", "requirement"):
+                row[key] = text
+        else:
+            row["sourceType"] = "catalog"
+            row["datasetId"] = "d" * content._CANDIDATE_NAME_MAX_CHARS
+            row["installed"] = False
+        return row
+
+    def _maximal_block(self) -> dict:
+        per_lane = content._CANDIDATES_MAX_ROWS_PER_LANE
+        return {"datasetCandidates": {"lanes": {
+            lane: [self._maximal_row(lane, i) for i in range(per_lane)]
+            for lane in content._CANDIDATE_LANES
+        }}}
+
+    def test_the_reported_leak_is_gone_end_to_end(self):
+        # #269's exact shape: prose, then the block the agent was told to write.
+        payload = self._maximal_block()
+        visible, parts = content.extract_content(
+            "Here is what I found.\n\n" + _tail(payload))
+
+        assert parts and parts[0]["type"] == "datasetCandidates"
+        assert "datasetCandidates" not in visible
+        assert "```" not in visible
+        assert visible.strip() == "Here is what I found."
+
+    def test_every_maximal_row_survives_the_trip(self):
+        payload = self._maximal_block()
+        _, parts = content.extract_content(_tail(payload))
+
+        lanes = parts[0]["lanes"]
+        for lane in content._CANDIDATE_LANES:
+            assert len(lanes[lane]) == content._CANDIDATES_MAX_ROWS_PER_LANE
+
+    def test_the_budget_covers_the_documented_maximum(self):
+        """The cap is derived from the bounds; this is the arithmetic, asserted."""
+        body = json.dumps(self._maximal_block())
+        assert len(body.encode("utf-8")) <= content.CANDIDATES_TAIL_MAX_BYTES
+
+    def test_the_budget_is_not_the_plan_budget(self):
+        # A display block does not get the 256 KB plan allowance.
+        assert content.CANDIDATES_TAIL_MAX_BYTES > content.TAIL_MAX_BYTES
+        assert content.CANDIDATES_TAIL_MAX_BYTES < content.PLAN_TAIL_MAX_BYTES
+
+    def test_an_oversized_block_is_still_refused(self):
+        # The enlarged budget is a bound, not an exemption.
+        payload = self._maximal_block()
+        payload["datasetCandidates"]["padding"] = "p" * (
+            content.CANDIDATES_TAIL_MAX_BYTES)
+        visible, parts = content.extract_content(_tail(payload))
+        assert parts == []
+
+    def test_a_padded_tool_request_cannot_ride_the_candidates_budget(self):
+        """The parsed-payload gate: merely naming the block is not enough."""
+        payload = {"toolRequest": {
+            "tool": "catalog.search",
+            "params": {"query": "datasetCandidates " + "q" * content.TAIL_MAX_BYTES},
+        }}
+        _, parts = content.extract_content(_tail(payload))
+        assert parts == []
+
+
 class TestDatasetCandidatesPart:
     """dev/50 — the docs/06 two-lane suggestions contract: bounded,
     scheme-allowlisted, informational rows; coexists with suggestedPrompts;

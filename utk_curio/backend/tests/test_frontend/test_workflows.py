@@ -17,6 +17,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from .utils import (
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
+    assert_vega_node_empty_state,
     get_shared_data_dir,
     load_artifact_as_dict,
     execute_workflow_programmatically,
@@ -63,6 +64,27 @@ def test_load_workflow_files(workflow_files):
 # ---------------------------------------------------------------------------
 # Test class
 # ---------------------------------------------------------------------------
+
+#: VIS_VEGA nodes that are *supposed* to have nothing on their canvas, keyed by
+#: workflow then node id. A ``None`` reason means the spec compiled and drew a
+#: real but markless chart (an empty frame, an all-null geometry column); a
+#: string means the spec could not be drawn at all and the node body is expected
+#: to say so, using that ``data-curio-node-empty`` reason.
+#:
+#: These are demonstrations, not defects: asserting marks on them would assert
+#: the opposite of what the example exists to show. Everything not listed here
+#: still has to draw.
+EXPECTED_EMPTY_VEGA = {
+    "13-vega-lite-geometry-columns.json": {
+        "5b98d1d6-9332-5fb1-a149-c8f607025a42": "geometry-unresolved",
+        "1340a3df-26a8-53db-8de3-dc04db64d6fc": "geometry-ambiguous",
+    },
+    "14-vega-lite-crs-and-geometry-types.json": {
+        "f5626141-f328-514e-be15-779e1cf43cbc": None,  # an empty frame
+        "e789669d-c845-5d49-a4ec-ae2212a535ad": None,  # every geometry null
+    },
+}
+
 
 class TestWorkflowCanvas:
     """End-to-end checks for each workflow loaded into the ReactFlow canvas.
@@ -781,7 +803,22 @@ class TestWorkflowCanvas:
                     # The probe and its poll live in ``utils`` so the per-dataset
                     # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
-                        assert_vega_canvas_rendered(self.page, node.id)
+                        expected = EXPECTED_EMPTY_VEGA.get(
+                            os.path.basename(self.spec.filepath), {}
+                        )
+                        if node.id in expected:
+                            reason = expected[node.id]
+                            if reason is None:
+                                # Draws a real but markless chart.
+                                assert_vega_canvas_rendered(
+                                    self.page, node.id, expect_blank=True
+                                )
+                            else:
+                                assert_vega_node_empty_state(
+                                    self.page, node.id, reason
+                                )
+                        else:
+                            assert_vega_canvas_rendered(self.page, node.id)
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all

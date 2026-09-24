@@ -35,6 +35,10 @@ const READERS: Record<DatasetFormat, string | null> = {
   // than a single path. Asserted explicitly below rather than dropped, so the
   // exception stays visible.
   osm: null,
+  // Same exception, same reason: a GeoPackage group is a set of per-layer
+  // parquet datasets, so there is no single path to generate for. Each member
+  // is an ordinary `parquet` dataset and takes that branch.
+  gpkg: null,
 };
 
 function snippetFor(format: DatasetFormat) {

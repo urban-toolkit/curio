@@ -8,8 +8,8 @@
  * `refreshPackageRegistry`, which several surfaces call on the same tick. The
  * bundle was then fetched and evaluated repeatedly on one page load, each pass
  * re-running its top-level `registerBehavior` side-effects. The stress run saw
- * `Behavior "cv-gallery" already registered; overwriting.` and three siblings,
- * eleven times each in a single chapter.
+ * `Behavior "hf-cv-inference" already registered; overwriting.` and its
+ * siblings, eleven times each in a single chapter.
  */
 
 // vega ships ESM that Jest's default transform skips; this suite never reaches

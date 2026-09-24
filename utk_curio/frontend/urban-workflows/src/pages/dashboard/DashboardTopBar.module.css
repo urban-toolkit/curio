@@ -1,0 +1,21 @@
+/* Only what the dataflow bar does not already provide. Everything else comes
+   from UpMenu.module.css, so the two bars are the same bar. */
+
+.title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  color: #fbfcf6;
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "Edit layout" while the layout is unlocked: the same accent the dataflow bar
+   uses for an active control. */
+.buttonActive {
+  color: rgb(251, 170, 105);
+}

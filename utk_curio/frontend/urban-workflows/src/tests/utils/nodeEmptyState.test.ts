@@ -9,6 +9,9 @@
 import {
   NODE_EMPTY_COPY,
   hasIncomingEdge,
+  incomingSourceIds,
+  isTabularPayload,
+  resolveGrammarEmptyReason,
   resolveNodeEmptyReason,
   type NodeEmptyReason,
 } from "../../utils/nodeEmptyState";
@@ -43,10 +46,134 @@ describe("resolveNodeEmptyReason", () => {
   });
 });
 
+describe("an errored upstream is not an unrun one (#347)", () => {
+  // A node whose execution fails produces no artifact, so it never calls
+  // outputCallback and nothing downstream changes at all. hasInput therefore
+  // stays false and the ladder said "upstream-not-run" - "Run the node feeding
+  // this one", to a user who had just run it and watched it fail.
+  test("outranks having no input", () => {
+    expect(
+      resolveNodeEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: false,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("outranks a stale input left over from an earlier good run", () => {
+    // Why it sits above hasInput rather than below: the rows on screen are from
+    // the run before the failure, so reporting on their shape would be a lie.
+    expect(
+      resolveNodeEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: true,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("does not outrank being disconnected", () => {
+    // An edge the user deleted leaves the old exec status behind; connectivity
+    // is still the more fundamental fact.
+    expect(
+      resolveNodeEmptyReason({
+        connected: false,
+        upstreamErrored: true,
+        hasInput: false,
+        tabular: false,
+        rowCount: 0,
+      }),
+    ).toBe("disconnected");
+  });
+
+  test("the grammar ladder agrees", () => {
+    expect(
+      resolveGrammarEmptyReason({
+        connected: true,
+        upstreamErrored: true,
+        hasInput: false,
+        hasSpec: true,
+        hasRun: false,
+      }),
+    ).toBe("upstream-errored");
+  });
+
+  test("is absent by default, so nothing changes for callers that do not pass it", () => {
+    expect(
+      resolveNodeEmptyReason({ connected: true, hasInput: false, tabular: false, rowCount: 0 }),
+    ).toBe("upstream-not-run");
+  });
+});
+
+describe("incomingSourceIds", () => {
+  test("names the nodes feeding this one", () => {
+    const edges = [
+      { source: "a", target: "pool" },
+      { source: "b", target: "pool" },
+      { source: "pool", target: "chart" },
+    ];
+    expect(incomingSourceIds(edges, "pool").sort()).toEqual(["a", "b"]);
+  });
+
+  test("de-duplicates a node wired into two ports", () => {
+    const edges = [
+      { source: "a", target: "merge", targetHandle: "in1" },
+      { source: "a", target: "merge", targetHandle: "in2" },
+    ];
+    expect(incomingSourceIds(edges, "merge")).toEqual(["a"]);
+  });
+
+  test("is empty for no edges, no id, or nothing incoming", () => {
+    expect(incomingSourceIds([], "pool")).toEqual([]);
+    expect(incomingSourceIds(null, "pool")).toEqual([]);
+    expect(incomingSourceIds([{ source: "a", target: "other" }], "pool")).toEqual([]);
+  });
+});
+
+describe("isTabularPayload", () => {
+  // The #347 correction: ask the payload what it is, not the row count. A
+  // zero-row dataframe is still tabular, and saying otherwise is what sent it
+  // to "This input is not tabular data".
+  test("an empty dataframe is still tabular", () => {
+    expect(isTabularPayload({ dataType: "dataframe", data: {} })).toBe(true);
+    expect(isTabularPayload({ dataType: "geodataframe", data: { features: [] } })).toBe(true);
+  });
+
+  test("a scalar or dict payload is not", () => {
+    expect(isTabularPayload({ dataType: "value", data: 42 })).toBe(false);
+    expect(isTabularPayload({ dataType: "dict", data: {} })).toBe(false);
+  });
+
+  test("an outputs envelope is tabular when any layer in it is", () => {
+    expect(
+      isTabularPayload({
+        dataType: "outputs",
+        data: [{ dataType: "value", data: 1 }, { dataType: "dataframe", data: {} }],
+      }),
+    ).toBe(true);
+    expect(
+      isTabularPayload({ dataType: "outputs", data: [{ dataType: "value", data: 1 }] }),
+    ).toBe(false);
+  });
+
+  test("a bare filename ref or a missing input is not", () => {
+    // What the pool receives before the preview fetch resolves.
+    expect(isTabularPayload({ filename: "artifact_id" })).toBe(false);
+    expect(isTabularPayload("")).toBe(false);
+    expect(isTabularPayload(null)).toBe(false);
+  });
+});
+
 describe("the copy", () => {
   const REASONS: NodeEmptyReason[] = [
     "disconnected",
     "upstream-not-run",
+    "upstream-errored",
     "no-rows",
     "not-tabular",
   ];
@@ -79,5 +206,101 @@ describe("hasIncomingEdge", () => {
     expect(hasIncomingEdge([], "n2")).toBe(false);
     expect(hasIncomingEdge(undefined, "n2")).toBe(false);
     expect(hasIncomingEdge([{ target: "n2" }], "")).toBe(false);
+  });
+});
+
+describe("the grammar states", () => {
+  // Added for the Vega-Lite node, which rendered no empty state at all: when
+  // nothing compiled, its output div was simply blank, the exact #224
+  // complaint, still true of the most-used visualisation node.
+  const GRAMMAR_REASONS: NodeEmptyReason[] = [
+    "input-type-rejected",
+    "geometry-unresolved",
+    "geometry-ambiguous",
+  ];
+
+  test("each has something to say", () => {
+    for (const reason of GRAMMAR_REASONS) {
+      expect(NODE_EMPTY_COPY[reason].title.trim()).not.toBe("");
+      expect(NODE_EMPTY_COPY[reason].hint.trim()).not.toBe("");
+    }
+  });
+
+  test("they do not read the same as each other", () => {
+    const hints = GRAMMAR_REASONS.map((r) => NODE_EMPTY_COPY[r].hint);
+    expect(new Set(hints).size).toBe(GRAMMAR_REASONS.length);
+  });
+
+  test("the geometry hints name the thing the user has to type", () => {
+    // A message that says only "something is wrong with your geometry" is the
+    // failure this replaces. Each one has to be actionable on its own.
+    expect(NODE_EMPTY_COPY["geometry-ambiguous"].hint).toContain('"geojson"');
+    expect(NODE_EMPTY_COPY["geometry-unresolved"].hint).toContain("geoshape");
+  });
+
+  test("adding them left the tabular states untouched", () => {
+    // Data Pool, Simple View and autk-grammar read these; the change was meant
+    // to be purely additive.
+    expect(NODE_EMPTY_COPY.disconnected.hint).toBe("Connect a node to this one's input.");
+    expect(NODE_EMPTY_COPY["upstream-not-run"].hint).toBe("Run the node feeding this one.");
+    expect(
+      resolveNodeEmptyReason({ connected: true, hasInput: true, tabular: true, rowCount: 3 }),
+    ).toBeNull();
+  });
+});
+
+describe("resolveGrammarEmptyReason", () => {
+  // A sibling of resolveNodeEmptyReason rather than an extension: a chart has
+  // no notion of rows or of being "tabular", and a table has none of a spec.
+  const inputs = (over: Partial<Parameters<typeof resolveGrammarEmptyReason>[0]> = {}) => ({
+    connected: true,
+    hasInput: true,
+    hasSpec: true,
+    hasRun: true,
+    ...over,
+  });
+
+  test("connectivity is asked first", () => {
+    expect(
+      resolveGrammarEmptyReason(inputs({ connected: false, hasInput: false, hasSpec: false })),
+    ).toBe("disconnected");
+  });
+
+  test("an edge with no output yet is upstream-not-run", () => {
+    // The state that makes the default-spec feature honest: an edge alone
+    // carries no schema, so there is nothing to fill from and saying so beats
+    // sitting blank.
+    expect(resolveGrammarEmptyReason(inputs({ hasInput: false }))).toBe("upstream-not-run");
+  });
+
+  test("an unreadable input outranks a missing spec", () => {
+    // No spec will fix a payload this node cannot read, so say the true thing.
+    expect(
+      resolveGrammarEmptyReason(
+        inputs({ hasSpec: false, inputProblem: "input-type-rejected" }),
+      ),
+    ).toBe("input-type-rejected");
+  });
+
+  test("an empty editor is no-spec", () => {
+    expect(resolveGrammarEmptyReason(inputs({ hasSpec: false }))).toBe("no-spec");
+  });
+
+  test("a spec that has not been compiled is not-run", () => {
+    expect(resolveGrammarEmptyReason(inputs({ hasRun: false }))).toBe("not-run");
+  });
+
+  test("a compile that drew nothing is rendered-empty", () => {
+    expect(resolveGrammarEmptyReason(inputs({ renderedEmpty: true }))).toBe("rendered-empty");
+  });
+
+  test("a node with a chart to show reports nothing", () => {
+    expect(resolveGrammarEmptyReason(inputs())).toBeNull();
+  });
+
+  test("the geometry reasons pass straight through as input problems", () => {
+    for (const problem of ["geometry-unresolved", "geometry-ambiguous"] as const) {
+      expect(resolveGrammarEmptyReason(inputs({ inputProblem: problem }))).toBe(problem);
+    }
   });
 });

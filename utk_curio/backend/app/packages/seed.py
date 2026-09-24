@@ -8,7 +8,7 @@ guest user's package store at backend startup.
 Besides ``curio.builtin`` (always seeded), the packages the bundled examples
 declare as dependencies (see :func:`example_dep_package_ids`) are seeded too
 when example projects are being seeded (``CURIO_SEED_EXAMPLES=1``, i.e.
-``--with-examples`` / ``--deploy``). Once they land in the user store, the
+``--with-examples``; ``docker-compose.deploy.yml`` passes it explicitly). Once they land in the user store, the
 launcher's per-user manifest walk re-installs their python deps on every
 subsequent start — so seeded examples keep working across plain
 ``curio start`` runs.
@@ -51,6 +51,7 @@ from utk_curio.backend.app.packages.locks import package_seed_lock
 from utk_curio.backend.app.packages import seed_state
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
+    catalog_root as storage_catalog_root,
     user_packageages_dir,
 )
 from utk_curio.backend.config import CURIO_RESEED_PACKAGES, CURIO_SEED_EXAMPLES
@@ -74,7 +75,7 @@ _SEED_STAGING_PREFIX = ".seed-staging-"
 
 def _catalog_root() -> Path:
     # utk_curio/backend/app/packages/seed.py  ->  <repo_root>/packages/
-    return Path(__file__).resolve().parents[4] / "packages"
+    return storage_catalog_root()
 
 
 BUILTIN_PACKAGE_ID = "curio.builtin"

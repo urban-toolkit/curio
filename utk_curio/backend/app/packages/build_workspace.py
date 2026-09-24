@@ -286,7 +286,7 @@ def check_build_isolation(*, hosted: bool, caps: Mapping[str, object] | None = N
         + ", ".join(missing)
         + "). The build will run anyway because this is a single-user launch, "
         "where the package author and the operator are the same person. Do not "
-        "expose this instance to other users without --auth."
+        "expose this instance to other users without --deploy."
     )
 
 

@@ -128,7 +128,7 @@
         "type": { "$ref": "#/$defs/nodeTypeRef" },
         "x": {
           "type": "number",
-          "description": "Canvas x position. Always the WORKFLOW position, never the dashboard one, so saving while in dashboard mode cannot corrupt the layout. May be fractional. When absent, useCode.loadTrill auto-places the node instead of failing."
+          "description": "Canvas x position. Always the CANVAS position, never a dashboard tile's, so a save made from the dashboard page cannot corrupt the authored layout. May be fractional. When absent, useCode.loadTrill auto-places the node instead of failing."
         },
         "y": {
           "type": "number",
@@ -158,23 +158,23 @@
         },
         "dashboardPinned": {
           "type": "boolean",
-          "description": "True when this node appears in dashboard mode. Only ever written as true - false is elided - and read as a truthy check."
+          "description": "True when this node is a tile on the dataflow's dashboard page. Only ever written as true - false is elided - and read as a truthy check. Pinning also decides which outputs are saved to the Data Catalog, so the tile can render without a run."
         },
         "dashboardX": {
           "type": "number",
-          "description": "Node x position in dashboard mode, independent of the canvas 'x'. Written and read as a pair with 'dashboardY', gated on this member alone, so a lone 'dashboardY' would be silently discarded; dependentRequired forbids that in both directions."
+          "description": "Node x position on the dashboard page, independent of the canvas 'x'. Written and read as a pair with 'dashboardY', gated on this member alone, so a lone 'dashboardY' would be silently discarded; dependentRequired forbids that in both directions."
         },
         "dashboardY": {
           "type": "number",
-          "description": "Node y position in dashboard mode. Paired with 'dashboardX'."
+          "description": "Node y position on the dashboard page. Paired with 'dashboardX'."
         },
         "dashboardWidth": {
           "type": "number",
-          "description": "Node width in dashboard mode. Paired with 'dashboardHeight'."
+          "description": "Node width on the dashboard page. Paired with 'dashboardHeight'."
         },
         "dashboardHeight": {
           "type": "number",
-          "description": "Node height in dashboard mode. Paired with 'dashboardWidth'."
+          "description": "Node height on the dashboard page. Paired with 'dashboardWidth'."
         },
         "saveOutputDataset": {
           "type": "boolean",
@@ -221,10 +221,19 @@
         },
         "spatialJoin": {
           "type": "object",
-          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon property used as the tag; absent means `name`, which is also what the backend assumes.",
+          "description": "Settings of a Spatial Join node (#262). `nameProperty` is the polygon column used as the tag; absent means `name`, which is also what the backend assumes. `output` picks what the node emits: the tagged points (absent, the default) or the polygons with the count of points inside each.",
           "additionalProperties": false,
           "properties": {
-            "nameProperty": { "type": "string", "minLength": 1 }
+            "nameProperty": { "type": "string", "minLength": 1 },
+            "output": { "type": "string", "enum": ["points", "polygons"] }
+          }
+        },
+        "simpleVis": {
+          "type": "object",
+          "description": "Settings of a Simple View node (#276). `imageColumn` pins the node to one image column; absent means every image column is shown side by side.",
+          "additionalProperties": false,
+          "properties": {
+            "imageColumn": { "type": "string", "minLength": 1 }
           }
         },
         "comments": {
@@ -310,7 +319,7 @@
         "title": { "type": "string", "description": "Display title at the time it was applied." },
         "format": {
           "type": "string",
-          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm"],
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm", "gpkg"],
           "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
         },
         "origin": { "$ref": "#/$defs/datasetOrigin" }

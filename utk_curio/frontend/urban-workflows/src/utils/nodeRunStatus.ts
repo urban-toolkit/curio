@@ -27,3 +27,23 @@ export function nodeRunStatus(output?: ICodeData): NodeRunStatus {
             return "idle";
     }
 }
+
+/**
+ * The failure text to expose as ``data-curio-node-error``, or undefined.
+ *
+ * AUTK_GRAMMAR nodes render no output box — `CodeEditor`'s
+ * ``[data-curio-node-output]`` is the only one, and the grammar editor has
+ * none — so a failed Autark node carried its reason nowhere a test or a
+ * support request could read it. The message went to a transient toast and the
+ * browser console, which is why an Interaction_AutkMap failure in CI took a
+ * month and an Allure attachment to explain (#318).
+ *
+ * Trimmed to keep the DOM attribute bounded; the console keeps the full text.
+ */
+export function nodeRunError(output?: ICodeData): string | undefined {
+    if (output?.code !== "error") return undefined;
+    const content = typeof output.content === "string" ? output.content : String(output.content ?? "");
+    const text = content.trim();
+    if (text === "") return undefined;
+    return text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+}

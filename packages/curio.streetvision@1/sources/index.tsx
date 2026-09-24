@@ -17,7 +17,6 @@
 
 import { useStreetViewFetcherBehavior } from './streetViewFetcherBehavior';
 import { useHfCvInferenceBehavior } from './hfCvInferenceBehavior';
-import { useCvGalleryBehavior } from './cvGalleryBehavior';
 
 // `window.curio.registerBehavior` is exposed by Curio's main bundle at boot
 // (src/registry/index.ts). We avoid a `declare global` for portability —
@@ -30,7 +29,6 @@ type CurioGlobal = {
 function registerAll(curio: CurioGlobal) {
   curio.registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
   curio.registerBehavior('hf-cv-inference', useHfCvInferenceBehavior);
-  curio.registerBehavior('cv-gallery', useCvGalleryBehavior);
 }
 
 if (typeof window !== 'undefined') {

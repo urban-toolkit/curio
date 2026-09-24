@@ -21,7 +21,7 @@ ordering mistake; this is the shape that catches an ordering mistake.
 
 The ordering was verified behaviourally once, by hand, with a plugin that forced
 ``wait_for_http_ready`` to raise: the old order left
-``curio.py start --backend-port 5002 ... --save-node-outputs`` plus its webpack
+``curio.py start --backend-port 5002 ...`` plus its webpack
 child alive with all three ports held; the new order left nothing.
 
 No fixtures are requested here on purpose - this file must not boot the very

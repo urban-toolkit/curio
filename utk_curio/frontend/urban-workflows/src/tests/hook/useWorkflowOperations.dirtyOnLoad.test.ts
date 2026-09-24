@@ -36,6 +36,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   getCurrentProjectPackagesList: jest.fn(() => []),
+  // No routed dataflow and nothing loading: saves take their id from the
+  // hook's own state, as they do once a load has landed.
+  getCurrentProjectId: jest.fn(() => undefined),
+  whenProjectSettled: jest.fn(async () => {}),
   setCurrentProject: jest.fn(),
   setCurrentProjectPackages: jest.fn(),
   subscribe: jest.fn(() => jest.fn()),
@@ -80,8 +84,6 @@ function makeDeps(hookRef: { current: any }, over: Record<string, unknown> = {})
     outputsRef: { current: [] },
     setInteractions: jest.fn(),
     setDashboardPins: jest.fn(),
-    setPositionsInDashboard: jest.fn(),
-    setPositionsInWorkflow: jest.fn(),
     setWorkflowName: jest.fn(),
     workflowNameRef: { current: "wf" },
     setWorkflowDescription: jest.fn(),

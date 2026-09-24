@@ -7,8 +7,8 @@ This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md). I
 > [!NOTE]
 > **Setup required**
 > Install the **Street Vision** package from Curio's `/catalog` page, or click
-> **Install Street Vision** on any of the three nodes, which say what they are
-> missing until you do; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
+> **Install Street Vision** on either of the two package nodes, which say what they are
+> missing until you do; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join and Simple View nodes are built-in and need no separate install.
 
 ## Pipeline overview
 
@@ -16,20 +16,21 @@ This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md). I
 flowchart LR
   F[Street View Fetcher<br/>place → image points]
   I[HF CV Inference<br/>segmentation per image]
-  G[CV Gallery<br/>inspect + re-emit as GEODATAFRAME]
+  G[`Simple View`<br/>the images, with their overlays]
   L[`Data Loading`<br/>neighborhood polygons]
 
   F --> I --> G --> SJ[Spatial Join]
+  %% Simple View passes its input straight through, so the join sees the same frame.
   L --> T[`Data Transformation`<br/>rename pri_neigh to name] --> SJ
   SJ --> V1[`Vega-Lite`<br/>polygon map]
   SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
 ```
 
-Six nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV), and the imagery + inference are decoupled so you can swap one without touching the other.
+Six nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 
-Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The original PR shipped two monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) talking to a companion FastAPI service in a separate repo; the merged version decomposes them into the three reusable nodes used here, ports the FastAPI service inside Curio's Flask backend, and adds a generic `Spatial Join` node to `curio.builtin@1`.
+Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The original PR shipped two monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) talking to a companion FastAPI service in a separate repo; the merged version decomposes them into the two reusable package nodes used here, ports the FastAPI service inside Curio's Flask backend, and adds a generic `Spatial Join` node to `curio.builtin@1`.
 
 The defaults baked into [`10-street-vision-cv-analysis.json`](10-street-vision-cv-analysis.json) (bbox, recommended model, class list) reproduce the **Chicago Greenery case study** from the original project's evaluation:
 - bbox: `[-87.66, 41.91, -87.62, 41.94]` (Lincoln Park)
@@ -71,13 +72,17 @@ Wire the Fetcher's output into the Inference node. Inside the node:
 3. **Target Classes.** Click `vegetation` (and optionally `building`, `road`, `sky`). You can also drop a CSV via the `+ Import CSV` link.
 4. Click **Run Inference**. Progress is polled every 2 seconds; expect 10 to 60 seconds per image on CPU, faster with a GPU.
 
-The output is per-image JSON with class ratios, lat/lon, and a stable `image_id`.
+The node's summary names the classes it found and how many images carried coordinates. Its output is a GEODATAFRAME of the same image points: one column per detected class (as a percentage for segmentation, a count for detection), plus `dominant_class`, `dominant_pct`, `image_url` and, for a segmentation run, an `overlay_url` pointing at that image's segmentation mask.
 
-## Step 3: Inspect results (`CV Gallery`)
+## Step 3: Inspect results (`Simple View`)
 
-Wire Inference → CV Gallery. The gallery shows thumbnails with top-3 class breakdowns; click any tile for an inspect view with side-by-side source / segmentation-overlay tabs. The "Aggregate Stats" tab summarizes the run.
+Wire Inference → `Simple View`. It is a built-in node with no configuration: a frame carrying an image column renders as one card per row, showing the image above that row's other values. Here that means each panorama beside its segmentation overlay, captioned with the dominant class and its percentage.
 
-Click **▶ Push to Downstream** to emit the same data as a GEODATAFRAME-shaped FeatureCollection, where each feature's `properties` now flatten the class ratios into individual columns plus `dominant_class` and `dominant_pct` columns useful for downstream visualization.
+`Simple View` picks the image columns itself. It looks for the familiar names first (`image_url`, `overlay_url`, `image_content`, `image`, `thumbnail`) and otherwise sniffs the values, so any frame with pictures in it displays without being told which column holds them. When a frame has more than one image column, an **Image column** selector appears; leave it on `all` to compare source against overlay, or pin a second `Simple View` to `overlay_url` to study the masks on their own.
+
+Overlays are served per user, so `Simple View` fetches them with your session rather than through a plain image tag. Clicking a card emits its row index as a selection, which a connected `Data Pool` picks up.
+
+`Simple View` passes its input straight through, so the Spatial Join downstream receives the same GEODATAFRAME the Inference node emitted.
 
 ## Step 4: Load neighborhood polygons (`Data Loading`)
 
@@ -92,15 +97,20 @@ import geopandas as gpd
 dataset_path = curio_dataset_path("data.cityofchicago.neighborhoods")
 gdf = gpd.read_file(dataset_path)
 
-gdf.metadata = {"name": "chicago_neighborhoods"}
+# __dict__, not plain assignment: pandas warns about creating a column via
+# a new attribute name, and that warning lands in this node's output with
+# an absolute site-packages path. NOT gdf.attrs, and do not just delete the
+# line: the sandbox reads this name (sandbox/util/parsers.py) and both of
+# those drop it silently from the emitted FeatureCollection.
+gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
 ## Step 5: Tag each image with its neighborhood (`Spatial Join`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) renders as a small icon-only block, just like Merge Flow, with two distinct input handles on the left edge: **points** (top, blue dot) and **polygons** (bottom, green dot). Wire the CV Gallery output to the points handle and the polygons output (from Step 4) to the polygons handle.
+The Spatial Join node (built-in, in `curio.builtin@1`) has a small body with its two settings and two input handles on the left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
 
-The node hardcodes the polygon tag column to `properties.name`. The Chicago neighborhoods file uses `pri_neigh`, the NYC boroughs file uses `BoroName`, etc., so insert a `Data Transformation` node between Data Loading and Spatial Join to rename the relevant property to `name`:
+The node tags with the polygon column you pick in its body, `name` by default. The Chicago neighborhoods file calls it `pri_neigh` and the NYC boroughs file `BoroName`; this example keeps the default and renames the column upstream with a `Data Transformation` node, so the tag lands in a column called `name`:
 
 ```python
 # Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses
@@ -109,14 +119,20 @@ The node hardcodes the polygon tag column to `properties.name`. The Chicago neig
 import geopandas as gpd
 
 gdf = arg.rename(columns={"pri_neigh": "name"})
-gdf.metadata = {"name": "chicago_neighborhoods"}
+# __dict__, not plain assignment: pandas warns about creating a column via
+# a new attribute name, and that warning lands in this node's output with
+# an absolute site-packages path. NOT gdf.attrs, and do not just delete the
+# line: the sandbox reads this name (sandbox/util/parsers.py) and both of
+# those drop it silently from the emitted FeatureCollection.
+gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
 The node emits the input points augmented with:
 
-- `neighborhood_name`: the matching polygon's tag value, or null for points outside every polygon.
-- `nbhd_dominant_class` / `nbhd_dominant_pct` / `nbhd_image_count`: per-polygon roll-ups projected back onto every member point so a Vega-Lite `lookup` can read them directly.
+- `name`: the matching polygon's `name`, or null for points outside every polygon. The tag column takes the polygon column's own name; this example keeps the node's default, `name`, which is why the transformation above renames `pri_neigh`.
+- `name_point_count`: how many images fell in the same neighborhood.
+- `name_dominant_class` / `name_dominant_pct`: per-neighborhood roll-ups of the images' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
 
 ## Step 6: Map view (`Vega-Lite`)
 
@@ -130,12 +146,11 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
   "projection": {"type": "mercator"},
   "layer": [
     {
-      "data": {"name": "table"},
       "transform": [{"filter": "datum.geometry != null"}],
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
-          "field": "properties.nbhd_dominant_class",
+          "field": "name_dominant_class",
           "type": "nominal",
           "scale": {
             "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -144,9 +159,9 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
           "legend": {"title": "Dominant class"}
         },
         "tooltip": [
-          {"field": "properties.neighborhood_name", "title": "neighborhood"},
-          {"field": "properties.nbhd_dominant_class", "title": "dominant"},
-          {"field": "properties.nbhd_dominant_pct",   "title": "avg %"}
+          {"field": "name", "title": "neighborhood"},
+          {"field": "name_dominant_class", "title": "dominant"},
+          {"field": "name_dominant_pct",   "title": "avg %"}
         ]
       }
     }
@@ -163,20 +178,19 @@ A second `Vega-Lite` wired off the same Spatial Join output:
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "width": 400,
   "height": {"step": 16},
-  "data": {"name": "table"},
   "transform": [
-    {"filter": "datum.properties.neighborhood_name != null"},
+    {"filter": "datum.name != null"},
     {
       "aggregate": [{"op": "count", "as": "image_count"}],
-      "groupby": ["properties.neighborhood_name", "properties.dominant_class"]
+      "groupby": ["name", "dominant_class"]
     }
   ],
   "mark": "bar",
   "encoding": {
-    "y": {"field": "properties.neighborhood_name", "type": "nominal", "sort": "-x", "title": null},
+    "y": {"field": "name", "type": "nominal", "sort": "-x", "title": null},
     "x": {"field": "image_count", "type": "quantitative", "title": "images"},
     "color": {
-      "field": "properties.dominant_class",
+      "field": "dominant_class",
       "type": "nominal",
       "scale": {
         "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -196,4 +210,4 @@ For a Lincoln Park run with the SegFormer-Cityscapes model and `vegetation` as t
 - **Jobs don't survive a backend restart.** Inference state is in-memory; restart loses any in-flight job. Re-run.
 - **Cost.** Street View Static API requests are billed past Google's free tier. The Fetcher node caps requests at 200; default 20.
 - **CPU inference is slow.** A single SegFormer pass per panorama takes a few seconds on CPU; a 20-image run lands around 1 to 2 minutes. With a GPU it's near-realtime.
-- **The neighborhood `name` property is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.
+- **The neighborhood `name` column is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.

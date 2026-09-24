@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 import { authHeaders } from './apiAuth';
+import { aggregateStats, resultsToFeatureCollection } from './resultsToFeatureCollection';
 
 /**
  * HuggingFace CV Inference behavior.
@@ -21,8 +22,8 @@ import { authHeaders } from './apiAuth';
 // See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
-// Shared with cvGalleryBehavior, which needs the same identity to read back
-// the overlays this node's runs wrote. See sources/apiAuth.ts.
+// The overlays a run writes are cached per user, and the route resolves which
+// user from this header, so the same identity has to reach it on the way back. See sources/apiAuth.ts.
 
 type ModelType = 'segmentation' | 'detection';
 
@@ -253,17 +254,17 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = undefined; }
   }, []);
 
-  const pushResults = useCallback((jobResults: ResultItem[], jid: string) => {
-    const payload = {
-      type: 'street_vision_results',
-      job_id: jid,
-      model_type: task,
-      total_images: jobResults.length,
-      results: jobResults,
-    };
-    data.outputCallback(data.nodeId, JSON.stringify(payload));
+  const pushResults = useCallback((jobResults: ResultItem[], _jid: string) => {
+    // A bare string is read by Curio's propagation layer as a DuckDB artifact
+    // id (`normalizeFlowInput` wraps it as `{ path: <the string> }`), so the
+    // JSON envelope this used to emit arrived downstream as an unparseable
+    // reference and nothing could read it (#276). Emit the `{ data, dataType }`
+    // wrapper every other behavior emits, carrying the FeatureCollection that
+    // Spatial Join, Simple View and Vega-Lite all consume directly.
+    const fc = resultsToFeatureCollection(jobResults);
+    data.outputCallback(data.nodeId, { data: fc, dataType: 'geodataframe' });
     nodeState.setOutput({ code: 'success', content: '' });
-  }, [data, task, nodeState]);
+  }, [data, nodeState]);
 
   const handleRun = useCallback(() => {
     if (!selectedModel || images.length === 0 || selectedClasses.length === 0) return;
@@ -315,6 +316,10 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const pct = totalImages > 0 ? Math.round((processed / totalImages) * 100) : 0;
+  // The per-class summary the CV Gallery used to carry. It is derived from
+  // `results`, which this node already holds, so retiring that node did not
+  // have to lose it.
+  const stats = aggregateStats(results);
   const allReady = !!selectedModel && selectedClasses.length > 0 && images.length > 0 && backendUp;
 
   const fmtDl = (n: number | null | undefined) =>
@@ -525,6 +530,27 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
               </div>
             </div>
           </div>
+          {stats && (
+            <div style={S.card}>
+              <div style={S.label}>Run summary</div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 6 }}>
+                <span><strong>{stats.classCount}</strong> classes</span>
+                <span><strong>{stats.geoCount}</strong> geolocated</span>
+                <span>{task === 'segmentation' ? 'Segmentation' : 'Detection'}</span>
+              </div>
+              {Object.entries(stats.averages)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6)
+                .map(([label, avg]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                    <span style={{ color: '#475569' }}>{label}</span>
+                    <span style={{ color: '#1a1a2e', fontWeight: 600 }}>
+                      {task === 'segmentation' ? `${(avg * 100).toFixed(1)}%` : avg.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
           <button
             style={{ ...S.btn, background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
             onClick={() => jobId && pushResults(results, jobId)}

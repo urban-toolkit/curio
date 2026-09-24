@@ -17,8 +17,7 @@ from typing import Iterator, List, Optional
 
 from . import cache
 
-# Cityscapes-style color palette. Keep in sync with the frontend's CLASS_COLORS
-# in cvGalleryBehavior.tsx so the overlay PNGs match the gallery legend.
+# Cityscapes-style color palette, used to paint the overlay PNGs.
 CITYSCAPES_COLORS = {
     0: (74, 144, 217), 1: (231, 76, 139), 2: (46, 204, 113), 3: (189, 195, 199),
     4: (155, 89, 182), 5: (0, 188, 212), 6: (241, 196, 15), 7: (241, 196, 15),
@@ -143,7 +142,7 @@ def run_batch(
     Args:
         images: list of ``{image_id, image_url, local_path?, latitude?, longitude?}``.
             ``local_path`` is the on-disk JPEG to feed into the model;
-            ``image_url`` is the URL the frontend displays in the gallery.
+            ``image_url`` is the URL the frontend displays for the image.
         model_id: HuggingFace model id (or YOLO checkpoint path).
         model_type: ``"segmentation"`` or ``"detection"``.
         classes: list of class-label strings to filter results by (empty = all).

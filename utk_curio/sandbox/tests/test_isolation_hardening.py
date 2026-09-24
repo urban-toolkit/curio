@@ -102,7 +102,7 @@ class TestDescribeExposure(unittest.TestCase):
         )
         self.assertIsNotNone(finding)
         self.assertIn("root", finding)
-        self.assertIn("--exec-user", finding)
+        self.assertIn("CURIO_EXEC_USER", finding)
 
 
 class TestAudit(unittest.TestCase):
@@ -148,7 +148,7 @@ class TestApplyAndReport(unittest.TestCase):
                 tmp, tmp, uid=None, gid=None, hosted=False
             )
         self.assertEqual(len(findings), 1)
-        self.assertIn("--exec-user", findings[0])
+        self.assertIn("CURIO_EXEC_USER", findings[0])
         self.assertFalse(fatal, "a local launch must not be blocked")
 
     def test_no_exec_user_is_fatal_for_a_hosted_instance(self):

@@ -57,7 +57,17 @@ import {
     faXmark,
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
-import { AccessLevelType, NodeType, SupportedType } from "../constants";
+import {
+    AccessLevelType,
+    DEFAULT_NODE_HEIGHT,
+    DEFAULT_NODE_WIDTH,
+    MIN_NODE_HEIGHT,
+    MIN_NODE_WIDTH,
+    MINIMIZED_NODE_HEIGHT,
+    MINIMIZED_NODE_WIDTH,
+    NodeType,
+    SupportedType,
+} from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
 import { NodeTemplateId } from "../registry/types";
 import {
@@ -73,15 +83,13 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
-import { nodeRunStatus } from "../utils/nodeRunStatus";
+import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
-const MIN_NODE_WIDTH = 200;
-const MIN_NODE_HEIGHT = 150;
 
 // Node Container
 export const NodeContainer = ({
@@ -171,8 +179,7 @@ export const NodeContainer = ({
     // Derived from node data rather than held in local state (#237). Comments
     // used to live in a `useState` that nothing ever wrote back, so they were
     // lost on save and on every remount - reopening the project was the path
-    // the reporter took. (A dashboard-mode toggle was NOT: it re-renders this
-    // component but never unmounts it, so the old local state survived that.)
+    // the reporter took.
     // Reading through `data` makes the canvas node the single source of truth,
     // so there is no second copy to fall out of step with the saved spec.
     const viewer = useMemo(
@@ -281,17 +288,17 @@ export const NodeContainer = ({
     useEffect(() => {
         if (!noContent) {
             if (minimized) {
-                setCurrentNodeWidth(70);
-                setCurrentNodeHeight(40);
+                setCurrentNodeWidth(MINIMIZED_NODE_WIDTH);
+                setCurrentNodeHeight(MINIMIZED_NODE_HEIGHT);
             } else {
                 if (nodeWidth == undefined) {
-                    setCurrentNodeWidth(525);
+                    setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
                 } else {
                     setCurrentNodeWidth(nodeWidth);
                 }
 
                 if (nodeHeight == undefined) {
-                    setCurrentNodeHeight(350);
+                    setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
                 } else {
                     setCurrentNodeHeight(nodeHeight);
                 }
@@ -307,11 +314,11 @@ export const NodeContainer = ({
         if (noContent) return;
 
         if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
-            setCurrentNodeWidth(525);
+            setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
         }
 
         if (nodeHeight == undefined || nodeHeight < MIN_NODE_HEIGHT) {
-            setCurrentNodeHeight(350);
+            setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
         }
     }, []);
 
@@ -360,6 +367,8 @@ export const NodeContainer = ({
                         dashboardWidth: newWidth,
                         dashboardHeight: newHeight,
                     });
+                    // Tile geometry is saved state, so resizing one is an edit.
+                    markDirty();
                 }
             } else {
                 if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
@@ -450,6 +459,9 @@ export const NodeContainer = ({
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
+    // A dashboard tile's title band: narrower than the canvas header, and the
+    // only thing on the tile that can be dragged while the layout is unlocked.
+    const dashboardTitleBandPx = 28;
 
     // --- Dataset drag-and-drop via capture-phase native listeners ---
     // Monaco editor installs its own native dragover/drop handlers that call
@@ -609,6 +621,7 @@ export const NodeContainer = ({
                 id={nodeId + "resizable"}
                 className={"resizable"}
                 data-curio-node-status={nodeRunStatus(output)}
+                data-curio-node-error={nodeRunError(output)}
                 onDragOver={onDatasetDragOver}
                 onDrop={onDatasetDrop}
                 style={{
@@ -625,6 +638,35 @@ export const NodeContainer = ({
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                 }}
             >
+                {!noContent && dashboardOn ? (
+                    <div
+                        // Matches DASHBOARD_TILE_DRAG_HANDLE, which the dashboard
+                        // page hands React Flow as the tile's ``dragHandle``. No
+                        // ``nodrag`` here, deliberately: this band is the handle.
+                        className="curio-dashboard-tile-handle"
+                        title={headerKindLabel}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            height: `${dashboardTitleBandPx}px`,
+                            marginBottom: "1px",
+                            padding: "0 4px",
+                            boxSizing: "border-box",
+                            width: "100%",
+                            flexShrink: 0,
+                            fontSize: "13px",
+                            fontWeight: 600,
+                            color: "var(--curio-text-primary)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            cursor: dashboardLocked ? "default" : "grab",
+                        }}
+                    >
+                        {headerKindLabel}
+                    </div>
+                ) : null}
+
                 {!noContent && !dashboardOn ? (
                     <>
                         <div style={{
@@ -746,7 +788,7 @@ export const NodeContainer = ({
                     </>
                 ) : null}
 
-                <div style={{height: dashboardOn ? "100%" : `calc(100% - ${nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{height: `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
                     {children}
                 </div>
 
@@ -1054,13 +1096,13 @@ export const NodeContainer = ({
                     onClick={() => {
                         if (!noContent) {
                             if (nodeWidth == undefined) {
-                                setCurrentNodeWidth(525);
+                                setCurrentNodeWidth(DEFAULT_NODE_WIDTH);
                             } else {
                                 setCurrentNodeWidth(nodeWidth);
                             }
 
                             if (nodeHeight == undefined) {
-                                setCurrentNodeHeight(350);
+                                setCurrentNodeHeight(DEFAULT_NODE_HEIGHT);
                             } else {
                                 setCurrentNodeHeight(nodeHeight);
                             }
@@ -1206,14 +1248,18 @@ export const getNodeContainerStyles = (
     };
 
     if (state.dashboardOn) {
-        // Dashboard mode frames every node identically, accent included.
+        // A dashboard tile is a card on a page, so it drops the canvas's accent
+        // stripe for the same hairline border, radius and resting shadow every
+        // other Curio card carries. The old 2px black square read as a node
+        // lifted off the canvas rather than as published content.
         return {
             ...base,
             borderStyle: "solid",
-            borderColor: "#000",
-            borderWidth: "2px",
-            borderRadius: "0",
-            boxShadow: "none",
+            borderColor: "var(--curio-border)",
+            borderWidth: "1px",
+            borderRadius: "var(--curio-radius-lg)",
+            boxShadow: "var(--curio-shadow-browse-card)",
+            padding: "10px",
             resize: "none",
         };
     }

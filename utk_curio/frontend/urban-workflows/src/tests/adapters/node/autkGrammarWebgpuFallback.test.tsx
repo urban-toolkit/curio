@@ -358,3 +358,58 @@ describe('the run always ends (#271)', () => {
     expect(terminal(h)[0].code).toBe('error');
   });
 });
+
+describe('the duckdb spatial extension (#318)', () => {
+  const terminal = (h: Harness) => h.outputs.filter((o) => o.code === 'success' || o.code === 'error');
+  const EXTENSION_ERROR = new Error(
+    "Failed to execute 'send' on 'XMLHttpRequest': Failed to load "
+    + "'https://extensions.duckdb.org/v1.5.1/wasm_eh/spatial.duckdb_extension.wasm'.",
+  );
+
+  test('a failed extension fetch is retried, and the node ends green', async () => {
+    // autk-db downloads the spatial extension into every fresh in-browser
+    // DuckDB, so one network flake failed a map node that had nothing to do
+    // with the network.
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValueOnce(EXTENSION_ERROR);
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(mockGrammarRun).toHaveBeenCalledTimes(2);
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('success');
+  });
+
+  test('an extension fetch that keeps failing reports it, once', async () => {
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValue(EXTENSION_ERROR);
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0]).toEqual({
+      code: 'error',
+      content: expect.stringContaining('extensions.duckdb.org'),
+    });
+  });
+
+  test('an error with no message still says something', async () => {
+    withGpu({ name: 'fake-adapter' });
+    mockGrammarRun.mockRejectedValueOnce(new TypeError(''));
+    const h = renderBehavior();
+
+    await act(async () => {
+      await h.apply(MAP_SPEC);
+    });
+
+    expect(terminal(h)).toHaveLength(1);
+    expect(terminal(h)[0].code).toBe('error');
+    expect(terminal(h)[0].content.trim()).not.toBe('');
+  });
+});

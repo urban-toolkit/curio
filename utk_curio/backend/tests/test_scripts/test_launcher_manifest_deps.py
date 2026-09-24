@@ -17,6 +17,7 @@ stubbed so nothing reaches the network.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -293,3 +294,117 @@ class TestBrokenInstallIsReported:
 
         assert entered.wait(5), "the probe never ran"
         release.set()
+
+
+# ── #332: under isolation the walk installs per user, not once for everyone ──
+
+
+@pytest.fixture
+def isolated(monkeypatch):
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+
+
+@pytest.fixture
+def in_process(monkeypatch):
+    monkeypatch.setenv("CURIO_ISOLATION", "off")
+
+
+@pytest.fixture
+def installed_per_user(monkeypatch):
+    """Capture what the launcher would install, and into whose tree."""
+    calls: list[tuple[dict, str]] = []
+    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    monkeypatch.setattr(
+        pip_runner, "install_python_deps_to_target",
+        lambda merged, target, on_line=None: calls.append((dict(merged), str(target))),
+    )
+    return calls
+
+
+def test_the_existing_routing_is_what_happens_without_isolation(
+    launch_cwd, installed, installed_per_user, in_process,
+):
+    """The three tests above run in this world; this states it outright."""
+    _write_package(
+        _user_store(launch_cwd), "acme.nodes@1",
+        deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+    )
+    launcher.install_manifest_dependencies()
+
+    merged = {k: v for call in installed for k, v in call.items()}
+    assert "inflection" in merged
+    assert installed_per_user == [], "nothing should reach a per-user tree"
+
+
+def test_with_isolation_a_users_deps_go_to_their_own_tree(
+    launch_cwd, installed, installed_per_user, isolated,
+):
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.nodes@1",
+        deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+    )
+    launcher.install_manifest_dependencies()
+
+    assert len(installed_per_user) == 1
+    deps, target = installed_per_user[0]
+    assert "inflection" in deps
+    assert target.endswith(os.path.join("users", "7"))
+    host = {k: v for call in installed for k, v in call.items()}
+    assert "inflection" not in host
+
+
+def test_two_users_needing_the_same_library_each_get_it(
+    launch_cwd, installed, installed_per_user, isolated,
+):
+    """The dedupe that made the merged host walk cheap is wrong here: the
+    library has to land in both trees, not in whichever the glob reached
+    first."""
+    for user in ("7", "8"):
+        _write_package(
+            _user_store(launch_cwd, user), "acme.nodes@1",
+            deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+        )
+    launcher.install_manifest_dependencies()
+
+    targets = sorted(t for _deps, t in installed_per_user)
+    assert len(targets) == 2 and targets[0] != targets[1]
+    assert all("inflection" in deps for deps, _t in installed_per_user)
+
+
+def test_one_users_broken_manifest_does_not_stop_the_boot(
+    launch_cwd, installed, isolated, monkeypatch,
+):
+    """Best-effort per user. The failure belongs to whoever installed that
+    package; everyone else's instance still comes up."""
+    import utk_curio.backend.app.packages.pip_runner as pip_runner
+
+    done: list[str] = []
+
+    def _maybe_fail(merged, target, on_line=None):
+        if os.path.basename(target) == "7":
+            raise pip_runner.PipInstallError("no such distribution")
+        done.append(os.path.basename(target))
+
+    monkeypatch.setattr(pip_runner, "install_python_deps_to_target", _maybe_fail)
+    for user in ("7", "8"):
+        _write_package(
+            _user_store(launch_cwd, user), "acme.nodes@1",
+            deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+        )
+    launcher.install_manifest_dependencies()
+
+    assert done == ["8"]
+
+
+def test_an_overlay_routed_package_stays_out_of_the_user_tree_too(
+    launch_cwd, installed, installed_per_user, isolated,
+):
+    """Handler deps are per-package state either way. Isolation moved where
+    NODE code's environment is; a backend-only package has none."""
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.handlers@1",
+        deps={"tabulate": ">=0.9"}, backend=True, python_template=False,
+    )
+    launcher.install_manifest_dependencies()
+
+    assert installed_per_user == []

@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -129,6 +130,34 @@ def remove_library(user_key: str, kind: str, spec: str) -> dict[str, list[str]]:
         current[kind].remove(spec)
         _save_raw(user_key, current)
     return current
+
+
+def _canonical(name: str) -> str:
+    """PEP 503 normalisation: ``Scikit_Learn`` and ``scikit-learn`` are one."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def listed_by_others(user_key: str, kind: str, name: str, name_of) -> bool:
+    """True if any user other than *user_key* lists *name* under *kind*.
+
+    Every user's list is bookkeeping over ONE interpreter, so dropping an entry
+    from yours must not uninstall what someone else asked for (#309).
+    *name_of* maps a stored spec (``"scikit-learn==1.4.0"``) to its name.
+    """
+    base = _users_base()
+    if not base.is_dir():
+        return False
+    wanted = _canonical(name)
+    for entry in base.iterdir():
+        if entry.name == user_key or not (entry / _FILENAME).is_file():
+            continue
+        try:
+            other = _user_key_segment(entry.name)
+        except ValueError:
+            continue
+        if any(_canonical(name_of(s)) == wanted for s in _load_raw(other)[kind]):
+            return True
+    return False
 
 
 def package_derived(user_key: str) -> list[LibraryEntry]:

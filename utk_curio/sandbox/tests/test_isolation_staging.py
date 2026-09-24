@@ -340,18 +340,23 @@ def test_input_staging_does_not_duplicate_large_payloads(workspace, scratch):
 
 
 # ---------------------------------------------------------------------------
-# The DuckDB write handle must not be held between executions
+# The DuckDB write handle stays with the sandbox
 # ---------------------------------------------------------------------------
 
-def test_persisting_releases_the_duckdb_write_handle(workspace, scratch):
-    """DuckDB allows one cross-process writer, and the backend needs it.
+def test_persisting_keeps_the_duckdb_write_handle(workspace, scratch):
+    """The sandbox owns the file now, and holds its connection.
 
-    worker.execute_code releases per execution for this reason (its finally
-    block spells out that the teardown is required, not wasteful). The isolated
-    path bypasses execute_code entirely, so if it does not release, the first
-    isolated node starves the backend's read-only opens for the life of the
-    sandbox process. That failure would only show up as flaky catalog and
-    auto-install errors on a real deployment, so it is pinned here.
+    This used to be the opposite assertion. DuckDB allows one cross-process
+    writer, and the backend opened the file read-only for auto-install and
+    output resolution, so every execution had to hand the handle back. That
+    negotiation cost a reopen per run, silently lost reads when the two
+    collided, and closed the connection under requests that were still using
+    it -- the last of which the stress tiers turned into failed Autark loads
+    at ten users.
+
+    The backend reads through the sandbox's /artifact-meta instead, so nothing
+    else opens the file and the handle can simply stay. Pinned because
+    reintroducing a release here would put the per-run reopen back.
     """
     from utk_curio.sandbox.isolation import runner
     from utk_curio.sandbox.util import db
@@ -364,35 +369,36 @@ def test_persisting_releases_the_duckdb_write_handle(workspace, scratch):
         "meta": {},
     }
 
-    art_id, _dataset = runner._persist_and_release(
+    art_id, _dataset = runner._persist_output(
         descriptor, node_type="n", session_id=None, save_dataset=False
     )
 
     assert art_id
-    assert db._connection is None, (
-        "the isolated path kept the DuckDB write handle; the backend's "
-        "read-only opens will now fail"
+    assert db._connection is not None, (
+        "the isolated path dropped the DuckDB handle; every following run now "
+        "pays a reopen, and a concurrent request can lose its connection"
     )
-    # And the artifact is genuinely there, i.e. releasing did not lose the write.
     pd.testing.assert_frame_equal(load_from_duckdb(art_id), pd.DataFrame({"a": [1]}))
 
 
-def test_the_handle_is_released_even_when_persisting_fails(workspace, scratch):
-    """A failed persist must not leave the lock held either."""
+def test_a_failed_persist_leaves_the_connection_usable(workspace, scratch):
+    """A failure must not poison the shared connection for the next caller."""
     from utk_curio.sandbox.isolation import runner
     from utk_curio.sandbox.util import db
 
     with pytest.raises(staging.StagingError):
-        runner._persist_and_release(
+        runner._persist_output(
             {"kind": "dataframe", "file": "missing.parquet",
              "path": str(scratch / "missing.parquet")},
             node_type="n", session_id=None, save_dataset=False,
         )
-    assert db._connection is None
+
+    con = db.get_connection()
+    assert con.execute("SELECT 1").fetchone() == (1,)
 
 
 def test_the_dataset_copy_still_happens_before_the_move(workspace, scratch):
-    """Ordering inside _persist_and_release, which the helper now owns."""
+    """Ordering inside _persist_output, which the helper now owns."""
     from utk_curio.sandbox.isolation import runner
 
     pd.DataFrame({"a": [1]}).to_parquet(scratch / "out.parquet")
@@ -402,7 +408,7 @@ def test_the_dataset_copy_still_happens_before_the_move(workspace, scratch):
         "path": str(scratch / "out.parquet"),
         "meta": {},
     }
-    _art_id, dataset_file = runner._persist_and_release(
+    _art_id, dataset_file = runner._persist_output(
         descriptor, node_type="n", session_id=None, save_dataset=True
     )
     assert dataset_file, "the dataset copy was skipped or ran after the move"

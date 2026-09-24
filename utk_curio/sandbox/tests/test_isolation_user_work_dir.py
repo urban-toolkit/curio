@@ -3,7 +3,7 @@
 An isolated child used to run in its per-execution scratch directory, so a
 node's relative reads found nothing and its relative writes vanished with the
 execution. Running it in the launch directory instead fixed the reads and made
-the writes land in the application tree -- or fail outright once ``--exec-user``
+the writes land in the application tree -- or fail outright once an execution user
 denies writing there.
 
 Each user now gets a persistent directory of their own, and the child runs in

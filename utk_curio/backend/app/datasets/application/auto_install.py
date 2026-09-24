@@ -150,6 +150,15 @@ def auto_install_node_output(
                 )
 
                 spec = project_storage.read_spec(user_key, dataflow_id)
+                # Same rule as the save-time installer: a node reading an
+                # installed dataset needs no computed copy of it.
+                if project_storage.installed_dataset_file_for_node(
+                    user_key, spec, node_id,
+                ) is not None:
+                    return _diagnostic(
+                        "skipped", node_id=node_id, data_type=data_type,
+                        reason="output is a dataset this account already holds",
+                    )
                 if isinstance(spec, dict):
                     # The workflow name lives at spec["dataflow"]["name"] - a
                     # top-level read is always None and, because re-execution

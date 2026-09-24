@@ -370,3 +370,35 @@ class TestRequestEncoding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NprocScalesWithParallelismTest(unittest.TestCase):
+    """The process budget is shared, so it has to grow with the slot count.
+
+    RLIMIT_NPROC counts every process and thread belonging to the real UID,
+    and all isolated children run as the same execution user. A per-child
+    number is therefore a budget they share: raising parallelism without
+    raising it starved ordinary library code, which failed nodes with
+    "can't start new thread" in the 100-user stress run.
+    """
+
+    def _config(self, parallelism: str):
+        from utk_curio.sandbox.isolation.runner import IsolationConfig
+
+        env = {"CURIO_EXEC_PARALLELISM": parallelism}
+        return IsolationConfig.from_environment(env)
+
+    def test_more_slots_means_more_processes(self):
+        from utk_curio.sandbox.isolation import supervisor
+
+        per_child = supervisor.DEFAULT_LIMITS["nproc"]
+        self.assertEqual(self._config("2").limits["nproc"], per_child * 2)
+        self.assertEqual(self._config("8").limits["nproc"], per_child * 8)
+
+    def test_an_operator_can_still_pin_it(self):
+        from utk_curio.sandbox.isolation.runner import IsolationConfig
+
+        config = IsolationConfig.from_environment(
+            {"CURIO_EXEC_PARALLELISM": "8", "CURIO_EXEC_NPROC": "300"}
+        )
+        self.assertEqual(config.limits["nproc"], 300)

@@ -3,9 +3,9 @@ import { useEdges } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
-import { IPropagation } from '../../providers/FlowProvider';
+import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
-import { hasIncomingEdge } from '../../utils/nodeEmptyState';
+import { hasIncomingEdge, incomingSourceIds } from '../../utils/nodeEmptyState';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -13,6 +13,13 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // only the graph knows (#224).
   const poolEdges = useEdges();
   const connected = hasIncomingEdge(poolEdges, data.nodeId);
+  // A failed upstream node propagates nothing, so "no input" is ambiguous
+  // between never-run and ran-and-failed. The exec status is the only place
+  // that difference is recorded (#347).
+  const { nodeExecStatus } = useFlowContext();
+  const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
+    (sourceId) => nodeExecStatus?.[sourceId] === "errored",
+  );
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const [plotResolutionMode, setPlotResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts are solved in the context of one plot
   const [resolutionMode, setResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts between plots are resolved
@@ -538,9 +545,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
         tableData={tableData}
         data={data}
         connected={connected}
+        upstreamErrored={upstreamErrored}
       />
     ),
-    [activeTab, setActiveTab, tabData, tableData, data, connected],
+    [activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored],
   );
 
   return {

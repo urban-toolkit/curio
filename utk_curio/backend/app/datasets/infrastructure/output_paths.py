@@ -24,28 +24,16 @@ def _launch_dir() -> Path:
 
 def _resolve_duckdb_artifact_path(art_id: str) -> Path | None:
     """Map a bare DuckDB artifact id to a readable file (parquet path or raster source)."""
-    try:
-        from utk_curio.sandbox.util.db import get_read_connection
-    except Exception:  # noqa: BLE001
-        return None
+    # Through the sandbox, not by opening the DuckDB file: it has a single
+    # writer, and this read used to lose to a node execution and report the
+    # artifact as missing.
+    from utk_curio.backend.app.datasets.infrastructure import sandbox_artifacts
 
-    try:
-        con = get_read_connection()
-        try:
-            row = con.execute(
-                "SELECT kind, value_str FROM artifacts WHERE id = ?",
-                [art_id],
-            ).fetchone()
-        finally:
-            con.close()
-    except Exception:  # noqa: BLE001
-        # Sandbox may still hold an exclusive lock on curio_data.duckdb during /exec.
-        return None
-
+    row = sandbox_artifacts.artifact_row(art_id)
     if not row:
         return None
 
-    kind, value_str = row[0], row[1]
+    kind, value_str = row[0], row[3]
     shared = _shared_data_dir()
     candidates: list[Path] = []
     # Only the kinds that STORE a path in ``value_str`` may contribute one. A

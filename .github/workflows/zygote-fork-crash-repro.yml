@@ -1,0 +1,133 @@
+name: Zygote fork crash repro
+
+# Runs scripts/repro_zygote_fork_crash.py inside the same container the
+# isolated e2e job uses, to measure how often a forked child crashes in DuckDB
+# with and without the zygote closing DuckDB's import-time connection
+# (zygote._release_import_time_duckdb).
+#
+# Diagnostic only, and never part of normal CI. It runs on a manual dispatch,
+# or when a branch named repro/... is pushed. Dispatch needs this file on the
+# default branch first, so until then the way to run it is a push, and a branch
+# name ending in -load adds busy processes alongside:
+#
+#     git push origin HEAD:repro/zygote-fork-crash        # no extra load
+#     git push origin HEAD:repro/zygote-fork-crash-load   # --load auto
+#
+# It occupies the self-hosted runner for roughly 10-15 minutes at the default
+# 300 iterations.
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Fresh zygotes per variant
+        default: "300"
+      node:
+        description: "DataFrame shape: string (the e2e node) or int (the unit test)"
+        default: string
+      load:
+        description: "Busy processes alongside: a number, or auto (half the CPUs, up to 8)"
+        default: "0"
+  push:
+    branches: ["repro/**"]
+
+permissions:
+  contents: read
+
+# One group for every repro run, whatever the branch: they share a container
+# name and ports, so two at once would collide.
+concurrency:
+  group: zygote-repro
+  cancel-in-progress: false
+
+jobs:
+  repro:
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 90
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      # Its own port triple and container: prod is 2000/5002/8080, curio-dev
+      # 2010/5012/8090, and the CI stacks use 2020-2040 / 5022-5042 / 8100-8120.
+      CURIO_CONTAINER_NAME: curio-ci-repro
+      CURIO_PORT_2000: "2050"
+      CURIO_PORT_5002: "5052"
+      CURIO_PORT_8080: "8130"
+      # Same build arg as test-gpu-isolated, so the image comes from its cache.
+      # Nothing here talks to the frontend.
+      BACKEND_URL: "http://localhost:5032"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      ITERATIONS: ${{ inputs.iterations || '300' }}
+      NODE_SHAPE: ${{ inputs.node || 'string' }}
+      LOAD: ${{ inputs.load || (endsWith(github.ref_name, '-load') && 'auto' || '0') }}
+
+    steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build the image
+        run: docker compose -p curio-ci-repro build --parallel
+
+      # The loop spawns its own zygotes and never calls this stack's services.
+      # The stack is started because its launcher installs the node libraries
+      # (pandas, pyarrow, duckdb, ...) into the container at boot, exactly as
+      # the isolated e2e job gets them.
+      - name: ▶️ Start the container
+        run: docker compose -p curio-ci-repro up -d
+
+      - name: 🧪 Wait for the container to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-repro ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the container exited during startup. Logs:"
+                docker compose -p curio-ci-repro logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      - name: 🔁 Run the fork-crash loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p curio-ci-repro exec -T curio \
+            python scripts/repro_zygote_fork_crash.py \
+              --iterations "$ITERATIONS" --node "$NODE_SHAPE" --load "$LOAD" \
+              --report /app/.curio/zygote-repro-report.json \
+            | tee zygote-repro.txt
+
+      - name: 📋 Collect the report
+        if: always()
+        run: |
+          # Written by root into the bind-mounted .curio; read out through a
+          # root container, the same way the isolated job reads messages.log.
+          docker run --rm -v "$PWD:/w" -w /w alpine \
+            cat .curio/zygote-repro-report.json > zygote-repro-report.json 2>/dev/null || true
+
+      - name: 📤 Upload the report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: zygote-fork-crash-repro-load-${{ env.LOAD }}
+          path: |
+            zygote-repro.txt
+            zygote-repro-report.json
+          retention-days: 14
+
+      - name: 🧹 Tear down
+        if: always()
+        run: |
+          docker compose -p curio-ci-repro down -v --remove-orphans || true
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true

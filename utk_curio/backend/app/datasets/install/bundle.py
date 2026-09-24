@@ -30,6 +30,7 @@ from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 # node's dataset (#180). Imported rather than redeclared so this reader and
 # ``output_paths._resolve_duckdb_artifact_path`` can never drift apart.
 from utk_curio.backend.app.datasets.infrastructure.output_paths import PATH_BEARING_KINDS
+from utk_curio.backend.app.datasets.infrastructure import sandbox_artifacts
 
 
 @dataclass(frozen=True)
@@ -130,27 +131,16 @@ def _artifact_value_row(art_id: str) -> tuple | None:
 
     ``None`` is load-bearing. It is the only signal the single-output install
     path has for "this artifact genuinely does not exist" - pruned, or the
-    sandbox restarted and lost the DB - which is the case the save warning exists
-    for and the only one where re-running the node helps. A DuckDB open failure
-    (the sandbox holds the write handle mid-``/exec``) reports the same way:
-    indistinguishable here, and equally "try again".
-    """
-    try:
-        from utk_curio.sandbox.util.db import get_read_connection
+    sandbox restarted and lost the DB - which is the case the save warning
+    exists for and the only one where re-running the node helps. An
+    unreachable sandbox reports the same way: indistinguishable here, and
+    equally "try again".
 
-        con = get_read_connection()
-    except Exception:  # noqa: BLE001 - a locked/absent DB reads as "no artifact"
-        return None
-    try:
-        return con.execute(
-            "SELECT kind, value_int, value_float, value_str, value_json "
-            "FROM artifacts WHERE id = ?",
-            [art_id],
-        ).fetchone()
-    except Exception:  # noqa: BLE001
-        return None
-    finally:
-        con.close()
+    Read through the sandbox rather than by opening the DuckDB file. The file
+    has one writer, and this used to be a read-only open that lost to a node
+    execution often enough to skip installs silently.
+    """
+    return sandbox_artifacts.artifact_row(art_id)
 
 
 def _row_value(kind: str, row: tuple) -> Any:
@@ -216,24 +206,15 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
     All three are multi-part outputs, so all three install as a bundle rather
     than as a scalar JSON stub of opaque artifact ids (#180).
     """
-    from utk_curio.sandbox.util.db import get_read_connection
+    parent = sandbox_artifacts.artifact_row(parent_art_id)
+    if not parent:
+        return []
+    parent_kind, parent_json = parent[0], parent[4]
 
-    try:
-        con = get_read_connection()
-        try:
-            row = con.execute(
-                "SELECT kind, value_json FROM artifacts WHERE id = ?",
-                [parent_art_id],
-            ).fetchone()
-        finally:
-            con.close()
-    except Exception:
+    if parent_kind not in ("outputs", *ID_CONTAINER_KINDS) or not parent_json:
         return []
 
-    if not row or row[0] not in ("outputs", *ID_CONTAINER_KINDS) or not row[1]:
-        return []
-
-    raw_children = row[1]
+    raw_children = parent_json
     if isinstance(raw_children, (list, dict)):
         decoded = raw_children
     elif isinstance(raw_children, str) and raw_children:
@@ -254,35 +235,25 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
         return []
 
     parts: list[BundlePart] = []
-    try:
-        con = get_read_connection()
-        try:
-            for index, (child_name, child_id) in enumerate(named_children):
-                if not child_id:
-                    continue
-                child = con.execute(
-                    "SELECT kind, value_str FROM artifacts WHERE id = ?",
-                    [str(child_id)],
-                ).fetchone()
-                if not child:
-                    continue
-                kind = child[0] or "unknown"
-                fmt = SANDBOX_DATATYPE_TO_FORMAT.get(kind, "json")
-                src = _resolve_artifact_source(str(child_id), kind, child[1])
-                parts.append(
-                    BundlePart(
-                        index=index,
-                        artifact_id=str(child_id),
-                        kind=kind,
-                        format=fmt,
-                        label=child_name or _part_label(index, kind),
-                        source_path=src,
-                    )
-                )
-        finally:
-            con.close()
-    except Exception:
-        return parts
+    for index, (child_name, child_id) in enumerate(named_children):
+        if not child_id:
+            continue
+        child = sandbox_artifacts.artifact_row(str(child_id))
+        if not child:
+            continue
+        kind = child[0] or "unknown"
+        fmt = SANDBOX_DATATYPE_TO_FORMAT.get(kind, "json")
+        src = _resolve_artifact_source(str(child_id), kind, child[3])
+        parts.append(
+            BundlePart(
+                index=index,
+                artifact_id=str(child_id),
+                kind=kind,
+                format=fmt,
+                label=child_name or _part_label(index, kind),
+                source_path=src,
+            )
+        )
     return parts
 
 

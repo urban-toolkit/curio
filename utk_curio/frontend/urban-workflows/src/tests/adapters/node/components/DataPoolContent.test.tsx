@@ -68,6 +68,65 @@ describe('DataPoolContent', () => {
     expect(screen.queryByText('The input ran, but came back empty.')).toBeNull();
   });
 
+  // ---- #347: the empty branch picked the wrong reason twice ----------------
+
+  test('says the input came back empty when a tabular payload has no rows', () => {
+    // The case the comment above used to rule out. processDataAsync filters
+    // dataframe/geodataframe layers with zero rows out BEFORE tabData is set
+    // (added for autk-db 2.1.2 empty layers), so a node that ran and returned
+    // an empty table does land here - and was told "This input is not tabular
+    // data", which is both wrong and unactionable.
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        data={{ nodeId: 'test-node', input: { dataType: 'dataframe', data: {} } }}
+      />
+    );
+    expect(screen.getByText('No rows to show')).toBeInTheDocument();
+    expect(screen.getByText('The input ran, but came back empty.')).toBeInTheDocument();
+    expect(screen.queryByText('This input is not tabular data.')).toBeNull();
+  });
+
+  test('reads an empty geodataframe the same way', () => {
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        data={{ nodeId: 'test-node', input: { dataType: 'geodataframe', data: { features: [] } } }}
+      />
+    );
+    expect(screen.getByText('The input ran, but came back empty.')).toBeInTheDocument();
+  });
+
+  test('still says not-tabular for a payload that never was a table', () => {
+    // Guards the two above: deriving `tabular` from the payload must not make
+    // everything tabular, or #224's original complaint comes back.
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[]}
+        connected
+        data={{ nodeId: 'test-node', input: { dataType: 'value', data: 42 } }}
+      />
+    );
+    expect(screen.getByText('This input is not tabular data.')).toBeInTheDocument();
+  });
+
+  test('blames the upstream node when it errored, instead of telling you to run it', () => {
+    // A failed upstream produces no artifact and so never calls outputCallback:
+    // data.input never arrives, hasInput stays false, and the pool advised
+    // running the node the user had just watched fail.
+    render(
+      <DataPoolContent {...defaultProps} tabData={[]} connected upstreamErrored />
+    );
+    expect(screen.getByText('The node feeding this one failed. Open it to see the error.'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('Run the node feeding this one.')).toBeNull();
+  });
+
   test('renders ContentTable with provided tableData', () => {
     render(<DataPoolContent {...defaultProps} />);
     expect(screen.getAllByText('name').length).toBeGreaterThanOrEqual(1);

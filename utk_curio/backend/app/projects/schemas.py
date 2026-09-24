@@ -75,6 +75,10 @@ class ProjectSummary:
     created_at: str
     updated_at: str
     graph_preview: Optional[dict] = None
+    #: Seeded from ``docs/examples/``, so Delete is not offered for it. Derived
+    #: per request from the filenames rather than stored on the row - see
+    #: ``seed.example_project_ids``.
+    is_example: bool = False
 
 
 @dataclass

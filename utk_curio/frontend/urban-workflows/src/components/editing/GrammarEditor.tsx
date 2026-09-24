@@ -5,6 +5,7 @@ import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
+import { describeError } from "../../adapters/node/autkRunSettlement";
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -169,7 +170,9 @@ export default function GrammarEditor({
                 // "exec" forever, and with it the Run All guard (#271).
                 setOutputCallback?.({
                     code: "error",
-                    content: (err as Error)?.message ?? String(err),
+                    // Never an empty string: a node in Error with no text tells
+                    // the user nothing (#318).
+                    content: describeError(err),
                 });
             });
         }

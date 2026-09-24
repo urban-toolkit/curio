@@ -116,3 +116,87 @@ describe("AgentDock — the dataflow goal", () => {
     );
   });
 });
+
+/**
+ * #355: every existing goal test renders with ``attachments={[]}``, so nothing
+ * covered the case the issue is actually about - the goal field sharing the
+ * dock with several avatars. These are behavioural; the CSS that keeps it from
+ * being cropped is pinned in ``src/tests/styles/agentDockGoalGeometry.test.ts``,
+ * because jsdom has no layout engine and cannot measure a crop.
+ */
+describe("the goal field beside attached agents", () => {
+  const MANY = [att("a1", "explainer"), att("a2", "debug"), att("a3", "planner"),
+                att("a4", "critic"), att("a5", "researcher")];
+
+  function renderCrowded(goal = "") {
+    const onGoalChange = jest.fn();
+    render(
+      <AgentDock
+        attachments={MANY}
+        selectedId={null}
+        onSelect={jest.fn()}
+        onDetach={jest.fn()}
+        showGoal
+        goal={goal}
+        onGoalChange={onGoalChange}
+      />,
+    );
+    return { onGoalChange };
+  }
+
+  it("still renders the goal with five agents attached", () => {
+    renderCrowded();
+    expect(screen.getByLabelText("Dataflow goal")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Open chat with/ })).toHaveLength(5);
+  });
+
+  it("comes before the avatars, so the agents squeeze rather than displace it", () => {
+    // Order is the reason this is a DOM test and not only a CSS one: the goal
+    // has to be the first item in the row for `flex: 1 1 auto` to give it the
+    // leftover space rather than the avatars.
+    renderCrowded();
+    const dock = screen.getByRole("toolbar", { name: "Canvas agents" });
+    const goal = screen.getByLabelText("Dataflow goal");
+    const firstAvatar = screen.getAllByRole("button", { name: /Open chat with/ })[0];
+    const position = goal.compareDocumentPosition(firstAvatar);
+    // eslint-disable-next-line no-bitwise
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dock).toContainElement(goal);
+  });
+
+  it("keeps its standing label, so a typed value does not leave it unnamed", () => {
+    // The placeholder is gone the moment anything is typed; the label is what
+    // still names the field, and it is only useful if it is wired to the input.
+    renderCrowded("Find heat islands in Chicago");
+    const input = screen.getByLabelText("Dataflow goal") as HTMLInputElement;
+    expect(input.value).toBe("Find heat islands in Chicago");
+    const label = screen.getByText("Goal") as HTMLLabelElement;
+    expect(label.htmlFor).toBe(input.id);
+    expect(input.id).not.toBe("");
+  });
+
+  it("reports what the user types", () => {
+    const { onGoalChange } = renderCrowded();
+    fireEvent.change(screen.getByLabelText("Dataflow goal"), {
+      target: { value: "Map tree canopy" },
+    });
+    expect(onGoalChange).toHaveBeenCalledWith("Map tree canopy");
+  });
+
+  it("shows the goal with no agents attached at all", () => {
+    // The `attachments.length === 0 && !showGoal` early return: showGoal alone
+    // has to be enough, or the field cannot be used before attaching anyone.
+    render(
+      <AgentDock
+        attachments={[]}
+        selectedId={null}
+        onSelect={jest.fn()}
+        onDetach={jest.fn()}
+        showGoal
+        goal=""
+        onGoalChange={jest.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Dataflow goal")).toBeInTheDocument();
+  });
+});

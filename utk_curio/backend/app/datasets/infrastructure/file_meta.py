@@ -36,8 +36,21 @@ def count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
                 data = json.load(fh)
             features = data.get("features", []) if isinstance(data, dict) else []
             return None, len(features)
+    except UnicodeDecodeError as exc:
+        # Imports are transcoded to UTF-8 on the way in (#280), so this is now
+        # a file that arrived some other way. Warn rather than debug: a dataset
+        # with no row count and no stated reason is what sent #280's reporter
+        # looking at the wrong thing.
+        logger.warning(
+            "Could not count rows/features for %s (format=%s): it is not UTF-8 "
+            "(%s). Re-import it so it is normalised on the way in.",
+            path,
+            fmt,
+            exc,
+        )
+        return None, None
     except Exception:
-        logger.debug(
+        logger.warning(
             "Could not count rows/features for %s (format=%s); returning None",
             path,
             fmt,

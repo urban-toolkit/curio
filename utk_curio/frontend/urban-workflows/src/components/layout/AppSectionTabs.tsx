@@ -31,6 +31,11 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/agents" className={tabClassName} end>
         Agent Catalog
       </NavLink>
+      {/* Unconditional: the monitor exists on every instance, not only a
+          --deploy one, so there is no flag to read here. */}
+      <NavLink to="/monitor" className={tabClassName} end>
+        Monitor
+      </NavLink>
     </nav>
   );
 }

@@ -33,7 +33,7 @@ from pathlib import Path
 
 import json as _json
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 
 from utk_curio.backend.app.packages.factory import (
     FactoryError,
@@ -69,6 +69,7 @@ from utk_curio.backend.app.packages.resolver import (
 from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
 from utk_curio.backend.app.packages.storage import (
     PackageIdError,
+    catalog_root as storage_catalog_root,
     list_user_packageages,
     package_dir,
     PACKAGE_DIR_RE,
@@ -76,6 +77,7 @@ from utk_curio.backend.app.packages.storage import (
 from utk_curio.backend.app.packages import services as packages_services
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.app.users.capabilities import library_install_refusal
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.config import CURIO_ALLOW_FACTORY_CATALOG_PUBLISH
 
@@ -199,7 +201,7 @@ def _catalog_root() -> Path:
     catalog drawer (and the future remote registry).
     """
     # routes.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-    return Path(__file__).resolve().parents[4] / "packages"
+    return storage_catalog_root()
 
 
 def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Path]:
@@ -425,9 +427,16 @@ def upload_packageage():
         result = install_packageage_from_archive(
             user_key, upload.stream.read(), replace=replace
         )
-    except InstallerError as exc:
-        return _error(str(exc))
-    except PackageIdError as exc:
+    except (InstallerError, PackageIdError) as exc:
+        # Logged, not only returned. The reason reaches the browser and stops
+        # there: a rejected sideload in CI left a 400 in the access log with
+        # nothing to say which archive or why, and the e2e failure that
+        # followed was a timeout on the NEXT request, two steps from the
+        # cause.
+        current_app.logger.warning(
+            "package upload rejected: filename=%s replace=%s reason=%s",
+            upload.filename, replace, exc,
+        )
         return _error(str(exc))
     user_packageage = package_dir(user_key, result.manifest.dir_name)
     return jsonify({
@@ -566,6 +575,10 @@ def remove_packageage(dir_name: str):
     from utk_curio.backend.app.packages.backend_runtime import remove_backend_residue
 
     remove_backend_residue(user_key, dir_name)
+    # ...and so do the lockfile entries that named it. Without this every
+    # dataflow that had the package kept a reference to something no longer
+    # installed, and reopening it retried an install that cannot succeed.
+    packages_services.detach_from_all_projects(user_key, dir_name)
     return "", 204
 
 
@@ -1185,15 +1198,37 @@ def install_workflow_deps():
 # Per-project lockfile + per-user defaults
 # ---------------------------------------------------------------------------
 #
-# These five endpoints implement the project-scoped install/uninstall and the
+# These six endpoints implement the project-scoped install/uninstall and the
 # per-user defaults list from [docs/NODE-CATALOG.md]. The drawer in the canvas
 # uses the `/projects/<id>/...` endpoints; the `/catalog` page uses
-# `/defaults`. There is deliberately no `DELETE /defaults/<dir>` - the only
-# way a package leaves the defaults list is via `prune_unreferenced_packages`,
-# which fires when the last project drops a dep.
+# `/defaults`.
+#
+# `DELETE /defaults/<dir>` is API-ONLY and deliberately has no UI (#353). It was
+# added with the #220 fix so that seeding a package into all new projects via
+# `POST /defaults` can be undone; the `/catalog` page offers no button for it,
+# and `catalogCardActions` returns no such action for a package (unlike datasets
+# and agents, which do). The ordinary way a package leaves the list is still
+# `prune_unreferenced_packages`, which fires when the last project drops a dep.
+#
+# Its coverage is therefore route-level by design, not by oversight: see
+# `test_lockfile.py::test_delete_defaults_detaches_without_touching_projects`
+# and its idempotency sibling. A browser-level test would have nothing to click.
+# If a UI affordance is ever wanted, `NodeCatalogBrowse.tsx` already reserves an
+# empty `case "remove-from-all-projects"` for it.
 
 def _packages_error(exc: packages_services.PackageServiceError):
     return jsonify({"error": str(exc)}), exc.status
+
+
+# The five routes below call this from their own ``except``. The install gate
+# does not get that chance: ``assert_may_install`` fires from inside
+# ``provision_declared_deps``, which three routes call from within the
+# ``jsonify({...})`` they return, after their try block has closed. Unregistered,
+# a deliberate 403 refusal reached the app-wide handler and came back as a 500
+# with a traceback, which is the exact confusion #279 was filed about.
+packages_bp.register_error_handler(
+    packages_services.PackageServiceError, _packages_error
+)
 
 
 @packages_bp.route("/projects/<project_id>", methods=["GET"])
@@ -1316,6 +1351,7 @@ def list_libraries_route():
     user_key = _user_dir_key(g.user)
     _ensure_user_seeded(user_key)
     agg = libs.aggregate(user_key)
+    refusal = library_install_refusal(g.user)
     return jsonify({
         "standalone": agg.standalone,
         "fromPackages": [
@@ -1323,7 +1359,19 @@ def list_libraries_route():
              "installed": e.installed}
             for e in agg.from_packages
         ],
+        # Whether POST/DELETE would be refused, so the modal can hide controls
+        # that could only fail and say why instead (#309).
+        "installAllowed": refusal is None,
+        "installDisabledReason": refusal,
     }), 200
+
+
+def _library_install_refused():
+    """The 403 for a caller who may not change a node environment, or None."""
+    refusal = library_install_refusal(g.user)
+    if refusal is None:
+        return None
+    return jsonify({"error": refusal, "code": "library_install_disabled"}), 403
 
 
 # ---------------------------------------------------------------------------
@@ -1384,7 +1432,7 @@ def add_library_route():
     """
     from utk_curio.backend.app.packages import libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, PipSpecError, import_failures, install_python_deps,
+        PipInstallError, PipSpecError,
     )
 
     body = request.get_json(silent=True) or {}
@@ -1400,12 +1448,16 @@ def add_library_route():
         # keeps the data path consistent for a future js_runner module.
         return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
 
+    refused = _library_install_refused()
+    if refused:
+        return refused
+
     user_key = _user_dir_key(g.user)
     # Spec parsing: split "<name><version>" → {name: version}. We let the
     # pip_runner re-canonicalize the version spec.
     name, version = _split_lib_spec(spec)
     try:
-        report = install_python_deps({name: version})
+        report = packages_services.install_user_library(user_key, name, version)
     except PipSpecError as exc:
         # A malformed requirement is the caller's mistake, not pip's failure:
         # answer 400 rather than letting it read as an upstream 502.
@@ -1419,7 +1471,7 @@ def add_library_route():
     # case - reports a good version, so pip declines to do anything and this
     # route used to answer "Already installed" for a library that raises
     # ImportError the moment a node touches it. Say so instead.
-    import_error = import_failures([name]).get(name)
+    import_error = packages_services.user_library_import_failure(user_key, name)
     return jsonify({
         "standalone": libs.list_standalone(user_key),
         # ``skipped`` is non-empty when pip found the requirement already
@@ -1442,9 +1494,9 @@ def remove_library_route(kind: str, spec: str):
     to be uninstalled, which triggers the ref-counted prune in
     ``prune_unreferenced_packages``.
     """
-    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages import backend_runtime, libraries as libs
     from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, uninstall_python_deps,
+        PipInstallError, PipSpecError, validate_python_requirement,
     )
 
     if kind not in ("python", "js"):
@@ -1452,13 +1504,34 @@ def remove_library_route(kind: str, spec: str):
     if kind == "js":
         return _error("JS library uninstall is not yet supported", 501)
 
+    refused = _library_install_refused()
+    if refused:
+        return refused
+
     user_key = _user_dir_key(g.user)
     name, _ = _split_lib_spec(spec)
-    # Only uninstall via pip if no installed package still declares this
-    # library - same ref-counting contract as the package prune path.
-    if not _any_package_declares(user_key, name, "python"):
+    try:
+        validate_python_requirement(name)
+    except PipSpecError as exc:
+        # Escaped the except below and read as a 500 before #309.
+        return _error(str(exc), 400)
+    # Only uninstall if nothing else still needs this library: no installed
+    # package declares it (the package prune path's contract), and - when one
+    # interpreter serves everyone - no other user lists it either. Under
+    # per-user node environments that second question is meaningless: another
+    # user's list describes another user's tree, so asking it would refuse to
+    # remove a library from yours because someone else installed it in theirs.
+    if not (
+        _any_package_declares(user_key, name, "python")
+        or (
+            not backend_runtime.per_user_node_envs()
+            and libs.listed_by_others(
+                user_key, "python", name, lambda s: _split_lib_spec(s)[0],
+            )
+        )
+    ):
         try:
-            uninstall_python_deps([name])
+            packages_services.uninstall_user_library(user_key, name)
         except PipInstallError as exc:
             log.warning("library remove: pip uninstall %s failed: %s", name, exc)
     libs.remove_library(user_key, kind, spec)

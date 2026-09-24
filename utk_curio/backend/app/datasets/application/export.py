@@ -14,6 +14,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.datasets.domain.code_refs import (
+    code_refers_to_dataset,
+    dataset_ids_in_code,
+    node_code,
+)
 from utk_curio.backend.app.datasets.domain.constants import FORMAT_TO_EXTENSION
 
 
@@ -92,7 +97,12 @@ def resolve_upstream_inputs(spec: dict[str, Any], node_id: str) -> list[dict[str
         if not isinstance(node, dict) or node.get("id") != node_id:
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        for ref in refs:
+        # Same gap as the consumer helper, and it has to close with it: a node
+        # whose only reference is a curio_dataset_path call in its code really
+        # does take that dataset as an input, and leaving it out here would make
+        # upstream lineage contradict the downstream answer on the same spec
+        # (#250).
+        for ref in [*refs, *dataset_ids_in_code(node_code(node))]:
             if isinstance(ref, str) and f"ds:{ref}" not in seen:
                 seen.add(f"ds:{ref}")
                 inputs.append({"datasetId": ref})
@@ -131,7 +141,11 @@ def _dataset_producer_in_spec(
 
 
 def _dataset_consumer_nodes_in_spec(
-    spec: dict[str, Any], dataset_id: str, dataflow_id: str | None = None
+    spec: dict[str, Any],
+    dataset_id: str,
+    dataflow_id: str | None = None,
+    code_ids_by_node: dict[str, set[str]] | None = None,
+    include_code_refs: bool = True,
 ) -> list[dict[str, Any]] | None:
     """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
     *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
@@ -192,7 +206,23 @@ def _dataset_consumer_nodes_in_spec(
         if not isinstance(node, dict):
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        if dataset_id in refs:
+        # A literal ``curio_dataset_path("<id>")`` in the node's own source is a
+        # reference too, and is the common one: the shipped examples carry no
+        # bindings at all, only loaders that name the dataset in code (#250).
+        # Treated exactly like a binding from here on, so a code-referencing
+        # loader is a carrier and a code-referencing compute node is a consumer.
+        # ``code_refers_to_dataset`` costs O(len(code)) per call, including the
+        # early-exit path, so a caller asking about many datasets against one
+        # spec would scan every node's source once per dataset. The browse page
+        # does exactly that. It can hand us the ids per node instead, scanned
+        # once, and the answer here becomes a set lookup.
+        if not include_code_refs:
+            in_code = False
+        elif code_ids_by_node is not None:
+            in_code = dataset_id in code_ids_by_node.get(node.get("id") or "", ())
+        else:
+            in_code = code_refers_to_dataset(node_code(node), dataset_id)
+        if dataset_id in refs or in_code:
             uses = True
             nid = node.get("id")
             if _is_data_loading(node.get("type")):
@@ -248,11 +278,19 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
 
     from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
 
+    from utk_curio.sandbox.util.codec import active_geometry_name
+
+    # A GeoParquet file can still have no *active* geometry column. There is no
+    # GeoJSON to write in that case (``to_json`` would raise), so treat it as
+    # ordinary tabular data and fall through to the CSV path below.
+    if geo_frame is not None and active_geometry_name(geo_frame) is None:
+        geo_frame = None
+
     if geo_frame is not None:
         # Decode JSON-encoded object columns (the <file>.decode.json sidecar) so
         # list/dict properties export as real values, not double-encoded strings.
         geo_frame = restore_parquet_sidecar(
-            geo_frame, path, geometry_col=geo_frame.geometry.name
+            geo_frame, path, geometry_col=active_geometry_name(geo_frame)
         )
         # ``to_json`` serializes feature properties via ``json.dumps``, which
         # can't natively encode pandas/numpy temporal values (e.g. Timestamp).

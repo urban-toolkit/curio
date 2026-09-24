@@ -116,9 +116,8 @@ export function UnresolvedNode({
     </>
   );
 
-  if (!registryReady || !packageId) {
-    // Still genuinely loading - or a node type with no package coordinate to
-    // act on, where naming a package would be a guess.
+  if (!registryReady) {
+    // Still genuinely loading: the registry may yet name a package to blame.
     return (
       <div
         style={{
@@ -132,6 +131,47 @@ export function UnresolvedNode({
         {handles}
         <strong style={{ color: "#334155", fontSize: 12 }}>Loading node…</strong>
         <div style={{ marginTop: 4, opacity: 0.7 }}>{nodeType}</div>
+      </div>
+    );
+  }
+
+  if (!packageId) {
+    // Terminal, not pending (#349). The registry has settled and this type
+    // names no package: `packageIdFromNodeType` returns null for an empty or
+    // non-string type and for a legacy plain-string one like "DATA_LOADING",
+    // and no amount of waiting changes any of those. Showing "Loading node…"
+    // for ever is the same dead end #233 fixed for installable packages, on a
+    // node-type shape that fix did not recognise.
+    //
+    // Reachable outside tests: `dataflowImport.ts` deliberately skips per-node
+    // type validation so older files still load, and `useCode.ts`'s loadTrill
+    // pushes `node.type` straight onto the canvas unvalidated.
+    //
+    // Slate rather than the amber below, and no Install button: amber means
+    // "one click fixes this", and here there is nothing to install - the type
+    // itself is the problem.
+    return (
+      <div
+        style={{
+          ...SHELL,
+          border: "1px dashed #94a3b8",
+          background: "#f8fafc",
+          color: "#475569",
+        }}
+        title={`Unrecognized node type: ${nodeType || "(empty)"}`}
+        data-testid="unrecognized-node"
+      >
+        {handles}
+        <strong style={{ color: "#334155", fontSize: 12 }}>
+          Unrecognized node type
+        </strong>
+        <div style={{ marginTop: 4 }}>
+          {nodeType
+            ? <>This dataflow asks for <strong>{nodeType}</strong>, which is not a
+              node type Curio knows. It may come from an older or hand-edited file.</>
+            : <>A node in this dataflow has no type. It may come from an older or
+              hand-edited file.</>}
+        </div>
       </div>
     );
   }

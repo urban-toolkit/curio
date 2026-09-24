@@ -1,0 +1,83 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  /* A published dashboard is content on a page, not a canvas. The tiles are
+     white, so the page behind them is the warm neutral the rest of Curio uses
+     for a surface a card sits on. On pure white the tiles had no edge at all
+     and the page read as an empty canvas with a box floating on it. */
+  background-color: var(--curio-surface-alt);
+  /* The bar is `position: fixed` (UpMenu.module.css), so the page reserves its
+     height rather than laying it out. The canvas box below is what the fit and
+     the resize observer measure, so it must not extend under the bar. */
+  padding-top: 65px;
+  box-sizing: border-box;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: #55565c;
+  font-size: 14px;
+  /* Above the (empty) canvas, but under the bar and its dropdowns. */
+  z-index: 10;
+  background-color: var(--curio-surface-alt);
+}
+
+.stateTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1E1F23;
+}
+
+/* A quiet secondary action rather than a default browser link: this is the
+   only thing on an otherwise empty page, and a blue underline was the one
+   piece of unstyled chrome left on it. */
+.stateLink {
+  margin-top: 6px;
+  padding: 7px 16px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background-color: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-md);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.stateLink:hover {
+  background-color: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+  text-decoration: none;
+}
+
+/* The read-only notice, in the yellow the canvas uses for a shared view. */
+.banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #FFF4D6;
+  color: #7A5A00;
+  border: 1px solid #E6CD7A;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 90;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}

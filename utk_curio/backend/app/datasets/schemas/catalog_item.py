@@ -31,6 +31,10 @@ class CatalogItem(TypedDict, total=False):
     sizeBytes: int | None
     rowCount: int | None
     featureCount: int | None
+    # The encoding the uploaded bytes were decoded from before being stored as
+    # UTF-8 (#280). ``"utf-8"`` when no transcode was needed, ``None`` for
+    # datasets imported before this existed.
+    sourceEncoding: str | None
 
     # Provenance (resolved across the user's projects by get_dataset/list_catalog)
     producerNodeId: str | None

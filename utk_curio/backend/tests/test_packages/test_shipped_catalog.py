@@ -17,9 +17,14 @@ import pytest
 
 from utk_curio.backend.app.packages.manifest import load_packageage_manifest
 from utk_curio.backend.app.packages.resolver import merge_python_deps
-from utk_curio.backend.app.packages.routes import _catalog_root, _manifest_to_payload
+from utk_curio.backend.app.packages.routes import _manifest_to_payload
 
-CATALOG = _catalog_root()
+# The COMMITTED catalog, named directly rather than through
+# ``_catalog_root()``: these assertions are about what the repository ships,
+# and the runtime root is relocatable (``CURIO_PACKAGES_ROOT``) so a test
+# session gets its own copy to publish into.
+REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
+CATALOG = REAL_CATALOG
 PACKAGE_DIRS = sorted(p for p in CATALOG.glob("*@*") if (p / "manifest.json").is_file())
 IDS = [p.name for p in PACKAGE_DIRS]
 

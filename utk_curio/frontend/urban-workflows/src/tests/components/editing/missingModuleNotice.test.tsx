@@ -180,3 +180,18 @@ describe("MissingModuleNotice", () => {
     });
   });
 });
+
+describe("when the caller may not install (#309)", () => {
+  it("says why rather than offering a button the route would refuse", () => {
+    renderNotice({
+      installable: false,
+      reason: "install-disabled",
+      detail:
+        "Installing libraries is not available for guest users. Sign in with "
+        + "an account to install one.",
+    });
+    expect(screen.getByText(/scikit-learn is not installed/)).toBeInTheDocument();
+    expect(screen.getByText(/not available for guest users/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
+  });
+});

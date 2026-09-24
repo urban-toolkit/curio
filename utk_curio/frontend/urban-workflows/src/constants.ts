@@ -76,3 +76,13 @@ export enum AccessLevelType {
   EXPERT = "EXPERT", // only experts can access
   ANY = "ANY", // both can access
 }
+
+// Node box geometry. The renderer (components/styles.tsx NodeContainer) is the
+// authority on these; they live here so layout utilities can share them without
+// importing a component and closing a cycle back through the provider stack.
+export const DEFAULT_NODE_WIDTH = 525;
+export const DEFAULT_NODE_HEIGHT = 350;
+export const MIN_NODE_WIDTH = 200;
+export const MIN_NODE_HEIGHT = 150;
+export const MINIMIZED_NODE_WIDTH = 70;
+export const MINIMIZED_NODE_HEIGHT = 40;

@@ -8,11 +8,12 @@ on:
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
       - 'docker-compose.ci-exec-user.yml'
+      - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
@@ -32,14 +33,21 @@ on:
       - 'docs/schemas/**'
   pull_request:
     branches: [ main ]
+    # `labeled` is here so that putting the `stress` label on an open PR starts
+    # a run. With the default types (opened, synchronize, reopened) the label
+    # would only take effect on the next push. Such a run carries the stress
+    # job alone: every other job below skips on `action == 'labeled'`, since
+    # they already ran on the push that produced this ref.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --auth boot flags).
+      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
       - 'docker-compose.yml'
       - 'docker-compose.ci.yml'
       - 'docker-compose.ci-isolated.yml'
       - 'docker-compose.ci-exec-user.yml'
+      - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
@@ -57,17 +65,59 @@ on:
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
       - 'docs/schemas/**'
+  # test-gpu-stress runs on this schedule instead of on every push. It holds
+  # the single GPU runner for ~30 minutes, which roughly doubles a run, and
+  # what it measures -- does the stack hold up under 5/10/50/100 users -- moves
+  # with the stack as a whole, not with most diffs. To exercise it on a change
+  # that does move it (the stress harness, the sandbox, the queue, anything
+  # concurrency-shaped), label the PR `stress`.
+  #
+  # 08:00 UTC is 3 AM in Chicago during CDT; cron has no notion of DST, so it
+  # becomes 2 AM local once CST starts. Mon/Wed/Fri rather than `*/2` in the
+  # day-of-month field, which restarts its count every month and so would fire
+  # on the 31st and the 1st back to back. Note that GitHub disables scheduled
+  # workflows after 60 days with no repository activity.
+  schedule:
+    - cron: '0 8 * * 1,3,5'
   workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
+    inputs:
+      stress:
+        description: 'Also run the multi-user stress job (~30 min on the GPU runner)'
+        type: boolean
+        default: false
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
 permissions:
   contents: read
 
-# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports.
-# Never let two runs execute concurrently or they fight over the GPU/ports.
+# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports, so
+# two jobs must never execute at once.
+#
+# Keyed per ref, not repo-wide. A repo-wide group serialises too, but GitHub
+# keeps only ONE run pending per group, so each newly queued run evicted the
+# previously pending one: runs were cancelled having started zero jobs, twice on
+# main itself, which leaves main unverified while still looking untouched. Per
+# ref, a new push still supersedes its own branch's pending run, which is what
+# you want, without discarding anyone else's.
+#
+# Allowing runs from different refs to be in progress at once is safe here, but
+# it rests on TWO invariants. Break either and the GPU/port contention is back:
+#
+#   1. Exactly ONE registered runner (`utk-gpu`) carries the
+#      [self-hosted, linux, gpu, curio] labels all three jobs ask for, so it runs
+#      a single job at a time and GitHub queues the rest. Two runs interleave
+#      their jobs; they never execute together. (The jobs within one run cannot
+#      collide regardless, since they use distinct compose projects: curio-ci,
+#      curio-ci-iso, curio-ci-exec-user.)
+#   2. `cancel-in-progress: false`, so an in-progress run is never cancelled.
+#      Eviction can then only ever kill a run that has started zero jobs, and a
+#      job-less run holds no containers, ports or GPU handle to leak. Flip this
+#      to true to save queue time and that stops being true: a cancelled job can
+#      skip its `if: always()` teardown and strand a compose project that the
+#      next run then trips over.
 concurrency:
-  group: utk-ci
+  group: utk-ci-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -82,9 +132,17 @@ jobs:
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
     # `utk`. Run only for push / workflow_dispatch / same-repo PRs. Fork PRs
     # are skipped entirely (they get no CI; a maintainer pushes the branch).
+    #
+    # The two stress triggers (the cron, and a `stress` label on an open PR)
+    # are there to run test-gpu-stress by itself, so this job and the two
+    # after it sit out those runs: the code they cover was already tested on
+    # the push or PR that produced the ref, and repeating them would hold the
+    # GPU for another 20 minutes.
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
 
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
@@ -101,6 +159,14 @@ jobs:
       # autk-grammar data pools parse city-scale PBFs server-side; give the
       # data-table render a larger budget than the 30s default on this host.
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      # Screenshot, node states and browser log of every failed e2e test
+      # (tests/test_frontend/diagnostics.py), uploaded as e2e-failures.
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      # Trace every test and keep the failing ones, so a rare browser-side
+      # failure (#318) is diagnosable from its first recurrence. "1" records DOM
+      # snapshots and the action log; per-action screenshots ("full") cost far
+      # more and the failure screenshot above already covers that.
+      CURIO_E2E_TRACE: "1"
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + remapped host ports so the CI stack never
       # collides with prod `curio` (2000/5002/8080) or `curio-dev`
@@ -154,6 +220,25 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
+      # .node-version, two package.json "engines", the Dockerfile). The test
+      # suite cannot check them: it runs inside the image, which ships
+      # utk_curio/ and none of those files. Here there is a checkout, and this
+      # runs before the image is built with whatever the Dockerfile pins.
+      - name: 🔒 Assert the Node.js version declarations agree
+        run: python3 scripts/check_node_pins.py
+
+      # BACKEND_URL is baked into the bundle at build time. The container used
+      # to rebuild the frontend at every boot (the image shipped dist/ without
+      # the stamp the launcher reads) in an environment that no longer carried
+      # the build arg, so the launcher's own http://localhost:5002 default was
+      # baked over the deployment's address. curio-dev served a frontend calling
+      # localhost for everything: health banner up, guest sign-in blocked as
+      # mixed content. Same reason as the pins above -- the suite runs inside
+      # the image and cannot see the Dockerfile; here there is a checkout.
+      - name: 🔒 Assert the image keeps the backend URL it was built for
+        run: python3 scripts/check_deploy_backend_url.py
+
       # The sandbox executes arbitrary node code. Production must never
       # publish its port; only the CI overlay does, and only on loopback.
       # Guards the configuration the live instances actually run.
@@ -173,19 +258,33 @@ jobs:
           echo "OK: the deploy configuration does not publish the sandbox port."
 
           # Isolation is what stops a node author reading every password hash.
-          # Dropping either flag would silently return the live instances to
-          # in-process execution, and nothing at runtime would complain --
-          # `off` is a valid mode. Read from `compose config` rather than the
-          # file so an override that removes the command is caught too.
-          for flag in -- --isolation fork --exec-user curio-exec; do
-            [ "$flag" = "--" ] && continue
-            if ! echo "$config" | grep -qF -- "$flag"; then
-              echo "::error::the deploy command no longer carries '$flag'; the live instances would run node code in-process" >&2
-              echo "$config" | grep -A 30 'command:' >&2
-              exit 1
-            fi
-          done
-          echo "OK: the deploy configuration runs node execution isolated."
+          # Losing it would silently return the live instances to in-process
+          # execution, and nothing at runtime would complain -- `off` is a
+          # valid mode. Read from `compose config` rather than the file so an
+          # override that drops the setting is caught too.
+          #
+          # --deploy turns isolation on by itself, but only BEST-EFFORT: it
+          # declines rather than refusing to boot when the host cannot confine,
+          # which is what lets `curio.py start --deploy` work on a laptop. A
+          # deployment wants the opposite, so deploy.yml pins CURIO_ISOLATION
+          # explicitly and that pin is what this asserts.
+          if ! echo "$config" | grep -qE '^ +CURIO_ISOLATION: "?fork"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer pins CURIO_ISOLATION=fork; the live instances could degrade to in-process execution instead of refusing to start" >&2
+            echo "$config" | grep -A 30 'environment:' >&2
+            exit 1
+          fi
+          echo "OK: the deploy configuration pins isolation fail-closed."
+
+          # The execution account is DISCOVERED by name rather than passed as a
+          # flag, so the command line can no longer be the thing that proves it
+          # exists. The image is. Without it the sandbox still refuses to serve
+          # (fork + no exec user is fatal when hosted), so this is a clearer
+          # error, not a second boundary.
+          if ! grep -qE '^RUN groupadd .*curio-exec' Dockerfile; then
+            echo "::error::the Dockerfile no longer creates the curio-exec account; --deploy would find no execution user and the sandbox would refuse to start" >&2
+            exit 1
+          fi
+          echo "OK: the image still carries the execution account isolation discovers."
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
@@ -241,7 +340,7 @@ jobs:
       # stub-project to skip the signup UI, reset-db between every test. That
       # blueprint refuses with 404 unless the server is BOTH a dev env and a
       # declared test rig (backend/app/testing/routes.py), and a compose-owned
-      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # stack only gets the second factor from --testing on its command.
       # Drop it and the stack still comes up healthy while all ~207 e2e tests
       # error inside an autouse fixture on a bare 404 -- 12k log lines that say
       # nothing about the cause. Ask once, here, and name it.
@@ -253,10 +352,34 @@ jobs:
             -H 'Content-Type: application/json' -d '{}' \
             "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
           if [ "$code" != "200" ]; then
-            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
           echo "OK: the testing stubs are mounted."
+
+      # The static check above proves the Dockerfile is right; this proves the
+      # image built from it behaves. This job builds with a non-default
+      # BACKEND_URL (localhost:5022), so a container that rebuilt its bundle
+      # would be serving localhost:5002 here -- invisible to the e2e suite,
+      # which injects window.__CURIO_BACKEND_URL__ and so never notices, which
+      # is exactly how this reached a deployment.
+      - name: 🔒 Assert the container serves the bundle it shipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          stamp=$(docker compose -p curio-ci exec -T curio \
+            cat /app/utk_curio/frontend/urban-workflows/dist/.curio-backend-url)
+          echo "stamp: ${stamp}"
+          if [ "$(echo "${stamp}" | sed -n 2p | tr -d '\r')" != "${BACKEND_URL}" ]; then
+            echo "::error::the shipped bundle is stamped for something other than ${BACKEND_URL}" >&2
+            exit 1
+          fi
+          # The launcher must agree, or the next start rebuilds and rebakes it.
+          docker compose -p curio-ci exec -T curio python -c 'import sys; from utk_curio.main import _build_stamp_reason as f; r = f(); sys.exit("the container would rebuild its bundle: " + r) if r else print("OK: the launcher reuses the shipped bundle.")'
+          # And the bundle actually being served carries that address.
+          curl -fsS "http://localhost:${CURIO_E2E_FRONTEND_PORT}/bundle.js" \
+            | grep -qF "${BACKEND_URL}"
+          echo "OK: the served bundle calls ${BACKEND_URL}."
 
       - name: 🧪 Run backend unit tests
         run: |
@@ -324,9 +447,18 @@ jobs:
               eval "$(env -u CURIO_E2E_BACKEND_PORT -u CURIO_E2E_SANDBOX_PORT \
                           -u BACKEND_PORT -u SANDBOX_PORT \
                           python -m utk_curio.backend.tests.shards "$k")"
-              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
+              mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA" "$CURIO_PACKAGES_ROOT"
               cp -r /app/datasets/. "$CURIO_CATALOG_ROOT/"
-              python curio.py start backend --auth --with-examples \
+              # The package catalog is per shard for the same reason the
+              # dataset one is: it is otherwise a single directory every
+              # worker publishes into and reads back.
+              cp -r /app/packages/. "$CURIO_PACKAGES_ROOT/"
+              # CURIO_ISOLATION=off for the same reason docker-compose.ci.yml
+              # sets it: these shards run as root in an image carrying
+              # curio-exec, so --deploy would discover it and isolate. The
+              # isolated stacks are test-gpu-isolated and test-gpu-exec-user.
+              export CURIO_ISOLATION=off
+              python curio.py start backend --deploy --testing --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
                 --sandbox-host 0.0.0.0 --sandbox-port "$SANDBOX_PORT" \
                 > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
@@ -394,6 +526,21 @@ jobs:
           docker build --target frontend_builder -t curio-frontend-test .
           docker run --rm curio-frontend-test npm test
 
+      - name: TypeScript typecheck
+        # Jest transpiles through babel, which strips types without checking
+        # them, so main could sit broken for tsc while every build was green.
+        # Two such breaks landed in one day during the #363-#373 merge, both in
+        # src/tests/, which tsconfig's "include": ["src/**/*"] does cover.
+        #
+        # The docker build is repeated rather than reusing the tag above because
+        # that step is `if: !cancelled()`: if it is ever skipped or reordered, a
+        # bare docker run would fail with "image not found" instead of a type
+        # error. It is a layer-cache hit.
+        if: ${{ !cancelled() }}
+        run: |
+          docker build --target frontend_builder -t curio-frontend-test .
+          docker run --rm curio-frontend-test npm run typecheck
+
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
         run: |
@@ -404,6 +551,14 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
             'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null; echo; echo "=== per-session messages.log ==="; find .curio -name messages.log -exec sh -c "echo \"--- {} ---\"; cat {}" \; 2>/dev/null' \
             > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
+          # Shards 1..N-1 start backend and sandbox separately, so they log to
+          # messages-backend.log / messages-sandbox.log in their own state dirs
+          # (main.py names the file after the server), which the messages.log
+          # search above never matches; launch-*.out is only the launcher banner.
+          # Without these, a failure on any worker but gw0 has no server log.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
+            > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
       - name: 📤 Upload sandbox logs
         if: always()
@@ -413,6 +568,16 @@ jobs:
           path: |
             container-logs.txt
             curio-messages.txt
+            shard-logs.txt
+          retention-days: 7
+
+      - name: 📤 Upload e2e failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-failures
+          path: e2e-failures/
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: 🧹 Tear down containers
@@ -424,11 +589,11 @@ jobs:
           # safety net for the next run.
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
-  # Second stack, same runner, booted with --isolation=fork so a real workload
+  # Second stack, same runner, booted with CURIO_ISOLATION=fork so a real workload
   # runs through the confined path. Runs after test-gpu rather than beside it:
   # the runner takes one job at a time, and both want the GPU and the bind
-  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --auth
-  # and --exec-user, and what that does and does not cover.
+  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --deploy
+  # and leaves CURIO_EXEC_USER empty, and what that does and does not cover.
   #
   # Scoped to the workflows whose nodes are Python, because isolation wraps
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py). Running
@@ -440,6 +605,8 @@ jobs:
     # information and worth having -- unless the run was cancelled.
     if: >-
       !cancelled() &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, gpu, curio]
@@ -465,6 +632,8 @@ jobs:
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       # Python nodes only; see the note above the job.
       ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_TRACE: "1"
 
     steps:
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
@@ -505,10 +674,14 @@ jobs:
       # reading anything into the test results. Without this a silently
       # degraded boot (fork unavailable, pyseccomp missing) would run the
       # in-process path and report a green "isolated" run.
-      - name: 🔒 Assert node execution is actually isolated
+      - name: 🔒 Assert the stack came up configured for isolation
         shell: bash
         run: |
           set -euo pipefail
+          # Boot-time, so this is the configuration only. Whether the workloads
+          # below actually forked is a separate question, asked after they run
+          # by "Assert the workflows above actually forked".
+          #
           # Ask the sandbox, do not read the logs. The startup banner goes to
           # the sandbox subprocess's stderr, which curio.py routes into
           # .curio/messages.log -- `docker compose logs` only carries the
@@ -541,7 +714,7 @@ jobs:
       # stub-project to skip the signup UI, reset-db between every test. That
       # blueprint refuses with 404 unless the server is BOTH a dev env and a
       # declared test rig (backend/app/testing/routes.py), and a compose-owned
-      # stack only gets the second factor from the overlay's CURIO_TESTING=1.
+      # stack only gets the second factor from --testing on its command.
       # Drop it and the stack still comes up healthy while all ~207 e2e tests
       # error inside an autouse fixture on a bare 404 -- 12k log lines that say
       # nothing about the cause. Ask once, here, and name it.
@@ -553,7 +726,7 @@ jobs:
             -H 'Content-Type: application/json' -d '{}' \
             "http://localhost:${CURIO_E2E_BACKEND_PORT}/api/testing/reset-db")
           if [ "$code" != "200" ]; then
-            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (CURIO_TESTING)" >&2
+            echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
           echo "OK: the testing stubs are mounted."
@@ -587,6 +760,35 @@ jobs:
           bash scripts/test.sh --e2e-only --use-existing \
             --workflows "$ISOLATED_WORKFLOWS"
 
+      - name: 🔒 Assert the workflows above actually forked
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The boot-time check earlier reads `isolation`, the mode the sandbox
+          # RESOLVED. That is settled before any node runs, so on its own it
+          # verifies a configuration and not a workload.
+          #
+          # The gap it leaves is reachable. The zygote is started lazily on the
+          # first /exec, and a spawn that fails degrades to in-process for the
+          # life of the process rather than failing the request, because the
+          # node still has to run. `isolation` does not move when that happens.
+          # This job would then have run every workflow in-process, produced
+          # the same correct answers, and gone green as a duplicate of test-gpu.
+          #
+          # `isolation_active` is the outcome rather than the intent, so it has
+          # to be read AFTER the workflows. `pending` means nothing executed,
+          # which is a failure here too: it would mean the e2e step dispatched
+          # no node at all.
+          active="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
+                    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation_active",""))')"
+          if [ "$active" != "fork" ]; then
+            echo "::error::the workflows did not run isolated (isolation_active='${active:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' >&2 || true
+            exit 1
+          fi
+          echo "OK: node execution was dispatched to the zygote"
+
       - name: 📋 Capture sandbox/backend logs
         if: always()
         run: |
@@ -610,18 +812,27 @@ jobs:
             isolated-messages.txt
           retention-days: 7
 
+      - name: 📤 Upload e2e failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: isolated-e2e-failures
+          path: e2e-failures/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: 🧹 Tear down containers
         if: always()
         run: |
           docker compose -p curio-ci-iso down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
-  # The only job that boots what the deploy actually ships: --isolation fork
-  # WITH --exec-user, so node code runs as an unprivileged account instead of
+  # The only job that boots what the deploy actually ships: isolation
+  # WITH an execution account, so node code runs unprivileged instead of
   # as root.
   #
   # Why this is a third job rather than a flag on test-gpu-isolated: setting
-  # --exec-user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
+  # an execution user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
   # boot, and the e2e harness computes its ground truth by executing every code
   # node in the HOST test process and writing artifacts into .curio/data as the
   # runner user. The two cannot coexist -- the comparison dies with EACCES
@@ -642,6 +853,8 @@ jobs:
     # Serialized behind them because all three share the runner's workspace.
     if: >-
       !cancelled() &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, gpu, curio]
@@ -701,7 +914,7 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio-ci-exec-user up -d
 
-      # The boot is itself an assertion. --isolation fork on an instance with
+      # The boot is itself an assertion. CURIO_ISOLATION=fork on an instance with
       # auth on is FAIL-CLOSED (isolation/hardening.py::apply_and_report): a
       # sandbox that cannot confine, or that finds a sensitive path still
       # readable by curio-exec after hardening, exits rather than serve. So a
@@ -748,7 +961,7 @@ jobs:
       # Deliberately not "no skips": test_the_deployment_secret_cannot_be_read
       # skips by design when the stack has no .env, which is the case here, and
       # a rule that forbade that would just get deleted the first time it fired.
-      - name: 🔒 Assert the isolation boundary holds under --exec-user
+      - name: 🔒 Assert the isolation boundary holds under an execution user
         shell: bash
         run: |
           set -euo pipefail
@@ -787,4 +1000,213 @@ jobs:
         if: always()
         run: |
           docker compose -p curio-ci-exec-user down -v --remove-orphans || true
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+  # Many users at once: 5, 10, 50 and 100 of them creating dataflows from the
+  # shipped examples and running every node, Autark included.
+  #
+  # Why a fourth job rather than more work inside test-gpu: this one needs its
+  # own stack (the deployment shape, so the numbers describe what users hit)
+  # and its own port triple, and a red tier here means "the stack does not hold
+  # up under N users", which is a different verdict from "a dataflow is
+  # broken". Serialized behind the others because they share the runner.
+  #
+  # The two tiers measure different halves of a dataflow. The HTTP tiers drive
+  # the backend endpoints the canvas calls -- including the Autark data load,
+  # which is compiled to autk-db JavaScript and runs in the sandbox -- and
+  # scale to 100 users because they need no browser. The browser tier is five
+  # real Chrome contexts rendering Autark on WebGPU, which is the half that
+  # cannot be driven any other way and does not scale past a handful on one GPU.
+  test-gpu-stress:
+    needs: test-gpu-exec-user
+    # Not on every push: on the cron above, on a PR labelled `stress`, or on a
+    # manual dispatch that asks for it. `!cancelled()` rather than a plain
+    # condition because on those three triggers the jobs it needs are skipped,
+    # and a skipped dependency would otherwise skip this one too; it also keeps
+    # the job running when an earlier suite went red, same as the two above.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.stress) ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'stress')))
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 75
+
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
+      # A sixth port triple; see the overlay's header for the other five.
+      CURIO_CONTAINER_NAME: curio-ci-stress
+      CURIO_PORT_2000: "2070"
+      CURIO_PORT_5002: "5072"
+      CURIO_PORT_8080: "8150"
+      BACKEND_URL: "http://localhost:5072"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Read by the e2e fixtures when CURIO_E2E_USE_EXISTING is set, so the
+      # browser tier attaches to the stack this job started.
+      CURIO_E2E_USE_EXISTING: "1"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5072"
+      CURIO_E2E_SANDBOX_PORT: "2070"
+      CURIO_E2E_FRONTEND_PORT: "8150"
+      CURIO_STRESS: "1"
+      CURIO_WEBGPU_BACKEND: hardware
+
+    steps:
+      # Same reason as the exec-user job: this stack hardens bind-mounted
+      # paths to root, and checkout runs as the runner user.
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔨 Build all service images in parallel
+        run: docker compose -p curio-ci-stress build --parallel
+
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci-stress up -d
+
+      - name: 🧪 Wait for services to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 420 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1 || true)"
+              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+              if [[ "${state}" == "exited" ]]; then
+                echo "the stress stack exited during startup. Logs:"
+                docker compose -p curio-ci-stress logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+              sleep 2
+            done
+          '
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 📦 Install harness dependencies
+        run: python -m pip install --quiet requests "pytest==9.0.3" pytest-playwright allure-pytest
+
+      # Sampled next to the run, not after it: peak memory and PID count are
+      # the two numbers that say how close 100 users came to the container's
+      # ceilings, and both are gone by the time the run ends.
+      - name: 📈 Start the container stats sampler
+        run: |
+          nohup bash -c 'while true; do
+            docker stats --no-stream --format "{{.Name}}|{{.MemUsage}}|{{.PIDs}}" \
+              >> "$GITHUB_WORKSPACE/docker-stats.log" 2>/dev/null || true
+            sleep 5
+          done' > /dev/null 2>&1 &
+          echo "$!" > "$GITHUB_WORKSPACE/stats-sampler.pid"
+
+      # Node 26 for the Autark compiler: the harness runs the frontend's own
+      # emitter through Node's type stripping rather than keeping a second copy
+      # of it in Python.
+      - name: 🟩 Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "26"
+
+      - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
+        run: |
+          python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 5,10,50,100 \
+            --out "$GITHUB_WORKSPACE/stress" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+
+      # The same 100 users, behaving like people rather than a thundering
+      # herd: arrivals spread over two minutes and a pause between node runs.
+      # A stack can be fine for a hundred people working and still fall over
+      # when all hundred press Run in the same millisecond, and the two
+      # numbers are fixed by different things, so both are recorded.
+      - name: 🚶 Run the session profile (100 users, realistic pacing)
+        if: always()
+        run: |
+          python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --profile session \
+            --out "$GITHUB_WORKSPACE/stress-session" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
+
+      # Separate step so a red HTTP tier does not hide the state of the WebGPU
+      # half, and vice versa: they fail for different reasons and get fixed by
+      # different changes.
+      # CURIO_STATE_DIR is what keeps this runnable at all. The e2e conftest
+      # creates its own ``.curio/test`` tree on the host at import time, and
+      # this stack runs with an execution user, which hardens the bind-mounted
+      # ``.curio`` to 0700 root-owned -- so the import died with EACCES before
+      # a browser was ever launched. The tier attaches to the running stack
+      # over HTTP and resets the database through /api/testing/reset-db, so
+      # those host-side paths are never read by anything; pointing them at the
+      # runner's temp dir costs nothing.
+      - name: 🖥️ Run the browser tier (5 concurrent WebGPU users)
+        if: always()
+        env:
+          CURIO_STATE_DIR: ${{ runner.temp }}/stress-e2e/.curio
+        run: |
+          mkdir -p "$CURIO_STATE_DIR"
+          cd utk_curio/backend
+          PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest \
+            tests/test_frontend/test_stress_browser.py -v -ra
+
+      - name: 📈 Stop the container stats sampler
+        if: always()
+        run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
+
+      - name: 📋 Capture stack logs
+        if: always()
+        run: |
+          docker compose -p curio-ci-stress logs --no-color --tail=8000 \
+            > "$GITHUB_WORKSPACE/stress-container-logs.txt" 2>&1 || true
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/stress-messages.txt" 2>&1 || true
+
+      - name: 📤 Upload the stress report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: stress-report
+          path: |
+            stress/
+            stress-session/
+            docker-stats.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 📤 Upload stress stack logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: stress-container-logs
+          path: |
+            stress-container-logs.txt
+            stress-messages.txt
+          retention-days: 7
+
+      - name: 📤 Upload browser tier diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: stress-e2e-failures
+          path: e2e-failures/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 🧹 Tear down containers
+        if: always()
+        run: |
+          docker compose -p curio-ci-stress down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true

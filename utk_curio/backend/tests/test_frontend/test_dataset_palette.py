@@ -99,10 +99,10 @@ def test_saved_computed_dataset_shows_in_palette_and_persists(
     page,
 ):
     # Both guards, in this order, like every other module that calls
-    # require_owner_view. A stack booted without --auth has no owner for
+    # require_owner_view. A stack booted without --deploy has no owner for
     # the browser to be, so the guest view there is the configuration, not
     # a setup bug -- docker-compose.ci-isolated.yml is forced to drop
-    # --auth (fork isolation without an --exec-user is fatal by design).
+    # --deploy (fork isolation without an execution user is fatal by design).
     # Without this, require_owner_view's deliberate hard failure fired on
     # that stack while its 111 peers correctly skipped.
     require_user_auth()

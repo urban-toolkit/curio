@@ -13,7 +13,13 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.packages.manifest import load_packageage_manifest
-from utk_curio.backend.app.packages.routes import _catalog_root, _manifest_to_payload
+from utk_curio.backend.app.packages.routes import _manifest_to_payload
+
+# The COMMITTED catalog, named directly rather than through
+# ``_catalog_root()``: these assertions are about what the repository ships,
+# and the runtime root is relocatable (``CURIO_PACKAGES_ROOT``) so a test
+# session gets its own copy to publish into.
+REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
 
 
 EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
@@ -40,7 +46,7 @@ EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
 
 @pytest.fixture()
 def builtin_packageage_dir() -> Path:
-    root = _catalog_root()
+    root = REAL_CATALOG
     candidates = sorted(
         d for d in root.iterdir()
         if d.is_dir() and d.name.startswith("curio.builtin@")
@@ -86,11 +92,11 @@ def test_every_catalog_packageage_validates_against_schema():
     import json
     from jsonschema import Draft202012Validator
 
-    schema_path = _catalog_root().parent / "docs" / "schemas" / "node-package.v4.json"
+    schema_path = REAL_CATALOG.parent / "docs" / "schemas" / "node-package.v4.json"
     assert schema_path.is_file(), f"schema not found at {schema_path}"
     validator = Draft202012Validator(json.loads(schema_path.read_text()))
 
-    manifests = sorted(_catalog_root().glob("*/manifest.json"))
+    manifests = sorted(REAL_CATALOG.glob("*/manifest.json"))
     assert manifests, "expected at least one package in the catalog"
     for m in manifests:
         errors = list(validator.iter_errors(json.loads(m.read_text())))

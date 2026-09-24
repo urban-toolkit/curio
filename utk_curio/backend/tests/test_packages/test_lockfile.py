@@ -599,3 +599,53 @@ class TestUninstallRefusesWhileNodesUseThePackage:
         )
         assert resp.status_code == 409
         assert "delete it first" in resp.get_json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# Uninstalling from the store detaches the package from the lockfiles too
+# ---------------------------------------------------------------------------
+
+def test_uninstall_detaches_the_package_from_every_project(
+    client, user_and_token, alice_project, tmp_curio,
+):
+    """A lockfile entry is Curio's reference, so Curio removes it.
+
+    Deleting a package from the user store used to leave every dataflow that
+    had installed it naming a package that is no longer there. The canvas
+    reinstalls anything in the lockfile it cannot find (``useEnsureWorkflowDeps``),
+    so reopening that dataflow retried an install that cannot succeed and
+    ended in "Could not install <coordinate>" -- every time, for good. It
+    also broke the next sideload of the same archive, which is how the e2e
+    package roundtrip started failing under load.
+    """
+    user, token = user_and_token
+    user_key = _user_key_for(user)
+    dir_name = UHVI_DIR
+
+    packages_services.install_to_project(user_key, alice_project, dir_name)
+    assert dir_name in packages_services.get_project_lockfile(user_key, alice_project)
+
+    assert client.delete(
+        f"/api/packages/{dir_name}", headers=_auth(token),
+    ).status_code == 204
+
+    assert dir_name not in packages_services.get_project_lockfile(
+        user_key, alice_project,
+    ), "the dataflow still names a package that is no longer installed"
+
+
+def test_uninstall_leaves_other_packages_in_the_lockfile_alone(
+    client, user_and_token, alice_project, tmp_curio,
+):
+    """The sweep is per coordinate, not a lockfile reset."""
+    user, token = user_and_token
+    user_key = _user_key_for(user)
+
+    packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
+    before = packages_services.get_project_lockfile(user_key, alice_project)
+    others = before - {UHVI_DIR}
+
+    client.delete(f"/api/packages/{UHVI_DIR}", headers=_auth(token))
+
+    after = packages_services.get_project_lockfile(user_key, alice_project)
+    assert after == others

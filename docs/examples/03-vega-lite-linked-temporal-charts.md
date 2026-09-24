@@ -83,7 +83,6 @@ The first view stacks violations by camera within each year so individual offend
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "table"},
   "width": 320,
   "height": 260,
   "config": {"bar": {"continuousBandSize": 18}},
@@ -112,7 +111,6 @@ The second view sums across the same five cameras to show the year-over-year tre
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "data": {"name": "table"},
   "width": 320,
   "height": 260,
   "transform": [

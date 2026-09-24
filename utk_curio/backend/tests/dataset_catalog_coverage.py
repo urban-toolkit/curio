@@ -177,13 +177,12 @@ return pd.DataFrame({
 })
 '''
 
-# ``data: {name: "data"}`` is how a vis-vega node names its upstream input; see
-# docs/examples/02-vega-lite-spatial-density.json for the same wiring.
+# No ``data`` block in these specs: the vis-vega node injects its upstream rows
+# as the spec's data when it compiles, so one written here would be inert.
 _GEOJSON_VEGA_SPEC = json.dumps(
     {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
         "description": "Per-feature bounding-box width of the loaded geometry.",
-        "data": {"name": "data"},
         "mark": "bar",
         "encoding": {
             "x": {"field": "feature", "type": "nominal", "axis": {"title": "Feature"}},
@@ -243,7 +242,6 @@ _PARQUET_VEGA_SPEC = json.dumps(
     {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
         "description": "Non-null cell count for the first columns of the table.",
-        "data": {"name": "data"},
         "mark": "bar",
         "encoding": {
             "x": {"field": "column", "type": "nominal", "axis": {"title": "Column"}},
@@ -326,7 +324,6 @@ _GEOTIFF_VEGA_SPEC = json.dumps(
     {
         "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
         "description": "Valid (non-nodata, finite) pixel count per raster band.",
-        "data": {"name": "data"},
         "mark": "bar",
         "encoding": {
             "x": {"field": "band", "type": "nominal", "axis": {"title": "Band"}},

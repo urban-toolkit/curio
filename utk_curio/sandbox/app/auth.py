@@ -1,7 +1,7 @@
 """Shared-secret authentication for the sandbox HTTP API.
 
-The sandbox executes arbitrary user code. Every route that can run code, install
-packages, or read artifacts must therefore prove the caller is Curio's own
+The sandbox executes arbitrary user code. Every route that can run code or
+read artifacts must therefore prove the caller is Curio's own
 backend and not something else that reached the port.
 
 The secret is generated once per launch by ``utk_curio/main.py``
@@ -17,7 +17,7 @@ Three deliberate choices:
   and permits.
 - **Except when hosted.** That convenience must never reach production, so
   ``require_startup_token`` refuses to boot when the launcher put this instance
-  in a multi-user posture (``--auth`` / ``--deploy``, i.e. ``CURIO_NO_AUTH=0``)
+  in a multi-user posture (``--deploy``, i.e. ``CURIO_NO_AUTH=0``)
   without a token.
 - **JSON, not ``abort(401)``.** Flask's default 401 is an HTML page, which the
   backend would surface to the browser as "sandbox returned non-JSON" plus a
@@ -38,7 +38,7 @@ _warned = False
 
 
 def hosted_mode() -> bool:
-    """True when the launcher enabled user auth (``--auth`` or ``--deploy``).
+    """True when the launcher enabled user auth (``--deploy``).
 
     ``main.py::set_environment_variables`` writes ``CURIO_NO_AUTH=0`` for both,
     and the sandbox inherits it. Absent means a plain local launch.
@@ -60,7 +60,7 @@ def require_startup_token() -> None:
     if hosted_mode() and get_expected_token() is None:
         raise RuntimeError(
             f"{TOKEN_ENV} is not set but this instance runs with user auth "
-            "enabled (--auth / --deploy). The sandbox executes arbitrary user "
+            "enabled (--deploy). The sandbox executes arbitrary user "
             "code and refuses to start unguarded. Launch through "
             "'curio start', which generates the token, or set "
             f"{TOKEN_ENV} yourself on both the backend and the sandbox."

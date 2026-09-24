@@ -50,9 +50,19 @@ class TestLocalLaunchDegrades(unittest.TestCase):
         self.assertIn("in-process", reason)
 
     def test_macos_explicit_fork_falls_back_locally(self):
-        """fork and rlimits exist; seccomp does not, but that only gates hosting."""
-        resolved, _reason = mode.resolve_mode("fork", hosted=False, caps=MACOS)
-        self.assertEqual(resolved, mode.FORK)
+        """fork and rlimits exist, so this read as isolable for a long time.
+
+        It is not. ``confine`` calls ``prctl(PR_SET_NO_NEW_PRIVS)`` through
+        ``libc.so.6`` before it does anything else, so macOS resolved to FORK
+        and then killed every node at confinement - the one outcome a local
+        launch is supposed to be protected from. The name of this test was
+        right; its assertion was not.
+        """
+        resolved, reason = mode.resolve_mode("fork", hosted=False, caps=MACOS)
+        self.assertEqual(resolved, mode.OFF)
+        self.assertIsNotNone(reason)
+        self.assertIn("Linux", reason)
+        self.assertIn("in-process", reason)
 
     def test_linux_local_auto_stays_off(self):
         """Local single-user work does not pay the isolation cost by default."""
@@ -71,7 +81,7 @@ class TestAutoIsOptInOnly(unittest.TestCase):
 
     Isolation is opt-in. Making `auto` isolate would silently move every hosted
     Linux instance onto the fork path the moment this shipped, and CI (Linux,
-    --auth) would be the first to run it. When child.confine() has actually
+    --deploy) would be the first to run it. When child.confine() has actually
     been exercised, these expectations change deliberately, together with the
     AUTO branch in mode.resolve_mode.
     """
@@ -80,10 +90,10 @@ class TestAutoIsOptInOnly(unittest.TestCase):
         resolved, reason = mode.resolve_mode("auto", hosted=True, caps=LINUX_FULL)
         self.assertEqual(resolved, mode.OFF)
         self.assertIsNotNone(reason, "a hosted instance must be told it is exposed")
-        self.assertIn("--isolation=fork", reason)
+        self.assertIn("CURIO_ISOLATION=fork", reason)
 
     def test_hosted_auto_does_not_raise_where_it_could_not_isolate(self):
-        """CI runs Linux with --auth and no pyseccomp; it must still boot."""
+        """CI runs Linux with --deploy and no pyseccomp; it must still boot."""
         for capabilities in (WINDOWS, MACOS, LINUX_NO_SECCOMP):
             with self.subTest(platform=capabilities["platform"]):
                 resolved, _reason = mode.resolve_mode(
@@ -104,8 +114,9 @@ class TestExplicitForkFailsClosedWhenHosted(unittest.TestCase):
             mode.resolve_mode("fork", hosted=True, caps=WINDOWS)
         self.assertIn("os.fork", str(caught.exception))
 
-    def test_macos_hosted_refuses_because_seccomp_is_absent(self):
-        """POSIX is not enough: without a syscall filter the child keeps network."""
+    def test_macos_hosted_refuses_because_it_is_not_linux(self):
+        """POSIX is not enough: confinement needs prctl, and hosting needs a
+        syscall filter on top of it. Neither exists here."""
         with self.assertRaises(IsolationUnavailable) as caught:
             mode.resolve_mode("fork", hosted=True, caps=MACOS)
         self.assertIn("Linux", str(caught.exception))
@@ -125,7 +136,7 @@ class TestExplicitForkFailsClosedWhenHosted(unittest.TestCase):
         with self.assertRaises(IsolationUnavailable) as caught:
             mode.resolve_mode("fork", hosted=True, caps=WINDOWS)
         message = str(caught.exception)
-        self.assertIn("--isolation=off", message)
+        self.assertIn("CURIO_ISOLATION=off", message)
         self.assertIn("Docker", message)
 
 

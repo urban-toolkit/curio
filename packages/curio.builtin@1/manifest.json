@@ -303,7 +303,7 @@
     {
       "bidirectional": true,
       "category": "vis_simple",
-      "description": "Displays incoming data: renders a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
+      "description": "Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -386,10 +386,10 @@
     {
       "category": "data",
       "containerStyle": {
-        "nodeHeight": 170,
-        "nodeWidth": 280
+        "nodeHeight": 300,
+        "nodeWidth": 460
       },
-      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two distinct input handles: points (top) and polygons (bottom); each accepts a GEODATAFRAME / GeoJSON FeatureCollection. Output points carry the containing polygon's tag as `neighborhood_name` plus per-polygon roll-up aggregates. Choose which polygon property is used as the tag in the node body - it defaults to `name`; Chicago's neighborhoods use `pri_neigh`, NYC's boroughs `BoroName`. The node warns when no polygon carries the chosen property.",
+      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two input handles on its left edge, each taking a GEODATAFRAME / GeoJSON FeatureCollection: the upper, blue one for the points and the lower, green one for the polygons (top and bottom). Two settings in the node body. Which polygon column to tag with: `name` by default; Chicago's neighborhoods use `pri_neigh`, its ZIP boundaries `zip`, NYC's boroughs `BoroName`; the node warns when no polygon carries it. And what comes out: the points, each with that column under its own name (`zip` stays `zip`; `<column>_polygon` if the points already had one; null outside every polygon) plus a `<column>_point_count`; or the polygons, each with a `point_count`, ready for a choropleth or a bar chart of counts. Points that carry a `dominant_class` also get the per-polygon `<column>_dominant_class` and `<column>_dominant_pct` roll-ups.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,

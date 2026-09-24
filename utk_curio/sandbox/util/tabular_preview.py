@@ -13,6 +13,43 @@ from utk_curio.sandbox.util.parsers import parseOutput
 logger = logging.getLogger(__name__)
 
 
+_GEOJSON_GEOMETRY_TYPES = frozenset(
+    {
+        "Point",
+        "MultiPoint",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+        "GeometryCollection",
+    }
+)
+
+
+def _as_wkt(value: Any) -> Any:
+    """Render a GeoJSON geometry dict as WKT, leaving everything else alone.
+
+    A *secondary* geometry column (a ``centroid``, an ``envelope``) travels
+    inside a feature's ``properties`` as a GeoJSON dict, so a preview table
+    would otherwise show ``{'type': 'Point', 'coordinates': [0.67, 0.33]}`` in
+    the cell. The parquet preview path already renders geometry columns as WKT
+    (``load_parquet_frame``); this keeps the two agreeing, so the Data Catalog
+    browser and the Data Pool table cannot drift apart.
+    """
+    if not isinstance(value, dict):
+        return value
+    if value.get("type") not in _GEOJSON_GEOMETRY_TYPES:
+        return value
+    if "coordinates" not in value and "geometries" not in value:
+        return value
+    try:
+        from shapely.geometry import shape
+
+        return shape(value).wkt
+    except Exception:  # noqa: BLE001 - a preview must never be the thing that fails
+        return value
+
+
 def rows_from_parse_output(parsed: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert a ``parseOutput`` payload into row records for table UIs."""
     data_type = parsed.get("dataType")
@@ -42,7 +79,13 @@ def rows_from_parse_output(parsed: dict[str, Any]) -> list[dict[str, Any]]:
 
     if data_type == "geodataframe" and isinstance(data, dict):
         features = data.get("features") or []
-        return [{**(feature.get("properties") or {})} for feature in features]
+        return [
+            {
+                key: _as_wkt(value)
+                for key, value in (feature.get("properties") or {}).items()
+            }
+            for feature in features
+        ]
 
     return []
 

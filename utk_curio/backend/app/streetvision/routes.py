@@ -1,13 +1,15 @@
 """Street Vision HTTP endpoints (registered under ``/api/streetvision/*``).
 
-Three frontend nodes share this blueprint:
+Two frontend nodes share this blueprint:
 
 - **Street View Fetcher** uses ``/data/streetview/search_place``,
   ``/data/streetview/coverage``, and ``/data/streetview/fetch``.
 - **HuggingFace CV Inference** uses ``/models/search``, ``/inference/run``,
-  ``/inference/results/<job_id>``, and ``/inference/overlay/<image_id>``.
-- **CV Gallery** just consumes the inference results plus
-  ``/inference/overlay/<image_id>`` for the inspect view; no extra endpoints.
+  and ``/inference/results/<job_id>``.
+
+``/inference/overlay/<image_id>`` is read by whatever displays the results:
+the inference node puts that path in an ``overlay_url`` column, and the
+built-in Simple View fetches it with the caller's token.
 
 All heavy ML dependencies (``torch``, ``transformers``, ``ultralytics``)
 are part of Curio's base install but lazy-imported deep in the call stack
@@ -262,8 +264,10 @@ def inference_results(job_id: str):
 
 @bp.get("/inference/overlay/<path:image_id>")
 def inference_overlay(image_id: str):
-    """Serve the segmentation overlay PNG for a single image (used by the
-    CV Gallery's inspect view)."""
+    """Serve the segmentation overlay PNG for a single image.
+
+    Addressed by ``overlay_url`` in the inference node's output, and fetched by
+    whatever renders that column."""
     # Scoped to the caller: this route has no @require_auth, so before the
     # cache was per-user anyone who could guess an image id could read another
     # user's overlay.

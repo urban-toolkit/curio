@@ -38,6 +38,7 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     _wait_for_reactflow_ready,
     api_json,
     open_tools_palette,
@@ -181,7 +182,7 @@ def test_save_node_as_package_export_then_load_back(
 
     # 4. Export. Never hard-code the filename: the package id is randomised per
     #    Save-As, so the archive is curio.canvas.draft.<random>@1-0.1.0.curio.zip.
-    with page.expect_download(timeout=60000) as download:
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
         modal.get_by_role("button", name="Export", exact=True).click()
 
     filename = download.value.suggested_filename

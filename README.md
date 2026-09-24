@@ -26,7 +26,7 @@
   <p>
     <a href="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml"><img alt="Full stack build" src="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg"/></a>
     <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white"/></a>
-    <a href="https://nodejs.org/"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white"/></a>
+    <a href="https://nodejs.org/"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-26-339933?logo=nodedotjs&logoColor=white"/></a>
     <a href="https://github.com/urban-toolkit/curio/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/urban-toolkit/curio"/></a>
     <a href="https://github.com/urban-toolkit/curio/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"/></a>
   </p>
@@ -116,7 +116,7 @@ A lot has landed since v0.5. Highlights:
 - 💾 **Auto-save.** With unsaved-changes guard and a save status icon.
 - ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
 - 👥 **Session-level multi-user isolation.** Across backend, sandbox, and frontend.
-- 📊 **Dashboard mode toggle.** Switches mode while preserving node state, edges, and positions.
+- 📊 **Shareable dashboards.** Pinned nodes get a page of their own at `/dashboard/<id>`, drawn from the dataflow's saved outputs. Share the link; nobody has to run anything.
 - 🦆 **DuckDB-native artifact I/O.** Faster, type-safe data exchange between sandbox and backend.
 - 🖼️ **Project thumbnails** in the project list, plus the `--with-examples` flag to seed example projects on startup, and toast notifications replacing browser alerts.
 - 👥 **Real-time collaboration.** Opt-in via `curio start --collab`. Co-edit a project with presence, soft locks, and shared execution output. See [docs/COLLABORATION.md](docs/COLLABORATION.md).
@@ -136,7 +136,7 @@ This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), whic
 
 ## Usage and contributions
 
-For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. To build a node of your own, follow the [authoring nodes guide](docs/AUTHORING-NODES.md). To install, fork, or publish node packages, see the [node catalog guide](docs/NODE-CATALOG.md); for datasets, see the [data catalog guide](docs/DATA-CATALOG.md). A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs).
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. To build a node of your own, follow the [authoring nodes guide](docs/AUTHORING-NODES.md). To install, fork, or publish node packages, see the [node catalog guide](docs/NODE-CATALOG.md); for datasets, see the [data catalog guide](docs/DATA-CATALOG.md). The [example gallery](docs/README.md#examples) collects 16 worked examples, from Vega-Lite dashboards to GPU-accelerated Autark maps. Each one has a dataflow you can import and a step-by-step walkthrough, and they are seeded into the hosted instances, so you can open them without installing anything.
 
 🐳 Curio supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
 

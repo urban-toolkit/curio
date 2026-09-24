@@ -88,7 +88,7 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
             test_name=label,
             clip_selector=walk.clip_selector,
             fit_reactflow=walk.fit_reactflow,
-            max_diff_ratio=walk.max_diff_ratio,
+            max_diff_ratio=walk.effective_max_diff_ratio,
             sweep_toasts=not subject_is_a_toast,
         )
 
@@ -113,6 +113,6 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
         test_name="walkthrough",
         clip_selector=walk.clip_selector,
         fit_reactflow=walk.fit_reactflow,
-        max_diff_ratio=walk.max_diff_ratio,
+        max_diff_ratio=walk.effective_max_diff_ratio,
         sweep_toasts=not subject_is_a_toast,
     )

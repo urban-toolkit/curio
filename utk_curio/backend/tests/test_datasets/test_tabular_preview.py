@@ -74,3 +74,52 @@ def test_dataset_preview_service_parquet(tmp_path: Path):
     assert payload.get("unsupported") is not True
     assert payload["rows"][0]["gid"] == "x1"
     assert payload["totalRows"] == 1
+
+
+def test_rows_from_parse_output_renders_secondary_geometry_as_wkt():
+    """A secondary geometry column previews as WKT, matching the parquet path (C6).
+
+    ``gdf['centroid'] = gdf.centroid`` used to crash ``parseOutput`` outright.
+    Now that it serializes, the cell arrives as a GeoJSON dict and would render
+    as ``{'type': 'Point', 'coordinates': [...]}`` in a table -- which is not a
+    good resting state either. The parquet preview already renders geometry as
+    WKT, so both paths must agree or the catalog browser and the Data Pool table
+    show the same dataset differently.
+    """
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+
+    gdf = gpd.GeoDataFrame(
+        {"name": ["A"]},
+        geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 0)])],
+        crs="EPSG:4326",
+    )
+    gdf["centroid"] = gdf.geometry.representative_point()
+
+    rows = rows_from_parse_output(parseOutput(gdf))
+
+    assert rows[0]["name"] == "A"
+    assert rows[0]["centroid"].startswith("POINT (")
+
+
+def test_parse_output_and_parquet_previews_agree_on_geometry(tmp_path: Path):
+    """The two preview paths render the same geometry the same way."""
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+
+    polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 0)])
+    gdf = gpd.GeoDataFrame({"name": ["A"]}, geometry=[polygon], crs="EPSG:4326")
+
+    path = tmp_path / "agree.parquet"
+    gdf.to_parquet(path)
+    parquet_rows, _, _ = preview_parquet_file(path, row_limit=10, offset=0)
+
+    # Same geometry, but reached through the parseOutput path as a secondary
+    # column, where it arrives as a GeoJSON dict rather than a geometry dtype.
+    as_secondary = gpd.GeoDataFrame(
+        {"name": ["A"]}, geometry=[polygon], crs="EPSG:4326"
+    )
+    as_secondary["other"] = [polygon]
+    parsed_rows = rows_from_parse_output(parseOutput(as_secondary))
+
+    assert parsed_rows[0]["other"] == parquet_rows[0]["geometry"]

@@ -31,6 +31,7 @@ if (!(global as any).DOMMatrixReadOnly) {
 const mockPersistDataflowForInstall = jest.fn().mockResolvedValue(undefined);
 const mockBeginPendingInstall = jest.fn();
 const mockEndPendingInstall = jest.fn();
+const mockFailPendingInstall = jest.fn();
 const mockShowToast = jest.fn();
 
 // Watchdog timeout in FlowProvider (PLAY_ALL_STALL_TIMEOUT_MS). Kept in sync here
@@ -45,6 +46,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     persistDataflowForInstall: mockPersistDataflowForInstall,
     beginPendingInstall: mockBeginPendingInstall,
     endPendingInstall: mockEndPendingInstall,
+    failPendingInstall: mockFailPendingInstall,
     applyRemoveChanges: jest.fn(),
     applyReviewedRemovals: jest.fn(),
     allMinimized: false,
@@ -454,6 +456,95 @@ describe('install-sync scoping (#180): the save is told which nodes it covers', 
       unmount();
 
       expect(mockPersistDataflowForInstall).toHaveBeenCalledWith(['A']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // ── #352: the placeholder clear follows the save's actual result ──────────
+  //
+  // It used to hang off `.finally`, so every "Adding…" placeholder was cleared
+  // however the save went. The backend's known file-less kinds are covered
+  // (ROW_ONLY_KINDS) and a real row suppresses the placeholder anyway, so this
+  // was masked - but nothing tied the clear to the outcome, and any new
+  // scalar kind or genuinely missing artifact reproduced #217's "entry flashes
+  // then disappears" with no test to catch it.
+
+  async function runInstallSyncFor(nodeIds: string[]) {
+    await mountWith(nodeIds.map((id) => makeNode(id, { saveOutputDataset: true })));
+    await act(async () => {
+      nodeIds.forEach((id) => api.applyNewOutput(output(id)));
+      jest.advanceTimersByTime(500);
+    });
+    // Let the save promise and its .then settle.
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  }
+
+  test('clears the placeholder only for producers whose dataset installed', async () => {
+    jest.useFakeTimers();
+    try {
+      mockPersistDataflowForInstall.mockResolvedValue({ saved: true, failedNodeIds: ['B'] });
+
+      await runInstallSyncFor(['A', 'B']);
+
+      expect(mockEndPendingInstall).toHaveBeenCalledWith('A');
+      expect(mockEndPendingInstall).not.toHaveBeenCalledWith('B');
+      // B says so instead of vanishing.
+      expect(mockFailPendingInstall).toHaveBeenCalledWith('B');
+    } finally {
+      jest.useRealTimers();
+      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+    }
+  });
+
+  test('fails every placeholder when the save itself did not land', async () => {
+    jest.useFakeTimers();
+    try {
+      mockPersistDataflowForInstall.mockResolvedValue({
+        saved: false,
+        failedNodeIds: ['A', 'B'],
+      });
+
+      await runInstallSyncFor(['A', 'B']);
+
+      expect(mockEndPendingInstall).not.toHaveBeenCalled();
+      expect(mockFailPendingInstall).toHaveBeenCalledWith('A');
+      expect(mockFailPendingInstall).toHaveBeenCalledWith('B');
+    } finally {
+      jest.useRealTimers();
+      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+    }
+  });
+
+  test('clears everything when the save reports no failures', async () => {
+    // Guards the two above: failing placeholders on a healthy save would leave
+    // a warning triangle beside every dataset that installed perfectly well.
+    jest.useFakeTimers();
+    try {
+      mockPersistDataflowForInstall.mockResolvedValue({ saved: true, failedNodeIds: [] });
+
+      await runInstallSyncFor(['A']);
+
+      expect(mockEndPendingInstall).toHaveBeenCalledWith('A');
+      expect(mockFailPendingInstall).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+    }
+  });
+
+  test('treats a save that reports nothing as a success', async () => {
+    // Backwards compatibility, and the reason the canvas cannot crash here: a
+    // resolve with no outcome must mean "nothing failed", not a TypeError in
+    // the middle of the install scheduler.
+    jest.useFakeTimers();
+    try {
+      mockPersistDataflowForInstall.mockResolvedValue(undefined);
+
+      await runInstallSyncFor(['A']);
+
+      expect(mockEndPendingInstall).toHaveBeenCalledWith('A');
+      expect(mockFailPendingInstall).not.toHaveBeenCalled();
     } finally {
       jest.useRealTimers();
     }

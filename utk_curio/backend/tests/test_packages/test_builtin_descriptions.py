@@ -52,8 +52,9 @@ def test_spatial_join_says_what_each_port_expects():
 
     assert "points" in text and "polygons" in text, "does not name the two inputs"
     assert "top" in text and "bottom" in text, "does not say which handle is which"
-    assert "output" in text, "does not say what the node produces"
-    # #262: the property is chosen on the node; the "rename it upstream"
-    # workaround is no longer the documented design.
-    assert "property" in text, "does not say the tag property is configurable"
+    assert "comes out" in text or "output" in text, "does not say what the node produces"
+    # #262: the tag column is chosen on the node; the "rename it upstream"
+    # workaround is no longer the documented design. "column", not "property":
+    # the node talks about GeoDataFrame columns, the way the rest of Curio does.
+    assert "column" in text, "does not say the tag column is configurable"
     assert "rename" not in text, "still tells the user to rename the field upstream"

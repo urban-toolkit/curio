@@ -417,7 +417,30 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
  * scale with the size of the account rather than of the open dataflow. Those
  * are loaded for the dataflow's own packages, and lazily for anything else.
  */
+/**
+ * Orders overlapping {@link loadInstalledPackages} calls.
+ *
+ * Each call replaces every package node in the registry, and it does so after
+ * two awaits (the installed list, then behavior scripts). Several surfaces
+ * refresh on the same tick, so calls overlap, and without this the one that
+ * FINISHED last won. An import's refresh could land, then a boot refresh
+ * holding a snapshot from before the import could land after it and take the
+ * package back out of the palette, where it stayed until a page reload. The
+ * mirror image resurrected packages that had just been uninstalled.
+ *
+ * The rule is "never apply an answer older than one already applied", not
+ * "only the newest call may apply". The difference is a newest call that
+ * FAILS: under the stricter rule an older call's perfectly good answer would be
+ * thrown away too, and the registry would not update at all.
+ *
+ * ``projectPackagesStore`` guards its own version of this race the same way
+ * (``applyProjectLockfile`` and its revision counter).
+ */
+let startedLoads = 0;
+let appliedLoad = 0;
+
 export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
+  const load = ++startedLoads;
   try {
     const { packages } = await packagesApi.listInstalled();
     const filtered = packages ?? [];
@@ -436,6 +459,13 @@ export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
     // this step, `getBehavior()` returns undefined and packages with
     // custom behaviors soft-fail to the package code editor.
     await loadPackageBehaviorScripts(scoped);
+    // A call that started later has already put its answer in the registry, so
+    // this one is out of date. Checked here, after the last await, because the
+    // replace below is synchronous: nothing can slip in between the two.
+    // Nobody reads the return value when superseded (``refreshPackageRegistry``
+    // only waits on it), and an empty list matches the error path below.
+    if (load < appliedLoad) return [];
+    appliedLoad = load;
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.

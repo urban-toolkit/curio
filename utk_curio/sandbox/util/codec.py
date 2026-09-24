@@ -18,6 +18,7 @@ without any access to the artifact store can import this module alone.
 import datetime
 import json
 import math
+import os
 import sys
 
 import duckdb
@@ -47,6 +48,33 @@ def safe_json_loads(val):
         print("Exception in safe_json_loads", e)
     return val
 
+def active_geometry_name(frame):
+    """The name of ``frame``'s active geometry column, or ``None``.
+
+    ``frame.geometry`` raises ``AttributeError`` when a GeoDataFrame has no
+    active geometry column -- which happens for real frames, e.g. one built from
+    a plain DataFrame or one whose geometry column was dropped. Every caller
+    here wants "the name, if there is one", never an exception, and the private
+    attribute is the only way to ask without raising.
+    """
+    return getattr(frame, "_geometry_column_name", None)
+
+
+def is_geospatial_frame(value):
+    """True for a GeoDataFrame that actually has an active geometry column.
+
+    A GeoDataFrame without one cannot be written as GeoParquet: ``to_parquet``
+    emits 'geo' metadata with no ``primary_column``, and reading it back raises
+    ``ValueError``. So the artifact saved but could never be loaded again.
+
+    It is also not geospatial in any useful sense -- it is a table. Treating it
+    as one everywhere (storage kind, reload, and the payload's ``dataType``)
+    keeps those three answers consistent, which is what stops the value from
+    changing shape as it moves through the system.
+    """
+    return isinstance(value, gpd.GeoDataFrame) and active_geometry_name(value) is not None
+
+
 def _make_serializable(val):
     """Recursively convert numpy/pandas types to native Python types."""
     if isinstance(val, np.ndarray):
@@ -65,6 +93,17 @@ def _make_serializable(val):
         return bool(val)
     elif isinstance(val, (pd.Timestamp, datetime.datetime, datetime.date)):
         return val.isoformat()
+    elif getattr(val, "__geo_interface__", None) is not None:
+        # A shapely geometry sitting in an ordinary cell -- which is what every
+        # secondary geometry column is (`gdf['centroid'] = gdf.centroid`), and
+        # what a plain DataFrame holding shapely objects is made of. Without
+        # this it falls through to `return val` and dies at `json.dumps` with
+        # "Object of type Point is not JSON serializable".
+        #
+        # `__geo_interface__` *is* what `shapely.geometry.mapping()` returns, so
+        # this needs no shapely import and works for anything implementing the
+        # protocol. Recursing converts its coordinate tuples to lists.
+        return _make_serializable(dict(val.__geo_interface__))
     elif isinstance(val, dict):
         return {k: _make_serializable(v) for k, v in val.items()}
     elif isinstance(val, list):
@@ -97,13 +136,36 @@ def _decode_object_cell_from_parquet(val):
     return val
 
 def _prepare_frame_for_parquet(frame, geometry_col=None):
+    """Make *frame* writable as parquet, reporting which columns were encoded.
+
+    ``geometry_col`` tells the two storage paths apart, and they want opposite
+    things from a geometry column:
+
+    * **GeoParquet** (``geometry_col`` given): every geometry column is written
+      natively, the active one and any secondary ``centroid`` / ``bbox`` beside
+      it, so none of them is touched here.
+    * **Plain parquet via duckdb** (``geometry_col`` is ``None``): duckdb has no
+      geometry type and raises ``Not implemented Error: Data type 'geometry' not
+      recognized``. A plain DataFrame can still hold geometry-dtype columns -
+      ``pd.DataFrame(gdf)`` keeps them, and assigning a GeoSeries onto an
+      ordinary frame creates one - so those are JSON-encoded like any other
+      unserializable cell and decoded back on the way out.
+    """
     prepared = frame
     encoded_object_columns = []
 
     for col in prepared.columns:
         if geometry_col is not None and col == geometry_col:
             continue
-        if prepared[col].dtype == object and _object_column_needs_json_encoding(prepared[col]):
+        is_geometry = str(prepared[col].dtype) == "geometry"
+        if geometry_col is not None and is_geometry:
+            continue  # a secondary geometry column, written as GeoParquet
+        needs_encoding = (
+            (geometry_col is None and is_geometry)
+            or (prepared[col].dtype == object
+                and _object_column_needs_json_encoding(prepared[col]))
+        )
+        if needs_encoding:
             if prepared is frame:
                 prepared = frame.copy(deep=False)
             prepared[col] = prepared[col].apply(_encode_object_cell_for_parquet)
@@ -195,8 +257,65 @@ def _object_column_needs_json_encoding(series):
         "decimal",
     }
 
+#: The most one COPY of one frame may reserve, in MB (#334).
+#:
+#: DuckDB's defaults assume it owns the machine: ``threads`` follows the host's
+#: core count and ``memory_limit`` is ~80% of system RAM. Serialization runs
+#: inside the isolated child's RLIMIT_AS cap (the interpreter's footprint plus
+#: ``--exec-memory-mb``), so on a many-core host those defaults reserved enough
+#: address space that writing ``pd.DataFrame({'a': [1, 2, 3]})`` failed with
+#: "Failed to allocate block of 32768 bytes". Measured on 8 cores: 7040 KB of
+#: peak RSS per write by default, 496 KB bounded to this.
+#:
+#: Not a ceiling on the frame: ``register`` is zero-copy and COPY streams row
+#: groups, so a 150 MB frame writes through a 256 MB limit in half a second.
+#: Insertion order is deliberately left alone - row order is part of a node's
+#: output, whatever DuckDB's own out-of-memory advice suggests.
+_WRITER_MEMORY_CAP_MB = 256
+
+#: The writer's share of a child budget smaller than twice the cap.
+#:
+#: The cap above was a fixed number while ``--exec-memory-mb`` was a knob, so
+#: an operator lowering the budget to fit more parallelism on a small host
+#: (USAGE.md sells the ceiling as budget x parallelism) handed the child less
+#: headroom than DuckDB had been told it could spend. That is #334's shape
+#: again with the host swapped for a stale constant, so the two numbers are
+#: now derived from each other instead of set independently.
+#:
+#: Half, because the writer is one of several things sharing the child's
+#: address space - the frame it is serializing is still live, and ``register``
+#: is zero-copy - so it must not be most of it.
+_WRITER_BUDGET_DIVISOR = 2
+
+#: Below this DuckDB has no workable arena, so a budget that would derive less
+#: gets this instead. The operator-facing guard is the floor on
+#: ``--exec-memory-mb`` in ``main.py``; this one only catches a raw
+#: ``CURIO_EXEC_MEMORY_MB`` set past it.
+_WRITER_MEMORY_FLOOR_MB = 32
+
+
+def _writer_memory_limit_mb(env=None):
+    """The writer's budget, derived from the child's (#334)."""
+    env = os.environ if env is None else env
+    try:
+        child_mb = int(env.get("CURIO_EXEC_MEMORY_MB") or 0)
+    except (TypeError, ValueError):
+        # Same fallback as IsolationConfig.from_environment: an unparseable
+        # value means "unset", not "zero".
+        child_mb = 0
+    if child_mb <= 0:
+        return _WRITER_MEMORY_CAP_MB
+    derived = child_mb // _WRITER_BUDGET_DIVISOR
+    return max(_WRITER_MEMORY_FLOOR_MB, min(_WRITER_MEMORY_CAP_MB, derived))
+
+
+def _writer_config(env=None):
+    """DuckDB settings for one write, sized against the child's budget."""
+    return {"threads": 1, "memory_limit": f"{_writer_memory_limit_mb(env)}MB"}
+
+
 def _write_dataframe_parquet(frame, parquet_path):
-    writer = duckdb.connect(database=":memory:")
+    writer = duckdb.connect(database=":memory:", config=_writer_config())
     try:
         writer.register("curio_frame", frame)
         escaped_path = str(parquet_path).replace("'", "''")
@@ -219,7 +338,7 @@ def detect_kind(obj):
     if isinstance(obj, list): return 'list'
     if isinstance(obj, dict): return 'dict'
     # GeoDataFrame MUST come before DataFrame
-    if isinstance(obj, gpd.GeoDataFrame): return 'geodataframe'
+    if is_geospatial_frame(obj): return 'geodataframe'
     if isinstance(obj, pd.DataFrame): return 'dataframe'
     if 'rasterio' in sys.modules and isinstance(obj, sys.modules['rasterio'].io.DatasetReader): return 'raster'
     if isinstance(obj, tuple): return 'outputs'

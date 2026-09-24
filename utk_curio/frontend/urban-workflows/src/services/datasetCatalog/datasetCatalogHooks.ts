@@ -16,7 +16,17 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
   items: [],
   facets: {
     origin: { source_node: 0, computed: 0, imported: 0, hub: 0 },
-    format: { csv: 0, geojson: 0, json: 0, parquet: 0, geotiff: 0, shp: 0, bundle: 0, osm: 0 },
+    format: {
+      csv: 0,
+      geojson: 0,
+      json: 0,
+      parquet: 0,
+      geotiff: 0,
+      shp: 0,
+      bundle: 0,
+      osm: 0,
+      gpkg: 0,
+    },
   },
 };
 

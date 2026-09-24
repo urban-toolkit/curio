@@ -87,6 +87,7 @@ from .stress import (
     write_report,
 )
 from .utils import (
+    EXPORT_DOWNLOAD_TIMEOUT_MS,
     _wait_for_reactflow_ready,
     accept_confirm_dialog,
     activate_header_icon,
@@ -680,9 +681,16 @@ def chapter_access(run: StressRun) -> None:
     # it under the Archived tab, then delete it from there. Both the action
     # and the tab were removed in #261; deletion is the only removal now.
     with run.step("Delete one from the context menu"):
-        projects = page.locator("[data-project-id]")
-        if projects.count():
-            projects.last.click(button="right")
+        # The tour's OWN project, not `projects.last`. A stack seeded with
+        # --with-examples fills this list with example dataflows, and an example
+        # offers no Delete at all (#285) - Curio put it there, so it is not the
+        # account's to remove. Whichever card happened to sort last was a coin
+        # flip on whether the menu had the row this step clicks.
+        mine = page.locator("[data-project-id]").filter(
+            has_text="Stress Alpha (renamed)"
+        )
+        if mine.count():
+            mine.first.click(button="right")
             page.wait_for_timeout(500)
             tour.click(page.get_by_text("Delete", exact=True).first)
             # The confirmation is an in-app ConfirmDialog now (#197).
@@ -1105,14 +1113,14 @@ def chapter_canvas(run: StressRun) -> None:
         page.wait_for_timeout(2500)
         dismiss_toasts(page)
         tour.click(menu(page, "File"), force=True)
-        with page.expect_download(timeout=45000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             page.get_by_role("button", name="Save dataflow as", exact=True).click()
         path = download.value.suggested_filename
         assert path.endswith(".json"), f"Save-as produced {path!r}, not a .json"
 
     with run.step("Export the dataflow as a notebook"):
         tour.click(menu(page, "File"), force=True)
-        with page.expect_download(timeout=60000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             page.get_by_role("button", name="Export as notebook", exact=True).click()
         name = download.value.suggested_filename
         assert name.endswith(".ipynb"), f"notebook export produced {name!r}"
@@ -1471,7 +1479,7 @@ def chapter_nodes(run: StressRun) -> None:
         )
         assert export.count(), "the packages palette offers no Export control"
         export.first.scroll_into_view_if_needed()
-        with page.expect_download(timeout=120000) as download:
+        with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
             export.first.click()
         archive = os.path.join(out_dir(), download.value.suggested_filename)
         download.value.save_as(archive)
@@ -2512,7 +2520,7 @@ def chapter_views(run: StressRun) -> None:
         play_all(run, timeout_ms=300000)
         run.snap("widgets")
 
-    with run.step("Dashboard mode: pin, enter, lock, exit"):
+    with run.step("Dashboard: pin, save, open the page, edit its layout, come back"):
         load_example(run, os.path.join(EXAMPLES,
                                        "04-vega-lite-multi-flow-dashboard.json"),
                      expected_nodes=24)
@@ -2523,27 +2531,37 @@ def chapter_views(run: StressRun) -> None:
             if pin.count():
                 activate_header_icon(pin)
                 page.wait_for_timeout(500)
-        tour.click(menu(page, "View"), force=True)
-        tour.click(page.get_by_role(
-            "button", name=re.compile("Dashboard Mode", re.I)).first)
+        # The dashboard renders what is saved, so save first. From an unsaved
+        # dataflow this also creates the project the dashboard's URL names.
+        tour.click(page.locator("[data-curio-save-state]").first, force=True)
+        page.wait_for_function(
+            "() => document.querySelector('[data-curio-save-state]')"
+            "?.getAttribute('data-curio-save-state') === 'saved'",
+            timeout=60000,
+        )
+        match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+        assert match, f"the dataflow did not save to a project: {page.url}"
+        base = page.url.split("/dataflow/")[0]
+        page.goto(f"{base}/dashboard/{match.group(1)}")
+        page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=60000)
         page.wait_for_timeout(2500)
-        run.snap("dashboard-mode")
-        lock = page.locator("[title*='ock']").first
-        if lock.count():
-            lock.click(force=True)
+        run.snap("dashboard-page")
+        edit = page.get_by_test_id("edit-layout-btn")
+        if edit.count():
+            edit.click()
             page.wait_for_timeout(1000)
-            lock.click(force=True)
+            edit.click()
             page.wait_for_timeout(800)
-        exit_button = page.get_by_role(
-            "button", name=re.compile("Exit Dashboard", re.I))
-        if exit_button.count():
-            tour.click(exit_button.first)
-        else:
-            page.locator("[title*='Exit']").first.click(force=True)
+        on_page = page.evaluate("() => window.__curio_reactFlow.getNodes().length")
+        assert on_page == before, (
+            f"the dashboard loaded {on_page} nodes of the dataflow's {before}"
+        )
+        tour.click(page.get_by_test_id("open-dataflow-link"))
+        page.wait_for_selector(".react-flow__node", timeout=60000)
         page.wait_for_timeout(2500)
         after = len(canvas_nodes(page))
         assert after == before, (
-            f"dashboard mode lost nodes: {before} before, {after} after"
+            f"the round trip through the dashboard lost nodes: {before} before, {after} after"
         )
 
     with run.step("The provenance window", may_fail=True):

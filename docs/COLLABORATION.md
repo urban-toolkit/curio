@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Disabled by default**. Enable with `--collab`.
 
-This feature is based on the design originally proposed by [@kirtanpatel2003](https://github.com/kirtanpatel2003) in [#112](https://github.com/urban-toolkit/curio/pull/112). The implementation in this branch was rewritten against the current manifest-node + auth architecture; the event vocabulary and proposal/lock model carry over directly.
+This feature is based on the design proposed by [@kirtanpatel2003](https://github.com/kirtanpatel2003) in [#112](https://github.com/urban-toolkit/curio/pull/112).
 
 ## Contents
 
@@ -29,10 +29,10 @@ When two or more users open the same project (`/dataflow/<UUID>`) on a host that
 
 ```bash
 # Backend + frontend, opt-in to collaboration:
-python curio.py start --auth --collab
+python curio.py start --deploy --collab
 
 # CORS for non-default frontend origins:
-COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --auth --collab
+COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --deploy --collab
 ```
 
 Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public`, so **no frontend rebuild is required** to flip the flag.
@@ -78,7 +78,7 @@ Useful environment variables:
 ## Security model
 
 - **Identity** is anchored in `UserSession.token` (the same Bearer token used by REST). The token is sent through Socket.IO's `auth` handshake (`io(url, { auth: { token } })`); the server resolves it in [auth.py](../utk_curio/backend/app/collaboration/auth.py) and stashes the `(user_id, username, name, profile_image)` tuple via `room_state.set_identity(sid, ...)`. **Every subsequent event handler reads from that stashed identity, never from the client-supplied payload.** Spoofing `userId`/`username` fields in an event has no effect.
-- **Sandbox artifact isolation is preserved.** The check in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) that gates DuckDB artifact reads on `session_id` is **unchanged**. Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`.
+- **Sandbox artifact isolation is preserved.** Outputs flow between collaborators over the socket as `output_produced` payloads, not by one user fetching another user's artifact via `/get`, so the per-session gate on DuckDB artifact reads in [`sandbox/util/parsers.py`](../utk_curio/sandbox/util/parsers.py) still applies. The exception is a project's SAVED outputs: a load hydrates those into the shared data directory and `/get` serves them by name, so a shared dataflow or dashboard shows its data.
 - **Room access** today is "any signed-in user who knows the project UUID can join". This matches the existing project share model (the URL is the share). A stricter `ProjectCollaborator` ACL is out of scope for v1.
 - **Editability of shared dataflows.** Without `--collab`, a non-owner who opens a project URL lands in a read-only "shared view" (project ownership in Curio is single-user). With `--collab` on, that read-only gate stands down so peers can actually collaborate. Edits flow over the socket to the owner's tab, which persists them via the existing auto-save path. **Only the owner writes to disk**; if the owner is offline, collaborator edits are ephemeral. A multi-writer model needs the `ProjectCollaborator` ACL above.
 - **No transport encryption out of the box.** Run behind HTTPS for deployments crossing an untrusted network.

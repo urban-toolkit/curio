@@ -33,14 +33,6 @@ import { CopyButton } from "../../../CopyButton";
 import { datasetReferenceCode } from "../../../../services/datasetCatalog";
 
 
-function formatAbbreviation(dataset: DatasetCatalogItem): string {
-  if (dataset.format === "geojson") return "GeoJSON";
-  if (dataset.format === "json") return "JSON";
-  if (dataset.format === "geotiff") return "GeoTIFF";
-  if (dataset.format === "bundle") return "Bundle";
-  return DATASET_FORMAT_LABEL[dataset.format].toUpperCase();
-}
-
 export const DatasetRow = memo(function DatasetRow({
   dataset,
   tooltipPlacement = "right",
@@ -96,7 +88,7 @@ export const DatasetRow = memo(function DatasetRow({
             className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
           />
           <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
-            {formatAbbreviation(dataset)}
+            {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
         </div>
         <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>

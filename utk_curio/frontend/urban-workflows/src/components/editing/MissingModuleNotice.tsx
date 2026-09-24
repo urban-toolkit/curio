@@ -58,6 +58,13 @@ function refusal(notice: Notice): string | null {
         `installing it again would change nothing.` +
         (notice.detail ? ` ${notice.detail}` : "")
       );
+    case "install-disabled":
+      // Still name the library: knowing what is missing is useful even where
+      // this instance will not install it for you (#309).
+      return (
+        `${notice.distribution ?? notice.module} is not installed.` +
+        (notice.detail ? ` ${notice.detail}` : "")
+      );
     case "installed-not-visible":
       return (
         `${notice.distribution} is installed here but the node could not import ` +

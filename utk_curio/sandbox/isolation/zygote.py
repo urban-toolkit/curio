@@ -1,7 +1,10 @@
 """A warm, single-threaded process that forks one child per node execution.
 
-NOT VERIFIED ON ANY MACHINE. Linux-only (fork, AF_UNIX, waitpid) and never
-executed: written on a Windows host with no container runtime available.
+Linux-only (fork, AF_UNIX, waitpid). Exercised on every CI run by
+docker-compose.ci-isolated.yml and docker-compose.ci-exec-user.yml, the second
+with an unprivileged execution account; the workflow asserts the mode the
+sandbox reports on /version. This docstring used to say the file had never
+executed anywhere, which is what mode.py's OFF default rested on.
 
 Why a separate process rather than forking from Flask
 -----------------------------------------------------
@@ -21,9 +24,13 @@ Forking from the Flask process itself would be cheaper still, and wrong:
   that file descriptor, handing the child exactly the access the scratch
   directory exists to deny.
 
-This process is started before either of those is true, stays single-threaded
-for its whole life (hence the ``selectors`` loop rather than a thread per
-connection), and never opens DuckDB.
+This process is started before either of those is true, starts no threads of
+its own (hence the ``selectors`` loop rather than a thread per connection), and
+never opens the DuckDB store. What it imports is another matter: ``import
+duckdb`` opens an in-memory default connection with a thread pool, and numpy's
+OpenBLAS starts one too. OpenBLAS tears its pool down before every fork;
+DuckDB does not, which is why ``warm_up`` closes that connection before the
+first fork. See :func:`_release_import_time_duckdb`.
 
 Wire protocol, newline-delimited JSON over AF_UNIX, one connection per
 execution:
@@ -41,6 +48,7 @@ concurrent executions work without any threads on this side.
 """
 
 import argparse
+import collections
 import errno
 import json
 import os
@@ -154,11 +162,101 @@ def _unavailable_under_isolation(name):
             f"{name}() is not available when node execution is isolated. "
             "Nodes exchange data through their inputs and return value rather "
             "than by reaching into the artifact store directly. If you need "
-            "this, run with --isolation=off and accept that node code then has "
+            "this, run with CURIO_ISOLATION=off and accept that node code then has "
             "the sandbox's full privileges."
         )
 
     return _stub
+
+
+def _thread_names():
+    """The name of every thread in this process, or None where /proc is absent.
+
+    Only Linux has ``/proc/self/task``. Everywhere else the answer is None
+    rather than a guess, and the callers skip what they would have reported.
+    """
+    task_dir = "/proc/self/task"
+    try:
+        thread_ids = os.listdir(task_dir)
+    except OSError:
+        return None
+    names = []
+    for thread_id in thread_ids:
+        try:
+            with open(os.path.join(task_dir, thread_id, "comm"),
+                      encoding="utf-8", errors="replace") as handle:
+                names.append(handle.read().strip() or "?")
+        except OSError:
+            # The thread exited between the listing and the read.
+            continue
+    return names
+
+
+def _describe_threads(names):
+    """``'17 (python3 x16, duckdb x1)'``: the count, then names by frequency."""
+    counts = collections.Counter(names)
+    listed = ", ".join(f"{name} x{count}" for name, count in counts.most_common())
+    return f"{len(names)} ({listed})"
+
+
+def _release_import_time_duckdb():
+    """Close the connection ``import duckdb`` opened, before anything forks.
+
+    ``import duckdb`` does more than load a library: it opens an in-memory
+    default connection, and with it a pool of one thread per core. DuckDB's
+    state is not fork-safe (duckdb/duckdb-python#292), and a child forked
+    from a process holding that pool died with signal 11 in DuckDB's
+    ``close()`` inside ``codec._write_dataframe_parquet`` in one or two
+    executions out of a hundred. The in-process path, which never forks,
+    never did.
+
+    Closing the connection joins those threads, so every child is forked from
+    a process with no DuckDB work in flight. Node code loses nothing: the
+    module-level API (``duckdb.sql`` and friends) opens a fresh default
+    connection on first use -- in the child, with its full thread pool --
+    and explicit ``duckdb.connect()`` calls were never affected.
+
+    The thread counts on either side are logged so a run can see what
+    changed. Warnings only: a zygote that failed to start would send the
+    sandbox back to in-process execution (``sandbox/app/api.py::
+    _isolated_runner``), which is far worse than a fork from a busy process.
+    """
+    duckdb = sys.modules.get("duckdb")
+    if duckdb is None:
+        return
+
+    before = _thread_names()
+    try:
+        connection = duckdb.default_connection
+        if callable(connection):  # a function in current DuckDB, an attribute before
+            connection = connection()
+        try:
+            # DuckDB can run a jemalloc background thread of its own, which
+            # is process-wide and would outlive the connection. It is off by
+            # default; this only makes sure.
+            connection.execute("SET GLOBAL allocator_background_threads = false")
+        except Exception:
+            pass
+        connection.close()
+    except Exception as exc:
+        print(f"[zygote] warning: could not close DuckDB's import-time "
+              f"connection, so children fork with its threads running: {exc}",
+              file=sys.stderr, flush=True)
+        return
+    after = _thread_names()
+
+    if before is None or after is None:
+        return
+    # What is left is expected: numpy's OpenBLAS pool, which tears itself
+    # down on the first fork, and pyarrow's jemalloc background thread
+    # ("jemalloc_bg_thd"), which is fork-aware. Neither crashed a child in
+    # 1,200 executions of scripts/repro_zygote_fork_crash.py.
+    if len(before) > 1:
+        print(
+            f"[zygote] released DuckDB's import-time connection: threads "
+            f"{_describe_threads(before)} -> {_describe_threads(after)}",
+            file=sys.stderr, flush=True,
+        )
 
 
 class Zygote:
@@ -194,6 +292,7 @@ class Zygote:
 
     def warm_up(self):
         self.namespace_template = build_namespace_template()
+        _release_import_time_duckdb()
 
     def serve_forever(self):
         import selectors
@@ -397,7 +496,7 @@ def _resolve_execution_identity(user):
     except KeyError:
         raise SystemExit(
             f"[zygote] execution user {user!r} does not exist. Create it in the "
-            "image, or launch without --exec-user."
+            "image, or launch with CURIO_EXEC_USER empty."
         )
     return entry.pw_uid, entry.pw_gid
 
