@@ -113,8 +113,16 @@ class DataLakeService:
     ) -> dict[str, Any]:
         manifest = self._catalog.get_manifest(dir_name)
         page = self._browse.search(manifest, _query(q, fmt, limit, cursor))
+        held = self._held_index()
         return search_payload(
-            [resource_row(r, source_name=manifest.name) for r in page.resources],
+            [
+                resource_row(
+                    r,
+                    source_name=manifest.name,
+                    already_held_dataset_id=held.get((manifest.dir_name, r.resource_id)),
+                )
+                for r in page.resources
+            ],
             sources=[{"sourceId": manifest.id, "status": "ok", "count": len(page.resources)}],
             next_cursor=page.next_cursor,
             total_hint=page.total_hint,
@@ -130,8 +138,19 @@ class DataLakeService:
             manifests = [m for m in manifests if m.provider.type == provider]
         names = {m.id: m.name for m in manifests}
         rows, legs = self._browse.search_all(manifests, _query(q, fmt, limit, None))
+        held = self._held_index()
+        dirs = {m.id: m.dir_name for m in manifests}
         return search_payload(
-            [resource_row(r, source_name=names.get(r.source_id, "")) for r in rows],
+            [
+                resource_row(
+                    r,
+                    source_name=names.get(r.source_id, ""),
+                    already_held_dataset_id=held.get(
+                        (dirs.get(r.source_id, ""), r.resource_id)
+                    ),
+                )
+                for r in rows
+            ],
             sources=legs,
             # A fan-out has no coherent cursor: five portals paginate
             # independently and interleaving them past page one would repeat
@@ -155,6 +174,18 @@ class DataLakeService:
 
         service = DatasetCatalogService(self.user)
         return service._mutations._install_imported_bytes(blob, filename, fmt, **kwargs)
+
+    def _held_index(self) -> dict[tuple[str, str], str]:
+        """What this account already downloaded, for a whole page of rows.
+
+        Resolved here rather than per row: the question is one walk of the
+        user's store, and asking it once per result turned it into twenty.
+        """
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        return UserDatasetRepository(self.user).lake_resource_index()
 
     def _find_held(self, lake_id, resource_id, fmt):
         from utk_curio.backend.app.datasets.repositories.user_store import (

@@ -228,3 +228,61 @@ class TestFailuresAreTheUsersAnswer:
         job = wait_for(client, auth, res.get_json()["jobId"])
         assert job["status"] == "failed"
         assert "timeout" in job["error"]
+
+
+class TestASearchRowKnowsWhatYouAlreadyHold:
+    """The badge that stops a user downloading the same thing twice.
+
+    ``describe`` answered this from the start; search did not, so every row in
+    a result list offered Download regardless of what the account held, and
+    the only way to find out was to download it again. A browser run found it:
+    the row never showed "In your Data Catalog".
+    """
+
+    def test_a_scoped_search_row_points_at_the_dataset_you_hold(
+        self, client, auth, live
+    ):
+        before = client.get(
+            f"/api/datalakes/sources/{CHICAGO}/search?q=crimes", headers=auth
+        ).get_json()["resources"]
+        row = next(r for r in before if r["resourceId"] == "ijzp-q8t2")
+        assert row["alreadyHeldDatasetId"] is None
+
+        job = acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()
+        dataset_id = wait_for(client, auth, job["jobId"])["datasetId"]
+
+        after = client.get(
+            f"/api/datalakes/sources/{CHICAGO}/search?q=crimes", headers=auth
+        ).get_json()["resources"]
+        row = next(r for r in after if r["resourceId"] == "ijzp-q8t2")
+        assert row["alreadyHeldDatasetId"] == dataset_id
+
+    def test_a_federated_row_knows_it_too(self, client, auth, live):
+        job = acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()
+        dataset_id = wait_for(client, auth, job["jobId"])["datasetId"]
+
+        rows = client.get("/api/datalakes/search?q=crimes", headers=auth).get_json()[
+            "resources"
+        ]
+        held = [r for r in rows if r["alreadyHeldDatasetId"]]
+        assert [r["resourceId"] for r in held] == ["ijzp-q8t2"]
+        assert held[0]["alreadyHeldDatasetId"] == dataset_id
+
+    def test_another_account_is_not_told_what_you_hold(self, client, auth, live, app):
+        """The index is the asking user's store, never a shared one."""
+        job = acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()
+        wait_for(client, auth, job["jobId"])
+
+        from utk_curio.backend.app.users import repositories as user_repo
+        from utk_curio.backend.extensions import db
+
+        with app.app_context():
+            other = user_repo.create_user(username="someoneelse", name="Someone Else")
+            token = user_repo.create_session(other.id).token
+            db.session.commit()
+
+        rows = client.get(
+            f"/api/datalakes/sources/{CHICAGO}/search?q=crimes",
+            headers={"Authorization": f"Bearer {token}"},
+        ).get_json()["resources"]
+        assert all(r["alreadyHeldDatasetId"] is None for r in rows)
