@@ -39,6 +39,7 @@ def holds_duckdb(view):
 
     return wrapper
 from utk_curio.sandbox.util.parsers import (
+    arrow_frame_schema,
     load_from_duckdb,
     load_shared_output_file,
     load_tabular_arrow_from_duckdb,
@@ -47,6 +48,24 @@ from utk_curio.sandbox.util.parsers import (
 )
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
+
+# Every header the Arrow artifact response can carry. These are what the JSON
+# body carries inline -- kind, dtypes, row counts, which columns are
+# JSON-encoded -- so a client that cannot read them gets bytes it cannot
+# interpret. The canvas is cross-origin, which means the backend has to list
+# them in Access-Control-Expose-Headers; a test pins that it lists all of
+# these, so adding one here without adding it there fails rather than silently
+# going unreadable in the browser.
+ARROW_RESPONSE_HEADERS = (
+    "X-Curio-Kind",
+    "X-Curio-Filename",
+    "X-Curio-Schema",
+    "X-Curio-Preview",
+    "X-Curio-Preview-Rows",
+    "X-Curio-Total-Rows",
+    "X-Curio-Encoded-Object-Columns",
+    "X-Curio-Frame-Metadata",
+)
 
 # Pre-load heavy libraries once at sandbox startup so every /exec call is fast.
 _worker_init()
@@ -223,7 +242,12 @@ def get_artifact():
     max_rows_param = request.args.get('maxRows')
 
     if request.accept_mimetypes.best == ARROW_IPC_MIME:
-        return _get_artifact_arrow(art_id, session_id, max_rows_param)
+        return _get_artifact_arrow(
+            art_id, session_id, max_rows_param,
+            allow_geometry=(
+                request.headers.get('X-Curio-Accept-Geometry', '').lower() == 'wkb'
+            ),
+        )
 
     # Raster artifacts re-open via rasterio.open(relative_path); match
     # /exec's cwd handling so the path resolves against launch_dir.
@@ -300,7 +324,7 @@ def get_artifact():
     return jsonify(data)
 
 
-def _get_artifact_arrow(art_id, session_id, max_rows_param):
+def _get_artifact_arrow(art_id, session_id, max_rows_param, *, allow_geometry=False):
     """Serve a tabular artifact as an Arrow IPC stream.
 
     parquet blob -> pyarrow.Table via pyarrow.parquet.read_table (no pandas).
@@ -311,7 +335,9 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param):
     import pyarrow.ipc as ipc
     try:
         table, kind, frame_metadata, encoded_object_columns = (
-            load_tabular_arrow_from_duckdb(art_id, session_id=session_id)
+            load_tabular_arrow_from_duckdb(
+                art_id, session_id=session_id, allow_geometry=allow_geometry
+            )
         )
     except KeyError as e:
         return jsonify({
@@ -352,6 +378,11 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param):
         'X-Curio-Kind': kind,
         'X-Curio-Filename': art_id,
     }
+    # The dtypes the JSON envelope carries as `schema`. Read from the parquet
+    # file's own pandas metadata, so this route still materialises nothing.
+    schema = arrow_frame_schema(table)
+    if schema:
+        headers['X-Curio-Schema'] = json.dumps(schema)
     if total_rows is not None:
         headers['X-Curio-Preview'] = 'true'
         headers['X-Curio-Preview-Rows'] = str(min(int(max_rows_param), total_rows))

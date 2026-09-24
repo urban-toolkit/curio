@@ -16,7 +16,25 @@ CORS_HEADERS = {
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
     # can read the friendly download filename returned by send_file.
-    "Access-Control-Expose-Headers": "Content-Disposition",
+    #
+    # The X-Curio-* set is what the Arrow artifact path sends instead of the
+    # JSON body's inline fields: kind, dtypes, row counts, which columns are
+    # JSON-encoded. The canvas runs on a different origin from the backend, so
+    # a header missing from this list is unreadable rather than merely
+    # unnoticed, and the payload would decode into an envelope with no
+    # dataType. ARROW_RESPONSE_HEADERS in the sandbox route is the source of
+    # truth; a test pins that this covers it.
+    "Access-Control-Expose-Headers": ",".join((
+        "Content-Disposition",
+        "X-Curio-Kind",
+        "X-Curio-Filename",
+        "X-Curio-Schema",
+        "X-Curio-Preview",
+        "X-Curio-Preview-Rows",
+        "X-Curio-Total-Rows",
+        "X-Curio-Encoded-Object-Columns",
+        "X-Curio-Frame-Metadata",
+    )),
     "Access-Control-Max-Age": "600",
 }
 

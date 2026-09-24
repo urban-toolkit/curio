@@ -732,7 +732,75 @@ def load_from_duckdb(art_id, session_id=None):
             pass
 
 
-def load_tabular_arrow_from_duckdb(art_id, session_id=None):
+# Arrow type -> the dtype string the JSON path sends, for the cases the two
+# spell differently. Everything else (int64, int32, bool, ...) is already the
+# same word on both sides, so it passes through.
+#
+# Needed because the two writers disagree: a GeoDataFrame goes through pandas
+# ``to_parquet`` and carries ``b'pandas'`` metadata, while a DataFrame is
+# written by DuckDB's ``COPY TO PARQUET``, which carries none. Rather than
+# make the client guess from Arrow types -- where a mistake is silent and
+# per-column -- the translation lives here, next to ``_frame_schema``, with a
+# test comparing both kinds against what the JSON path actually sends.
+_ARROW_DTYPE_NAMES = {
+    "double": "float64",
+    "float": "float32",
+    "halffloat": "float16",
+    "string": "str",
+    "large_string": "str",
+    "binary": "object",
+    "large_binary": "object",
+}
+
+
+def _dtype_name_for(arrow_type):
+    name = str(arrow_type)
+    if name in _ARROW_DTYPE_NAMES:
+        return _ARROW_DTYPE_NAMES[name]
+    if name.startswith("timestamp["):
+        # timestamp[us] -> datetime64[us], timezone suffix dropped the same
+        # way ``frame.dtypes`` drops it for a naive column.
+        unit = name[len("timestamp["):].split(",")[0].rstrip("]")
+        return f"datetime64[{unit}]"
+    if name.startswith("date"):
+        return "object"
+    return name
+
+
+def arrow_frame_schema(table):
+    """``{column: dtype}`` for an Arrow table, matching the JSON path's schema.
+
+    The same mapping ``_frame_schema`` produces from a live DataFrame, which
+    is what the JSON envelope sends as ``schema`` and what ``vegaBehavior``
+    reads to choose a starter spec. Built without materialising anything, so
+    the Arrow route keeps the property that makes it worth having.
+
+    Prefers the parquet file's own ``b'pandas'`` metadata when it is there,
+    because that is the authoritative spelling; falls back to the Arrow types
+    otherwise, which is the DataFrame case (DuckDB writes those and records no
+    pandas metadata).
+    """
+    metadata = table.schema.metadata or {}
+    raw = metadata.get(b"pandas")
+    if raw:
+        try:
+            columns = json.loads(raw).get("columns") or []
+            named = {
+                column["name"]: column.get("numpy_type")
+                for column in columns
+                if column.get("name") and column.get("numpy_type")
+            }
+            if named:
+                return named
+        except (ValueError, AttributeError):
+            pass
+    return {
+        name: _dtype_name_for(table.schema.field(name).type)
+        for name in table.schema.names
+    }
+
+
+def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):
     """Load a tabular artifact as a pyarrow.Table read directly from its stored
     parquet payload — no pandas materialization.
 
@@ -762,6 +830,16 @@ def load_tabular_arrow_from_duckdb(art_id, session_id=None):
         if kind not in ('dataframe', 'geodataframe'):
             raise ValueError(
                 f"Arrow IPC only supports tabular kinds; got {kind!r}"
+            )
+        if kind == 'geodataframe' and not allow_geometry:
+            # Geometry rides as binary WKB here, where the JSON path sends
+            # GeoJSON. A client that cannot decode WKB would render nothing
+            # and say nothing, so it has to ask for it explicitly
+            # (X-Curio-Accept-Geometry: wkb) and gets a 415 otherwise. The
+            # check is before read_table, so the refusal costs nothing.
+            raise ValueError(
+                "Arrow IPC serves geodataframe geometry as WKB; send "
+                "X-Curio-Accept-Geometry: wkb to accept it"
             )
         table = pq.read_table(_parquet_source(v_str, blob))
         frame_metadata, encoded_object_columns = _parse_parquet_meta(v_json)
