@@ -189,4 +189,23 @@ describe("tableToEnvelope, geodataframe", () => {
     it("carries the schema the JSON envelope sends", () => {
         expect(decode().schema).toEqual(fixture.json_envelope.schema);
     });
+
+    it("decodes a SECOND geometry column too, not just the active one", () => {
+        // `gdf["bbox"] = gdf.geometry.envelope` is in the shipped examples.
+        // Every geometry column is WKB in GeoParquet, and the JSON path puts
+        // the secondary ones in `properties` as GeoJSON. Passing one through
+        // raw yielded a byte-indexed object where a chart wanted a geometry,
+        // and vega-lite rendered a blank canvas with no error at all
+        // (14-vega-lite-crs-and-geometry-types).
+        const envelope = decode();
+
+        envelope.data.features.forEach((feature: any, i: number) => {
+            const expected = fixture.json_envelope.data.features[i].properties.bbox;
+            expect(feature.properties.bbox).toEqual(expected);
+            // A geometry object, not the raw bytes. (The type varies: the
+            // envelope of a Point is a Point, of a LineString a Polygon.)
+            expect(typeof feature.properties.bbox.type).toBe("string");
+            expect(feature.properties.bbox.coordinates).toBeDefined();
+        });
+    });
 });

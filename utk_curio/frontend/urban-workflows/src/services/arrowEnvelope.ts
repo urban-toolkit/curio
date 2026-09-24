@@ -98,12 +98,25 @@ function featureCollection(table: Table, columns: Record<string, unknown[]>) {
     const geo = geoMetadata(table);
     const geometryColumn = geo.primary_column || "geometry";
     const geometries = columns[geometryColumn] || [];
+    // EVERY geometry column, not just the active one. A GeoDataFrame may carry
+    // more than one (`gdf["bbox"] = gdf.geometry.envelope` is in the shipped
+    // examples), they are all WKB in GeoParquet, and the JSON path serialises
+    // the secondary ones as GeoJSON geometry objects inside `properties`.
+    // Passing them through raw put a byte-indexed object where a chart
+    // expected a geometry, and vega-lite drew nothing at all.
+    const secondaryGeometry = new Set(
+        Object.keys(geo.columns || {}).filter((name) => name !== geometryColumn),
+    );
     const propertyNames = Object.keys(columns).filter((name) => name !== geometryColumn);
 
     const features = new Array(geometries.length);
     for (let i = 0; i < geometries.length; i++) {
         const properties: Record<string, unknown> = {};
-        for (const name of propertyNames) properties[name] = columns[name][i];
+        for (const name of propertyNames) {
+            properties[name] = secondaryGeometry.has(name)
+                ? wkbToGeoJSON(columns[name][i] as Uint8Array | null)
+                : columns[name][i];
+        }
         features[i] = {
             type: "Feature",
             properties,

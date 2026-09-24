@@ -797,25 +797,34 @@ def arrow_frame_schema(table):
             name: _dtype_name_for(table.schema.field(name).type)
             for name in table.schema.names
         }
-    # Whichever source it came from, the geometry column needs the same
-    # correction: GeoParquet stores it as WKB, so pandas metadata calls it
+    # Whichever source it came from, every geometry column needs the same
+    # correction: GeoParquet stores them as WKB, so pandas metadata calls them
     # ``object`` and the Arrow type is binary, while the JSON path reports
     # geopandas' own ``geometry`` dtype. Say what the column means.
-    geometry_column = _geoparquet_primary_column(table)
-    if geometry_column in named:
-        named[geometry_column] = "geometry"
+    #
+    # All of them, not just the active one: a frame can carry a second
+    # geometry column (``gdf["bbox"] = gdf.geometry.envelope``), and it is a
+    # geometry in both paths.
+    for column in _geoparquet_geometry_columns(table):
+        if column in named:
+            named[column] = "geometry"
     return named
 
 
-def _geoparquet_primary_column(table):
-    """The active geometry column name from GeoParquet metadata, or None."""
+def _geoparquet_geometry_columns(table):
+    """Every geometry column named by GeoParquet metadata, active or not."""
     raw = (table.schema.metadata or {}).get(b"geo")
     if not raw:
-        return None
+        return ()
     try:
-        return json.loads(raw).get("primary_column")
+        metadata = json.loads(raw)
     except (ValueError, AttributeError):
-        return None
+        return ()
+    columns = metadata.get("columns")
+    if isinstance(columns, dict) and columns:
+        return tuple(columns)
+    primary = metadata.get("primary_column")
+    return (primary,) if primary else ()
 
 
 def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):

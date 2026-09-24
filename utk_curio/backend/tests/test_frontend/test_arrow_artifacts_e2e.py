@@ -28,6 +28,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow,
     set_node_code,
     stub_login_and_enter_workflow,
 )
@@ -115,6 +116,11 @@ def _run_and_open_pool(page, code: str):
         state="visible", timeout=30000
     )
 
+    # Save before reloading, or there is nothing to come back to: a canvas
+    # built by dragging lives in the browser until the dataflow is written.
+    # Reloading without this left no Data Pool at all, which is how the first
+    # version of this test timed out waiting for its tab strip.
+    save_dataflow(page)
     page.reload(wait_until="domcontentloaded")
     node_locator(page, pool).locator(TAB_STRIP).first.wait_for(
         state="visible", timeout=60000

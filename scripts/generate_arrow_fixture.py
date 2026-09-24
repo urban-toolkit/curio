@@ -45,6 +45,10 @@ gdf = gpd.GeoDataFrame(
     },
     crs="EPSG:4326",
 )
+# A second geometry column, which the shipped examples do
+# (`gdf["bbox"] = gdf.geometry.envelope`) and which is WKB in GeoParquet just
+# like the active one. Passing it through undecoded is what blanked a chart.
+gdf["bbox"] = gdf.geometry.envelope
 art_id = parsers.save_to_duckdb(gdf, "fixture-node")
 
 envelope = parsers.parseOutput(parsers.load_from_duckdb(art_id))
