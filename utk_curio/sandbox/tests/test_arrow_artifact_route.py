@@ -120,12 +120,10 @@ class SchemaMatchesAcrossDtypesTest(ArrowRouteTestCase):
             self.get(art_id, geometry=True).headers["X-Curio-Schema"]
         )
 
-        # The JSON path describes the geometry column as a geometry dtype and
-        # the Arrow one as the WKB binary it actually is, so compare the rest.
-        for column, dtype in json_schema.items():
-            if column == "geometry":
-                continue
-            self.assertEqual(arrow_schema.get(column), dtype, f"column {column}")
+        # Including the geometry column: GeoParquet stores it as WKB binary,
+        # but both paths report geopandas' ``geometry`` dtype, because what a
+        # consumer wants to know is what the column means.
+        self.assertEqual(arrow_schema, json_schema)
 
 
 class GeometryOptInTest(ArrowRouteTestCase):

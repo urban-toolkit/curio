@@ -775,29 +775,47 @@ def arrow_frame_schema(table):
     reads to choose a starter spec. Built without materialising anything, so
     the Arrow route keeps the property that makes it worth having.
 
-    Prefers the parquet file's own ``b'pandas'`` metadata when it is there,
-    because that is the authoritative spelling; falls back to the Arrow types
-    otherwise, which is the DataFrame case (DuckDB writes those and records no
-    pandas metadata).
+    Two sources, because the two writers differ: a GeoDataFrame reaches
+    parquet through pandas ``to_parquet`` and carries ``b'pandas'`` metadata,
+    which is authoritative; a DataFrame is written by DuckDB's ``COPY TO
+    PARQUET``, which carries none, so its dtypes are derived from the Arrow
+    types instead.
     """
-    metadata = table.schema.metadata or {}
-    raw = metadata.get(b"pandas")
+    named = {}
+    raw = (table.schema.metadata or {}).get(b"pandas")
     if raw:
         try:
-            columns = json.loads(raw).get("columns") or []
             named = {
                 column["name"]: column.get("numpy_type")
-                for column in columns
+                for column in (json.loads(raw).get("columns") or [])
                 if column.get("name") and column.get("numpy_type")
             }
-            if named:
-                return named
         except (ValueError, AttributeError):
-            pass
-    return {
-        name: _dtype_name_for(table.schema.field(name).type)
-        for name in table.schema.names
-    }
+            named = {}
+    if not named:
+        named = {
+            name: _dtype_name_for(table.schema.field(name).type)
+            for name in table.schema.names
+        }
+    # Whichever source it came from, the geometry column needs the same
+    # correction: GeoParquet stores it as WKB, so pandas metadata calls it
+    # ``object`` and the Arrow type is binary, while the JSON path reports
+    # geopandas' own ``geometry`` dtype. Say what the column means.
+    geometry_column = _geoparquet_primary_column(table)
+    if geometry_column in named:
+        named[geometry_column] = "geometry"
+    return named
+
+
+def _geoparquet_primary_column(table):
+    """The active geometry column name from GeoParquet metadata, or None."""
+    raw = (table.schema.metadata or {}).get(b"geo")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw).get("primary_column")
+    except (ValueError, AttributeError):
+        return None
 
 
 def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):

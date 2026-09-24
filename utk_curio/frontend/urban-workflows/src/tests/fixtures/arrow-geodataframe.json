@@ -1,0 +1,100 @@
+{
+  "arrow_base64": "/////6AQAAAQAAAAAAAKAA4ABgAFAAgACgAAAAABBAAQAAAAAAAKAAwAAAAEAAgACgAAAPQIAAAEAAAAAgAAAMgFAAAEAAAAiPD//7QFAAAEAAAApQUAAHsicHJpbWFyeV9jb2x1bW4iOiAiZ2VvbWV0cnkiLCAiY29sdW1ucyI6IHsiZ2VvbWV0cnkiOiB7ImVuY29kaW5nIjogIldLQiIsICJjcnMiOiB7IiRzY2hlbWEiOiAiaHR0cHM6Ly9wcm9qLm9yZy9zY2hlbWFzL3YwLjcvcHJvampzb24uc2NoZW1hLmpzb24iLCAidHlwZSI6ICJHZW9ncmFwaGljQ1JTIiwgIm5hbWUiOiAiV0dTIDg0IiwgImRhdHVtX2Vuc2VtYmxlIjogeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IGVuc2VtYmxlIiwgIm1lbWJlcnMiOiBbeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChUcmFuc2l0KSJ9LCB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKEc3MzApIn0sIHsibmFtZSI6ICJXb3JsZCBHZW9kZXRpYyBTeXN0ZW0gMTk4NCAoRzg3MykifSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMTE1MCkifSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMTY3NCkifSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMTc2MikifSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMjEzOSkifSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMjI5NikifV0sICJlbGxpcHNvaWQiOiB7Im5hbWUiOiAiV0dTIDg0IiwgInNlbWlfbWFqb3JfYXhpcyI6IDYzNzgxMzcsICJpbnZlcnNlX2ZsYXR0ZW5pbmciOiAyOTguMjU3MjIzNTYzfSwgImFjY3VyYWN5IjogIjIuMCIsICJpZCI6IHsiYXV0aG9yaXR5IjogIkVQU0ciLCAiY29kZSI6IDYzMjZ9fSwgImNvb3JkaW5hdGVfc3lzdGVtIjogeyJzdWJ0eXBlIjogImVsbGlwc29pZGFsIiwgImF4aXMiOiBbeyJuYW1lIjogIkdlb2RldGljIGxhdGl0dWRlIiwgImFiYnJldmlhdGlvbiI6ICJMYXQiLCAiZGlyZWN0aW9uIjogIm5vcnRoIiwgInVuaXQiOiAiZGVncmVlIn0sIHsibmFtZSI6ICJHZW9kZXRpYyBsb25naXR1ZGUiLCAiYWJicmV2aWF0aW9uIjogIkxvbiIsICJkaXJlY3Rpb24iOiAiZWFzdCIsICJ1bml0IjogImRlZ3JlZSJ9XX0sICJzY29wZSI6ICJIb3Jpem9udGFsIGNvbXBvbmVudCBvZiAzRCBzeXN0ZW0uIiwgImFyZWEiOiAiV29ybGQuIiwgImJib3giOiB7InNvdXRoX2xhdGl0dWRlIjogLTkwLCAid2VzdF9sb25naXR1ZGUiOiAtMTgwLCAibm9ydGhfbGF0aXR1ZGUiOiA5MCwgImVhc3RfbG9uZ2l0dWRlIjogMTgwfSwgImlkIjogeyJhdXRob3JpdHkiOiAiRVBTRyIsICJjb2RlIjogNDMyNn19LCAiZ2VvbWV0cnlfdHlwZXMiOiBbIkxpbmVTdHJpbmciLCAiUG9pbnQiLCAiUG9seWdvbiJdLCAiYmJveCI6IFstODcuNjUsIDQxLjg3LCAtODcuNjIsIDQxLjg5XX19LCAidmVyc2lvbiI6ICIxLjAuMCIsICJjcmVhdG9yIjogeyJsaWJyYXJ5IjogImdlb3BhbmRhcyIsICJ2ZXJzaW9uIjogIjEuMS4zIn19AAAAAwAAAGdlbwBI9v//EAMAAAQAAAAAAwAAeyJpbmRleF9jb2x1bW5zIjogW3sia2luZCI6ICJyYW5nZSIsICJuYW1lIjogbnVsbCwgInN0YXJ0IjogMCwgInN0b3AiOiAzLCAic3RlcCI6IDF9XSwgImNvbHVtbl9pbmRleGVzIjogW3sibmFtZSI6IG51bGwsICJmaWVsZF9uYW1lIjogbnVsbCwgInBhbmRhc190eXBlIjogInVuaWNvZGUiLCAibnVtcHlfdHlwZSI6ICJzdHIiLCAibWV0YWRhdGEiOiB7ImVuY29kaW5nIjogIlVURi04In19XSwgImNvbHVtbnMiOiBbeyJuYW1lIjogImlkIiwgImZpZWxkX25hbWUiOiAiaWQiLCAicGFuZGFzX3R5cGUiOiAiaW50NjQiLCAibnVtcHlfdHlwZSI6ICJpbnQ2NCIsICJtZXRhZGF0YSI6IG51bGx9LCB7Im5hbWUiOiAibmFtZSIsICJmaWVsZF9uYW1lIjogIm5hbWUiLCAicGFuZGFzX3R5cGUiOiAib2JqZWN0IiwgIm51bXB5X3R5cGUiOiAic3RyIiwgIm1ldGFkYXRhIjogbnVsbH0sIHsibmFtZSI6ICJ2YWx1ZSIsICJmaWVsZF9uYW1lIjogInZhbHVlIiwgInBhbmRhc190eXBlIjogImZsb2F0NjQiLCAibnVtcHlfdHlwZSI6ICJmbG9hdDY0IiwgIm1ldGFkYXRhIjogbnVsbH0sIHsibmFtZSI6ICJnZW9tZXRyeSIsICJmaWVsZF9uYW1lIjogImdlb21ldHJ5IiwgInBhbmRhc190eXBlIjogImVtcHR5IiwgIm51bXB5X3R5cGUiOiAib2JqZWN0IiwgIm1ldGFkYXRhIjogbnVsbH1dLCAiYXR0cmlidXRlcyI6IHt9LCAiY3JlYXRvciI6IHsibGlicmFyeSI6ICJweWFycm93IiwgInZlcnNpb24iOiAiMjQuMC4wIn0sICJwYW5kYXNfdmVyc2lvbiI6ICIzLjAuMyJ9AAAAAAYAAABwYW5kYXMAAAQAAABIBwAACAcAANQGAAAYAAAAAAASABgACAAGAAcADAAAABAAFAASAAAAAAABBBQAAACoBgAACAAAABgAAAAAAAAACAAAAGdlb21ldHJ5AAAAAAIAAABIBgAABAAAAMj5//8UBgAABAAAAAYGAAB7ImNycyI6IHsiJHNjaGVtYSI6ICJodHRwczovL3Byb2oub3JnL3NjaGVtYXMvdjAuNy9wcm9qanNvbi5zY2hlbWEuanNvbiIsICJ0eXBlIjogIkdlb2dyYXBoaWNDUlMiLCAibmFtZSI6ICJXR1MgODQiLCAiZGF0dW1fZW5zZW1ibGUiOiB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgZW5zZW1ibGUiLCAibWVtYmVycyI6IFt7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKFRyYW5zaXQpIiwgImlkIjogeyJhdXRob3JpdHkiOiAiRVBTRyIsICJjb2RlIjogMTE2Nn19LCB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKEc3MzApIiwgImlkIjogeyJhdXRob3JpdHkiOiAiRVBTRyIsICJjb2RlIjogMTE1Mn19LCB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKEc4NzMpIiwgImlkIjogeyJhdXRob3JpdHkiOiAiRVBTRyIsICJjb2RlIjogMTE1M319LCB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKEcxMTUwKSIsICJpZCI6IHsiYXV0aG9yaXR5IjogIkVQU0ciLCAiY29kZSI6IDExNTR9fSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMTY3NCkiLCAiaWQiOiB7ImF1dGhvcml0eSI6ICJFUFNHIiwgImNvZGUiOiAxMTU1fX0sIHsibmFtZSI6ICJXb3JsZCBHZW9kZXRpYyBTeXN0ZW0gMTk4NCAoRzE3NjIpIiwgImlkIjogeyJhdXRob3JpdHkiOiAiRVBTRyIsICJjb2RlIjogMTE1Nn19LCB7Im5hbWUiOiAiV29ybGQgR2VvZGV0aWMgU3lzdGVtIDE5ODQgKEcyMTM5KSIsICJpZCI6IHsiYXV0aG9yaXR5IjogIkVQU0ciLCAiY29kZSI6IDEzMDl9fSwgeyJuYW1lIjogIldvcmxkIEdlb2RldGljIFN5c3RlbSAxOTg0IChHMjI5NikiLCAiaWQiOiB7ImF1dGhvcml0eSI6ICJFUFNHIiwgImNvZGUiOiAxMzgzfX1dLCAiZWxsaXBzb2lkIjogeyJuYW1lIjogIldHUyA4NCIsICJzZW1pX21ham9yX2F4aXMiOiA2Mzc4MTM3LCAiaW52ZXJzZV9mbGF0dGVuaW5nIjogMjk4LjI1NzIyMzU2M30sICJhY2N1cmFjeSI6ICIyLjAiLCAiaWQiOiB7ImF1dGhvcml0eSI6ICJFUFNHIiwgImNvZGUiOiA2MzI2fX0sICJjb29yZGluYXRlX3N5c3RlbSI6IHsic3VidHlwZSI6ICJlbGxpcHNvaWRhbCIsICJheGlzIjogW3sibmFtZSI6ICJHZW9kZXRpYyBsYXRpdHVkZSIsICJhYmJyZXZpYXRpb24iOiAiTGF0IiwgImRpcmVjdGlvbiI6ICJub3J0aCIsICJ1bml0IjogImRlZ3JlZSJ9LCB7Im5hbWUiOiAiR2VvZGV0aWMgbG9uZ2l0dWRlIiwgImFiYnJldmlhdGlvbiI6ICJMb24iLCAiZGlyZWN0aW9uIjogImVhc3QiLCAidW5pdCI6ICJkZWdyZWUifV19LCAic2NvcGUiOiAiSG9yaXpvbnRhbCBjb21wb25lbnQgb2YgM0Qgc3lzdGVtLiIsICJhcmVhIjogIldvcmxkLiIsICJiYm94IjogeyJzb3V0aF9sYXRpdHVkZSI6IC05MCwgIndlc3RfbG9uZ2l0dWRlIjogLTE4MCwgIm5vcnRoX2xhdGl0dWRlIjogOTAsICJlYXN0X2xvbmdpdHVkZSI6IDE4MH0sICJpZCI6IHsiYXV0aG9yaXR5IjogIkVQU0ciLCAiY29kZSI6IDQzMjZ9fX0AABgAAABBUlJPVzpleHRlbnNpb246bWV0YWRhdGEAAAAACAAMAAQACAAIAAAAHAAAAAQAAAAMAAAAZ2VvYXJyb3cud2tiAAAAABQAAABBUlJPVzpleHRlbnNpb246bmFtZQAAAACo////pP///wAAAQMQAAAAHAAAAAQAAAAAAAAABQAAAHZhbHVlAAYACAAGAAYAAAAAAAIA1P///wAAARQQAAAAHAAAAAQAAAAAAAAABAAAAG5hbWUAAAAABAAEAAQAAAAQABQACAAGAAcADAAAABAAEAAAAAAAAQIQAAAAHAAAAAQAAAAAAAAAAgAAAGlkAAAIAAwACAAHAAgAAAAAAAABQAAAAP////84AQAAFAAAAAAAAAAMABYABgAFAAgADAAMAAAAAAMEABgAAAD4AAAAAAAAAAAACgAYAAwABAAIAAoAAAC8AAAAEAAAAAMAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAYAAAAAAAAACAAAAAAAAAAOAAAAAAAAAADAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAABgAAAAAAAAAWAAAAAAAAAAAAAAAAAAAAFgAAAAAAAAAEAAAAAAAAABoAAAAAAAAAIsAAAAAAAAAAAAAAAQAAAADAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAIAAAAAAAAAAwAAAAAAAABhYmMAAAAAAAAAAAAAAPg/AAAAAAAABEAAAAAAAAAMQAAAAAAVAAAAPgAAAIsAAAABAQAAAFXBqKRO6FXADk+vlGXwREABAgAAAAIAAAC4HoXrUehVwHE9Ctej8ERASOF6FK7nVcBSuB6F6/FEQAEDAAAAAQAAAAQAAACamZmZmelVwI/C9Shc70RAKVyPwvXoVcCPwvUoXO9EQClcj8L16FXAcT0K16PwRECamZmZmelVwI/C9Shc70RAAAAAAAD/////AAAAAA==",
+  "headers": {
+    "X-Curio-Filename": "1790212450733_bd7e6b92",
+    "X-Curio-Kind": "geodataframe",
+    "X-Curio-Schema": "{\"id\": \"int64\", \"name\": \"str\", \"value\": \"float64\", \"geometry\": \"geometry\"}"
+  },
+  "json_envelope": {
+    "data": {
+      "crs": {
+        "properties": {
+          "name": "urn:ogc:def:crs:EPSG::4326"
+        },
+        "type": "name"
+      },
+      "features": [
+        {
+          "geometry": {
+            "coordinates": [
+              -87.6298,
+              41.8781
+            ],
+            "type": "Point"
+          },
+          "id": "0",
+          "properties": {
+            "id": 1,
+            "name": "a",
+            "value": 1.5
+          },
+          "type": "Feature"
+        },
+        {
+          "geometry": {
+            "coordinates": [
+              [
+                -87.63,
+                41.88
+              ],
+              [
+                -87.62,
+                41.89
+              ]
+            ],
+            "type": "LineString"
+          },
+          "id": "1",
+          "properties": {
+            "id": 2,
+            "name": "b",
+            "value": 2.5
+          },
+          "type": "Feature"
+        },
+        {
+          "geometry": {
+            "coordinates": [
+              [
+                [
+                  -87.65,
+                  41.87
+                ],
+                [
+                  -87.64,
+                  41.87
+                ],
+                [
+                  -87.64,
+                  41.88
+                ],
+                [
+                  -87.65,
+                  41.87
+                ]
+              ]
+            ],
+            "type": "Polygon"
+          },
+          "id": "2",
+          "properties": {
+            "id": 3,
+            "name": "c",
+            "value": 3.5
+          },
+          "type": "Feature"
+        }
+      ],
+      "geometry_name": "geometry",
+      "type": "FeatureCollection"
+    },
+    "dataType": "geodataframe",
+    "filename": "1790212450733_bd7e6b92",
+    "schema": {
+      "geometry": "geometry",
+      "id": "int64",
+      "name": "str",
+      "value": "float64"
+    }
+  }
+}

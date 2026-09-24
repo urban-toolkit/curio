@@ -17,6 +17,9 @@ async function fetchArtifactAsArrow(url: string, token: string | null | undefine
     const response = await fetch(url, {
         headers: {
             Accept: ARROW_IPC_MIME,
+            // Geometry arrives as WKB on this path, so the sandbox refuses a
+            // geodataframe unless the client says it can decode it (utils/wkb).
+            "X-Curio-Accept-Geometry": "wkb",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
     });
