@@ -262,7 +262,14 @@ class TestDatasetFinderComposite:
         # The docs/06 Data-Load gate: requires rides the node target only.
         assert by_kind["node"].requires == ["data-loading"]
         assert by_kind["canvas"].requires == []
-        assert [t.id for t in m.tools] == ["catalog.search", "dataset.install", "dataflow.read"]
+        assert [t.id for t in m.tools] == [
+            "catalog.search",
+            # The external lane used to dead-end: it could name a portal
+            # dataset and nothing could act on it. These three make it
+            # actionable - roster, live search, reviewed download.
+            "datalake.sources", "datalake.search", "datalake.acquire",
+            "dataset.install", "dataflow.read",
+        ]
         assert m.provenance.trust == "built-in"
 
     def test_net_new_instruction_resolves(self):

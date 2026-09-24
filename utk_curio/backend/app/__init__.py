@@ -67,6 +67,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.datasets import datasets_bp
     app.register_blueprint(datasets_bp)
 
+    from utk_curio.backend.app.datalakes import datalakes_bp
+    app.register_blueprint(datalakes_bp)
+
     from utk_curio.backend.app.agents.routes import agents_bp
     app.register_blueprint(agents_bp)
 

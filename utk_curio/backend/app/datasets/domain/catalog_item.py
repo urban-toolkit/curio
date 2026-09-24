@@ -270,6 +270,12 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # sibling layer datasets; ``layerName`` is this dataset's layer.
         "groupId": None,
         "layerName": None,
+        # Where a dataset downloaded from the Data Lake Catalog came from. Null
+        # for everything else, which is most datasets. Not an ``origin`` of its
+        # own: such a dataset IS imported, and a fifth origin would ripple
+        # through the labels, facets, filters and dedup for a distinction this
+        # block already carries losslessly.
+        "lakeSource": None,
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
@@ -356,4 +362,5 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         producerDataflowId=manifest.producer_dataflow_id,
         producerDataflowName=manifest.producer_dataflow_name,
         upstreamInputs=list(manifest.upstream_inputs) if manifest.upstream_inputs else [],
+        lakeSource=dict(manifest.lake_source) if manifest.lake_source else None,
     )

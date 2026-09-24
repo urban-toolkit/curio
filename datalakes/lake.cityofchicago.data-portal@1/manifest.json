@@ -1,0 +1,35 @@
+{
+  "id": "lake.cityofchicago.data-portal",
+  "name": "City of Chicago Data Portal",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "The City of Chicago's open data portal: permits, transport, public safety, environment and census extracts for the city.",
+  "publisher": "City of Chicago",
+  "homepage": "https://data.cityofchicago.org",
+  "license": "See each dataset's own terms",
+  "tags": ["chicago", "municipal", "united-states", "socrata"],
+  "icon": "icon.png",
+  "provider": {
+    "type": "socrata",
+    "baseUrl": "https://data.cityofchicago.org",
+    "options": {}
+  },
+  "auth": {
+    "mode": "optional-token",
+    "secretId": "socrata.app-token",
+    "scheme": "header",
+    "headerName": "X-App-Token",
+    "helpUrl": "https://dev.socrata.com/docs/app-tokens.html"
+  },
+  "capabilities": {
+    "search": true,
+    "describe": true,
+    "download": true,
+    "formats": ["csv", "geojson", "json"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": false
+  },
+  "limits": { "requestsPerMinute": 30 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

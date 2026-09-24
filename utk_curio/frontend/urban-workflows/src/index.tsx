@@ -82,6 +82,8 @@ import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
 import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
+import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
+import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
 import DataHubPage from "./pages/dataHub/DataHubPage";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
@@ -186,6 +188,11 @@ const App: React.FC = () => {
                       <Route path="data" element={<DataCatalogBrowse />} />
                       <Route path="data/:datasetId" element={<DataCatalogDetail />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
+                      <Route path="lakes" element={<DataLakeCatalogBrowse />} />
+                      <Route
+                        path="lakes/:sourceDir"
+                        element={<DataLakeSourceDetail />}
+                      />
                     </Route>
                     <Route
                       path="/data-hub/:datasetId?"

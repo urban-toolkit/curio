@@ -246,3 +246,348 @@ class TestCallBudgetCountsRequests:
         )
         assert result.status == 200
         assert called["n"] == 1
+
+
+# ── The policy moved to common/egress_policy.py; the transport stayed here ──
+
+
+class TestTheSplitIsInvisibleToCallers:
+    """``agents/egress`` re-exports the policy, so callers see the SAME objects.
+
+    Identity, not equality: ``except egress.EgressRefused`` in tools.py and
+    verify.py must catch what ``egress_policy`` raises. A second class with the
+    same name would be caught by neither.
+    """
+
+    def test_the_names_are_the_same_objects(self):
+        from utk_curio.backend.app.common import egress_policy
+
+        for name in (
+            "EgressRefused",
+            "EgressTooLarge",
+            "CallBudget",
+            "check_url",
+            "trusted_host_of",
+            "ALLOWED_SCHEMES",
+            "MAX_REDIRECTS",
+            "MAX_CALLS_PER_RUN",
+        ):
+            assert getattr(egress, name) is getattr(egress_policy, name), name
+
+    def test_too_large_is_a_refusal(self):
+        """So every existing ``except EgressRefused`` still catches it."""
+        assert issubclass(egress.EgressTooLarge, egress.EgressRefused)
+
+
+class TestFetchBodyBound:
+    def test_the_default_is_still_256_KiB(self):
+        """Pinned. It bounds what becomes prompt text; raising it by accident
+        is how a tool result blows the model's context."""
+        assert egress.MAX_BODY_BYTES == 256 * 1024
+
+    def test_the_default_truncates_at_that_bound(self):
+        body = b"x" * (egress.MAX_BODY_BYTES + 100)
+        result = egress.fetch(
+            "https://big.example",
+            request_fn=lambda m, u: (200, {"Content-Type": "text/plain"}, body, None),
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert result.truncated
+        assert result.body.startswith("x" * 100)
+        assert "truncated" in result.body
+
+    def test_a_caller_may_raise_it(self):
+        """A portal's package_search page routinely exceeds 256 KiB, and it is
+        not going into a prompt."""
+        body = b"y" * (egress.MAX_BODY_BYTES + 100)
+        result = egress.fetch(
+            "https://big.example",
+            request_fn=lambda m, u: (200, {"Content-Type": "application/json"}, body, None),
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=egress.MAX_BODY_BYTES * 4,
+        )
+        assert not result.truncated
+        assert len(result.body) == len(body)
+
+    def test_a_caller_may_lower_it(self):
+        result = egress.fetch(
+            "https://small.example",
+            request_fn=lambda m, u: (200, {"Content-Type": "text/plain"}, b"abcdef", None),
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=3,
+        )
+        assert result.truncated
+        assert result.body.startswith("abc")
+
+
+class _NoBody:
+    """An empty, closeable chunk stream - for hops that only redirect."""
+
+    def __iter__(self):
+        return iter(())
+
+    def close(self):
+        pass
+
+
+def _stream(chunks, *, status=200, headers=None, location=None):
+    """A ``download`` transport double. Records whether it was closed."""
+    state = {"closed": False}
+
+    class _Chunks:
+        def __iter__(self):
+            return iter(chunks)
+
+        def close(self):
+            state["closed"] = True
+
+    def _request(method, url, **kwargs):
+        return status, dict(headers or {}), location, _Chunks()
+
+    return _request, state
+
+
+class TestDownload:
+    def test_it_streams_to_the_sink_and_hashes_what_it_wrote(self):
+        import hashlib
+
+        payload = [b"hello ", b"world"]
+        request_fn, _ = _stream(payload, headers={"Content-Type": "text/csv"})
+        written = []
+        result = egress.download(
+            "https://portal.example/data.csv",
+            sink=written.append,
+            max_bytes=1024,
+            request_fn=request_fn,
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert b"".join(written) == b"hello world"
+        assert result.bytes_written == 11
+        assert result.sha256 == hashlib.sha256(b"hello world").hexdigest()
+        assert result.content_type == "text/csv"
+
+    def test_it_closes_the_stream(self):
+        request_fn, state = _stream([b"x"])
+        egress.download(
+            "https://portal.example/d",
+            sink=lambda c: None,
+            max_bytes=1024,
+            request_fn=request_fn,
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert state["closed"]
+
+    def test_a_declared_length_over_the_bound_is_refused_before_any_body(self):
+        request_fn, state = _stream(
+            [b"z" * 100], headers={"Content-Length": "999999"}
+        )
+        written = []
+        with pytest.raises(egress.EgressTooLarge, match="declares"):
+            egress.download(
+                "https://portal.example/huge",
+                sink=written.append,
+                max_bytes=1024,
+                request_fn=request_fn,
+                resolver=lambda h: ["93.184.216.34"],
+            )
+        assert written == []      # not one byte read
+        assert state["closed"]
+
+    def test_a_lying_content_length_is_still_caught_while_streaming(self):
+        """The bound is enforced against bytes actually written, so an absent
+        or dishonest Content-Length cannot get past it."""
+        request_fn, _ = _stream([b"a" * 60, b"b" * 60], headers={"Content-Length": "10"})
+        written = []
+        with pytest.raises(egress.EgressTooLarge, match="while streaming"):
+            egress.download(
+                "https://portal.example/liar",
+                sink=written.append,
+                max_bytes=100,
+                request_fn=request_fn,
+                resolver=lambda h: ["93.184.216.34"],
+            )
+        # Checked before writing: the sink never saw the chunk that crossed it.
+        assert b"".join(written) == b"a" * 60
+
+    def test_it_shares_the_ssrf_policy(self):
+        request_fn, _ = _stream([b"x"])
+        with pytest.raises(egress.EgressRefused, match="non-public"):
+            egress.download(
+                "https://metadata.internal/latest",
+                sink=lambda c: None,
+                max_bytes=1024,
+                request_fn=request_fn,
+                resolver=_resolver({"metadata.internal": ["169.254.169.254"]}),
+            )
+
+    def test_it_shares_the_scheme_allowlist(self):
+        with pytest.raises(egress.EgressRefused, match="scheme"):
+            egress.download(
+                "file:///etc/passwd",
+                sink=lambda c: None,
+                max_bytes=1024,
+                request_fn=_stream([b"x"])[0],
+                resolver=PUBLIC,
+            )
+
+    def test_every_redirect_hop_is_re_checked(self):
+        """The hop off the public host lands on link-local and is refused."""
+        seen = []
+
+        def _request(method, url, **kwargs):
+            seen.append(url)
+            if "start" in url:
+                return 302, {"Location": "https://metadata.internal/x"}, "https://metadata.internal/x", _NoBody()
+            return 200, {}, None, _NoBody()
+
+        with pytest.raises(egress.EgressRefused, match="non-public"):
+            egress.download(
+                "https://start.example/f",
+                sink=lambda c: None,
+                max_bytes=1024,
+                request_fn=_request,
+                resolver=_resolver(
+                    {
+                        "start.example": ["93.184.216.34"],
+                        "metadata.internal": ["169.254.169.254"],
+                    }
+                ),
+            )
+        assert seen == ["https://start.example/f"]
+
+    def test_the_redirect_cap_is_shared(self):
+        def _request(method, url, **kwargs):
+            return 302, {"Location": "https://a.example/next"}, "https://a.example/next", _NoBody()
+
+        with pytest.raises(egress.EgressRefused, match="redirects"):
+            egress.download(
+                "https://a.example/start",
+                sink=lambda c: None,
+                max_bytes=1024,
+                request_fn=_request,
+                resolver=lambda h: ["93.184.216.34"],
+            )
+
+    def test_the_budget_is_charged_per_hop(self):
+        def _request(method, url, **kwargs):
+            if url.endswith("start"):
+                return 302, {"Location": "https://a.example/end"}, "https://a.example/end", _NoBody()
+            return 200, {}, None, _NoBody()
+
+        budget = egress.CallBudget(limit=4)
+        egress.download(
+            "https://a.example/start",
+            sink=lambda c: None,
+            max_bytes=1024,
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            budget=budget,
+        )
+        assert budget.used == 2      # the redirect cost what it cost
+
+    def test_progress_reports_bytes_and_the_declared_total(self):
+        request_fn, _ = _stream(
+            [b"a" * 10, b"b" * 10], headers={"Content-Length": "20"}
+        )
+        seen = []
+        egress.download(
+            "https://portal.example/d",
+            sink=lambda c: None,
+            max_bytes=1024,
+            request_fn=request_fn,
+            resolver=lambda h: ["93.184.216.34"],
+            progress=lambda written, total: seen.append((written, total)),
+        )
+        assert seen == [(10, 20), (20, 20)]
+
+    def test_audit_records_what_was_written(self):
+        request_fn, _ = _stream([b"x" * 7])
+        audit = []
+        egress.download(
+            "https://portal.example/d",
+            sink=lambda c: None,
+            max_bytes=1024,
+            request_fn=request_fn,
+            resolver=lambda h: ["93.184.216.34"],
+            audit=audit,
+        )
+        assert audit == [
+            {
+                "url": "https://portal.example/d",
+                "finalUrl": "https://portal.example/d",
+                "status": 200,
+                "bytes": 7,
+            }
+        ]
+
+
+class TestTheBodyBoundReachesTheTransport:
+    """``max_bytes`` has to stop the READ, not just truncate what arrived.
+
+    Reading a fixed 256 KiB while the caller asked for more made the parameter
+    a lie: the body came back pre-cut, and ``truncated`` then compared that
+    short body against the larger bound and reported False. A caller got a
+    silently truncated document with no indication - which is how a 425 KB WFS
+    capabilities response became an XML parse error a long way from here.
+    """
+
+    def test_the_default_request_fn_honours_the_callers_bound(self):
+        seen = {}
+
+        def _request(method, url, *, trusted_host=None, max_bytes=None):
+            seen["max_bytes"] = max_bytes
+            return 200, {"Content-Type": "text/plain"}, b"x" * 10, None
+
+        egress.fetch(
+            "https://big.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=2 * 1024 * 1024,
+        )
+        assert seen["max_bytes"] == 2 * 1024 * 1024
+
+    def test_the_default_is_passed_when_the_caller_says_nothing(self):
+        seen = {}
+
+        def _request(method, url, *, trusted_host=None, max_bytes=None):
+            seen["max_bytes"] = max_bytes
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+        )
+        assert seen["max_bytes"] == egress.MAX_BODY_BYTES
+
+    def test_a_two_argument_double_is_still_called_with_two_arguments(self):
+        """Every existing test double takes ``(method, url)``. Widening the
+        call unconditionally would break all of them."""
+        calls = []
+
+        def _request(method, url):
+            calls.append((method, url))
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=999,
+        )
+        assert calls == [("GET", "https://ok.example")]
+
+    def test_a_kwargs_double_receives_both_extras(self):
+        seen = {}
+
+        def _request(method, url, **kwargs):
+            seen.update(kwargs)
+            return 200, {}, b"ok", None
+
+        egress.fetch(
+            "https://ok.example",
+            request_fn=_request,
+            resolver=lambda h: ["93.184.216.34"],
+            max_bytes=4096,
+        )
+        assert seen == {"trusted_host": None, "max_bytes": 4096}

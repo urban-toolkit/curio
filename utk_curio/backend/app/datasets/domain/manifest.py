@@ -61,6 +61,15 @@ class DatasetManifest:
     # Each entry describes one upstream input feeding the producer node:
     # ``{"nodeId", "nodeType"?}`` and/or ``{"datasetId"}``.
     upstream_inputs: list[dict[str, Any]] | None = None
+    # Where a dataset downloaded from the Data Lake Catalog came from:
+    # ``{lakeId, lakeName, resourceId, resourceUrl, finalUrl, fetchedAt,
+    # contentSha256}``. A nested block rather than five scalars because it is
+    # one fact with parts, and because ``source_label`` - the obvious place to
+    # put a provenance string - is a display field already load-bearing for
+    # dedup and cannot carry a machine-readable back-reference. Without
+    # ``resourceId`` there is no answering "do I already hold this?", which is
+    # what stops the same file being downloaded twice.
+    lake_source: dict[str, Any] | None = None
 
     @property
     def dir_name(self) -> str:
@@ -101,6 +110,18 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
     if schema is not None and not isinstance(schema, dict):
         raise ManifestError(f"{where}.schema must be an object when present")
 
+    lake_source = raw.get("lakeSource")
+    if lake_source is not None:
+        if not isinstance(lake_source, dict):
+            raise ManifestError(f"{where}.lakeSource must be an object when present")
+        # Bounded: every value in it came off a remote portal, and a manifest is
+        # read on every catalog listing.
+        lake_source = {
+            str(k)[:64]: (v if isinstance(v, (int, float, bool)) else str(v)[:512])
+            for k, v in list(lake_source.items())[:16]
+            if v is not None
+        }
+
     feature_count = raw.get("featureCount")
     row_count = raw.get("rowCount")
     if feature_count is not None:
@@ -138,6 +159,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
             if isinstance(raw.get("upstreamInputs"), list)
             else None
         ),
+        lake_source=lake_source,
     )
 
 
@@ -179,6 +201,7 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
             if manifest.upstream_inputs
             else None
         ),
+        "lakeSource": dict(manifest.lake_source) if manifest.lake_source else None,
     }
 
 

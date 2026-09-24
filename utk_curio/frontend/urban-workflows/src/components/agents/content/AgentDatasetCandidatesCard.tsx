@@ -25,9 +25,21 @@ export function composeConfirmationPrompt(
         .join(", ")}`,
     );
   }
-  if (externalRows.length) {
+  // The external lane splits in two. A row Curio can download says so; one it
+  // cannot still goes to Node Builder, which is the right answer for a source
+  // no provider covers - it just stops being the ONLY answer.
+  const downloadable = externalRows.filter((r) => r.acquirable && r.sourceId && r.resourceId);
+  const handoff = externalRows.filter((r) => !downloadable.includes(r));
+  if (downloadable.length) {
     bits.push(
-      `hand off to Node Builder: ${externalRows.map((r) => r.name).join(", ")}`,
+      `download into my Data Catalog: ${downloadable
+        .map((r) => `${r.name} (${r.sourceId}/${r.resourceId})`)
+        .join(", ")}`,
+    );
+  }
+  if (handoff.length) {
+    bits.push(
+      `hand off to Node Builder: ${handoff.map((r) => r.name).join(", ")}`,
     );
   }
   return bits.length ? `Confirm my selection — ${bits.join("; ")}.` : "";
@@ -82,6 +94,14 @@ export const AgentDatasetCandidatesCard: React.FC<{
               {lane === "catalog" ? (
                 <span className={row.installed ? styles.installedChip : styles.notInstalledChip}>
                   {row.installed ? "Installed" : "Not installed"}
+                </span>
+              ) : null}
+              {lane === "external" && row.acquirable ? (
+                // Set by the runtime against the real source roster, never by
+                // the model. It is the difference between a row Curio can
+                // download and one it can only hand to Node Builder.
+                <span className={styles.installedChip} title="Curio can download this for you">
+                  Downloadable
                 </span>
               ) : null}
               {lane === "external" && row.verification ? (

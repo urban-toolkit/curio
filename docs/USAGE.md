@@ -440,6 +440,14 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 
 For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
+## Data Lake Catalog
+
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach - Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback - so you can browse one and download into your Data Catalog rather than hand-writing fetch code.
+
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They are operator-authored: there is no import route, because a source declares a host the server makes outbound requests to on your behalf.
+
+See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
+
 ## Agent Catalog
 
 Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of

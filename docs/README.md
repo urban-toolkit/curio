@@ -8,6 +8,7 @@
 - [Node catalog](NODE-CATALOG.md)
 - [Data catalog](DATA-CATALOG.md)
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
+- [Data lake catalog](DATA-LAKE-CATALOG.md): the data portals this install can reach, and how a download from one becomes an ordinary dataset
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 

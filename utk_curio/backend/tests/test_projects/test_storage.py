@@ -334,3 +334,52 @@ def test_spec_write_lock_msvcrt_blocks_through_contention(tmp_curio, monkeypatch
     assert fake.lock_attempts == 4, "should re-issue the blocking lock until acquired"
     assert (fake.LK_LOCK, 1) in fake.calls
     assert (fake.LK_UNLCK, 1) in fake.calls
+
+
+def test_a_reader_never_sees_a_half_written_spec(tmp_curio):
+    """A save in flight must not make a concurrent read fail.
+
+    ``write_text`` truncates first and writes second, so a reader arriving
+    between the two got zero bytes and ``json.loads("")``. Readers take no
+    lock - the spec lock serializes writers against writers only - so this was
+    reachable from ordinary use: it surfaced in CI as the Agent Catalog 500ing
+    with "Expecting value: line 1 column 1 (char 0)" while the walkthrough was
+    saving, and as a red banner in that walkthrough's screenshot.
+
+    The reader here hammers the file while the writer rewrites it. Any read
+    that raises, or comes back short, is the bug.
+    """
+    import threading
+
+    storage.write_spec("1", "proj-race", {"dataflow": {"nodes": [{"id": "n0"}]}})
+
+    stop = threading.Event()
+    failures: list[str] = []
+
+    def _read() -> None:
+        while not stop.is_set():
+            try:
+                spec = storage.read_spec("1", "proj-race")
+            except Exception as exc:  # noqa: BLE001 - that IS the failure
+                failures.append(f"{type(exc).__name__}: {exc}")
+                return
+            if spec is None or "dataflow" not in spec:
+                failures.append(f"short read: {spec!r}")
+                return
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        # Big enough that the write is not a single syscall, so the window
+        # between truncate and write is real rather than theoretical.
+        for i in range(300):
+            storage.write_spec(
+                "1",
+                "proj-race",
+                {"dataflow": {"nodes": [{"id": f"n{n}"} for n in range(200)], "rev": i}},
+            )
+    finally:
+        stop.set()
+        reader.join(timeout=5)
+
+    assert not failures, failures[:3]

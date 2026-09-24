@@ -95,7 +95,9 @@ _PLAN_EXPECTS_MAX_CHARS = 160
 # URLs are scheme-allowlisted at parse time (REQ-SEC-002 belt-and-braces —
 # rendering still goes through the sanitizer).
 _CANDIDATE_LANES = ("external", "catalog")
-_CANDIDATE_SOURCE_TYPES = ("api", "endpoint", "portal", "catalog", "document", "database")
+_CANDIDATE_SOURCE_TYPES = (
+    "api", "endpoint", "portal", "catalog", "document", "database", "lake",
+)
 _CANDIDATES_MAX_ROWS_PER_LANE = 8
 _CANDIDATE_NAME_MAX_CHARS = 120
 _CANDIDATE_TEXT_MAX_CHARS = 160
@@ -115,6 +117,9 @@ _CANDIDATE_ROW_MAX_BYTES = (
     _CANDIDATE_NAME_MAX_CHARS          # name
     + _CANDIDATE_NAME_MAX_CHARS        # datasetId (catalog lane)
     + _CANDIDATE_URL_MAX_CHARS         # url (external lane)
+    # sourceId + resourceId: the external lane's grounded coordinate, which is
+    # what makes a portal row actionable rather than only nameable.
+    + 2 * _CANDIDATE_NAME_MAX_CHARS
     # provider, format, coverage, requirement, fit.rationale
     + 5 * _CANDIDATE_TEXT_MAX_CHARS
     + 256                              # keys, punctuation, sourceType, score
@@ -385,6 +390,24 @@ def _parse_candidate_row(raw: object, lane: str) -> dict | None:
             return None  # catalog rows are tool-grounded: the id is mandatory
         row["datasetId"] = dataset_id
         row["installed"] = bool(raw.get("installed"))
+    if lane == "external":
+        # Optional, and only meaningful together: a portal row carrying both is
+        # one Curio can actually download, rather than one it can only name and
+        # hand to Node Builder. A row with neither parses exactly as before.
+        #
+        # Note what is NOT set here: `acquirable`. The model may name a source;
+        # it may not claim the source exists or that the run may act on it. The
+        # runtime decides that against the real roster, the same way the
+        # catalog lane's datasetId has to come from catalog.search.
+        source_id = raw.get("sourceId")
+        resource_id = raw.get("resourceId")
+        if source_id is not None or resource_id is not None:
+            source_text = _bounded_str(source_id, _CANDIDATE_NAME_MAX_CHARS)
+            resource_text = _bounded_str(resource_id, _CANDIDATE_NAME_MAX_CHARS)
+            if source_text is None or resource_text is None:
+                return None  # half a coordinate is not a coordinate
+            row["sourceId"] = source_text
+            row["resourceId"] = resource_text
     return row
 
 
@@ -942,6 +965,21 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
 # The tool whose grant means an agent is expected to propose dataset candidates.
 # Used to decide whether the candidates schema belongs in this run's tail.
 _CANDIDATES_TOOL = "catalog.search"
+#: Either grant unlocks the candidates schema: a run that can search portals
+#: can fill the external lane even without the Data Catalog tool.
+_LAKE_CANDIDATES_TOOL = "datalake.search"
+_CANDIDATES_TOOLS = (_CANDIDATES_TOOL, _LAKE_CANDIDATES_TOOL)
+
+#: Appended only for a run holding ``datalake.search``. Kept separate so the
+#: base instruction stays byte-identical for every run that cannot use it.
+CANDIDATES_LAKE_ADDENDUM = (
+    "An external row for a dataset you found with datalake.search may also "
+    'carry "sourceId" and "resourceId", copied exactly from that result. '
+    "Include both or neither. A row with both can be downloaded into the Data "
+    "Catalog for the user; a row without them is handed to Node Builder "
+    "instead. Never invent either value - a pair that does not match a real "
+    "source is dropped."
+)
 
 # The datasetCandidates schema, shown to agents that can actually produce one.
 #
@@ -1007,8 +1045,15 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
         '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
         "```"
     )
-    if any(tool_id == _CANDIDATES_TOOL for tool_id, _ in grants):
+    granted_ids = {tool_id for tool_id, _ in grants}
+    if granted_ids & set(_CANDIDATES_TOOLS):
         instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
+        # Only described to a run that can actually produce them. A run without
+        # the lake tools cannot obtain a sourceId, so telling it about the
+        # fields would invite it to invent a pair the runtime then rejects -
+        # and would change the prompt for every existing agent for nothing.
+        if _LAKE_CANDIDATES_TOOL in granted_ids:
+            instruction = f"{instruction}\n{CANDIDATES_LAKE_ADDENDUM}"
     return instruction
 
 

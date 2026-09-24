@@ -908,6 +908,10 @@ def apply_proposal(
         return _apply_dataset_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "datalake.acquire":
+        return _apply_datalake_acquire(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     if tool == "package.install":
         return _apply_package_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
@@ -2374,6 +2378,138 @@ def _mint_dataset_install(
     )
 
 
+def _lake_service():
+    from flask import g
+
+    from utk_curio.backend.app.datalakes.service import DataLakeService
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    return DataLakeService(
+        _user_dir_key(user) if user is not None else None, user=user
+    )
+
+
+def _mint_datalake_acquire(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """Propose downloading ONE portal resource into the Data Catalog.
+
+    **Grounded in a real describe() call**, the way ``_mint_dataset_install`` is
+    grounded in ``_resolve_catalog_dataset``: the card shows the portal's own
+    name, format and size, not the model's claim about them. A model that
+    invented a resource id produces a refusal here rather than a proposal the
+    user approves on the strength of a fabricated description.
+
+    Every refusal is honest chat instead of a dead proposal (docs/06
+    idempotence), and each names what to do about it.
+    """
+    from utk_curio.backend.app.datalakes.domain.errors import (
+        CredentialRequired,
+        DataLakeError,
+    )
+
+    params = req.get("params") or {}
+    source_id = str(params.get("sourceId") or "").strip()
+    resource_id = str(params.get("resourceId") or "").strip()
+    fmt = str(params.get("format") or "").strip().lower() or None
+    if not source_id or not resource_id:
+        return "refused", "a download needs both a sourceId and a resourceId", None
+
+    service = _lake_service()
+    try:
+        manifest = service.get_manifest(source_id)
+    except DataLakeError:
+        known = [
+            row.get("dirName")
+            for row in (service.list_catalog().get("sources") or [])
+        ]
+        return (
+            "refused",
+            f"there is no data lake source {source_id!r} here; this deployment "
+            f"connects to {', '.join(str(k) for k in known) or 'none'}",
+            None,
+        )
+    if not manifest.capabilities.download:
+        return "refused", f"{manifest.name} does not offer downloads", None
+
+    held = service._acquire.already_held(manifest, resource_id, fmt)
+    if held is not None:
+        return (
+            "refused",
+            f"{held.get('title')!r} is already in the user's Data Catalog from "
+            "this resource - tell them instead of proposing a second copy",
+            None,
+        )
+
+    try:
+        detail = service.describe_resource(source_id, resource_id)
+    except CredentialRequired as exc:
+        help_url = manifest.auth.help_url
+        return (
+            "refused",
+            f"{exc} - ask the user to add the {manifest.auth.secret_id} token in "
+            f"AI Settings{f' ({help_url})' if help_url else ''}. Never ask them "
+            "to paste it to you.",
+            None,
+        )
+    except DataLakeError as exc:
+        return "refused", f"{manifest.name} could not describe {resource_id!r}: {exc}", None
+
+    offered = [str(f) for f in (detail.get("formats") or [])]
+    if fmt and fmt not in offered:
+        return (
+            "refused",
+            f"that resource is not offered as {fmt!r}; it offers "
+            f"{', '.join(offered) or 'nothing this catalog can ingest'}",
+            None,
+        )
+
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+
+    name = str(detail.get("name") or resource_id)
+    chosen = fmt or (offered[0] if offered else None)
+    proposal_id = uuid.uuid4().hex
+    summary = f"Download dataset · {name}"
+    preview_bits = [name, manifest.name]
+    if chosen:
+        preview_bits.append(chosen.upper())
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="datalake.acquire",
+        summary=summary,
+        preview=" · ".join(preview_bits),
+        pins={"sourceId": manifest.dir_name, "resourceId": resource_id, "format": chosen},
+    )
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "datalake.acquire",
+            "sourceId": manifest.dir_name,
+            "sourceName": manifest.name,
+            "resourceId": resource_id,
+            "format": chosen,
+            "datasetName": name,
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"proposal {proposal_id} created to download {name!r} from "
+        f"{manifest.name}; it awaits the user's explicit review - do NOT assume "
+        "it was downloaded",
+        part,
+    )
+
+
 # The model's why-needed rationale rides the proposal card — bounded so a
 # runaway reply can't bloat the persisted mirror (dev/84).
 _PACKAGE_REASON_MAX_CHARS = 300
@@ -3018,6 +3154,86 @@ def _apply_dataflow_plan(
         },
         "builderSession": record.get("builderSession") if record else None,
     }
+
+
+def _apply_datalake_acquire(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The ONLY path that downloads. Never the model loop.
+
+    Re-resolves the source first: one removed between mint and apply is the
+    drift analogue ``_apply_dataset_install`` handles the same way, 409 +
+    ``stale``, rather than a confusing failure at the portal.
+
+    Waits briefly on the job so the common case - a small file from a
+    responsive portal - answers with the dataset. A slow one hands back the
+    job id and says so, which is honest either way and is one code path rather
+    than two.
+    """
+    from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+
+    source_id = proposal.get("sourceId", "")
+    resource_id = proposal.get("resourceId", "")
+    service = _lake_service()
+    try:
+        service.get_manifest(source_id)
+    except DataLakeError as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"that data lake source is no longer available ({exc}) - ask the "
+            "agent to search again",
+        )
+    try:
+        started = service.start_acquire(
+            source_id, resource_id, fmt=proposal.get("format") or None
+        )
+    except DataLakeError as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id, str(exc)
+        )
+
+    if started.get("alreadyPresent"):
+        dataset = started.get("dataset") or {}
+        return {"ok": True, "datasetId": dataset.get("id"), "alreadyPresent": True}
+
+    job_id = started.get("jobId")
+    outcome = _await_lake_job(service, job_id)
+    if outcome is not None and outcome.get("status") == "failed":
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            outcome.get("error") or "that download did not finish",
+        )
+    dataset = (outcome or {}).get("dataset") or {}
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "datasetId": dataset.get("id"),
+        "status": (outcome or {}).get("status", "running"),
+    }
+
+
+#: How long the apply endpoint waits before handing the job back. Long enough
+#: for a small file from a responsive portal, short enough not to hold a
+#: request open on a large one.
+_LAKE_APPLY_WAIT_S = 20
+
+
+def _await_lake_job(service, job_id: str | None) -> dict | None:
+    if not job_id:
+        return None
+    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    while time.monotonic() < deadline:
+        row = service.get_job(job_id)
+        if row.get("status") in ("completed", "failed", "refused", "cancelled"):
+            return row
+        time.sleep(0.1)
+    return None
 
 
 def _apply_dataset_install(
@@ -5458,6 +5674,7 @@ MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.create",
     "node.template.create",
     "dataset.install",
+    "datalake.acquire",
     "package.install",  # dev/84
     "package.draft.apply",  # dev/89
     "dataflow.plan.write",
@@ -5517,6 +5734,8 @@ def _mint_proposal(
         return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
+    if tool == "datalake.acquire":
+        return _mint_datalake_acquire(user_key, project_id, loop_ctx, req)
     if tool == "package.install":
         return _mint_package_install(user_key, project_id, loop_ctx, req)
     if tool == "package.draft.apply":
@@ -5807,6 +6026,60 @@ def _verify_candidate_parts(parts: list) -> None:
             row["verification"] = verify.verify_external_source(url, budget=budget)
 
 
+def _mark_acquirable_candidates(parts: list, granted: set[str]) -> None:
+    """Decide, server-side, which external rows Curio can actually download.
+
+    The model may NAME a source; it may not claim the run can act on it. This
+    is the catalog lane's mandatory-``datasetId`` discipline applied one lane
+    over: a row is acquirable only when the source really exists in this
+    deployment's roster, really offers downloads, and the run really holds the
+    grant. Anything the model asserted about that is ignored.
+
+    Reads the roster off disk, so it costs no web budget.
+    """
+    rows = [
+        row
+        for part in parts
+        if isinstance(part, dict) and part.get("type") == "datasetCandidates"
+        for row in (part.get("lanes") or {}).get("external") or []
+        if isinstance(row, dict)
+    ]
+    # Never leave the key model-supplied: a row the model marked acquirable
+    # must read as false unless the runtime says otherwise.
+    for row in rows:
+        row.pop("acquirable", None)
+    candidates = [r for r in rows if r.get("sourceId") and r.get("resourceId")]
+    if not candidates or "datalake.acquire" not in granted:
+        return
+    try:
+        from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        listing = DataLakeService().list_catalog()
+    except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
+        return
+    downloadable = {
+        source.get("dirName")
+        for source in listing.get("sources") or []
+        if (source.get("capabilities") or {}).get("download")
+    }
+    for row in candidates:
+        if row.get("sourceId") in downloadable:
+            row["acquirable"] = True
+
+
+#: The tools that spend the per-run web budget. ``datalake.sources`` is absent
+#: on purpose: it reads manifests off disk, and charging it would burn a run's
+#: allowance on a free call.
+_EGRESS_TOOLS = ("web.fetch", "web.search", "datalake.search")
+
+
+def _egress_cost(tool_id: str, params: dict) -> int:
+    """How many requests this tool call will make."""
+    if tool_id == "datalake.search":
+        return tools.datalake_sources_contacted(params)
+    return 1
+
+
 def _execute_tool_request(
     user_key: str, project_id: str, loop_ctx: dict, req: dict, tool_calls: list, minted: list
 ) -> tuple[str, str]:
@@ -5822,7 +6095,7 @@ def _execute_tool_request(
     started = time.monotonic()
     if tool_id not in loop_ctx["granted"]:
         status, text = "refused", f"tool {tool_id!r} is not granted for this run"
-    elif tool_id in ("web.fetch", "web.search") and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
+    elif tool_id in _EGRESS_TOOLS and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
         # dev/67-4 (DEC-053): the per-run egress budget — verification, never
         # crawling. The refusal is data the model must surface honestly.
         status, text = "error", (
@@ -5830,8 +6103,16 @@ def _execute_tool_request(
             "calls per run) — report what you verified so far"
         )
     else:
-        if tool_id in ("web.fetch", "web.search"):
-            loop_ctx["egressCalls"] = loop_ctx.get("egressCalls", 0) + 1
+        if tool_id in _EGRESS_TOOLS:
+            # Charged by the number of requests the call will ACTUALLY make,
+            # not one per tool call. A federated datalake.search contacts every
+            # searchable portal, so a flat tick would let one call issue five
+            # requests against a budget of four - the same undercount
+            # CallBudget's docstring records being fixed once already, where a
+            # Socrata verification fetched twice per row.
+            loop_ctx["egressCalls"] = loop_ctx.get("egressCalls", 0) + _egress_cost(
+                tool_id, req.get("params") or {}
+            )
         contract = tools.REGISTRY.get(tool_id)
         if contract is None:
             status, text = "refused", f"tool {tool_id!r} is not available"
@@ -7169,6 +7450,7 @@ def run_attachment(
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+            _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
@@ -7481,6 +7763,7 @@ def stream_attachment(
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+        _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
         if withheld is not None and not parts:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld

@@ -40,6 +40,13 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
+      # The Data Lake Catalog's recorded portal corpus. The host-side e2e specs
+      # drive this container with --use-existing, so it is the CONTAINER that
+      # needs this, not the pytest process: without it the lake transport falls
+      # back to real HTTP and those specs would reach live portals. Honoured
+      # only alongside --testing on the command below, which is what sets
+      # CURIO_TESTING (see datalakes/infrastructure/transport.py).
+      - CURIO_DATALAKE_FIXTURES=/app/utk_curio/backend/tests/test_datalakes/fixtures
       # ``--testing`` on the command mounts the /api/testing/* stubs the e2e
       # fixtures depend on; see docker-compose.ci.yml.
       - CURIO_LAUNCH_CWD=/app

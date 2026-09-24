@@ -276,6 +276,25 @@
   --curio-kind-dataflow-fg: #5B6472;
   --curio-kind-dataflow-bg: #E4E7EC;
 
+  /* A data lake SOURCE (a portal), for the /catalog/lakes cards and the lake
+     kind icon. Every lake card takes this one colour rather than a per-provider
+     hue - the same choice the projects list makes for dataflows, and for a
+     sharper reason: on that page every card IS a portal, so a per-provider
+     colour would carry no information within the page while costing four new
+     hues. The provider is shown as a neutral badge instead, which is legible
+     without anyone having to learn a colour code.
+
+     The hue (303deg) is the widest gap left in this palette that is not
+     already claimed: red is danger, yellow-olive will not hold contrast at
+     fill weight, and everything from 137 to 282 is formats and categories.
+     21deg from computation purple and from shp mauve, which is tighter than
+     ideal - the mitigation is that neither of those ever appears on a surface
+     with this one, and no surface asks a viewer to tell two lake colours
+     apart. 6.5:1 on white, and 6.3:1 for the white strip label over the fill. */
+  --curio-kind-lake-fg: #953790;
+  --curio-kind-lake-bg: #F6DFF5;
+  --curio-kind-lake-on-tint: #742570;
+
   /* ── Semantic roles ────────────────────────────────────────────────────
      Named for what they mean, so a role can change without dragging a category
      colour with it. Each points at the raw accent palette below; before this
