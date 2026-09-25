@@ -222,9 +222,12 @@ and anything it cannot identify is an honest error rather than a guess.
   `Content-Length` over the bound is refused before a body byte is read, and
   the stream is capped again while writing so a lying or absent length cannot
   get past it.
-- **Archives are refused**, by content type and by extension. Nothing is
-  unpacked: that is the decompression-bomb surface and it deserves its own
-  design rather than arriving as a side effect of a download.
+- **Archives are refused**, by content type and by extension, using the list
+  in [`formats.py`](../utk_curio/backend/app/datalakes/domain/formats.py).
+  Nothing is unpacked: that is the decompression-bomb surface and it deserves
+  its own design rather than arriving as a side effect of a download. The
+  Dataset Finder reads the same list, so it offers an archive as a manual
+  download, never as data.
 - Remote filenames are sanitised, and the dataset *directory* is minted as
   `imported.x<uuid>` by the importer - which no remote input can influence at
   all, and is the reason a hostile `Content-Disposition` cannot reach the
