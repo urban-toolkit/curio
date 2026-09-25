@@ -338,3 +338,23 @@ class TestOneDatasetWhicheverPathCameFirst:
                                {"lakeId": CHICAGO, "resourceId": "ijzp-q8t2"})
         assert other.status_code == 200
         assert other.get_json()["id"] == job["dataset"]["id"]
+
+    def test_every_remote_path_records_the_same_origin(self, client, auth, live):
+        """The seam: both ways a remote file enters the Data Catalog run the one
+        importer and leave the same origin fields, so either can be found by
+        the other. Only the socket is fake here; nothing is injected."""
+        import hashlib
+
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        other = b"x,y\n1,2\n"
+        manual = import_by_hand(client, auth, other, {"resourceUrl": "https://a.example/xy.csv"})
+        fetched = job["dataset"]["lakeSource"]
+        by_hand = manual.get_json()["lakeSource"]
+        for origin in (fetched, by_hand):
+            assert {"resourceUrl", "fetchedAt", "contentSha256"} <= set(origin)
+        assert fetched["contentSha256"] == hashlib.sha256(CRIMES_CSV.read_bytes()).hexdigest()
+        assert by_hand["contentSha256"] == hashlib.sha256(other).hexdigest()
+        assert by_hand["manual"] is True and "manual" not in fetched
