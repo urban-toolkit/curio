@@ -13,11 +13,13 @@ import {
   type LakeSourceRow,
 } from "../../services/dataLakeCatalog";
 import { LakeSourceIcon } from "./LakeSourceIcon";
+import { lakeSourceAccessItems, lakeSourceInfoRows } from "./lakeSourceFacts";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface DataLakeCatalogBrowseDrawerProps {
   source: LakeSourceRow | null;
   onBrowse: (source: LakeSourceRow) => void;
+  onViewDetails: (source: LakeSourceRow) => void;
   onClose: () => void;
   onLayoutChange?: (slotOpen: boolean) => void;
 }
@@ -34,30 +36,33 @@ export interface DataLakeCatalogBrowseDrawerProps {
 export function DataLakeCatalogBrowseDrawer({
   source,
   onBrowse,
+  onViewDetails,
   onClose,
   onLayoutChange,
 }: DataLakeCatalogBrowseDrawerProps) {
   return (
     <CatalogBrowseDrawerShell presented={source != null} onLayoutChange={onLayoutChange}>
       {source ? (
-        <DataLakeDrawerContent source={source} onBrowse={onBrowse} onClose={onClose} />
+        <DataLakeDrawerContent
+          source={source}
+          onBrowse={onBrowse}
+          onViewDetails={onViewDetails}
+          onClose={onClose}
+        />
       ) : null}
     </CatalogBrowseDrawerShell>
   );
 }
 
-function bytesLabel(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  return mb >= 1 ? `${Math.round(mb)} MB` : `${Math.round(bytes / 1024)} KB`;
-}
-
 const DataLakeDrawerContent: React.FC<{
   source: LakeSourceRow;
   onBrowse: (source: LakeSourceRow) => void;
+  onViewDetails: (source: LakeSourceRow) => void;
   onClose: () => void;
-}> = ({ source, onBrowse, onClose }) => {
-  const { auth, capabilities } = source;
+}> = ({ source, onBrowse, onViewDetails, onClose }) => {
+  const { auth } = source;
   const blocked = unsearchableReason(source);
+  const access = lakeSourceAccessItems(source);
 
   return (
     <CatalogBrowseDrawerBody
@@ -93,51 +98,12 @@ const DataLakeDrawerContent: React.FC<{
       fresh={false}
       description={source.description}
       infoLabel="Source"
-      infoRows={[
-        { label: "Provider", value: LAKE_PROVIDER_LABEL[source.provider] ?? source.provider },
-        source.baseUrl ? { label: "Endpoint", value: source.baseUrl } : null,
-        source.homepage
-          ? {
-              label: "Homepage",
-              value: (
-                <a href={source.homepage} target="_blank" rel="noreferrer noopener">
-                  {new URL(source.homepage).host}
-                </a>
-              ),
-            }
-          : null,
-        source.license ? { label: "Licence", value: source.license } : null,
-        { label: "Search", value: capabilities.search ? "Yes" : "Link only" },
-        {
-          label: "Formats",
-          value: capabilities.formats.map((f) => f.toUpperCase()).join(", ") || "None",
-        },
-        { label: "Max download", value: bytesLabel(capabilities.maxDownloadBytes) },
-      ]}
+      infoRows={lakeSourceInfoRows(source)}
       tags={source.tags}
       sections={
-        auth.usesToken ? (
+        access.length > 0 ? (
           <CatalogDrawerSection label="Access">
-            <CatalogDrawerList
-              items={[
-                <li key="mode">
-                  {auth.required
-                    ? "This portal will not answer without a token."
-                    : "Works without a token; one raises the rate limit."}
-                </li>,
-                <li key="slot">
-                  Credential: <code>{auth.secretId}</code>
-                  {auth.present ? " (set on your account)" : " (not set)"}
-                </li>,
-                auth.helpUrl ? (
-                  <li key="help">
-                    <a href={auth.helpUrl} target="_blank" rel="noreferrer noopener">
-                      How to get one
-                    </a>
-                  </li>
-                ) : null,
-              ].filter(Boolean) as React.ReactNode[]}
-            />
+            <CatalogDrawerList items={access} />
           </CatalogDrawerSection>
         ) : null
       }
@@ -153,6 +119,17 @@ const DataLakeDrawerContent: React.FC<{
             Browse datasets
           </button>
         )
+      }
+      secondaryAction={
+        /* The way out of the panel, as on the other three drawers: the same
+           details modal the card's "View details" opens. */
+        <button
+          className={styles.drawerLinkButton}
+          type="button"
+          onClick={() => onViewDetails(source)}
+        >
+          View details
+        </button>
       }
     />
   );

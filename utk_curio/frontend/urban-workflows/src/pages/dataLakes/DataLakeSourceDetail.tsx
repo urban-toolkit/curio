@@ -2,6 +2,7 @@ import React from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeader";
+import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
 import {
   LAKE_AUTH_LABEL,
   LAKE_PROVIDER_LABEL,
@@ -35,6 +36,9 @@ export const DataLakeSourceDetail: React.FC = () => {
 
   const [source, setSource] = React.useState<LakeSourceRow | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  // The same details modal the Data Catalog opens, over this page, so the
+  // search that found the resource is still there when it closes.
+  const [detailDatasetId, setDetailDatasetId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -162,7 +166,7 @@ export const DataLakeSourceDetail: React.FC = () => {
                 resource={resource}
                 iconUrl={source.iconUrl}
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
-                datasetHref={(id) => `/catalog/data/${encodeURIComponent(id)}`}
+                onViewDataset={setDetailDatasetId}
                 onDownload={(r, fmt) =>
                   // The portal's own title, or the dataset lands named after
                   // the remote FILE - "ijzp-q8t2.csv" rather than "Crimes -
@@ -189,6 +193,13 @@ export const DataLakeSourceDetail: React.FC = () => {
           ) : null}
         </>
       )}
+
+      {detailDatasetId ? (
+        <DatasetDetailModal
+          datasetId={detailDatasetId}
+          onClose={() => setDetailDatasetId(null)}
+        />
+      ) : null}
     </div>
   );
 };

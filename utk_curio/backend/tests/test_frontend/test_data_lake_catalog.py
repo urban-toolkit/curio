@@ -10,8 +10,8 @@ Stubbing at ``page.route`` instead would have tested the page against a
 fiction and left every one of those layers uncovered in e2e, which is exactly
 where they meet. What is asserted here is what only a browser can settle: that
 the two-mode browse page really swaps, that a partial failure really renders
-the rows that arrived, and that a download really ends up as a dataset on the
-other catalog's page.
+the rows that arrived, and that a download really ends up as a dataset in the
+other catalog's details.
 
 Covered more cheaply elsewhere and deliberately not re-asserted: the provider
 parsing (``test_datalakes/test_providers.py``), the format ladder
@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 
 import pytest
 from playwright.sync_api import expect
@@ -177,6 +178,42 @@ def test_the_roster_lists_the_shipped_portals(
     expect(page.get_by_text("Link only").first).to_be_visible()
 
 
+def test_a_source_shows_its_details_where_the_drawer_cannot(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """A source's details open in a modal, as on the other three catalogs.
+
+    Below 1100px the layout hides the drawer column, which was the only place a
+    source's endpoint, formats and download cap appeared. The modal is how that
+    width reads them, and it does not leave the page.
+    """
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="lakedetails", project="Lake Details")
+    page.set_viewport_size({"width": 1000, "height": 800})
+    _goto_lakes(page, app_frontend)
+
+    card = page.locator(f'[data-lake-source="{CHICAGO}"]')
+    expect(card).to_be_visible(timeout=30000)
+    browse_url = page.url
+    card.get_by_role("button", name="View details").click()
+
+    details = page.get_by_role("dialog", name="Data lake details")
+    expect(details).to_be_visible(timeout=15000)
+    expect(details.get_by_text("Endpoint", exact=True)).to_be_visible()
+    expect(details.get_by_text("Max download", exact=True)).to_be_visible()
+    assert page.url == browse_url
+
+    # Its primary action is the drawer's: browse the portal. The modal goes
+    # with the page it was opened over.
+    details.get_by_role("button", name="Browse datasets").click()
+    expect(details).to_have_count(0, timeout=30000)
+    page.wait_for_url(f"**/catalog/lakes/{quote(CHICAGO, safe='')}", timeout=30000)
+    expect(
+        page.get_by_role("heading", name="City of Chicago Data Portal", exact=True)
+    ).to_be_visible(timeout=30000)
+
+
 def test_searching_swaps_the_cards_for_federated_results(
     app_frontend: "FrontendPage", current_server: str, page
 ):
@@ -236,7 +273,7 @@ def test_downloading_lands_a_real_dataset_in_the_data_catalog(
     """The claim only a full-stack test can make.
 
     Browser → route → provider → download → format ladder → the Data Catalog's
-    own importer, and then the OTHER catalog's page showing the result. Every
+    own importer, and then the OTHER catalog's details showing the result. Every
     layer runs; only the socket is replaced.
     """
     require_project_page()
@@ -248,26 +285,46 @@ def test_downloading_lands_a_real_dataset_in_the_data_catalog(
     expect(row).to_be_visible(timeout=30000)
     row.get_by_role("button", name="Download").click()
 
-    # Polled server-side job: the link appears when it finishes.
-    link = row.get_by_role("link", name="View dataset")
-    expect(link).to_be_visible(timeout=60000)
+    # Polled server-side job: the button appears when it finishes.
+    view = row.get_by_role("button", name="View dataset")
+    expect(view).to_be_visible(timeout=60000)
+    lake_url = page.url
 
-    link.click()
-    page.wait_for_load_state("networkidle")
-    # It is an ordinary dataset now, on the Data Catalog's own detail page,
-    # under the name the PORTAL gave it. Asserting the title and not merely
-    # "a page loaded" is the point: it arrived named "ijzp-q8t2.csv" after the
+    view.click()
+    # It is an ordinary dataset now, in the Data Catalog's own details modal,
+    # the one every catalog opens, over the lake page rather than instead of
+    # it. The button used to be a link that left for /catalog/data/:id.
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    assert page.url == lake_url
+    # Under the name the PORTAL gave it. Asserting the title and not merely
+    # "a modal opened" is the point: it arrived named "ijzp-q8t2.csv" after the
     # remote file, because the download never sent the resource title.
     expect(
-        page.get_by_role("heading", name="Crimes - 2001 to Present")
+        details.get_by_role("heading", name="Crimes - 2001 to Present")
     ).to_be_visible(timeout=30000)
     # And it still says where it came from. Its origin is "imported", exactly
-    # like a hand-uploaded file, so this block is the only thing on the page
+    # like a hand-uploaded file, so this block is the only thing in the details
     # that distinguishes the two.
-    expect(page.get_by_text("Downloaded from")).to_be_visible(timeout=15000)
+    expect(details.get_by_text("Downloaded from")).to_be_visible(timeout=15000)
     expect(
-        page.get_by_role("link", name="City of Chicago Data Portal")
+        details.get_by_role("link", name="City of Chicago Data Portal")
     ).to_be_visible(timeout=15000)
+
+    # The portal link inside the details points at the page already open, so
+    # it closes the modal and keeps the search. As a plain link it navigated to
+    # the same page again, clearing the results behind a modal left open.
+    details.get_by_role("link", name="City of Chicago Data Portal").click()
+    expect(details).to_have_count(0)
+    assert page.url == lake_url
+    expect(row).to_be_visible()
+
+    # Opened again, Close does the same.
+    row.get_by_role("button", name="View dataset").click()
+    expect(details).to_be_visible(timeout=30000)
+    details.get_by_role("button", name="Close").click()
+    expect(details).to_have_count(0)
+    expect(row).to_be_visible()
 
 
 def test_a_second_download_offers_the_dataset_instead_of_a_copy(
@@ -282,7 +339,7 @@ def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     row = page.locator('[data-lake-resource="ijzp-q8t2"]')
     expect(row).to_be_visible(timeout=30000)
     row.get_by_role("button", name="Download").click()
-    expect(row.get_by_role("link", name="View dataset")).to_be_visible(timeout=60000)
+    expect(row.get_by_role("button", name="View dataset")).to_be_visible(timeout=60000)
 
     # Reload: the row now knows this account already holds it.
     _goto_lakes(page, app_frontend, f"/catalog/lakes/{CHICAGO}?q={CHICAGO_QUERY}")

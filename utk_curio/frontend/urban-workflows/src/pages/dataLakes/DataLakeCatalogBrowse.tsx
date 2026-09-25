@@ -2,10 +2,17 @@ import React, { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import {
+  lakeSourceCardActions,
+  type CatalogCardActionId,
+} from "../../components/catalog/catalogCardActions";
+import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
 import {
   acquireKey,
   notifyDatasetCatalogRefresh,
   partialFailureMessage,
+  unsearchableReason,
   useLakeAcquire,
   useLakeCatalog,
   useLakeSearch,
@@ -17,6 +24,7 @@ import { AUTH_FILTERS, PROVIDER_FILTERS } from "./dataLakeBrowseConstants";
 import { DataLakeSourceCard } from "./DataLakeSourceCard";
 import { DataLakeResourceRow } from "./DataLakeResourceRow";
 import { DataLakeCatalogBrowseDrawer } from "./DataLakeCatalogBrowseDrawer";
+import { DataLakeSourceDetailModal } from "./DataLakeSourceDetailModal";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import resultStyles from "./DataLakeCatalogBrowse.module.css";
 
@@ -54,7 +62,19 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const [auth, setAuth] = useState<LakeAuthMode | "">("");
   const [sort, setSort] = useState<SortMode>("name");
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  // Its own state, not `selectedDir`: the card click drives the drawer and
+  // "View details" opens the modal. Sharing one setter is the bug (#189) that
+  // made the Agent page's "View details" a no-op on an already-selected card.
+  const [detailDir, setDetailDir] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    source: LakeSourceRow;
+  } | null>(null);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
+  // A downloaded resource opens in the Data Catalog's details modal, over this
+  // page, rather than sending you to the dataset's own route.
+  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
 
   // The roster is always loaded: the rail counts and the source names shown
   // beside federated rows both come from it, and it is disk-backed and cheap.
@@ -80,6 +100,10 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     () => sources.find((s) => s.dirName === selectedDir) ?? null,
     [sources, selectedDir]
   );
+  const detailSource = useMemo(
+    () => (detailDir ? sources.find((s) => s.dirName === detailDir) ?? null : null),
+    [sources, detailDir]
+  );
 
   const sourcesById = useMemo(
     () => new Map(data.sources.map((s) => [s.sourceId, s])),
@@ -96,6 +120,20 @@ export const DataLakeCatalogBrowse: React.FC = () => {
 
   const openSource = (source: LakeSourceRow) =>
     navigate(`/catalog/lakes/${encodeURIComponent(source.dirName)}`);
+
+  const runSourceAction = (id: CatalogCardActionId, source: LakeSourceRow) => {
+    switch (id) {
+      case "browse-datasets":
+        openSource(source);
+        return;
+      case "view-details":
+        setDetailDir(source.dirName);
+        return;
+      // A source is never added to or removed from anything.
+      default:
+        return;
+    }
+  };
 
   const providerCounts = data.facets.provider ?? {};
   const authCounts = data.facets.auth ?? {};
@@ -254,7 +292,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                     )
                   ]
                 }
-                datasetHref={(id) => `/catalog/data/${encodeURIComponent(id)}`}
+                onViewDataset={setDetailDatasetId}
                 onDownload={(r, fmt) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
@@ -302,6 +340,14 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                 selected={selectedDir === source.dirName}
                 onSelect={() => setSelectedDir(source.dirName)}
                 onBrowse={() => openSource(source)}
+                onViewDetails={() => setDetailDir(source.dirName)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  // Select first, as the peer pages do: the menu acts on this
+                  // source, so the drawer should not describe another one.
+                  setSelectedDir(source.dirName);
+                  setContextMenu({ x: e.clientX, y: e.clientY, source });
+                }}
               />
             ))}
           </div>
@@ -311,9 +357,38 @@ export const DataLakeCatalogBrowse: React.FC = () => {
       <DataLakeCatalogBrowseDrawer
         source={selected}
         onBrowse={openSource}
+        onViewDetails={(source) => setDetailDir(source.dirName)}
         onClose={() => setSelectedDir(null)}
         onLayoutChange={setDrawerSlotOpen}
       />
+
+      {contextMenu ? (
+        <CardContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          ariaLabel="Data lake actions"
+          items={lakeSourceCardActions({
+            browsable: unsearchableReason(contextMenu.source) == null,
+          })}
+          onSelect={(id) => runSourceAction(id as CatalogCardActionId, contextMenu.source)}
+          onDismiss={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {detailSource ? (
+        <DataLakeSourceDetailModal
+          source={detailSource}
+          onBrowse={openSource}
+          onClose={() => setDetailDir(null)}
+        />
+      ) : null}
+
+      {detailDatasetId ? (
+        <DatasetDetailModal
+          datasetId={detailDatasetId}
+          onClose={() => setDetailDatasetId(null)}
+        />
+      ) : null}
     </div>
   );
 };

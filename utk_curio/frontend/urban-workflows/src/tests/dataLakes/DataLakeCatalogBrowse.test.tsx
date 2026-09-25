@@ -11,6 +11,13 @@ jest.mock('../../utils/authApi', () => ({
   getToken: jest.fn(() => 'token'),
 }));
 
+// The page renders the Data Catalog's details modal for a downloaded row, and
+// the modal's table preview imports vega, which Jest does not transform. Which
+// modal opens, and when, is asserted in lakeViewDataset.test.tsx.
+jest.mock('../../components/datasets/catalog/DatasetDetailModal', () => ({
+  DatasetDetailModal: () => null,
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { apiFetch } = require('../../utils/authApi') as { apiFetch: jest.Mock };
 

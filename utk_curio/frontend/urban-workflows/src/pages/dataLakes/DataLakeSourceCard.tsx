@@ -14,6 +14,7 @@ export interface DataLakeSourceCardProps {
   selected: boolean;
   onSelect: () => void;
   onBrowse: () => void;
+  onViewDetails: () => void;
   /** Right-click. The grid owns the menu; the card reports and selects, which
    *  is what a left-click does too. Same division as the peer pages. */
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -37,6 +38,7 @@ export function DataLakeSourceCard({
   selected,
   onSelect,
   onBrowse,
+  onViewDetails,
   onContextMenu,
 }: DataLakeSourceCardProps) {
   const { auth, capabilities } = source;
@@ -121,8 +123,22 @@ export function DataLakeSourceCard({
       </div>
 
       <div className={styles.cardActions}>
+        {/* "View details" is the peers' one way in, and opens the same kind of
+            modal. Browsing stays on the card as well: it is what this page is
+            for, and it writes nothing, unlike the account-level actions the
+            peer cards leave to their drawers. */}
         <div className={styles.cardActionsLeft} />
         <div className={styles.cardActionsRight}>
+          <button
+            className={styles.linkButton}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewDetails();
+            }}
+          >
+            View details
+          </button>
           <button
             className={styles.linkButton}
             type="button"
