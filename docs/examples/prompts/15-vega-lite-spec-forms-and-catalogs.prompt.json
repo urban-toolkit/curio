@@ -1,0 +1,217 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "15-vega-lite-spec-forms-and-catalogs",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
+    "sha256": "81bb6910d3d3785572d55dafba0cf87d7af3539c162e8c83deda7d39290a73f4",
+    "walkthrough": "docs/examples/15-vega-lite-spec-forms-and-catalogs.md"
+  },
+  "prompt": "Load three datasets from the Data Catalog that are stored in different formats: the Chicago ZIP boundaries, the green roofs table and the Project Sidewalk labels. Join them spatially, then draw a series of maps and charts in which I have written parts of the spec myself, so I can check that what I write is kept rather than overwritten and that the storage format makes no difference.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.green-roofs",
+      "data.projectsidewalk.chicago-labels",
+      "data.urbanlab.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "endpoint1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "endpoint1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint1",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint1",
+        "to": "visualization8",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.green-roofs",
+        "data.projectsidewalk.chicago-labels",
+        "data.urbanlab.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/spatial-join",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cityofchicago.green-roofs",
+        "licence": "Open Data"
+      },
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "licence": "Project Sidewalk API terms"
+      },
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "Three catalog formats and a spatial join; the authored parts of each spec survive."
+}

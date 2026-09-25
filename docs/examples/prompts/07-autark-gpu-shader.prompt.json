@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/07-autark-gpu-shader.json",
-    "sha256": "77c2d9c2c14aedbd8fc21426d4df44c1683c68c0249f2954971c62538c79f6b8",
+    "sha256": "ef2a9ac5ed126b7dfe802ae50a63359770b6b6893b364084fa291b0c5364d23b",
     "walkthrough": "docs/examples/07-autark-gpu-shader.md"
   },
   "prompt": "For the Chicago Loop I want to know how many minutes of shadow each road gets on the solstice. The OSM extract is in this checkout at docs/examples/data/chicago_loop.osm.pbf. Load the buildings and roads from it with Autark in the browser, then run a batched GPU shader that accumulates shadow minutes per road over the day. Show the result as a thematic map and as a brushable histogram, and link the two so brushing the histogram highlights roads on the map.",

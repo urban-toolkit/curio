@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/03-vega-lite-linked-temporal-charts.json",
-    "sha256": "b1e78680952d1ec7332022e1420123e97a42361e6565facb36ac7acb4bf74ac1",
+    "sha256": "5539044205384f90a0dd4aae921e6233ec181a08955ba794b97b9bc9a336b4a5",
     "walkthrough": "docs/examples/03-vega-lite-linked-temporal-charts.md"
   },
   "prompt": "From the Chicago speed camera violations table in the Data Catalog, I want a per-camera and per-year picture. Load the violations, then aggregate them by camera and by year in a Python computation step. Feed that same aggregation into two linked Vega-Lite charts: a stacked bar chart of violations per camera and a line chart of the citywide yearly total.",
@@ -13,7 +13,8 @@
     "datasets": [
       "data.cityofchicago.speed-camera-violations"
     ],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -68,9 +69,7 @@
         "data.cityofchicago.speed-camera-violations"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

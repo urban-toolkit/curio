@@ -309,14 +309,20 @@ class TestDependencies:
             [
                 _node("a", LOADER, content='p = curio_dataset_path("data.city.roads")'),
                 _node("b", LOADER, content='gdf = gpd.read_file("docs/examples/data/x.geojson")'),
-                _node("c", VEGA, content='{"$schema": "https://vega.github.io/schema/v6.json"}'),
+                _node("c", VEGA, content=(
+                    '{"$schema": "https://vega.github.io/schema/v6.json",'
+                    ' "data": {"url": "https://example.org/rows.csv"}}'
+                )),
             ],
             [],
         )
         sources = referenced_sources(spec, templates=TEMPLATES)
         assert sources.dataset_ids == ("data.city.roads",)
         assert sources.paths == ("docs/examples/data/x.geojson",)
-        assert sources.urls == ("https://vega.github.io/schema/v6.json",)
+        # The document's own `$schema` is a format declaration, not data the
+        # node loads, and the production scanner skips it; the url the spec
+        # actually fetches is still here. See SCHEMA_DECLARATION_KEY.
+        assert sources.urls == ("https://example.org/rows.csv",)
 
     def test_url_allowlist_is_prefix_matching_not_host_matching(self):
         allowed = ["https://vega.github.io/schema/"]
@@ -328,12 +334,12 @@ class TestDependencies:
 class TestTheShippedCorpus:
     """The properties the harness relies on, asserted over the real examples."""
 
-    def test_the_corpus_is_the_thirty_one_examples(self):
+    def test_the_corpus_is_the_thirty_seven_examples(self):
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 11, [p.name for p in curated]
-        assert len(legacy) == 20, [p.name for p in legacy]
+        assert len(curated) == 16, [p.name for p in curated]
+        assert len(legacy) == 21, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):

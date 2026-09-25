@@ -247,7 +247,7 @@ class TestTheCli:
 
         assert main(["list"]) == 0
         out = capsys.readouterr().out
-        assert "31 fixtures" in out
+        assert "37 fixtures" in out
         assert "01-vega-lite-chained-transforms" in out
         assert "pending-owner-review" in out
 

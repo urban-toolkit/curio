@@ -11,7 +11,8 @@
   "context": null,
   "required": {
     "datasets": [],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [

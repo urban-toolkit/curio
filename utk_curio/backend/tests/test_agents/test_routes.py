@@ -4160,6 +4160,13 @@ class TestDataflowPlanMint:
         actually asks for dataset.discover in a project whose lockfile lost the
         Dataset Finder."""
         user, token = user_and_token
+        # The candidate row below carries a URL, and the Dataset Finder gate
+        # probes one for real; the suite's netguard refuses that. Stubbed as
+        # the verification tests in this file stub it.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
+        )
         att_id, calls = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[

@@ -46,6 +46,17 @@ ONE = load_fixture(FIXTURE_ROOT / "01-vega-lite-chained-transforms.prompt.json")
 STREETVISION = load_fixture(FIXTURE_ROOT / "10-street-vision-cv-analysis.prompt.json")
 
 
+def _by_id(fixture_id: str):
+    """One fixture by id.
+
+    By id and not by position in ``FIXTURES``: that list is a sorted glob, so
+    adding an example silently repoints every index after it at a different
+    fixture, and the test goes on passing (or failing) about something nobody
+    chose.
+    """
+    return next(f for f in FIXTURES if f.fixture_id == fixture_id)
+
+
 def _example(fixture):
     return json.loads(fixture.source_path.read_text(encoding="utf-8"))
 
@@ -132,8 +143,12 @@ class TestTheModelSeesOnlyThePrompt:
     """The fixture is an answer key. If any of it travelled, the score would
     measure transcription."""
 
+    # One curated chart example, one with a Data Pool, one legacy grammar
+    # dataflow — the three shapes the planning turn is built differently for.
     @pytest.mark.parametrize(
-        "fixture", [ONE, FIXTURES[1], FIXTURES[11]], ids=lambda f: f.fixture_id
+        "fixture",
+        [ONE, _by_id("02-vega-lite-spatial-density"), _by_id("AutkMap")],
+        ids=lambda f: f.fixture_id,
     )
     def test_the_planning_turn_carries_no_part_of_the_answer(
         self, client, user_and_token, tmp_curio, monkeypatch, fixture
@@ -452,7 +467,7 @@ class TestResolutionModePackageTemplates:
                     "tool": "package.install",
                     "params": {
                         "dirName": "curio.streetvision@1",
-                        "reason": "its street-view, inference and gallery templates",
+                        "reason": "its street-view and inference templates",
                     },
                 }
             })
@@ -491,7 +506,11 @@ class TestResolutionModePackageTemplates:
             "a lockfile-changing apply must tell the frontend to refresh its "
             "registries (dev/105)"
         )
-        assert "curio.streetvision/cv-gallery" in driver.roster_ids()
+        # The enlist put the package's templates on the roster. Named one by
+        # one rather than by count: the point is that THESE arrived.
+        roster = driver.roster_ids()
+        assert "curio.streetvision/street-view-fetcher" in roster
+        assert "curio.streetvision/hf-cv-inference" in roster
 
         phase["name"] = "plan"
         driver.with_attachment(dfb)

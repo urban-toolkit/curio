@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "84b7001f4e60bd2a92ffb9bbcb2b37604b49d572411294b2b62e4a6cd1d80b46",
+    "sha256": "dc30078854e4f39019cd3876c1e48fdc64d076a54e90df182aa97feeb78d9e9b",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
   "prompt": "I want a what-if shadow study for the Back Bay area of Boston, comparing today's buildings against a scenario where they are three times taller. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load the buildings from it in the browser with Autark, and build two parallel branches that each accumulate shadow on the ground with a GPU shader over a solstice day: one using the real building heights and one using the raised heights, with the footprint-area criterion deciding which buildings get raised. Render each branch as its own 3D map so I can compare them side by side, and route both through a shared fan-out.",

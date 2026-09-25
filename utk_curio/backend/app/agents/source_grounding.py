@@ -251,6 +251,20 @@ def _parse_python(code: str) -> tuple[ast.AST, int] | None:
         return None
 
 
+#: The value of a ``"$schema"`` key is the document's own format declaration —
+#: vega-lite's ``https://vega.github.io/schema/vega-lite/v6.json``, and the
+#: equivalent in any other JSON document a grammar node holds. It is not data
+#: the node loads, so grounding it proves nothing, and probing it is a request
+#: to a third party on every document the agent writes. Worse, it fails CLOSED:
+#: an install with no route to vega.github.io could not write a Vega document
+#: at all, because one unverifiable URL refuses the whole candidate.
+#:
+#: Keyed on the KEY, in both scanners, so this is a rule about what a `$schema`
+#: value IS — not a list of schema hosts to trust.
+SCHEMA_DECLARATION_KEY = "$schema"
+_SCHEMA_KEY_RE = re.compile(r'"\$schema"\s*:\s*$')
+
+
 def _scan_python(code: str) -> list[SourceRef] | None:
     parsed = _parse_python(code)
     if parsed is None:
@@ -262,7 +276,18 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     # ``curio_dataset_path("<id>")`` call is a catalog reference, not a path.
     fstring_children: set[int] = set()
     call_ids: set[int] = set()
+    schema_values: set[int] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            # A grammar document parses as a dict literal, so it reaches the
+            # AST scanner rather than the regex one; see SCHEMA_DECLARATION_KEY.
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == SCHEMA_DECLARATION_KEY
+                    and isinstance(value, ast.Constant)
+                ):
+                    schema_values.add(id(value))
         if isinstance(node, ast.JoinedStr):
             for child in ast.walk(node):
                 if child is not node:
@@ -293,7 +318,11 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                 # is refused with the correction named.
                 refs.append(SourceRef("path", template.strip(), line, partial=True))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if id(node) in fstring_children or id(node) in call_ids:
+            if (
+                id(node) in fstring_children
+                or id(node) in call_ids
+                or id(node) in schema_values
+            ):
                 continue
             kind = classify_literal(node.value)
             if kind:
@@ -315,6 +344,10 @@ def _scan_regex(code: str) -> list[SourceRef]:
         refs.append(SourceRef("catalog-id", match.group(2), code.count("\n", 0, match.start()) + 1))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
+            continue
+        # Keyed on the KEY, not on the host: any document's own `$schema`, not
+        # a list of schema sites to trust.
+        if _SCHEMA_KEY_RE.search(code, 0, match.start()):
             continue
         body = match.group("body")
         kind = classify_literal(body)

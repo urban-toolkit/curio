@@ -1,13 +1,13 @@
 {
   "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
-  "fixtureId": "JSComputation",
+  "fixtureId": "ImageUrls",
   "version": 1,
   "source": {
-    "path": "docs/examples/dataflows/JSComputation.json",
-    "sha256": "b114dee2a63bd5f56674befb9b3ad4b9a3bc073e3d6682371ca438c463fe0225",
+    "path": "docs/examples/dataflows/ImageUrls.json",
+    "sha256": "556977bd645dfd5250bfa3ca473a107b337489780e7ca57292fc7b5096937522",
     "walkthrough": null
   },
-  "prompt": "Double the numbers one, two and three in a JavaScript computation step, log the result, and show the returned array in the simple view.",
+  "prompt": "Generate a small geographic frame in which every row carries a picture as well as a location and a score, and send it to the built-in viewer so each row shows up as a card with its image rather than as a row of text.",
   "context": null,
   "required": {
     "datasets": [],
@@ -18,7 +18,7 @@
     "nodes": [
       {
         "ref": "analysis1",
-        "type": "curio.builtin/js-computation",
+        "type": "curio.builtin/computation-analysis",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -44,15 +44,7 @@
       "urls": []
     }
   },
-  "intents": [
-    {
-      "ref": "analysis1",
-      "mustMention": [
-        "double",
-        "map"
-      ]
-    }
-  ],
+  "intents": [],
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
@@ -71,10 +63,10 @@
     "topology": 0.9,
     "dependencies": 1.0
   },
-  "split": "validation",
+  "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -83,5 +75,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The JavaScript engine path: executable, but not python."
+  "notes": "The smallest image-carrying case: one compute node into one Simple View."
 }

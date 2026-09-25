@@ -103,9 +103,7 @@
       "paths": [
         "docs/examples/data/access_score.geojson"
       ],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

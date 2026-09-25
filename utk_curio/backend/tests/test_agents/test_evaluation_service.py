@@ -198,7 +198,7 @@ class TestFixtureSelectionAndReview:
         payload = client.get(
             "/api/agents/evaluation/fixtures", headers=_auth(account["token"])
         ).get_json()
-        assert len(payload["fixtures"]) == 31
+        assert len(payload["fixtures"]) == 37
         one = next(
             f for f in payload["fixtures"] if f["fixtureId"] == FIXTURE.fixture_id
         )

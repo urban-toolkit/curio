@@ -7,7 +7,6 @@ import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
 import { hasIncomingEdge, incomingSourceIds, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
 import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
-import { useFlowContext } from '../../providers/FlowProvider';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {

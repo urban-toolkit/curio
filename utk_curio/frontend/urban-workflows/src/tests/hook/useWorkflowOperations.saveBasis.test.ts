@@ -36,7 +36,11 @@ jest.mock("../../TrillGenerator", () => ({
 jest.mock("../../utils/saveOutputDataset", () => ({
   buildSaveableLiveOutputs: jest.fn(() => []),
 }));
+// Spread requireActual rather than replacing the module: a partial mock that
+// enumerates exports breaks the moment the hook reaches for another one, which
+// is how `getCurrentProjectId` arrived and took this suite down.
 jest.mock("../../registry/projectPackagesStore", () => ({
+  ...jest.requireActual("../../registry/projectPackagesStore"),
   getCurrentProjectPackagesList: jest.fn(() => []),
   setCurrentProject: jest.fn(),
   setCurrentProjectPackages: jest.fn(),

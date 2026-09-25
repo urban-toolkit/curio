@@ -11,7 +11,8 @@
   "context": null,
   "required": {
     "datasets": [],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -67,9 +68,7 @@
         "data.urbanlab.chicago-boundary"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/01-vega-lite-chained-transforms.json",
-    "sha256": "94e6cb922dddb1df1f533ecdf0a86ece8aca6ddafa58ef2a90d5581611ed9bf6",
+    "sha256": "95b947c7bab81bd219edd17e19fc597301091b8552fe54da07af395ceeb8f77f",
     "walkthrough": "docs/examples/01-vega-lite-chained-transforms.md"
   },
   "prompt": "I have the Project Sidewalk accessibility labels for Chicago in the Data Catalog and I want to explore where the reported problems are. Load them once, then clean and enrich the labels: keep the label type, severity, neighborhood and geometry with the agree and disagree counts, derive an agreement ratio from those counts, bin severity into a four-level tier, and make sure the geometry is in WGS84. From that one cleaned table build two separate summaries: one grouped by feature type and one grouped by neighborhood. Chart the feature-type summary as a bar chart and the neighborhood summary as a bubble chart, so I get two Vega-Lite views from the same cleanup.",
@@ -13,7 +13,8 @@
     "datasets": [
       "data.projectsidewalk.chicago-labels"
     ],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -92,9 +93,7 @@
         "data.projectsidewalk.chicago-labels"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

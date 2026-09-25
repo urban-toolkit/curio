@@ -267,6 +267,7 @@ class TestInstalledTemplatesNotInProject:
             "id", "label", "description", "authorable", "presentation", "inputs",
             "maxIncomingEdges", "dirName",
             "engine", "editor", "hasCode", "backendHandler", "executable",  # dev/119
+            "contentKind", "hasGrammar",  # dev/134
         }
 
 
@@ -715,9 +716,16 @@ class TestDev119ExecutableFlag:
         ])
         _lockfile_add(key, alice_project, "ai.test.exec@1")
         snap = packages_services.roster_templates(key, alice_project)
-        assert snap["ai.test.exec/js-thing"] == {"executable": True, "engine": "javascript"}
-        assert snap["ai.test.exec/spatial-join"] == {"executable": False, "engine": "python"}
-        assert set(snap["ai.test.exec/js-thing"]) == {"executable", "engine"}  # the runner's contract, nothing more
+        assert snap["ai.test.exec/js-thing"] == {
+            "executable": True, "engine": "javascript", "contentKind": "code",
+        }
+        assert snap["ai.test.exec/spatial-join"] == {
+            "executable": False, "engine": "python", "contentKind": "note",
+        }
+        # The runner's contract, nothing more. `contentKind` joined it in
+        # dev/134: the write gate routes on the same snapshot, so a template
+        # whose content is a document is told apart from one that holds code.
+        assert set(snap["ai.test.exec/js-thing"]) == {"executable", "engine", "contentKind"}
         monkeypatch.setattr(packages_services, "available_templates",
                             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("store down")))
         assert packages_services.roster_templates(key, alice_project) is None  # callers fall back to legacy

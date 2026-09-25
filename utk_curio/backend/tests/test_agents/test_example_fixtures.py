@@ -3,7 +3,7 @@
 The contract these tests enforce is what makes a fixture worth trusting:
 
 *Completeness.* Every shipped example has a fixture and every fixture has an
-example -- 31 both ways, no silent omissions.
+example -- 37 both ways, no silent omissions.
 
 *Drift.* A fixture's ``source.sha256`` matches the example on disk and its
 ``expected`` block equals the recomputed canonical form. The expectation is
@@ -55,7 +55,7 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        assert len(fixtures) == 31
+        assert len(fixtures) == 37
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -63,8 +63,8 @@ class TestCompleteness:
     def test_the_curated_and_legacy_corpora_are_both_covered(self):
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
-        assert len(curated) == 11
-        assert len(legacy) == 20
+        assert len(curated) == 16
+        assert len(legacy) == 21
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
         """Splits exist so a later fine-tuning export has somewhere to draw
@@ -301,6 +301,6 @@ class TestFixturesAreNotMistakenForDataflows:
         corpus by glob; the fixture directory must stay outside both."""
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
-        assert len(curated) == 11
-        assert len(legacy) == 20
+        assert len(curated) == 16
+        assert len(legacy) == 21
         assert not any(".prompt.json" in p.name for p in curated + legacy)

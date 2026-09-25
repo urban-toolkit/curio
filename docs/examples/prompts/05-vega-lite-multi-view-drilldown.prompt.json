@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "sha256": "bb82bc552edd340aaba74cdcc9184857618557aa30c302e80dba620e237ca0f5",
+    "sha256": "eb4be5aa4d843e7ac35d4add339fade9d3c33c69d0d665549891bc23a90458ab",
     "walkthrough": "docs/examples/05-vega-lite-multi-view-drilldown.md"
   },
   "prompt": "I want a drill-down over the Chicago 2010 building energy usage table in the Data Catalog, along five independent axes. Each axis should load the data for itself, prepare it, and end in its own Vega-Lite view: energy split by building type; community-level ranking with a scatter; the monthly kilowatt-hour trend by community; a monthly bar chart with a brushable filter; and energy use by building age against the number of stories. Some axes need more than one preparation step before the charts, and one of them ends in several faceted views rather than a single chart.",
@@ -13,7 +13,8 @@
     "datasets": [
       "data.cityofchicago.energy-usage-2010"
     ],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -324,9 +325,7 @@
         "data.cityofchicago.energy-usage-2010"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/09-heterogeneous-data-linked-views.json",
-    "sha256": "858b8c2aab2edfbec92e05516cfa36842381b2ac9600fafea98eb4ae1441becc",
+    "sha256": "d9e99b3d3a4588b243f4d9bb74d3e723839a05e6ade609edbbc14780f09b1c09",
     "walkthrough": "docs/examples/09-heterogeneous-data-linked-views.md"
   },
   "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, fan it out, and show it two ways that stay linked: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",
@@ -17,7 +17,8 @@
     ],
     "packages": [
       "curio.weather@1"
-    ]
+    ],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -197,9 +198,7 @@
         "data.urbanlab.milan-mrt"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

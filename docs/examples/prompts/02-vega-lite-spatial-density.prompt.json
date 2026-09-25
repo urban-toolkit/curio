@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/02-vega-lite-spatial-density.json",
-    "sha256": "e5fd666f40798dcc42ce600e450c2234fad4bfabd31de77c735f7ab5a1bb3a8f",
+    "sha256": "84298ae821e6516647b994cf722f9d0c7229edf0e695c3d6cf820f5e265dbbdd",
     "walkthrough": "docs/examples/02-vega-lite-spatial-density.md"
   },
   "prompt": "Using the Chicago green roofs inventory and the zip-coded Chicago neighborhood boundary polygons from the Data Catalog, I want to see where vegetated roof area concentrates. Load the roof inventory, fill in its missing values, and chart the distribution of roof sizes as a histogram. Separately, load the boundary polygons and spatially join the roofs into them so each roof carries its zip code, then fan that joined result out so several views can read it: a dot-density map of the roofs, and a bar chart of the ten zip codes with the most vegetated area, which needs its own aggregation step first.",
@@ -14,7 +14,8 @@
       "data.cityofchicago.green-roofs",
       "data.urbanlab.chicago-boundary"
     ],
-    "packages": []
+    "packages": [],
+    "paths": []
   },
   "expected": {
     "nodes": [
@@ -113,9 +114,7 @@
         "data.urbanlab.chicago-boundary"
       ],
       "paths": [],
-      "urls": [
-        "https://vega.github.io/schema/vega-lite/v6.json"
-      ]
+      "urls": []
     }
   },
   "intents": [

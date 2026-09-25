@@ -15,6 +15,10 @@ let mockCounts: unknown = { rowsIn: 3, drawn: 3 };
 const mockCompile = jest.fn(async () => mockCounts);
 const mockToasts: Array<[string, string]> = [];
 
+// The behavior reads its incoming edges to decide the empty state, which
+// needs React Flow's store; this suite renders the hook bare.
+jest.mock('reactflow', () => ({ useEdges: () => [{ source: 'up', target: 'vega-1' }] }));
+
 jest.mock('../../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: mockCompile }),
 }));
@@ -36,7 +40,7 @@ async function applyWith(nextCounts: unknown) {
   mockToasts.length = 0;
   const setOutput = jest.fn();
   const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
-  const nodeState: any = { code: SPEC, setOutput };
+  const nodeState: any = { code: SPEC, setOutput, templateData: { code: SPEC } };
   let hook: any;
   await act(async () => {
     hook = renderHook(() => useVegaBehavior(data, nodeState)).result;
@@ -84,7 +88,9 @@ describe('useVegaBehavior — an empty plot is a failed render', () => {
     const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
     let hook: any;
     await act(async () => {
-      hook = renderHook(() => useVegaBehavior(data, { code: SPEC, setOutput } as any)).result;
+      hook = renderHook(() =>
+        useVegaBehavior(data, { code: SPEC, setOutput, templateData: { code: SPEC } } as any),
+      ).result;
     });
     await act(async () => {
       await hook.current.applyGrammar(SPEC);
