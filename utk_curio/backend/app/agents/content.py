@@ -78,6 +78,13 @@ _PLAN_MAX_NODES = 200
 _PLAN_MAX_EDGES = 600
 _PLAN_GOAL_MAX_CHARS = 300
 _PLAN_TEMPLATE_ID_MAX_CHARS = 64
+# dev/112 (DEC-070): a plan edge carries an explicit kind. "data" is the
+# default and stays byte-absent from the canonical plan; "interaction" is the
+# Trill's feedback edge (Interaction type, in/out handles) — before this the
+# grammar dropped any kind the model wrote and every plan edge materialized as
+# a data edge, so an agent asked to "make it an interaction edge" recreated
+# the same data edge (and the same cycle) on every round.
+PLAN_EDGE_KINDS = ("data", "interaction")
 _PLAN_REF_MAX_CHARS = 32
 _PLAN_TITLE_MAX_CHARS = 120
 _PLAN_INTENT_MAX_CHARS = 300
@@ -509,8 +516,20 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     nodes_raw = raw.get("nodes")
     if nodes_raw is None and (remove_nodes or remove_edges):
         nodes_raw = []  # a remove-only revision carries no new nodes
-    if not isinstance(nodes_raw, list) or (not nodes_raw and not (remove_nodes or remove_edges)):
-        errors.append("nodes must be a non-empty list (unless the plan only removes)")
+    edges_raw_probe = raw.get("edges")
+    has_edges = isinstance(edges_raw_probe, list) and len(edges_raw_probe) > 0
+    if nodes_raw is None and has_edges:
+        nodes_raw = []  # dev/112: an edge-only plan carries no new nodes
+    if not isinstance(nodes_raw, list) or (
+        not nodes_raw and not (remove_nodes or remove_edges or has_edges)
+    ):
+        # dev/112: a plan may add nodes, add connections, or remove — any of
+        # them. Refusing edge-only plans taught the model to invent filler
+        # nodes "to make the plan valid".
+        errors.append(
+            "the plan changes nothing — add nodes, add edges (existing node ids "
+            "allowed), or remove nodes/edges"
+        )
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
         errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
@@ -584,7 +603,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
         edges_raw = []
     edges: list[dict] = []
-    seen_edges: set[tuple[str, str]] = set()
+    seen_edges: set[tuple[str, str, str]] = set()
     removed = set(remove_nodes)
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
@@ -615,18 +634,47 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 errors.append(err)
                 continue
             to_handle = str(to_handle_raw).strip()
+        kind_raw = edge_raw.get("kind", edge_raw.get("type"))
+        kind = "data"
+        if kind_raw is not None:
+            kind_norm = str(kind_raw).strip().lower()
+            if kind_norm not in PLAN_EDGE_KINDS:
+                errors.append(
+                    f"{where}.kind {kind_raw!r} is not one of "
+                    + ", ".join(repr(k) for k in PLAN_EDGE_KINDS)
+                )
+                continue
+            kind = kind_norm
+        if kind == "interaction" and to_handle:
+            errors.append(
+                f"{where}: an interaction edge has no merge slot — drop toHandle"
+            )
+            continue
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
             errors.append(f"{where} connects {src!r} to itself")
             continue
-        if (src, dst) in seen_edges:
-            errors.append(f"{where} duplicates an earlier {src!r}→{dst!r} edge")
+        # dev/125: the duplicate key includes the KIND. dev/112 §6 decided a
+        # (from,to) pair was a duplicate whatever its kind; the shipped corpus
+        # disproves it — `docs/examples/dataflows/Interaction_Vega.json` (and
+        # the three other linked-view examples) carry BOTH a data edge and an
+        # Interaction edge between the same data-pool and visualization, which
+        # is what a linked view IS: the pool feeds the chart, the chart feeds
+        # selections back. Keying on the pair alone made those graphs
+        # unproposable, so the eight interaction fixtures scored 0 with the
+        # whole plan refused.
+        if (src, dst, kind) in seen_edges:
+            errors.append(
+                f"{where} duplicates an earlier {src!r}→{dst!r} {kind} edge"
+            )
             continue
-        seen_edges.add((src, dst))
+        seen_edges.add((src, dst, kind))
         edge_entry = {"from": src, "to": dst}
         if to_handle:
             # Present only when named — additive plans stay byte-identical.
             edge_entry["toHandle"] = to_handle
+        if kind != "data":
+            edge_entry["kind"] = kind  # dev/112: data stays byte-absent
         edges.append(edge_entry)
     plan["edges"] = edges
     # dev/59: keys present only when used — additive plans stay byte-identical.
@@ -945,20 +993,64 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     if body is None:
         return reply, []
     parts = parse_parts(body)
+    candidates = []
+    display_blocks = []
+    if parts is None or parts[0].get("type") not in _REQUEST_TYPES:
+        for match in _ANY_BLOCK_RE.finditer(visible):
+            block_parts = parse_parts(match.group(1))
+            if not block_parts:
+                continue  # an invalid earlier block stays the model's text (fail-open)
+            if len(block_parts) == 1 and block_parts[0].get("type") in _REQUEST_TYPES:
+                candidates.append((match, block_parts))
+            else:
+                display_blocks.append((match, block_parts))
     if parts is None:
-        return reply, []
+        # dev/115 A3 (live gemma4, 2026-09-08, second shape): the TERMINAL
+        # block was broken JSON (an unescaped quote inside a suggested prompt)
+        # while the candidates block before it was valid. The invalid block
+        # stays visible verbatim (fail-open, unchanged), but the valid display
+        # blocks before it are still parts — three probed rows must not vanish
+        # because a follow-up prompt had a stray quote. Requests are not
+        # recovered here (that is _handle_tool_reply's job, #245).
+        if not display_blocks or candidates:
+            return reply, []
+        stripped = reply
+        for match, _ in reversed(display_blocks):
+            stripped = stripped[: match.start()] + stripped[match.end():]
+        merged: list[dict] = []
+        for _, block_parts in display_blocks:
+            merged.extend(block_parts)
+        return stripped.strip(), merged[:MAX_PARTS]
     if parts and parts[0].get("type") in _REQUEST_TYPES:
         return visible, parts
-    candidates = []
-    for match in _ANY_BLOCK_RE.finditer(visible):
-        block_parts = parse_parts(match.group(1))
-        if (block_parts and len(block_parts) == 1
-                and block_parts[0].get("type") in _REQUEST_TYPES):
-            candidates.append((match, block_parts))
     if len(candidates) == 1:
         match, request_parts = candidates[0]
         stripped = (visible[: match.start()] + visible[match.end():]).strip()
         return stripped, request_parts
+    if candidates:
+        return visible, parts  # several request blocks: the conservative boundary
+    if display_blocks:
+        # dev/115 A3 (live gemma4, 2026-09-08) — the DECORATED DISPLAY PARTS:
+        # the Dataset Finder's instruction says "propose ONE datasetCandidates
+        # block … include a suggestedPrompts block", and the model obeyed with
+        # TWO fences — candidates mid-reply, prompts last. Only the terminal
+        # fence counted, so the candidates were folded into prose and never
+        # probed. Every earlier block that parses to display parts merges with
+        # the terminal one (the terminal suggestedPrompts wins), and the fences
+        # leave the visible text. Same conservative boundary as A10: valid
+        # blocks only, requests untouched, MAX_PARTS bound.
+        stripped = visible
+        merged: list[dict] = []
+        for match, _ in reversed(display_blocks):
+            stripped = stripped[: match.start()] + stripped[match.end():]
+        terminal_has_prompts = any(p.get("type") == "suggestedPrompts" for p in parts)
+        for _, block_parts in display_blocks:
+            for part in block_parts:
+                if part.get("type") == "suggestedPrompts" and terminal_has_prompts:
+                    continue
+                merged.append(part)
+        merged.extend(parts)
+        return stripped.strip(), merged[:MAX_PARTS]
     return visible, parts
 
 
@@ -1152,6 +1244,86 @@ def make_delegation_part(
         "status": "ok" if status == "ok" else "failed",
         "summary": str(summary or "")[:_DELEGATION_SUMMARY_MAX_CHARS],
     }
+
+
+#: dev/127: the attempt trail's bounds, enforced HERE so no caller can decide
+#: to persist a little more (a transcript is a record, not a copy of the code).
+#: dev/131 (owner correction): a Solve is a SESSION now — the trail spans
+#: passes, so the part carries more rows, and the ones it carries are the most
+#: RECENT (what the node is stuck on now); earlier rows are counted in
+#: ``elided``, which is what the card has always said.
+SOLVE_ATTEMPTS_MAX_ROWS = 12
+SOLVE_ATTEMPT_CODE_MAX_CHARS = 4000
+SOLVE_ATTEMPT_ERROR_MAX_CHARS = 2000
+_SOLVE_ATTEMPT_KINDS_MAX = 40
+
+
+def make_solve_attempts_part(
+    *,
+    node_id: str,
+    label: str,
+    attachment_id: str | None,
+    rounds: int,
+    stopped_by: str,
+    attempts: list,
+    verdict: str = "fail",
+) -> dict:
+    """Every attempt a repair loop made, for the CHAT TRANSCRIPT (memo dev/127).
+
+    RUNTIME-emitted, like proposal and delegation parts — never parseable from a
+    model tail, so nothing a model writes can put a fake trail in the record.
+    The owner's requirement is the shape: *"it is important to clearly display
+    all attempts to fix in the chat transcript"*, with the code each attempt ran
+    beside the error it produced. A card part cannot carry code (its lines are
+    capped per line), which is why this is a part of its own.
+
+    ``attachmentId`` is the node's own agent, so the card can open the chat
+    where the child's replies live. Every field is bounded here; a truncated
+    one says so.
+    """
+    rows: list[dict] = []
+    for attempt in (attempts or [])[-SOLVE_ATTEMPTS_MAX_ROWS:]:
+        if not isinstance(attempt, dict):
+            continue
+        raw_error = str(
+            attempt.get("errorSummary")
+            or attempt.get("stderrTail")
+            or attempt.get("detail")
+            or ""
+        )
+        row: dict = {
+            "round": int(attempt.get("round") or len(rows) + 1),
+            "verdict": str(attempt.get("verdict") or "fail")[:24],
+            "kind": str(attempt.get("kind") or "")[:_SOLVE_ATTEMPT_KINDS_MAX],
+            "error": raw_error[:SOLVE_ATTEMPT_ERROR_MAX_CHARS],
+        }
+        if len(raw_error) > SOLVE_ATTEMPT_ERROR_MAX_CHARS:
+            row["errorTruncated"] = True
+        code = attempt.get("code")
+        if isinstance(code, str) and code.strip():
+            row["code"] = code[:SOLVE_ATTEMPT_CODE_MAX_CHARS]
+            if len(code) > SOLVE_ATTEMPT_CODE_MAX_CHARS or attempt.get("codeTruncated"):
+                row["codeTruncated"] = True
+            if attempt.get("codeIsProse"):
+                row["codeIsProse"] = True
+        for key in ("durationMs", "outputDataType", "contentSha256", "source"):
+            if attempt.get(key) is not None:
+                row[key] = attempt[key] if key == "durationMs" else str(attempt[key])[:80]
+        rows.append(row)
+    part = {
+        "type": "solveAttempts",
+        "nodeId": str(node_id or "")[:80],
+        "label": str(label or "")[:120],
+        "attachmentId": attachment_id if isinstance(attachment_id, str) else None,
+        "rounds": int(rounds or len(rows)),
+        "stoppedBy": str(stopped_by or "")[:32],
+        "verdict": str(verdict or "fail")[:24],
+        "attempts": rows,
+    }
+    total = len(attempts or [])
+    if total > SOLVE_ATTEMPTS_MAX_ROWS:
+        part["elided"] = total - SOLVE_ATTEMPTS_MAX_ROWS
+    return part
 
 
 def make_proposal_part(

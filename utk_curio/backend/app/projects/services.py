@@ -11,6 +11,7 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.schemas import (
@@ -189,6 +190,35 @@ def _owner_user_dir_key(project) -> str:
 def _assert_guest_can_save(user) -> None:
     if user.is_guest and not _is_shared_guest(user):
         raise ProjectError("Guest users cannot save projects", 403)
+
+
+def _assert_evaluation_run_not_writing(
+    user_key: str, existing_spec: Optional[dict]
+) -> None:
+    """Refuse a client save into a project an evaluation is still building.
+
+    The rule and its reasoning live with the marker
+    (``agents/evaluation/authorization``); this reads the run's phase, which
+    the rule needs and cannot look up itself, and translates its refusal into
+    this domain's own error so the route answers 409 with that sentence.
+
+    This is NOT the general staleness rule — that is ``concurrency``, and it
+    applies to every project. This one says only that a run owns the project it
+    created until it reaches a terminal phase.
+    """
+    from utk_curio.backend.app.agents.evaluation import authorization as eval_auth
+    from utk_curio.backend.app.agents.evaluation import records as eval_records
+
+    marker = eval_auth.marker_of(existing_spec or {})
+    if marker is None:
+        return
+    record = eval_records.read(user_key, marker.run_id)
+    if not record or record.phase in eval_records.TERMINAL_PHASES:
+        return
+    try:
+        eval_auth.assert_run_is_not_writing(existing_spec or {})
+    except eval_auth.ClientSaveRefused as refusal:
+        raise ProjectError(str(refusal), 409) from refusal
 
 
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
@@ -382,14 +412,17 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _to_summary(p, graph_preview=None, is_example=False) -> ProjectSummary:
+def _to_summary(p, graph_preview=None, spec_revision=None, is_example=False) -> ProjectSummary:
+    """*spec_revision* keeps one meaning for the field across the API (memo
+    dev/124): how many times the spec has been written, background writes
+    included. ``None`` falls back to the column."""
     return ProjectSummary(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
@@ -398,14 +431,20 @@ def _to_summary(p, graph_preview=None, is_example=False) -> ProjectSummary:
     )
 
 
-def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> ProjectDetail:
+def _to_detail(
+    p, spec=None, outputs=None, dataset_install_warnings=None, spec_revision=None
+) -> ProjectDetail:
+    """*spec_revision* is the project's write counter (memo dev/124) — the
+    number a client holds as its basis, which counts every write rather than
+    only client saves. ``None`` falls back to the database column, for a
+    caller that has no user key to read the counter with."""
     return ProjectDetail(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
@@ -591,7 +630,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id))
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -625,6 +665,24 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # from the on-disk spec — otherwise a client save wipes installed agents
         # and attachments. No-op on an outputs-only update (effective is existing).
         if data.spec is not None:
+            # A save may not delete what the client never saw (memo dev/124).
+            # This is where the canvas's whole-spec PUT meets whatever the
+            # backend wrote since the client loaded — an agent apply, a Solve
+            # wave, an install — and the check runs on the bytes the write
+            # would replace, under the lock that performs it.
+            try:
+                concurrency.assert_save_keeps_server_work(
+                    existing_spec or {}, effective_spec or {},
+                    base_revision=data.base_revision,
+                    current_revision=storage.spec_revision(ukey, project_id),
+                )
+            except concurrency.SaveWouldLoseWork as refusal:
+                raise ProjectError(str(refusal), 409) from refusal
+            # An evaluation run owns its project until it finishes; that is
+            # about evaluations rather than about staleness, so it stays its
+            # own rule. Its graph clause is gone — dev/124's rule covers it for
+            # every project.
+            _assert_evaluation_run_not_writing(ukey, existing_spec)
             from utk_curio.backend.app.agents.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
             from utk_curio.backend.app.agents.sessions import delete_session
@@ -719,7 +777,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id))
 
 
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
@@ -833,7 +892,10 @@ def load_project(user, project_id: str) -> dict:
 
     db.session.commit()
     return {
-        "project": _to_detail(project, spec=spec, outputs=hydrated),
+        "project": _to_detail(
+            project, spec=spec, outputs=hydrated,
+            spec_revision=storage.spec_revision(ukey, project_id),
+        ),
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
     }
@@ -883,7 +945,10 @@ def load_shared_project(project_id: str) -> dict:
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
     spec = _with_effective_packages(spec, ukey, project_id)
 
-    detail = _to_detail(project, spec=spec, outputs=hydrated)
+    detail = _to_detail(
+        project, spec=spec, outputs=hydrated,
+        spec_revision=storage.spec_revision(ukey, project_id),
+    )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
 
@@ -927,13 +992,11 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             repo.delete_project_row(p.id, user.id)
             dropped_stale_row = True
             continue
-        summaries.append(
-            _to_summary(
-                p,
-                graph_preview=_extract_graph_preview(spec),
-                is_example=p.id in example_ids,
-            )
-        )
+        summaries.append(_to_summary(
+            p, graph_preview=_extract_graph_preview(spec),
+            spec_revision=storage.spec_revision(ukey, p.id),
+            is_example=p.id in example_ids,
+        ))
     if dropped_stale_row:
         db.session.commit()
     return summaries
@@ -948,7 +1011,9 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     project.name = new_name
     project.slug = repo._unique_slug(user.id, _slugify(new_name), exclude_id=project_id)
     db.session.commit()
-    return _to_summary(project)
+    return _to_summary(
+        project, spec_revision=storage.spec_revision(_user_dir_key(user), project_id)
+    )
 
 
 # ---------------------------------------------------------------------------

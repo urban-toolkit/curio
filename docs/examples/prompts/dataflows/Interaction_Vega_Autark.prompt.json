@@ -1,0 +1,161 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Interaction_Vega_Autark",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Interaction_Vega_Autark.json",
+    "sha256": "a861ac81f4f15371c165060e69fe82882c572892db49a1432e03c62be6be2932",
+    "walkthrough": null
+  },
+  "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keep coverage, the average attribute count, the neighborhood name and the geometry, clean and flatten the attribute counts, and compute a weighted accessibility score per neighborhood in a Python step. Fan the result out to two linked views: an Autark map coloured by the accessibility score and a Vega-Lite plot of accessibility by neighborhood, with selections travelling between them.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/access_score.geojson"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "pool1",
+        "kind": "interaction"
+      },
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization2",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/access_score.geojson"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "coverage",
+        "accessibility"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "score",
+        "weight"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T2",
+    "needs": [
+      "interaction-edge"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "The cross-grammar linked pair, in miniature."
+}

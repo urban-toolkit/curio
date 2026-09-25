@@ -1,0 +1,54 @@
+/* dev/138: a node's last outcome, in the node. One line by default — a node
+   body is a few hundred pixels wide — with the rest behind a disclosure. */
+
+.strip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 6px 4px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  /* The text is what a user copies first: keep it selectable inside a node
+     whose drag handlers otherwise swallow the gesture. */
+  user-select: text;
+  cursor: auto;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  background: var(--curio-danger-bg, #fdecec);
+  color: var(--curio-danger-text, #8a1f1f);
+  border: 1px solid var(--curio-danger-border, #f2c7c7);
+}
+
+.notice {
+  background: var(--curio-surface-muted, #f4f4f5);
+  color: var(--curio-text-secondary, #52525b);
+  border: 1px solid var(--curio-border, #e4e4e7);
+}
+
+.label {
+  flex-shrink: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.62rem;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.more {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

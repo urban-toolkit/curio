@@ -50,6 +50,19 @@ def create_project():
     return jsonify(asdict(detail)), 201
 
 
+def _optional_int(value):
+    """``None`` for anything that is not a whole number, so a malformed basis
+    is "no opinion" rather than a 400 — the guard's default is today's
+    behaviour, and refusing the request would be a worse answer than not
+    checking it."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
@@ -70,6 +83,12 @@ def update_project(project_id: str):
             name=body.get("name"),
             description=body.get("description"),
             thumbnail_accent=body.get("thumbnail_accent"),
+            # dev/124: the counter this client last synced with. Accepted in
+            # either spelling because the wire is camelCase and the dataclass
+            # is not; absent means unchecked.
+            base_revision=_optional_int(
+                body.get("baseRevision", body.get("base_revision"))
+            ),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))

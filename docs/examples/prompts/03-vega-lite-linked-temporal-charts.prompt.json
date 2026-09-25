@@ -1,0 +1,129 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "03-vega-lite-linked-temporal-charts",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/03-vega-lite-linked-temporal-charts.json",
+    "sha256": "5539044205384f90a0dd4aae921e6233ec181a08955ba794b97b9bc9a336b4a5",
+    "walkthrough": "docs/examples/03-vega-lite-linked-temporal-charts.md"
+  },
+  "prompt": "From the Chicago speed camera violations table in the Data Catalog, I want a per-camera and per-year picture. Load the violations, then aggregate them by camera and by year in a Python computation step. Feed that same aggregation into two linked Vega-Lite charts: a stacked bar chart of violations per camera and a line chart of the citywide yearly total.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cityofchicago.speed-camera-violations"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cityofchicago.speed-camera-violations"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "violation",
+        "speed camera"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "year",
+        "camera"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "heldout",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cityofchicago.speed-camera-violations",
+        "licence": "Open Data"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Small and linear: one loader, one aggregation, two charts off the same node."
+}

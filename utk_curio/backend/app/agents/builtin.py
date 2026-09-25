@@ -90,6 +90,12 @@ class BuiltinAgentSpec:
     # byte-identical; composites that mint mutation proposals declare
     # "review-before-apply".
     review_policy: str = "report-only"
+    # runtime.execution (dev/115, DEC-073): "background" declares that a SERVER
+    # path of this agent outlives the HTTP request — the Dataflow Builder's
+    # Solve runs as a detached, re-attachable job. The dock projects a running
+    # indicator from the live job (docs/11:178). Every other built-in stays
+    # "foreground" byte-identically.
+    execution: str = "foreground"
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -193,8 +199,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # the node it modifies.
                      targets=("canvas", "node"),
                      reads=("nodeIntent", "targetContext", "externalSelection"),
+                     # dev/114 (DEC-072): catalog.search — the ONLY way a
+                     # data-loading node learns a real local path (rows carry
+                     # the resolved path); the grounding gate refuses any
+                     # other file the code opens.
                      tools=("dataflow.read", "node.create", "node.template.create",
-                            "node.runtime.read", "node.content.write"),
+                            "node.runtime.read", "node.content.write", "catalog.search"),
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
@@ -206,7 +216,17 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
-                                   "agent.generated-content-evaluator"),
+                                   "agent.generated-content-evaluator",
+                                   # dev/114 (DEC-072): source resolution for a
+                                   # data-loading node — the tool-less child gets
+                                   # the catalog as INPUT and its candidates are
+                                   # runtime-minted onto the two-lane card.
+                                   "agent.dataset-finder"),
+                     # dev/126: a data-loading node's source resolution
+                     # delegates dataset.discover from a SERVER path, with no
+                     # model choice — the Dataset Finder is a hard dependency,
+                     # not a preference.
+                     requires_agents=("agent.dataset-finder",),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -276,8 +296,18 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    # reply, reviewed note sequence.
                                    "agent.researcher"),
                      # dev/106: Solve/Validate hard-invoke node.content.generate.
-                     requires_agents=("agent.node-content-builder",),
-                     review_policy="review-before-apply"),
+                     # dev/126: and resolution hard-invokes dataset.discover for
+                     # a data-loading node, while every plan-created node is
+                     # given a Node Builder at the user's Apply — both server
+                     # paths, neither a model choice, so both are required
+                     # (DEC-068's own criterion) instead of merely preferred.
+                     # The install proposal for a required agent that the owner
+                     # hit mid-conversation (memo dev/126 §0) cannot recur.
+                     requires_agents=("agent.node-content-builder",
+                                      "agent.dataset-finder", "agent.node-builder"),
+                     review_policy="review-before-apply",
+                     # dev/115 (DEC-073): Solve is a detached background job.
+                     execution="background"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
     # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
@@ -404,7 +434,7 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "inputs": {"reads": list(spec.reads), "requiredConfig": []},
         # Typed tool requirements (dev/41) — all optional declarations.
         "tools": [{"id": t} for t in spec.tools],
-        "runtime": {"execution": "foreground", "reviewPolicy": spec.review_policy},
+        "runtime": {"execution": spec.execution, "reviewPolicy": spec.review_policy},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
     }

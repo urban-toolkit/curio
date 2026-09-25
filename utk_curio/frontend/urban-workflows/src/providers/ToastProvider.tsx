@@ -215,6 +215,13 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     );
 };
 
+/** The toast surface when one is mounted, else null. For a component that
+ * WANTS a toast but must render without one — a provider rendered standalone
+ * in a test, or a surface a host embeds bare (dev/132). Prefer
+ * ``useToastContext`` wherever a toast is part of the contract. */
+export const useOptionalToastContext = (): ToastContextValue | null =>
+    useContext(ToastContext);
+
 export const useToastContext = (): ToastContextValue => {
     const ctx = useContext(ToastContext);
     if (!ctx) throw new Error("useToastContext must be used within ToastProvider");

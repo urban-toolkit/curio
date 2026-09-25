@@ -28,24 +28,12 @@ SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
 SANDBOX_VERSION_TIMEOUT  = 5
 
 
-SANDBOX_TOKEN_HEADER = "X-Curio-Sandbox-Token"
-
-
-def _sandbox_headers(existing):
-    """Merge the shared secret into a caller's headers without clobbering them.
-
-    The sandbox executes arbitrary code, so every guarded route requires this
-    header (see utk_curio/sandbox/app/auth.py). The token is minted per launch
-    by main.py::set_environment_variables and inherited by both processes.
-    Absent (a bare `python -m backend.server`), we send nothing and the sandbox
-    runs in its unauthenticated local-dev mode.
-    """
-    token = os.getenv("CURIO_SANDBOX_TOKEN", "").strip()
-    if not token:
-        return existing
-    headers = dict(existing or {})
-    headers[SANDBOX_TOKEN_HEADER] = token
-    return headers
+# The shared secret lives in execution/sandbox_auth.py so the validation
+# runner sends the same header this bridge does (dev/115 field fix).
+from utk_curio.backend.app.execution.sandbox_auth import (  # noqa: E402
+    SANDBOX_TOKEN_HEADER,
+    sandbox_headers as _sandbox_headers,
+)
 
 
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
@@ -347,6 +335,30 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         return {}
 
 
+def _resolve_exec_secrets(code: str) -> dict:
+    """Resolve the connection keys *code* reaches as ``curio_secret("<name>")``
+    (memo dev/116) to their values — the ``dataset_paths`` twin, minus the disk.
+
+    Best-effort and fail-open like ``_resolve_exec_dataset_paths``: an empty
+    mapping never blocks execution; the sandbox's injected ``curio_secret``
+    names the missing key. Values leave this function only inside the sandbox
+    request body; they are never logged and never echoed to the browser.
+    """
+    from utk_curio.backend.app.users.connection_keys import secret_names
+
+    names = secret_names(code)
+    if not names:
+        return {}
+    try:
+        from utk_curio.backend.app.users.connection_keys import default_store, storage_key_for
+
+        user_key = storage_key_for(getattr(g, "user", None))
+        return default_store().resolve(user_key, names)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] connection-key resolution skipped: {e.__class__.__name__}", flush=True)
+        return {}
+
+
 def _exec_user_key():
     """The current user's on-disk storage key, or None when there is no user.
 
@@ -392,6 +404,7 @@ def process_python_code():
     # this route knows it: the sandbox has no notion of who is logged in, and
     # the in-process path ignores it entirely.
     exec_user_key = _exec_user_key()
+    exec_secrets = _resolve_exec_secrets(code)
     t1 = _time.perf_counter()
     # The gauge wraps only the sandbox round trip, which is where a node
     # actually spends its time. Counting the surrounding parse and JSON work
@@ -409,6 +422,9 @@ def process_python_code():
                 "save_dataset": bool(save_output_dataset),
                 "dataset_paths": dataset_paths,
                 "user_key": exec_user_key,
+                # dev/116: present only when the code names a saved key — the
+                # request body is otherwise byte-identical to before.
+                **({"secrets": exec_secrets} if exec_secrets else {}),
             }),
             headers={"Content-Type": "application/json"},
         )
@@ -553,6 +569,108 @@ def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, outpu
         )
     except Exception:
         pass
+
+
+@bp.route('/nodeRuntime', methods=['POST'])
+@require_auth
+def report_node_runtime():
+    """A node reports its own execution outcome from the BROWSER (memo dev/135).
+
+    ``DEC-052``'s journal had three writers and all three were the sandbox, so a
+    Vega-Lite chart, an AUTK map, a Data Pool, a Merge Flow, a Simple View, a
+    Spatial Join and a Data Export — every kind that runs in the client or
+    through its own service — left no trace, and every agent reading the journal
+    was told ``never-executed`` about a node the user had just watched fail.
+
+    Body: ``{dataflowId, nodeId, status, message?, outputType?, durationMs?,
+    code?}``. Deliberately narrow, because this is client-supplied data written
+    into a store agents read:
+
+    - the caller's own storage key is used, so a report can only ever touch
+      that user's own project directory, and the project must already exist
+      (a bogus id is a no-op, never a new directory);
+    - ``status`` is an allowlist and ``message`` is bounded on arrival;
+    - **no artifact path is accepted** — a client cannot mint one, so nothing
+      downstream can mistake a reported record for a stored artifact;
+    - the response is 204 whether or not the write landed: a render must never
+      fail over its journal (``DEC-052``'s own rule).
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    body = request.get_json(silent=True) or {}
+    node_id = body.get('nodeId')
+    dataflow_id = body.get('dataflowId')
+    status = body.get('status')
+    user = getattr(g, 'user', None)
+    if not isinstance(node_id, str) or not node_id.strip():
+        return jsonify({'error': "'nodeId' is required"}), 400
+    if not isinstance(dataflow_id, str) or not dataflow_id.strip():
+        return jsonify({'error': "'dataflowId' is required"}), 400
+    if status not in runtime_journal.STATUSES:
+        return jsonify({
+            'error': f"'status' must be one of {', '.join(runtime_journal.STATUSES)}",
+        }), 400
+    if user is None:
+        return jsonify({'error': 'authentication required'}), 401
+    user_key = _user_dir_key(user)
+    try:
+        exists = projects_storage.project_dir(user_key, dataflow_id).is_dir()
+    except Exception:
+        exists = False
+    if not exists:
+        # An unsaved canvas or an id this user does not own: nothing to journal,
+        # and never a directory created on a client's word.
+        return '', 204
+    try:
+        duration = float(body.get('durationMs') or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    runtime_journal.record_browser_execution(
+        user_key, dataflow_id, node_id.strip(),
+        status=status,
+        message=str(body.get('message') or '')[:runtime_journal.BROWSER_MESSAGE_CHARS],
+        output_type=str(body.get('outputType') or '')[:60],
+        duration_ms=max(duration, 0.0),
+        code=str(body.get('code') or ''),
+        # dev/136: an empty render is not the same problem as a render that
+        # threw, and the harness must not have to match prose to tell them
+        # apart. Bounded and free-form: an unknown kind is just a label.
+        kind=str(body.get('kind') or '')[:40],
+    )
+    return '', 204
+
+
+@bp.route('/nodeRuntime', methods=['GET'])
+@require_auth
+def read_node_runtime():
+    """What this node's last run and last render did (memo dev/138).
+
+    The same records the agents read (``DEC-052``'s journal, split per origin
+    by dev/137), so the reason a user sees IN THE NODE and the reason an agent
+    is handed cannot differ. Query: ``?dataflowId=…&nodeId=…``.
+
+    Read-only, the caller's own storage key, and an empty answer (never a 404)
+    when the node has no record: "nothing recorded" is a normal state, and the
+    node body must not render an error because of it.
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    node_id = (request.args.get('nodeId') or '').strip()
+    dataflow_id = (request.args.get('dataflowId') or '').strip()
+    user = getattr(g, 'user', None)
+    if not node_id or not dataflow_id:
+        return jsonify({'error': "'dataflowId' and 'nodeId' are required"}), 400
+    if user is None:
+        return jsonify({'error': 'authentication required'}), 401
+    user_key = _user_dir_key(user)
+    return jsonify({
+        'nodeId': node_id,
+        'run': runtime_journal.read_record(user_key, dataflow_id, node_id),
+        'render': runtime_journal.read_render_record(user_key, dataflow_id, node_id),
+    }), 200
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])

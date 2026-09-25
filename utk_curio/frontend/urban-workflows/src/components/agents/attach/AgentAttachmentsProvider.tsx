@@ -8,9 +8,14 @@ import React, {
   useState,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useOptionalToastContext } from "../../../providers/ToastProvider";
+import { useDatasetCatalog } from "../../../services/datasetCatalog/datasetCatalogHooks";
+import { useDatasetImport } from "../../../services/datasetCatalog/useDatasetImport";
 import {
   agentsApi,
   type AgentApplyResult,
+  type AgentDatasetPick,
+  type AgentDatasetSelection,
   type AgentSessionTurn,
   type AgentUsage,
 } from "../../../api/agentsApi";
@@ -64,6 +69,17 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/126: record the confirmed dataset selection for a node (through its
+   * Dataset Finder attachment) — what the node's next Solve reads. */
+  recordDatasetSelection: (
+    attachmentId: string,
+    picks: AgentDatasetPick[],
+  ) => Promise<AgentDatasetSelection>;
+  /** dev/132: import a dataset the user downloaded from a portal, through the
+   * ONE catalog import pathway (`useDatasetImport` — same register, same
+   * toast, same cross-surface refresh), and resolve with its dataset id so
+   * the card can confirm it as the node's source. */
+  importDataset: (file: File) => Promise<string | null>;
   /** dev/67-9: run the Simulation Mode driver (step or auto) — canvas
    * mutations from the stream apply live; resolves with the done payload. */
   runSimulation: (
@@ -117,9 +133,34 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
    * attachment's next solve starts — NOT on done, so the strip can show why
    * the pills say failed. The Solve turn's card is the durable record. */
   solveErrors: Record<string, Record<string, string>>;
+  /** dev/116: the LIVE batch's per-node remedies (attachmentId → nodeId →
+   * remedy) — a `source-missing` failure that asks for a connection key.
+   * Cleared with solveErrors. */
+  solveRemedies: Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>;
+  /** dev/118: the LIVE batch's current wave (attachmentId → wave), from `solve_wave`. */
+  solveWave: Record<string, import("../../../api/agentsApi").AgentSolveWave>;
+  /** dev/118: per-node notices that are not errors (attachmentId → nodeId →
+   * text): a target left pending by the batch's time budget, a skipped slice
+   * bound, a browser-rendered kind written unexecuted. Cleared with solveErrors. */
+  solveNotices: Record<string, Record<string, string>>;
+  /** dev/131: the running session's pass number, per attachment. */
+  solvePass: Record<string, number>;
+  /** dev/131: what the session is blocked on, per attachment. */
+  solveWaiting: Record<string, Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>>;
+  /** dev/131: how the last session ended — complete | stopped | budget | blocked. */
+  solveEndedBy: Record<string, string>;
   /** Cancel the running solve (dev/63): in-flight children finish and
    * persist; undispatched targets revert to pending. */
   cancelSolve: (attachmentId: string) => Promise<void>;
+  /** dev/115 (Amendment A2): the per-node Solve — run the node's current
+   * code, fix, re-run; lands an executed review (or writes an empty node). */
+  solveNode: (attachmentId: string, nodeId: string) => Promise<Record<string, unknown>>;
+  /** dev/115: transient narration of the running per-node Solve. */
+  solveNodeActivity: Record<string, string>;
+  /** dev/115 (DEC-021 slice): re-attach to the attachment's running background
+   * job (a Solve that outlived a closed panel or a reload) — replays, tails,
+   * and refreshes the session when it finishes. */
+  attachSolveJob: (attachmentId: string) => Promise<void>;
   /** Dismiss a pending review proposal without applying it. */
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
 }
@@ -134,6 +175,34 @@ export const AgentAttachmentsProvider: React.FC<{
 }> = ({ enabled = true, children }) => {
   const { projectId } = useFlowContext();
   const effectiveProjectId = enabled ? (projectId ?? null) : null;
+  // dev/132: the toast is how the shared import reports itself; the provider
+  // must still render where none is mounted (a test, an embedded surface).
+  const toast = useOptionalToastContext();
+  const showToast = useCallback(
+    (message: string, kind: "success" | "error") => {
+      if (toast) toast.showToast(message, kind);
+    },
+    [toast],
+  );
+  // dev/132: the catalog hook is used for its import ONLY — `enabled: false`
+  // fetches no listing here (the drawer and the catalog page own that), so a
+  // chat card gains the import without a second listing behind it.
+  const datasetCatalog = useDatasetCatalog({
+    dataflowId: effectiveProjectId ?? undefined,
+    enabled: false,
+  });
+  const { importFile: importDatasetFile } = useDatasetImport({
+    importDataset: datasetCatalog.importDataset,
+    showToast,
+  });
+  const importDataset = useCallback(
+    async (file: File) => {
+      const imported = await importDatasetFile(file);
+      const id = (imported as { id?: string } | null | undefined)?.id;
+      return typeof id === "string" && id ? id : null;
+    },
+    [importDatasetFile],
+  );
   const state = useAgentAttachments(effectiveProjectId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, AgentSessionTurn[]>>({});
@@ -148,6 +217,20 @@ export const AgentAttachmentsProvider: React.FC<{
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
   const [solveErrors, setSolveErrors] = useState<Record<string, Record<string, string>>>({});
+  const [solveRemedies, setSolveRemedies] = useState<
+    Record<string, Record<string, import("../../../api/agentsApi").AgentRemedy>>
+  >({});
+  const [solveWave, setSolveWave] = useState<Record<string, import("../../../api/agentsApi").AgentSolveWave>>({});
+  const [solveNotices, setSolveNotices] = useState<Record<string, Record<string, string>>>({});
+  const [solvePass, setSolvePass] = useState<Record<string, number>>({});
+  const [solveWaiting, setSolveWaiting] = useState<
+    Record<string, Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>>
+  >({});
+  const [solveEndedBy, setSolveEndedBy] = useState<Record<string, string>>({});
+  // dev/115: the per-node Solve's narration, and the background jobs this
+  // client is already attached to (never attach twice to one execution).
+  const [solveNodeActivity, setSolveNodeActivity] = useState<Record<string, string>>({});
+  const attachedJobsRef = useRef<Set<string>>(new Set());
   // dev/67-9: the running simulation's narration line, per attachment.
   const [simulationActivity, setSimulationActivity] = useState<Record<string, string>>({});
   const solveAbortRef = useRef<Map<string, AbortController>>(new Map());
@@ -463,6 +546,23 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession, state.reload],
   );
 
+  const recordDatasetSelection = useCallback(
+    async (attachmentId: string, picks: AgentDatasetPick[]) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        return await agentsApi.recordDatasetSelection(pid, attachmentId, picks);
+      } finally {
+        // The record lives on the attachment and the confirmation is logged
+        // as a turn: refresh both, exactly as an apply does.
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
   const applyPlanNode = useCallback(
     async (attachmentId: string, proposalId: string, ref: string) => {
       const pid = projectRef.current;
@@ -631,6 +731,141 @@ export const AgentAttachmentsProvider: React.FC<{
     [state.reload],
   );
 
+  // dev/115: ONE handler for the Solve stream, whether the batch was started
+  // here or re-attached — node_started/node_result (dev/63) plus the verified
+  // loop's rounds (node_round → generating, node_executed → verifying,
+  // node_verdict → verified | fixing) so the pills say what is happening.
+  const solveEventHandler = useCallback(
+    (attachmentId: string) => {
+      const mark = (nodeId: string, status: string) =>
+        setSolveProgress((prev) => ({
+          ...prev,
+          [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
+        }));
+      /**
+       * dev/137: drop what an earlier pass said about this node.
+       *
+       * dev/131 made Solve a SESSION of passes, and these maps were only ever
+       * written — so the owner's `7a27b702` showed every pill *solved*,
+       * "Finished — nothing left to do", and at the same time "not fixed after
+       * 15 attempts …" and "pending — waiting — upstream '1b133767' has no
+       * content yet" for a node that ended solved with 620 characters of
+       * content. Both lines were true of an earlier pass. A panel that says
+       * two contradictory things is worse than either, so the event that
+       * supersedes a line is what removes it.
+       */
+      const forget = (nodeId: string) => {
+        const drop = (prev: Record<string, Record<string, unknown>>) => {
+          const forAttachment = prev[attachmentId];
+          if (!forAttachment || !(nodeId in forAttachment)) return prev;
+          const { [nodeId]: _gone, ...rest } = forAttachment;
+          return { ...prev, [attachmentId]: rest };
+        };
+        setSolveErrors((prev) => drop(prev) as Record<string, Record<string, string>>);
+        setSolveNotices((prev) => drop(prev) as Record<string, Record<string, string>>);
+        setSolveRemedies(
+          (prev) =>
+            drop(prev) as Record<
+              string,
+              Record<string, import("../../../api/agentsApi").AgentRemedy>
+            >,
+        );
+      };
+      return (name: string, payload: Record<string, unknown>) => {
+        if (name === "solve_pass" || name === "solve_waiting") {
+          // dev/131: the session keeps making passes; `waiting` names the
+          // nodes it is blocked on, and a "dataset-selection" kind means the
+          // USER is the blocker.
+          if (typeof payload.pass === "number") {
+            setSolvePass((prev) => ({ ...prev, [attachmentId]: payload.pass as number }));
+          }
+          const waiting = Array.isArray(payload.waiting)
+            ? (payload.waiting as Array<Record<string, unknown>>).map((w) => ({
+                nodeId: String(w.nodeId ?? ""),
+                kind: String(w.kind ?? "retry"),
+                reason: typeof w.reason === "string" ? w.reason : undefined,
+                attachmentId:
+                  typeof w.attachmentId === "string" ? w.attachmentId : null,
+              }))
+            : [];
+          setSolveWaiting((prev) => ({ ...prev, [attachmentId]: waiting }));
+          setSolveEndedBy((prev) => {
+            const { [attachmentId]: _gone, ...rest } = prev;
+            return rest;
+          });
+          // dev/137: a node this pass will attempt again carries nothing from
+          // the pass before it.
+          if (Array.isArray(payload.targets)) {
+            for (const target of payload.targets) {
+              if (typeof target === "string") forget(target);
+            }
+          }
+          return;
+        }
+        if (name === "solve_wave") {
+          // dev/118 (DEC-075): the batch runs in topological waves.
+          const wave = typeof payload.wave === "number" ? payload.wave : 0;
+          const of = typeof payload.of === "number" ? payload.of : 0;
+          const ids = Array.isArray(payload.nodeIds) ? payload.nodeIds.filter((x): x is string => typeof x === "string") : [];
+          setSolveWave((prev) => ({ ...prev, [attachmentId]: { wave, of, nodeIds: ids } }));
+          return;
+        }
+        const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
+        if (!nodeId) return;
+        if (name === "node_started") mark(nodeId, "solving");
+        else if (name === "node_round") mark(nodeId, "generating");
+        else if (name === "node_executed") mark(nodeId, "verifying");
+        else if (name === "node_verdict")
+          mark(nodeId, payload.verdict === "pass" ? "verified" : payload.verdict === "fail" ? "fixing" : "solving");
+        else if (name === "node_result") {
+          const status = typeof payload.status === "string" ? payload.status : "failed";
+          const verification = payload.verification as { status?: unknown; reason?: unknown } | undefined;
+          const notExecutable = status === "solved" && verification?.status === "not-executable";
+          // dev/118: a browser-rendered kind is WRITTEN, never "verified".
+          mark(nodeId, notExecutable ? "written" : status === "solved" && payload.verdict === "pass" ? "verified" : status);
+          // dev/137: this result is the node's current truth — whatever an
+          // earlier pass said about it is gone before the new state is written.
+          forget(nodeId);
+          const notice =
+            notExecutable && typeof verification?.reason === "string"
+              ? verification.reason
+              : (status === "pending" || status === "skipped") && typeof payload.reason === "string"
+                ? `${status} — ${payload.reason}`
+                : null;
+          if (notice) {
+            setSolveNotices((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: notice },
+            }));
+          }
+          if (typeof payload.error === "string" && payload.error) {
+            const reason = payload.error;
+            setSolveErrors((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
+            }));
+          }
+          const remedy = payload.remedy;
+          if (remedy && typeof remedy === "object" && typeof (remedy as { kind?: unknown }).kind === "string") {
+            const typed = remedy as import("../../../api/agentsApi").AgentRemedy;
+            setSolveRemedies((prev) => ({
+              ...prev,
+              [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: typed },
+            }));
+          }
+          if (payload.status === "solved" && typeof payload.content === "string") {
+            notifyAgentCanvasMutation({
+              kind: "node-content-applied",
+              nodeId,
+              content: payload.content,
+            });
+          }
+        }
+      };
+    },
+    [],
+  );
+
   const solveAttachment = useCallback(
     async (attachmentId: string, nodeIds?: string[]) => {
       const pid = projectRef.current;
@@ -642,44 +877,54 @@ export const AgentAttachmentsProvider: React.FC<{
       // end either way; the overlay is display-only.
       const controller = new AbortController();
       solveAbortRef.current.set(attachmentId, controller);
-      const mark = (nodeId: string, status: string) =>
-        setSolveProgress((prev) => ({
-          ...prev,
-          [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
-        }));
       // dev/106: a fresh batch starts with a clean reason slate.
       setSolveErrors((prev) => {
         const { [attachmentId]: _gone, ...rest } = prev;
+        return rest;
+      });
+      setSolveNotices((prev) => {
+        const { [attachmentId]: _gone, ...rest } = prev;
+        return rest;
+      });
+      setSolveRemedies((prev) => {
+        const { [attachmentId]: _cleared, ...rest } = prev;
         return rest;
       });
       try {
         const result = await agentsApi.solveAttachmentStream(
           pid,
           attachmentId,
-          (name, payload) => {
-            const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
-            if (name === "node_started" && nodeId) mark(nodeId, "solving");
-            else if (name === "node_result" && nodeId) {
-              mark(nodeId, typeof payload.status === "string" ? payload.status : "failed");
-              if (typeof payload.error === "string" && payload.error) {
-                const reason = payload.error;
-                setSolveErrors((prev) => ({
-                  ...prev,
-                  [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: reason },
-                }));
-              }
-              if (payload.status === "solved" && typeof payload.content === "string") {
-                notifyAgentCanvasMutation({
-                  kind: "node-content-applied",
-                  nodeId,
-                  content: payload.content,
-                });
-              }
-            }
-          },
+          solveEventHandler(attachmentId),
           nodeIds,
           controller.signal,
         );
+        // dev/131: how the session ended, for the strip's one honest line.
+        const endedBy = (result as { endedBy?: string } | undefined)?.endedBy;
+        if (typeof endedBy === "string" && endedBy) {
+          setSolveEndedBy((prev) => ({ ...prev, [attachmentId]: endedBy }));
+        }
+        const waiting = (result as { waiting?: unknown } | undefined)?.waiting;
+        if (endedBy === "complete") {
+          // dev/137: a session that finished everything waits for nothing.
+          // "Finished — nothing left to do" over a pending line was the other
+          // half of the owner's contradictory panel.
+          setSolveWaiting((prev) => {
+            const { [attachmentId]: _done, ...rest } = prev;
+            return rest;
+          });
+        } else if (Array.isArray(waiting)) {
+          // Stopped, out of budget or blocked: those nodes DO still wait, and
+          // saying so is the honest line.
+          setSolveWaiting((prev) => ({
+            ...prev,
+            [attachmentId]: (waiting as Array<Record<string, unknown>>).map((w) => ({
+              nodeId: String(w.nodeId ?? ""),
+              kind: String(w.kind ?? "retry"),
+              reason: typeof w.reason === "string" ? w.reason : undefined,
+              attachmentId: typeof w.attachmentId === "string" ? w.attachmentId : null,
+            })),
+          }));
+        }
         return result;
       } finally {
         solveAbortRef.current.delete(attachmentId);
@@ -687,7 +932,109 @@ export const AgentAttachmentsProvider: React.FC<{
           const { [attachmentId]: _gone, ...rest } = prev;
           return rest;
         });
+        setSolveWave((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolvePass((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
         // The solve result turn + the builder session both refresh.
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  // dev/115 (DEC-021 slice): re-attach to a running background Solve — the
+  // batch kept going while the panel was closed or the page reloaded; the
+  // stream replays what happened and tails the rest. One attach per
+  // execution; the session refetch at the end is the truth.
+  const attachSolveJob = useCallback(
+    async (attachmentId: string) => {
+      const pid = projectRef.current;
+      if (!pid) return;
+      const attachment = state.attachments.find((a) => a.attachmentId === attachmentId);
+      const job = attachment?.liveJob;
+      if (!job || job.status !== "running" || attachedJobsRef.current.has(job.executionId)) return;
+      attachedJobsRef.current.add(job.executionId);
+      const controller = new AbortController();
+      solveAbortRef.current.set(attachmentId, controller);
+      try {
+        if (job.kind === "solve-batch") {
+          await agentsApi.attachJobStream(pid, attachmentId, solveEventHandler(attachmentId), controller.signal);
+        } else {
+          await agentsApi.attachJobStream(
+            pid, attachmentId,
+            (name, payload) => {
+              const round = typeof payload.round === "number" ? payload.round : null;
+              const line =
+                name === "generation_round" ? `Round ${round ?? "?"} — generating…`
+                : name === "node_executed" ? `Round ${round ?? ""} — running in the sandbox…`.replace("Round  — ", "")
+                : name === "round_verdict" ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed" : "failed, fixing…"}`
+                : null;
+              if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
+            },
+            controller.signal,
+          );
+        }
+      } catch {
+        // A dropped re-attach is display-only; the job runs on the server.
+      } finally {
+        solveAbortRef.current.delete(attachmentId);
+        setSolveProgress((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolveWave((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        setSolveNodeActivity((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, solveEventHandler, state.attachments, state.reload],
+  );
+
+  // Opening a chat whose attachment carries a running job re-attaches to it.
+  useEffect(() => {
+    if (!selectedId) return;
+    const attachment = state.attachments.find((a) => a.attachmentId === selectedId);
+    if (attachment?.liveJob?.status === "running") void attachSolveJob(selectedId);
+  }, [selectedId, state.attachments, attachSolveJob]);
+
+  // dev/115 (Amendment A2): the per-node Solve from the node's own agent.
+  const solveNode = useCallback(
+    async (attachmentId: string, nodeId: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: "Starting — running the node's current code…" }));
+      try {
+        return await agentsApi.solveNodeStream(pid, attachmentId, nodeId, (name, payload) => {
+          const round = typeof payload.round === "number" ? payload.round : null;
+          const line =
+            name === "generation_round"
+              ? round === 1 ? "Round 1 — running the current code…" : `Round ${round} — generating a fix…`
+              : name === "node_executed" ? "Running in the sandbox…"
+              : name === "round_verdict"
+                ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed ✓" : payload.verdict === "fail" ? "failed — fixing…" : "not verified (sandbox unreachable)"}`
+                : null;
+          if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
+        });
+      } finally {
+        setSolveNodeActivity((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
         await state.reload();
@@ -801,8 +1148,19 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       solveErrors,
+      solveRemedies,
+      solveWave,
+      solveNotices,
+      solvePass,
+      solveWaiting,
+      solveEndedBy,
       cancelSolve,
+      solveNode,
+      solveNodeActivity,
+      attachSolveJob,
       applyPlanNode,
+      recordDatasetSelection,
+      importDataset,
       savePlanGoal,
       applyPlanEdges,
       validateNode,
@@ -831,8 +1189,19 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       solveErrors,
+      solveRemedies,
+      solveWave,
+      solveNotices,
+      solvePass,
+      solveWaiting,
+      solveEndedBy,
       cancelSolve,
+      solveNode,
+      solveNodeActivity,
+      attachSolveJob,
       applyPlanNode,
+      recordDatasetSelection,
+      importDataset,
       savePlanGoal,
       applyPlanEdges,
       validateNode,

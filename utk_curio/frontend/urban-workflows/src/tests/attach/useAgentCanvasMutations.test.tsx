@@ -266,6 +266,27 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(changes[1].item).toMatchObject({ id: "e-plain", targetHandle: "in", sourceHandle: "out" });
   });
 
+  it("materializes an Interaction edge as bidirectional on in/out handles (dev/112)", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "edges-created",
+        batchId: "batch-ix",
+        edges: [
+          { id: "ix", source: "gv", target: "gp", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" },
+          { id: "dx", source: "ga", target: "gb" },
+        ],
+      }),
+    );
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    expect(changes[0].item).toMatchObject({
+      id: "ix", sourceHandle: "in/out", targetHandle: "in/out",
+      type: "BIDIRECTIONAL_EDGE", markerStart: { type: "arrow" }, markerEnd: { type: "arrow" },
+    });
+    expect(changes[1].item).toMatchObject({ id: "dx", type: "UNIDIRECTIONAL_EDGE", sourceHandle: "out", targetHandle: "in" });
+    expect(changes[1].item.markerStart).toBeUndefined();
+  });
+
   it("skips nodes already live (partial replays)", () => {
     mockGetNodes.mockReturnValue([{ id: "ga" }]);
     render(<Host />);

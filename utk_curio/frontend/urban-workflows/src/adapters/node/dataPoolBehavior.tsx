@@ -5,7 +5,8 @@ import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
-import { hasIncomingEdge, incomingSourceIds } from '../../utils/nodeEmptyState';
+import { hasIncomingEdge, incomingSourceIds, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -16,7 +17,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // A failed upstream node propagates nothing, so "no input" is ambiguous
   // between never-run and ran-and-failed. The exec status is the only place
   // that difference is recorded (#347).
-  const { nodeExecStatus } = useFlowContext();
+  const { projectId: flowProjectId, nodeExecStatus } = useFlowContext();
   const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
@@ -531,6 +532,52 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (displayTable) return createTableData(displayTable as ICodeDataContent);
     return [];
   }, [output, tabData, activeTab, createTableData]);
+
+  // dev/138 (closes dev/137 F1): the pool is the node that DETECTS a bad
+  // input — "this input is not tabular data" is its own sentence — and it
+  // reported nothing to the journal, because its outcome lives in this
+  // behavior's local state rather than in `nodeState.output`, so dev/135's
+  // reporter never fired for it. In the owner's `edd71e67` the pool was the
+  // only node that knew the upstream had produced something unusable.
+  //
+  // Only the two REAL failures are reported. A pool that is not wired yet owes
+  // nothing, and one whose upstream has not run is waiting rather than broken
+  // — its upstream reports its own outcome.
+  useEffect(() => {
+    const hasInput = data.input != null && data.input !== "";
+    const reason = resolveNodeEmptyReason({
+      connected,
+      upstreamErrored,
+      hasInput,
+      tabular: tabData.length > 0,
+      rowCount: tableData.length,
+    });
+    // An upstream failure is the upstream's to report, like a node that has
+    // not run yet (#347).
+    if (
+      reason === "disconnected" ||
+      reason === "upstream-not-run" ||
+      reason === "upstream-errored"
+    )
+      return;
+    const projectId = (data as { projectId?: string }).projectId ?? flowProjectId;
+    if (!projectId) return;
+    if (reason === null) {
+      void reportNodeRuntime({
+        dataflowId: projectId, nodeId: data.nodeId, status: "ok",
+        outputType: (data.input as { dataType?: string } | null)?.dataType ?? "",
+      });
+      return;
+    }
+    const copy = NODE_EMPTY_COPY[reason];
+    void reportNodeRuntime({
+      dataflowId: projectId,
+      nodeId: data.nodeId,
+      status: "error",
+      message: `${copy.title} — ${copy.hint}`,
+      kind: `bad-input:${reason}`,
+    });
+  }, [connected, upstreamErrored, data, tabData.length, tableData.length, flowProjectId]);
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes

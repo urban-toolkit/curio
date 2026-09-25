@@ -248,6 +248,43 @@ class TestCallBudgetCountsRequests:
         assert called["n"] == 1
 
 
+class TestKeyedRequests:
+    """dev/116: a probe may carry a connection key as a query parameter or a
+    header — the parameters join the URL BEFORE the policy check, the header
+    reaches only a request_fn that accepts one."""
+
+    def test_params_join_the_url_before_the_policy_check(self):
+        seen = []
+
+        def _fn(method, url, trusted_host=None):
+            seen.append(url)
+            return _response()
+
+        result = egress.fetch("https://api.example.org/data?get=NAME", request_fn=_fn, resolver=PUBLIC,
+                              params={"key": "s3cr3t-value-0123"})
+        assert seen == ["https://api.example.org/data?get=NAME&key=s3cr3t-value-0123"]
+        assert result.url == seen[0] and result.final_url == seen[0]
+        assert egress.with_params("https://x.org/a", {"k": "v w"}) == "https://x.org/a?k=v+w"
+        assert egress.with_params("https://x.org/a", None) == "https://x.org/a"
+
+    def test_headers_reach_a_request_fn_that_accepts_them(self):
+        seen = {}
+
+        def _with(method, url, headers=None):
+            seen["headers"] = headers
+            return _response()
+
+        def _without(method, url):
+            return _response()
+
+        egress.fetch("https://api.example.org/x", request_fn=_with, resolver=PUBLIC,
+                     headers={"X-Api-Key": "s3cr3t-value-0123"})
+        assert seen["headers"] == {"X-Api-Key": "s3cr3t-value-0123"}
+        # A request_fn without the keyword is still called (the header is dropped, not an error).
+        egress.fetch("https://api.example.org/x", request_fn=_without, resolver=PUBLIC,
+                     headers={"X-Api-Key": "s3cr3t-value-0123"})
+
+
 # ── The policy moved to common/egress_policy.py; the transport stayed here ──
 
 

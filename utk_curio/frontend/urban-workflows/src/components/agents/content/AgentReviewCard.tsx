@@ -1,9 +1,46 @@
 import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentProposalPart } from "../../../api/agentsApi";
+import type { AgentProposalPart, AgentSourceRef } from "../../../api/agentsApi";
+import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
+import { VerificationChip } from "./verificationChip";
+
+/** dev/114 (DEC-072): the Source block's kind headline — how the runtime
+ * grounded what the proposed code opens or fetches. */
+const SOURCE_KIND_LABEL: Record<string, string> = {
+  catalog: "Data Catalog",
+  external: "External source",
+  "user-path": "User-provided path",
+  synthetic: "Synthetic data",
+  secret: "Connection key",
+  mixed: "Several sources",
+};
+
+/** One grounded reference, as plain text (the chip states the verdict). */
+function sourceRefText(ref: AgentSourceRef): string {
+  switch (ref.kind) {
+    case "catalog":
+      return `${ref.title ?? ref.datasetId ?? "dataset"}${ref.format ? ` (${ref.format})` : ""}${
+        ref.datasetId ? ` · ${ref.datasetId}` : ""
+      }`;
+    case "external":
+      return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}${
+        ref.hint ? ` — ${ref.hint}` : ""
+      }`;
+    case "secret":
+      // dev/116: the key the code reaches by name — never its value.
+      return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
+    case "user-path":
+      return `${ref.value ?? ""} — not checked by Curio`;
+    case "synthetic":
+      return "generated in the node — no external source";
+    default:
+      return ref.value ?? String(ref.kind);
+  }
+}
 
 /** dev/67-5/67-8/71: the per-node review state (mirror + builderSession). */
 export interface PlanNodeReviewState {
@@ -183,6 +220,20 @@ const OUTCOME_LABEL: Record<string, string> = {
 };
 
 /** What one Apply click does, per proposal kind — stated on the card. */
+/**
+ * dev/119 (DEC-076): can the sandbox run a node.create's kind? The roster's
+ * own flag rides the proposal (`pins.executable`); a part minted before that
+ * flag falls back to the installed registry descriptor (`hasCode`); a kind
+ * the registry has never seen answers null — the card then says nothing.
+ */
+export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined): boolean | null {
+  if (typeof pins?.executable === "boolean") return pins.executable;
+  const nodeType = pins?.nodeType;
+  if (typeof nodeType !== "string" || !nodeType) return null;
+  const descriptor = tryGetNodeDescriptor(nodeType);
+  return descriptor ? Boolean(descriptor.hasCode) : null;
+}
+
 const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
   "project.install":
@@ -197,17 +248,42 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying installs the exact reviewed artifact and creates its requested nodes — nothing else changes.",
 };
 
+/** dev/112: the removals block title — nodes, connections, and the cascade,
+ * each only when present. */
+function removalsTitle(nodes: number, edges: number, cascade: number): string {
+  const parts: string[] = [];
+  if (nodes) parts.push(`${nodes} node${nodes === 1 ? "" : "s"}`);
+  if (edges) parts.push(`${edges} connection${edges === 1 ? "" : "s"}`);
+  const cascadeNote = cascade
+    ? ` (and ${cascade} connected edge${cascade === 1 ? "" : "s"})`
+    : "";
+  return `Removes ${parts.join(" · ")}${cascadeNote}`;
+}
+
 /** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about
  * removals. */
 function planEffectLine(part: AgentProposalPart): string | null {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
   const n = part.plan.nodes.length;
   const removed = part.plan.removals?.length ?? 0;
+  const removedEdges = part.plan.removedEdges?.length ?? 0;
   if (removed) {
     return (
       `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed} — ` +
       "removal deletes their content and cannot be undone."
     );
+  }
+  if (removedEdges) {
+    // dev/112: an edge-only revision — truthful about what changes.
+    const e = part.plan.edgeCount;
+    return (
+      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges} — ` +
+      "nodes and their content are untouched."
+    );
+  }
+  if (n === 0) {
+    const e = part.plan.edgeCount;
+    return `Applying adds ${e} connection${e === 1 ? "" : "s"} — existing work is untouched.`;
   }
   return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas — existing work is untouched.`;
 }
@@ -281,6 +357,30 @@ export const AgentReviewCard: React.FC<{
         <span>{part.summary}</span>
         <span className={styles.kind}>review</span>
       </div>
+      {part.source ? (
+        // dev/114 (DEC-072): what the code opens/fetches and how the RUNTIME
+        // grounded it — a catalog dataset by id, a probed URL with its
+        // verdict, a path the user typed, or declared synthetic data. Above
+        // the preview so it cannot be missed; plain text, never markup.
+        <div className={styles.sourceBlock} role="group" aria-label="Data source">
+          <div className={styles.sourceTitle}>
+            Source · {SOURCE_KIND_LABEL[part.source.kind] ?? part.source.kind}
+          </div>
+          <ul className={styles.sourceList}>
+            {part.source.refs.map((ref, i) => (
+              <li key={i}>
+                {sourceRefText(ref)}
+                {ref.kind === "external" && ref.verification ? (
+                  <>
+                    {" "}
+                    <VerificationChip verification={ref.verification} />
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {part.tool === "node.template.create" && part.justification ? (
         // The adequacy gate (dev/48 §3.2b): the model's reasoning is what the
         // user judges — rendered verbatim FIRST, above the definition.
@@ -301,25 +401,31 @@ export const AgentReviewCard: React.FC<{
           {part.plan.nodes.length} nodes · {part.plan.edgeCount} connections — {part.plan.goal}
         </div>
       ) : null}
-      {part.tool === "dataflow.plan.write" && part.plan?.removals?.length ? (
+      {part.tool === "dataflow.plan.write" &&
+      part.plan &&
+      ((part.plan.removals?.length ?? 0) > 0 || (part.plan.removedEdges?.length ?? 0) > 0) ? (
         // DEC-049.2: removals reviewed by NAME — every victim, with a
-        // content flag; impossible to miss.
-        <div className={styles.removals} role="group" aria-label="Nodes this plan removes">
+        // content flag; impossible to miss. dev/112: removed CONNECTIONS
+        // named too — the owner approved five edge removals unseen.
+        <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removes">
           <div className={styles.removalsTitle}>
-            Removes {part.plan.removals.length} node
-            {part.plan.removals.length === 1 ? "" : "s"}
-            {part.plan.cascadeCount
-              ? ` (and ${part.plan.cascadeCount} connected edge${part.plan.cascadeCount === 1 ? "" : "s"})`
-              : ""}
+            {removalsTitle(part.plan.removals?.length ?? 0, part.plan.removedEdges?.length ?? 0, part.plan.cascadeCount ?? 0)}
           </div>
           <ul className={styles.removalsList}>
-            {part.plan.removals.map((victim) => (
+            {(part.plan.removals ?? []).map((victim) => (
               <li key={victim.id}>
                 {victim.label}
                 {victim.nodeType ? ` · ${victim.nodeType}` : ""}
                 {victim.contentChars > 0
                   ? ` — contains ${victim.contentChars} chars of content`
                   : " — empty"}
+              </li>
+            ))}
+            {(part.plan.removedEdges ?? []).map((edge) => (
+              <li key={edge.id}>
+                {edge.kind === "interaction" ? "⇄ " : "→ "}
+                {edge.fromLabel} → {edge.toLabel}
+                {edge.kind === "interaction" ? " · interaction" : ""}
               </li>
             ))}
           </ul>
@@ -538,6 +644,70 @@ export const AgentReviewCard: React.FC<{
               <pre>{part.validation.evidence.stderrTail}</pre>
             </details>
           ) : null}
+          {part.validation.attempts && part.validation.attempts.length > 0 ? (
+            // dev/115 (Amendments A1/A2): the engineering loop's trail — every
+            // round the runtime ran (or refused before running), how it
+            // failed, and that a fix followed. Collapsed by default; plain text.
+            <details className={styles.validationDetails}>
+              <summary>
+                Verification · {part.validation.attempts.length} attempt
+                {part.validation.attempts.length === 1 ? "" : "s"}
+              </summary>
+              <ol className={styles.attempts} aria-label="Verification attempts">
+                {part.validation.attempts.map((attempt) => (
+                  <li key={attempt.round}>
+                    <span className={styles.attemptHead}>
+                      Round {attempt.round} ·{" "}
+                      {attempt.verdict === "pass"
+                        ? "pass ✓"
+                        : attempt.verdict === "not-executable"
+                          ? "not executable — no code to run, nothing ran"
+                          : attempt.verdict}
+                      {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
+                      {attempt.source === "current content" ? " · the node's current code" : ""}
+                    </span>
+                    {attempt.reusedNodes?.length ? (
+                      <span className={styles.attemptDetail}>
+                        {" "}· reused {attempt.reusedNodes.length} upstream result{attempt.reusedNodes.length === 1 ? "" : "s"}
+                        {attempt.reuseRetried ? " (re-run whole once)" : ""}
+                      </span>
+                    ) : null}
+                    {attempt.verdict === "pass" ? (
+                      <span className={styles.attemptDetail}>
+                        {attempt.outputDataType ? ` output: ${attempt.outputDataType}` : ""}
+                        {typeof attempt.durationMs === "number" ? ` · ${(attempt.durationMs / 1000).toFixed(1)} s` : ""}
+                      </span>
+                    ) : attempt.detail || attempt.stderrTail ? (
+                      <details className={styles.attemptError}>
+                        <summary>{(attempt.detail ?? attempt.stderrTail ?? "").slice(0, 120)}</summary>
+                        <pre>{attempt.stderrTail ?? attempt.detail}</pre>
+                      </details>
+                    ) : null}
+                    {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
+                      <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
+                    ) : null}
+                    {attempt.verdict !== "pass" && attempt.code ? (
+                      // dev/127: what this round actually ran. The review card
+                      // already showed the error; the code was only ever in
+                      // another agent's chat.
+                      <details className={styles.attemptError}>
+                        <summary>
+                          {attempt.codeIsProse
+                            ? "What the builder said instead of writing code"
+                            : "The code this attempt ran"}
+                          {attempt.codeTruncated ? " (truncated)" : ""}
+                        </summary>
+                        <pre>{attempt.code}</pre>
+                      </details>
+                    ) : null}
+                    {attempt.verdict !== "pass" && attempt.remedy ? (
+                      <AddKeyAction remedy={attempt.remedy} className={styles.attemptRemedy} />
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
         </div>
       ) : null}
       {part.tool === "dataflow.plan.write" && part.plan && pending && onApplyPlanNode ? (
@@ -640,8 +810,9 @@ export const AgentReviewCard: React.FC<{
               return (
                 <li key={index} className={styles.planEdgeRow}>
                   <span className={styles.planEdgeNames}>
-                    {edge.fromLabel} → {edge.toLabel}
+                    {edge.fromLabel} {edge.kind === "interaction" ? "⇄" : "→"} {edge.toLabel}
                     {edge.toHandle ? ` [${edge.toHandle}]` : ""}
+                    {edge.kind === "interaction" ? " · interaction" : ""}
                   </span>
                   {state === "applied" ? (
                     <span className={styles.planNodeCreated}>Connected ✓</span>
@@ -668,7 +839,24 @@ export const AgentReviewCard: React.FC<{
       {planEffectLine(part) ? (
         <div className={styles.meta}>{planEffectLine(part)}</div>
       ) : EFFECT_LINE[part.tool] ? (
-        <div className={styles.meta}>{EFFECT_LINE[part.tool]}</div>
+        <div className={styles.meta}>
+          {EFFECT_LINE[part.tool]}
+          {part.tool === "node.create" && part.source ? (
+            // dev/115 (Amendment A2) → dev/118 (DEC-075) → dev/119 (DEC-076):
+            // Apply places the node as proposed; the user's Solve runs, fixes
+            // and verifies the code of every kind the sandbox can run. Whether
+            // it can is the ROSTER's answer (pins.executable, minted from the
+            // template), falling back to the registry descriptor for parts
+            // minted before it; unknown says nothing rather than guessing.
+            <>
+              {nodeKindExecutable(part.pins) === true
+                ? " Solve runs it in the sandbox and fixes errors before its code is trusted."
+                : nodeKindExecutable(part.pins) === false
+                  ? " This kind has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified."
+                  : null}
+            </>
+          ) : null}
+        </div>
       ) : null}
       {pending && (onApply || onDismiss) ? (
         <div className={styles.actions}>

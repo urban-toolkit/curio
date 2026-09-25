@@ -9,6 +9,7 @@ import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 import { composeAgentRunContext } from "./agentRunContext";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { ConnectionKeysModalHost } from "../../connectionKeys/ConnectionKeysModalHost";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
 
 /**
@@ -19,7 +20,10 @@ import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresenta
  */
 export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
-  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef } = useFlowContext();
+  // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
+  // current_output can name the artifact a node produced.
+  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef, outputs } =
+    useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
   // and content writes land on the LIVE canvas from here, where React Flow
@@ -141,6 +145,8 @@ export const AgentDockOverlay: React.FC = () => {
 
   return (
     <>
+      {/* dev/116: "Add key for <host>" from any card opens Settings → Connection keys here. */}
+      <ConnectionKeysModalHost />
       <AgentDock
         attachments={canvasAttachments}
         selectedId={ctx.selectedId}
@@ -183,6 +189,7 @@ export const AgentDockOverlay: React.FC = () => {
                     edges: getEdges(),
                     workflowName: workflowNameRef.current,
                     workflowGoal,
+                    outputs,
                   }),
                 )
               }
@@ -213,7 +220,21 @@ export const AgentDockOverlay: React.FC = () => {
               onSolve={(nodeIds) => ctx.solveAttachment(shown.attachmentId, nodeIds)}
               solveProgress={ctx.solveProgress[shown.attachmentId]}
               solveErrors={ctx.solveErrors[shown.attachmentId]}
+              solveRemedies={ctx.solveRemedies[shown.attachmentId]}
+              solveWaiting={ctx.solveWaiting[shown.attachmentId]}
+              solveEndedBy={ctx.solveEndedBy[shown.attachmentId] ?? null}
+              solvePass={ctx.solvePass[shown.attachmentId] ?? null}
+              onSolveOneNode={(nodeId) => ctx.solveNode(shown.attachmentId, nodeId)}
+              solveWave={ctx.solveWave[shown.attachmentId]}
+              solveNotices={ctx.solveNotices[shown.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(shown.attachmentId)}
+              // dev/115 (Amendment A2): the per-node Solve from the node's own agent.
+              onSolveNode={
+                shown.target.kind === "node" && shown.target.targetId
+                  ? () => ctx.solveNode(shown.attachmentId, shown.target.targetId as string)
+                  : undefined
+              }
+              solveNodeActivity={ctx.solveNodeActivity[shown.attachmentId] ?? null}
               onDismissProposal={(proposalId) =>
                 ctx.dismissProposal(shown.attachmentId, proposalId)
               }
@@ -221,6 +242,11 @@ export const AgentDockOverlay: React.FC = () => {
               // delegated agent's chat; existence-checked against the live
               // list so a detached home never renders a dead link.
               onOpenAgentChat={ctx.openChat}
+              onRecordDatasetSelection={(picks) =>
+                ctx.recordDatasetSelection(shown.attachmentId, picks)
+              }
+              // dev/132: the portal-download row's Import button.
+              onImportDataset={ctx.importDataset}
               delegateExists={(id) =>
                 ctx.attachments.some((a) => a.attachmentId === id)
               }

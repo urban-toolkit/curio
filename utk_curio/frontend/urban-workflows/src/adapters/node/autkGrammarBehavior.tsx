@@ -9,6 +9,7 @@ import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
+import { partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
@@ -305,12 +306,26 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         + 'map/plot will render blank. Check the upstream nodes.',
                     );
                 }
+                // dev/136: what this render ASKED for, before any resolution
+                // drops a thing. A dropped layerRef used to leave a
+                // console.warn as its only trace, so a map whose every ref was
+                // dropped rendered a grey canvas under a green "Done".
+                const requestedRefs: string[] = [
+                    ...(Array.isArray(spec.map?.layerRefs)
+                        ? spec.map.layerRefs
+                            .map((r: any) => r?.dataRef)
+                            .filter((r: any): r is string => typeof r === 'string' && !!r)
+                        : []),
+                    ...(spec.plot?.dataRef ? [String(spec.plot.dataRef)] : []),
+                ];
+                let availableRefs: string[] = [];
                 if (dataSectionSources.length > 0) {
                     const availableNames = new Set<string>(
                         dataSectionSources
                             .map((s: any) => s?.outputTableName)
                             .filter(Boolean),
                     );
+                    availableRefs = [...availableNames];
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
                             (r: any) => r?.dataRef && !availableNames.has(r.dataRef),
@@ -392,9 +407,32 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     interactionOffRef.current = [off1, off2];
                 }
 
+                // dev/136: did this map/plot actually draw? The layers that
+                // survived resolution are what there was to draw FROM, so an
+                // empty set is an empty render — reported, not warned about.
+                const layersDrawn = (Array.isArray(spec.map?.layerRefs)
+                    ? spec.map.layerRefs.length
+                    : 0) + (spec.plot ? 1 : 0);
+                const renderCounts = {
+                    layersRequested: requestedRefs.length,
+                    layersDrawn,
+                    requestedRefs,
+                    availableRefs,
+                };
+                const outcome = renderOutcome(renderCounts);
+                if (outcome.empty) {
+                    emit({ code: 'error', content: outcome.message,
+                           kind: `empty-render:${outcome.cause}` } as any);
+                    showToast(outcome.message, 'error');
+                    return;
+                }
                 if (data.outputCallback) {
                     data.outputCallback(data.nodeId, data.input ?? null);
                 }
+                // A partial drop still drew something; say what it lost rather
+                // than leaving the console as the only record.
+                const note = partialRenderNote(renderCounts);
+                if (note) setRunSummary(note);
             } else {
                 // Data-only node: emit the data downstream.
                 grammarRef.current = null;
@@ -471,6 +509,19 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 }
             }
 
+            // dev/136: a data or compute run that produced only EMPTY tables
+            // produced nothing, and `describeAutkRun` was already counting the
+            // rows — the count was in the sentence and nothing read it.
+            if (summary && emptyRunRows(summary) === 0) {
+                const message =
+                    'rendered nothing — every layer this run produced is empty ('
+                    + summary + '). The source it loads, or the query that '
+                    + 'filters it, is what must change.';
+                emit({ code: 'error', content: message,
+                       kind: 'empty-render:nothing-drawn' } as any);
+                showToast(message, 'error');
+                return;
+            }
             // A render node reports through its map/plot; a data or compute
             // node has only this line to show that it did something (#282).
             setRunSummary(summary);
@@ -960,6 +1011,18 @@ export type { AutkSpecKind } from '../../utils/autkSpecKind';
 export { classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 
 /** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
+/**
+ * The total rows a run summary reports, or ``undefined`` when it names none
+ * (memo dev/136). ``describeAutkRun`` composes "Loaded 3 tables: a (0 rows),
+ * b (0 rows), c (0 rows)" — the counts were already there; this reads them, so
+ * an all-empty run stops reporting success.
+ */
+export function emptyRunRows(summary: string): number | undefined {
+    const matches = [...String(summary || "").matchAll(/\((\d+)\s+(?:rows|features)\)/g)];
+    if (matches.length === 0) return undefined;
+    return matches.reduce((total, m) => total + Number(m[1] || 0), 0);
+}
+
 export function describeAutkRun(verb: string, noun: string, items: string[]): string {
     if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
     const plural = items.length === 1 ? noun : `${noun}s`;

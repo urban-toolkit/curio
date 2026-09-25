@@ -1086,3 +1086,272 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+
+describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () => {
+  const candidatesTurns: AgentSessionTurn[] = [
+    { role: "user", text: "build a node that loads heat data" },
+    {
+      role: "agent",
+      text: "Select a source and confirm.",
+      content: [
+        {
+          type: "datasetCandidates",
+          lanes: {
+            external: [
+              { name: "NOAA Climate Data API", sourceType: "api", url: "https://api.noaa.gov",
+                verification: { status: "verified", httpStatus: 200 } },
+            ],
+            catalog: [],
+          },
+        },
+      ],
+    },
+  ];
+
+  it("a selection prefills the BUILD request when the host is Node Builder", () => {
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder" },
+      turns: candidatesTurns,
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+    );
+  });
+
+  it("a selection prefills the hand-off confirmation in any other chat", () => {
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.dataset-finder@1.0.0", name: "Dataset Finder" },
+      turns: candidatesTurns,
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
+    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+      "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
+    );
+  });
+});
+
+describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
+  const nodeAttachment: AgentAttachment = {
+    ...attachment,
+    coord: "agent.node-builder@1.0.0",
+    name: "Node Builder",
+    target: { kind: "node" as const, targetId: "n1" },
+  };
+
+  it("offers Solve this node for a node-attached agent and reports the outcome", async () => {
+    const onSolveNode = jest.fn().mockResolvedValue({ verdict: "pass", rounds: 2, proposalId: "p9" });
+    renderPanel({ attachment: nodeAttachment, targetName: "Data Loading", onSolveNode });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    expect(row).toHaveTextContent(/only code that passed lands/);
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    expect(onSolveNode).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(within(row).getByRole("status")).toHaveTextContent(/corrected code ran successfully/),
+    );
+  });
+
+  it("a live per-node job shows Solving with the background copy and the narration", () => {
+    renderPanel({
+      attachment: { ...nodeAttachment, liveJob: { executionId: "e2", kind: "solve-node", status: "running", startedAt: 1 } },
+      onSolveNode: jest.fn(),
+      solveNodeActivity: "Round 2 — generating a fix…",
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    expect(within(row).getByRole("button", { name: "Solving…" })).toBeDisabled();
+    expect(row).toHaveTextContent("Solve keeps running if you close this panel.");
+    expect(row).toHaveTextContent("Round 2 — generating a fix…");
+  });
+
+  it("no row for canvas attachments or without the callback", () => {
+    renderPanel({ attachment: nodeAttachment });
+    expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
+    renderPanel({ onSolveNode: jest.fn() }); // canvas target
+    expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
+  });
+});
+
+
+describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
+  it("a source-missing outcome with a remedy offers Add key for the host", async () => {
+    const { subscribeConnectionKeysRequests } = await import("../../components/connectionKeys/connectionKeysRequest");
+    const seen: unknown[] = [];
+    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const onSolveNode = jest.fn().mockResolvedValue({
+      verdict: "fail", rounds: 2,
+      remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },
+    });
+    renderPanel({
+      attachment: { ...attachment, coord: "agent.node-builder@1.0.0", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" } },
+      targetName: "Data Loading",
+      onSolveNode,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const add = await within(row).findByRole("button", { name: "Add key for api.census.gov" });
+    expect(within(row).getByRole("status")).toHaveTextContent(/Not fixed after 2 attempts/);
+    fireEvent.click(add);
+    expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
+    off();
+  });
+
+  // dev/126: the awaiting-selection remedy — the twin of the key remedy. The
+  // node's source is with the user, so the row offers the chat that holds the
+  // candidates instead of a failure message with advice in it.
+  it("an awaiting-source outcome offers the node's Dataset Finder", async () => {
+    const onOpenAgentChat = jest.fn();
+    const onSolveNode = jest.fn().mockResolvedValue({
+      verdict: "awaiting-source",
+      rounds: 3,
+      remedy: { kind: "dataset-selection", attachmentId: "att-df", nodeId: "n1" },
+    });
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.node-builder@1.0.0",
+        name: "Node Builder",
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      targetName: "Data Loading",
+      onSolveNode,
+      onOpenAgentChat,
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const open = await within(row).findByRole("button", {
+      name: "Open Dataset Finder for this node",
+    });
+    expect(within(row).getByRole("status")).toHaveTextContent(/Awaiting a source/);
+    expect(within(row).getByRole("status")).toHaveTextContent(/Nothing was generated or written/);
+    fireEvent.click(open);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("a Dataset Finder on a node can record the confirmed source", async () => {
+    const onRecordDatasetSelection = jest
+      .fn()
+      .mockResolvedValue({ attachmentId: "att-df", nodeId: "n1", status: "resolved", picks: [] });
+    renderPanel({
+      attachment: {
+        ...attachment,
+        attachmentId: "att-df",
+        coord: "agent.dataset-finder@1.0.0",
+        name: "Dataset Finder",
+        target: { kind: "node" as const, targetId: "n1" },
+      },
+      turns: [
+        {
+          role: "agent" as const,
+          text: "2 candidates",
+          content: [
+            {
+              type: "datasetCandidates" as const,
+              lanes: {
+                external: [
+                  {
+                    name: "Chicago areas",
+                    sourceType: "portal",
+                    url: "https://data.example.org/areas.geojson",
+                  },
+                ],
+                catalog: [],
+              },
+            },
+          ],
+        },
+      ],
+      onRecordDatasetSelection,
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    const confirm = within(card).getByRole("button", { name: /Confirm source for this node/ });
+    expect(confirm).toBeDisabled();  // nothing selected yet
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    fireEvent.click(confirm);
+    await screen.findByText(/Source recorded for this node/);
+    // Identifiers ONLY: the server resolves the url against its own rows.
+    expect(onRecordDatasetSelection).toHaveBeenCalledWith([
+      { lane: "external", key: "https://data.example.org/areas.geojson" },
+    ]);
+  });
+
+  // dev/127: the trail rides the transcript, so opening the panel shows it.
+  it("renders a failed node's attempt trail from the transcript", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      turns: [
+        {
+          role: "agent" as const,
+          text: "Solved 5 of 7 plan nodes.",
+          content: [
+            {
+              type: "solveAttempts" as const,
+              nodeId: "08b108a1",
+              label: "Calculate Density",
+              attachmentId: "att-nb",
+              rounds: 2,
+              stoppedBy: "budget",
+              verdict: "fail",
+              attempts: [
+                {
+                  round: 1,
+                  verdict: "fail",
+                  kind: "execution-error",
+                  error: "KeyError: 'community_area'",
+                  code: "merged = a.merge(b, on='community_area')",
+                },
+                {
+                  round: 2,
+                  verdict: "fail",
+                  kind: "execution-error",
+                  error: "AttributeError: 'DataFrame' object has no attribute 'crs'",
+                  code: "return merged.to_crs(3395)",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      onOpenAgentChat,
+    });
+    const card = screen.getByRole("group", { name: /Attempts to fix Calculate Density/ });
+    expect(card).toHaveTextContent("KeyError: 'community_area'");
+    expect(card).toHaveTextContent("return merged.to_crs(3395)");
+    expect(card).toHaveTextContent(/this node's time budget was spent/);
+    fireEvent.click(
+      within(card).getByRole("button", { name: /Open the Node Builder for Calculate Density/ }),
+    );
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-nb");
+  });
+
+  it("a Dataset Finder on the canvas offers no per-node confirm", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.dataset-finder@1.0.0",
+        name: "Dataset Finder",
+        target: { kind: "canvas" as const },
+      },
+      turns: [
+        {
+          role: "agent" as const,
+          text: "candidates",
+          content: [
+            {
+              type: "datasetCandidates" as const,
+              lanes: {
+                external: [{ name: "Chicago areas", sourceType: "portal" }],
+                catalog: [],
+              },
+            },
+          ],
+        },
+      ],
+      onRecordDatasetSelection: jest.fn(),
+    });
+    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    expect(
+      within(card).queryByRole("button", { name: /Confirm source for this node/ }),
+    ).toBeNull();
+  });
+});

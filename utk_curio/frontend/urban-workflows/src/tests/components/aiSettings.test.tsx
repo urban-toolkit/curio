@@ -54,6 +54,20 @@ let mockModels: {
 };
 let mockModelsRejects: string | null = null;
 
+// dev/116: the Connection keys section lives in this modal; its client is
+// mocked so the suite never fetches, and a mutable list drives the table.
+let mockKeys: Array<Record<string, unknown>> = [];
+const mockPut = jest.fn();
+const mockRemove = jest.fn();
+jest.mock("../../api/connectionKeysApi", () => ({
+  connectionKeysApi: {
+    list: jest.fn(() => Promise.resolve({ keys: mockKeys })),
+    put: (...args: unknown[]) => mockPut(...args),
+    remove: (...args: unknown[]) => mockRemove(...args),
+    suggestName: jest.fn(() => Promise.resolve({ name: "census" })),
+  },
+}));
+
 // Spread requireActual rather than replacing the module: a partial mock that
 // enumerates exports breaks the moment someone adds one, which has bitten this
 // suite before. Only getPublicConfig is used by the modal.
@@ -673,6 +687,96 @@ describe("AI Settings: the model suggestions are canonical ids", () => {
       expect(box.placeholder).not.toMatch(suffixed);
       unmount();
     }
+  });
+});
+
+
+describe("AI Settings: Connection keys (dev/116)", () => {
+  const CENSUS = {
+    name: "census", host: "api.census.gov", delivery: "query:key",
+    use: 'api_key = curio_secret("census")', createdAt: 1, lastUsedAt: null,
+  };
+
+  beforeEach(() => {
+    mockUser = { ...SIGNED_IN };
+    mockKeys = [];
+    mockPut.mockReset();
+    mockRemove.mockReset();
+  });
+
+  it("is a collapsed section with the count; nothing of it joins the form until opened", async () => {
+    mockKeys = [CENSUS];
+    open();
+    const section = screen.getByTestId("connection-keys-section");
+    await waitFor(() => expect(section).toHaveTextContent("Connection keys (1)"));
+    expect(section).not.toHaveAttribute("open");
+    expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();
+    // The provider form's Save stays the only /save/i button while collapsed.
+    expect(screen.getAllByRole("button", { name: /save/i })).toHaveLength(1);
+  });
+
+  it("lists refs only — never a value — and the key field is masked and write-only", async () => {
+    mockKeys = [CENSUS];
+    open();
+    fireEvent.click(await screen.findByText(/^Connection keys/));
+    const table = await screen.findByRole("table");
+    expect(table).toHaveTextContent("census");
+    expect(table).toHaveTextContent("api.census.gov");
+    expect(table).toHaveTextContent('query parameter "key"');
+    expect(table).toHaveTextContent("never used");
+    const value = screen.getByLabelText("Key") as HTMLInputElement;
+    expect(value.type).toBe("password");
+    expect(value.autocomplete).toBe("new-password");
+    expect(value.value).toBe("");
+    expect(screen.getByText(/never appears in your dataflow, proposals or chat/)).toBeInTheDocument();
+  });
+
+  it("a focus from a card opens the section with the host filled and a name suggested", async () => {
+    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }} />);
+    expect(screen.getByTestId("connection-keys-section")).toHaveAttribute("open");
+    expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe("api.census.gov");
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("census");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
+  });
+
+  it("saving sends host, value and delivery, then clears the key field and shows the use line", async () => {
+    mockPut.mockResolvedValue({ key: CENSUS });
+    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov" }} />);
+    fireEvent.change(screen.getByLabelText("Sent as"), { target: { value: "query" } });
+    fireEvent.change(screen.getByLabelText("Parameter name"), { target: { value: "key" } });
+    fireEvent.change(screen.getByLabelText("Key"), { target: { value: "s3cr3t-value" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await waitFor(() => expect(mockPut).toHaveBeenCalledWith("census", { host: "api.census.gov", value: "s3cr3t-value", delivery: "query:key" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent('Use it in node code as api_key = curio_secret("census")'));
+    expect((screen.getByLabelText("Key") as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("table")).toHaveTextContent("census");
+  });
+
+  it("a 409 offers to replace the host binding; remove asks first and names the consequence", async () => {
+    mockKeys = [CENSUS];
+    const conflict = Object.assign(new Error("'census' is saved for api.census.gov; pass replace to bind it to other.gov"), { status: 409 });
+    mockPut.mockRejectedValueOnce(conflict).mockResolvedValueOnce({ key: { ...CENSUS, host: "other.gov" } });
+    mockRemove.mockResolvedValue({ deleted: "census" });
+    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "other.gov", suggestedName: "census" }} />);
+    fireEvent.change(screen.getByLabelText("Key"), { target: { value: "s3cr3t-value" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/pass replace/));
+    fireEvent.change(screen.getByLabelText("Key"), { target: { value: "s3cr3t-value" } });
+    fireEvent.click(screen.getByRole("button", { name: "Replace the host binding" }));
+    await waitFor(() => expect(mockPut).toHaveBeenLastCalledWith("census", expect.objectContaining({ replace: true, host: "other.gov" })));
+    // Remove: a confirmation with the consequence, then the call.
+    fireEvent.click(await screen.findByRole("button", { name: "Remove census" }));
+    expect(screen.getByRole("alert")).toHaveTextContent('Nodes that call curio_secret("census") will fail until a key with this name is saved again.');
+    fireEvent.click(screen.getByRole("button", { name: "Confirm removing census" }));
+    await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("census"));
+    await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
+  });
+
+  it("a temporary guest sees no key form; the shared guest sees it with the sharing banner", async () => {
+    mockUser = { ...SIGNED_IN, is_guest: true };
+    const { unmount } = open();
+    expect(screen.queryByTestId("connection-keys-section")).toBeNull();
+    unmount();
   });
 });
 

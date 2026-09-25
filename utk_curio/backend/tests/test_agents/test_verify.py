@@ -68,6 +68,58 @@ class TestGenericGate:
         )
         assert outcome["status"] == "refused"
 
+    def test_a_redirect_to_an_html_page_is_named_not_hidden(self):
+        # The Census API's key-less answer (dev/115 live re-test, 2026-09-08):
+        # 302 → /data/missing_key.html, 200 text/html. "verified" by status,
+        # but the outcome now says where it landed and what the page is.
+        def _fn(method, url):
+            if url.endswith("/missing_key.html"):
+                body = b"<html><head><title>Missing <b>Key</b></title></head><body>x</body></html>"
+                return 200, {"Content-Type": "text/html;charset=utf-8"}, body, None
+            return 302, {}, b"", "https://data.example.gov/data/missing_key.html"
+
+        outcome = verify.verify_external_source(
+            "https://data.example.gov/data/2022/acs/acs5?get=NAME&for=tract:*",
+            request_fn=_fn, resolver=_resolver(),
+        )
+        assert outcome["status"] == "verified" and outcome["httpStatus"] == 200
+        assert outcome["finalUrl"] == "https://data.example.gov/data/missing_key.html"
+        assert outcome["pageTitle"] == "Missing Key"
+        assert "_body" not in outcome
+
+    def test_a_plain_text_error_answer_is_sampled(self):
+        def _fn(method, url):
+            return 400, {"Content-Type": "text/plain"}, b"error: unknown/unsupported geography heirarchy\n", None
+
+        outcome = verify.verify_external_source(
+            "https://data.example.gov/x", request_fn=_fn, resolver=_resolver(),
+        )
+        assert outcome["status"] == "unreachable" and outcome["httpStatus"] == 400
+        assert outcome["bodySample"] == "error: unknown/unsupported geography heirarchy"
+        assert "finalUrl" not in outcome  # no redirect happened
+        # JSON answers keep the shape sample and never grow a body sample.
+        ok = verify.verify_external_source(
+            "https://data.example.gov/records",
+            request_fn=_request({"records": (200, {"total": 1})}), resolver=_resolver(),
+        )
+        assert "bodySample" not in ok and "pageTitle" not in ok
+
+    def test_a_keyed_probe_reports_a_redirect_against_the_request_it_made(self):
+        # dev/116: with params appended, "finalUrl" appears only on a real
+        # redirect — never merely because the probe's URL grew a query string.
+        seen = []
+
+        def _fn(method, url, headers=None):
+            seen.append((url, headers))
+            return 200, {"Content-Type": "application/json"}, b"[]", None
+
+        outcome = verify.verify_external_source(
+            "https://data.example.gov/data", request_fn=_fn, resolver=_resolver(),
+            params={"key": "s3cr3t-value-0123"}, headers={"X-Api-Key": "hdr-value-0123"},
+        )
+        assert outcome["status"] == "verified" and "finalUrl" not in outcome
+        assert seen == [("https://data.example.gov/data?key=s3cr3t-value-0123", {"X-Api-Key": "hdr-value-0123"})]
+
     def test_no_url_is_loudly_unverified(self):
         outcome = verify.verify_external_source(None)
         assert outcome["status"] == "unverified"

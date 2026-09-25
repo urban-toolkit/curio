@@ -1,0 +1,140 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Regression",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Regression.json",
+    "sha256": "801e9e77eecc61c14d9dd3c7a6a7dc37bca8efd71aabeb1c8536868bc87a3599",
+    "walkthrough": null
+  },
+  "prompt": "Load the Niteroi road network with its surface, park and water layers from the OSM extract at docs/examples/data/niteroi.osm.pbf with Autark and run a spatial join over it. Normalise the lane count on the GPU by clamping it to between one and eight, then fan the augmented roads and their context layers out to two views: a 3D map coloured by normalised lane count and a brushable lane distribution histogram, with brushing on the histogram highlighting roads on the map.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/niteroi.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization2",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization3",
+        "kind": "interaction"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization4",
+        "kind": "interaction"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/niteroi.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "browser-only-execution",
+      "gpu",
+      "interaction-edge"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark GPU compute stages need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Grammar-only with GPU compute and a brush-back link."
+}

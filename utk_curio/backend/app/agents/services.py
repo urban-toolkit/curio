@@ -28,7 +28,20 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
-from utk_curio.backend.app.agents import egress, node_context, verify
+from utk_curio.backend.app.agents import (
+    agent_jobs,
+    document_validation,
+    egress,
+    failure_text,
+    input_contract,
+    node_context,
+    plan_topology,
+    result_shape,
+    source_grounding,
+    upstream_schema,
+    verify,
+)
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -574,6 +587,93 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     }
 
 
+def _repair_required_closure(
+    user_key: str, project_id: str, coord: str, *, attachment_id: str | None = None
+) -> list[str]:
+    """``DEC-080`` (memo dev/126): complete an installed agent's declared
+    hard-dependency closure at the point the USER acts on the dependent.
+
+    A project whose lockfile predates a ``requiresAgents`` declaration is
+    missing an agent a SERVER path of the dependent invokes without model
+    choice, and no amount of conversation can fix that: the run stalls on a
+    reviewed install for something the user already consented to when they
+    installed the dependent (that is what ``DEC-068`` made an install mean).
+    So the closure is completed through the ONE install path
+    (``install_in_project`` — same materialization, same single spec write,
+    same 409 when a member is visible nowhere), bounded to ``requiresAgents``
+    members, never a preferred delegate, and never a model decision:
+    `REQ-ORCH-001` is untouched.
+
+    Returns the coords added (empty when the closure was already complete, or
+    when it could not be completed — a refusal is logged and disclosed by the
+    caller's own fallback lane, never raised into the user's action).
+    """
+    from utk_curio.backend.app.agents import project_agents
+
+    try:
+        manifest = _resolve_definition(user_key, coord)
+        if manifest is None or not manifest.requires_agents:
+            return []
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return []
+        installed_ids = {
+            c.split("@", 1)[0] for c in project_agents.project_agents(spec)
+        }
+        required, missing = delegation.required_closure(user_key, manifest)
+        if missing:
+            log.warning(
+                "Required agent(s) %s of %s are visible nowhere — project %s keeps the "
+                "reviewed install lane", ", ".join(missing), coord, project_id,
+            )
+            return []
+        if all(c.split("@", 1)[0] in installed_ids for c in required):
+            return []
+        added = install_in_project(user_key, project_id, coord).get("installed") or []
+    except Exception:  # noqa: BLE001
+        log.warning("Could not repair the required closure of %s in project %s",
+                    coord, project_id, exc_info=True)
+        return []
+    if added and attachment_id:
+        _disclose_closure_repair(user_key, project_id, attachment_id, coord, added)
+    return added
+
+
+def _disclose_closure_repair(
+    user_key: str, project_id: str, attachment_id: str, coord: str, added: list[str]
+) -> None:
+    """Say in the transcript what the repair installed and why (dev/126) — an
+    install the user did not click on this turn is never silent. Best-effort:
+    the disclosure never fails the action it describes."""
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        record = attachments.get_attachment(spec or {}, attachment_id) or {}
+        session_id = record.get("sessionId")
+        if not isinstance(session_id, str):
+            return
+        dependent = _resolve_definition(user_key, coord)
+        dependent_name = getattr(dependent, "name", None) or coord
+        names = []
+        for c in added:
+            m = _resolve_definition(user_key, c)
+            names.append(getattr(m, "name", None) or c)
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn(
+                "agent",
+                f"Added {', '.join(names)} — required by {dependent_name}.",
+                content=[{
+                    "type": "card",
+                    "kind": "result",
+                    "title": "Added required agents",
+                    "lines": [c for c in added[:6]] + [f"required by {coord}"],
+                }],
+            )],
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("Could not disclose the closure repair for %s", coord, exc_info=True)
+
+
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     """Remove *coord* from the project's lockfile and drop its defaults record.
 
@@ -649,6 +749,48 @@ def _read_spec_or_404(user_key: str, project_id: str) -> dict:
     return spec
 
 
+def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record: dict) -> bool:
+    """dev/115 (DEC-021, single-process): a builder session left ``solving``
+    by an execution this process does not hold becomes ``interrupted`` — the
+    transcript says so once, nothing is re-run, and the caller's *spec* is
+    persisted when anything changed. Runs wherever a builder session is read
+    for action (attachment listing, Solve, cancel)."""
+    session = record.get("builderSession")
+    if not isinstance(session, dict):
+        return False
+    before = session.get("solveExecutionId")
+    if not agent_jobs.reconcile_builder_session(session):
+        return False
+    record["builderSession"] = session
+    projects_storage.write_spec(user_key, project_id, spec)
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str):
+        try:
+            pending = sum(
+                1 for status in (session.get("nodeRuns") or {}).values()
+                if status in ("pending", "failed")
+            )
+            sessions.append_turns(
+                user_key, project_id, session_id, record.get("attachmentId"),
+                [sessions.make_turn(
+                    "agent",
+                    "Solve was interrupted — the server stopped while it was running. "
+                    "Nothing was replayed; finished nodes kept their content. "
+                    f"{pending} node{'s' if pending != 1 else ''} still need solving — Retry continues.",
+                    content=[{
+                        "type": "card", "kind": "error", "title": "Solve interrupted",
+                        "lines": [
+                            f"execution {str(before or '')[:8]} expired with the process",
+                            "Retry starts a new execution linked to it (DEC-021: never a replay)",
+                        ],
+                    }],
+                )],
+            )
+        except Exception:
+            pass
+    return True
+
+
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
     """Attachment record + a resolved name/hooks for its source template (best-effort).
 
@@ -687,6 +829,9 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
         "builderSession": record.get("builderSession"),
+        # dev/115: the running background job this process holds for the
+        # attachment (Solve batch / per-node Solve), or null.
+        "liveJob": _live_job_payload(user_key, record),
     }
 
 
@@ -724,9 +869,21 @@ def _proposal_summary(proposal: object) -> dict | None:
     return summary
 
 
+def _live_job_payload(user_key: str, record: dict) -> dict | None:
+    """dev/115: the attachment's running background job, if this process
+    holds one — the dock's running indicator (docs/11:178)."""
+    job = agent_jobs.live_job(user_key, str(record.get("attachmentId") or ""))
+    return job.to_payload() if job is not None else None
+
+
 def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
     spec = _read_spec_or_404(user_key, project_id)
-    return [_attachment_card(spec, r, user_key) for r in attachments.list_attachments(spec)]
+    records = attachments.list_attachments(spec)
+    # dev/115 (DEC-021): a session left "solving" by a process that is gone is
+    # reconciled to "interrupted" the first time anyone reads it.
+    for record in records:
+        _reconcile_solve_session(user_key, project_id, spec, record)
+    return [_attachment_card(spec, r, user_key) for r in records]
 
 
 def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> dict:
@@ -737,6 +894,10 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
         raise AgentServiceError(
             "install the agent in this project before attaching it", 400
         )
+    # DEC-080 (dev/126): attaching is acting on this agent — complete its
+    # declared closure before it can run.
+    if _repair_required_closure(user_key, project_id, coord):
+        spec = _read_spec_or_404(user_key, project_id)
     # Enforce the agent's declared compatibility: a canvas-only agent can only
     # attach to the canvas, a node-only agent only to nodes, a dual-compatible
     # agent to either. (attachments.attach still validates the target exists.)
@@ -762,10 +923,9 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
                 (n for n in nodes if isinstance(n, dict) and n.get("id") == target_id), None
             )
             node_type = str((node or {}).get("type") or "")
-            # Canonical suffix, tolerant of versioned ids and legacy enum names
-            # ("pkg/tmpl@1" → "tmpl"; "DATA_LOADING" → "data-loading").
-            suffix = node_type.rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
-            if suffix not in {r.lower() for r in node_target.requires}:
+            # dev/126: ONE reading of the rule — the same predicate the plan
+            # apply's automatic attach uses (attachments.node_target_matches).
+            if not attachments.node_target_matches(manifest, node_type):
                 raise AgentServiceError(
                     f"this agent attaches to {', '.join(sorted(node_target.requires))} "
                     f"nodes; that node is {node_type or 'untyped'}",
@@ -825,6 +985,230 @@ def update_attachment_title(
     return _attachment_card(spec, record, user_key)
 
 
+def record_dataset_selection(
+    user_key: str, project_id: str, attachment_id: str, picks: object,
+    config: "ProviderConfig | None" = None,
+) -> dict:
+    """dev/126: record the user's confirmed dataset selection for a node.
+
+    The picks are ``{lane, key}`` pairs — a catalog row's ``datasetId`` or an
+    external row's ``url`` — resolved against the LATEST ``datasetCandidates``
+    part persisted in this attachment's own session. The client therefore sends
+    identifiers only: a source the runtime never proposed (and never probed)
+    cannot enter through this endpoint. External picks are re-probed at
+    confirmation time through the ``DEC-053`` chokepoint, and the verdict is
+    what the record keeps — an unreachable pick does not resolve the node.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    if record.get("coord", "").split("@", 1)[0] != dataset_resolution.FINDER_AGENT_ID:
+        raise AgentServiceError(
+            "a dataset selection belongs to a Dataset Finder attachment", 400
+        )
+    target = record.get("target") or {}
+    if target.get("kind") != "node":
+        raise AgentServiceError(
+            "a dataset selection belongs to a Dataset Finder attached to a node", 400
+        )
+    session_id = record.get("sessionId")
+    turns = (
+        sessions.read_turns(user_key, project_id, session_id)
+        if isinstance(session_id, str) else []
+    )
+    part = next(
+        (
+            p for turn in reversed(turns) for p in (turn.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "datasetCandidates"
+        ),
+        None,
+    )
+    try:
+        rows = dataset_resolution.resolve_picks(
+            part, picks,
+            # dev/132: the Data Catalog listing, so a dataset the user just
+            # imported from the card's download steps can be confirmed — the
+            # card predates the file.
+            catalog_rows=_catalog_rows_for_discovery(user_key, project_id),
+        )
+    except dataset_resolution.DatasetResolutionError as exc:
+        raise AgentServiceError(str(exc), 422) from exc
+    # Re-probe the external picks: the card may be minutes or days old, and the
+    # record must carry what is true NOW (the row keeps its own mint-time
+    # verdict in the transcript either way).
+    budget = egress.CallBudget(_RUN_EGRESS_CALLS)
+    for row in rows:
+        if row["lane"] == "external" and row.get("url"):
+            row["verification"] = verify.verify_external_source(row["url"], budget=budget)
+            # dev/132: and what can be DONE with it now — the card's verdict
+            # may be days old, and the delegation below depends on this one.
+            _mint_row_access(row)
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = _read_spec_or_404(user_key, project_id)
+        state = dataset_resolution.record_selection(fresh, attachment_id, rows)
+        if state is None:
+            raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+        projects_storage.write_spec(user_key, project_id, fresh)
+    if isinstance(session_id, str):
+        try:
+            names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
+            lines = [
+                f"{r['lane']} · {r.get('name') or r.get('datasetId') or r.get('url')}"
+                + (f" · {(r.get('verification') or {}).get('status')}"
+                   if r["lane"] == "external" else
+                   (" · installed" if r.get("installed") else " · not installed yet"))
+                for r in rows[:8]
+            ]
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent",
+                    f"Source recorded for this node: {names}."
+                    + (" The dataset must be installed from the Data Catalog before "
+                       "Solve can load it."
+                       if state["status"] == dataset_resolution.STATE_AWAITING_INSTALL else
+                       " Solve the node to build its loader from this source."
+                       if state["status"] == dataset_resolution.STATE_RESOLVED else
+                       " Nothing selectable was confirmed — the runtime could not reach it."),
+                    content=[{
+                        "type": "card",
+                        "kind": "result" if state["status"] != dataset_resolution.STATE_CANDIDATES_PENDING
+                        else "error",
+                        "title": "Dataset selection recorded",
+                        "lines": lines,
+                    }],
+                )],
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("Could not log the dataset selection for %s", attachment_id,
+                        exc_info=True)
+    payload = {
+        "attachmentId": attachment_id,
+        "nodeId": target.get("targetId"),
+        "status": state["status"],
+        "picks": rows,
+    }
+    # dev/132 (R1): a confirmed row code can FETCH is handed to the node's own
+    # builder automatically — the owner asked for the delegation, not for a
+    # prompt they must compose. A manual row is not delegated: its file does
+    # not exist yet, and its card teaches the download and offers Import.
+    delegated = _delegate_confirmed_fetch(
+        user_key, project_id, str(target.get("targetId") or ""), rows, state, config,
+    )
+    if delegated is not None:
+        payload["delegated"] = delegated
+    return payload
+
+
+#: dev/132: the two rows worth delegating a fetch for — an external row the
+#: probe could read, and a catalog row already installed (its path exists).
+def _fetchable_picks(rows: list[dict]) -> list[dict]:
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("lane") == "external" and row.get("access") == verify.ACCESS_FETCHABLE:
+            out.append(row)
+        elif row.get("lane") == "catalog" and (row.get("installed") or row.get("imported")):
+            out.append(row)
+    return out
+
+
+def _delegate_confirmed_fetch(
+    user_key: str,
+    project_id: str,
+    node_id: str,
+    rows: list[dict],
+    state: dict,
+    config: "ProviderConfig | None",
+) -> dict | None:
+    """dev/132 (R1): start the node's own builder on the confirmed source.
+
+    The owner's instruction — *"The datafinder should be able to automatically
+    delegate the code to fetch external api datasets"* — closes `DEC-047`'s
+    manual seam: the Finder no longer composes a prompt for the user to send.
+    Nothing here authors anything itself: it starts the SAME detached per-node
+    Solve the user's own button starts (dev/115, `DEC-073`), which reads the
+    recorded source (dev/126), verifies before writing (dev/129) and lands
+    reviewed content for a node that already has some (`DEC-006`).
+
+    Returns what happened — ``delegating`` with the job's execution id,
+    ``session-running`` when dev/131's session will pick the node up on its
+    next pass (its record just moved, which is exactly its trigger),
+    ``manual-download`` when the file is still on a portal, or a reason —
+    never raising: a selection is recorded whether or not a build can start.
+    """
+    from utk_curio.backend.app.agents import agent_jobs, dataset_resolution
+
+    if not node_id or state.get("status") != dataset_resolution.STATE_RESOLVED:
+        return None
+    fetchable = _fetchable_picks(rows)
+    if not fetchable:
+        manual = [r for r in rows if (r or {}).get("access") == verify.ACCESS_MANUAL]
+        if manual:
+            return {
+                "status": "manual-download",
+                "reason": (
+                    "this source is a portal download — follow the steps on the "
+                    "card and use Import dataset; solving continues from the "
+                    "imported dataset"
+                ),
+            }
+        return None
+    if config is None:
+        return {"status": "skipped", "reason": "no provider is configured for this user"}
+    try:
+        spec = _read_spec_or_404(user_key, project_id)
+    except AgentServiceError:
+        return None
+    # A running dataflow session owns this node: dev/131 re-reads the spec each
+    # pass and this record IS the change it watches for. Two builders on one
+    # node would race for its content.
+    for record in attachments.list_attachments(spec):
+        job = agent_jobs.live_job(user_key, str(record.get("attachmentId") or ""))
+        if job is not None and job.kind == "solve-batch":
+            return {
+                "status": "session-running",
+                "reason": "the running Solve session picks this node up on its next pass",
+            }
+    builder = None
+    for agent_id in _NODE_BUILD_AGENTS:
+        builder = _node_attachment_of(spec, agent_id, node_id)
+        if builder is not None:
+            break
+    if builder is None:
+        return {
+            "status": "no-builder",
+            "reason": (
+                "no builder is attached to this node — Solve the node, or attach "
+                "a Node Builder to it"
+            ),
+        }
+    builder_id = str(builder.get("attachmentId") or "")
+    try:
+        subscription = solve_node_stream(
+            user_key, project_id, builder_id, config, node_id=node_id,
+        )
+    except AgentServiceError as exc:
+        return {"status": "skipped", "reason": str(exc)}
+    except Exception:  # noqa: BLE001 — a selection is recorded regardless
+        log.warning("Could not delegate the fetch for node %s", node_id, exc_info=True)
+        return {"status": "skipped", "reason": "the build could not be started"}
+    job = agent_jobs.live_job(user_key, builder_id)
+    del subscription  # the job is detached; the client re-attaches to it
+    return {
+        "status": "delegating",
+        "attachmentId": builder_id,
+        "nodeId": node_id,
+        "sources": [
+            str(r.get("name") or r.get("datasetId") or r.get("url") or "")[:120]
+            for r in fetchable[:8]
+        ],
+        **({"executionId": job.job_id} if job is not None else {}),
+    }
+
+
 def _record_or_404(spec: dict, attachment_id: str) -> dict:
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
@@ -877,6 +1261,13 @@ def apply_proposal(
     model/tool/user *text* can reach this path — only this endpoint."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): a plan apply attaches the plan-node agents, so the
+    # closure is completed BEFORE the apply reads the lockfile it consults.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     # dev/90 A16: settle the same-reply queue first, then address the
     # proposal by id in EITHER pending home — active slot or queue.
     attachments.reconcile_proposal_queue(spec, attachment_id)
@@ -1083,6 +1474,15 @@ def _mint_node_template_create(
         return "refused", "template.content must be a non-empty string", None
     if len(code) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", "template.content exceeds the proposal size bound", None
+    # dev/114 (DEC-072): a new type's first-node content passes the same gate
+    # for path/URL literals (the no-source rule needs a known data-loading
+    # type, which a brand-new template is not).
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=code, engine=engine, node_type=None, params=params, is_data_loading=False,
+    )
+    if refusal:
+        return _refuse_params(refusal)
     try:
         existing = packages_services.available_templates(user_key, project_id)
     except Exception as exc:
@@ -1120,6 +1520,8 @@ def _mint_node_template_create(
     # the justification is what the user judges (memo dev/48 §3.2b).
     part["justification"] = justification.strip()
     part["template"] = {"label": label, "engine": engine, "description": description}
+    if verdict.source:
+        part["source"] = verdict.source  # dev/114
     _store_proposal(
         user_key,
         project_id,
@@ -1257,10 +1659,14 @@ def _validate_plan_fanin(
             continue
         if edge.get("source") in remove_node_set or edge.get("target") in remove_node_set:
             continue
+        if plan_topology.is_interaction_edge(edge):
+            continue  # dev/112: feedback edges take no input port (parity with _plan_edge_context)
         target = edge.get("target")
         surviving_in[target] = surviving_in.get(target, 0) + 1
     incoming: dict[str, list[str]] = {}
     for edge in plan.get("edges", []):
+        if plan_topology.is_interaction_edge(edge):
+            continue  # dev/112
         incoming.setdefault(edge["to"], []).append(edge["from"])
     for target, sources in incoming.items():
         if target in plan_nodes:
@@ -1320,6 +1726,47 @@ def _validate_plan_fanin(
                 f"edges[{i}].toHandle {handle!r}: merge inputs are in_0..in_4"
             )
     return errors
+
+
+def _interaction_spec_edge(source: str, target: str) -> dict:
+    """dev/112: the spec shape of a Trill Interaction edge — what
+    ``TrillGenerator`` writes and ``loadTrill`` reads (``in/out`` both ends,
+    bidirectional on the canvas)."""
+    return {
+        "id": str(uuid.uuid4()),
+        "source": source,
+        "target": target,
+        "sourceHandle": "in/out",
+        "targetHandle": "in/out",
+        "type": plan_topology.INTERACTION_EDGE_TYPE,
+    }
+
+
+def _topology_clause(spec: dict) -> str:
+    """dev/112 (G5): the applied turn's verdict on the saved graph — what the
+    agent reads to confirm a repair instead of asserting one. A cycle the plan
+    could not have created (the user drew it) is reported here, never refused."""
+    dataflow = spec.get("dataflow") or {}
+    nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
+    pairs = plan_topology.net_data_edges(dataflow.get("edges") or [], {"edges": []}, set(), set())
+    path = plan_topology.find_data_cycle(pairs)
+    if path is None:
+        return "Topology: acyclic."
+    return "Topology: cycle through " + plan_topology.format_cycle(
+        path, lambda x: (nodes.get(x) or {}).get("goal") or x
+    ) + "."
+
+
+def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
+    """dev/112: ``, removed 1 node and 2 connections`` — truthful for edges
+    (the old copy counted nodes only, so an edge-only removal read "removed 0
+    nodes"). Empty when nothing was removed."""
+    parts = []
+    if n_nodes:
+        parts.append(f"{n_nodes} node{'s' if n_nodes != 1 else ''}")
+    if n_edges:
+        parts.append(f"{n_edges} connection{'s' if n_edges != 1 else ''}")
+    return f", {prefix}" + " and ".join(parts) if parts else ""
 
 
 def _mint_dataflow_plan(
@@ -1422,6 +1869,49 @@ def _mint_dataflow_plan(
     )
     if fanin_errors:
         return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
+    # dev/112 (DEC-070): topology validated BEFORE anything materializes, like
+    # fan-in. (1) Interaction edges obey the preamble's rule (visualization ↔
+    # data-pool) — an executable rule, not prose the model must infer. (2) No
+    # plan DATA edge may close a cycle in the NET graph. Before this, an
+    # agent asked to "make it an interaction edge" had its kind dropped by
+    # the grammar and re-applied the same data edge — the same cycle — on
+    # every round; the only enforcement was the execution runner's refusal,
+    # which the agent never saw.
+    plan_types = {n["ref"]: n["nodeType"] for n in plan["nodes"]}
+
+    def _type_of_endpoint(endpoint: str):
+        if endpoint in plan_types:
+            return plan_types[endpoint]
+        node = existing_nodes.get(endpoint)
+        return node.get("type") if node else None
+
+    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint)
+    if kind_errors:
+        return "refused", "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors), None
+    net_pairs = plan_topology.net_data_edges(
+        existing_edges, plan, remove_node_set, set(remove_edges)
+    )
+    closing = plan_topology.closing_plan_edges(net_pairs, plan)
+    if closing:
+        def _label(node_id: str) -> str:
+            return _plan_endpoint_label(node_id, plan, existing_nodes)
+        cycle_errors = [
+            f"edge {_label(u)!r} → {_label(v)!r} closes a cycle: "
+            + plan_topology.format_cycle(path, _label)
+            for u, v, path in closing[:5]
+        ]
+        return (
+            "refused",
+            "\n- ".join(
+                ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
+                + cycle_errors
+                + [
+                    "remove one data edge of the loop, or — for a visualization feeding "
+                    "back into a data-pool — make that edge \"kind\": \"interaction\""
+                ]
+            ),
+            None,
+        )
     # The cascade: edges incident to removed nodes die with them (dev/59) —
     # computed here for the review card, recomputed at apply as the truth.
     cascade_edge_ids = [
@@ -1464,7 +1954,9 @@ def _mint_dataflow_plan(
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
     summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
     if remove_nodes or remove_edges:
-        summary += f", removes {len(remove_nodes)} node{'s' if len(remove_nodes) != 1 else ''}"
+        # dev/112: removed connections counted too — the user approved edge
+        # removals five times without seeing them named.
+        summary += _removal_phrase(len(remove_nodes), len(remove_edges), prefix="removes ")
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
@@ -1499,6 +1991,7 @@ def _mint_dataflow_plan(
                 "from": e["from"],
                 "to": e["to"],
                 **({"toHandle": e["toHandle"]} if e.get("toHandle") else {}),
+                **({"kind": e["kind"]} if e.get("kind") else {}),  # dev/112
                 "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes),
                 "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes),
             }
@@ -1519,6 +2012,23 @@ def _mint_dataflow_plan(
         ]
         part["plan"]["removedEdgeCount"] = len(remove_edges)
         part["plan"]["cascadeCount"] = len(cascade_edge_ids)
+        # dev/112: removed connections reviewed by NAME too (DEC-049.2 applied
+        # to edges) — endpoint labels from the saved spec, kind preserved.
+        edges_by_id = {str(e.get("id")): e for e in existing_edges}
+        part["plan"]["removedEdges"] = [
+            {
+                "id": edge_id,
+                "fromLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("source")), plan, existing_nodes),
+                "toLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("target")), plan, existing_nodes),
+                **(
+                    {"kind": "interaction"}
+                    if plan_topology.is_interaction_edge(edges_by_id[edge_id])
+                    else {}
+                ),
+            }
+            for edge_id in remove_edges
+            if edge_id in edges_by_id
+        ]
     # The builder session (DR-2) transitions on the SAME spec write: the
     # attachment record is rule-9 share-stripped and save-preserved already.
     record = attachments.get_attachment(spec, loop_ctx["attachment_id"])
@@ -1623,37 +2133,144 @@ def set_plan_goal(
     }
 
 
-def _attach_node_builder(spec: dict, node_id: str) -> str | None:
-    """dev/71: best-effort Node Builder attachment for a plan-created node.
-    Skips (returning None) when the template is not installed or the node
-    already carries one — node creation NEVER fails over this."""
+#: dev/126: the agents a plan-created node carries. WHICH of them attaches to
+#: a given node is the manifests' own compatibility declaration, read through
+#: ``attachments.node_target_matches`` — the Node Builder accepts any node, the
+#: Dataset Finder only a ``data-loading`` one (dev/50's ``requires``). No second
+#: predicate lives here, so this list can never drift from the manifests.
+_PLAN_NODE_AGENTS: tuple[str, ...] = ("agent.node-builder", "agent.dataset-finder")
+#: dev/132: which node-attached agent a confirmed source is handed to, in
+#: preference order — the Node Builder owns fetch code (`DEC-047`), and the
+#: Node Content Builder is the fallback a plain plan node carries.
+_NODE_BUILD_AGENTS: tuple[str, ...] = (
+    "agent.node-builder", "agent.node-content-builder",
+)
+
+
+def _installed_project_coord(spec: dict, agent_id: str) -> str | None:
+    """The project lockfile's coord for *agent_id*, or None when absent."""
     from utk_curio.backend.app.agents import project_agents
 
-    coord = next(
+    return next(
         (
             c for c in project_agents.project_agents(spec)
-            if c.split("@", 1)[0] == "agent.node-builder"
+            if c.split("@", 1)[0] == agent_id
         ),
         None,
     )
-    if coord is None:
-        return None
+
+
+def _node_attachment_of(spec: dict, agent_id: str, node_id: str) -> dict | None:
+    """An existing attachment of *agent_id* on node *node_id*, or None."""
     for existing in attachments.list_attachments(spec):
         target = existing.get("target") or {}
         if (
-            existing.get("coord", "").split("@", 1)[0] == "agent.node-builder"
+            existing.get("coord", "").split("@", 1)[0] == agent_id
             and target.get("kind") == "node"
             and target.get("targetId") == node_id
         ):
-            return existing.get("attachmentId")
+            return existing
+    return None
+
+
+def _attach_node_agent(
+    user_key: str | None, spec: dict, agent_id: str, node_id: str, node_type: object
+) -> dict:
+    """Attach ONE agent to a node, idempotently, reporting what happened.
+
+    dev/126: the shared body of dev/71's plan-node attachment. Returns
+    ``{"agentId", "attachmentId" | None, "status": "attached" | "existing" |
+    "skipped", "reason"?}``. Never raises and never writes the spec — the
+    caller's own single write persists it, and a node is never blocked over
+    its agent."""
+    existing = _node_attachment_of(spec, agent_id, node_id)
+    if existing is not None:
+        return {
+            "agentId": agent_id,
+            "attachmentId": existing.get("attachmentId"),
+            "status": "existing",
+        }
+    coord = _installed_project_coord(spec, agent_id)
+    if coord is None:
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": "not installed in this dataflow"}
+    manifest = _resolve_definition(user_key, coord) if user_key else None
+    if manifest is not None and not attachments.node_target_matches(manifest, node_type):
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": f"does not attach to {attachments.canonical_node_suffix(node_type)} nodes"}
     try:
         record = attachments.attach(
             spec, coord, {"kind": "node", "targetId": node_id},
             attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex,
         )
-        return record.get("attachmentId")
-    except Exception:
-        return None  # best-effort: never block the node over its agent
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not attach %s to node %s: %s", agent_id, node_id, exc)
+        return {"agentId": agent_id, "attachmentId": None, "status": "skipped",
+                "reason": str(exc)[:120]}
+    return {"agentId": agent_id, "attachmentId": record.get("attachmentId"),
+            "status": "attached"}
+
+
+def _attach_plan_node_agents(
+    user_key: str | None, spec: dict, node_id: str, node_type: object
+) -> dict:
+    """dev/126: every plan-created node gets its agents — the Node Builder
+    always, the Dataset Finder when the node is a data-loading one — on BOTH
+    apply paths, idempotently, in the caller's own spec write.
+
+    Returns ``{"attached": [row], "skipped": [row], "byAgent": {agentId: id}}``
+    so the apply can SAY what it attached instead of silently dropping it."""
+    rows = [
+        _attach_node_agent(user_key, spec, agent_id, node_id, node_type)
+        for agent_id in _PLAN_NODE_AGENTS
+    ]
+    return {
+        "attached": [
+            {"nodeId": node_id, **r} for r in rows if r["status"] in ("attached", "existing")
+        ],
+        "skipped": [{"nodeId": node_id, **r} for r in rows if r["status"] == "skipped"],
+        "byAgent": {
+            r["agentId"]: r["attachmentId"] for r in rows if r.get("attachmentId")
+        },
+    }
+
+
+def _attached_agent_lines(*results: dict) -> list[str]:
+    """The applied card's truthful account of the agents an apply attached
+    (dev/126): one line naming each agent and how many nodes carry it, plus a
+    line for anything that could not be attached, with its reason."""
+    counts: dict[str, int] = {}
+    skipped: dict[str, str] = {}
+    for result in results:
+        for row in result.get("attached") or []:
+            counts[row["agentId"]] = counts.get(row["agentId"], 0) + 1
+        for row in result.get("skipped") or []:
+            skipped.setdefault(row["agentId"], row.get("reason") or "skipped")
+    lines: list[str] = []
+    if counts:
+        lines.append("agents attached: " + " · ".join(
+            f"{_agent_label(a)} ×{n}" if n > 1 else _agent_label(a)
+            for a, n in sorted(counts.items())
+        ))
+    for agent_id, reason in sorted(skipped.items()):
+        lines.append(f"no {_agent_label(agent_id)}: {reason}")
+    return lines
+
+
+def _agent_label(agent_id: str) -> str:
+    """A built-in's display name for a card line, id as the last resort."""
+    manifest = builtin.get_builtin_manifest(f"{agent_id}@{builtin.BUILTIN_VERSION}")
+    return getattr(manifest, "name", None) or agent_id
+
+
+def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = None,
+                         node_type: object = None) -> str | None:
+    """dev/71: best-effort Node Builder attachment for a plan-created node.
+    Skips (returning None) when the template is not installed or the node
+    already carries one — node creation NEVER fails over this. dev/126: one
+    call into the shared body above."""
+    row = _attach_node_agent(user_key, spec, "agent.node-builder", node_id, node_type)
+    return row.get("attachmentId")
 
 
 def apply_plan_node(
@@ -1728,7 +2345,11 @@ def apply_plan_node(
     # dev/71: attach the Node Builder to the created node (best-effort,
     # idempotent — creation never fails over it); it operates as the node's
     # creation/content orchestration agent (67-6 modify-existing posture).
-    attached_agent_id = _attach_node_builder(spec, node_id)
+    # dev/126: and the Dataset Finder when the node is a data-loading one —
+    # the same helper the whole-plan apply uses, so the two paths cannot
+    # produce different graphs from the same plan.
+    attached = _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
+    attached_agent_id = attached["byAgent"].get("agent.node-builder")
     # dev/71: PROGRESSIVE CONNECTION — apply every plan edge whose other
     # endpoint already exists (created refs or existing canvas nodes), through
     # the 67-8 per-edge policy. The graph grows connected, not as islands;
@@ -1777,6 +2398,7 @@ def apply_plan_node(
                             f"{plan_node['title']} · {plan_node['nodeType']}",
                             f"node {node_id[:8]}",
                             f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
+                            *_attached_agent_lines(attached),
                             f"proposal {proposal_id[:8]}",
                         ],
                     }],
@@ -1796,6 +2418,10 @@ def apply_plan_node(
         "edgeResults": edge_results,
         "edgeStates": dict(ctx["edge_states"]),
         "attachedAgentId": attached_agent_id,
+        # dev/126: every agent this apply gave the node, and anything it could
+        # not — the apply SAYS what it attached instead of dropping it.
+        "attachedAgents": attached["attached"],
+        "skippedAgents": attached["skipped"],
         "builderSession": session,
     }
 
@@ -1901,12 +2527,13 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         reason = source_err or target_err
         edge_states[key] = "refused"
         return {**row, "status": "refused", "reason": reason}, None
+    wants_interaction = plan_topology.is_interaction_edge(plan_edge)
     already = next(
         (
             e for e in ctx["edges"]
             if isinstance(e, dict)
             and e.get("source") == source and e.get("target") == target
-            and str(e.get("type") or "") != "Interaction"
+            and plan_topology.is_interaction_edge(e) == wants_interaction
         ),
         None,
     )
@@ -1915,6 +2542,29 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         return {
             **row, "status": "applied", "edgeId": already.get("id"),
             "note": "already connected",
+        }, None
+    if wants_interaction:
+        # dev/112: feedback edge — no input port, no merge slot, no cycle
+        # question (interaction edges never carry data flow).
+        edge = _interaction_spec_edge(source, target)
+        ctx["edges"].append(edge)
+        edge_states[key] = "applied"
+        return {**row, "status": "applied", "edgeId": edge["id"], "kind": "interaction"}, edge
+    # dev/112: a data edge that would close a cycle in the CURRENT graph is
+    # refused per edge, named — the same predicate the mint applies.
+    current_pairs = [
+        (str(e.get("source")), str(e.get("target")))
+        for e in ctx["edges"]
+        if isinstance(e, dict) and not plan_topology.is_interaction_edge(e)
+    ]
+    closing = plan_topology.closing_plan_edges(current_pairs, {"edges": [{"from": source, "to": target}]})
+    if closing:
+        _, _, path = closing[0]
+        labels = {nid: (n.get("goal") or nid) for nid, n in nodes_by_id.items()}
+        edge_states[key] = "refused"
+        return {
+            **row, "status": "refused",
+            "reason": "closes a cycle: " + plan_topology.format_cycle(path, lambda x: labels.get(x, x)),
         }, None
     # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
     target_type = ctx["types_by_id"].get(target, "")
@@ -2996,6 +3646,30 @@ def _apply_dataflow_plan(
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
     edges = dataflow.setdefault("edges", [])
+    # dev/112 (DEC-070): topology re-checked against the CURRENT spec BEFORE
+    # anything mutates (``_mark_stale`` persists the spec, so a later raise
+    # would persist the removals). The shape digest already catches most
+    # drift; this names the one case it cannot — a plan minted acyclic whose
+    # edges now close a loop through edges the user drew since.
+    pre_ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
+    closing = plan_topology.closing_plan_edges(
+        plan_topology.net_data_edges(
+            edges, plan, set(plan.get("removeNodes", [])),
+            set(plan.get("removeEdges", [])), pre_ref_to_id,
+        ),
+        plan, pre_ref_to_id,
+    )
+    if closing:
+        u, v, path = closing[0]
+        labels = {n.get("id"): (n.get("goal") or n.get("id")) for n in nodes if isinstance(n, dict)}
+        plan_titles = {n["ref"]: n["title"] for n in plan.get("nodes", [])}
+        def _lbl(x):  # noqa: E306
+            return plan_titles.get(x) or labels.get(x) or x
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the canvas changed since this plan was proposed — applying it would now "
+            f"close a cycle ({plan_topology.format_cycle(path, _lbl)}) — ask the agent to replan",
+        )
     # Removals first (dev/59): listed edges + the recomputed cascade of edges
     # incident to removed nodes, then the victims themselves — in place, so
     # unlisted elements are untouched by construction.
@@ -3027,6 +3701,7 @@ def _apply_dataflow_plan(
     already_applied = set(proposal.get("appliedRefs") or [])
     ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
     created_nodes: list[dict] = []
+    attached_results: list[dict] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
@@ -3047,6 +3722,12 @@ def _apply_dataflow_plan(
         }
         nodes.append(created)
         created_nodes.append(created)
+        # dev/126: the whole-plan apply gives every created node its agents,
+        # in THIS apply's single spec write — the per-node path has done so
+        # since dev/71 and the two must not disagree.
+        attached_results.append(
+            _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
+        )
     # dev/67-3 (DEC-051): handles are explicit end-to-end. Merge targets get a
     # deterministic free in_N slot (a named free toHandle wins; occupied or
     # unnamed falls to the lowest free) — the bridge passes these through
@@ -3070,6 +3751,14 @@ def _apply_dataflow_plan(
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
         source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
         target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
+        if plan_topology.is_interaction_edge(plan_edge):
+            # dev/112: the Trill's feedback edge — in/out handles both ends,
+            # type Interaction (what loadTrill/TrillGenerator round-trip); no
+            # input port, no merge slot.
+            edge = _interaction_spec_edge(source, target)
+            edges.append(edge)
+            created_edges.append(edge)
+            continue
         target_handle = plan_edge.get("toHandle") or "in"
         if types_by_id.get(target) == _MERGE_NODE_TYPE:
             taken = merge_slots_taken.setdefault(target, set())
@@ -3123,20 +3812,23 @@ def _apply_dataflow_plan(
             "nodeIds": dict(ref_to_id),
         }
     projects_storage.write_spec(user_key, project_id, spec)
-    removed_summary = (
-        f", removed {len(remove_node_set)} node{'s' if len(remove_node_set) != 1 else ''}"
-        if remove_node_set or removed_edge_ids
-        else ""
-    )
+    # dev/112: truthful for edges (the old copy said "removed 0 nodes" after an
+    # edge-only removal), plus the post-apply topology verdict the agent needs
+    # to confirm a fix instead of asserting one.
+    removed_summary = _removal_phrase(len(remove_node_set), len(removed_edge_ids))
+    topology = _topology_clause(spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: plan added {len(created_nodes)} nodes and "
-        f"{len(created_edges)} connections{removed_summary}.",
+        f"{len(created_edges)} connections{removed_summary}. {topology}",
         "Applied: dataflow plan",
         [
             f"+{len(created_nodes)} nodes · +{len(created_edges)} connections"
-            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else ""),
+            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else "")
+            + (f" · −{len(removed_edge_ids)} connections" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
+            *_attached_agent_lines(*attached_results),
+            topology,
             f"proposal {proposal_id[:8]}",
         ],
     )
@@ -3152,6 +3844,9 @@ def _apply_dataflow_plan(
             "removedNodeIds": sorted(remove_node_set),
             "removedEdgeIds": sorted(removed_edge_ids),
         },
+        # dev/126: as the per-node apply — what each created node was given.
+        "attachedAgents": [row for r in attached_results for row in r["attached"]],
+        "skippedAgents": [row for r in attached_results for row in r["skipped"]],
         "builderSession": record.get("builderSession") if record else None,
     }
 
@@ -3276,13 +3971,21 @@ def _apply_dataset_install(
     spec = _read_spec_or_404(user_key, project_id)
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
+    # dev/126: a node that was waiting for exactly this dataset is resolved by
+    # this install — the reviewed lane is what "awaiting-install" waited for.
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    resolved_nodes = dataset_resolution.mark_dataset_installed(spec, dataset_id)
     projects_storage.write_spec(user_key, project_id, spec)
     name = str(item.get("title") or dataset_id)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: dataset installed ({name}).",
         "Applied: dataset installed",
-        [name, dataset_id, f"proposal {proposal_id[:8]}"],
+        [name, dataset_id,
+         *([f"{len(resolved_nodes)} node(s) waiting for it can now be solved"]
+           if resolved_nodes else []),
+         f"proposal {proposal_id[:8]}"],
     )
     return {
         "attachmentId": attachment_id,
@@ -3778,6 +4481,9 @@ def dismiss_proposal(
 _SOLVE_MAX_WORKERS = 3
 # A hard-crashed solve leaves the transient "solving" phase behind; a marker
 # older than this is treated as stale so the user is never wedged.
+#: dev/118: measured from ``solvingSince``, which every wave boundary
+#: refreshes — so "stale" means "no wave completed for 15 minutes", not "the
+#: batch started 15 minutes ago".
 _SOLVE_STALE_SECONDS = 15 * 60
 # In-flight cancellation (dev/63): solve executionId → stop event. The
 # in-process fast path; the persisted ``cancelRequested`` session flag is the
@@ -3791,14 +4497,16 @@ def solve_attachment(
     attachment_id: str,
     config: ProviderConfig,
     node_ids: list[str] | None = None,
+    verify: bool = True,
 ) -> dict:
     """The dev/52 Solve batch (DEC-048), blocking form: drains the streaming
     batch (dev/63 — one implementation) and returns its terminal payload,
     minus the stream-only keys, so the response is byte-compatible. Always
-    write mode — propose mode (dev/67-6) is the streaming route's."""
+    write mode — propose mode (dev/67-6) is the streaming route's.
+    ``verify`` (dev/115): data-loading nodes execute before they are final."""
     payload: dict | None = None
     for kind, data in solve_attachment_stream(
-        user_key, project_id, attachment_id, config, node_ids
+        user_key, project_id, attachment_id, config, node_ids, verify=verify
     ):
         if kind == "done":
             payload = dict(data)
@@ -3821,6 +4529,7 @@ def request_solve_cancel(user_key: str, project_id: str, attachment_id: str) -> 
     """
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if session.get("phase") != "solving":
         raise AgentServiceError("no solve is running for this attachment", 409)
@@ -3839,6 +4548,7 @@ def solve_attachment_stream(
     config: ProviderConfig,
     node_ids: list[str] | None = None,
     mode: str = "write",
+    verify: bool = True,
 ):
     """The dev/52 Solve batch (DEC-048) as an event stream (dev/63): ONE
     explicit, authenticated user action authorizes filling the applied plan's
@@ -3868,18 +4578,40 @@ def solve_attachment_stream(
     and the session returns to its pre-solve phase. The single-activeProposal
     model means a multi-node propose batch supersedes all but the last —
     the 67-9 sequence solves one node at a time by design.
+
+    ``verify`` (dev/115, DEC-073): a data-loading node's content is not final
+    until it has EXECUTED — the worker drives the one verified-content loop
+    (generate → gate → run in the sandbox → correct with the traceback → run
+    again, ≤2 corrections) and only code that passed is written (write mode)
+    or minted (propose mode, with the validation block); exhaustion is
+    ``failed`` with the attempt trail, a sandbox outage leaves the node
+    ``pending`` with the reason. ``verify=False`` keeps the legacy path.
     """
     import threading
     import time as _time
 
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): Solve hard-invokes node.content.generate and, for a
+    # data-loading node, dataset.discover — both required delegates, completed
+    # before the batch resolves them.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
+    _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if not session.get("appliedPlanId"):
         raise AgentServiceError("nothing to solve — apply a plan first", 409)
     now = _time.time()
     if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < _SOLVE_STALE_SECONDS:
         raise AgentServiceError("a solve is already running for this plan", 409)
+    try:
+        # dev/115: refuse BEFORE persisting any in-flight state.
+        agent_jobs.check_can_start(user_key, attachment_id)
+    except agent_jobs.JobRefused as exc:
+        raise AgentServiceError(str(exc), exc.status)
     node_runs: dict = session.get("nodeRuns") or {}
     targets = [
         node_id
@@ -3897,6 +4629,10 @@ def solve_attachment_stream(
         if isinstance(n, dict)
     }
     solve_execution_id = uuid.uuid4().hex
+    # dev/115 (DEC-021): a Solve after an interruption is a NEW execution
+    # linked to the expired one — recorded, never replayed.
+    retry_of = session.pop("interruptedExecutionId", None) if session.get("phase") == "interrupted" else None
+    session.pop("interruptedAt", None)
     # The in-flight guard + cancellation identity persist before any provider
     # work; the cancel endpoint finds the run through ``solveExecutionId``.
     session["phase"] = "solving"
@@ -3909,11 +4645,35 @@ def solve_attachment_stream(
     manifest = _resolve_definition(user_key, record.get("coord", ""))
     coord = record.get("coord", "")
     session_id = record.get("sessionId")
-    return _solve_events(
+    # dev/115: everything that needs the REQUEST context is resolved here —
+    # the job thread holds no ``g``: the batch's grounding base (catalog refs,
+    # mission + plan texts) and the sandbox's dataset-path mapping.
+    solve_ground = _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    solve_dataset_paths = (
+        _resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+        if verify else {}
+    )
+    # dev/126: and the Data Catalog rows the discovery delegate is handed.
+    solve_catalog_rows = _catalog_rows_for_discovery(user_key, project_id)
+    # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
+    # DURING the session can still be resolved to a sandbox path.
+    solve_user = _acting_user()
+    events = _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
-        spec=spec, mode=mode, return_phase=return_phase,
+        spec=spec, mode=mode, return_phase=return_phase, verify=verify,
+        grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
+        catalog_rows=solve_catalog_rows, acting_user=solve_user,
+        retry_of=retry_of if isinstance(retry_of, str) else None,
     )
+    # dev/115 (DEC-021, single-process slice): the batch runs as a detached
+    # job — the request only SUBSCRIBES (replay + tail); a disconnect no
+    # longer ends the Solve, and a reload re-attaches through the jobs stream.
+    job = agent_jobs.start_job(
+        user_key=user_key, project_id=project_id, attachment_id=attachment_id,
+        kind="solve-batch", job_id=solve_execution_id, events=events,
+    )
+    return agent_jobs.subscribe(job)
 
 
 def _solve_events(
@@ -3932,6 +4692,12 @@ def _solve_events(
     spec: dict | None = None,
     mode: str = "write",
     return_phase: str | None = None,
+    verify: bool = True,
+    grounding_base: dict | None = None,
+    dataset_paths: dict | None = None,
+    retry_of: str | None = None,
+    catalog_rows: list | None = None,
+    acting_user=None,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -3942,7 +4708,32 @@ def _solve_events(
     from concurrent.futures import ThreadPoolExecutor
 
     results: dict[str, dict] = {}
+    # dev/131 (owner correction): consecutive passes in which a node's every
+    # failed attempt was a REPEAT — the builder handed back the code that
+    # already failed. Retrying that is not persistence, it is a spin, so a
+    # node is dropped from later passes once it stalls this way (below).
+    weak_passes: dict[str, int] = {}
     applied_contents: list[dict] = []
+    # dev/127: one bounded artifact preview per artifact per batch, turned into
+    # the columns and dtypes its frame holds. A node that had to join two
+    # frames used to be told only their TYPE and spent its whole budget
+    # guessing a join key (memo dev/127 §1 D5).
+    schema_cache: dict[str, dict | None] = {}
+
+    def _schema_of_artifact(artifact_id: str) -> dict | None:
+        if artifact_id in schema_cache:
+            return schema_cache[artifact_id]
+        from utk_curio.backend.app.agents import upstream_schema
+        from utk_curio.backend.app.execution import runner as _runner
+
+        summary = None
+        try:
+            preview = _runner.load_artifact_preview(artifact_id)
+            summary = upstream_schema.summarize(preview) if preview else None
+        except Exception:  # noqa: BLE001
+            log.warning("Could not describe artifact %s", artifact_id, exc_info=True)
+        schema_cache[artifact_id] = summary
+        return summary
     delegations: list = []
     unstarted: list[str] = []
     started = time.monotonic()
@@ -3954,6 +4745,23 @@ def _solve_events(
     # attachment mirror.
     batch_reason: str | None = None
     extra_parts: list[dict] = []
+    # dev/118 (DEC-075): waves. The spec the loop and the context composer see
+    # is re-read after every wave's persist, so a downstream target executes
+    # against the upstream content that actually ran; the outputs recorded for
+    # passing upstream targets are handed to their dependents' corrections.
+    current: dict = {"spec": spec, "wave": 0}
+    wave_outputs: dict[str, dict] = {}
+    persisted: set[str] = set()
+    # dev/118: the batch's time budget (§3.6) — a bound, never a failure.
+    deadline_s = solve_batch_deadline_s()
+    # dev/131: the session's own budget — the owner's fifteen minutes. The
+    # batch ceiling above stays the outer guard.
+    session_deadline_s = solve_session_deadline_s()
+    session_wait_s = solve_session_wait_s()
+    deadline_reason = (
+        f"the batch's time budget ({max(1, deadline_s // 60)} min) was spent — "
+        "Retry continues from here"
+    )
 
     def _flag_requested() -> bool:
         # The durable cancel signal, read lazily at node boundaries only.
@@ -3972,7 +4780,118 @@ def _solve_events(
             return True
         return False
 
+    # dev/114: ONE grounding base per batch (catalog paths, mission + plan
+    # texts), built here in the request thread — workers hold no request
+    # context; ONE egress budget for the batch's probes.
+    # dev/115: the request thread resolved these (the generator body runs in
+    # the job thread, which holds no request context); computing them here is
+    # only the fallback for a direct caller.
+    solve_ground = (
+        grounding_base if grounding_base is not None
+        else _solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+    )
+    solve_ctx: dict = {"granted": [], "manifest": manifest}
+    solve_dataset_paths = (
+        dataset_paths if dataset_paths is not None
+        else (_resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+              if verify else {})
+    )
+    from utk_curio.backend.app.packages import services as _pkg_services
+
+    def _is_data_loading(node_obj: dict) -> bool:
+        return source_grounding.is_data_loading_type(
+            _pkg_services.canonical_template_id((node_obj or {}).get("type"))
+        )
+
+    batch_templates = _roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
+
+    def _is_executable(node_obj: dict) -> bool:  # dev/118 (DEC-075) → dev/119 (DEC-076)
+        return _node_is_executable(node_obj, batch_templates)
+
+    def _content_kind(node_obj: dict) -> str:  # dev/134
+        return workflow_spec.content_kind(
+            str((node_obj or {}).get("type") or ""), batch_templates
+        )
+
     def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
+        # dev/131: a later pass must not ERASE an earlier pass's evidence. A
+        # node that is still awaiting the user produces a fresh result with no
+        # attempts (nothing was tried this pass), and overwriting the trail of
+        # the pass that DID try left the user with a bare "pending". So the
+        # record is merged: a result carrying attempts always wins; one without
+        # them keeps the earlier trail and updates only the reason.
+        previous = dict(results.get(node_id) or {})
+        if previous.get("status") in ("solved", "proposed") and status != "verified":
+            # dev/131: a session NEVER un-solves a node. A later pass exists to
+            # pick up work that became possible, not to downgrade a node whose
+            # content already landed (a slice bound or a cancellation arriving
+            # after the fact must not rewrite "solved" into "skipped").
+            return None
+        event = _record_outcome_inner(node_id, status, text, child)
+        fresh = results.get(node_id)
+        if isinstance(fresh, dict) and fresh.get("attempts") and previous.get("attempts"):
+            # dev/131 (owner correction): a session keeps attempting, and the
+            # owner asked for ALL attempts to be visible — so a later pass
+            # APPENDS its rounds to the trail instead of replacing it. And a
+            # pass that only repeated itself must not bury the concrete error
+            # the earlier pass found: the sentence stays the concrete one.
+            this_pass_was_weak = _weak_failure(fresh)
+            if fresh.get("status") == "failed" and this_pass_was_weak:
+                weak_passes[node_id] = weak_passes.get(node_id, 0) + 1
+            else:
+                weak_passes.pop(node_id, None)
+            fresh["attempts"] = (
+                list(previous["attempts"]) + list(fresh["attempts"])
+            )[-_MAX_TRAIL_ATTEMPTS:]
+            if (
+                fresh.get("status") == "failed"
+                and previous.get("status") == "failed"
+                and previous.get("error")
+                and this_pass_was_weak
+                and not _weak_failure(previous)
+            ):
+                fresh["error"] = previous["error"]
+            if isinstance(event, dict):
+                event["attempts"] = fresh["attempts"]
+                if fresh.get("error"):
+                    event["error"] = fresh["error"]
+        if isinstance(fresh, dict) and not fresh.get("attempts") and previous.get("attempts"):
+            # An emptied field counts as absent, not as an answer: the awaiting
+            # path records ``attempts: []`` and ``rounds: 0``, which used to
+            # win over a real trail purely because they are not None.
+            for key in ("attempts", "rounds", "verdict", "stoppedBy"):
+                if previous.get(key) is not None and not fresh.get(key):
+                    fresh[key] = previous[key]
+            if isinstance(event, dict) and not event.get("attempts"):
+                for key in ("attempts", "rounds", "verdict", "stoppedBy"):
+                    if fresh.get(key) is not None:
+                        event[key] = fresh[key]
+        return event
+
+    def _record_outcome_inner(node_id: str, status: str, text, child) -> dict | None:
+        nonlocal batch_reason
+        if status == "no-content":
+            # dev/134: nothing is owed and nothing was spent. Not "skipped"
+            # (that means a bound refused it) and not "pending" (that means
+            # work remains): the node is resolved, and the reason says why
+            # there was never anything to write.
+            node = nodes_by_id.get(node_id) or {}
+            reason = (
+                f"{node.get('type')} is wired, not written — this kind has no "
+                "content to author; it renders or forwards its input"
+            )
+            result = {"status": "solved",
+                      "verification": {"status": "no-content", "reason": reason[:300]}}
+            results[node_id] = result
+            return {"nodeId": node_id, "status": "solved", **result}
+        if status == "deadline":
+            # dev/118: the budget ran out before this node was dispatched — it
+            # stays pending, says why, and the batch names the reason once.
+            results[node_id] = {"status": "pending", "reason": deadline_reason}
+            if node_id not in unstarted:
+                unstarted.append(node_id)
+            batch_reason = batch_reason or deadline_reason
+            return {"nodeId": node_id, "status": "pending", "reason": deadline_reason}
         """Fold one worker outcome into the batch state — no yields, so it is
         safe on the disconnect drain. Returns the node_result payload, or
         None for an unstarted (cancelled-before-dispatch) target, which stays
@@ -3980,13 +4899,179 @@ def _solve_events(
         state machine."""
         if child is not None:
             delegations.append(child)
+        if status == "verified":
+            # dev/115 (DEC-073): the verified-content loop's outcome. Only
+            # code that PASSED is written; exhaustion is failed with the
+            # trail; a sandbox outage is pending with the reason — never a
+            # content failure, never silently written.
+            outcome = text
+            for c in outcome.get("delegations") or []:
+                if c is not None:
+                    delegations.append(c)
+            trail = {
+                "verdict": outcome.get("verdict"),
+                "rounds": outcome.get("rounds"),
+                "attempts": outcome.get("attempts") or [],
+                # dev/127: which bound ended the loop, all the way to the UI.
+                "stoppedBy": outcome.get("stoppedBy"),
+            }
+            if outcome.get("verdict") == "pass":
+                candidate = outcome.get("candidate") or ""
+                results[node_id] = {"status": "solved", **trail}
+                applied_contents.append({"nodeId": node_id, "content": candidate})
+                wave_outputs[node_id] = {
+                    "nodeId": node_id,
+                    "goal": str((nodes_by_id.get(node_id) or {}).get("goal") or "")[:200],
+                    "outputDataType": (outcome.get("evidence") or {}).get("outputDataType") or "",
+                    "wave": current["wave"],
+                    # dev/118 commit 4: the artifact a dependent's validation reuses.
+                    "output": (outcome.get("evidence") or {}).get("output"),
+                }
+                return {"nodeId": node_id, "status": "solved", "content": candidate, **trail}
+            evidence = outcome.get("evidence") or {}
+            if outcome.get("verdict") == "not-executable" and (outcome.get("candidate") or "").strip():
+                # dev/118 (DEC-075): a browser-rendered kind — SAID to be
+                # unexecuted, never "verified". dev/129: and never written
+                # unchecked — an authored document that nothing here can
+                # validate stays OUT of the node.
+                candidate = outcome.get("candidate") or ""
+                if evidence.get("documentUnchecked") and not evidence.get("documentPassive"):
+                    reason = (
+                        "written nothing — " + str(evidence["documentUnchecked"])[:200]
+                        + "; Play the dataflow to see whether it renders"
+                    )[:300]
+                    results[node_id] = {"status": "pending", "reason": reason, **trail}
+                    return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
+                verification = (
+                    {"status": "document-valid",
+                     "reason": f"{evidence['documentValidated']} document validated — not executed"}
+                    if evidence.get("documentValidated") else
+                    {"status": "not-executable", "reason": str(evidence.get("detail") or "")[:300]}
+                )
+                results[node_id] = {"status": "solved", "verification": verification, **trail}
+                applied_contents.append({"nodeId": node_id, "content": candidate})
+                return {"nodeId": node_id, "status": "solved", "content": candidate,
+                        "verification": verification, **trail}
+            if outcome.get("verdict") == "infrastructure":
+                reason = (
+                    "not verified — sandbox unreachable: "
+                    + str(evidence.get("detail") or "")[:160]
+                    + " — nothing was run or written; Retry when the sandbox is back"
+                )[:300]
+                results[node_id] = {"status": "pending", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
+            if outcome.get("verdict") == "awaiting-source":
+                # dev/126: the node's source is with the USER now — the Dataset
+                # Finder on this node proposed candidates (or said it found
+                # none). Nothing was generated or written, so this is PENDING
+                # with the reason, never a failure of content.
+                reason = (
+                    "awaiting your dataset selection — "
+                    + str(evidence.get("detail") or "")[:240]
+                )[:300]
+                remedy = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
+                extra = {"remedy": remedy} if remedy else {}
+                results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
+                return {"nodeId": node_id, "status": "pending", "reason": reason,
+                        **trail, **extra}
+            kind = evidence.get("kind") or "fail"
+            raw_detail = str(evidence.get("stderrTail") or evidence.get("detail") or "")
+            if kind in _WEAK_CARRY_KINDS:
+                # dev/131 (owner correction): the loop stopped because the
+                # correction repeated itself — that is HOW it stopped, not WHAT
+                # is wrong. The sentence names the error it is stuck on (the
+                # last attempt that actually ran and failed); ``stoppedBy``
+                # still says a repeat ended it.
+                stronger = next(
+                    (
+                        a for a in reversed(trail.get("attempts") or [])
+                        if isinstance(a, dict)
+                        and a.get("verdict") != "pass"
+                        and str(a.get("kind") or "") not in _WEAK_CARRY_KINDS
+                        and str(a.get("stderrTail") or a.get("detail") or "").strip()
+                    ),
+                    None,
+                )
+                if stronger is not None:
+                    kind = str(stronger.get("kind") or kind)
+                    raw_detail = str(
+                        stronger.get("stderrTail") or stronger.get("detail") or raw_detail
+                    )
+            if evidence.get("upstreamEmpty"):
+                # dev/118 live fix: the upstream has no content (it failed, or
+                # is not a target) — this node waits, pending with the reason;
+                # Retry runs it once the upstream is solved or filled.
+                reason = f"waiting — {raw_detail[:240]}" if raw_detail else "waiting — an upstream node has no content yet"
+                results[node_id] = {"status": "pending", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
+            if kind == "precondition":
+                # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
+                # bound, a cycle) — a bound on validation, not a failure of the
+                # content: skipped, with the bound named.
+                reason = f"skipped — {raw_detail[:240]}" if raw_detail else "skipped — validation refused the slice"
+                results[node_id] = {"status": "skipped", "reason": reason, **trail}
+                return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
+            # dev/127: a refusal's head names the literal; a traceback is read
+            # for its exception line and frame, never sliced by character count
+            # (the report's "execution-error: das/core/generic.py" was the tail
+            # of pandas/core/generic.py, cut mid-path).
+            detail = (
+                failure_text.excerpt(raw_detail, limit=200, head=True)
+                if kind in _HEAD_FIRST_KINDS
+                else failure_text.summary(
+                    raw_detail,
+                    code=_last_attempt_code(trail),
+                    limit=200,
+                )
+            )
+            rounds = outcome.get("rounds") or 0
+            remedy_payload = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
+            remedy = (
+                _ungrounded_remedy(_dataset_finder_attachment_id(spec, node_id))
+                if kind == "ungrounded-source" else
+                _source_missing_remedy(remedy_payload)
+                if kind == "source-missing" else ""
+            )
+            bound = _stopped_by_clause(outcome.get("stoppedBy"))
+            err = (
+                f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound} — "
+                f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
+            )[:300]
+            extra = {"remedy": remedy_payload} if remedy_payload else {}
+            results[node_id] = {"status": "failed", "error": err, **trail, **extra}
+            return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
         if status == "solved":
             # The child replies with response formatting around the code —
             # only the executable content is written (dev/57).
             text_out = content.extract_node_content(text)
-            results[node_id] = {"status": "solved"}
+            # dev/114 (DEC-072): the gate — a fabricated path or an
+            # unverified URL never reaches the spec; the node fails LOUDLY
+            # with the literal and the remedy named.
+            node = nodes_by_id.get(node_id) or {}
+            _verdict, refusal = _gate_generated_content(
+                user_key, project_id, solve_ctx,
+                code=text_out, engine="python", node_type=node.get("type"),
+                base=solve_ground,
+            )
+            if refusal:
+                err = (
+                    "ungrounded source: " + refusal.split("Allowed sources:")[0]
+                    .replace("source grounding refused — ", "").strip()
+                )[:220] + _ungrounded_remedy(_dataset_finder_attachment_id(spec, node_id))
+                results[node_id] = {"status": "failed", "error": err[:300]}
+                return {"nodeId": node_id, "status": "failed", "error": err[:300]}
+            result: dict = {"status": "solved"}
+            if not _is_executable(node):
+                # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
+                result["verification"] = {
+                    "status": "not-executable",
+                    "reason": f"{node.get('type')} has no code the sandbox could run — written, not executed",
+                }
+            results[node_id] = result
             applied_contents.append({"nodeId": node_id, "content": text_out})
-            return {"nodeId": node_id, "status": "solved", "content": text_out}
+            return {"nodeId": node_id, "status": "solved", "content": text_out, **(
+                {"verification": result["verification"]} if "verification" in result else {}
+            )}
         if status == "failed":
             err = (text or "")[:300]
             results[node_id] = {"status": "failed", "error": err}
@@ -3997,24 +5082,19 @@ def _solve_events(
         unstarted.append(node_id)
         return None
 
-    def _finish() -> dict:
-        # One batched spec write: contents (re-guarded against the CURRENT
-        # spec under the read-modify-write), statuses, and the exit phase —
-        # plus the transcript card. Idempotent: exactly one persist per batch.
-        if state["finished"]:
-            return payload_out
-        state["finished"] = True
-        cancelled = stop.is_set()
-        spec = _read_spec_or_404(user_key, project_id)
-        record = _record_or_404(spec, attachment_id)
-        session = record.get("builderSession") or {}
-        node_runs = session.get("nodeRuns") or {}
+    def _apply_contents(spec_doc: dict) -> None:
+        """Write every solved content not yet persisted into *spec_doc*,
+        re-guarded against the CURRENT nodes (deleted → skipped; a user edit
+        wins). Shared by the per-wave persist and the final one (dev/118)."""
         current_nodes = {
             n.get("id"): n
-            for n in (spec.get("dataflow") or {}).get("nodes") or []
+            for n in (spec_doc.get("dataflow") or {}).get("nodes") or []
             if isinstance(n, dict)
         }
         for item in applied_contents:
+            if item["nodeId"] in persisted:
+                continue
+            persisted.add(item["nodeId"])
             node = current_nodes.get(item["nodeId"])
             if node is None:
                 results[item["nodeId"]] = {"status": "skipped"}  # deleted meanwhile
@@ -4023,47 +5103,125 @@ def _solve_events(
                 results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
                 continue
             node["content"] = item["content"]
-        applied = [
-            i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
-        ]
-        ids_to_ref = {
-            nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
-        }
-        node_states = session.get("nodeStates")
-        for node_id, outcome in results.items():
-            if outcome["status"] == "proposed":
-                # dev/67-6: nothing was written — the node stays pending
-                # until the user applies the content proposal; the plan row
-                # advances to "solving" (a review awaits).
-                ref = ids_to_ref.get(node_id)
-                if node_states is not None and ref is not None:
-                    node_states[ref] = "solving"
-                continue
-            if node_id in node_runs:
-                node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
-        session["nodeRuns"] = node_runs
-        session.pop("solvingSince", None)
-        session.pop("solveExecutionId", None)
-        session.pop("cancelRequested", None)
-        if mode == "propose" and return_phase not in (None, "", "solving"):
-            # The propose batch resolved nothing — the session returns to the
-            # phase the solve interrupted (typically "simulating").
-            session["phase"] = return_phase
-        else:
-            session["phase"] = (
-                "ready"
-                if all(s not in ("pending", "failed") for s in node_runs.values())
-                else "applied"
-            )
-        record["builderSession"] = session
-        projects_storage.write_spec(user_key, project_id, spec)
+
+    def _persist_wave(wave_ids: list[str]) -> None:
+        """dev/118 (DEC-075): the wave boundary IS the persist — and the
+        heartbeat. Under the spec lock: the wave's solved contents land (the
+        same guards as the final write), its nodeRuns say what happened, and
+        ``solvingSince`` is refreshed so the stale marker means "no wave
+        completed for 15 minutes". A process that dies between waves leaves
+        every persisted wave in place (DEC-021: nothing replayed; Retry
+        continues). The re-read spec is what the next wave runs against."""
+        with projects_storage.spec_write_lock(user_key, project_id):
+            spec_doc = _read_spec_or_404(user_key, project_id)
+            record = _record_or_404(spec_doc, attachment_id)
+            session = record.get("builderSession") or {}
+            _apply_contents(spec_doc)
+            node_runs = session.get("nodeRuns") or {}
+            for nid in wave_ids:
+                outcome = results.get(nid)
+                if outcome and nid in node_runs and outcome.get("status") in ("solved", "failed", "skipped"):
+                    node_runs[nid] = outcome["status"]
+            session["nodeRuns"] = node_runs
+            if session.get("phase") == "solving":
+                session["solvingSince"] = time.time()
+            record["builderSession"] = session
+            projects_storage.write_spec(user_key, project_id, spec_doc)
+        current["spec"] = spec_doc
+
+    def _finish() -> dict:
+        # One batched spec write: contents (re-guarded against the CURRENT
+        # spec under the read-modify-write), statuses, and the exit phase —
+        # plus the transcript card. Idempotent: exactly one persist per batch.
+        # dev/118: the LAST wave's persist — earlier waves already landed.
+        if state["finished"]:
+            return payload_out
+        state["finished"] = True
+        cancelled = stop.is_set()
+        with projects_storage.spec_write_lock(user_key, project_id):
+            spec = _read_spec_or_404(user_key, project_id)
+            record = _record_or_404(spec, attachment_id)
+            session = record.get("builderSession") or {}
+            node_runs = session.get("nodeRuns") or {}
+            _apply_contents(spec)
+            applied = [
+                i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
+            ]
+            ids_to_ref = {
+                nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
+            }
+            node_states = session.get("nodeStates")
+            for node_id, outcome in results.items():
+                if outcome["status"] == "proposed":
+                    # dev/67-6: nothing was written — the node stays pending
+                    # until the user applies the content proposal; the plan row
+                    # advances to "solving" (a review awaits).
+                    ref = ids_to_ref.get(node_id)
+                    if node_states is not None and ref is not None:
+                        node_states[ref] = "solving"
+                    continue
+                if node_id in node_runs:
+                    node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
+            session["nodeRuns"] = node_runs
+            session.pop("solvingSince", None)
+            session.pop("solveExecutionId", None)
+            session.pop("cancelRequested", None)
+            if mode == "propose" and return_phase not in (None, "", "solving"):
+                # The propose batch resolved nothing — the session returns to the
+                # phase the solve interrupted (typically "simulating").
+                session["phase"] = return_phase
+            else:
+                session["phase"] = (
+                    "ready"
+                    if all(s not in ("pending", "failed") for s in node_runs.values())
+                    else "applied"
+                )
+            record["builderSession"] = session
+            projects_storage.write_spec(user_key, project_id, spec)
         solved = sum(1 for r in results.values() if r["status"] == "solved")
         proposed = sum(1 for r in results.values() if r["status"] == "proposed")
         if isinstance(session_id, str):
-            lines = [
-                f"{node_id[:8]} · {outcome['status']}"
-                for node_id, outcome in list(results.items())[:10]
+            lines: list[str] = []
+            for node_id, outcome in list(results.items())[:10]:
+                line = f"{node_id[:8]} · {outcome['status']}"
+                if outcome.get("verdict"):
+                    # dev/115: the verified loop's verdict and, on failure,
+                    # the attempt trail — one line per round, bounded.
+                    rounds = outcome.get("rounds") or 0
+                    line += f" · {outcome['verdict']} after {rounds} round{'s' if rounds != 1 else ''}"
+                if outcome.get("reason") and outcome["status"] in ("pending", "skipped"):
+                    line += f" — {str(outcome['reason'])[:120]}"
+                lines.append(line)
+                if outcome.get("verdict") == "fail":
+                    for attempt in (outcome.get("attempts") or [])[:3]:
+                        why = _attempt_why(attempt, limit=160)
+                        lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} — {why}")
+                        if attempt.get("endpointEvidence"):
+                            lines.append(f"    endpoint: {str(attempt['endpointEvidence'])[:200]}")
+            lines = lines[:24]
+            # dev/127: every attempt, in the transcript, per node that has a
+            # trail — the card's lines cannot carry code, so the trail is its
+            # own part. Bounded: the first _MAX_ATTEMPT_PARTS nodes, then a
+            # line naming the rest (each still reachable from its own chat).
+            attempt_parts: list = []
+            trailed = [
+                (nid, outcome) for nid, outcome in results.items()
+                if (outcome or {}).get("attempts")
+                and (outcome or {}).get("status") in ("failed", "pending", "skipped")
             ]
+            for nid, outcome in trailed[:_MAX_ATTEMPT_PARTS]:
+                node = nodes_by_id.get(nid) or {}
+                part = _solve_attempts_part(
+                    current.get("spec") or spec, nid,
+                    str(node.get("goal") or nid)[:120], outcome,
+                )
+                if part is not None:
+                    attempt_parts.append(part)
+            if len(trailed) > _MAX_ATTEMPT_PARTS:
+                lines.append(
+                    f"{len(trailed) - _MAX_ATTEMPT_PARTS} more node(s) have attempt trails — "
+                    "open each node's agent to read them"
+                )
             if cancelled:
                 lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
             if batch_reason:
@@ -4085,12 +5243,13 @@ def _solve_events(
                             "kind": "result",
                             "title": f"Solve: {solved} of {len(targets)} nodes",
                             "lines": lines,
-                        }, *extra_parts],
+                        }, *attempt_parts, *extra_parts],
                         execution=_execution_record(
                             solve_execution_id,
                             {"coord": coord, "provider": config.api_type,
                              "model": config.model, "tools": [], "intentEdited": False},
                             {}, started, "ok", delegations=delegations,
+                            retry_of=retry_of,
                         ),
                     )
                 ],
@@ -4109,6 +5268,12 @@ def _solve_events(
             payload_out["reason"] = batch_reason
         return payload_out
 
+    # dev/131: session bookkeeping lives ABOVE the resolution branch, because
+    # every exit — including "no specialist installed" — must still report how
+    # the session ended.
+    ended_by = "complete"
+    pass_no = 0
+    attempted_signature: dict[str, tuple] = {}
     try:
         yield "solve_started", {"executionId": solve_execution_id, "targets": list(targets)}
         resolution = delegation.resolve(
@@ -4147,6 +5312,10 @@ def _solve_events(
             for node_id in targets:
                 results[node_id] = {"status": "failed", "error": reason}
                 yield "node_result", {"nodeId": node_id, "status": "failed", "error": reason}
+            # dev/131: nothing a further pass could change — the missing
+            # specialist is an install the USER applies, and the proposal for it
+            # is already in the chat.
+            ended_by = "blocked"
         else:
             goals = [
                 str(nodes_by_id[t].get("goal") or "") for t in targets if t in nodes_by_id
@@ -4158,6 +5327,9 @@ def _solve_events(
                     if _should_stop():
                         outcome_queue.put((node_id, "unstarted", None, None))
                         return
+                    if _batch_deadline_spent(started, deadline_s):
+                        outcome_queue.put((node_id, "deadline", None, None))
+                        return
                     outcome_queue.put((node_id, "started", None, None))
                     node = nodes_by_id.get(node_id)
                     if node is None:
@@ -4167,17 +5339,153 @@ def _solve_events(
                         # User content preserved.
                         outcome_queue.put((node_id, "skipped", None, None))
                         return
+                    if _content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
+                        # dev/134: this kind authors NOTHING — it renders or
+                        # forwards its input and everything it does comes from
+                        # the wiring (a merge, a pool, a simple view, a spatial
+                        # join). Asking a model for its content spends a call
+                        # to produce something that can only be wrong: the
+                        # owner's `e72c7080` wrote the reply "not controllable"
+                        # into a merge-flow and a data-pool as their content.
+                        outcome_queue.put((node_id, "no-content", None, None))
+                        return
                     # dev/67-6: the ONE context composer — the child sees the
                     # node's neighborhood (goals, runtime status, datasets),
                     # not just its own intent.
+                    wave_spec = current["spec"]
+                    upstream_outputs = _upstream_outputs_for(
+                        wave_spec, node_id, wave_outputs, schema_fn=_schema_of_artifact,
+                    )
                     inputs = {
                         "nodeType": node.get("type"),
                         "intent": node.get("goal"),
                         "planSiblings": goals[:20],
                         "nodeContext": node_context.compose_node_context(
-                            user_key, project_id, spec, node_id
+                            user_key, project_id, wave_spec, node_id
                         ),
                     }
+                    if upstream_outputs:
+                        # dev/118: what the nodes feeding this one actually
+                        # produced when they ran — a type to write against.
+                        inputs["upstreamOutputs"] = upstream_outputs
+                    # dev/114: the seventh DEC-063 application — a data-
+                    # loading child is HANDED its grounded sources.
+                    from utk_curio.backend.app.packages import services as _pkg
+
+                    if source_grounding.is_data_loading_type(
+                        _pkg.canonical_template_id(node.get("type"))
+                    ):
+                        inputs["sourceGrounding"] = _source_grounding_inputs(
+                            _grounding_context(
+                                user_key, project_id, solve_ctx,
+                                node_type=node.get("type"), base=solve_ground,
+                                extra_texts=(str(node.get("goal") or ""),),
+                            )
+                        )
+                    if verify and _content_kind(node) in (
+                        workflow_spec.CONTENT_KIND_CODE,
+                        workflow_spec.CONTENT_KIND_GRAMMAR,
+                    ):
+                        # dev/115 (DEC-073) → dev/118 (DEC-075): the ONE
+                        # verified-content loop for EVERY executable kind —
+                        # and, since dev/134, for every GRAMMAR kind too: the
+                        # runner reports "not executable" for a document and
+                        # dev/129's validator decides, so nothing unvalidated
+                        # is written on any path. The batch used to route a
+                        # Vega or AUTK node past this loop, which is how an
+                        # invalid document and the sentence "not controllable"
+                        # reached two nodes in the owner's `e72c7080`.
+                        # every round traced at the node's home (dev/72), the
+                        # loop's progress relayed as node_* events, the outcome
+                        # folded by _record_outcome.
+                        def _traced(delegate_inputs, _node_id=node_id):
+                            st, tx, ch, _h = _run_delegate_traced(
+                                user_key, project_id, resolution.coord,
+                                "node.content.generate", delegate_inputs, config,
+                                parent_execution_id=solve_execution_id,
+                                parent_coord=coord,
+                                attachment_id=attachment_id,
+                                node_id=_node_id,
+                                home_create=False,  # workers never write the spec
+                            )
+                            return st, tx, ch
+
+                        # dev/129: errors from ANY execution feed the fix. A
+                        # node that still holds the code a Play run raised on
+                        # is repaired FROM that code — round 0 re-runs it and
+                        # the correction works on the real traceback — instead
+                        # of being regenerated as if nothing had happened.
+                        recorded = None
+                        try:
+                            from utk_curio.backend.app.execution import runtime_journal
+
+                            candidate_failure = runtime_journal.last_failure(
+                                user_key, project_id, node_id
+                            )
+                            if runtime_journal.failure_matches(
+                                candidate_failure, node.get("content")
+                            ):
+                                recorded = candidate_failure
+                        except Exception:  # noqa: BLE001
+                            recorded = None
+                        # dev/131 (owner correction): on a later pass the error
+                        # this node's last attempt produced is the input this
+                        # one starts from — never the same blank inputs again.
+                        # A recorded on-disk failure is the stronger evidence
+                        # (it is the code actually ON the node), so it wins.
+                        carry = (
+                            None if recorded
+                            else _carry_forward_error(results.get(node_id))
+                        )
+                        gen = _verified_content_rounds(
+                            user_key, project_id,
+                            spec=wave_spec, node=node, resolution=resolution, config=config,
+                            start_from_current=bool(recorded),
+                            recorded_failure=recorded,
+                            carry_forward=carry,
+                            parent_execution_id=solve_execution_id, parent_coord=coord,
+                            attachment_id=attachment_id, exec_fn=None,
+                            grounding_loop_ctx=solve_ctx, grounding_base=solve_ground,
+                            extra_inputs={"planSiblings": goals[:20],
+                                          **({"upstreamOutputs": upstream_outputs} if upstream_outputs else {})},
+                            delegate_runner=_traced,
+                            # dev/132 (closes dev/131 F4): the eager mapping,
+                            # topped up for a dataset the user imported or
+                            # installed since this session started.
+                            dataset_paths_fn=lambda codes: _session_dataset_paths(
+                                project_id, acting_user, solve_dataset_paths, codes
+                            ),
+                            # dev/133: the batch's memoized preview — one
+                            # description per artifact, reused by the emptiness
+                            # check and by the next node's input schema.
+                            result_summary_fn=_schema_of_artifact,
+                            exec_user_key=user_key,
+                            secrets_fn=_exec_secrets_resolver(user_key),
+                            prior_outputs_fn=lambda: {
+                                nid: o["output"] for nid, o in wave_outputs.items() if o.get("output")
+                            },
+                            # dev/126: the batch resolves a data-loading node's
+                            # source before generating for it.
+                            resolve_source=_source_resolver(
+                                user_key, project_id, coord=coord,
+                                attachment_id=attachment_id,
+                                execution_id=solve_execution_id, config=config,
+                                manifest=manifest,
+                                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                                catalog_rows=catalog_rows,
+                            ),
+                            # dev/131: this node may not outlive the session.
+                            node_budget_s=max(
+                                int(session_deadline_s - (time.monotonic() - started)), 1
+                            ),
+                        )
+                        try:
+                            while True:
+                                kind, data = next(gen)
+                                outcome_queue.put((node_id, "progress", {"kind": kind, **data}, None))
+                        except StopIteration as stop_iter:
+                            outcome_queue.put((node_id, "verified", stop_iter.value, None))
+                        return
                     status, text, child, _home = _run_delegate_traced(
                         user_key, project_id, resolution.coord,
                         "node.content.generate", inputs, config,
@@ -4193,95 +5501,331 @@ def _solve_events(
                 except BaseException as exc:  # a lost item would deadlock the drain
                     outcome_queue.put((node_id, "failed", f"solve worker error: {exc}", None))
 
-            pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
-            try:
-                for target in targets:
-                    pool.submit(_solve_one, target)
-                remaining = len(targets)
-                while remaining:
-                    node_id, status, text, child = outcome_queue.get()
-                    if status == "started":
-                        yield "node_started", {"nodeId": node_id}
-                        continue
-                    remaining -= 1
-                    if mode == "propose" and status == "solved":
-                        # dev/67-6 (Simulation Mode: solve): nothing is
-                        # written — the child's content mints a reviewed
-                        # node.content.write proposal through the EXISTING
-                        # machinery (digest-pinned against the current
-                        # content). dev/72: the review lives with the node's
-                        # agent when one exists (find-only — the drain never
-                        # writes the spec beyond the mint's own write).
-                        if child is not None:
-                            delegations.append(child)
-                        # dev/73: the shared content→review sequence (also the
-                        # chat loops' — one mint policy, three callers).
-                        part, home_att, mint_text = _mint_content_review_from_delegate(
-                            user_key, project_id,
-                            node_id=node_id,
-                            generated_text=text,
-                            parent_attachment_id=attachment_id,
-                            parent_session_id=session_id,
-                            local_turn=True,
-                        )
-                        if part is not None:
-                            results[node_id] = {
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
-                            }
-                            node = nodes_by_id.get(node_id) or {}
-                            node_label = (node.get('goal') or node_id)[:60]
-                            if home_att != attachment_id and isinstance(session_id, str):
-                                sessions.append_turns(
-                                    user_key, project_id, session_id, attachment_id,
-                                    [sessions.make_turn(
-                                        "agent",
-                                        f"Proposed content for {node_label!r} — "
-                                        "the review lives in the node's Node Builder.",
-                                        content=[content.make_delegation_part(
-                                            capability="node.content.generate",
-                                            coord="agent.node-builder",
-                                            name="Node Builder",
-                                            category="node",
-                                            attachment_id=home_att,
-                                            status="ok",
-                                            summary=f"content proposed for {node_label!r}",
-                                        )],
-                                    )],
+            # dev/131: SOLVE IS A SESSION. dev/118's pass — waves in
+            # topological order, per-wave persist, honest reasons — is unchanged
+            # inside; what changed is that it no longer ends the run. The
+            # session keeps making passes while unresolved nodes remain, the
+            # session budget is unspent and the user has not stopped, so a
+            # blocker that clears later (a dataset the user confirms mid-run, an
+            # upstream a later pass fills) is picked up instead of stranding the
+            # dataflow (the owner's `224d23a2`: six solved, three left, exited
+            # in thirteen seconds).
+            while True:
+                pass_no += 1
+                if pass_no > _SOLVE_MAX_PASSES:
+                    ended_by = "budget"
+                    break
+                if _should_stop():
+                    ended_by = "stopped"
+                    break
+                if (time.monotonic() - started) >= session_deadline_s:
+                    ended_by = "budget"
+                    break
+                if pass_no > 1 and _batch_deadline_spent(started, deadline_s):
+                    # dev/118's outer ceiling: nothing would be dispatched, so
+                    # another pass could only re-mark the same nodes. Only from
+                    # the second pass on — the first pass IS dev/118's batch and
+                    # keeps its own boundary checks, unchanged.
+                    ended_by = "budget"
+                    break
+                # Re-read the spec every pass: a selection confirmed, a node
+                # edited or content written since the last pass all count.
+                try:
+                    pass_spec = _read_spec_or_404(user_key, project_id)
+                except AgentServiceError:
+                    pass_spec = current.get("spec") or spec
+                record_now = attachments.get_attachment(pass_spec, attachment_id) or {}
+                runs_now = (record_now.get("builderSession") or {}).get("nodeRuns") or {}
+                unresolved = [
+                    nid for nid in targets
+                    if str(runs_now.get(nid, "pending")) in ("pending", "failed")
+                    # dev/131 (owner correction): what THIS session already
+                    # settled counts too. dev/118 persists a wave only at a
+                    # wave boundary, so the pass's last wave lands in
+                    # ``_finish``; reading the disk alone made a node this
+                    # session had just solved look pending and re-solved it
+                    # every pass.
+                    and str((results.get(nid) or {}).get("status") or "pending")
+                    in ("pending", "failed")
+                ]
+                if not unresolved:
+                    ended_by = "complete"
+                    break
+                # dev/131: pass 1 attempts everything. A later pass attempts
+                # every node that is NOT parked on the user — carrying the
+                # error its last attempt produced, which is a different input
+                # than the pass before had (owner correction: "it should carry
+                # the currently error that is being given"). A node waiting on
+                # a user action has no new input, so that one is attempted
+                # again only when something that could unblock it changed.
+                pass_targets = [
+                    nid for nid in unresolved
+                    if pass_no == 1
+                    or (
+                        not _awaits_user_action(results.get(nid))
+                        and weak_passes.get(nid, 0) < _MAX_WEAK_PASSES
+                    )
+                    or attempted_signature.get(nid) != _blocker_signature(pass_spec, nid)
+                ]
+                if not pass_targets:
+                    # Nothing can progress yet. The session STAYS ALIVE — the
+                    # user may confirm a source or edit a node — and says what
+                    # it is waiting for, checking again after a bounded,
+                    # stop-aware pause.
+                    if _should_stop():
+                        ended_by = "stopped"
+                        break
+                    if (time.monotonic() - started) >= session_deadline_s:
+                        ended_by = "budget"
+                        break
+                    yield "solve_waiting", {
+                        "pass": pass_no,
+                        "seconds": session_wait_s,
+                        "waiting": _session_waiting_summary(results, unresolved),
+                        "secondsLeft": max(
+                            int(session_deadline_s - (time.monotonic() - started)), 0
+                        ),
+                    }
+                    if _wait_for_stop(stop, session_wait_s):
+                        ended_by = "stopped"
+                        break
+                    continue
+                spec = pass_spec
+                current["spec"] = pass_spec
+                nodes_by_id = {
+                    n.get("id"): n
+                    for n in (pass_spec.get("dataflow") or {}).get("nodes") or []
+                    if isinstance(n, dict)
+                }
+                waiting = _session_waiting_summary(results, pass_targets)
+                yield "solve_pass", {
+                    "pass": pass_no,
+                    "targets": list(pass_targets),
+                    "remaining": len(pass_targets),
+                    "waiting": waiting,
+                    "secondsLeft": max(int(session_deadline_s - (time.monotonic() - started)), 0),
+                }
+
+                pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
+                # dev/131 (owner correction): the waves are this PASS's targets
+                # — a node parked on the user (or already solved) is not
+                # re-dispatched, so its trail and its reason survive the pass
+                # that could not touch it. Depth is recomputed over the pass's
+                # own set: an upstream outside it either has content already or
+                # is named as a blocker honestly, exactly as dev/118 intends.
+                waves = _solve_waves(spec, list(pass_targets))
+                try:
+                    for wave_no, wave in enumerate(waves, 1):
+                        current["wave"] = wave_no
+                        if _should_stop():
+                            # Cancelled between waves: nothing here was dispatched.
+                            for nid in wave:
+                                _record_outcome(nid, "unstarted", None, None)
+                            continue
+                        if _batch_deadline_spent(started, deadline_s):
+                            # dev/118: out of time before this wave — its targets
+                            # stay pending with the reason; Retry continues.
+                            for nid in wave:
+                                event = _record_outcome(nid, "deadline", None, None)
+                                if event is not None:
+                                    yield "node_result", event
+                            continue
+                        yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
+                        for target in wave:
+                            pool.submit(_solve_one, target)
+                        remaining = len(wave)
+                        while remaining:
+                            node_id, status, text, child = outcome_queue.get()
+                            if status == "started":
+                                yield "node_started", {"nodeId": node_id}
+                                continue
+                            if status == "progress":
+                                # dev/115: the verified loop's rounds, live — the strip
+                                # shows "verifying" and each round's verdict.
+                                progress = dict(text)
+                                kind = progress.pop("kind", "")
+                                event_name = _SOLVE_PROGRESS_EVENTS.get(kind)
+                                if event_name:
+                                    yield event_name, {"nodeId": node_id, **progress}
+                                continue
+                            remaining -= 1
+                            if mode == "propose" and status == "verified":
+                                # dev/115: an EXECUTED review — the validation block
+                                # (verdict, rounds, attempts) rides the part, PASS or
+                                # FAIL (dev/67-7's labeled choice); a sandbox outage
+                                # mints nothing and the node stays pending.
+                                outcome = text
+                                for c in outcome.get("delegations") or []:
+                                    if c is not None:
+                                        delegations.append(c)
+                                if outcome.get("verdict") == "infrastructure":
+                                    event = _record_outcome(node_id, "verified", outcome, None)
+                                    if event is not None:
+                                        yield "node_result", event
+                                    continue
+                                validation_block = {
+                                    "verdict": outcome.get("verdict"),
+                                    "rounds": outcome.get("rounds"),
+                                    "evidence": outcome.get("evidence") or {},
+                                    "attempts": outcome.get("attempts") or [],
+                                }
+                                part, home_att, mint_text = _mint_content_review_from_delegate(
+                                    user_key, project_id,
+                                    node_id=node_id,
+                                    generated_text=outcome.get("candidate") or "",
+                                    parent_attachment_id=attachment_id,
+                                    parent_session_id=session_id,
+                                    local_turn=True,
+                                    validation=validation_block,
+                                    grounding_base=solve_ground,
                                 )
-                            yield "node_result", {
-                                "nodeId": node_id,
-                                "status": "proposed",
-                                "proposalId": part["proposalId"],
-                                "proposalAttachmentId": home_att,
-                            }
-                        else:
-                            results[node_id] = {
-                                "status": "failed", "error": mint_text[:300]
-                            }
-                            yield "node_result", {
-                                "nodeId": node_id, "status": "failed",
-                                "error": mint_text[:300],
-                            }
-                        continue
-                    event = _record_outcome(node_id, status, text, child)
-                    if event is not None:
-                        yield "node_result", event
-            except GeneratorExit:
-                # Client gone (dev/63): stop dispatch, let in-flight children
-                # finish, fold their results in WITHOUT yielding — the finally
-                # persist keeps everything that completed.
-                stop.set()
-                pool.shutdown(wait=True)
-                while not outcome_queue.empty():
-                    node_id, status, text, child = outcome_queue.get_nowait()
-                    if status != "started":
-                        _record_outcome(node_id, status, text, child)
-                raise
-            finally:
-                pool.shutdown(wait=True)
-        yield "done", _finish()
+                                if part is not None:
+                                    results[node_id] = {
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                        "verdict": validation_block["verdict"],
+                                        "rounds": validation_block["rounds"],
+                                        "attempts": validation_block["attempts"],
+                                    }
+                                    yield "node_result", {
+                                        "nodeId": node_id,
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                        "verdict": validation_block["verdict"],
+                                        "rounds": validation_block["rounds"],
+                                    }
+                                else:
+                                    results[node_id] = {"status": "failed", "error": mint_text[:300]}
+                                    yield "node_result", {
+                                        "nodeId": node_id, "status": "failed", "error": mint_text[:300],
+                                    }
+                                continue
+                            if mode == "propose" and status == "solved":
+                                # dev/67-6 (Simulation Mode: solve): nothing is
+                                # written — the child's content mints a reviewed
+                                # node.content.write proposal through the EXISTING
+                                # machinery (digest-pinned against the current
+                                # content). dev/72: the review lives with the node's
+                                # agent when one exists (find-only — the drain never
+                                # writes the spec beyond the mint's own write).
+                                if child is not None:
+                                    delegations.append(child)
+                                # dev/114: the gate runs on the batch base BEFORE the
+                                # mint so the node's failure names the source.
+                                _pnode = nodes_by_id.get(node_id) or {}
+                                _v, _refusal = _gate_generated_content(
+                                    user_key, project_id, solve_ctx,
+                                    code=content.extract_node_content(text), engine="python",
+                                    node_type=_pnode.get("type"), base=solve_ground,
+                                )
+                                if _refusal:
+                                    err = ("ungrounded source: " + _refusal.split("Allowed sources:")[0]
+                                           .replace("source grounding refused — ", "").strip())[:220] + \
+                                          _ungrounded_remedy(
+                                              _dataset_finder_attachment_id(spec, node_id))
+                                    results[node_id] = {"status": "failed", "error": err[:300]}
+                                    yield "node_result", {"nodeId": node_id, "status": "failed", "error": err[:300]}
+                                    continue
+                                # dev/73: the shared content→review sequence (also the
+                                # chat loops' — one mint policy, three callers).
+                                part, home_att, mint_text = _mint_content_review_from_delegate(
+                                    user_key, project_id,
+                                    node_id=node_id,
+                                    generated_text=text,
+                                    parent_attachment_id=attachment_id,
+                                    parent_session_id=session_id,
+                                    local_turn=True,
+                                )
+                                if part is not None:
+                                    results[node_id] = {
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                    }
+                                    node = nodes_by_id.get(node_id) or {}
+                                    node_label = (node.get('goal') or node_id)[:60]
+                                    if home_att != attachment_id and isinstance(session_id, str):
+                                        sessions.append_turns(
+                                            user_key, project_id, session_id, attachment_id,
+                                            [sessions.make_turn(
+                                                "agent",
+                                                f"Proposed content for {node_label!r} — "
+                                                "the review lives in the node's Node Builder.",
+                                                content=[content.make_delegation_part(
+                                                    capability="node.content.generate",
+                                                    coord="agent.node-builder",
+                                                    name="Node Builder",
+                                                    category="node",
+                                                    attachment_id=home_att,
+                                                    status="ok",
+                                                    summary=f"content proposed for {node_label!r}",
+                                                )],
+                                            )],
+                                        )
+                                    yield "node_result", {
+                                        "nodeId": node_id,
+                                        "status": "proposed",
+                                        "proposalId": part["proposalId"],
+                                        "proposalAttachmentId": home_att,
+                                    }
+                                else:
+                                    results[node_id] = {
+                                        "status": "failed", "error": mint_text[:300]
+                                    }
+                                    yield "node_result", {
+                                        "nodeId": node_id, "status": "failed",
+                                        "error": mint_text[:300],
+                                    }
+                                continue
+                            event = _record_outcome(node_id, status, text, child)
+                            if event is not None:
+                                yield "node_result", event
+                        if wave_no < len(waves):
+                            # dev/118: the wave boundary persists and heartbeats;
+                            # the next wave runs against what actually landed.
+                            _persist_wave(list(wave))
+                except GeneratorExit:
+                    # Client gone (dev/63): stop dispatch, let in-flight children
+                    # finish, fold their results in WITHOUT yielding — the finally
+                    # persist keeps everything that completed.
+                    stop.set()
+                    pool.shutdown(wait=True)
+                    while not outcome_queue.empty():
+                        node_id, status, text, child = outcome_queue.get_nowait()
+                        if status != "started":
+                            _record_outcome(node_id, status, text, child)
+                    raise
+                finally:
+                    pool.shutdown(wait=True)
+                # dev/131 (owner correction): the pass boundary persists what
+                # the pass settled — including its LAST wave, which dev/118
+                # deliberately left to ``_finish`` because a batch ended
+                # there. A session does not end at a pass, so a pass that is
+                # not the last must leave the same truth on disk.
+                _persist_wave(list(pass_targets))
+                # dev/131: the signature is taken AFTER the pass, from a fresh
+                # spec — a node attempted once its upstream landed in the same
+                # pass has already seen that content, so the next pass must not
+                # count it as a change. Taking it before the pass made every
+                # pass that solved anything trigger another one.
+                try:
+                    settled = _read_spec_or_404(user_key, project_id)
+                except AgentServiceError:
+                    settled = current.get("spec") or pass_spec
+                for nid in pass_targets:
+                    attempted_signature[nid] = _blocker_signature(settled, nid)
+
+
+        payload = _finish()
+        # dev/131: every session ends in exactly one of three ways, and says so.
+        payload["endedBy"] = ended_by
+        payload["passes"] = pass_no
+        payload["waiting"] = _session_waiting_summary(
+            results, [nid for nid, r in results.items() if (r or {}).get("status") in ("pending", "failed")]
+        )
+        yield "done", payload
     finally:
         _SOLVE_CANCEL_EVENTS.pop(solve_execution_id, None)
         _finish()
@@ -4820,10 +6364,728 @@ def _run_node_events(
             pass
 
 
-# dev/67-7: bounded self-correction — initial generation + up to 2 corrective
+# dev/67-7: bounded self-correction — an initial generation plus corrective
 # regenerations, each re-validated by actually running the dataflow.
-_VALIDATE_CORRECTION_ROUNDS = 2
+#
+# dev/127: the bound used to be a hard, unconfigurable 2 (three attempts), and
+# the owner's failing batch spent it in 25 SECONDS against a 300 s sandbox
+# timeout and a 45-minute batch deadline: the loop stopped for want of a round
+# with both budgets essentially untouched. It is now a round cap AND a per-node
+# wall budget, whichever binds first, both env-overridable on the
+# ``exec_timeout_s`` pattern (an unusable value falls back rather than raising).
+# dev/128 (owner instruction): "change the fix attempts to 10 and 15 mins at
+# max". The knob is stated in ATTEMPTS, the way the instruction and the failure
+# sentence both read, rather than in corrections-after-the-first.
+#
+# dev/129 (the same day, refined): "the validation runtime should keep trying to
+# solve for at least 15 mins, with many retries as possible". A failing round
+# takes seconds, so an attempt cap of ten stopped the loop with fourteen
+# minutes unspent. The default cap therefore sits ABOVE what a quarter hour
+# affords — the CLOCK is the bound, and `stoppedBy` reports `budget` in the
+# normal case — while the knob stays a real cap for a deployment (or a test)
+# that wants a tighter one.
+DEFAULT_SOLVE_ATTEMPTS = 40
+DEFAULT_SOLVE_NODE_BUDGET_S = 15 * 60
+# dev/131 (owner instruction): "The DFB must continue to manage the data flow
+# until the user requests to stop by pressing a button, or until a timeout of 15
+# minutes occurs." That is the SESSION's budget — the batch used to make one
+# pass and exit (thirteen seconds, in the owner's dataflow `224d23a2`), leaving
+# a node that was one dataset selection away from finishing.
+DEFAULT_SOLVE_SESSION_DEADLINE_S = 15 * 60
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    import os as _os
+
+    raw = _os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def solve_max_attempts() -> int:
+    """``CURIO_SOLVE_MAX_ATTEMPTS`` — how many times the loop may try, counting
+    the first generation (dev/128: the owner's ten)."""
+    return _positive_int_env("CURIO_SOLVE_MAX_ATTEMPTS", DEFAULT_SOLVE_ATTEMPTS)
+
+
+def solve_correction_rounds() -> int:
+    """Corrections after the first generation — ``solve_max_attempts() - 1``,
+    kept as its own reading because that is what the loop's docstring and the
+    egress budget are written in terms of."""
+    return max(solve_max_attempts() - 1, 0)
+
+
+def solve_session_deadline_s() -> int:
+    """``CURIO_SOLVE_SESSION_DEADLINE`` — how long ONE Solve session keeps
+    managing the dataflow before it gives the time back (dev/131). The user's
+    Stop ends it sooner; nothing else does while work remains."""
+    return _positive_int_env(
+        "CURIO_SOLVE_SESSION_DEADLINE", DEFAULT_SOLVE_SESSION_DEADLINE_S
+    )
+
+
+def solve_node_budget_s() -> int:
+    """``CURIO_SOLVE_NODE_BUDGET`` — the wall-clock budget one node's repair
+    loop may spend (dev/128: the owner's fifteen minutes). Checked at round
+    BOUNDARIES: a round already running is never killed (its own sandbox
+    timeout bounds it), but no new round starts past the budget."""
+    return _positive_int_env("CURIO_SOLVE_NODE_BUDGET", DEFAULT_SOLVE_NODE_BUDGET_S)
+
+
+#: The widest the loop may ever go, whatever the env says — the trail, the
+#: transcript part and the egress budget are all sized from it. dev/129: the
+#: owner's instruction is that TIME is the bound ("keep trying to solve for at
+#: least 15 mins, with many retries as possible"), so this is a safety net
+#: rather than the normal stop: sized so that a quarter hour of seconds-long
+#: rounds cannot exhaust it by accident, and so that a typo in the env cannot
+#: run one node forever.
+MAX_SOLVE_ATTEMPTS = 40
+
+
+def _solve_waves(spec: dict | None, targets: list[str]) -> list[list[str]]:
+    """dev/118 (DEC-075): the batch's topological waves over its OWN targets.
+    Depth 0 = no target upstream (an upstream that is not a target already has
+    content, or will be named as a blocker honestly); depth k = one more than
+    the deepest target upstream. Data-flow edges only (Interaction edges carry
+    selection state). Targets caught in a cycle land in one last wave — the
+    runner refuses a cyclic slice by name. Order within a wave is the
+    targets' own."""
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    targets = [t for t in targets if isinstance(t, str)]
+    target_set = set(targets)
+    try:
+        wf = parse_workflow_dict(spec or {})
+        upstream = {t: [u for u in wf.upstream_nodes(t) if u in target_set and u != t] for t in targets}
+    except Exception:
+        return [list(targets)] if targets else []
+    depth: dict[str, int] = {}
+    remaining = list(targets)
+    while remaining:
+        progressed = False
+        for t in list(remaining):
+            ups = upstream.get(t, [])
+            if all(u in depth for u in ups):
+                depth[t] = 1 + max((depth[u] for u in ups), default=-1)
+                remaining.remove(t)
+                progressed = True
+        if not progressed:
+            last = max(depth.values(), default=-1) + 1
+            for t in remaining:
+                depth[t] = last
+            break
+    return [[t for t in targets if depth[t] == d] for d in sorted(set(depth.values()))]
+
+
+#: dev/127: how far the walk looks through nodes that produced no artifact of
+#: their own (a merge-flow, a data pool) before giving up.
+_UPSTREAM_WALK_MAX_DEPTH = 4
+_UPSTREAM_ROWS_MAX = 12
+
+
+def _upstream_outputs_for(
+    spec: dict | None,
+    node_id: str,
+    wave_outputs: dict,
+    *,
+    schema_fn=None,
+) -> list[dict]:
+    """What the nodes feeding this one actually produced (dev/118, dev/127).
+
+    dev/118 listed the direct upstreams that had passed earlier in the batch —
+    which skipped the case that mattered: a ``merge-flow`` is written but never
+    executed (``DEC-075``), so it holds no output, so a node fed THROUGH one
+    was handed an empty list and had to invent its inputs (memo dev/127 §1 D5,
+    the owner's join that guessed ``community_area`` three times).
+
+    So the walk goes THROUGH a node that produced nothing, into its own
+    upstreams, in ``in_0…in_n`` order — which is the order the child will index
+    as ``arg[0]``, ``arg[1]`` — and each row carries ``argIndex`` when it
+    arrived that way. ``schema_fn`` (optional) turns a recorded artifact into
+    the columns and dtypes it holds; an artifact it cannot describe leaves the
+    row without a schema rather than with a guess.
+    """
+    if not wave_outputs:
+        return []
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    try:
+        graph = parse_workflow_dict(spec or {})
+    except Exception:
+        return []
+
+    def _row(nid: str, arg_index: int | None) -> dict:
+        record = wave_outputs[nid]
+        row = {k: v for k, v in record.items() if k != "output"}
+        if arg_index is not None:
+            row["argIndex"] = arg_index
+        if schema_fn is not None:
+            artifact = (record.get("output") or {}).get("path")
+            if artifact:
+                try:
+                    schema = schema_fn(artifact)
+                except Exception:  # noqa: BLE001
+                    schema = None
+                if schema:
+                    row["schema"] = schema
+        return row
+
+    def _walk(target: str, arg_index: int | None, depth: int) -> list[dict]:
+        if depth > _UPSTREAM_WALK_MAX_DEPTH:
+            return []
+        try:
+            ups = graph.upstream_nodes(target)
+        except Exception:
+            return []
+        rows: list[dict] = []
+        indexed = len(ups) > 1
+        for index, up in enumerate(ups):
+            slot = index if indexed else arg_index
+            if up in wave_outputs:
+                rows.append(_row(up, slot))
+            else:
+                # A node with no recorded output of its own (a merge, a pool,
+                # or one that has not run): look through it, keeping the slot
+                # order the child will index by.
+                rows.extend(_walk(up, slot, depth + 1))
+        return rows
+
+    return _walk(node_id, None, 0)[:_UPSTREAM_ROWS_MAX]
+
+
+_VANISHED_INPUT_MARKERS = (
+    "could not be loaded", "not found", "no such file", "does not exist",
+    "keyerror", "artifact", "outputs table", "no output",
+)
+
+
+def _looks_like_a_vanished_reused_input(result: dict | None) -> bool:
+    """dev/118 commit 4: a failed round that ran with reused ancestor outputs,
+    where the TARGET failed while loading its input — the artifact behind a
+    reused record is gone, not the code wrong. Only when ancestors were
+    actually reused; a failure with a named upstream blocker or of another
+    shape is the candidate's own."""
+    if not isinstance(result, dict) or result.get("verdict") != "fail":
+        return False
+    evidence = result.get("evidence") or {}
+    if not evidence.get("reusedNodes") or evidence.get("kind") != "execution-error":
+        return False
+    text = str(evidence.get("stderrTail") or evidence.get("detail") or "").lower()
+    return any(marker in text for marker in _VANISHED_INPUT_MARKERS)
+
+
+def _node_is_executable(node_obj: dict | None, templates: dict | None = None) -> bool:
+    """dev/118 (DEC-075) → dev/119 (DEC-076): the ONE executability predicate
+    the batch, the per-node Solve and validate-node consult. With the roster
+    snapshot the template's own facts decide; without one the legacy tables
+    are the fallback."""
+    from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
+
+    return is_executable_kind(str((node_obj or {}).get("type") or ""), templates)
+
+
+def _roster_templates(user_key: str, project_id: str) -> dict | None:
+    """dev/119: the roster snapshot for a project, or None when unreachable."""
+    from utk_curio.backend.app.packages import services as _pkg
+
+    return _pkg.roster_templates(user_key, project_id)
+#: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
+#: run legitimately does — every external candidate row the card may carry,
+#: each allowed one redirect (a normal answer, not a cost the user should read
+#: as "refused — budget spent"). ``egress.MAX_CALLS_PER_RUN`` stays the bound
+#: on the MODEL's own web.fetch/web.search calls, a different budget.
+_RUN_EGRESS_CALLS = content._CANDIDATES_MAX_ROWS_PER_LANE * 2
+#: dev/118 (DEC-075): a Solve batch's wall-clock budget. Every node may cost
+#: up to three rounds of a sandbox run each; the budget is what stops a wide
+#: plan from running past any reasonable wait — what it did not reach reverts
+#: to ``pending`` with the reason, and Retry continues from there.
+DEFAULT_SOLVE_BATCH_DEADLINE_S = 45 * 60
+
+
+def solve_batch_deadline_s() -> int:
+    """``CURIO_SOLVE_BATCH_DEADLINE`` in seconds; an unusable value falls back
+    to the default (the ``exec_timeout_s`` pattern)."""
+    import os as _os
+
+    raw = _os.environ.get("CURIO_SOLVE_BATCH_DEADLINE")
+    if raw is None or not str(raw).strip():
+        return DEFAULT_SOLVE_BATCH_DEADLINE_S
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return DEFAULT_SOLVE_BATCH_DEADLINE_S
+    return value if value > 0 else DEFAULT_SOLVE_BATCH_DEADLINE_S
+
+
+#: dev/131: how long the session pauses between two passes that changed
+#: nothing — long enough for a user to answer, short enough to pick up their
+#: answer promptly, and always stop-aware. Env-overridable so a test suite can
+#: run a whole session without sleeping.
+DEFAULT_SOLVE_SESSION_WAIT_S = 10
+#: A hard bound on passes, so a clock that misbehaves cannot spin forever.
+_SOLVE_MAX_PASSES = 200
+
+
+def solve_session_wait_s() -> int:
+    """``CURIO_SOLVE_SESSION_WAIT`` — the pause between two passes that changed
+    nothing (dev/131)."""
+    return _positive_int_env("CURIO_SOLVE_SESSION_WAIT", DEFAULT_SOLVE_SESSION_WAIT_S)
+
+
+def _wait_for_stop(stop, seconds: float) -> bool:
+    """Sleep up to *seconds*, returning True the moment a stop is requested.
+
+    ``stop`` is dev/63's in-process event; a durable cancel flag is checked by
+    the caller's own ``_should_stop`` on the next pass. Waiting on the event
+    rather than sleeping means Stop is felt immediately (memo dev/131 §6.5).
+    """
+    try:
+        return bool(stop.wait(timeout=seconds))
+    except Exception:  # noqa: BLE001 — a stop we cannot wait on is not a stop
+        time.sleep(min(seconds, 1))
+        return False
+
+
+def _blocker_signature(spec: dict | None, node_id: str) -> tuple:
+    """What would have to CHANGE for this node to be worth attempting again.
+
+    dev/131: a session that keeps making passes must not re-burn provider calls
+    on identical conditions — "consistently attempt to resolve" means keep
+    watching and attempt whenever progress became possible, not attempt the
+    same impossible thing in a loop. The signature is the node's own content,
+    the content of everything upstream of it, and the state of its dataset
+    selection; when none of those moved, a new attempt would ask the same
+    question of the same model with the same inputs.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    dataflow = (spec or {}).get("dataflow") or {}
+    nodes = {
+        n.get("id"): str(n.get("content") or "")
+        for n in dataflow.get("nodes") or []
+        if isinstance(n, dict)
+    }
+    upstreams: list[str] = []
+    try:
+        graph = parse_workflow_dict(spec or {})
+        frontier = [node_id]
+        seen = set()
+        while frontier:
+            current_id = frontier.pop()
+            for up in graph.upstream_nodes(current_id):
+                if up in seen:
+                    continue
+                seen.add(up)
+                upstreams.append(up)
+                frontier.append(up)
+    except Exception:  # noqa: BLE001
+        upstreams = []
+    record = dataset_resolution.source_record(spec, node_id) or {}
+    return (
+        len(nodes.get(node_id) or ""),
+        tuple(sorted((up, len(nodes.get(up) or "")) for up in upstreams)),
+        str(record.get("status") or ""),
+        len(record.get("picks") or []),
+    )
+
+
+def _session_waiting_summary(results: dict, targets: list) -> list[dict]:
+    """What the session is blocked on, per node, for the strip's live line.
+
+    dev/131: a node awaiting the USER (dev/126's dataset selection) is the case
+    that used to end a run; naming it is how the user learns the session is
+    waiting for them rather than stuck.
+    """
+    out: list[dict] = []
+    for node_id in targets:
+        result = results.get(node_id) or {}
+        remedy = result.get("remedy") if isinstance(result.get("remedy"), dict) else None
+        kind = (
+            "dataset-selection" if (remedy or {}).get("kind") == "dataset-selection"
+            else "upstream" if "waiting — upstream" in str(result.get("reason") or "")
+            else "retry"
+        )
+        out.append({
+            "nodeId": node_id,
+            "kind": kind,
+            "reason": str(result.get("reason") or result.get("error") or "")[:200],
+            **({"attachmentId": (remedy or {}).get("attachmentId")} if remedy else {}),
+        })
+    return out[:12]
+
+
+def _batch_deadline_spent(started: float, deadline_s: int) -> bool:
+    """Whether a batch begun at monotonic *started* has used its budget —
+    checked at every wave boundary and before every node dispatch."""
+    return (time.monotonic() - started) >= deadline_s
+
+
+#: dev/116: the verified loop's own egress budget — per failed round up to five
+#: real requests (the gate's probe, the composed request and its redirect, the
+#: keyed probe), over the first round plus the corrections, with slack.
+_LOOP_EGRESS_CALLS = 4 * DEFAULT_SOLVE_ATTEMPTS + 2
 _VALIDATE_STALE_SECONDS = 15 * 60
+
+
+def solve_node_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    *,
+    node_id: str,
+    exec_fn=None,
+):
+    """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
+    explicit ask to run, fix, and re-run ONE node's code from the node's own
+    agent (any attachment whose manifest resolves ``node.content.generate``).
+
+    Round 0 executes the node's CURRENT content as-is; corrections run the
+    shared loop. A node that already had content lands as a reviewed
+    ``node.content.write`` that has already passed (DEC-006 — an existing
+    node's content changes only through review); an EMPTY node is written
+    directly on PASS; exhaustion mints nothing and says so; a sandbox outage
+    says "not verified". Detached like the batch: the request subscribes.
+
+    Eager validation (404/409 stay JSON); the generator yields
+    ``solve_node_started`` → the loop's ``generation_round`` /
+    ``node_executed`` / ``round_verdict`` → ``done {verdict, rounds,
+    attempts, unchanged?, written?, proposalId?, proposalAttachmentId?}``.
+    """
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    # DEC-080 (dev/126): as the batch — the per-node Solve resolves the same
+    # required delegates.
+    if _repair_required_closure(
+        user_key, project_id, record.get("coord", ""), attachment_id=attachment_id
+    ):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
+    if not isinstance(node_id, str) or not node_id:
+        raise AgentServiceError("a nodeId is required", 422)
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    resolution = delegation.resolve(
+        user_key, project_id, manifest, "node.content.generate"
+    ) if manifest is not None else delegation.Resolution("unresolvable")
+    if resolution.outcome != "ok":
+        raise AgentServiceError(
+            "no installed agent declares node.content.generate — install the "
+            "Node Content Builder first",
+            409,
+        )
+    try:
+        agent_jobs.check_can_start(user_key, attachment_id)
+    except agent_jobs.JobRefused as exc:
+        raise AgentServiceError(str(exc), exc.status)
+    execution_id = uuid.uuid4().hex
+    # Request-context pieces, resolved before the job thread starts.
+    base = _solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
+    dataset_paths = _resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
+    events = _solve_node_events(
+        user_key, project_id, attachment_id, config, spec, node, resolution,
+        record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
+        manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
+        catalog_rows=_catalog_rows_for_discovery(user_key, project_id),
+        templates=_roster_templates(user_key, project_id),
+        acting_user=_acting_user(),
+    )
+    job = agent_jobs.start_job(
+        user_key=user_key, project_id=project_id, attachment_id=attachment_id,
+        kind="solve-node", job_id=execution_id, events=events,
+    )
+    return agent_jobs.subscribe(job)
+
+
+def _artifact_summary_fn():
+    """A memoized ``artifact id -> shape summary`` reader (dev/127's preview +
+    dev/133's emptiness check), for a caller with no batch-wide cache."""
+    cache: dict = {}
+
+    def _summary(artifact_id: str) -> dict | None:
+        if artifact_id in cache:
+            return cache[artifact_id]
+        from utk_curio.backend.app.execution import runner as _runner
+
+        summary = None
+        try:
+            preview = _runner.load_artifact_preview(artifact_id)
+            summary = upstream_schema.summarize(preview) if preview else None
+        except Exception:  # noqa: BLE001
+            log.warning("Could not describe artifact %s", artifact_id, exc_info=True)
+        cache[artifact_id] = summary
+        return summary
+
+    return _summary
+
+
+def _solve_node_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    spec: dict,
+    node: dict,
+    resolution,
+    coord: str,
+    session_id,
+    execution_id: str,
+    exec_fn,
+    *,
+    manifest,
+    grounding_base: dict,
+    dataset_paths: dict,
+    templates: dict | None = None,
+    catalog_rows: list | None = None,
+    acting_user=None,
+):
+    """The per-node Solve body (dev/115 A2) over the ONE verified loop."""
+    node_id = node.get("id")
+    label = (node.get("goal") or node_id)[:60]
+    started = time.monotonic()
+    had_content = bool(str(node.get("content") or "").strip())
+    yield "solve_node_started", {
+        "nodeId": node_id, "executionId": execution_id, "hasContent": had_content,
+    }
+
+    def _traced(delegate_inputs):
+        st, tx, ch, _h = _run_delegate_traced(
+            user_key, project_id, resolution.coord,
+            "node.content.generate", delegate_inputs, config,
+            parent_execution_id=execution_id,
+            parent_coord=coord,
+            attachment_id=attachment_id,
+            node_id=node_id,
+            home_create=False,
+        )
+        return st, tx, ch
+
+    kind = workflow_spec.content_kind(str(node.get("type") or ""), templates)
+    # dev/134: a DOCUMENT kind (Vega-Lite, an AUTK grammar) goes through the
+    # SAME loop as code — the runner reports "not executable" and dev/129's
+    # validator decides whether the document is written. The per-node Solve used
+    # to refuse these outright, which left the batch's unguarded write path as
+    # the only way to fill such a node.
+    if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
+        # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
+        # all (a merge, a pool, a simple view, a spatial join) or presentation
+        # content with no validator. No round, no sandbox, no generation —
+        # nothing this loop could verify; say so and change nothing.
+        reason = (
+            f"{label!r} ({node.get('type')}) is wired, not written — this kind has no "
+            "content to author; it renders or forwards its input"
+            if kind == workflow_spec.CONTENT_KIND_NONE else
+            f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
+            "in the browser or through its own service; Play the dataflow to see it"
+        )
+        outcome = {
+            "verdict": "not-executable",
+            "evidence": {"kind": "not-executable", "detail": reason},
+            "rounds": 0, "candidate": "", "delegations": [],
+            "roundsTrace": [f"not executable — {reason}"], "attempts": [],
+        }
+    else:
+        outcome = yield from _verified_content_rounds(
+            user_key, project_id,
+            spec=spec, node=node, resolution=resolution, config=config,
+            parent_execution_id=execution_id, parent_coord=coord,
+            attachment_id=attachment_id, exec_fn=exec_fn,
+            grounding_loop_ctx={"granted": [], "manifest": manifest,
+                                "attachment_id": attachment_id, "session_id": session_id},
+            grounding_base=grounding_base,
+            start_from_current=True,
+            delegate_runner=_traced,
+            # dev/132 (closes dev/131 F4): topped up for a dataset that
+            # arrived after this job started — the per-pill Solve and the
+            # Finder's own delegation both come through here.
+            dataset_paths_fn=lambda codes: _session_dataset_paths(
+                project_id, acting_user, dataset_paths, codes
+            ),
+            # dev/133: an empty result is a failed round here too — the
+            # per-node Solve is where the owner presses "solve this node".
+            result_summary_fn=_artifact_summary_fn(),
+            exec_user_key=user_key,
+            secrets_fn=_exec_secrets_resolver(user_key),
+            resolve_source=_source_resolver(
+                user_key, project_id, coord=coord, attachment_id=attachment_id,
+                execution_id=execution_id, config=config, manifest=manifest,
+                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+                catalog_rows=catalog_rows,
+            ),
+        )
+    verdict = outcome["verdict"]
+    attempts = outcome["attempts"]
+    rounds = outcome["rounds"]
+    done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
+                  "attempts": attempts, "evidence": outcome["evidence"]}
+    trail_lines = []
+    for attempt in attempts[:8]:
+        why = _attempt_why(attempt, limit=160)
+        line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
+        if attempt.get("verdict") == "pass":
+            line += f" · {attempt.get('outputDataType') or '?'}"
+        elif why:
+            line += f" — {why}"
+        if attempt.get("verdict") != "pass" and attempt.get("endpointEvidence"):
+            line += f" · endpoint: {str(attempt['endpointEvidence'])[:200]}"
+        trail_lines.append(line)
+    unchanged = (
+        verdict == "pass" and rounds == 1 and attempts
+        and attempts[0].get("source") == "current content"
+    )
+    parts: list = []
+    if verdict == "pass" and unchanged:
+        text = f"Verified {label!r}: its current code ran successfully — no change needed."
+        done["unchanged"] = True
+        card_kind = "result"
+    elif verdict == "pass" and not had_content:
+        # An empty node (a plan placeholder solved from its own agent) is
+        # written directly on PASS — parity with the Dataflow Builder's Solve.
+        written = False
+        try:
+            fresh = _read_spec_or_404(user_key, project_id)
+            target = next(
+                (n for n in (fresh.get("dataflow") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id") == node_id), None,
+            )
+            if target is not None and not str(target.get("content") or "").strip():
+                target["content"] = outcome["candidate"]
+                projects_storage.write_spec(user_key, project_id, fresh)
+                written = True
+        except Exception:
+            written = False
+        done["written"] = written
+        text = (
+            f"Solved {label!r}: the code ran successfully after {rounds} round"
+            f"{'s' if rounds != 1 else ''} and was written to the node."
+            if written else
+            f"Solved {label!r}: the code ran successfully, but the node gained content meanwhile — nothing written."
+        )
+        card_kind = "result"
+    elif verdict == "pass":
+        part, home_att, _mint_text = _mint_content_review_from_delegate(
+            user_key, project_id,
+            node_id=node_id,
+            generated_text=outcome["candidate"],
+            parent_attachment_id=attachment_id,
+            parent_session_id=session_id,
+            local_turn=False,
+            validation={"verdict": verdict, "rounds": rounds,
+                        "evidence": outcome["evidence"], "attempts": attempts},
+            grounding_base=grounding_base,
+        )
+        if part is not None:
+            done["proposalId"] = part["proposalId"]
+            done["proposalAttachmentId"] = home_att
+            if home_att == attachment_id:
+                parts.append(part)
+            text = (
+                f"Solved {label!r}: the corrected code ran successfully after {rounds} "
+                f"round{'s' if rounds != 1 else ''} — review and apply it below."
+            )
+        else:
+            text = f"Solved {label!r} but the review could not be minted — nothing was changed."
+        card_kind = "result"
+    elif verdict == "infrastructure":
+        text = (
+            f"Not verified: the sandbox was unreachable while solving {label!r} — "
+            "nothing was run, corrected, or written. Retry when it is back."
+        )
+        card_kind = "error"
+    elif verdict == "not-executable":
+        # dev/129: a document that validated says so; one that nothing could
+        # check says THAT, and is not written.
+        doc_evidence = outcome.get("evidence") or {}
+        if doc_evidence.get("documentValidated"):
+            text = (
+                f"Validated {label!r}: its {doc_evidence['documentValidated']} document is valid "
+                "and was written — the sandbox cannot run this kind, so it was not executed; "
+                "Play the dataflow to see it render."
+            )
+        elif doc_evidence.get("documentUnchecked") and not doc_evidence.get("documentPassive"):
+            text = (
+                f"Wrote nothing for {label!r}: {str(doc_evidence['documentUnchecked'])[:200]}. "
+                "Nothing unchecked is put into a node."
+            )
+        else:
+            text = (
+                f"Not executable: {label!r} has no code the sandbox could run — it works in the "
+                "browser or through its own service. Play the dataflow to see it. Nothing was changed."
+            )
+        card_kind = "result"
+    elif verdict == "awaiting-source":
+        # dev/126: the source is with the user. Nothing was generated or
+        # written; the node's own Dataset Finder holds the candidates.
+        evidence = outcome.get("evidence") or {}
+        remedy_payload = evidence.get("remedy")
+        if isinstance(remedy_payload, dict):
+            done["remedy"] = remedy_payload
+        text = (
+            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'} "
+            "— open Dataset Finder on this node, select the source and confirm, then Solve "
+            "again. Nothing was generated or written."
+        )
+        card_kind = "result"
+    elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
+        text = (
+            f"Not verified: {(outcome.get('evidence') or {}).get('detail') or 'an upstream node has no content yet'} "
+            f"— {label!r} waits for it; solve or fill that node, then Solve this one again. Nothing was changed."
+        )
+        card_kind = "result"
+    else:
+        text = (
+            f"Not fixed after {rounds} attempt{'s' if rounds != 1 else ''}"
+            f"{_stopped_by_clause(outcome.get('stoppedBy'))}: {label!r} still "
+            "fails — every attempt is listed below with the code it ran; nothing was written."
+        )
+        remedy_payload = (outcome.get("evidence") or {}).get("remedy")
+        if isinstance(remedy_payload, dict):
+            done["remedy"] = remedy_payload
+            text += _source_missing_remedy(remedy_payload).replace(" — ", " ", 1).capitalize() + "."
+        card_kind = "error"
+    card = {
+        "type": "card", "kind": card_kind,
+        "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
+        "lines": trail_lines[:10],
+    }
+    if verdict != "pass" and attempts:
+        # dev/127: the trail itself, with the code each attempt ran — in THIS
+        # chat, durably, not only in the transient row above.
+        trail_part = _solve_attempts_part(
+            spec, node_id, str(node.get("goal") or node_id)[:120],
+            {"attempts": attempts, "rounds": rounds, "verdict": verdict,
+             "stoppedBy": outcome.get("stoppedBy")},
+        )
+        if trail_part is not None:
+            parts.append(trail_part)
+    if isinstance(session_id, str):
+        try:
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent", text, error=(card_kind == "error"),
+                    content=[card, *parts],
+                    execution=_execution_record(
+                        execution_id,
+                        {"coord": coord, "provider": getattr(config, "api_type", None),
+                         "model": getattr(config, "model", None), "tools": [], "intentEdited": False},
+                        {}, started, "ok" if verdict in ("pass", "not-executable") else "error",
+                        delegations=[c for c in outcome["delegations"] if c is not None],
+                    ),
+                )],
+            )
+        except Exception:
+            pass
+    yield "done", done
 
 
 def validate_node_stream(
@@ -4904,100 +7166,1304 @@ def validate_node_stream(
     )
 
 
-def _validate_events(
+#: dev/115: the verified loop's progress, relayed on the Solve stream.
+_SOLVE_PROGRESS_EVENTS = {
+    "generation_round": "node_round",
+    "node_executed": "node_executed",
+    "round_verdict": "node_verdict",
+}
+
+
+def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict:
+    """dev/115: ``{datasetId: absolutePath}`` for every id a Solve batch may
+    load — resolved ONCE in the request thread the way ``/processPythonCode``
+    does (contained paths only); fail-open to ``{}``."""
+    ids = [str(i) for i in dataset_ids if i][:64]
+    if not ids:
+        return {}
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        return dict(
+            DatasetCatalogService(user).resolve_execution_paths(ids, dataflow_id=project_id) or {}
+        )
+    except Exception:
+        log.warning("Could not resolve catalog execution paths for project %s",
+                    project_id, exc_info=True)
+        return {}
+
+
+def _acting_user():
+    """The user object the request is acting as, or None — captured at a job's
+    ENTRY so the detached thread can still reach the datasets domain (which is
+    user-object keyed, unlike the key-based agents store)."""
+    try:
+        from flask import g, has_request_context
+
+        return getattr(g, "user", None) if has_request_context() else None
+    except Exception:  # noqa: BLE001 — not under Flask
+        return None
+
+
+def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> dict:
+    """Resolve dataset ids the eager mapping does not have, as *user_obj*.
+
+    dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
+    Solve starts (dev/115's rule — the job thread holds no request context), so
+    a dataset that appeared DURING the session — the user importing the file a
+    portal row's steps described, or installing one from the catalog — had no
+    path inside the running job and its node stayed pending until the next
+    Solve. The acting user is what the resolution actually needs, and a job can
+    hold that from its start; the top-up caches into the same mapping, so one
+    new id costs one lookup per session.
+    """
+    missing = [i for i in ids if i and i not in mapping]
+    if not missing or user_obj is None:
+        return mapping
+    try:
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
+            missing, dataflow_id=project_id
+        ) or {}
+    except Exception:  # noqa: BLE001 — an unresolvable id fails loudly IN the sandbox
+        log.warning("Could not top up catalog paths for project %s", project_id,
+                    exc_info=True)
+        return mapping
+    for dataset_id, path in resolved.items():
+        mapping[str(dataset_id)] = path
+    return mapping
+
+
+def _dataset_ids_in(codes: list) -> list[str]:
+    """Every ``curio_dataset_path("<id>")`` id these codes reference."""
+    out: list[str] = []
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id not in out:
+                out.append(dataset_id)
+    return out
+
+
+def _session_dataset_paths(project_id: str, user_obj, mapping: dict, codes: list) -> dict:
+    """The paths *codes* need — from the eager mapping, topped up for anything
+    that arrived since the session started (dev/131 F4)."""
+    ids = _dataset_ids_in(codes)
+    if ids:
+        _dataset_path_topup(project_id, user_obj, mapping, ids)
+    return _filter_dataset_paths(mapping, codes)
+
+
+def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
+    """The subset of a precomputed mapping that *codes* reference — pure, so a
+    worker thread can call it."""
+    if not mapping:
+        return {}
+    out: dict = {}
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id in mapping:
+                out[dataset_id] = mapping[dataset_id]
+    return out
+
+
+#: dev/115: how many URLs a failed round probes for the correction's evidence.
+_CORRECTION_URL_PROBES = 2
+#: dev/115: bounded attempt-trail fields (the card renders them inert).
+_ATTEMPT_DETAIL_CHARS = 300
+_ATTEMPT_STDERR_CHARS = 1200
+#: dev/127: the candidate a failed round actually ran, kept ON the attempt so
+#: the transcript can show what was tried. Bounded — a trail is a record, not
+#: a copy of the project (a five-round trail costs tens of KB, not MB).
+_ATTEMPT_CODE_CHARS = 4000
+_CODE_TRUNCATION_MARKER = "\n… [truncated: the attempt's code exceeded the trail's bound]"
+#: dev/127: how many repeated candidates before the correction ESCALATES.
+#: dev/116 tells the model it repeated itself and lets it try again; dev/129
+#: keeps the loop going (the owner's "as many retries as possible") but makes
+#: each repeat louder, and stops only at the hard count — a stuck model must
+#: not spend a quarter hour of provider calls on copies.
+_MAX_REPEATED_ATTEMPTS = 2
+_MAX_REPEATED_ATTEMPTS_HARD = 8
+#: dev/127: how many nodes' attempt trails ride ONE Solve turn. Beyond this the
+#: card names how many were elided; each is still readable in its own node's
+#: agent chat.
+_MAX_ATTEMPT_PARTS = 8
+
+#: dev/127: why the repair loop stopped. Every failure sentence names one, so
+#: "not fixed after N attempts" can never again read as a verdict on the code
+#: when it was a verdict on the round cap.
+STOPPED_BY_PHRASES = {
+    "rounds": "the attempt ceiling",
+    "budget": "this node's time budget",
+    "repeat": "a repeated attempt",
+    "decline": "the builder's decline",
+    "blocker": "an upstream blocker",
+    "generation": "a generation error",
+    "infrastructure": "a sandbox outage",
+    "passed": "success",
+    # dev/126's lane: the source is with the user, so the loop stopped ON PURPOSE.
+    "source": "a source the user must confirm",
+    # dev/131: the session's own endings.
+    "complete": "nothing left to do",
+    "stopped": "you stopped it",
+    "budget": "this session's time budget",
+    "blocked": "a specialist that must be installed first",
+}
+
+
+def _stopped_by_clause(stopped_by: object) -> str:
+    """`" (stopped by this node's time budget)"`, or `""` when unrecorded."""
+    phrase = STOPPED_BY_PHRASES.get(str(stopped_by or ""))
+    return f" (stopped by {phrase})" if phrase and stopped_by != "passed" else ""
+
+
+def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
+    """The attempt's ``code`` (+ ``codeIsProse``/``codeTruncated``) fields."""
+    text = candidate if isinstance(candidate, str) else ""
+    if not text.strip():
+        return {}
+    field: dict = {}
+    if len(text) > _ATTEMPT_CODE_CHARS:
+        field["code"] = text[:_ATTEMPT_CODE_CHARS] + _CODE_TRUNCATION_MARKER
+        field["codeTruncated"] = True
+    else:
+        field["code"] = text
+    if prose:
+        # dev/115: the builder's sanctioned decline is prose, not content — the
+        # card must not render it as code the user could run.
+        field["codeIsProse"] = True
+    return field
+
+
+def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
+    """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
+    every ``curio_dataset_path("<id>")`` call in *codes* — resolved the way
+    ``/processPythonCode`` resolves it (``resolve_execution_paths``, contained
+    paths only). Fail-open to ``{}``: an unmapped id raises a clear per-id
+    error inside the sandbox, which the correction loop then sees. Needs the
+    request context (``g.user``); a Solve batch precomputes it in the request
+    thread and hands the mapping to its workers."""
+    ids: list[str] = []
+    for code in codes:
+        if not isinstance(code, str) or "curio_dataset_path" not in code:
+            continue
+        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
+            dataset_id = match.group(2)
+            if dataset_id not in ids:
+                ids.append(dataset_id)
+            if len(ids) >= 32:
+                break
+    if not ids:
+        return {}
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        resolved = DatasetCatalogService(user).resolve_execution_paths(
+            ids, dataflow_id=project_id
+        )
+        return dict(resolved or {})
+    except Exception:  # resolution must never fail a validation run
+        log.warning(
+            "Could not resolve dataset paths for a validation run (project %s)",
+            project_id, exc_info=True,
+        )
+        return {}
+
+
+def _content_sha(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+#: Attempt kinds whose detail is read from the HEAD (a refusal names the
+#: literal, a decline names the missing input); a traceback reads from its tail.
+_HEAD_FIRST_KINDS = (
+    "ungrounded-source", "source-missing", "repeated-attempt",
+    # dev/128: the shape refusal's first line IS the answer.
+    "input-contract",
+    # dev/129/133/134: these details are composed prose, not tracebacks — the
+    # sentence that says what is wrong is the FIRST one.
+    "document-invalid", "empty-result",
+    # dev/136: and the render that drew nothing.
+    "empty-render",
+)
+
+
+def _last_attempt_code(trail: dict) -> str | None:
+    """The code of the last recorded attempt (dev/127) — what the failure's
+    exception line is read against, so a self-raised error is named as one."""
+    attempts = (trail or {}).get("attempts") or []
+    return attempts[-1].get("code") if attempts else None
+
+
+#: dev/131 (owner correction): remedies only the USER can act on. A node
+#: parked on one of these has no new input to carry — attempting it again would
+#: ask the same question of the same model, so the session WAITS and rechecks.
+#: Everything else (an execution error, a refusal, a decline) IS a new input.
+_USER_ACTION_REMEDIES = ("dataset-selection", "connection-key")
+
+
+def _awaits_user_action(result: dict | None) -> bool:
+    """Whether this node's last outcome is parked on something the user must do."""
+    remedy = (result or {}).get("remedy")
+    return (
+        isinstance(remedy, dict)
+        and str(remedy.get("kind") or "") in _USER_ACTION_REMEDIES
+    )
+
+
+#: Attempt kinds that say nothing about the CODE: the sandbox was down, the
+#: runner refused the slice, an upstream has no content yet. Carrying one
+#: forward would ask the builder to "fix" code that never ran — and the repeat
+#: detector would then fail the node for returning the same correct code. The
+#: node is still re-attempted; it just starts clean, because the blocker was
+#: never in the code.
+_NO_CARRY_KINDS = ("infrastructure", "precondition", "upstream-blocker", "not-executable")
+#: A repeat notice is about the LOOP, not the code: when a real error sits
+#: behind it, that error is what the next pass carries.
+_WEAK_CARRY_KINDS = ("repeated-attempt",)
+
+
+#: How many consecutive repeat-only passes a node gets before the session
+#: stops re-attempting it: the builder is handing back the code that already
+#: failed, so another pass would spend a provider call to learn the same
+#: thing. Its diagnosis and trail stay; the session moves on to what can
+#: progress (and ends "blocked" when nothing can).
+_MAX_WEAK_PASSES = 3
+
+#: How many attempt rows one node's trail keeps across a whole session. The
+#: transcript part shows the last few (dev/127's cap); this is the record.
+_MAX_TRAIL_ATTEMPTS = 40
+
+
+def _weak_failure(result: dict | None) -> bool:
+    """Whether every failed attempt in this trail is about the LOOP or the
+    environment rather than the code (a repeat notice, a sandbox outage, a
+    slice bound) — so its sentence must not replace a concrete diagnosis."""
+    failed = [
+        a for a in ((result or {}).get("attempts") or [])
+        if isinstance(a, dict) and a.get("verdict") != "pass"
+    ]
+    if not failed:
+        return False
+    weak = set(_WEAK_CARRY_KINDS) | set(_NO_CARRY_KINDS)
+    return all(str(a.get("kind") or "") in weak for a in failed)
+
+
+def _carry_forward_error(result: dict | None) -> dict | None:
+    """The input a re-attempt carries: the last attempt's code and ITS error.
+
+    The owner's correction to dev/131 — *"the keep attempting it should not
+    carry the same inputs, supposing it doesn't depend on user's actions, it
+    should carry the currently error that is being given"*. A later pass is not
+    a fresh start: it continues from the candidate that failed and the error it
+    produced, so round 0 generates a CORRECTION rather than another blank first
+    draft that fails the same way.
+    """
+    attempts = [
+        a for a in ((result or {}).get("attempts") or [])
+        if isinstance(a, dict)
+        and a.get("verdict") != "pass"
+        and str(a.get("kind") or "") not in _NO_CARRY_KINDS
+        and str(a.get("stderrTail") or a.get("detail") or "").strip()
+    ]
+    if not attempts:
+        return None
+    strong = [a for a in attempts if str(a.get("kind") or "") not in _WEAK_CARRY_KINDS]
+    attempt = (strong or attempts)[-1]
+    error = str(attempt.get("stderrTail") or attempt.get("detail") or "").strip()
+    code = "" if attempt.get("codeIsProse") else str(attempt.get("code") or "")
+    return {"code": code, "error": error, "kind": str(attempt.get("kind") or "")}
+
+
+def _solve_attempts_part(
+    spec: dict | None, node_id: str, label: str, result: dict | None
+) -> dict | None:
+    """dev/127: ONE node's repair attempts as a transcript part, or None.
+
+    The owner's requirement — *"it is important to clearly display all attempts
+    to fix in the chat transcript"* — is a durability requirement: the strip is
+    transient and the card's lines cannot carry code. Every recorded attempt
+    rides here with the code it ran and its error read through
+    ``failure_text`` (the exception line first, whole), and the part links the
+    node's own agent so the child's replies are one click away.
+    """
+    attempts = (result or {}).get("attempts") or []
+    if not attempts:
+        return None
+    rows = []
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        rows.append({
+            **attempt,
+            "errorSummary": _attempt_why(
+                attempt, limit=content.SOLVE_ATTEMPT_ERROR_MAX_CHARS
+            ),
+        })
+    if not rows:
+        return None
+    home = _node_attachment_of(spec or {}, "agent.node-builder", node_id) or {}
+    return content.make_solve_attempts_part(
+        node_id=node_id,
+        label=label,
+        attachment_id=home.get("attachmentId"),
+        rounds=(result or {}).get("rounds") or len(rows),
+        stopped_by=(result or {}).get("stoppedBy") or "",
+        attempts=rows,
+        verdict=(result or {}).get("verdict") or "fail",
+    )
+
+
+def _attempt_why(attempt: dict, *, limit: int) -> str:
+    """dev/127: ONE reading of a recorded attempt's failure, for every card.
+
+    A refusal (the grounding gate, a decline) says what it refused in its FIRST
+    line; a traceback says it in its exception line, which
+    ``failure_text.summary`` puts first and keeps whole. The attempt's own code
+    rides along so an error the candidate raised itself is labeled as such."""
+    raw = str(attempt.get("stderrTail") or attempt.get("detail") or "")
+    if not raw.strip():
+        return ""
+    if attempt.get("kind") in _HEAD_FIRST_KINDS:
+        return failure_text.excerpt(raw, limit=limit, head=True)
+    return failure_text.summary(raw, code=attempt.get("code"), limit=limit)
+
+
+def _same_code(a: str, b: str) -> bool:
+    """Byte-different but code-identical: comments, blank lines and spacing
+    stripped through the tokenizer (a string literal with a '#' survives)."""
+    import io
+    import tokenize
+
+    def _norm(code: str) -> str:
+        try:
+            tokens = tokenize.generate_tokens(io.StringIO(code).readline)
+            skip = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                    tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER}
+            return " ".join(t.string for t in tokens if t.type not in skip and t.string.strip())
+        except (tokenize.TokenError, SyntaxError, IndentationError):
+            return "\n".join(l.strip() for l in code.splitlines() if l.strip() and not l.strip().startswith("#"))
+
+    return bool(a and b) and _norm(a) == _norm(b)
+
+
+def _dataset_finder_attachment_id(spec: dict | None, node_id: str) -> str | None:
+    """The node's own Dataset Finder attachment id, or None (dev/126)."""
+    if not isinstance(spec, dict) or not isinstance(node_id, str) or not node_id:
+        return None
+    record = _node_attachment_of(spec, "agent.dataset-finder", node_id)
+    return (record or {}).get("attachmentId")
+
+
+#: dev/126: the ONE sentence an ``ungrounded-source`` failure ends with. It
+#: existed in three copies (the batch Solve's verified and legacy lanes and the
+#: per-node stream), which is exactly how the three drifted apart from what the
+#: product can now do: discovery is initiated at the node, so the sentence names
+#: that node's own Dataset Finder when it has one.
+_UNGROUNDED_REMEDY_GENERIC = (
+    " — resolve the source with Dataset Finder (attach it to this node) or give the path"
+)
+
+
+def _ungrounded_remedy(attachment_id: str | None = None) -> str:
+    """The remedy an ungrounded data source ends with (dev/126)."""
+    if attachment_id:
+        return (
+            " — open Dataset Finder on this node to pick a source, or give the path"
+        )
+    return _UNGROUNDED_REMEDY_GENERIC
+
+
+def _source_missing_remedy(remedy: dict | None) -> str:
+    """The one sentence a ``source-missing`` failure ends with (dev/116)."""
+    if isinstance(remedy, dict) and remedy.get("kind") == "connection-key" and remedy.get("host"):
+        return (
+            f" — add a connection key for {remedy['host']} (Settings → Connection keys), "
+            "then Solve again"
+        )
+    if isinstance(remedy, dict) and remedy.get("kind") == "use-connection-key" and remedy.get("host"):
+        return (
+            f" — a connection key {remedy.get('name')!r} is saved for {remedy['host']}; "
+            "Solve again so the builder uses it"
+        )
+    return " — provide what it names (a key, a path or a URL), then Solve again"
+_PROSE_DECLINE_MAX_CHARS = 400
+_CODE_MARKERS = ("import ", "return ", " = ", "(", "def ", "{")
+
+
+def _is_prose_decline(candidate: str) -> bool:
+    """A short, single-line reply with no code shape — the content builder's
+    sanctioned "what source is missing" line rather than content."""
+    text = (candidate or "").strip()
+    if not text or "\n" in text or len(text) > _PROSE_DECLINE_MAX_CHARS:
+        return False
+    return not any(marker in text for marker in _CODE_MARKERS)
+
+
+def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]:
+    """dev/115: when a failed run names an HTTP problem, re-probe the URLs the
+    candidate fetches (DEC-053, budgeted through the grounding context) so the
+    correction is grounded in the endpoint's real answer — not a guess about
+    why a 400 happened."""
+    if ctx is None or ctx.probe is None:
+        return []
+    lowered = (error_text or "").lower()
+    named_http = any(
+        marker in lowered for marker in ("http", "status", "urlerror", "connection", "timeout")
+    )
+    # A data-loading node that fetches and then fails is an endpoint question
+    # whatever the traceback says: the field case wrapped the request in a
+    # bare ``except`` and returned an empty frame, so the only error named was
+    # DuckDB's "need at least one column" (dev/115 field fix, 2026-09-08).
+    if not named_http and not getattr(ctx, "is_data_loading", False):
+        return []
+    # The requests the loader actually made come first: a parameterised API's
+    # base answers 200 while the composed query is what fails.
+    targets = [(url, "composed") for url in source_grounding.composed_requests(candidate)]
+    targets += [
+        (ref.literal, "literal")
+        for ref in source_grounding.scan_sources(candidate, "python")
+        if ref.kind == "url" and ref.literal not in {u for u, _ in targets}
+    ]
+    out: list[dict] = []
+    known = getattr(ctx, "verified_urls", None)
+    for url, how in targets:
+        if how == "composed":
+            placeholder = _placeholder_probe(url, ctx)
+            if placeholder is not None:
+                # The code sends a saved key itself (curio_secret(...) as a
+                # parameter): probe ONLY with the value swapped in — a bare probe
+                # would send the placeholder text and answer nothing useful.
+                out.append(placeholder)
+                if len(out) >= _CORRECTION_URL_PROBES:
+                    break
+                continue
+        already_known = isinstance(known, dict) and url in known
+        try:
+            verdict = ctx.probe(url)
+        except Exception as exc:  # a broken prober is absence, never a claim
+            verdict = {"status": "unverified", "detail": str(exc)[:200]}
+        if how == "composed" and isinstance(known, dict) and not already_known:
+            # Evidence for the correction, NOT a new grounded source: a
+            # composed query is a derivative of its (already gated) base URL,
+            # and a 200 HTML "Missing Key" page must never be listed as a URL
+            # the builder may fetch.
+            known.pop(url, None)
+        entry = {"url": url, "verification": verdict}
+        if how == "composed":
+            entry["request"] = "the URL composed from the code's url + params"
+        note = _endpoint_note(verdict)
+        if note:
+            entry["note"] = note
+        keyed = _keyed_probe(candidate, url, how, ctx) if how == "composed" else None
+        if keyed:
+            entry.update(keyed)
+        out.append(entry)
+        if len(out) >= _CORRECTION_URL_PROBES:
+            break
+    return out
+
+
+def _placeholder_probe(url: str, ctx) -> dict | None:
+    """dev/116 live fix (2026-09-09): a composed request whose parameters carry
+    ``curio_secret("<name>")`` placeholders. The saved values are sent in their
+    place through the keyed (uncached, never-verified) probe path and the
+    outcome is redacted; the entry shows the call, never the value."""
+    bare, secret_params = source_grounding.split_secret_params(url)
+    if not secret_params:
+        return None
+    shown = source_grounding.display_composed_url(url)
+    names = sorted(set(secret_params.values()))
+    entry: dict = {
+        "url": shown,
+        "request": "the URL composed from the code's url + params; the saved key was sent in place of curio_secret(...)",
+        "keyed": ", ".join(names),
+    }
+    resolver = getattr(ctx, "secret_values", None)
+    values: dict = {}
+    if resolver is not None:
+        try:
+            values = resolver(names) or {}
+        except Exception:
+            values = {}
+    missing = [n for n in names if not values.get(n)]
+    if missing:
+        entry["verification"] = {
+            "status": "unverified",
+            "detail": f"no connection key named {', '.join(repr(m) for m in missing)} is saved — not probed",
+        }
+        return entry
+    params = {param: values[name] for param, name in secret_params.items()}
+    try:
+        outcome = ctx.probe(bare, params=params) or {}
+    except Exception as exc:
+        outcome = {"status": "unverified", "detail": str(exc)[:200]}
+    from utk_curio.common.redaction import redact
+
+    outcome = {k: (redact(v, values) if isinstance(v, str) else v) for k, v in outcome.items()}
+    entry["verification"] = outcome
+    note = _endpoint_note(outcome)
+    if note:
+        entry["note"] = note
+    return entry
+
+
+def _keyed_probe(candidate: str, url: str, how: str, ctx) -> dict | None:
+    """dev/116: when a saved connection key is bound to the composed request's
+    host and the API's ``delivery`` is known (``query:<p>`` / ``header:<H>``),
+    probe the SAME request with the key and report what the keyed request
+    answers — redacted, never cached, never a verified source. ``delivery:
+    code`` only names the key (the run is the evidence)."""
+    saved = source_grounding.secret_for_host(ctx, url)
+    if saved is None:
+        return None
+    result: dict = {"keyed": saved.name, "keyedDelivery": saved.delivery}
+    in_code = saved.name in source_grounding.secret_names(candidate)
+    if not saved.delivery.startswith(("query:", "header:")):
+        result["keyedNote"] = (
+            f"a connection key {saved.name!r} is saved for this host"
+            + ("" if in_code else f" — the code does not use it yet: {saved.use_line}")
+            + "; the code decides how the API receives it"
+        )
+        return result
+    resolver = getattr(ctx, "secret_values", None)
+    if resolver is None:
+        return result
+    try:
+        values = resolver([saved.name]) or {}
+    except Exception:
+        values = {}
+    value = values.get(saved.name)
+    if not value:
+        return result
+    kind, _, target = saved.delivery.partition(":")
+    kwargs = {"params": {target: value}} if kind == "query" else {"headers": {target: value}}
+    try:
+        outcome = ctx.probe(url, **kwargs)
+    except Exception as exc:
+        outcome = {"status": "unverified", "detail": str(exc)[:200]}
+    from utk_curio.common.redaction import redact
+
+    outcome = {
+        k: (redact(v, {saved.name: value}) if isinstance(v, str) else v)
+        for k, v in (outcome or {}).items()
+    }
+    result["keyedVerification"] = outcome
+    status = outcome.get("status")
+    content_type = str(outcome.get("contentType") or "").lower()
+    sent = f"as {kind} {target!r}"
+    if status == "verified" and content_type and "json" not in content_type:
+        result["keyedNote"] = (
+            f"even with the saved key {saved.name!r} sent {sent}, the request answered "
+            f"{content_type.split(';')[0]}{' (' + str(outcome.get('pageTitle')) + ')' if outcome.get('pageTitle') else ''}"
+            " — the key or the way it is sent is wrong; say so instead of guessing parameters"
+        )
+    elif status == "verified":
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent} the request answers data — "
+            f"the code must send it the same way: {saved.use_line}"
+            + ("" if in_code else " (the code does not use it yet)")
+        )
+    else:
+        result["keyedNote"] = (
+            f"with the saved key {saved.name!r} sent {sent}: {status}"
+            + (f" {outcome.get('httpStatus')}" if outcome.get("httpStatus") else "")
+        )
+    return result
+
+
+_CREDENTIAL_DECLINE_RE = _re.compile(
+    r"api[ _-]?key|\bkey\b|token|credential|sign[- ]?in|log[- ]?in|unauthori[sz]ed|missing key|forbidden",
+    _re.IGNORECASE,
+)
+
+
+def _decline_remedy(decline: str, previous_attempt: str | None, ctx) -> dict | None:
+    """dev/116: a decline about a credential + a host from the failed attempt
+    → a concrete remedy the card can act on."""
+    if not decline or not _CREDENTIAL_DECLINE_RE.search(decline):
+        return None
+    host = ""
+    for url in source_grounding.composed_requests(previous_attempt or ""):
+        host = source_grounding._host_of(url)
+        if host:
+            break
+    if not host:
+        for ref in source_grounding.scan_sources(previous_attempt or "", "python"):
+            if ref.kind == "url":
+                host = source_grounding._host_of(ref.literal)
+                if host:
+                    break
+    if not host:
+        return None
+    from utk_curio.backend.app.users.connection_keys import suggest_name
+
+    saved = source_grounding.secret_for_host(ctx, f"https://{host}/") if ctx is not None else None
+    if saved is not None:
+        return {"kind": "use-connection-key", "host": host, "name": saved.name}
+    return {"kind": "connection-key", "host": host, "suggestedName": suggest_name(host)}
+
+
+def _endpoint_note(verdict: dict) -> str:
+    """A deterministic reading of a probe outcome for the correction and the
+    card — only what the outcome itself shows, never a guess."""
+    if not isinstance(verdict, dict):
+        return ""
+    status = verdict.get("status")
+    content_type = str(verdict.get("contentType") or "")
+    final_url = verdict.get("finalUrl")
+    title = verdict.get("pageTitle")
+    sample = verdict.get("bodySample")
+    where = f" after redirecting to {final_url}" if final_url else ""
+    if status == "verified" and content_type and "json" not in content_type.lower():
+        what = f'an HTML page titled "{title}"' if title else f"{content_type.split(';')[0]} content"
+        return (
+            f"answered {what}{where} — not data. Read the page title: a key or "
+            "sign-in requirement cannot be fixed by changing parameters; say what is missing."
+        )
+    if status == "unreachable" and verdict.get("httpStatus"):
+        said = f': "{sample}"' if sample else (f' ("{title}")' if title else "")
+        return f"the request itself answered {verdict['httpStatus']}{where}{said}"
+    return ""
+
+
+def _url_evidence_summary(url_evidence: list[dict]) -> str:
+    """One line for the attempt trail: what the endpoint actually answered."""
+    parts: list[str] = []
+    for entry in url_evidence[:2]:
+        verdict = entry.get("verification") or {}
+        head = str(entry.get("url") or "")
+        head = head if len(head) <= 90 else head[:87] + "…"
+        status = verdict.get("status", "unverified")
+        http = verdict.get("httpStatus")
+        bit = f"{head} → {status}" + (f" {http}" if http else "")
+        if entry.get("note"):
+            bit += f": {entry['note']}"
+        elif verdict.get("detail"):
+            bit += f": {verdict['detail']}"
+        parts.append(bit)
+    return "; ".join(parts)[:_ATTEMPT_DETAIL_CHARS * 2]
+
+
+def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
+    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS.
+
+    dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
+    request context (the datasets domain is user-object keyed), and a detached
+    Solve job has none — so the rows are listed at the entry point and handed
+    to the discovery delegate, exactly as dev/115 already resolves the
+    execution paths eagerly. Empty on failure: the delegate is then TOLD the
+    catalog was unavailable rather than left to imagine it.
+    """
+    try:
+        return tools._catalog_search_rows(user_key, project_id, {})
+    except Exception:  # noqa: BLE001
+        log.warning("Data Catalog listing unavailable for project %s", project_id,
+                    exc_info=True)
+        return []
+
+
+def _node_grounded_literal(node: dict, ctx, *, extra_texts=()) -> str | None:
+    """The literal that ALREADY grounds this node's source, or None (dev/126).
+
+    Deliberately narrow. Only human-authored text counts — the node's own goal,
+    the dataflow's mission and the user's message — never the node's current
+    content: a path the model wrote is what the DEC-072 gate exists to refuse,
+    and letting it stand in here would ground a node on its own hallucination.
+    A batch's grounding context is shared by every target node, so the scan is
+    over THIS node's texts rather than over the context's own path set.
+    """
+    if ctx is None:
+        return None
+    texts = [str(node.get("goal") or ""), *[str(t or "") for t in extra_texts]]
+    joined = " ".join(texts)
+    for path in sorted(source_grounding.user_paths(texts)):
+        return path
+    for dataset_id in sorted(getattr(ctx, "catalog_ids", None) or {}):
+        if dataset_id and dataset_id in joined:
+            return f'curio_dataset_path("{dataset_id}")'
+    for url in sorted(getattr(ctx, "verified_urls", None) or {}):
+        if url and url in joined:
+            return url
+    if source_grounding.synthetic_requested(texts):
+        return "synthetic data (the goal asks for it)"
+    return None
+
+
+def _project_grounded_literal(ctx) -> str | None:
+    """Project-wide grounding: the Data Catalog the content child is handed.
+
+    dev/126: the catalog IS a grounded source (``DEC-072``) — the child gets
+    its rows and the gate accepts the row it loads — so a project that holds
+    datasets grounds a FIRST attempt without a review gate. It is not evidence
+    about this node, so it ranks below a pending candidates card, and when the
+    catalog turns out not to cover the node the ROUND says so and discovery is
+    initiated on that evidence instead of on a guess.
+    """
+    catalog = getattr(ctx, "catalog_ids", None) or {}
+    if catalog:
+        return f"the project's Data Catalog ({len(catalog)} dataset(s))"
+    return None
+
+
+def _source_resolver(
     user_key: str,
     project_id: str,
-    attachment_id: str,
+    *,
+    coord: str,
+    attachment_id: str | None,
+    execution_id: str,
     config: ProviderConfig,
+    manifest=None,
+    extra_texts=(),
+    catalog_rows: list | None = None,
+):
+    """dev/126: the callable the content loop consults BEFORE generating for a
+    data-loading node — the one place resolution initiates discovery.
+
+    Same policy on all three resolution paths (the Solve batch, the per-node
+    Solve, Simulation Mode's validate): a node whose source is already
+    grounded proceeds and the skip is recorded; an unresolved one gets ONE
+    ``dataset.discover`` delegation whose candidates await the user in that
+    node's own Dataset Finder chat; a node already awaiting the user spends
+    nothing at all.
+    """
+    parent_manifest = manifest if manifest is not None else _resolve_definition(user_key, coord)
+
+    def _resolve(node: dict, grounding_ctx, *, stage: str = "pre") -> dict:
+        """``stage="pre"``: before round 0, when nothing in the project could
+        ground this node's source. ``stage="post"``: after a round failed FOR
+        its source — the gate refused the literal the builder wrote, or the
+        builder declined — which is evidence no heuristic can override."""
+        from utk_curio.backend.app.agents import dataset_resolution
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        node_id = str(node.get("id") or "")
+        spec = projects_storage.read_spec(user_key, project_id)
+        literal = (
+            _node_grounded_literal(node, grounding_ctx, extra_texts=extra_texts)
+            if stage == "pre" else None
+        )
+        project_literal = (
+            _project_grounded_literal(grounding_ctx) if stage == "pre" else None
+        )
+        state = dataset_resolution.node_source_state(
+            spec, node_id, grounded_literal=literal, project_literal=project_literal,
+        )
+        if state["state"] == dataset_resolution.STATE_RESOLVED:
+            skip_literal = literal or project_literal
+            if skip_literal and state.get("attachmentId"):
+                with projects_storage.spec_write_lock(user_key, project_id):
+                    fresh = projects_storage.read_spec(user_key, project_id)
+                    if fresh is not None and dataset_resolution.mark_skipped(
+                        fresh, state["attachmentId"], literal=skip_literal
+                    ):
+                        projects_storage.write_spec(user_key, project_id, fresh)
+            return {
+                "state": "resolved",
+                "detail": state["detail"] or (skip_literal or ""),
+                "confirmedSource": dataset_resolution.confirmed_source(spec, node_id),
+            }
+        if state["state"] != dataset_resolution.STATE_UNRESOLVED:
+            # Candidates (or a reviewed install) already await the user: say so
+            # without spending a model call on a second identical card.
+            return {"state": "awaiting", "detail": state["detail"],
+                    "attachmentId": state["attachmentId"]}
+        started = dataset_resolution.initiate(
+            user_key, project_id, node,
+            config=config,
+            parent_manifest=parent_manifest,
+            parent_coord=coord,
+            parent_execution_id=execution_id,
+            parent_attachment_id=attachment_id,
+            mission=" — ".join(
+                t for t in [str(node.get("goal") or ""), *[str(x or "") for x in extra_texts]]
+                if t
+            )[:2000],
+            catalog_rows=catalog_rows,
+        )
+        if started["status"] == "awaiting":
+            return {"state": "awaiting", "detail": started["detail"],
+                    "attachmentId": started.get("attachmentId")}
+        # Discovery ran and found nothing usable, or the specialist could not
+        # run at all. "Awaiting your selection" would be a lie — there is
+        # nothing to select — so the node keeps its own honest outcome and the
+        # discovery attempt rides along as the reason it stays unresolved.
+        return {"state": "unresolved", "detail": started["detail"],
+                "attachmentId": started.get("attachmentId"),
+                "discovery": started["status"]}
+
+    return _resolve
+
+
+def _verified_content_rounds(
+    user_key: str,
+    project_id: str,
+    *,
     spec: dict,
     node: dict,
-    ref: str | None,
     resolution,
-    coord: str,
-    session_id,
+    config: ProviderConfig,
+    parent_execution_id: str,
+    parent_coord: str,
+    attachment_id: str | None,
     exec_fn,
-    *,
-    home_attachment_id: str | None = None,
-    home_session_id: str | None = None,
+    grounding_loop_ctx: dict,
+    grounding_base: dict | None = None,
+    start_from_current: bool = False,
+    extra_inputs: dict | None = None,
+    delegate_runner=None,
+    dataset_paths_fn=None,
+    exec_user_key: str | None = None,
+    secrets_fn=None,
+    prior_outputs_fn=None,
+    resolve_source=None,
+    clock=time.monotonic,
+    recorded_failure=None,
+    node_budget_s=None,
+    carry_forward=None,
+    result_summary_fn=None,
 ):
-    """The validate-node body: threaded validation runs drain a queue so
-    upstream executions stream live (the dev/63 pattern); the finally clears
-    the in-flight guard on every exit, disconnect included."""
+    """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
+
+    The dev/67-7 round loop extracted from ``_validate_events`` so every
+    caller — validate-node, Simulation Mode, and Solve — runs the same policy:
+
+    - round 0 either delegates ``node.content.generate`` or, with
+      ``start_from_current``, executes the node's CURRENT content as-is (the
+      per-node Solve on code the user just applied: if it passes, nothing is
+      generated, nothing changes);
+    - every candidate passes the DEC-072 grounding gate BEFORE it runs — a
+      refused candidate is a failed round (``kind: ungrounded-source``) whose
+      refusal text is the correction's error, and it never reaches the sandbox;
+    - a run's ``dataset_paths`` are resolved for the candidate + its slice;
+    - a failed round feeds the next generation ``previousAttempt``,
+      ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
+      the failure names an HTTP problem — fresh probe evidence for the URLs
+      the candidate fetches;
+    - attempts continue while BOTH bounds allow (dev/127, widened by dev/128 at
+      the owner's instruction): at most ``solve_max_attempts()`` of them — ten
+      by default — and only while ``solve_node_budget_s()`` seconds have not
+      been spent — fifteen minutes by default; the outcome's ``stoppedBy``
+      names whichever bound ended it.
+
+    A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
+    and ``("round_verdict", …)`` exactly as the validate-node stream always
+    did, and RETURNS the outcome dict ``{verdict, evidence, rounds, candidate,
+    delegations, roundsTrace, attempts}`` (``outcome = yield from …``).
+    ``attempts`` is the bounded trail the cards render: one row per round
+    with the content digest, verdict, kind, detail, stderr tail, and output.
+    """
     import queue as _queue
     import threading
 
     from utk_curio.backend.app.agents import validation
     from utk_curio.backend.app.packages import services as packages_services
 
+    run_delegate = delegate_runner or (
+        lambda inputs: delegation.run_delegate(
+            user_key, project_id, resolution.coord,
+            "node.content.generate", inputs, config,
+            parent_execution_id=parent_execution_id,
+            parent_coord=parent_coord,
+            attachment_id=attachment_id,
+        )
+    )
     node_id = node.get("id")
-    execution_id = uuid.uuid4().hex
+    node_type = node.get("type")
+    is_data_loading = source_grounding.is_data_loading_type(
+        packages_services.canonical_template_id(node_type)
+    )
+    try:
+        available = {
+            t["id"]: t for t in packages_services.available_templates(user_key, project_id)
+        }
+    except Exception:
+        available = None  # arity metadata unavailable: type check fails open
+    # dev/119 (DEC-076): the same roster classifies executability for the runner.
+    loop_templates = (
+        {tid: {
+            "executable": bool(row.get("executable")),
+            "engine": row.get("engine") or "python",
+            # dev/134: and the same snapshot routes the document validator.
+            "contentKind": row.get("contentKind") or "none",
+            **({"grammar": row["grammar"]} if row.get("grammar") else {}),
+        } for tid, row in available.items()}
+        if available else None
+    )
+    # ONE grounding context per loop: the same catalog/verified-URL evidence for
+    # every round, one probe budget, and the sourceGrounding inputs derive from it.
+    # dev/116 live fix (2026-09-09): the budget is the LOOP's own — a failed
+    # round spends up to five calls (gate probe, composed request + redirect,
+    # keyed probe) and the run-wide four starved every correction of its
+    # evidence. The probe cache and the verified map stay shared with the
+    # caller's context (a batch probes a base URL once).
+    shared = grounding_loop_ctx
+    grounding_loop_ctx = dict(shared)
+    grounding_loop_ctx["_probe_cache"] = shared.setdefault("_probe_cache", {})
+    grounding_loop_ctx["_verified_urls"] = shared.setdefault("_verified_urls", {})
+    grounding_loop_ctx["_egress_budget"] = egress.CallBudget(_LOOP_EGRESS_CALLS)
+    grounding_ctx = None
+    dataflow = (spec or {}).get("dataflow") or {}
+    try:
+        # The node's goal and the dataflow's mission are human-authored intent
+        # (a plan goal saying "synthetic sample data" authorizes inline data).
+        grounding_ctx = _grounding_context(
+            user_key, project_id, grounding_loop_ctx, node_type=node_type,
+            base=grounding_base,
+            extra_texts=(str(node.get("goal") or ""), str(dataflow.get("task") or "")),
+        )
+    except Exception:
+        log.warning("Grounding context unavailable for node %s", node_id, exc_info=True)
     verdict_result: dict | None = None
     rounds_used = 0
     candidate = ""
     delegations: list = []
-    rounds_trace: list[str] = []  # dev/72: the consolidated per-round story
-    label = (node.get("goal") or node_id)[:60]
-    if isinstance(home_session_id, str):
-        try:
-            sessions.append_turns(
-                user_key, project_id, home_session_id, home_attachment_id,
-                [sessions.make_turn(
-                    "user",
-                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
-                    "execute through the dataflow, validate, self-correct.",
-                )],
+    rounds_trace: list[str] = []
+    attempts: list[dict] = []
+    previous_attempt: str | None = None
+    previous_error: str | None = None
+    url_evidence: list[dict] = []
+    confirmed_source: dict | None = None
+    stopped_by: str | None = None  # dev/127: which bound ended the loop
+    repeats = 0
+    if isinstance(recorded_failure, dict) and recorded_failure.get("stderr"):
+        # dev/129: the loop is starting from code that already failed — in a
+        # Play run or an earlier validation — and the traceback is on disk.
+        # Round 0 re-runs it (start_from_current), so this line is the trail's
+        # explanation of WHY it starts there; the correction gets the real
+        # traceback from the run itself.
+        rounds_trace.append(
+            f"starting from the code on the node, which failed at "
+            f"{recorded_failure.get('origin') or 'a previous run'}"
+            f"{' (' + str(recorded_failure.get('ranAt')) + ')' if recorded_failure.get('ranAt') else ''}"
+            f": {failure_text.summary(recorded_failure['stderr'], limit=200)}"
+        )
+        previous_error = str(recorded_failure["stderr"])[-2000:]
+    if isinstance(carry_forward, dict) and (carry_forward.get("error") or "").strip():
+        # dev/131 (owner correction): a retry must not carry the SAME inputs.
+        # When an earlier pass of this session already tried and failed, its
+        # last candidate and the error it produced are the inputs this pass
+        # starts from — so round 0 generates a CORRECTION, not another blank
+        # first draft. (A node blocked on the user has no such input, which is
+        # why only that case waits.)
+        previous_attempt = (
+            str(carry_forward.get("code") or "")[:6000] or previous_attempt
+        )
+        previous_error = str(carry_forward["error"])[-2000:]
+        rounds_trace.append(
+            "carrying forward the previous attempt's error: "
+            + failure_text.summary(
+                str(carry_forward["error"]), code=carry_forward.get("code"), limit=200
             )
-        except Exception:
-            pass
-    try:
-        yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
+        )
+    # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
+    # once (it cannot change mid-loop), handed to the child as an input, and
+    # enforced before the sandbox. The owner's report: a node fed through a
+    # merge received ``arg`` and treated it as a frame.
+    arg_contract = input_contract.arg_shape(spec, node_id)
+    if (extra_inputs or {}).get("upstreamOutputs"):
+        arg_contract = input_contract.with_schemas(
+            arg_contract, (extra_inputs or {}).get("upstreamOutputs")
+        )
+    # dev/126: a data-loading node RESOLVES ITS SOURCE FIRST. Discovery is
+    # initiated by the runtime (never left to the model to think of), and a
+    # node whose source the user has not confirmed yet waits for them instead
+    # of ending in the old dead end — the content builder declining, or the
+    # gate refusing a filename it had to invent.
+    if is_data_loading and resolve_source is not None:
         try:
-            available = {
-                t["id"]: t
-                for t in packages_services.available_templates(user_key, project_id)
+            source_state = resolve_source(node, grounding_ctx) or {}
+        except Exception:  # noqa: BLE001
+            log.warning("Source resolution failed for node %s", node_id, exc_info=True)
+            source_state = {}
+        if source_state.get("state") == "unresolved" and source_state.get("discovery"):
+            # Discovery was initiated and produced nothing selectable: say so
+            # in the trail and let the round proceed, so the node still ends
+            # with ITS own evidence (a refusal naming the literal, or the
+            # builder's own decline) rather than a promise of candidates.
+            rounds_trace.append(
+                f"discovery found no source — {str(source_state.get('detail'))[:160]}"
+            )
+        if source_state.get("state") == "awaiting":
+            detail = str(source_state.get("detail") or "a source must be selected")
+            return {
+                "verdict": "awaiting-source",
+                "evidence": {
+                    "kind": "awaiting-selection",
+                    "detail": detail[:2000],
+                    **({"remedy": {
+                        "kind": "dataset-selection",
+                        "attachmentId": source_state["attachmentId"],
+                        "nodeId": node_id,
+                    }} if source_state.get("attachmentId") else {}),
+                },
+                "rounds": 0,
+                "candidate": "",
+                "delegations": delegations,
+                "roundsTrace": [f"awaiting dataset selection — {detail[:160]}"],
+                "attempts": [],
             }
-        except Exception:
-            available = None  # arity metadata unavailable: type check fails open
-        previous_attempt: str | None = None
-        previous_error: str | None = None
-        for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
-            rounds_used = round_index + 1
-            yield "generation_round", {"round": rounds_used}
+        confirmed_source = source_state.get("confirmedSource")
+        if source_state.get("detail"):
+            rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
+    # dev/129: the wall budget is the bound; the attempt count is a cap that
+    # sits ABOVE what a quarter hour affords, so in practice the clock stops
+    # the loop and `stoppedBy` says so. A deployment (or a test) that wants a
+    # tighter cap sets CURIO_SOLVE_MAX_ATTEMPTS and gets it.
+    max_rounds = min(solve_max_attempts(), MAX_SOLVE_ATTEMPTS)
+    # dev/131: a node's repair budget is clamped by what remains of the
+    # SESSION's, so the owner's fifteen minutes means the same thing at both
+    # levels and one node cannot spend a session it shares.
+    node_budget_s = (
+        max(int(node_budget_s), 1) if isinstance(node_budget_s, (int, float))
+        else solve_node_budget_s()
+    )
+    loop_started = clock()
+    for round_index in range(max_rounds):
+        if round_index and (clock() - loop_started) >= node_budget_s:
+            # dev/127: the budget is checked BEFORE a new round is dispatched,
+            # so a round in flight always finishes and is recorded. dev/129:
+            # this is now the NORMAL stop, which is why it is checked first.
+            stopped_by = "budget"
+            rounds_trace.append(
+                f"stopped after round {rounds_used}: this node's "
+                f"{node_budget_s}s repair budget is spent"
+            )
+            break
+        rounds_used = round_index + 1
+        yield "generation_round", {"round": rounds_used}
+        use_current = (
+            round_index == 0 and start_from_current and str(node.get("content") or "").strip()
+        )
+        if use_current:
+            candidate = str(node.get("content") or "")
+        else:
             inputs = {
-                "nodeType": node.get("type"),
+                "nodeType": node_type,
                 "intent": node.get("goal"),
                 "nodeContext": node_context.compose_node_context(
                     user_key, project_id, spec, node_id
                 ),
             }
-            if previous_attempt is not None:
+            if is_data_loading and grounding_ctx is not None:
+                # dev/114's seventh DEC-063 application, on every caller.
+                inputs["sourceGrounding"] = _source_grounding_inputs(grounding_ctx)
+                if confirmed_source is not None:
+                    # dev/126: the source the USER confirmed on this node —
+                    # handed over, not inferred from what was verified once.
+                    inputs["sourceGrounding"]["confirmedSource"] = confirmed_source
+            if arg_contract.get("kind") != input_contract.KIND_NONE:
+                # dev/128 (DEC-063, ninth application): the shape of `arg`, per
+                # node, on the first generation and on every correction.
+                inputs["inputContract"] = arg_contract
+            if extra_inputs:
+                inputs.update({k: v for k, v in extra_inputs.items() if k not in inputs})
+            if previous_attempt is not None or (previous_error or "").strip():
                 # The NCB instruction's self-correction contract: fix
                 # precisely the failure, grounded in the real traceback.
-                inputs["previousAttempt"] = previous_attempt[:6000]
+                # dev/131: a carried-forward error with no code (a prose
+                # decline, a refusal that named no candidate) still rides —
+                # the error IS the new input.
                 inputs["validationError"] = (previous_error or "")[:2000]
-            status, text, child = delegation.run_delegate(
-                user_key, project_id, resolution.coord,
-                "node.content.generate", inputs, config,
-                parent_execution_id=execution_id,
-                parent_coord=coord,
-                attachment_id=attachment_id,
-            )
+                if previous_attempt is not None:
+                    inputs["previousAttempt"] = previous_attempt[:6000]
+                if url_evidence:
+                    inputs["urlEvidence"] = url_evidence
+            status, text, child = run_delegate(inputs)
             delegations.append(child)
             if status != "ok":
                 verdict_result = {
                     "verdict": "fail",
                     "evidence": {"kind": "generation-error", "detail": (text or "")[:300]},
                 }
+                attempts.append({
+                    "round": rounds_used, "verdict": "fail", "kind": "generation-error",
+                    "detail": (text or "")[:_ATTEMPT_DETAIL_CHARS],
+                })
+                stopped_by = "generation"
                 break
             candidate = content.extract_node_content(text)
+        # DEC-072: the gate runs BEFORE the sandbox does — a fabricated path
+        # or an unverified URL never executes, and the refusal is the error
+        # the next round corrects.
+        if grounding_ctx is not None:
+            gate = source_grounding.check_grounding(candidate, "python", grounding_ctx)
+            if not gate.ok:
+                refusal = source_grounding.refusal_text(gate, grounding_ctx)
+                kind = "ungrounded-source"
+                declined = not use_current and _is_prose_decline(candidate)
+                if declined:
+                    # The delegate followed its rule ("return a one-line
+                    # explanation of what source is missing instead of code").
+                    # Record ITS words as the attempt, not a gate verdict on
+                    # prose (dev/115 field fix, 2026-09-08).
+                    refusal = f"the content builder declined: {candidate.strip()}"
+                    kind = "source-missing"
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": kind, "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:160]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": kind,
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    # dev/127: what was refused, verbatim — the literal the
+                    # gate named is IN this text, so showing it is the point.
+                    **_attempt_code_field(candidate, prose=declined),
+                })
+                if declined:
+                    # dev/116: when the decline is about a credential and the
+                    # failed attempt named a host, the remedy is concrete —
+                    # add a connection key for that host (or use the saved one).
+                    remedy = _decline_remedy(candidate, previous_attempt, grounding_ctx)
+                    if remedy:
+                        verdict_result["evidence"]["remedy"] = remedy
+                        attempts[-1]["remedy"] = remedy
+                    # A decline names an input nobody in this loop can supply
+                    # (a key, a path, a URL). Asking the same builder again
+                    # with the same inputs only repeats it — the user is the
+                    # correction; stop and say so.
+                    stopped_by = "decline"
+                    break
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+        # dev/128: the shape gate, beside the DEC-072 source gate and before
+        # the sandbox. A list-shaped `arg` used as a frame is provably wrong —
+        # a list has no such attribute — so the round fails HERE, for free,
+        # with the slot table as its correction instead of a library's
+        # AttributeError three minutes later.
+        violation = input_contract.check(candidate, arg_contract)
+        if violation is not None:
+            refusal = input_contract.refusal_text(arg_contract, violation)
+            verdict_result = {
+                "verdict": "fail",
+                "evidence": {"kind": "input-contract", "detail": refusal[:2000]},
+            }
+            yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+            rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+            attempts.append({
+                "round": rounds_used, "contentSha256": _content_sha(candidate),
+                "verdict": "fail", "kind": "input-contract",
+                "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                "source": "current content" if use_current else "generated",
+                **_attempt_code_field(candidate),
+            })
+            previous_attempt = candidate
+            previous_error = refusal
+            url_evidence = []
+            continue
+        # A repeat is judged AFTER the gate: a refused candidate keeps its own kind.
+        if not use_current and previous_attempt is not None and _same_code(candidate, previous_attempt):
+            # dev/116 live fix (2026-09-09): the correction changed only
+            # comments or spacing — running it again would fail the same
+            # way. Not run; the next round is told so, in plain words.
+            detail = (
+                "the correction repeated the previous attempt (only comments or spacing "
+                "changed) — not run again; change the request that failed: "
+                + (previous_error or "")[:400]
+            )
+            verdict_result = {
+                "verdict": "fail",
+                "evidence": {"kind": "repeated-attempt", "detail": detail[:2000]},
+            }
+            yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+            rounds_trace.append(f"round {rounds_used}: fail — repeated the previous attempt")
+            attempts.append({
+                "round": rounds_used, "contentSha256": _content_sha(candidate),
+                "verdict": "fail", "kind": "repeated-attempt",
+                "detail": detail[:_ATTEMPT_DETAIL_CHARS], "source": "generated",
+                **_attempt_code_field(candidate),
+            })
+            repeats += 1
+            if repeats >= _MAX_REPEATED_ATTEMPTS:
+                # dev/129: a repeat no longer ends the loop — the owner asked
+                # for as many retries as the budget affords. It ESCALATES: the
+                # next round is told how many times it has repeated itself and
+                # that it must change approach, not phrasing. Only an
+                # implausible run of identical candidates stops the loop, so a
+                # stuck model cannot spend fifteen minutes of provider calls.
+                detail = (
+                    f"you have now returned the same code {repeats} times. Stop repeating it: "
+                    "change the APPROACH — a different library call, a different key or column, "
+                    "a different shape of the result — or say plainly what you cannot do. "
+                    + detail
+                )
+                previous_error = detail
+                attempts[-1]["detail"] = detail[:_ATTEMPT_DETAIL_CHARS]
+                if repeats >= _MAX_REPEATED_ATTEMPTS_HARD:
+                    stopped_by = "repeat"
+                    break
+            previous_attempt = candidate
+            previous_error = detail
+            continue  # url_evidence: unchanged — same request, same answer
+        dataset_paths = None
+        if dataset_paths_fn is not None:
+            try:
+                slice_codes = [
+                    str(n.get("content") or "")
+                    for n in ((spec.get("dataflow") or {}).get("nodes") or [])
+                    if isinstance(n, dict)
+                ]
+                dataset_paths = dataset_paths_fn([candidate, *slice_codes]) or None
+            except Exception:
+                dataset_paths = None
+        # dev/116: the connection keys THIS candidate names, resolved per round
+        # so a correction that adopts curio_secret("<name>") runs with it.
+        secrets = None
+        if secrets_fn is not None:
+            try:
+                secrets = secrets_fn([candidate]) or None
+            except Exception:
+                secrets = None
+        # dev/118 commit 4: the outputs recorded for ancestors that passed
+        # earlier in this batch stand in for their re-run (fresh per round).
+        prior_outputs = None
+        if prior_outputs_fn is not None:
+            try:
+                prior_outputs = prior_outputs_fn() or None
+            except Exception:
+                prior_outputs = None
+
+        def _validate_with(prior, candidate_text=candidate, paths=dataset_paths, secret_values=secrets):
             progress_queue: _queue.Queue = _queue.Queue()
 
             def _run_validation():
                 try:
                     result = validation.validate_candidate(
-                        user_key, project_id, spec, node_id, candidate,
+                        user_key, project_id, spec, node_id, candidate_text,
                         exec_fn=exec_fn,
                         available_templates=available,
+                        dataset_paths=paths,
+                        exec_user_key=exec_user_key,
+                        secrets=secret_values,
+                        prior_outputs=prior,
+                        templates=loop_templates,
                         progress=lambda nid, i, total: progress_queue.put(
                             ("progress", nid, i, total)
                         ),
@@ -5017,35 +8483,423 @@ def _validate_events(
                     _, nid, index, total = item
                     yield "node_executed", {"nodeId": nid, "index": index, "total": total}
                     continue
-                verdict_result = item[1]
-                break
-            thread.join(timeout=5)
-            yield "round_verdict", {
-                "round": rounds_used, "verdict": verdict_result["verdict"],
-            }
-            round_evidence = (verdict_result.get("evidence") or {})
-            rounds_trace.append(
-                f"round {rounds_used}: {verdict_result['verdict']}"
-                + (
-                    f" — {(round_evidence.get('stderrTail') or round_evidence.get('detail') or '')[-160:]}"
-                    if verdict_result["verdict"] != "pass"
-                    else f" — output {round_evidence.get('outputDataType') or '?'}"
-                )
+                thread.join(timeout=5)
+                return item[1]
+
+        verdict_result = yield from _validate_with(prior_outputs)
+        reuse_retried = False
+        if prior_outputs and _looks_like_a_vanished_reused_input(verdict_result):
+            # A reused artifact is gone (the sandbox store moved on): that is
+            # not the candidate's fault. Once, silently, the slice runs whole.
+            verdict_result = yield from _validate_with(None)
+            reuse_retried = True
+        if verdict_result.get("verdict") == "not-executable" and str(candidate or "").strip():
+            # dev/129: the sandbox cannot RUN a Vega or AUTK document, which is
+            # not the same as being unable to CHECK it. An invalid document is
+            # a failed round like any other — the validator's message is the
+            # correction — and a valid one is written with a stronger, still
+            # truthful claim than "no code to run".
+            # dev/134: routed by the roster's own grammarId, and checked
+            # against the columns this node's input actually has — the same
+            # rows the generation request was handed (DEC-063).
+            document = document_validation.validate(
+                node_type, candidate,
+                grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                columns=upstream_schema.columns_of(
+                    (extra_inputs or {}).get("upstreamOutputs")
+                ),
             )
-            if verdict_result["verdict"] != "fail":
-                break
-            previous_attempt = candidate
-            evidence = verdict_result.get("evidence") or {}
-            previous_error = evidence.get("stderrTail") or evidence.get("detail") or ""
+            if document["status"] == document_validation.STATUS_INVALID:
+                refusal = document_validation.refusal_text(
+                    node_type, document,
+                    grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "document-invalid", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "document-invalid",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+            evidence = verdict_result.setdefault("evidence", {})
+            if document["status"] == document_validation.STATUS_VALID:
+                # dev/136: a valid document is not a drawn picture. When the
+                # node's last RENDER drew nothing and the document on it is the
+                # one that drew nothing, passing here would end the loop on a
+                # chart the user is looking at empty — the owner's report. The
+                # recorded render failure becomes this round's verdict instead.
+                render_cause = (
+                    result_shape.empty_render_cause((recorded_failure or {}).get("kind"))
+                    if use_current and isinstance(recorded_failure, dict) else None
+                )
+                if render_cause is not None:
+                    upstream_rows = (extra_inputs or {}).get("upstreamOutputs")
+                    refusal = result_shape.empty_render_refusal(
+                        message=str((recorded_failure or {}).get("stderr") or ""),
+                        cause=render_cause,
+                        upstream_outputs=upstream_rows,
+                    )
+                    if not result_shape.is_document_at_fault(render_cause):
+                        # Nothing arrived, so no document could have drawn
+                        # anything: dev/133's rule, applied to a picture. The
+                        # node WAITS on its upstream (dev/118's vocabulary) and
+                        # its document is left exactly as it is.
+                        return {
+                            "verdict": "fail",
+                            "evidence": {
+                                "kind": "empty-render",
+                                "detail": refusal,
+                                "upstreamEmpty": True,
+                            },
+                            "rounds": rounds_used,
+                            "candidate": candidate,
+                            "delegations": delegations,
+                            "roundsTrace": rounds_trace + [
+                                f"round {rounds_used}: the document is valid and its "
+                                "last render drew nothing — its input was empty"
+                            ],
+                            "attempts": attempts + [{
+                                "round": rounds_used,
+                                "contentSha256": _content_sha(candidate),
+                                "verdict": "fail", "kind": "empty-render",
+                                "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                                "source": "current content",
+                                **_attempt_code_field(candidate),
+                            }],
+                            "stoppedBy": "blocker",
+                        }
+                    verdict_result = {
+                        "verdict": "fail",
+                        "evidence": {"kind": "empty-render", "detail": refusal[:2000]},
+                    }
+                    yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                    rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                    attempts.append({
+                        "round": rounds_used, "contentSha256": _content_sha(candidate),
+                        "verdict": "fail", "kind": "empty-render",
+                        "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                        "source": "current content",
+                        **_attempt_code_field(candidate),
+                    })
+                    previous_attempt = candidate
+                    previous_error = refusal
+                    url_evidence = []
+                    continue
+                evidence["documentValidated"] = document_validation.canonical_suffix(node_type)
+            else:
+                evidence["documentUnchecked"] = str(document.get("why") or "")[:300]
+                evidence["documentPassive"] = bool(document.get("passive"))
+        if verdict_result.get("verdict") == "pass":
+            # dev/138: the run passed and produced NO output — `return None`
+            # types as "null", which read as success in three places at once.
+            # The journal and the consumer type check now name it too; here it
+            # becomes the round's own verdict, with the node's own conclusion
+            # quoted back and the decline path named.
+            from utk_curio.backend.app.execution import runtime_journal as _journal
+
+            produced = (verdict_result.get("evidence") or {}).get("output") or {}
+            if _journal.is_absent_output(produced):
+                refusal = result_shape.absent_output_refusal(
+                    code=candidate,
+                    output_data_type=str(
+                        (verdict_result.get("evidence") or {}).get("outputDataType") or ""
+                    ),
+                    upstream_outputs=(extra_inputs or {}).get("upstreamOutputs"),
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+        if verdict_result.get("verdict") == "pass" and result_summary_fn is not None:
+            # dev/133: "it ran" is not "it worked". A node that produced a
+            # countable result with NO rows in it, out of inputs that had rows,
+            # destroyed the dataflow's data — the owner's `e72c7080` joined
+            # community-area numbers to census-tract ids, ran clean in 45 ms,
+            # and left the pool and the chart empty while the chat said solved.
+            # The check is silent whenever it cannot attribute the emptiness.
+            artifact = ((verdict_result.get("evidence") or {}).get("output") or {}).get("path")
+            summary = None
+            if artifact:
+                try:
+                    summary = result_summary_fn(artifact)
+                except Exception:  # noqa: BLE001 — a shape we cannot read is not a failure
+                    summary = None
+            upstream_rows = (extra_inputs or {}).get("upstreamOutputs")
+            # dev/137 (dev/133's own F1): a result can be non-empty and still
+            # contain nothing. A `how="left"` join on keys that cannot match
+            # keeps its rows and fills the other side with nulls — the row
+            # count passes, the field check passes (the column exists), and
+            # every plot below is empty. An all-null column this node CREATED
+            # is the same verdict as no rows at all.
+            null_created = (
+                result_shape.created_null_columns(summary, upstream_rows)
+                if not result_shape.is_empty(summary) else []
+            )
+            if null_created and result_shape.inputs_had_rows(upstream_rows) is not False:
+                refusal = result_shape.null_refusal_text(
+                    columns=null_created,
+                    summary=summary,
+                    upstream_outputs=upstream_rows,
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+            if result_shape.is_empty(summary) and (
+                result_shape.inputs_had_rows(upstream_rows) is not False
+            ):
+                refusal = result_shape.refusal_text(
+                    summary=summary,
+                    upstream_outputs=upstream_rows,
+                    output_data_type=str(
+                        (verdict_result.get("evidence") or {}).get("outputDataType") or ""
+                    ),
+                )
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "empty-result", "detail": refusal[:2000]},
+                }
+                yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
+                rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
+                attempts.append({
+                    "round": rounds_used, "contentSha256": _content_sha(candidate),
+                    "verdict": "fail", "kind": "empty-result",
+                    "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
+                    "source": "current content" if use_current else "generated",
+                    **_attempt_code_field(candidate),
+                })
+                previous_attempt = candidate
+                previous_error = refusal
+                url_evidence = []
+                continue
+        yield "round_verdict", {
+            "round": rounds_used, "verdict": verdict_result["verdict"],
+        }
+        round_evidence = (verdict_result.get("evidence") or {})
+        rounds_trace.append(
+            f"round {rounds_used}: {verdict_result['verdict']}"
+            + (
+                # dev/127: the exception line, whole — this is the line that
+                # reached the owner's chat as "round 2: execution-error — de".
+                " — " + failure_text.summary(
+                    round_evidence.get("stderrTail") or round_evidence.get("detail") or "",
+                    code=candidate, limit=200,
+                )
+                if verdict_result["verdict"] != "pass"
+                else f" — output {round_evidence.get('outputDataType') or '?'}"
+            )
+        )
+        attempt = {
+            "round": rounds_used,
+            "contentSha256": _content_sha(candidate),
+            "verdict": verdict_result["verdict"],
+            "kind": round_evidence.get("kind"),
+            "source": "current content" if use_current else "generated",
+        }
+        if round_evidence.get("detail"):
+            attempt["detail"] = str(round_evidence["detail"])[:_ATTEMPT_DETAIL_CHARS]
+        if round_evidence.get("stderrTail"):
+            attempt["stderrTail"] = str(round_evidence["stderrTail"])[-_ATTEMPT_STDERR_CHARS:]
+        if round_evidence.get("outputDataType"):
+            attempt["outputDataType"] = round_evidence["outputDataType"]
+        if round_evidence.get("durationMs") is not None:
+            attempt["durationMs"] = round_evidence["durationMs"]
+        if round_evidence.get("reusedNodes"):
+            attempt["reusedNodes"] = list(round_evidence["reusedNodes"])[:12]
+        if reuse_retried:
+            attempt["reuseRetried"] = True
+        if verdict_result["verdict"] != "pass":
+            # dev/127: the code that ran and failed, ON the attempt — the
+            # owner could not see any of it without opening another chat.
+            attempt.update(_attempt_code_field(candidate))
+        attempts.append(attempt)
+        if verdict_result["verdict"] != "fail":
+            stopped_by = "passed" if verdict_result["verdict"] == "pass" else (
+                "infrastructure" if verdict_result["verdict"] == "infrastructure" else None
+            )
+            break
+        if round_evidence.get("kind") == "precondition" or round_evidence.get("upstreamEmpty"):
+            # dev/118: the runner refused the SLICE (bound, cycle), or an
+            # upstream has no content yet — no correction of THIS content can
+            # change that; one round says so.
+            stopped_by = "blocker"
+            break
+        previous_attempt = candidate
+        previous_error = round_evidence.get("stderrTail") or round_evidence.get("detail") or ""
+        url_evidence = _correction_url_evidence(candidate, previous_error, grounding_ctx)
+        if url_evidence:
+            # The endpoint's real answer joins the trail the card shows, so a
+            # key-gated API reads as such instead of as a JSON decode error.
+            attempt["endpointEvidence"] = _url_evidence_summary(url_evidence)
+    final_evidence = (verdict_result or {}).get("evidence") or {}
+    final_verdict = verdict_result["verdict"] if verdict_result else "fail"
+    if (
+        is_data_loading
+        and resolve_source is not None
+        and final_verdict == "fail"
+        and final_evidence.get("kind") in ("ungrounded-source", "source-missing")
+    ):
+        # dev/126: the round itself proved the source is missing — the gate
+        # refused the literal the builder wrote, or the builder declined and
+        # named what it needs. THIS is where the old dead end was: a failure
+        # whose remedy text asked the user to attach the Dataset Finder by
+        # hand. Discovery is initiated on that evidence, the attempt trail is
+        # kept (the user sees what was tried), and the node WAITS instead of
+        # failing.
+        try:
+            post = resolve_source(node, grounding_ctx, stage="post") or {}
+        except Exception:  # noqa: BLE001
+            log.warning("Post-failure source resolution failed for node %s",
+                        node_id, exc_info=True)
+            post = {}
+        if post.get("state") == "unresolved" and post.get("detail"):
+            final_evidence = {**final_evidence,
+                              "discovery": str(post["detail"])[:600]}
+            rounds_trace.append(
+                f"discovery found no source — {str(post['detail'])[:160]}"
+            )
+        if post.get("state") == "awaiting":
+            detail = str(post.get("detail") or "a source must be selected")
+            rounds_trace.append(f"awaiting dataset selection — {detail[:160]}")
+            return {
+                "verdict": "awaiting-source",
+                "evidence": {
+                    "kind": "awaiting-selection",
+                    "detail": detail[:2000],
+                    "after": str(final_evidence.get("detail") or "")[:600],
+                    **({"remedy": {
+                        "kind": "dataset-selection",
+                        "attachmentId": post["attachmentId"],
+                        "nodeId": node_id,
+                    }} if post.get("attachmentId") else {}),
+                },
+                "rounds": rounds_used,
+                "candidate": "",
+                "delegations": delegations,
+                "roundsTrace": rounds_trace,
+                "attempts": attempts,
+                "stoppedBy": "source",
+            }
+    return {
+        "verdict": final_verdict,
+        "evidence": final_evidence,
+        "rounds": rounds_used,
+        "candidate": candidate,
+        "delegations": delegations,
+        "roundsTrace": rounds_trace,
+        "attempts": attempts,
+        # dev/127: which bound ended the loop. Unset means the rounds ran out.
+        "stoppedBy": stopped_by or "rounds",
+    }
+
+
+def _validate_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    spec: dict,
+    node: dict,
+    ref: str | None,
+    resolution,
+    coord: str,
+    session_id,
+    exec_fn,
+    *,
+    home_attachment_id: str | None = None,
+    home_session_id: str | None = None,
+):
+    """The validate-node body over the ONE verified-content loop (dev/115):
+    the loop streams its rounds live; this body owns the framing turns, the
+    reviewed mint with the validation block, the per-node ledger, and the
+    finally that clears the in-flight guard on every exit, disconnect
+    included."""
+    node_id = node.get("id")
+    execution_id = uuid.uuid4().hex
+    label = (node.get("goal") or node_id)[:60]
+    if isinstance(home_session_id, str):
+        try:
+            sessions.append_turns(
+                user_key, project_id, home_session_id, home_attachment_id,
+                [sessions.make_turn(
+                    "user",
+                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
+                    "execute through the dataflow, validate, self-correct.",
+                )],
+            )
+        except Exception:
+            pass
+    try:
+        yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
+        outcome = yield from _verified_content_rounds(
+            user_key, project_id,
+            spec=spec, node=node, resolution=resolution, config=config,
+            parent_execution_id=execution_id, parent_coord=coord,
+            attachment_id=attachment_id, exec_fn=exec_fn,
+            grounding_loop_ctx={
+                "attachment_id": attachment_id, "session_id": session_id,
+                "granted": [], "manifest": None,
+            },
+            dataset_paths_fn=lambda codes: _exec_dataset_paths(project_id, *codes),
+            exec_user_key=user_key,
+            secrets_fn=_exec_secrets_resolver(user_key),
+            resolve_source=_source_resolver(
+                user_key, project_id, coord=coord, attachment_id=attachment_id,
+                execution_id=execution_id, config=config,
+                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+            ),
+        )
+        rounds_used = outcome["rounds"]
+        candidate = outcome["candidate"]
+        rounds_trace = outcome["roundsTrace"]
         done: dict = {
-            "verdict": verdict_result["verdict"] if verdict_result else "fail",
-            "evidence": (verdict_result or {}).get("evidence") or {},
+            "verdict": outcome["verdict"],
+            "evidence": outcome["evidence"],
             "rounds": rounds_used,
             "nodeId": node_id,
+            "attempts": outcome["attempts"],
         }
-        if done["verdict"] in ("pass", "fail") and candidate:
+        if done["verdict"] in ("pass", "fail", "not-executable") and candidate:
             # PASS or FAIL, the user decides — the proposal carries the
             # validation block so the review is informed, never gatekept.
+            # dev/118: NOT-EXECUTABLE (a browser-rendered kind) is proposed
+            # too, labeled — nothing ran, and the block says so.
             # dev/72: the review lives with the NODE's agent when it exists —
             # per-node proposals stop contending for the builder's one slot.
             mint_attachment = home_attachment_id or attachment_id
@@ -5061,12 +8915,15 @@ def _validate_events(
                     "verdict": done["verdict"],
                     "rounds": rounds_used,
                     "evidence": done["evidence"],
+                    # dev/115: the attempt trail — every round's error and
+                    # fix, rendered as a collapsed list on the card.
+                    "attempts": done["attempts"],
                 }
                 done["proposalId"] = part["proposalId"]
                 done["proposalAttachmentId"] = mint_attachment
                 trace_card = {
                     "type": "card",
-                    "kind": "result" if done["verdict"] == "pass" else "error",
+                    "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
                     "title": f"Solve trace · {done['verdict'].upper()}",
                     "lines": (
                         [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
@@ -5105,7 +8962,7 @@ def _validate_events(
                                 name="Node Builder",
                                 category="node",
                                 attachment_id=home_attachment_id,
-                                status="ok" if done["verdict"] == "pass" else "failed",
+                                status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
                                 summary=f"Solve {label!r}: {done['verdict']} "
                                 f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
                             )],
@@ -5121,7 +8978,10 @@ def _validate_events(
         fresh_record = _record_or_404(fresh, attachment_id)
         fresh_session = fresh_record.get("builderSession") or {}
         if ref and isinstance(fresh_session.get("nodeStates"), dict):
-            if done["verdict"] == "pass":
+            if done["verdict"] in ("pass", "not-executable"):
+                # dev/118: a browser-rendered kind proceeds like a pass in the
+                # plan's ledger (Simulation Mode auto-approves it); the
+                # proposal's validation block carries the honest label.
                 fresh_session["nodeStates"][ref] = "validated"
             elif done["verdict"] == "fail":
                 fresh_session["nodeStates"][ref] = "failed"
@@ -5295,6 +9155,7 @@ def _execution_record(
     tool_calls: list | None = None,
     delegations: list | None = None,
     refused_rounds: int = 0,
+    retry_of: str | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn.
 
@@ -5320,6 +9181,10 @@ def _execution_record(
         # — auditable beside toolCalls[].status so a run that leaned on the
         # free corrections is legible after the fact.
         record["refusedRounds"] = refused_rounds
+    if retry_of:
+        # dev/115 (DEC-021): a retry after an interruption is a NEW execution
+        # linked to the one that expired — nothing was replayed.
+        record["retryOf"] = retry_of
     return record
 
 
@@ -5357,6 +9222,13 @@ def _prepare_run(
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
+    # DEC-080 (dev/126): a project whose lockfile predates this agent's
+    # requiresAgents declaration gets it completed HERE — before the messages
+    # are composed, so the run resolves its required delegates instead of
+    # stalling on a reviewed install for one of them.
+    if _repair_required_closure(user_key, project_id, coord, attachment_id=attachment_id):
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
     manifest = _resolve_definition(user_key, coord)
     requested_tools = manifest.tools if manifest is not None else []
     missing = tools.missing_required(requested_tools)
@@ -5514,6 +9386,25 @@ _NO_NOTE_TEMPLATE_LINE = (
     "note content — take the 'Installed but NOT enlisted in this project' rung "
     "(when offered) or delegate authoring; do not node.create on any of the above."
 )
+
+
+def roster_block(templates: list, *, notes_agent: bool = False) -> str | None:
+    """The roster listing a run's system turn carries, for a caller outside a run.
+
+    A thin public wrapper over :func:`_available_templates_block`, added by memo
+    dev/122 so the training-set builder composes its system turn with the SAME
+    formatter a live run uses. Building a training example against a
+    hand-written roster paragraph would teach the model a prompt shape the
+    runtime never sends — a second vocabulary of exactly the kind ``DEC-062``
+    exists to prevent.
+
+    ``templates`` is a roster row list as ``packages_services.available_templates``
+    returns it. There is no project here, so the log line's project id reads
+    ``"training"``.
+    """
+    return _available_templates_block(
+        "training", {"available": list(templates)}, notes_agent=notes_agent
+    )
 
 
 def _available_templates_block(
@@ -5863,6 +9754,19 @@ def _mint_node_content_write(
     node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
     if node is None:
         return "refused", f"node {node_id!r} not found in the saved spec", None
+    # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
+    # dev/73 runtime review mint inherits it (a refusal is its honest text).
+    from utk_curio.backend.app.packages import services as packages_services
+
+    entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=proposed, engine=(entry or {}).get("engine"),
+        node_type=node.get("type"), params=params,
+        base=loop_ctx.get("_grounding_base"),
+    )
+    if refusal:
+        return _refuse_params(refusal)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
     summary = f"Replace the content of node {node_id!r}"
@@ -5873,22 +9777,19 @@ def _mint_node_content_write(
         preview=proposed,
         pins={"nodeId": node_id, "contentSha256": basis},
     )
-    _store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "node.content.write",
-            "nodeId": node_id,
-            "content": proposed,
-            "contentSha256": basis,
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "node.content.write",
+        "nodeId": node_id,
+        "content": proposed,
+        "contentSha256": basis,
+        "summary": summary,
+        "status": "pending",
+    }
+    if verdict.source:
+        part["source"] = verdict.source
+        proposal["source"] = verdict.source
+    _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",
         f"proposal {proposal_id} created for node {node_id!r}; it awaits the user's "
@@ -5931,6 +9832,17 @@ def _mint_node_create(
         return _refuse_params("params.content must be a non-empty string")
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return _refuse_params("params.content exceeds the proposal size bound")
+    # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
+    # A same-run node.create after the runtime minted dataset candidates is
+    # refused too: the user reviews and confirms a source first (DEC-006).
+    if loop_ctx.get("_candidates_pending_review"):
+        return _refuse_params(_CANDIDATES_PENDING_TEXT)
+    verdict, refusal = _gate_generated_content(
+        user_key, project_id, loop_ctx,
+        code=proposed, engine=entry.get("engine"), node_type=entry["id"], params=params,
+    )
+    if refusal:
+        return _refuse_params(refusal)
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
     # dev/105 A2 (additive): the node's HEADER. The note behavior renders
@@ -5966,7 +9878,10 @@ def _mint_node_create(
         tool="node.create",
         summary=summary,
         preview=proposed,
-        pins={"nodeType": entry["id"]},
+        # dev/119 (DEC-076): the roster's own answer to "can the sandbox run
+        # this kind" rides the card — display, never a revision pin — so no
+        # frontend file keeps a list of executable kinds.
+        pins={"nodeType": entry["id"], "executable": bool(entry.get("executable"))},
     )
     proposal = {
         "proposalId": proposal_id,
@@ -5976,6 +9891,11 @@ def _mint_node_create(
         "summary": summary,
         "status": "pending",
     }
+    if verdict.source:
+        # dev/114: what the code opens/fetches and how it was grounded — the
+        # card's Source block; display + provenance, never a pin.
+        part["source"] = verdict.source
+        proposal["source"] = verdict.source
     if goal:
         proposal["goal"] = goal
     if title:
@@ -5992,7 +9912,7 @@ def _mint_node_create(
     )
 
 
-def _verify_candidate_parts(parts: list) -> None:
+def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     """dev/67-4 (DEC-053): the Dataset Finder stops laundering — external
     candidate rows are verified DETERMINISTICALLY before they reach the user.
     URL-bearing rows are probed through the egress policy (first 4 — the
@@ -6005,7 +9925,15 @@ def _verify_candidate_parts(parts: list) -> None:
     # could issue a dozen requests (a Socrata probe fetched twice, and every
     # fetch follows up to MAX_REDIRECTS hops), so the documented bound of
     # MAX_CALLS_PER_RUN bore no relation to what actually went out.
-    budget = egress.CallBudget(egress.MAX_CALLS_PER_RUN)
+    # dev/114: the budget is the RUN's when a loop context rides along — the
+    # grounding gate's mint-time probes and this pass spend the same four
+    # requests — and every verified row is remembered so a same-run
+    # confirmation grounds its URL without re-spending.
+    budget = (
+        _run_egress_budget(loop_ctx)
+        if loop_ctx is not None
+        else egress.CallBudget(_RUN_EGRESS_CALLS)
+    )
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -6016,14 +9944,490 @@ def _verify_candidate_parts(parts: list) -> None:
             url = row.get("url")
             if not url:
                 row["verification"] = verify.verify_external_source(None)
+                _mint_row_access(row)
                 continue
             if budget.exhausted:
                 row["verification"] = {
                     "status": "unverified",
                     "detail": "the egress budget was spent before this row — not checked",
                 }
+                _mint_row_access(row)
                 continue
             row["verification"] = verify.verify_external_source(url, budget=budget)
+            _mint_row_access(row)
+            if loop_ctx is not None and row["verification"].get("status") == "verified":
+                loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
+
+
+def _mint_row_access(row: dict) -> None:
+    """dev/132: what the user can DO with this row, minted from the probe.
+
+    The owner's instruction splits the external lane: a row code can fetch is
+    delegated automatically, a row a person must download from a portal
+    carries the steps and an Import button. Both halves need the same thing
+    first — a verdict, recorded by the runtime from what it observed
+    (``DEC-053``), never a claim the model made. ``access`` is that verdict;
+    ``downloadSteps`` rides only the manual answer.
+    """
+    outcome = row.get("verification") if isinstance(row.get("verification"), dict) else {}
+    verdict = verify.classify_access(outcome)
+    row["access"] = verdict["access"]
+    row["accessWhy"] = verdict["why"]
+    if verdict["access"] == verify.ACCESS_MANUAL:
+        steps = verify.download_steps(row, outcome)
+        if steps:
+            row["downloadSteps"] = steps
+
+
+def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
+    """dev/114: ONE egress budget per run (or per Solve batch) — created lazily
+    on the loop context, shared by candidate verification and the grounding
+    gate's probes, so ``MAX_CALLS_PER_RUN`` means the run's total."""
+    budget = loop_ctx.get("_egress_budget")
+    if budget is None:
+        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or _RUN_EGRESS_CALLS))
+        loop_ctx["_egress_budget"] = budget
+    return budget
+
+
+#: dev/114: the text a same-run node.create/insert gets after the runtime
+#: minted dataset candidates — the user reviews first (DEC-006).
+_CANDIDATES_PENDING_TEXT = (
+    "dataset candidates are shown to the user for review — do not propose a "
+    "node in this turn; end your reply by asking the user to select and "
+    "confirm a source, then build from the confirmed one on the next turn"
+)
+
+
+def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
+    """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
+    for this project, the SAME listing ``catalog.search`` serves, so a row the
+    tool showed is grounded by construction: by resolved path (the historical
+    literal form) and by id (the portable ``curio_dataset_path("<id>")`` call
+    the loader recipe emits, resolved by the sandbox at run time). A failing
+    catalog read degrades to empty maps (logged): the gate still refuses
+    ungrounded sources, honestly, rather than inventing a neighborhood."""
+    try:
+        from flask import g, has_request_context
+
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user = getattr(g, "user", None) if has_request_context() else None
+        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
+    except Exception:  # a broken catalog is data, never a run error
+        log.warning(
+            "Could not read the Data Catalog for source grounding (project %s) — "
+            "catalog paths are treated as unknown this run", project_id, exc_info=True,
+        )
+        return {}, {}
+    by_path: dict = {}
+    by_id: dict = {}
+    for item in (listing or {}).get("items") or []:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        path = item.get("path")
+        ref = source_grounding.CatalogRef(
+            dataset_id=str(item.get("id")),
+            title=str(item.get("title") or item.get("id") or ""),
+            format=str(item.get("format") or ""),
+            path=path if isinstance(path, str) else "",
+        )
+        by_id[ref.dataset_id] = ref
+        if isinstance(path, str) and path.strip():
+            by_path[path] = ref
+    return by_path, by_id
+
+
+def _session_grounding_evidence(
+    user_key: str, project_id: str, loop_ctx: dict
+) -> tuple[list[str], dict]:
+    """dev/114: what this conversation already established — the user's own
+    texts (the current message first) and every candidate row the runtime
+    verified (persisted turns + this run's ``_verified_urls``)."""
+    texts: list[str] = []
+    verified: dict = {}
+    message = loop_ctx.get("message")
+    if isinstance(message, str) and message.strip():
+        texts.append(message)
+    session_id = loop_ctx.get("session_id")
+    if isinstance(session_id, str):
+        try:
+            turns = sessions.read_turns(user_key, project_id, session_id)
+        except Exception:
+            turns = []
+        for turn in turns:
+            if turn.get("role") == "user" and isinstance(turn.get("text"), str):
+                texts.append(turn["text"])
+            for part in turn.get("content") or []:
+                if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+                    continue
+                for row in ((part.get("lanes") or {}).get("external") or []):
+                    if not isinstance(row, dict):
+                        continue
+                    evidence = row.get("verification")
+                    if (
+                        isinstance(row.get("url"), str)
+                        and isinstance(evidence, dict)
+                        and evidence.get("status") == "verified"
+                    ):
+                        verified[row["url"]] = evidence
+    for url, evidence in (loop_ctx.get("_verified_urls") or {}).items():
+        verified[url] = evidence
+    return texts, verified
+
+
+def _grounding_context(
+    user_key: str,
+    project_id: str,
+    loop_ctx: dict,
+    *,
+    node_type: object,
+    params: dict | None = None,
+    extra_texts: tuple = (),
+    base: dict | None = None,
+    is_data_loading: bool | None = None,
+) -> "source_grounding.GroundingContext":
+    """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
+    paths, the conversation's evidence, the run-budgeted prober, and the
+    grant-aware corrective routes. ``base`` (a Solve batch's precomputed
+    catalog paths / texts / verified map) replaces the per-mint reads."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    canonical = packages_services.canonical_template_id(node_type) if node_type else ""
+    if is_data_loading is None:
+        is_data_loading = source_grounding.is_data_loading_type(canonical)
+    if base is not None:
+        catalog_paths = base.get("catalog_paths") or {}
+        catalog_ids = base.get("catalog_ids") or {}
+        texts = list(base.get("texts") or [])
+        verified = dict(base.get("verified") or {})
+        secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(user_key)
+    else:
+        catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
+        texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
+        secrets = _connection_key_refs(user_key)
+    texts.extend(t for t in extra_texts if isinstance(t, str) and t.strip())
+    budget = _run_egress_budget(loop_ctx)
+    cache: dict = loop_ctx.setdefault("_probe_cache", {})
+
+    def _probe(url: str, *, headers=None, params=None) -> dict:
+        keyed = bool(headers or params)
+        if not keyed and url in cache:
+            return cache[url]
+        if budget.exhausted:
+            return {
+                "status": "unverified",
+                "detail": "the egress budget was spent before this URL — not checked",
+            }
+        if keyed:
+            # dev/116: a probe carrying a connection key is evidence for ONE
+            # correction — never cached under the bare URL, never a verified
+            # source (the caller redacts the outcome).
+            return verify.verify_external_source(url, budget=budget, headers=headers, params=params)
+        result = verify.verify_external_source(url, budget=budget)
+        cache[url] = result
+        if result.get("status") == "verified":
+            loop_ctx.setdefault("_verified_urls", {})[url] = result
+            # The context's own map too: a URL the gate verified THIS run is
+            # evidence the next correction round is handed (dev/115 field fix,
+            # 2026-09-08 — the current content's Census URL passed the gate by
+            # probe, the correction saw an empty ``verifiedUrls`` and the
+            # content builder rightly declined to write code).
+            verified[url] = result
+        return result
+
+    hints: list[str] = []
+    if "catalog.search" in (loop_ctx.get("granted") or []):
+        hints.append("a `path` from a catalog.search row (granted — search first)")
+    manifest = loop_ctx.get("manifest")
+    if "agent.dataset-finder" in (getattr(manifest, "delegates_to", None) or []):
+        hints.append(
+            "a URL the runtime verified — delegate the dataset.discover capability "
+            "to find and verify candidates first, then build from the one the user confirms"
+        )
+    elif verified:
+        hints.append("a URL already verified in this conversation")
+    hints.append(
+        'declare "synthetic": true in the params ONLY when the user asked for made-up data'
+    )
+    if secrets:
+        hints.append(
+            "a saved connection key by name — " + "; ".join(
+                ref.use_line for ref in list(secrets.values())[:6]
+            )
+        )
+    secret_values = _exec_secrets_resolver(user_key)
+    return source_grounding.GroundingContext(
+        catalog_paths=catalog_paths,
+        catalog_ids=catalog_ids,
+        user_paths=source_grounding.user_paths(texts),
+        verified_urls=verified,
+        synthetic_requested=source_grounding.synthetic_requested(texts, params),
+        is_data_loading=is_data_loading,
+        probe=_probe,
+        hints=hints,
+        secrets=secrets,
+        secret_values=lambda names: secret_values(
+            [f'curio_secret("{n}")' for n in names]
+        ),
+    )
+
+
+def _gate_generated_content(
+    user_key: str,
+    project_id: str,
+    loop_ctx: dict,
+    *,
+    code: str,
+    engine: object,
+    node_type: object,
+    params: dict | None = None,
+    extra_texts: tuple = (),
+    base: dict | None = None,
+    is_data_loading: bool | None = None,
+) -> tuple["source_grounding.GroundingVerdict", str | None]:
+    """The ONE call every agent-authored-content boundary makes (dev/114):
+    ``(verdict, refusal_text | None)``. The refusal is model-correctable
+    (DEC-067) and names only routes this run can take."""
+    ctx = _grounding_context(
+        user_key, project_id, loop_ctx, node_type=node_type, params=params,
+        extra_texts=extra_texts, base=base, is_data_loading=is_data_loading,
+    )
+    engine_name = engine if isinstance(engine, str) and engine else "python"
+    verdict = source_grounding.check_grounding(code, engine_name, ctx)
+    if verdict.ok:
+        return verdict, None
+    return verdict, source_grounding.refusal_text(verdict, ctx)
+
+
+def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
+    """dev/114: the grounding a tool-less content delegate is HANDED (the
+    DEC-063 pattern — evidence as inputs): the catalog datasets with their
+    real paths, the paths the user typed, the URLs already verified, and the
+    rule. Bounded; plain data."""
+    datasets = [
+        {
+            "datasetId": ref.dataset_id,
+            "title": ref.title,
+            "format": ref.format,
+            "use": f'dataset_path = curio_dataset_path("{ref.dataset_id}")',
+            **({"path": ref.path} if ref.path else {}),
+        }
+        for ref in list(ctx.catalog_ids.values())[:24]
+    ]
+    secrets = [
+        {
+            "name": ref.name,
+            "host": ref.host,
+            "delivery": ref.delivery,
+            "use": ref.use_line,
+        }
+        for ref in list((ctx.secrets or {}).values())[:24]
+    ]
+    return {
+        "catalogDatasets": datasets,
+        "userPaths": sorted(ctx.user_paths)[:24],
+        "verifiedUrls": sorted(ctx.verified_urls)[:24],
+        "availableSecrets": secrets,
+        "syntheticRequested": bool(ctx.synthetic_requested),
+        "rule": (
+            "Load catalog datasets ONLY through their `use` line "
+            "(curio_dataset_path(\"<id>\") — the sandbox resolves it), open ONLY the "
+            "local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY "
+            "these URLs (verifiedUrls). Never invent a filename, never "
+            "assume a file exists, never write a URL from memory — the runtime "
+            "refuses ungrounded content. If none of these fits the intent, return "
+            "a one-line explanation of what source is missing instead of code."
+            + (
+                " A key-gated host is reachable ONLY through a saved connection key: "
+                "copy its `use` line (curio_secret(\"<name>\") — the sandbox resolves "
+                "it) and send the value the way `delivery` says (query:<param> / "
+                "header:<Name> / code = as the API documents). Never write a key "
+                "value into the code; if the host needs a key and availableSecrets "
+                "lists none for it, return the one-line explanation naming the host."
+                if secrets else
+                " A key-gated host has no saved connection key here: do not invent one — "
+                "return the one-line explanation naming the host that needs a key."
+            )
+            + (
+                " The user asked for synthetic data: build it inline and say so."
+                if ctx.synthetic_requested else ""
+            )
+        ),
+    }
+
+
+def _connection_key_refs(user_key: str) -> dict:
+    """dev/116: the user's saved connection keys as ``SecretRef``s (names,
+    hosts, delivery — never values). Read in the request thread; a missing or
+    unreadable store is simply no keys."""
+    from utk_curio.backend.app.users.connection_keys import default_store
+
+    try:
+        return {
+            ref.name: source_grounding.SecretRef(ref.name, ref.host, ref.delivery)
+            for ref in default_store().list(user_key)
+        }
+    except Exception:
+        return {}
+
+
+def _exec_secrets_resolver(user_key: str):
+    """dev/116: ``codes -> {name: value}`` for the ``curio_secret("<name>")``
+    calls in *codes* — the ONE reader of values on the agent path. The user
+    key is captured here (request thread); the store needs no request context,
+    so a job thread may call the closure per round (dev/115 lesson 1)."""
+    from utk_curio.backend.app.users.connection_keys import default_store, secret_names
+
+    def _resolve(codes) -> dict:
+        names: list[str] = []
+        for code in codes or ():
+            for name in secret_names(code):
+                if name not in names:
+                    names.append(name)
+        if not names:
+            return {}
+        try:
+            return default_store().resolve(user_key, names)
+        except Exception:
+            return {}
+
+    return _resolve
+
+
+def _solve_grounding_base(
+    user_key: str, project_id: str, spec: dict | None, nodes_by_id: dict, targets: list
+) -> dict:
+    """dev/114: ONE grounding base per Solve batch, built in the request
+    thread (workers hold no request context): catalog paths, the mission and
+    plan texts (the human-authored intents), and the session-free verified
+    map (empty — Solve has no candidates transcript of its own)."""
+    dataflow = (spec or {}).get("dataflow") or {}
+    texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
+    for node_id in targets:
+        node = nodes_by_id.get(node_id) or {}
+        texts.append(str(node.get("goal") or ""))
+    by_path, by_id = _catalog_grounding_refs(project_id)
+    return {
+        "catalog_paths": by_path,
+        "catalog_ids": by_id,
+        "texts": [t for t in texts if t.strip()],
+        "verified": {},
+        "secrets": _connection_key_refs(user_key),
+    }
+
+
+#: dev/114: the sixth runtime-supplied-inputs application (DEC-063) — the
+#: rule a tool-less Dataset Finder child answers to. The row schema itself is
+#: content.CANDIDATES_INSTRUCTION (#269): ONE schema, never a second copy.
+_DISCOVERY_RULE = (
+    "You are running as a delegate without tools. The `catalog` input IS the "
+    "project's Data Catalog (catalog.search was run for you): catalog-lane rows "
+    "must come ONLY from it, quoting each row's id as datasetId — any other id is "
+    "dropped. External rows are suggestions the runtime will probe; do not claim "
+    "verification. Reply with the datasetCandidates block described below and a "
+    "one-line summary; nothing else."
+)
+
+
+def _extract_candidates_reply(child_text: str) -> dict | None:
+    """dev/114: the child reply's ``datasetCandidates`` payload, or None —
+    schema-only recognition (DEC-063): a JSON object, bare or inside ONE fence
+    of any language tag (the #269 schema teaches a curio.v1 fence), whose
+    ``datasetCandidates.lanes`` is a dict. Chat JSON never matches."""
+    import json as _json
+    import re as _re2
+
+    if not isinstance(child_text, str) or not child_text.strip():
+        return None
+    candidates = [child_text.strip()]
+    candidates += [m.group(1).strip() for m in _re2.finditer(
+        r"```[A-Za-z0-9_.-]*[ \t]*\n(.*?)\n?```", child_text, _re2.DOTALL)]
+    for candidate in candidates:
+        try:
+            payload = _json.loads(candidate)
+        except ValueError:
+            continue
+        block = payload.get("datasetCandidates") if isinstance(payload, dict) else None
+        if isinstance(block, dict) and isinstance(block.get("lanes"), dict):
+            return block
+    return None
+
+
+def _mint_candidates_from_delegate(
+    loop_ctx: dict, child_text: str, catalog_rows: list
+) -> tuple[dict | None, str, str]:
+    """dev/114: a successful ``dataset.discover`` delegation becomes the
+    two-lane ``datasetCandidates`` part on the PARENT's turn — runtime-minted:
+    catalog rows not in the runtime's own catalog listing are dropped (tool-
+    grounded, never model-claimed), external rows get the DEC-053 verdict, and
+    the run is marked so a same-turn node.create is refused (the user reviews
+    first). Returns ``(part | None, text_for_model, outcome)``."""
+    block = _extract_candidates_reply(child_text)
+    if block is None:
+        return None, (
+            "the Dataset Finder returned no recognizable datasetCandidates block — "
+            "report that honestly; do not invent candidates or a source"
+        ), "no-candidates"
+    known = {str(r.get("id")) for r in catalog_rows if isinstance(r, dict) and r.get("id")}
+    lanes = block.get("lanes") or {}
+    catalog_raw = lanes.get("catalog") if isinstance(lanes.get("catalog"), list) else []
+    kept = [r for r in catalog_raw if isinstance(r, dict) and str(r.get("datasetId")) in known]
+    dropped = len(catalog_raw) - len(kept)
+    for row in kept:
+        # Installed state is the LISTING's, never the child's claim.
+        listed = next((r for r in catalog_rows if str(r.get("id")) == str(row.get("datasetId"))), None)
+        if listed is not None:
+            row["installed"] = bool(listed.get("installed"))
+            row.setdefault("name", listed.get("name"))
+            row.setdefault("sourceType", "catalog")
+    parsed = content._parse_dataset_candidates({"lanes": {
+        "external": lanes.get("external") if isinstance(lanes.get("external"), list) else [],
+        "catalog": kept,
+    }})
+    if parsed is None:
+        note = f" ({dropped} catalog row(s) dropped — not in the Data Catalog)" if dropped else ""
+        return None, (
+            "the Dataset Finder returned no usable candidates" + note +
+            " — report that honestly; ask the user for a path or URL instead of guessing"
+        ), "no-candidates"
+    _verify_candidate_parts([parsed], loop_ctx)
+    loop_ctx["_candidates_pending_review"] = True
+    total = sum(len(v) for v in parsed["lanes"].values())
+    note = f" {dropped} catalog row(s) were dropped (not in the Data Catalog)." if dropped else ""
+    return parsed, (
+        f"{total} dataset candidate(s) are shown to the user for review; external rows "
+        "carry the runtime's verification verdict." + note +
+        " Do NOT propose a node in this turn — ask the user to select and confirm; "
+        "you will build from the confirmed source on the next turn."
+    ), "ok"
+
+
+def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> dict:
+    """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
+    child gets the catalog listing and the reply schema as INPUTS."""
+    enriched = dict(inputs)
+    if "catalog" not in enriched:
+        try:
+            rows = tools._catalog_search_rows(user_key, project_id, {})
+        except Exception:
+            log.warning("Could not list the Data Catalog for a dataset.discover "
+                        "delegate (project %s)", project_id, exc_info=True)
+            rows = []
+        enriched["catalog"] = {
+            "note": (
+                "The project's Data Catalog as catalog.search returned it"
+                if rows else
+                "The Data Catalog listing was empty or unavailable — the catalog lane "
+                "must stay empty; say so."
+            ),
+            "rows": rows,
+        }
+    if "discoveryReplyContract" not in enriched:
+        enriched["discoveryReplyContract"] = _DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
+    return enriched
 
 
 def _mark_acquirable_candidates(parts: list, granted: set[str]) -> None:
@@ -6216,6 +10620,18 @@ def _mint_project_install(
     )
 
 
+#: dev/126: capabilities whose node-scoped work homes at the DELEGATE's own
+#: node attachment rather than dev/72's Node Builder default — discovery
+#: belongs in the chat of the agent that owns it, which is also where the user
+#: selects a source. One declaration; every other capability keeps dev/72's
+#: behavior byte-for-byte, and so does this one when that agent cannot live on
+#: the node (its manifest's compatibleTargets decide).
+_HOME_AGENT_BY_CAPABILITY: dict[str, str] = {
+    "dataset.discover": "agent.dataset-finder",
+    "dataset.select": "agent.dataset-finder",
+}
+
+
 def _delegation_home(
     spec: dict,
     coord: str,
@@ -6224,15 +10640,36 @@ def _delegation_home(
     *,
     node_id: str | None = None,
     create: bool = True,
+    user_key: str | None = None,
 ) -> tuple[dict | None, bool]:
     """Where a delegated task LIVES (memo dev/72): node-scoped work → the
     target node's Node Builder attachment (dev/71's; best-effort created);
     everything else → an existing attachment of the DELEGATE's agent id
     (canvas-scoped preferred), else a new canvas attachment of the resolved
     coord. Returns ``(record | None, created)`` — best-effort throughout: a
-    missing home never fails a delegation."""
+    missing home never fails a delegation. dev/126: a capability in
+    ``_HOME_AGENT_BY_CAPABILITY`` homes at its own agent's node attachment."""
     target_node = node_id or (inputs or {}).get("nodeId")
     if isinstance(target_node, str) and target_node:
+        home_agent = _HOME_AGENT_BY_CAPABILITY.get(capability)
+        if home_agent:
+            existing = _node_attachment_of(spec, home_agent, target_node)
+            if existing is not None:
+                return existing, False
+            if create:
+                node_type = next(
+                    (
+                        n.get("type") for n in (spec.get("dataflow") or {}).get("nodes") or []
+                        if isinstance(n, dict) and n.get("id") == target_node
+                    ),
+                    None,
+                )
+                row = _attach_node_agent(
+                    user_key, spec, home_agent, target_node, node_type
+                )
+                if row.get("attachmentId"):
+                    return attachments.get_attachment(spec, row["attachmentId"]), True
+            # That agent cannot live on this node — dev/72's default applies.
         for rec in attachments.list_attachments(spec):
             target = rec.get("target") or {}
             if (
@@ -6305,7 +10742,8 @@ def _run_delegate_traced(
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is not None:
             home, created = _delegation_home(
-                spec, coord, capability, inputs, node_id=node_id, create=home_create
+                spec, coord, capability, inputs, node_id=node_id, create=home_create,
+                user_key=user_key,
             )
             if home is not None:
                 home_attachment_id = home.get("attachmentId")
@@ -6402,6 +10840,9 @@ def _mint_content_review_from_delegate(
     parent_attachment_id,
     parent_session_id,
     local_turn: bool = False,
+    parent_loop_ctx: dict | None = None,
+    validation: dict | None = None,
+    grounding_base: dict | None = None,
 ) -> tuple[dict | None, str | None, str]:
     """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
     a successful ``node.content.generate`` delegation becomes a reviewed
@@ -6436,9 +10877,21 @@ def _mint_content_review_from_delegate(
                 break
     except Exception:
         pass
+    # dev/114: the mint's grounding gate reads the PARENT run's evidence
+    # (current message, verified rows, probe cache, grants) — the home
+    # session alone would not know what the user just typed.
+    mint_ctx = {
+        k: v for k, v in (parent_loop_ctx or {}).items()
+        if k in ("message", "_verified_urls", "_egress_budget", "_probe_cache", "granted", "manifest")
+    }
+    mint_ctx.update({"attachment_id": home_att, "session_id": home_sess})
+    if grounding_base is not None:
+        # dev/115: a job thread holds no request context — the gate grounds
+        # against the batch's precomputed catalog refs, not a live listing.
+        mint_ctx["_grounding_base"] = grounding_base
     p_status, p_error, part = _mint_node_content_write(
         user_key, project_id,
-        {"attachment_id": home_att, "session_id": home_sess},
+        mint_ctx,
         {"tool": "node.content.write",
          "params": {"nodeId": node_id, "content": text_out}},
     )
@@ -6448,6 +10901,10 @@ def _mint_content_review_from_delegate(
             f"({(p_error or 'unknown error')[:200]}) — report this honestly: "
             "nothing was changed and nothing awaits review"
         )
+    if validation:
+        # dev/115: an EXECUTED review carries its verdict and attempt trail —
+        # stamped before the turn is written so the persisted part has it.
+        part["validation"] = dict(validation)
     if isinstance(home_sess, str) and (local_turn or home_att != parent_attachment_id):
         try:
             sessions.append_turns(
@@ -7344,6 +11801,12 @@ def _enriched_delegate_inputs(
         if "notesReplyContract" not in enriched:
             enriched["notesReplyContract"] = _NOTES_REPLY_CONTRACT
         return enriched
+    if capability == "dataset.discover":
+        # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):
+        # a tool-less Dataset Finder child cannot run catalog.search, so the
+        # runtime lists the catalog for it and teaches the ONE reply schema
+        # (#269's). Model-supplied keys always win.
+        return _dataset_discover_inputs(user_key, project_id, inputs)
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")
@@ -7360,7 +11823,21 @@ def _enriched_delegate_inputs(
     composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
     if composed is None:
         return inputs
-    return {**inputs, "nodeContext": composed}
+    enriched = {**inputs, "nodeContext": composed}
+    # dev/114 — the SEVENTH application: a data-loading node's content child
+    # is HANDED its grounded sources (catalog paths, the user's paths, the
+    # URLs already verified) instead of guessing a filename.
+    from utk_curio.backend.app.packages import services as packages_services
+
+    node_type = composed.get("nodeType")
+    if "sourceGrounding" not in enriched and source_grounding.is_data_loading_type(
+        packages_services.canonical_template_id(node_type)
+    ):
+        enriched["sourceGrounding"] = _source_grounding_inputs(
+            _grounding_context(user_key, project_id, loop_ctx, node_type=node_type,
+                               extra_texts=(str(inputs.get("intent") or ""),))
+        )
+    return enriched
 
 
 def _resolve_delegate_request(
@@ -7377,6 +11854,23 @@ def _resolve_delegate_request(
     if resolution.outcome == "ok":
         return "ok", "", resolution
     if resolution.outcome == "not-installed":
+        # DEC-080 (dev/126): a REQUIRED delegate that is missing is a closure
+        # the user already consented to — repaired once, here, instead of
+        # stalling the conversation on an install proposal for it. A merely
+        # PREFERRED delegate keeps the reviewed install lane below
+        # (`REQ-ORCH-001`), unchanged.
+        dependency_id = (resolution.coord or "").split("@", 1)[0]
+        required_ids = {
+            c.split("@", 1)[0]
+            for c in delegation.required_closure(user_key, manifest)[0]
+        }
+        if dependency_id in required_ids and _repair_required_closure(
+            user_key, project_id, loop_ctx.get("coord") or "",
+            attachment_id=loop_ctx.get("attachment_id"),
+        ):
+            retried = delegation.resolve(user_key, project_id, manifest, capability)
+            if retried.outcome == "ok":
+                return "ok", "", retried
         status, text, part = _mint_project_install(
             user_key,
             project_id,
@@ -7415,6 +11909,10 @@ def run_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config, run_context
     )
+    # dev/114: the current user text — turns persist AFTER the run, so the
+    # grounding gate cannot read it from the session; a path the user typed
+    # is the one human-trusted source of a local path.
+    loop_ctx["message"] = message
     execution_id = uuid.uuid4().hex
     # Atomic admission (dev/40): after validation (an invalid request never
     # consumes quota), before provider dispatch (a denied run never reaches a
@@ -7449,7 +11947,7 @@ def run_attachment(
             )
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
-            _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+            _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
             _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
             req = (
                 parts[0]
@@ -7544,6 +12042,7 @@ def run_attachment(
                             generated_text=text,
                             parent_attachment_id=loop_ctx.get("attachment_id"),
                             parent_session_id=loop_ctx.get("session_id"),
+                            parent_loop_ctx=loop_ctx,
                         )
                         delegate_summary = text
                         if review_part is not None:
@@ -7575,6 +12074,20 @@ def run_attachment(
                         # not merely that the child ran — "ok" beside "returned
                         # no parseable draft" is how the parent learned nothing.
                         status = draft_outcome
+                    elif status == "ok" and req["capability"] == "dataset.discover":
+                        # dev/114: discovery success ⇒ the two-lane candidates part
+                        # EXISTS on this turn — runtime-minted (catalog rows tool-
+                        # grounded, external rows probed), never the model's claim.
+                        cand_part, text, cand_outcome = _mint_candidates_from_delegate(
+                            loop_ctx, text,
+                            ((req.get("inputs") or {}).get("catalog") or {}).get("rows")
+                            or _dataset_discover_inputs(user_key, project_id, {})["catalog"]["rows"],
+                        )
+                        delegate_summary = text
+                        if cand_part is not None:
+                            minted.append(cand_part)
+                            delegate_summary = "dataset candidates shown for review — select and confirm"
+                        status = cand_outcome
                     elif status == "ok" and req["capability"] == "research.notes.compose":
                         # dev/95 (Follow-up D): notes success ⇒ the reviewed
                         # A16 sequence EXISTS — runtime-minted from the
@@ -7693,6 +12206,10 @@ def stream_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config, run_context
     )
+    # dev/114: the current user text — turns persist AFTER the run, so the
+    # grounding gate cannot read it from the session; a path the user typed
+    # is the one human-trusted source of a local path.
+    loop_ctx["message"] = message
     execution_id = uuid.uuid4().hex
     # Eager atomic admission (dev/40): a quota/budget denial surfaces as a
     # plain 429 before any streaming begins, and consumes/persists nothing.
@@ -7762,7 +12279,7 @@ def stream_attachment(
                     yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
-        _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
+        _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
         _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
         if withheld is not None and not parts:
             if hold_plan_tail and (
@@ -7944,6 +12461,7 @@ def stream_attachment(
                                 generated_text=text,
                                 parent_attachment_id=loop_ctx.get("attachment_id"),
                                 parent_session_id=loop_ctx.get("session_id"),
+                                parent_loop_ctx=loop_ctx,
                             )
                             delegate_summary = text
                             if review_part is not None:
@@ -7976,6 +12494,20 @@ def stream_attachment(
                             # dev/93 D5: the card reports the OUTCOME (see the
                             # non-streaming path).
                             status = draft_outcome
+                        elif status == "ok" and req["capability"] == "dataset.discover":
+                            # dev/114: discovery success ⇒ the two-lane candidates part
+                            # EXISTS on this turn — runtime-minted (catalog rows tool-
+                            # grounded, external rows probed), never the model's claim.
+                            cand_part, text, cand_outcome = _mint_candidates_from_delegate(
+                                loop_ctx, text,
+                                ((req.get("inputs") or {}).get("catalog") or {}).get("rows")
+                                or _dataset_discover_inputs(user_key, project_id, {})["catalog"]["rows"],
+                            )
+                            delegate_summary = text
+                            if cand_part is not None:
+                                minted.append(cand_part)
+                                delegate_summary = "dataset candidates shown for review — select and confirm"
+                            status = cand_outcome
                         elif status == "ok" and req["capability"] == "research.notes.compose":
                             # dev/95: see the non-streaming path.
                             note_parts, text, notes_outcome = _mint_notes_from_delegate(

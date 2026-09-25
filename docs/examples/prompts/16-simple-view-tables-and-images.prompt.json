@@ -1,0 +1,99 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "16-simple-view-tables-and-images",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/16-simple-view-tables-and-images.json",
+    "sha256": "442214a9ee6a95a5fd6a5b539185f8639d90a8507190f4a629dc807dfd9dcfc9",
+    "walkthrough": "docs/examples/16-simple-view-tables-and-images.md"
+  },
+  "prompt": "Build two independent little paths that both end in the built-in viewer, to show the two things it does on its own. In the first, generate a small table of neighbourhood readings and display it as a table. In the second, generate a few rows that each carry a picture and display those as one card per row. Nothing should read a file or reach the network.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": []
+  },
+  "notes": "Two four-node paths that share nothing: Simple View as a table and as image cards."
+}

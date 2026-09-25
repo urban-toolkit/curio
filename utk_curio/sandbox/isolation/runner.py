@@ -176,6 +176,7 @@ def execute_isolated(
     dataset_paths=None,
     user_key=None,
     config,
+    secrets=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -248,6 +249,7 @@ def execute_isolated(
             session_imports=_imports_for(session_id),
             limits=config.limits,
             wall_timeout=config.wall_timeout,
+            secrets=secrets,
         )
 
         client = supervisor.ZygoteClient(config.socket_path)

@@ -1,0 +1,233 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "13-vega-lite-geometry-columns",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/13-vega-lite-geometry-columns.json",
+    "sha256": "ba16c7ca7c07b9556133f9cb693dfb78a18620d8f604316d33f34476df105b11",
+    "walkthrough": "docs/examples/13-vega-lite-geometry-columns.md"
+  },
+  "prompt": "Using the Chicago ZIP boundary polygons from the Data Catalog, show me how a geometry column behaves whatever it is called: one frame whose geometry column has an unusual name, one that carries several geometry columns at once, and one with no geometry at all. Draw each case in its own map or chart so I can compare what the same spec does with each.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.urbanlab.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform3",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform4",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform5",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform6",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform6",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform6",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "transform6",
+        "to": "visualization7",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.urbanlab.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "Geometry-column naming and arity: six transforms off one loader, seven views."
+}

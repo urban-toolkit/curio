@@ -55,75 +55,25 @@ from utk_curio.sandbox.util.codec import (
 
 #     return parsedJson
 
-# I/O Type Checking
+# I/O type checking — RETIRED (memo dev/120).
+#
+# ``checkIOType`` used to dispatch on the legacy uppercase node names
+# (DATA_LOADING / DATA_TRANSFORMATION / DATA_EXPORT) and refuse inputs and
+# outputs outside a hand-typed copy of the builtin manifest's port types. Every
+# caller has sent the namespaced id (``curio.builtin/data-loading``) since the
+# package registry landed, so the check has been a no-op on the browser path,
+# the agents' runner and the e2e runner for as long as those ids have existed.
+# A node's type contract is its template's declared ports (DEC-062/076),
+# enforced by the canvas at connect time; the validators are gone.
+#
+# The NAME stays, and stays seeded into every node namespace (owner decision
+# 2026-09-09): the #158 contract promises that every name the old star import
+# leaked keeps resolving in node code. Calling it does nothing, which is what
+# it did for every namespaced id already.
 def checkIOType(data, nodeType, input=True):
-    if input:
-        validate_input(data, nodeType)
-    else:
-        validate_output(data, nodeType)
+    """No-op kept for the #158 namespace contract — see the note above."""
+    return None
 
-
-# Input Validation
-def validate_input(data, nodeType):
-    if isinstance(data, list):
-        return
-    if nodeType == 'DATA_EXPORT':
-        check_dataframe_input(data, nodeType)
-    elif nodeType == 'DATA_TRANSFORMATION':
-        check_transformation_input(data, nodeType)
-
-# Output Validation
-def validate_output(data, nodeType):
-    if nodeType in ['DATA_LOADING', 'DATA_TRANSFORMATION']:
-        check_valid_output(data, nodeType)
-    elif nodeType == 'DATA_EXPORT':
-        if data.get('dataType') in ['', None]:
-            return
-        raise Exception(f'{nodeType} does not support output')
-
-
-# Input Type Checks
-def check_dataframe_input(data, nodeType):
-    if isinstance(data, list):
-        return
-    if data['dataType'] == 'outputs' and len(data['data']) > 5:
-        raise Exception(f'{nodeType} only supports five inputs')
-
-    valid_types = {'dataframe', 'geodataframe'}
-    if data['dataType'] == 'outputs':
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
-
-def check_transformation_input(data, nodeType):
-    valid_types = {'dataframe', 'geodataframe', 'raster'}
-    if data['dataType'] == 'outputs' and len(data['data']) > 2:
-        raise Exception(f'{nodeType} only supports one or two inputs')
-
-    if data['dataType'] == 'outputs':
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
-
-def check_valid_output(data, nodeType):
-    if isinstance(data, list):
-        return
-    valid_types = {'dataframe', 'geodataframe', 'raster'}
-
-    if data['dataType'] == 'outputs':
-        if len(data['data']) > 1 and nodeType != 'DATA_LOADING':
-            raise Exception(f'{nodeType} only supports one output')
-
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as output')
-
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as output')
 
 def save_memory_mapped_file(data):
     """

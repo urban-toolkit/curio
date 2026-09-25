@@ -495,7 +495,6 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         parseOutput,
         save_memory_mapped_file,
         load_memory_mapped_file,
-        checkIOType,
     )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": ..., "dataType": ...}
@@ -566,7 +565,8 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 
             # --- serialise exactly like the sandbox ---
             parsed = parseOutput(result)
-            checkIOType(parsed, node.type, False)
+            # dev/120: no name-keyed I/O check — the product never ran one on
+            # this output either; a baseline is minted for what the node returns.
             rel_path = save_memory_mapped_file(parsed)
 
             outputs[node.id] = {"path": rel_path, "dataType": parsed["dataType"]}
@@ -696,10 +696,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
             json={
                 "code": indented_code,
                 "file_path": file_path,
-                # Send the on-the-wire namespaced id (`curio.builtin/...`)
-                # so the sandbox's checkIOType matches what the browser
-                # frontend posts; otherwise the programmatic runner would
-                # enable IO validation that the browser path silently skips.
+                # The on-the-wire namespaced id (`curio.builtin/...`), as the
+                # browser posts it: the sandbox tags the artifact and its log
+                # lines with it (no type dispatch happens on it — dev/120).
                 "nodeType": node.raw_type,
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner
@@ -3148,19 +3147,25 @@ def use_scripted_llm(backend_url: str, token: str) -> dict:
     )
 
 
-def script_agent_replies(backend_url: str, *replies: str, reset: bool = True) -> int:
+def script_agent_replies(
+    backend_url: str, *replies: str, reset: bool = True,
+    by_intent: dict | None = None,
+) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
     A multi-round run needs one entry per round: a reply carrying a
     ``toolRequest`` tail is answered by the runtime and the model is prompted
     again, so script the follow-up too. Returns how many are pending.
 
+    *by_intent* maps a substring of a delegated call's ``intent`` to its reply,
+    for calls whose order the test cannot know (Solve's per-node content).
+
     Resets by default. A reply left over from a previous test would be consumed
     by this one, and the failure would point anywhere but at the cause.
     """
     body = _post_json(
         f"{backend_url}/api/testing/agent-script",
-        {"replies": list(replies), "reset": reset},
+        {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})},
     )
     return body["pending"]
 

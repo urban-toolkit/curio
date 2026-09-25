@@ -102,6 +102,19 @@ class TestPreambleAndInputs:
         others = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
         assert others.prompts["system"].path == "prompts/default_preamble.txt"
 
+    def test_preamble_exemplars_never_read_a_bare_filename(self):
+        # dev/114: the shared preamble's worked dataflow was the ONLY data-
+        # loading exemplar every agent saw, and all three of its loaders read
+        # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
+        import re
+
+        text = (builtin.PROMPT_SOURCE_DIR / "default_preamble.txt").read_text(encoding="utf-8")
+        assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
+        assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
+        assert not re.search(r"""rasterio\.open\(f?['"]""", text)
+        assert text.count("curio_dataset_path(") >= 3
+        assert "never a guessed filename" in text
+
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents import builtin
 
@@ -181,6 +194,7 @@ class TestNodeBuilderComposite:
             "agent.package-recommendation",  # dev/84: required-package identify
             "agent.package-builder",  # dev/89: no-template-fits → authoring
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -189,6 +203,7 @@ class TestNodeBuilderComposite:
             "dataflow.read", "node.create", "node.template.create",
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
         ]
         assert m.provenance.trust == "built-in"
 
@@ -205,6 +220,7 @@ class TestNodeBuilderComposite:
             "agent.node-researcher", "agent.package-recommendation",
             "agent.package-builder",  # dev/89
             "agent.generated-content-evaluator",
+            "agent.dataset-finder",  # dev/114
         ]
         cb = builtin.build_builtin_manifest(
             builtin.get_builtin_spec("agent.connection-builder@1.0.0")
@@ -231,6 +247,19 @@ class TestNodeBuilderComposite:
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "Reuse first" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+    def test_instruction_teaches_the_source_ladder(self):
+        # dev/114 (DEC-072): the ladder the runtime gate enforces — user path,
+        # catalog.search loader line, runtime-verified URL via dataset.discover,
+        # synthetic only when asked — and the two-turn rule.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert "catalog.search" in text
+        assert 'curio_dataset_path("<id>")' in text
+        assert '"dataset.discover"' in text
+        assert "do not propose in that same turn" in text
+        assert '"synthetic": true' in text
+        assert "Never invent a filename" in text
+        assert "ask the user for a path or URL instead of proposing" in text
 
     def test_instruction_sends_code_through_params_not_the_reply(self):
         # #245: the runtime now recovers a misplaced request, but the cheapest
@@ -272,11 +301,38 @@ class TestDatasetFinderComposite:
         ]
         assert m.provenance.trust == "built-in"
 
+    def test_handoff_card_carries_the_verdict(self):
+        # dev/114: the DEC-047 hand-off is a "handoff" card whose lines carry
+        # the runtime's verification verdict; Node Builder re-probes anyway.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert 'kind "handoff"' in text
+        assert "verification verdict" in text
+        assert "never as usable" in text
+
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "two lanes" in text.lower()
         assert "never author" in text.lower() or "never authors" in text.lower()
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestBackgroundExecutionRoster:
+    """dev/115 (DEC-073): the Dataflow Builder alone declares
+    ``runtime.execution: "background"`` — its Solve outlives the request as a
+    detached job; every other built-in stays foreground byte-identically."""
+
+    def test_only_the_dataflow_builder_is_background(self):
+        background = [
+            spec.agent_id for spec in builtin.BUILTIN_AGENTS if spec.execution == "background"
+        ]
+        assert background == ["agent.dataflow-builder"]
+        dfb = builtin.build_builtin_manifest(builtin.get_builtin_spec("agent.dataflow-builder@1.0.0"))
+        assert dfb["runtime"] == {"execution": "background", "reviewPolicy": "review-before-apply"}
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.agent_id != "agent.dataflow-builder":
+                assert builtin.build_builtin_manifest(spec)["runtime"]["execution"] == "foreground"
+        # And the field parses through the manifest contract.
+        assert builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0") is not None
 
 
 class TestRequiresAgentsRoster:
@@ -290,9 +346,15 @@ class TestRequiresAgentsRoster:
                 assert r in m.delegates_to, (m.agent_id, r)
                 assert r in ids, (m.agent_id, r)
 
-    def test_only_the_dataflow_builder_requires(self):
-        requiring = [m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents]
-        assert requiring == ["agent.dataflow-builder"]
+    def test_only_the_two_composites_require(self):
+        # dev/126: the Node Builder joins the Dataflow Builder — a data-loading
+        # node's source resolution delegates dataset.discover from a server
+        # path. Every other built-in keeps an empty requiresAgents, so no
+        # install fans out across the roster.
+        requiring = sorted(
+            m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents
+        )
+        assert requiring == ["agent.dataflow-builder", "agent.node-builder"]
 
 
 class TestDataflowBuilderComposite:
@@ -326,11 +388,16 @@ class TestDataflowBuilderComposite:
         ]
         assert m.provenance.trust == "built-in"
 
-    def test_requires_only_the_solve_specialist(self):
-        # dev/106: Solve/Validate hard-invoke node.content.generate; every
-        # other delegate stays optional (no 15-agent install fan-out).
+    def test_requires_the_three_server_invoked_specialists(self):
+        # dev/106: Solve/Validate hard-invoke node.content.generate.
+        # dev/126: resolution hard-invokes dataset.discover, and every
+        # plan-created node is given a Node Builder at the user's Apply — both
+        # server paths, so both are required. The other nine delegates stay
+        # optional (no 15-agent install fan-out).
         m = builtin.get_builtin_manifest(self.COORD)
-        assert m.requires_agents == ["agent.node-content-builder"]
+        assert m.requires_agents == [
+            "agent.node-content-builder", "agent.dataset-finder", "agent.node-builder",
+        ]
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
@@ -522,7 +589,7 @@ class TestResearcher:
     # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
-        "6000ae6c847e62095e94530a5e26a713f44769472b43ead998eb62a096a89a09"  # dev/95 commit 3: the deliberate Follow-up D prompt edit
+        "94fe370b1e43c6be5a9956d7c3242f0df09c0b75e6fac88c059a9ffbc69beec2"  # dev/126 commit 7: plan first (step 2d), and step 6 points at the NODE's Dataset Finder
     )
 
     def test_manifest_surface(self):

@@ -14,6 +14,7 @@ import type {
   AgentAttachment,
   AgentCardPart,
   AgentDatasetCandidatesPart,
+  AgentSolveAttemptsPart,
   AgentDelegationPart,
   AgentProposalPart,
   AgentSessionTurn,
@@ -22,8 +23,10 @@ import type {
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
+import { NodeSolveRow } from "./NodeSolveRow";
 import { AgentChatCard } from "../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
+import { AgentSolveAttemptsCard } from "../content/AgentSolveAttemptsCard";
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
@@ -132,11 +135,37 @@ export const AgentChatPanel: React.FC<{
   solveProgress?: Record<string, string>;
   /** dev/106: the live batch's per-node failure reasons (nodeId → text). */
   solveErrors?: Record<string, string>;
+  /** dev/116: the live batch's per-node remedies (a missing connection key). */
+  solveRemedies?: Record<string, import("../../../api/agentsApi").AgentRemedy>;
+  /** dev/131: the session's live pass / waiting summary / ending. */
+  solveWaiting?: Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
+  solveEndedBy?: string | null;
+  solvePass?: number | null;
+  /** dev/131: resolve ONE node through its own agent, from its pill. */
+  onSolveOneNode?: (nodeId: string) => Promise<unknown>;
+  /** dev/118: the live batch's current topological wave. */
+  solveWave?: import("../../../api/agentsApi").AgentSolveWave;
+  /** dev/118: per-node notices that are not errors (pending/skipped reasons, written-not-executed). */
+  solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
+  /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
+   * attached to a node; runs the node's current code in the sandbox, fixes
+   * errors, re-runs, and lands an executed review. Omitted → no row. */
+  onSolveNode?: () => Promise<unknown>;
+  /** dev/115: the running per-node Solve's narration. */
+  solveNodeActivity?: string | null;
   /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
    * plan-row chips' icon-links route through this. Omitted → entries inert. */
   onOpenAgentChat?: (attachmentId: string) => void;
+  /** dev/126: record the confirmed dataset selection for this attachment's
+   * node (Dataset Finder on a node only). */
+  onRecordDatasetSelection?: (
+    picks: import("../../../api/agentsApi").AgentDatasetPick[],
+  ) => Promise<import("../../../api/agentsApi").AgentDatasetSelection>;
+  /** dev/132: the shared catalog import, for a candidate row the runtime
+   * could not fetch — resolves with the imported dataset's id. */
+  onImportDataset?: (file: File) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
@@ -172,10 +201,21 @@ export const AgentChatPanel: React.FC<{
   onCancelSimulate,
   simulationActivity,
   onSolve,
+  onSolveNode,
+  solveNodeActivity = null,
   solveProgress,
   solveErrors,
+  solveRemedies,
+  solveWaiting,
+  solveEndedBy,
+  solvePass,
+  onSolveOneNode,
+  solveWave,
+  solveNotices,
   onCancelSolve,
   onOpenAgentChat,
+  onRecordDatasetSelection,
+  onImportDataset,
   delegateExists,
   onSaveIntent,
   onSaveTitle,
@@ -595,12 +635,28 @@ export const AgentChatPanel: React.FC<{
 
       {/* The dev/52 builder strip: Dataflow Builder attachments only — every
           other agent's chat is pixel-identical. */}
+      {onSolveNode && attachment.target.kind === "node" ? (
+        <NodeSolveRow
+          onSolveNode={onSolveNode}
+          onOpenChat={onOpenAgentChat}
+          activity={solveNodeActivity}
+          live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+        />
+      ) : null}
       {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
         <AgentBuilderStrip
           attachment={attachment}
           onSolve={onSolve}
           solveProgress={solveProgress}
           solveErrors={solveErrors}
+          solveRemedies={solveRemedies}
+          onOpenChat={onOpenAgentChat}
+          solveWaiting={solveWaiting}
+          solveEndedBy={solveEndedBy}
+          solvePass={solvePass}
+          onSolveNode={onSolveOneNode}
+          solveWave={solveWave}
+          solveNotices={solveNotices}
           onCancelSolve={onCancelSolve}
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}
@@ -731,6 +787,46 @@ export const AgentChatPanel: React.FC<{
                         part={part}
                         tintClassName={tint}
                         onComposePrompt={composePrompt}
+                        // dev/114: in the Node Builder's chat the runtime
+                        // minted these from a dataset.discover delegation —
+                        // the confirmation asks the builder to build.
+                        variant={
+                          attachment.coord.startsWith("agent.node-builder@") ? "builder" : "finder"
+                        }
+                        // dev/126: a Dataset Finder attached to a NODE can
+                        // record the confirmed source for it — that record is
+                        // what the node's next Solve reads.
+                        onRecordSelection={
+                          onRecordDatasetSelection &&
+                          attachment.coord.startsWith("agent.dataset-finder@") &&
+                          attachment.target.kind === "node"
+                            ? onRecordDatasetSelection
+                            : undefined
+                        }
+                        // dev/132: and the Import button under a portal row's
+                        // download steps — the same catalog import as the
+                        // drawer footer and the catalog page.
+                        onImportDataset={
+                          onImportDataset &&
+                          attachment.coord.startsWith("agent.dataset-finder@") &&
+                          attachment.target.kind === "node"
+                            ? onImportDataset
+                            : undefined
+                        }
+                      />
+                    ))}
+                  {(t.content ?? [])
+                    .filter(
+                      (p): p is AgentSolveAttemptsPart => p.type === "solveAttempts",
+                    )
+                    .map((part, j) => (
+                      // dev/127: every attempt to fix this node, with the code
+                      // it ran — durable, not a transient strip line.
+                      <AgentSolveAttemptsCard
+                        key={`attempts-${part.nodeId}-${j}`}
+                        part={part}
+                        tintClassName={tint}
+                        onOpenChat={onOpenAgentChat}
                       />
                     ))}
                   {(t.content ?? [])

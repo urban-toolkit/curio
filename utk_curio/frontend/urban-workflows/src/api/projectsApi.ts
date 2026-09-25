@@ -80,6 +80,11 @@ export interface UpdateBody {
   name?: string;
   description?: string;
   thumbnail_accent?: string;
+  /** The spec revision this client last synced with (memo dev/124). The
+   *  server refuses a save whose basis is older than the spec on disk AND
+   *  which would delete a node, an edge or a node's code that the client
+   *  never saw. Omitting it means "no opinion" and is not checked. */
+  baseRevision?: number;
 }
 
 export interface LoadResponse {

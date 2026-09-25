@@ -254,6 +254,38 @@ The following providers are supported:
 
 Settings are stored per user in the database and apply across all of their projects.
 
+### Connection keys
+
+The same panel holds **Connection keys**: API keys a data-loading node reaches
+by name. Save a key once — name, host, how the API expects it (in the code, as
+a query parameter, or as a header) and the key itself in a masked field that is
+never read back — then write, in the node's code:
+
+```python
+api_key = curio_secret("census")
+```
+
+Curio resolves the name when the node runs (on Play and when an agent's Solve
+runs it) and hands the value to the sandbox for that run only. The key never
+appears in your saved dataflow, in proposals, in the chat or in the run log; a
+key the code prints is redacted. Running a node that names a key you have not
+saved fails with one sentence naming the key. When an agent's Solve hits an
+endpoint that wants a key you have not saved, the failure offers **Add key for
+<host>**, which opens this section with the host filled in.
+
+Keys are stored per account in your own directory as a plain file readable by
+the server only; they are not encrypted at rest. A dataflow you publish carries
+the key *names* — whoever installs it saves their own key under the same name.
+When authentication is off, every guest shares one key store.
+
+The node editor helps you keep it that way. If the code you type or paste
+contains something shaped like an API key — a long token assigned to a name
+like `api_key`, `token` or `Authorization` — a quiet bar above the editor says
+which line looks like a key, and offers **Save as connection key**, which opens
+this section with the host from the code filled in. It is a hint, not a block:
+Play and save work as before, the code is never changed for you, and the
+detected text never leaves your browser. Dismiss it if the value is not a key.
+
 ### Guest users
 
 Guest users cannot configure their own LLM key. Instead, a shared key is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
@@ -489,6 +521,36 @@ lands on your canvas until you apply it.
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
 strip adds planning phases, per-node progress, **Solve** (fill in the planned
 nodes in one batch) and **Simulation Mode** (walk the plan without executing).
+
+Solve does not just write code, it runs it: every node kind the sandbox can
+execute is generated, run, fixed when it fails and written only when it passed,
+in topological waves — the loaders first, then what depends on them, against
+the code that actually landed. The strip reads *solving wave 2 of 3* while it
+works. Kinds with no code to run (charts, maps, merges, data pools, the
+spatial join) are written and labeled *no code to run; renders in the browser
+or its own service*; nothing claims they were verified. A batch stops after 45 minutes by default and leaves what it did
+not reach *pending* with the reason; **Retry** continues from there.
+
+Applying a plan also gives every created node its own agents: a **Node
+Builder** on each, and a **Dataset Finder** on each data-loading node. Solving a
+data-loading node whose source is not already settled asks that Dataset Finder
+for candidates instead of letting the code guess a filename: the two-lane card
+appears in the node's Dataset Finder chat, the node stays **pending — awaiting
+your dataset selection** with an **Open Dataset Finder** button, and nothing is
+generated or written until you pick one. **Confirm source for this node**
+records your choice against the node, and the next Solve builds the loader from
+exactly that source. So the Dataflow Builder plans first — it does not need to
+know the datasets to draw the dataflow.
+
+A node fed by a **Merge** receives a list — `arg[0]`, `arg[1]`, … in the order
+of the merge's input handles — and the agent is told which dataset sits in each
+slot, with its columns. Code that forgets to index it is refused before it runs.
+
+When Solve cannot fix a node, the chat says so completely: every attempt
+appears as its own row — the exception, where it was raised, and the code that
+attempt ran — with the last one expanded, and the message names what stopped
+the loop (this node's 15-minute repair budget, which is normally what stops it,
+or a builder that kept returning the same code). Nothing is written when nothing passed.
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow

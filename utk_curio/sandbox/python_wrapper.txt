@@ -83,7 +83,9 @@ if out_kind == 'outputs':
     }
 else:
     synthetic_out = {'dataType': out_kind, 'data': None}
-#checkIOType is not inert. It halts the pipeline when a node produces the wrong kind of thing. it's a gate, not a modifier. 
+# dev/120: checkIOType is a no-op now (the name-keyed I/O validators are retired; the
+# type contract is the template's declared ports). This legacy subprocess wrapper is
+# kept for reference only — the in-process worker (app/worker.py) is what runs.
 checkIOType(synthetic_out, nodeType, False)
 
 # print(parsedOutput)

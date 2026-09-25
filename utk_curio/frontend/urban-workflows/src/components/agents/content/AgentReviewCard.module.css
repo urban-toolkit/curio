@@ -373,3 +373,59 @@
     font-size: var(--curio-font-size-sm);
     color: var(--curio-text-secondary, var(--curio-text-secondary));
 }
+
+/* dev/114 (DEC-072) — the Source block: how the runtime grounded what the
+   proposed code opens or fetches. Neutral surface; the verdict chip states
+   its status in text. */
+.sourceBlock {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--curio-surface-muted);
+    border: 1px solid var(--curio-border);
+    font-size: 0.76rem;
+}
+
+.sourceTitle {
+    font-weight: 700;
+    color: var(--curio-text-primary);
+}
+
+.sourceList {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
+/* dev/115 — the verification attempt trail (collapsed by default). */
+.attempts {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.74rem;
+}
+
+.attemptHead {
+    font-weight: 600;
+}
+
+.attemptDetail {
+    color: var(--curio-text-secondary);
+}
+
+.attemptError summary {
+    cursor: pointer;
+    color: var(--curio-danger-text);
+    overflow-wrap: anywhere;
+}
+
+.attemptEndpoint {
+    display: block;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.attemptRemedy {
+    display: inline-block;
+    margin-top: 4px;
+}

@@ -40,7 +40,12 @@ function cssFiles(rel: string): string[] {
   return out;
 }
 
-const FILES = AGENT_DIRS.flatMap(cssFiles);
+/** Stylesheets outside those directories that follow the same rule
+ * (dev/117: the editor's credential hint — the rest of components/editing is
+ * legacy CSS with its own literals and stays out). */
+const EXTRA_FILES = ["components/editing/CredentialHint.module.css"];
+
+const FILES = [...AGENT_DIRS.flatMap(cssFiles), ...EXTRA_FILES.map((rel) => path.join(SRC, rel))];
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 const COMMENT = /^\s*(\/\*|\*|\/\/)/;
 

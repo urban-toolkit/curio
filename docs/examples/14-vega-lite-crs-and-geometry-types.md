@@ -86,8 +86,3 @@ skipped rather than breaking the layer.
 Derived geometry works the same way. Another view draws `gdf.envelope` as
 bounding boxes over the ZIP polygons, straight from the column, with nothing in
 the Python to prepare it.
-
-## Nothing to draw
-
-An empty frame and an all-null geometry column each render an empty chart rather
-than failing. A filter that matches no rows is a normal thing to do.

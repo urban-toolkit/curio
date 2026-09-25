@@ -84,6 +84,9 @@ def create_app(config_class=config_class):
     app.register_blueprint(auth_bp)
     app.register_blueprint(config_bp)
 
+    from utk_curio.backend.app.users.connection_keys_routes import connection_keys_bp
+    app.register_blueprint(connection_keys_bp)
+
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
 
