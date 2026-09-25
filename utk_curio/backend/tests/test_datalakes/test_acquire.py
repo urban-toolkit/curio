@@ -286,3 +286,55 @@ class TestASearchRowKnowsWhatYouAlreadyHold:
             headers={"Authorization": f"Bearer {token}"},
         ).get_json()["resources"]
         assert all(r["alreadyHeldDatasetId"] is None for r in rows)
+
+
+CRIMES_CSV = (
+    __import__("pathlib").Path(__file__).resolve().parent / "fixtures" / "download" / "crimes.csv"
+)
+CRIMES_URL = "https://data.cityofchicago.org/resource/ijzp-q8t2.csv"
+
+
+def import_by_hand(client, auth, body: bytes, lake_source: dict | None):
+    """The card's Import: a file the person downloaded, and where it came from."""
+    import io
+
+    data = {"file": (io.BytesIO(body), "crimes.csv")}
+    if lake_source is not None:
+        data["lakeSource"] = json.dumps(lake_source)
+    return client.post("/api/datasets/import", headers=auth, data=data,
+                       content_type="multipart/form-data")
+
+
+class TestOneDatasetWhicheverPathCameFirst:
+    """A file downloaded by hand and the same file the Data Lake fetched are
+    one dataset, matched by the resource or by the bytes, in either order."""
+
+    def test_a_hand_import_is_found_by_a_later_download(self, client, auth, live):
+        manual = import_by_hand(client, auth, CRIMES_CSV.read_bytes(), {"resourceUrl": CRIMES_URL})
+        assert manual.status_code == 201
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        assert job["status"] == "completed" and job["alreadyPresent"] is True
+        assert job["dataset"]["id"] == manual.get_json()["id"]
+
+    def test_a_download_is_found_by_a_later_hand_import(self, client, auth, live):
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        again = import_by_hand(client, auth, CRIMES_CSV.read_bytes(), {"resourceUrl": CRIMES_URL})
+        assert again.status_code == 200
+        assert again.get_json()["alreadyPresent"] is True
+        assert again.get_json()["id"] == job["dataset"]["id"]
+
+    def test_a_held_resource_is_found_by_its_coordinate(self, client, auth, live):
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        other = import_by_hand(client, auth, b"a,b\n1,2\n",
+                               {"lakeId": CHICAGO, "resourceId": "ijzp-q8t2"})
+        assert other.status_code == 200
+        assert other.get_json()["id"] == job["dataset"]["id"]

@@ -165,7 +165,10 @@ export const AgentChatPanel: React.FC<{
   ) => Promise<import("../../../api/agentsApi").AgentDatasetSelection>;
   /** dev/132: the shared catalog import, for a candidate row the runtime
    * could not fetch — resolves with the imported dataset's id. */
-  onImportDataset?: (file: File) => Promise<string | null>;
+  onImportDataset?: (
+    file: File,
+    lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+  ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;

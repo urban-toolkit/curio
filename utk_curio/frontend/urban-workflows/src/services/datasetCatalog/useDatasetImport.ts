@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { notifyDatasetCatalogRefresh } from "./datasetCatalogApi";
-import type { DatasetCatalogItem } from "./datasetCatalogTypes";
+import type { DatasetCatalogItem, DatasetLakeSourceInput } from "./datasetCatalogTypes";
 
 /**
  * The ONE dataset-import pathway, shared by the Data Catalog drawer's footer
@@ -19,7 +19,10 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
  */
 export interface DatasetImportOptions {
   /** ``importDataset`` from ``useDatasetCatalog``; it reloads the listing. */
-  importDataset: (file: File) => Promise<DatasetCatalogItem | null | undefined>;
+  importDataset: (
+    file: File,
+    opts?: { lakeSource?: DatasetLakeSourceInput },
+  ) => Promise<DatasetCatalogItem | null | undefined>;
   showToast: (message: string, kind: "success" | "error") => void;
   /** Optional in-list placeholder, which only the drawer renders. */
   onBegin?: (key: string, label: string) => void;
@@ -38,7 +41,7 @@ export function useDatasetImport({
   const inFlight = useRef(false);
 
   const importFile = useCallback(
-    async (file: File) => {
+    async (file: File, opts?: { lakeSource?: DatasetLakeSourceInput }) => {
       if (inFlight.current) return null;
       inFlight.current = true;
       setImporting(true);
@@ -46,8 +49,12 @@ export function useDatasetImport({
       // the only in-list feedback until it lands.
       onBegin?.("import", file.name);
       try {
-        const imported = await importDataset(file);
+        const imported = await importDataset(file, opts);
         notifyDatasetCatalogRefresh();
+        if ((imported as { alreadyPresent?: boolean } | null | undefined)?.alreadyPresent) {
+          showToast(`${file.name} is already in the Data Catalog.`, "success");
+          return imported ?? null;
+        }
         const count =
           (imported as { importedDatasetCount?: number } | null | undefined)
             ?.importedDatasetCount ?? 1;

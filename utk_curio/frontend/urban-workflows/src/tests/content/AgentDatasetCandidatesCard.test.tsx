@@ -4,6 +4,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   AgentDatasetCandidatesCard,
   composeConfirmationPrompt,
+  rowProvenance,
 } from "../../components/agents/content/AgentDatasetCandidatesCard";
 import type { AgentDatasetCandidatesPart } from "../../api/agentsApi";
 
@@ -215,7 +216,10 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     await act(async () => {
       fireEvent.change(input, { target: { files: [file] } });
     });
-    expect(onImportDataset).toHaveBeenCalledWith(file);
+    // The file carries where it came from: the row's link, recorded with it.
+    expect(onImportDataset).toHaveBeenCalledWith(file, {
+      resourceUrl: "https://geosampa.example.gov.br/downloads",
+    });
     // The just-imported dataset IS the node's source — one catalog pick.
     expect(onRecordSelection).toHaveBeenCalledWith([
       { lane: "catalog", key: "imported.x99@1" },
@@ -328,5 +332,15 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
       { lane: "external", key: "lake.cityofchicago.data-portal@1/sp34-6z76" },
     ]);
     expect(screen.getByText(/downloading into your Data Catalog/)).toBeInTheDocument();
+  });
+});
+
+describe("rowProvenance", () => {
+  it("states a row's coordinate and link, and nothing for a row with neither", () => {
+    expect(rowProvenance({
+      name: "a", sourceType: "lake", url: "https://x.example/a.csv",
+      sourceId: "lake.a.b@1", resourceId: "r1",
+    })).toEqual({ lakeId: "lake.a.b@1", resourceId: "r1", resourceUrl: "https://x.example/a.csv" });
+    expect(rowProvenance({ name: "a", sourceType: "document" })).toBeUndefined();
   });
 });

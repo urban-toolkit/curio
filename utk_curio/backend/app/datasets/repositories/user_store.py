@@ -90,6 +90,20 @@ class UserDatasetRepository:
             return item
         return None
 
+    def find_by_content(self, content_sha256: str) -> dict[str, Any] | None:
+        """A dataset from a remote origin whose bytes are exactly these.
+
+        The other half of "do I already hold this?": a file a person downloaded
+        by hand and one the Data Lake fetched are the same dataset when their
+        bytes are, whichever arrived first.
+        """
+        if self.user is None or not content_sha256:
+            return None
+        for item in self.list_items():
+            if (item.get("lakeSource") or {}).get("contentSha256") == content_sha256:
+                return item
+        return None
+
     def lake_resource_index(self) -> dict[tuple[str, str], str]:
         """Everything this account holds from a portal, keyed by what it came from.
 

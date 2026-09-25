@@ -462,6 +462,23 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     expect(resource).toHaveAttribute("rel", expect.stringContaining("noopener"));
   });
 
+  it("says a hand download came by hand, from its link", () => {
+    renderWithRouter(catalogItem({
+      origin: "imported",
+      lakeSource: {
+        resourceUrl: "https://data.example.org/cities.csv",
+        manual: true,
+        fetchedAt: new Date().toISOString(),
+      },
+    }));
+
+    expect(screen.getByText("Downloaded by hand from")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "https://data.example.org/cities.csv" });
+    expect(link).toHaveAttribute("href", "https://data.example.org/cities.csv");
+    expect(screen.queryByText("Portal")).not.toBeInTheDocument();
+    expect(screen.queryByText("Downloaded")).not.toBeInTheDocument();
+  });
+
   it("says nothing at all for a dataset that did not come from a portal", () => {
     renderWithRouter(catalogItem({ origin: "imported" }));
 

@@ -15,6 +15,19 @@ import {
 import type { LakeAcquireJob } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
 import { isTerminal, jobProgress } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
 import { notifyDatasetCatalogRefresh } from "../../../services/datasetCatalog/datasetCatalogApi";
+import type { DatasetLakeSourceInput } from "../../../services/datasetCatalog/datasetCatalogTypes";
+
+/** Where a file downloaded by hand from this row came from: its Data Lake
+ * coordinate when it has one, and its link. Exported for tests. */
+export function rowProvenance(row: AgentDatasetCandidateRow): DatasetLakeSourceInput | undefined {
+  const source: DatasetLakeSourceInput = {};
+  if (row.sourceId && row.resourceId) {
+    source.lakeId = row.sourceId;
+    source.resourceId = row.resourceId;
+  }
+  if (row.url) source.resourceUrl = row.url;
+  return Object.keys(source).length ? source : undefined;
+}
 
 const LANE_LABEL: Record<"external" | "catalog", string> = {
   external: "External sources",
@@ -110,7 +123,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * be downloaded from a portal can be brought in from the card that taught
    * the download. Resolves to the imported dataset's id, or null when the
    * import failed (the hook has already shown its own toast). */
-  onImportDataset?: (file: File) => Promise<string | null>;
+  onImportDataset?: (file: File, lakeSource?: DatasetLakeSourceInput) => Promise<string | null>;
 }> = ({
   part,
   tintClassName,
@@ -163,12 +176,12 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * the portal is imported through the SAME catalog pathway as everywhere
    * else, and its id is then confirmed as this node's source, so solving
    * continues from it without the user explaining anything further. */
-  const importAndConfirm = async (file: File) => {
+  const importAndConfirm = async (file: File, row: AgentDatasetCandidateRow) => {
     if (!onImportDataset || importing) return;
     setImporting(true);
     setRecordError(null);
     try {
-      const datasetId = await onImportDataset(file);
+      const datasetId = await onImportDataset(file, rowProvenance(row));
       if (!datasetId) return; // the import hook reported its own failure
       if (onRecordSelection) {
         setRecorded(await onRecordSelection([{ lane: "catalog", key: datasetId }]));
@@ -349,7 +362,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         e.target.value = "";
-                        if (file) void importAndConfirm(file);
+                        if (file) void importAndConfirm(file, row);
                       }}
                     />
                     <span
