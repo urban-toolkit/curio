@@ -260,7 +260,7 @@ class LiveRun:
     def _provision(self, project_id: str, fixture) -> None:
         for dataset_id in fixture.required["datasets"]:
             status, body = self.client.request(
-                f"/api/datasets/dataflows/{project_id}/datasets/install",
+                f"/api/dataflows/{project_id}/datasets/install",
                 method="POST", payload={"datasetId": dataset_id},
             )
             if status >= 400:

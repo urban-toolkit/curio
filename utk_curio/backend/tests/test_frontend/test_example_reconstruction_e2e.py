@@ -151,7 +151,7 @@ def _provision(session, project_id: str) -> None:
     backend, token = session["backend"], session["token"]
     for dataset_id in FIXTURE.required["datasets"]:
         api_json(
-            f"{backend}/api/datasets/dataflows/{project_id}/datasets/install",
+            f"{backend}/api/dataflows/{project_id}/datasets/install",
             token, method="POST", payload={"datasetId": dataset_id},
         )
     for dir_name in FIXTURE.required["packages"]:
@@ -258,9 +258,10 @@ class TestPaletteShowsWhatWasProvisioned:
     def test_a_package_contributes_its_templates_to_the_palette(
         self, reconstruction_session
     ):
-        """Example 10's kinds live in ``curio.streetvision@1``. Enlisting it
-        must put its templates in the palette, because that -- not the lockfile
-        -- is where a person looks for them."""
+        """Enlisting a package must put its templates in the palette, because
+        that -- not the lockfile -- is where a person looks for them.
+        ``curio.example-ui@1`` because it declares no python dependencies: any
+        other package runs pip inside the request (see test_node_catalog.py)."""
         require_project_page()
         require_user_auth()
         session = reconstruction_session
@@ -269,13 +270,13 @@ class TestPaletteShowsWhatWasProvisioned:
         api_json(
             f"{session['backend']}/api/packages/projects/{project_id}/install",
             session["token"], method="POST",
-            payload={"dirName": "curio.streetvision@1"},
+            payload={"dirName": "curio.example-ui@1"},
         )
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")
         dismiss_toasts(page)
         row = page.locator(
-            '[data-pkg-template-id="curio.streetvision/street-view-fetcher"]'
+            '[data-pkg-template-id="curio.example-ui/column-filter"]'
         ).first
         expect(row).to_be_visible(timeout=45000)
 
@@ -505,6 +506,7 @@ class TestEvaluationModeRunsFromAiSettings:
         assert FIXTURE.prompt.split("\n")[0][:40] in (prompt_region.inner_text() or "")
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="evaluation_mode_ready",
+            fit_reactflow=False,
         )
 
         section.get_by_role("button", name="Run evaluation").click()
@@ -526,6 +528,3 @@ class TestEvaluationModeRunsFromAiSettings:
             report.get_by_role("link", name="Open the generated dataflow")
         ).to_be_visible(timeout=20000)
         expect(report.get_by_role("table")).to_be_visible()
-        save_workflow_test_screenshot(
-            page, SCREENSHOT_STEM, test_name="evaluation_mode_report",
-        )
