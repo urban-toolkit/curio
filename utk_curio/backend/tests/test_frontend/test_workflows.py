@@ -26,6 +26,7 @@ from .utils import (
     play_node,
     read_node_error_text,
     wait_for_node_done,
+    wait_for_node_settled,
 )
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
@@ -71,9 +72,10 @@ def test_load_workflow_files(workflow_files):
 #: string means the spec could not be drawn at all and the node body is expected
 #: to say so, using that ``data-curio-node-empty`` reason.
 #:
-#: These are demonstrations, not defects: asserting marks on them would assert
-#: the opposite of what the example exists to show. Everything not listed here
-#: still has to draw.
+#: A view that draws nothing ends in Error with an ``empty-render`` verdict, so
+#: these nodes are expected to error with that verdict, and their canvas or
+#: empty-state marker is still checked. Everything not listed here still has to
+#: draw and finish Done.
 EXPECTED_EMPTY_VEGA = {
     "13-vega-lite-geometry-columns.json": {
         "5b98d1d6-9332-5fb1-a149-c8f607025a42": "geometry-unresolved",
@@ -129,6 +131,9 @@ class TestWorkflowCanvas:
                 if is_webgpu
                 else self._DEFAULT_SCREENSHOT_MAX_DIFF_RATIO
             ),
+            # Expected-empty views leave an error toast each; keep them out of
+            # the capture.
+            sweep_toasts=bool(self._expected_empty()),
         )
         log_entries = getattr(self.page, "_curio_browser_log", None) or []
         autk_errors = getattr(self.__class__, "_autk_error_texts", None) or {}
@@ -301,6 +306,10 @@ class TestWorkflowCanvas:
             f"{text or '(could not read error tab)'}"
         )
 
+    def _expected_empty(self) -> dict:
+        """This workflow's ``EXPECTED_EMPTY_VEGA`` entries, keyed by node id."""
+        return EXPECTED_EMPTY_VEGA.get(os.path.basename(self.spec.filepath), {})
+
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
         return node_execution_timeout_ms(node.type)
@@ -368,6 +377,15 @@ class TestWorkflowCanvas:
                 continue
 
             play_node(self.page, node.id)
+
+            if node.id in self._expected_empty():
+                status = wait_for_node_settled(self.page, node.id, node_type=node.type)
+                detail = read_node_error_text(node_el) or ""
+                assert status == "error" and detail.startswith("rendered nothing"), (
+                    f"Node {node.id} ({node.type}): expected an empty-render "
+                    f"verdict, got {status!r}: {detail}"
+                )
+                continue
 
             # Wait for success, or fail with the node's own error text. A
             # node that never settles is a hard timeout failure - there is
@@ -657,15 +675,17 @@ class TestWorkflowCanvas:
                 continue
 
             node_el = self._node_locator(node)
-            # wait for the done span to be visible
-            done_span = node_el.locator("span").filter(
-                has_text=re.compile(r"^Done$")
-            )
-            done_span.first.wait_for(state="visible", timeout=10000)
-            assert done_span.count() >= 1, (
-                f"Node {node.id} ({node.type}) output is not 'Done' "
-                f"after full workflow execution"
-            )
+            # wait for the done span to be visible (an expected-empty view
+            # errored with its verdict, checked in _execute_all_playable_nodes)
+            if node.id not in self._expected_empty():
+                done_span = node_el.locator("span").filter(
+                    has_text=re.compile(r"^Done$")
+                )
+                done_span.first.wait_for(state="visible", timeout=10000)
+                assert done_span.count() >= 1, (
+                    f"Node {node.id} ({node.type}) output is not 'Done' "
+                    f"after full workflow execution"
+                )
 
             # ---------------------------------------------------------------
             # Check output area (inline for code nodes; output tab for grammar)
