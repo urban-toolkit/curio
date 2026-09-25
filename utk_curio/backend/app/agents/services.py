@@ -10150,6 +10150,14 @@ class _LazyRoster:
                     self._sources[source["dirName"]] = source
         return self._sources.get(dir_name) if isinstance(dir_name, str) else None
 
+    def direct(self) -> str | None:
+        """The source that downloads a plain link, when the roster has one."""
+        self.get(None)
+        for dir_name, source in (self._sources or {}).items():
+            if source.get("provider") == "direct" and (source.get("capabilities") or {}).get("download"):
+                return dir_name
+        return None
+
 
 def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
     """Whether Curio can download this row into the Data Catalog: the one answer.
@@ -10168,27 +10176,46 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
       https URL the probe read as data, whose content type maps to a format the
       source accepts, and whose ``resourceId`` is that same URL, so what is
       downloaded is what was probed.
+
+    A row with a plain link and no coordinate is tried as a ``direct`` row: the
+    coordinate is minted here, after parsing, so it is never model-supplied and
+    never meets the parser's length cap. It stays only when the row qualifies.
+    A downloadable row offers that and nothing else, so it carries no portal
+    steps.
     """
     row.pop("acquirable", None)
+    minted = False
+    if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
+        direct = roster.direct()
+        if direct:
+            row["sourceId"], row["resourceId"] = direct, row["url"]
+            minted = True
+    if _acquirable(row, roster):
+        row["acquirable"] = True
+        row.pop("downloadSteps", None)
+    elif minted:
+        row.pop("sourceId", None)
+        row.pop("resourceId", None)
+
+
+def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     capabilities = (source or {}).get("capabilities") or {}
     if not capabilities.get("download"):
-        return
+        return False
     if source.get("provider") != "direct":
-        row["acquirable"] = True
-        return
+        return True
     url = str(row.get("url") or "")
     if not url.startswith("https://") or row.get("resourceId") != url:
-        return
+        return False
     if row.get("access") != verify.ACCESS_FETCHABLE:
-        return
+        return False
     from utk_curio.backend.app.datalakes.domain import formats
 
     content_type = formats.content_type_of(
         {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
     )
-    if formats.CONTENT_TYPE_FORMATS.get(content_type) in (capabilities.get("formats") or ()):
-        row["acquirable"] = True
+    return formats.CONTENT_TYPE_FORMATS.get(content_type) in (capabilities.get("formats") or ())
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

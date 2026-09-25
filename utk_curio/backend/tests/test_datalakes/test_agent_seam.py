@@ -216,6 +216,27 @@ class TestOnlyTheRuntimeSaysActionable:
         for why, fields in cases.items():
             assert self._row(sourceId=self.DIRECT, **fields).get("acquirable") is None, why
 
+    def test_a_plain_link_to_a_storable_file_becomes_a_direct_url_download(
+        self, app, shipped_root
+    ):
+        row = self._row(url=self.URL, verification=self.GEOJSON)
+        assert row["acquirable"] is True
+        assert (row["sourceId"], row["resourceId"]) == (self.DIRECT, self.URL)
+
+    def test_a_plain_link_that_does_not_qualify_keeps_no_coordinate(self, app, shipped_root):
+        page = {"status": "verified", "httpStatus": 200, "contentType": "text/html"}
+        row = self._row(url=self.URL, verification=page)
+        assert row.get("acquirable") is None
+        assert "sourceId" not in row and "resourceId" not in row
+        http = self._row(url=self.URL.replace("https://", "http://"), verification=self.GEOJSON)
+        assert "sourceId" not in http
+
+    def test_a_downloadable_row_carries_no_portal_steps(self, app, shipped_root):
+        row = {"name": "Bike Routes", "sourceType": "lake", **self.CHICAGO,
+               "access": verify.ACCESS_MANUAL, "downloadSteps": ["Open the portal page"]}
+        _mint_row_acquirable(row, _LazyRoster())
+        assert row["acquirable"] is True and "downloadSteps" not in row
+
     def test_a_charset_parameter_does_not_hide_the_type(self, app, shipped_root):
         row = self._row(sourceId=self.DIRECT, resourceId=self.URL, url=self.URL,
                         verification={**self.GEOJSON,

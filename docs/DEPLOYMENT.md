@@ -72,7 +72,9 @@ user's behalf, so it is worth knowing what bounds them. Every URL - search,
 describe, download, and each redirect hop - passes the same default-deny
 address policy the agent tools use: https/http only, private, loopback,
 link-local and reserved addresses refused *after* DNS resolution, and the
-connected peer re-checked before any response body is read.
+connected peer re-checked before any response body is read. A download started
+from the Dataset Finder's card, or from an agent's approved proposal, is the
+same download under the same policy.
 
 Two things a deployment should know:
 

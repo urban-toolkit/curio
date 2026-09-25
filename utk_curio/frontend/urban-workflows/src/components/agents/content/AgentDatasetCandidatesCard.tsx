@@ -7,6 +7,27 @@ import type {
 } from "../../../api/agentsApi";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
+import {
+  acquireKey,
+  startLakeAcquire,
+  useLakeAcquire,
+} from "../../../services/dataLakeCatalog/dataLakeCatalogHooks";
+import type { LakeAcquireJob } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
+import { isTerminal, jobProgress } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
+import { notifyDatasetCatalogRefresh } from "../../../services/datasetCatalog/datasetCatalogApi";
+import type { DatasetLakeSourceInput } from "../../../services/datasetCatalog/datasetCatalogTypes";
+
+/** Where a file downloaded by hand from this row came from: its Data Lake
+ * coordinate when it has one, and its link. Exported for tests. */
+export function rowProvenance(row: AgentDatasetCandidateRow): DatasetLakeSourceInput | undefined {
+  const source: DatasetLakeSourceInput = {};
+  if (row.sourceId && row.resourceId) {
+    source.lakeId = row.sourceId;
+    source.resourceId = row.resourceId;
+  }
+  if (row.url) source.resourceUrl = row.url;
+  return Object.keys(source).length ? source : undefined;
+}
 
 const LANE_LABEL: Record<"external" | "catalog", string> = {
   external: "External sources",
@@ -37,9 +58,10 @@ export function composeConfirmationPrompt(
           .join(", ")}`,
       );
     }
-    if (externalRows.length) {
+    const fetched = externalRows.filter((r) => !r.acquirable);
+    if (fetched.length) {
       bits.push(
-        `fetch from: ${externalRows
+        `fetch from: ${fetched
           .map((r) => (r.url ? `${r.name} (${r.url})` : r.name))
           .join(", ")}`,
       );
@@ -53,18 +75,10 @@ export function composeConfirmationPrompt(
         .join(", ")}`,
     );
   }
-  // The external lane splits in two. A row Curio can download says so; one it
-  // cannot still goes to Node Builder, which is the right answer for a source
-  // no provider covers - it just stops being the ONLY answer.
-  const downloadable = externalRows.filter((r) => r.acquirable && r.sourceId && r.resourceId);
-  const handoff = externalRows.filter((r) => !downloadable.includes(r));
-  if (downloadable.length) {
-    bits.push(
-      `download into my Data Catalog: ${downloadable
-        .map((r) => `${r.name} (${r.sourceId}/${r.resourceId})`)
-        .join(", ")}`,
-    );
-  }
+  // A row Curio can download is downloaded by its own button on the card, not
+  // asked for in the chat. The rest go to Node Builder, which is the right
+  // answer for a source no provider covers.
+  const handoff = externalRows.filter((r) => !r.acquirable);
   if (handoff.length) {
     bits.push(
       `hand off to Node Builder: ${handoff.map((r) => r.name).join(", ")}`,
@@ -87,9 +101,10 @@ export function pickKey(
 /**
  * The dev/50 two-lane suggestions surface (docs/06): one grouped card, two
  * labeled lanes, keyboard-operable multi-select rows carrying safe metadata
- * only. Rows have NO bespoke action buttons — toggling a selection composes
- * the editable confirmation prompt into the chat input (the suggested-prompt
- * vehicle); Apply/Dismiss stay exclusively on review cards. Every text field
+ * only. Toggling a selection composes the editable confirmation prompt into
+ * the chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
+ * on review cards. The one row action is Download, on a row Curio can
+ * download: the same download the Data Lake Catalog page runs. Every text field
  * arrives bounded + scheme-allowlisted from the server and renders as plain
  * text here (REQ-SEC-002).
  */
@@ -108,7 +123,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * be downloaded from a portal can be brought in from the card that taught
    * the download. Resolves to the imported dataset's id, or null when the
    * import failed (the hook has already shown its own toast). */
-  onImportDataset?: (file: File) => Promise<string | null>;
+  onImportDataset?: (file: File, lakeSource?: DatasetLakeSourceInput) => Promise<string | null>;
 }> = ({
   part,
   tintClassName,
@@ -122,6 +137,8 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [downloaded, setDownloaded] = useState<string | null>(null);
+  const { jobs } = useLakeAcquire();
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
 
@@ -159,12 +176,12 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * the portal is imported through the SAME catalog pathway as everywhere
    * else, and its id is then confirmed as this node's source, so solving
    * continues from it without the user explaining anything further. */
-  const importAndConfirm = async (file: File) => {
+  const importAndConfirm = async (file: File, row: AgentDatasetCandidateRow) => {
     if (!onImportDataset || importing) return;
     setImporting(true);
     setRecordError(null);
     try {
-      const datasetId = await onImportDataset(file);
+      const datasetId = await onImportDataset(file, rowProvenance(row));
       if (!datasetId) return; // the import hook reported its own failure
       if (onRecordSelection) {
         setRecorded(await onRecordSelection([{ lane: "catalog", key: datasetId }]));
@@ -176,6 +193,68 @@ export const AgentDatasetCandidatesCard: React.FC<{
     } finally {
       setImporting(false);
     }
+  };
+
+  /** The Data Lake page's own download: the same endpoint and the same job,
+   * followed after this card unmounts. The dataset it lands is this node's
+   * source, confirmed by id like an import. */
+  const download = async (row: AgentDatasetCandidateRow) => {
+    if (!row.sourceId || !row.resourceId) return;
+    setRecordError(null);
+    try {
+      await startLakeAcquire(row.sourceId, row.resourceId, {}, (job) => {
+        void landed(row, job);
+      });
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "the download could not start");
+    }
+  };
+
+  const landed = async (row: AgentDatasetCandidateRow, job: LakeAcquireJob) => {
+    if (job.status !== "completed" || !job.datasetId) {
+      setRecordError(job.error || `The download of ${row.name} was ${job.status}.`);
+      return;
+    }
+    notifyDatasetCatalogRefresh();
+    if (!onRecordSelection) {
+      setDownloaded(`${row.name} is in your Data Catalog.`);
+      return;
+    }
+    try {
+      setRecorded(await onRecordSelection([{ lane: "catalog", key: job.datasetId }]));
+    } catch (e) {
+      setRecordError(
+        e instanceof Error ? e.message : "the downloaded dataset could not be recorded",
+      );
+    }
+  };
+
+  const downloadControl = (row: AgentDatasetCandidateRow) => {
+    const job = row.sourceId && row.resourceId
+      ? jobs[acquireKey(row.sourceId, row.resourceId)]
+      : undefined;
+    const running = !!job && !isTerminal(job.status);
+    const progress = job && running ? jobProgress(job) : null;
+    const label = running
+      ? `Downloading…${progress !== null ? ` ${Math.round(progress * 100)}%` : ""}`
+      : job?.status === "completed"
+        ? "Downloaded"
+        : job
+          ? "Retry download"
+          : "Download";
+    return (
+      <button
+        type="button"
+        className={styles.importButton}
+        disabled={running || job?.status === "completed"}
+        onClick={(e) => {
+          e.preventDefault();
+          void download(row);
+        }}
+      >
+        {label}
+      </button>
+    );
   };
 
   const recordedNote = (selection: AgentDatasetSelection): string => {
@@ -240,6 +319,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                   Downloadable
                 </span>
               ) : null}
+              {lane === "external" && row.acquirable ? downloadControl(row) : null}
               {lane === "external" && row.verification ? (
                 // dev/67-4 (DEC-053): the runtime's verdict, never the
                 // model's claim — verified ✓ or a loud warning (the ONE
@@ -282,7 +362,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         e.target.value = "";
-                        if (file) void importAndConfirm(file);
+                        if (file) void importAndConfirm(file, row);
                       }}
                     />
                     <span
@@ -333,6 +413,18 @@ export const AgentDatasetCandidatesCard: React.FC<{
           </button>
           {recorded ? (
             <span className={styles.recorded} role="status">{recordedNote(recorded)}</span>
+          ) : null}
+          {recordError ? (
+            <span className={styles.recordError} role="alert">{recordError}</span>
+          ) : null}
+        </div>
+      ) : null}
+      {!onRecordSelection && (downloaded || recordError) ? (
+        // A chat with no node to confirm for: the download still lands in the
+        // Data Catalog, and the card says so, or says why it did not.
+        <div className={styles.confirmRow}>
+          {downloaded ? (
+            <span className={styles.recorded} role="status">{downloaded}</span>
           ) : null}
           {recordError ? (
             <span className={styles.recordError} role="alert">{recordError}</span>

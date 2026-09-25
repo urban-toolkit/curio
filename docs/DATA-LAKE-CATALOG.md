@@ -192,6 +192,11 @@ came from, so the second click on Download answers from what you hold and
 **contacts the portal not at all**. The same resource in two formats is two
 datasets: holding the CSV is not holding the GeoJSON.
 
+A file you downloaded yourself and imported from a Dataset Finder row carries a
+`lakeSource` too, marked as downloaded by hand, with the link it came from and
+a digest of its bytes. A download and a hand import of the same bytes are one
+dataset, whichever arrived first.
+
 `refresh` forces a fetch. If the bytes hash the same, no second dataset is
 created - the download was paid for, a duplicate would not be. If they differ,
 a **new** dataset is minted and the old one is left alone: a saved dataflow
@@ -394,8 +399,19 @@ stripped before the check. Confirming a downloadable row on the card downloads
 it with your own sign-in; an agent's download proposal still needs the
 `datalake.acquire` grant.
 
+A row that names only an https link is tried as a **Direct URL** row: the
+server adds the coordinate, and keeps it only when the row qualifies, so a
+plain link to a file is downloaded rather than handed to Node Builder.
+
 This is the same discipline the catalog lane already has, where a row without a
 `datasetId` from `catalog.search` is dropped.
+
+### One download, whoever starts it
+
+The card's **Download** is this catalog's own download: the same endpoint, the
+same job, followed after the chat closes, and the resource shows one download
+on the card and on this catalog's page. The dataset it lands becomes the node's
+source. An agent's approved `datalake.acquire` proposal runs the same download.
 
 ### What a fan-out costs
 

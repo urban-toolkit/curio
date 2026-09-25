@@ -532,31 +532,37 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             // answers - "which portal is this, and can I go back to it?" - has
             // no other home on this page.
             <div className={styles.infoSection}>
-              <p className={styles.infoSectionLabel}>Downloaded from</p>
+              <p className={styles.infoSectionLabel}>
+                {dataset.lakeSource.manual ? "Downloaded by hand from" : "Downloaded from"}
+              </p>
               <dl className={styles.infoRows}>
-                <div>
-                  <dt>Portal</dt>
-                  <dd>
-                    <Link to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}>
-                      {dataset.lakeSource.lakeName}
-                    </Link>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Resource</dt>
-                  <dd>
-                    <a
-                      href={dataset.lakeSource.resourceUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      {dataset.lakeSource.resourceId}
-                    </a>
-                  </dd>
-                </div>
+                {dataset.lakeSource.lakeId ? (
+                  <div>
+                    <dt>Portal</dt>
+                    <dd>
+                      <Link to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}>
+                        {dataset.lakeSource.lakeName || dataset.lakeSource.lakeId}
+                      </Link>
+                    </dd>
+                  </div>
+                ) : null}
+                {dataset.lakeSource.resourceUrl ? (
+                  <div>
+                    <dt>{dataset.lakeSource.resourceId ? "Resource" : "Link"}</dt>
+                    <dd>
+                      <a
+                        href={dataset.lakeSource.resourceUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        {dataset.lakeSource.resourceId || dataset.lakeSource.resourceUrl}
+                      </a>
+                    </dd>
+                  </div>
+                ) : null}
                 {dataset.lakeSource.fetchedAt ? (
                   <div>
-                    <dt>Downloaded</dt>
+                    <dt>{dataset.lakeSource.manual ? "Imported" : "Downloaded"}</dt>
                     <dd title={absoluteDate(dataset.lakeSource.fetchedAt)}>
                       {relativeTime(dataset.lakeSource.fetchedAt)}
                     </dd>
