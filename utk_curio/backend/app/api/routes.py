@@ -8,6 +8,11 @@ import json
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
+# The header a client sends to say it can decode WKB geometry. The sandbox
+# gates geodataframes on it (sandbox/app/api.py); this process only has to
+# pass it through, and must, or the gate never opens.
+GEOMETRY_ACCEPT_HEADER = "X-Curio-Accept-Geometry"
+
 _sandbox_session = requests.Session()
 
 
@@ -226,6 +231,15 @@ def get_file():
     }
     if wants_arrow:
         sandbox_kwargs['headers'] = {"Accept": ARROW_IPC_MIME}
+        # Forward the client's WKB opt-in. Without this the sandbox refuses
+        # every geodataframe on the Arrow path and the caller falls back to
+        # JSON -- which looks like success, because the data still arrives,
+        # while the format that made it worth asking for is never used. The
+        # stress harness is the only caller that treats that 415 as an error,
+        # which is how it was caught.
+        accept_geometry = request.headers.get(GEOMETRY_ACCEPT_HEADER)
+        if accept_geometry:
+            sandbox_kwargs['headers'][GEOMETRY_ACCEPT_HEADER] = accept_geometry
     resp = _sandbox_call(
         'get', '/get',
         label='/get', timeout=SANDBOX_GET_TIMEOUT,

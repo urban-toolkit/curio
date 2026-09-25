@@ -1,3 +1,4 @@
+import { toRows } from "./rowSource";
 export const shortenString = (str: string) => {
   if (str.length > 15) {
     return str.slice(0, 15) + "...";
@@ -47,18 +48,9 @@ export const get_camera = (coordinates: number[]) => {
 };
 
 export const parseDataframe = (data: any) => {
-  let columns = Object.keys(data);
-  const values = Object.keys(data[columns[0]]).map((key) => {
-    let obj: any = {};
-
-    for (const column of columns) {
-      obj[column] = data[column][key];
-    }
-
-    return obj;
-  });
-
-  return values;
+  // The original of the five copies; see utils/rowSource. Eager, because
+  // these rows become vega-lite `values`.
+  return toRows({ data });
 };
 
 export type ParsedGeoDataframe = {

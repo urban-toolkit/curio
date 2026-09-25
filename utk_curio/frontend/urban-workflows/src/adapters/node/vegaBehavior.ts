@@ -9,6 +9,7 @@ import { renderOutcome } from '../../utils/renderOutcome';
 import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
 import { activeGeometryName } from '../../utils/parsing';
+import { toRows } from '../../utils/rowSource';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
@@ -130,23 +131,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 
 /** Column-oriented dataframe payload -> row records, for classification. */
 function rowsFromColumns(payload: any): any[] {
-  if (payload == null || typeof payload !== 'object') return [];
-  const columns = Object.keys(payload);
-  if (columns.length === 0) return [];
-
-  const first = payload[columns[0]];
-  const keys = Array.isArray(first)
-    ? first.map((_: unknown, i: number) => i)
-    : first && typeof first === 'object'
-      ? Object.keys(first)
-      : [];
-
-  return keys.map((key: any) => {
-    const row: any = {};
-    for (const column of columns) {
-      const values = payload[column];
-      row[column] = Array.isArray(values) ? values[key] : values?.[key];
-    }
-    return row;
-  });
+  // Fifth copy of the same flatten, now utils/rowSource. Eager: these rows go
+  // to vega-lite's `values`, which wants a real array.
+  return toRows({ data: payload });
 }

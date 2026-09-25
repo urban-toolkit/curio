@@ -123,21 +123,38 @@ class UserFailed(Exception):
     """A user's session ended early. The Sample already records the reason."""
 
 
-# Fields of a /get body that differ between two runs of identical code, so
-# hashing them would report every user as a mismatch. Same reason
-# ``utils.load_artifact_as_dict`` drops it for the E2E comparisons: the
-# artifact id is minted per execution.
-VOLATILE_ARTIFACT_FIELDS = ("filename",)
+# The Accept header the sandbox answers with an Arrow IPC stream instead of
+# JSON. The canvas does not send it yet; this is how the harness measures what
+# it would cost if it did.
+ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
+
+# Geometry rides as WKB on the Arrow path, so the sandbox refuses a
+# geodataframe unless the client says it can take it. The harness digests the
+# response bytes rather than decoding them, so accepting WKB is honest: what
+# it measures is the cost of producing and shipping the artifact. Without
+# this, every spatial example in the mix comes back 415 -- which is how the
+# first Arrow tier failed, on example 01 of all things.
+ARROW_GEOMETRY_HEADERS = {"X-Curio-Accept-Geometry": "wkb"}
 
 
-def artifact_hash(payload: object) -> str:
-    """Stable digest of a node's output, for comparing users against each other."""
-    if isinstance(payload, dict):
-        payload = {k: v for k, v in payload.items()
-                   if k not in VOLATILE_ARTIFACT_FIELDS}
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+def arrow_artifact_hash(content: bytes, headers) -> str:
+    """Digest of an Arrow response: the bytes, plus the metadata headers.
+
+    The headers carry what the JSON body used to carry inline (kind, row
+    counts, which columns are JSON-encoded), so leaving them out would let a
+    change in them pass unnoticed. ``X-Curio-Filename`` is dropped because it
+    is minted per execution: hashing it would report every user as a mismatch.
+
+    The baseline and the tiers are digested the same way in the same run,
+    which is what makes them comparable.
+    """
+    metadata = sorted(
+        (k.lower(), v) for k, v in headers.items()
+        if k.lower().startswith("x-curio-") and k.lower() != "x-curio-filename"
+    )
+    digest = hashlib.sha256(content)
+    digest.update(json.dumps(metadata, sort_keys=True).encode("utf-8"))
+    return digest.hexdigest()
 
 
 class VirtualUser:
@@ -197,6 +214,9 @@ class VirtualUser:
         node_id: str | None = None,
         timeout: float = API_TIMEOUT_S,
         expect: int | tuple[int, ...] = 200,
+        accept: str | None = None,
+        raw: bool = False,
+        extra_headers: dict | None = None,
     ) -> dict:
         """Make one call, record a Sample, and raise UserFailed on anything bad.
 
@@ -207,9 +227,14 @@ class VirtualUser:
         url = f"{self.backend_url}{path_url or path}"
         started = time.time()
         try:
+            headers = self._headers()
+            if accept:
+                headers["Accept"] = accept
+            if extra_headers:
+                headers.update(extra_headers)
             resp = self.session.request(
                 method, url, json=json_body, params=params,
-                headers=self._headers(), timeout=timeout,
+                headers=headers, timeout=timeout,
             )
         except requests.Timeout:
             self._record(path, node_id, None, started, False,
@@ -225,6 +250,10 @@ class VirtualUser:
             raise UserFailed(f"{path} returned {resp.status_code}")
 
         self._record(path, node_id, resp.status_code, started, True)
+        if raw:
+            # The Arrow path: bytes plus the headers that carry the metadata
+            # the JSON body would have carried inline.
+            return {"content": resp.content, "headers": dict(resp.headers)}
         if not resp.content:
             return {}
         try:
@@ -444,11 +473,22 @@ class VirtualUser:
         difference means concurrency changed a result -- one user reading
         another's artifact, or an output overwritten mid-run -- which no
         latency number would reveal.
+
+        In ``arrow`` mode this is also the measurement: the fetch is the
+        expensive half of a dataflow (42% of blocked time at 100 users), and
+        the Arrow path skips the pandas materialisation and the JSON encode
+        that make it expensive.
         """
         ref = self.result.outputs[node.id]
-        body = self._call("GET", "/get", params={"fileName": ref["path"]},
-                          node_id=node.id, timeout=ARTIFACT_TIMEOUT_S)
-        digest = artifact_hash(body)
+        response = self._call(
+            "GET", "/get", params={"fileName": ref["path"]},
+            node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
+            accept=ARROW_IPC_MIME, raw=True,
+            extra_headers=ARROW_GEOMETRY_HEADERS,
+        )
+        digest = arrow_artifact_hash(
+            response.get("content") or b"", response.get("headers") or {}
+        )
         self.result.hashes[node.id] = digest
         expected = self.compare_to.get(node.id)
         if expected is not None and expected != digest:

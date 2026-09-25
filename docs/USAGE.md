@@ -89,6 +89,8 @@ Node-execution isolation has no flag of its own: `--deploy` turns it on wherever
 
 Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
+`CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
+
 The three startup modes control which pages are shown when a user first opens Curio:
 
 | Mode | Login page | Project page | Typical use |

@@ -21,12 +21,111 @@ import collections
 import contextlib
 import os
 import threading
+import time
 
 from utk_curio.common.redaction import redact
 from utk_curio.sandbox.util.secrets import make_curio_secret
 
 _globals_cache: dict = {}
-_exec_lock = threading.Lock()
+
+
+class _ExecLock:
+    """``_exec_lock``, plus the numbers that say whether it is the bottleneck.
+
+    The lock itself is unchanged: one process-wide mutex, ``with _exec_lock:``
+    still works, and nothing about who waits for whom is different. What is new
+    is that each acquisition records how long it waited and how long it held,
+    under a label naming the call site.
+
+    This exists because a stress run cannot otherwise tell a slot queue from a
+    lock queue. Raising ``CURIO_EXEC_PARALLELISM`` from 8 to 32 left the
+    100-user tier's throughput unchanged while /get's median got 7.5x worse,
+    which says the waiting moved from the execution semaphore to this lock --
+    but says it by inference. These counters say it directly.
+
+    Accounting costs two ``perf_counter`` calls and a dict update per
+    acquisition, against critical sections that run for seconds. The stats
+    mutex is separate from the real one and is never held across user work, so
+    it cannot become a second queue.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stats_lock = threading.Lock()
+        self._stats = {}
+        self._waiting = 0
+        self._holder = None
+
+    @contextlib.contextmanager
+    def hold(self, label="other"):
+        """Take the lock, recording the wait and the hold under ``label``."""
+        requested = time.perf_counter()
+        with self._stats_lock:
+            self._waiting += 1
+        try:
+            self._lock.acquire()
+        finally:
+            with self._stats_lock:
+                self._waiting -= 1
+        waited = time.perf_counter() - requested
+        acquired = time.perf_counter()
+        self._holder = label
+        try:
+            yield
+        finally:
+            held = time.perf_counter() - acquired
+            self._holder = None
+            self._lock.release()
+            self._record(label, waited, held)
+
+    def __enter__(self):
+        """``with _exec_lock:`` still works, and lands under "other"."""
+        self._ctx = self.hold()
+        return self._ctx.__enter__()
+
+    def __exit__(self, *exc):
+        ctx, self._ctx = self._ctx, None
+        return ctx.__exit__(*exc)
+
+    def _record(self, label, waited, held):
+        with self._stats_lock:
+            entry = self._stats.get(label)
+            if entry is None:
+                entry = {"acquisitions": 0, "wait_seconds": 0.0,
+                         "held_seconds": 0.0, "max_wait_seconds": 0.0}
+                self._stats[label] = entry
+            entry["acquisitions"] += 1
+            entry["wait_seconds"] += waited
+            entry["held_seconds"] += held
+            if waited > entry["max_wait_seconds"]:
+                entry["max_wait_seconds"] = waited
+
+    def snapshot(self):
+        """Counters so far, as plain data. Cumulative, never reset.
+
+        A stress tier takes the difference between two of these, the same way
+        the container stats sampler is read: an absolute total across a run
+        that includes the baseline would not describe any one tier.
+        """
+        with self._stats_lock:
+            labels = {
+                label: dict(entry) for label, entry in self._stats.items()
+            }
+            waiting = self._waiting
+        return {
+            "waiting": waiting,
+            "holder": self._holder,
+            "labels": labels,
+            "total_wait_seconds": round(
+                sum(e["wait_seconds"] for e in labels.values()), 3
+            ),
+            "total_held_seconds": round(
+                sum(e["held_seconds"] for e in labels.values()), 3
+            ),
+        }
+
+
+_exec_lock = _ExecLock()
 
 
 def _default_js_parallelism() -> int:
@@ -203,7 +302,9 @@ def chdir_locked(launch_dir):
     if not launch_dir:
         yield
         return
-    with _exec_lock:
+    # Labelled: this is the artifact-serving side of the lock, and telling it
+    # apart from execution is the whole point of the counters.
+    with _exec_lock.hold("chdir"):
         original = os.getcwd()
         try:
             os.chdir(launch_dir)
@@ -398,7 +499,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
-    with _exec_lock:
+    with _exec_lock.hold("exec_in_process"):
         t0 = time.perf_counter()
         original_dir = os.getcwd()
         if launch_dir:

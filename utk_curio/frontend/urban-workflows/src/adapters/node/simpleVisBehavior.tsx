@@ -14,28 +14,11 @@ import { resolveImageColumns } from '../../utils/imageColumns';
 import ContentTable from './components/ContentTable';
 import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
+import { toRows } from '../../utils/rowSource';
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
-  if (!parsedOutput || !parsedOutput.data) return [];
-  if (parsedOutput.dataType === 'dataframe') {
-    const columns = Object.keys(parsedOutput.data);
-    if (columns.length === 0) return [];
-    const indices = Object.keys(parsedOutput.data[columns[0]]);
-    return indices.map((i) => {
-      const row: any = {};
-      for (const col of columns) row[col] = parsedOutput.data[col][i];
-      return row;
-    });
-  }
-  if (parsedOutput.dataType === 'geodataframe' && parsedOutput.data?.features?.length > 0) {
-    const columns = Object.keys(parsedOutput.data.features[0].properties);
-    return parsedOutput.data.features.map((f: any) => {
-      const row: any = {};
-      for (const col of columns) row[col] = f.properties[col];
-      return row;
-    });
-  }
-  return [];
+  // Was a fourth copy of the same column-major flatten; see utils/rowSource.
+  return toRows(parsedOutput as any);
 }
 
 type SimpleVisMode = 'table' | 'image' | 'text';
