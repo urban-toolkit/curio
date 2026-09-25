@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.parse import urlparse
 
 from utk_curio.backend.app.agents import egress
 
@@ -254,9 +255,11 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
 # status, and the page title of a non-data answer. Nothing here issues a
 # request; `classify_access` is a pure function of one observation.
 
-#: Content types a loader can parse directly.
+#: Content types a loader can parse directly. Archives are not among them:
+#: the Data Lake refuses them (``datalakes/domain/formats.py``), so a person
+#: unpacks one and imports the file.
 _DATA_CONTENT_TYPES = (
-    "json", "geo+json", "csv", "text/csv", "xml", "zip", "octet-stream",
+    "json", "geo+json", "csv", "text/csv", "xml", "octet-stream",
     "spreadsheet", "excel", "parquet", "x-netcdf", "geopackage", "shapefile",
 )
 #: Content types that are a PAGE about the data, never the data.
@@ -273,16 +276,29 @@ _STEP_MAX_CHARS = 200
 _STEPS_MAX = 6
 
 
-def _content_type_kind(content_type: str) -> str:
+def _is_archive(content_type: str, url: str | None) -> bool:
+    """Whether the answer is an archive, by the Data Lake's own table: its
+    content type (parameters such as ``charset`` stripped) or the URL's suffix."""
+    from utk_curio.backend.app.datalakes.domain import formats
+
+    if formats.content_type_of({"Content-Type": content_type}) in formats.ARCHIVE_CONTENT_TYPES:
+        return True
+    path = urlparse(url or "").path.lower()
+    return path.endswith(formats.ARCHIVE_SUFFIXES)
+
+
+def _content_type_kind(content_type: str, url: str | None = None) -> str:
     lowered = (content_type or "").lower()
     if any(marker in lowered for marker in _PAGE_CONTENT_TYPES):
         return "page"
+    if _is_archive(content_type, url):
+        return "archive"
     if any(marker in lowered for marker in _DATA_CONTENT_TYPES):
         return "data"
     return "unknown"
 
 
-def classify_access(observation: dict | None) -> dict:
+def classify_access(observation: dict | None, url: str | None = None) -> dict:
     """``{"access": …, "why": …}`` — whether code can fetch this row's URL.
 
     dev/132: the three answers of memo §3A, each traceable to the probe's own
@@ -293,7 +309,8 @@ def classify_access(observation: dict | None) -> dict:
       type, or a JSON shape sample the probe read);
     - ``manual-download`` — the data URL answered with a PAGE (``text/html``),
       or refused with a gated status (401/403/451) — a portal a person passes
-      through, not an endpoint code can read;
+      through, not an endpoint code can read; or with an archive, which a
+      person unpacks before importing the file;
     - ``unknown`` — nothing was probed, the policy refused the URL, or the
       answer was neither (a 404, a transport failure, an unrecognized type).
       The row says so; nothing downstream may upgrade it silently.
@@ -301,9 +318,15 @@ def classify_access(observation: dict | None) -> dict:
     obs = observation if isinstance(observation, dict) else {}
     status = str(obs.get("status") or "")
     http_status = obs.get("httpStatus")
-    kind = _content_type_kind(str(obs.get("contentType") or ""))
+    kind = _content_type_kind(str(obs.get("contentType") or ""), obs.get("finalUrl") or url)
     title = str(obs.get("pageTitle") or "").strip()
     if status == "verified":
+        if kind == "archive":
+            why = (
+                f"the URL serves an archive ({obs.get('contentType') or 'by its suffix'}), "
+                "which Curio does not unpack"
+            )
+            return {"access": ACCESS_MANUAL, "why": why[:_ACCESS_WHY_MAX]}
         if kind == "data" or obs.get("sampleKeys"):
             detail = (
                 f"the endpoint answered {http_status or 200} with "
@@ -348,22 +371,26 @@ def download_steps(row: dict | None, observation: dict | None) -> list[str]:
     obs = observation if isinstance(observation, dict) else {}
     url = str(obs.get("finalUrl") or row.get("url") or "").strip()
     steps: list[str] = []
-    if url:
-        steps.append(f"Open the portal page in your browser: {url}")
     title = str(obs.get("pageTitle") or "").strip()
-    if title:
-        steps.append(
-            f'The page answered as "{title}" — use its own download control '
-            "(the portal describes the click path, not Curio)."
-        )
-    elif url:
-        steps.append(
-            "Use the page's own download control — the portal describes the "
-            "click path, not Curio."
-        )
     fmt = str(row.get("format") or "").strip()
-    if fmt:
-        steps.append(f"Save the {fmt} file the portal offers.")
+    if url and _is_archive(str(obs.get("contentType") or ""), url):
+        steps.append(f"Download the archive: {url}")
+        steps.append("Unpack it and keep the data file inside (Curio does not unpack archives).")
+    else:
+        if url:
+            steps.append(f"Open the portal page in your browser: {url}")
+        if title:
+            steps.append(
+                f'The page answered as "{title}"; use its own download control '
+                "(the portal describes the click path, not Curio)."
+            )
+        elif url:
+            steps.append(
+                "Use the page's own download control; the portal describes the "
+                "click path, not Curio."
+            )
+        if fmt:
+            steps.append(f"Save the {fmt} file the portal offers.")
     requirement = str(row.get("requirement") or "").strip()
     if requirement:
         steps.append(f"The row states this requirement: {requirement}")

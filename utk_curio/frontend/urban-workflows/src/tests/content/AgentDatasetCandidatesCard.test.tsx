@@ -270,3 +270,63 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     ).toBeInTheDocument();
   });
 });
+
+describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
+  const LAKE: AgentDatasetCandidatesPart = {
+    type: "datasetCandidates",
+    lanes: {
+      external: [
+        {
+          // A connector row whose landing page is a portal: the probe says a
+          // person would download it, but Curio downloads it itself.
+          name: "Chicago community areas",
+          sourceType: "lake",
+          url: "https://data.cityofchicago.org/d/cauq-8yn6",
+          sourceId: "lake.cityofchicago.data-portal@1",
+          resourceId: "cauq-8yn6",
+          acquirable: true,
+          access: "manual-download",
+          accessWhy: "the data URL answered with a web page",
+          downloadSteps: ["Open the portal page in your browser: https://data.cityofchicago.org"],
+        },
+        {
+          name: "Chicago wards",
+          sourceType: "lake",
+          sourceId: "lake.cityofchicago.data-portal@1",
+          resourceId: "sp34-6z76",
+          acquirable: true,
+        },
+      ],
+      catalog: [],
+    },
+  };
+
+  it("offers only the download, never the portal steps", () => {
+    render(<AgentDatasetCandidatesCard part={LAKE} onImportDataset={jest.fn()} />);
+    expect(screen.getAllByText("Downloadable")).toHaveLength(2);
+    expect(screen.queryByText(/Download it from the portal/)).toBeNull();
+    expect(screen.queryByText("Import dataset")).toBeNull();
+  });
+
+  it("confirms a row with no url by its coordinate and says it is downloading", async () => {
+    const onRecordSelection = jest.fn().mockResolvedValue({
+      attachmentId: "att-df",
+      nodeId: "n1",
+      status: "awaiting-install",
+      picks: [],
+      delegated: {
+        status: "acquiring",
+        reason: "Chicago wards is downloading into your Data Catalog; Solve the node once it lands",
+      },
+    });
+    render(<AgentDatasetCandidatesCard part={LAKE} onRecordSelection={onRecordSelection} />);
+    fireEvent.click(screen.getByLabelText("Select Chicago wards"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Confirm source for this node/ }));
+    });
+    expect(onRecordSelection).toHaveBeenCalledWith([
+      { lane: "external", key: "lake.cityofchicago.data-portal@1/sp34-6z76" },
+    ]);
+    expect(screen.getByText(/downloading into your Data Catalog/)).toBeInTheDocument();
+  });
+});

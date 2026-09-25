@@ -73,6 +73,17 @@ export function composeConfirmationPrompt(
   return bits.length ? `Confirm my selection — ${bits.join("; ")}.` : "";
 }
 
+/** How a pick addresses a row, matching the server's `row_key`. Exported for tests. */
+export function pickKey(
+  lane: "external" | "catalog",
+  row: AgentDatasetCandidateRow,
+): string | undefined {
+  if (lane === "catalog") return row.datasetId;
+  if (row.url) return row.url;
+  if (row.sourceId && row.resourceId) return `${row.sourceId}/${row.resourceId}`;
+  return undefined;
+}
+
 /**
  * The dev/50 two-lane suggestions surface (docs/06): one grouped card, two
  * labeled lanes, keyboard-operable multi-select rows carrying safe metadata
@@ -115,13 +126,14 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
 
   /** The server addresses rows by identifier: a catalog row's datasetId, an
-   * external row's url. A row with neither cannot be confirmed. */
+   * external row's url, or its Data Lake coordinate when it has no url. A row
+   * with none of these cannot be confirmed. */
   const picksFor = (keys: Set<string>): AgentDatasetPick[] => {
     const out: AgentDatasetPick[] = [];
     (["catalog", "external"] as const).forEach((lane) => {
       (part.lanes[lane] ?? []).forEach((row, i) => {
         if (!keys.has(rowKey(lane, i))) return;
-        const key = lane === "catalog" ? row.datasetId : row.url;
+        const key = pickKey(lane, row);
         if (key) out.push({ lane, key });
       });
     });
@@ -245,7 +257,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
             {row.requirement ? (
               <span className={styles.requirement}>{row.requirement}</span>
             ) : null}
-            {row.access === "manual-download" ? (
+            {row.access === "manual-download" && !row.acquirable ? (
               // dev/132: this source is a portal download, and the card is
               // where the user learns how — the steps are the portal's own
               // (or what the probe observed), never invented here.

@@ -1038,12 +1038,19 @@ def record_dataset_selection(
     # record must carry what is true NOW (the row keeps its own mint-time
     # verdict in the transcript either way).
     budget = egress.CallBudget(_RUN_EGRESS_CALLS)
+    roster = _LazyRoster()
     for row in rows:
-        if row["lane"] == "external" and row.get("url"):
+        if row["lane"] != "external":
+            continue
+        if row.get("url"):
             row["verification"] = verify.verify_external_source(row["url"], budget=budget)
             # dev/132: and what can be DONE with it now — the card's verdict
             # may be days old, and the delegation below depends on this one.
             _mint_row_access(row)
+        _mint_row_acquirable(row, roster)
+    # A row Curio can download is downloaded now, by the Data Lake, and
+    # recorded as the catalog pick it becomes.
+    acquisitions = _acquire_confirmed_picks(rows)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = _read_spec_or_404(user_key, project_id)
         state = dataset_resolution.record_selection(fresh, attachment_id, rows)
@@ -1057,6 +1064,7 @@ def record_dataset_selection(
                 f"{r['lane']} · {r.get('name') or r.get('datasetId') or r.get('url')}"
                 + (f" · {(r.get('verification') or {}).get('status')}"
                    if r["lane"] == "external" else
+                   " · downloading" if r.get("acquiring") else
                    (" · installed" if r.get("installed") else " · not installed yet"))
                 for r in rows[:8]
             ]
@@ -1065,7 +1073,10 @@ def record_dataset_selection(
                 [sessions.make_turn(
                     "agent",
                     f"Source recorded for this node: {names}."
-                    + (" The dataset must be installed from the Data Catalog before "
+                    + (" It is downloading into the Data Catalog; Solve the node "
+                       "once it lands."
+                       if any(r.get("acquiring") for r in rows) else
+                       " The dataset must be installed from the Data Catalog before "
                        "Solve can load it."
                        if state["status"] == dataset_resolution.STATE_AWAITING_INSTALL else
                        " Solve the node to build its loader from this source."
@@ -1093,20 +1104,151 @@ def record_dataset_selection(
     # builder automatically — the owner asked for the delegation, not for a
     # prompt they must compose. A manual row is not delegated: its file does
     # not exist yet, and its card teaches the download and offers Import.
+    if acquisitions:
+        payload["acquisitions"] = acquisitions
     delegated = _delegate_confirmed_fetch(
         user_key, project_id, str(target.get("targetId") or ""), rows, state, config,
-    )
+    ) or _acquisition_outcome(acquisitions)
     if delegated is not None:
         payload["delegated"] = delegated
     return payload
 
 
+def _acquire_format(row: dict) -> str | None:
+    """The format to download a confirmed row as, when it can be named: a
+    ``direct`` row's from the content type the probe saw, a connector row's
+    from its own ``format`` when that is one the Data Lake accepts."""
+    from utk_curio.backend.app.datalakes.domain import formats
+    from utk_curio.backend.app.datalakes.domain.manifest import LAKE_ACQUIRABLE_FORMATS
+
+    probed = formats.CONTENT_TYPE_FORMATS.get(formats.content_type_of(
+        {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
+    ))
+    if probed and row.get("resourceId") == row.get("url"):
+        return probed
+    named = str(row.get("format") or "").strip().lower()
+    return named if named in LAKE_ACQUIRABLE_FORMATS else None
+
+
+def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
+    """Download every confirmed acquirable row through the Data Lake, and record
+    each as the catalog pick it becomes.
+
+    The download is ``DataLakeService.start_acquire``, the one the Data Lake page
+    uses, so the dataset carries its ``lakeSource`` and a resource the account
+    already holds is not fetched again. It is not handed to a builder: the
+    builder writes fetch code, and here Curio fetches. Every download shares one
+    wait. One that lands inside it becomes an imported catalog pick; one still
+    running becomes a pick that is ``acquiring``, settled by
+    ``_settle_lake_acquisitions`` once the dataset is held. Returns one summary
+    per download.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+    from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+
+    summaries: list[dict] = []
+    running: list[tuple[int, dict, str]] = []
+    service = None
+    for index, row in enumerate(rows):
+        if row.get("lane") != "external" or not row.get("acquirable"):
+            continue
+        service = service or _lake_service()
+        summary = {"name": row.get("name"), "sourceId": row["sourceId"],
+                   "resourceId": row["resourceId"]}
+        try:
+            started = service.start_acquire(
+                row["sourceId"], row["resourceId"], fmt=_acquire_format(row),
+            )
+        except DataLakeError as exc:
+            row["acquireError"] = str(exc)[:200]
+            summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
+            continue
+        if started.get("alreadyPresent"):
+            dataset_id = (started.get("dataset") or {}).get("id")
+            rows[index] = dataset_resolution.acquired_pick(row, dataset_id)
+            summaries.append({**summary, "status": "acquired", "datasetId": dataset_id,
+                              "alreadyPresent": True})
+        else:
+            running.append((index, summary, str(started.get("jobId") or "")))
+    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    for index, summary, job_id in running:
+        row = rows[index]
+        outcome = _await_lake_job(service, job_id, deadline=deadline) or {}
+        status = outcome.get("status")
+        dataset_id = outcome.get("datasetId") or (outcome.get("dataset") or {}).get("id")
+        if status == "completed" and dataset_id:
+            rows[index] = dataset_resolution.acquired_pick(row, dataset_id)
+            summaries.append({**summary, "status": "acquired", "datasetId": dataset_id})
+        elif status in ("failed", "refused", "cancelled"):
+            row["acquireError"] = str(outcome.get("error") or f"the download was {status}")[:200]
+            summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
+        else:
+            rows[index] = dataset_resolution.acquiring_pick(row, job_id)
+            summaries.append({**summary, "status": "acquiring", "jobId": job_id})
+    return summaries
+
+
+def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
+    """What the confirmation says when no builder was started: a download still
+    running, or one that failed."""
+    running = [a for a in acquisitions if a.get("status") == "acquiring"]
+    failed = [a for a in acquisitions if a.get("status") == "failed"]
+    if running:
+        names = ", ".join(str(a.get("name") or a.get("resourceId")) for a in running)
+        return {
+            "status": "acquiring",
+            "jobIds": [a["jobId"] for a in running],
+            "reason": f"{names} is downloading into your Data Catalog; Solve the node once it lands",
+        }
+    if failed:
+        first = failed[0]
+        return {
+            "status": "acquire-failed",
+            "reason": f"the download of {first.get('name') or first.get('resourceId')} failed: {first.get('error')}",
+        }
+    return None
+
+
+def _settle_lake_acquisitions(user_key: str, project_id: str) -> None:
+    """Resolve nodes whose confirmed download has landed since it was confirmed.
+
+    Called at a Solve's entry, while the request's user can read the datasets
+    domain (a detached job cannot). Reads the spec first, so a project with no
+    download in flight costs one read.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    spec = projects_storage.read_spec(user_key, project_id)
+    if not dataset_resolution.has_acquiring_picks(spec):
+        return
+    user = _acting_user()
+    if user is None:
+        return
+    try:
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        held = UserDatasetRepository(user).lake_resource_index()
+    except Exception:  # noqa: BLE001 - an unreadable store settles nothing
+        log.warning("Could not read the held Data Lake datasets for project %s",
+                    project_id, exc_info=True)
+        return
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = projects_storage.read_spec(user_key, project_id)
+        if fresh is not None and dataset_resolution.settle_acquisitions(fresh, held):
+            projects_storage.write_spec(user_key, project_id, fresh)
+
+
 #: dev/132: the two rows worth delegating a fetch for — an external row the
 #: probe could read, and a catalog row already installed (its path exists).
+#: A row Curio downloads is never one: it becomes a catalog pick instead.
 def _fetchable_picks(rows: list[dict]) -> list[dict]:
     out = []
     for row in rows or []:
         if not isinstance(row, dict):
+            continue
+        if row.get("lane") == "external" and row.get("acquirable"):
             continue
         if row.get("lane") == "external" and row.get("access") == verify.ACCESS_FETCHABLE:
             out.append(row)
@@ -1145,7 +1287,10 @@ def _delegate_confirmed_fetch(
         return None
     fetchable = _fetchable_picks(rows)
     if not fetchable:
-        manual = [r for r in rows if (r or {}).get("access") == verify.ACCESS_MANUAL]
+        manual = [
+            r for r in rows
+            if (r or {}).get("access") == verify.ACCESS_MANUAL and not (r or {}).get("acquirable")
+        ]
         if manual:
             return {
                 "status": "manual-download",
@@ -3919,10 +4064,11 @@ def _apply_datalake_acquire(
 _LAKE_APPLY_WAIT_S = 20
 
 
-def _await_lake_job(service, job_id: str | None) -> dict | None:
+def _await_lake_job(service, job_id: str | None, *, deadline: float | None = None) -> dict | None:
     if not job_id:
         return None
-    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    if deadline is None:
+        deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
     while time.monotonic() < deadline:
         row = service.get_job(job_id)
         if row.get("status") in ("completed", "failed", "refused", "cancelled"):
@@ -4654,6 +4800,7 @@ def solve_attachment_stream(
         if verify else {}
     )
     # dev/126: and the Data Catalog rows the discovery delegate is handed.
+    _settle_lake_acquisitions(user_key, project_id)
     solve_catalog_rows = _catalog_rows_for_discovery(user_key, project_id)
     # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
     # DURING the session can still be resolved to a sandbox path.
@@ -6789,6 +6936,7 @@ def solve_node_stream(
         raise AgentServiceError(str(exc), exc.status)
     execution_id = uuid.uuid4().hex
     # Request-context pieces, resolved before the job thread starts.
+    _settle_lake_acquisitions(user_key, project_id)
     base = _solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
     dataset_paths = _resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
     events = _solve_node_events(
@@ -7113,6 +7261,7 @@ def validate_node_stream(
     """
     import time as _time
 
+    _settle_lake_acquisitions(user_key, project_id)
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
@@ -9934,6 +10083,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
         if loop_ctx is not None
         else egress.CallBudget(_RUN_EGRESS_CALLS)
     )
+    roster = _LazyRoster()
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -9944,19 +10094,17 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
             url = row.get("url")
             if not url:
                 row["verification"] = verify.verify_external_source(None)
-                _mint_row_access(row)
-                continue
-            if budget.exhausted:
+            elif budget.exhausted:
                 row["verification"] = {
                     "status": "unverified",
-                    "detail": "the egress budget was spent before this row — not checked",
+                    "detail": "the egress budget was spent before this row, so it was not checked",
                 }
-                _mint_row_access(row)
-                continue
-            row["verification"] = verify.verify_external_source(url, budget=budget)
+            else:
+                row["verification"] = verify.verify_external_source(url, budget=budget)
+                if loop_ctx is not None and row["verification"].get("status") == "verified":
+                    loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             _mint_row_access(row)
-            if loop_ctx is not None and row["verification"].get("status") == "verified":
-                loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
+            _mint_row_acquirable(row, roster)
 
 
 def _mint_row_access(row: dict) -> None:
@@ -9970,13 +10118,77 @@ def _mint_row_access(row: dict) -> None:
     ``downloadSteps`` rides only the manual answer.
     """
     outcome = row.get("verification") if isinstance(row.get("verification"), dict) else {}
-    verdict = verify.classify_access(outcome)
+    verdict = verify.classify_access(outcome, row.get("url"))
     row["access"] = verdict["access"]
     row["accessWhy"] = verdict["why"]
     if verdict["access"] == verify.ACCESS_MANUAL:
         steps = verify.download_steps(row, outcome)
         if steps:
             row["downloadSteps"] = steps
+
+
+class _LazyRoster:
+    """The Data Lake sources this deployment has, by ``dirName``, read off disk
+    on first use, so a pass with no coordinate never touches the roster and
+    costs no web budget. An unreadable roster is an empty one."""
+
+    def __init__(self, sources: dict | None = None) -> None:
+        self._sources = sources
+
+    def get(self, dir_name: object) -> dict | None:
+        if self._sources is None:
+            self._sources = {}
+            try:
+                from utk_curio.backend.app.datalakes.service import DataLakeService
+
+                listing = DataLakeService().list_catalog()
+            except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
+                log.warning("Could not read the Data Lake roster", exc_info=True)
+                listing = {}
+            for source in listing.get("sources") or []:
+                if source.get("dirName"):
+                    self._sources[source["dirName"]] = source
+        return self._sources.get(dir_name) if isinstance(dir_name, str) else None
+
+
+def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
+    """Whether Curio can download this row into the Data Catalog: the one answer.
+
+    The model may name a source; it may not claim the source can be acted on,
+    so a model-supplied ``acquirable`` never survives. The answer reads the
+    roster and the probe, never the run's grants: a person confirming the row
+    uses the download route, which needs only their sign-in, and an agent's
+    own ``datalake.acquire`` proposal is checked against its grant where it is
+    minted.
+
+    - A connector source (anything but ``direct``) is acquirable when the
+      roster has it and it downloads. The connector knows how to fetch the
+      resource, so the probe of a landing page does not decide it.
+    - A ``direct`` source downloads the URL itself, so the probe decides: an
+      https URL the probe read as data, whose content type maps to a format the
+      source accepts, and whose ``resourceId`` is that same URL, so what is
+      downloaded is what was probed.
+    """
+    row.pop("acquirable", None)
+    source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
+    capabilities = (source or {}).get("capabilities") or {}
+    if not capabilities.get("download"):
+        return
+    if source.get("provider") != "direct":
+        row["acquirable"] = True
+        return
+    url = str(row.get("url") or "")
+    if not url.startswith("https://") or row.get("resourceId") != url:
+        return
+    if row.get("access") != verify.ACCESS_FETCHABLE:
+        return
+    from utk_curio.backend.app.datalakes.domain import formats
+
+    content_type = formats.content_type_of(
+        {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
+    )
+    if formats.CONTENT_TYPE_FORMATS.get(content_type) in (capabilities.get("formats") or ()):
+        row["acquirable"] = True
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
@@ -10428,47 +10640,6 @@ def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> di
     if "discoveryReplyContract" not in enriched:
         enriched["discoveryReplyContract"] = _DISCOVERY_RULE + "\n\n" + content.CANDIDATES_INSTRUCTION
     return enriched
-
-
-def _mark_acquirable_candidates(parts: list, granted: set[str]) -> None:
-    """Decide, server-side, which external rows Curio can actually download.
-
-    The model may NAME a source; it may not claim the run can act on it. This
-    is the catalog lane's mandatory-``datasetId`` discipline applied one lane
-    over: a row is acquirable only when the source really exists in this
-    deployment's roster, really offers downloads, and the run really holds the
-    grant. Anything the model asserted about that is ignored.
-
-    Reads the roster off disk, so it costs no web budget.
-    """
-    rows = [
-        row
-        for part in parts
-        if isinstance(part, dict) and part.get("type") == "datasetCandidates"
-        for row in (part.get("lanes") or {}).get("external") or []
-        if isinstance(row, dict)
-    ]
-    # Never leave the key model-supplied: a row the model marked acquirable
-    # must read as false unless the runtime says otherwise.
-    for row in rows:
-        row.pop("acquirable", None)
-    candidates = [r for r in rows if r.get("sourceId") and r.get("resourceId")]
-    if not candidates or "datalake.acquire" not in granted:
-        return
-    try:
-        from utk_curio.backend.app.datalakes.service import DataLakeService
-
-        listing = DataLakeService().list_catalog()
-    except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
-        return
-    downloadable = {
-        source.get("dirName")
-        for source in listing.get("sources") or []
-        if (source.get("capabilities") or {}).get("download")
-    }
-    for row in candidates:
-        if row.get("sourceId") in downloadable:
-            row["acquirable"] = True
 
 
 #: The tools that spend the per-run web budget. ``datalake.sources`` is absent
@@ -11948,7 +12119,6 @@ def run_attachment(
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
-            _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
@@ -12280,7 +12450,6 @@ def stream_attachment(
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
-        _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
         if withheld is not None and not parts:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld

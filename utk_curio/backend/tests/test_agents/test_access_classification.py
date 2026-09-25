@@ -17,7 +17,7 @@ class TestClassifyAccess:
     def test_a_data_body_is_fetchable(self):
         for content_type in (
             "application/json", "application/geo+json", "text/csv",
-            "application/zip", "application/octet-stream",
+            "application/octet-stream",
         ):
             verdict = verify.classify_access(
                 {"status": "verified", "httpStatus": 200, "contentType": content_type}
@@ -65,6 +65,48 @@ class TestClassifyAccess:
         assert verify.classify_access(
             {"status": "verified", "httpStatus": 200, "contentType": "application/pdf"}
         )["access"] == verify.ACCESS_UNKNOWN
+
+
+class TestAnArchiveIsAManualDownload:
+    """The Data Lake refuses archives before reading a body
+    (``datalakes/domain/formats.py``), so a probe must not call one data a
+    loader can read. A person unpacks it and imports the file."""
+
+    def test_an_archive_content_type_is_a_manual_download(self):
+        for content_type in (
+            "application/zip", "application/x-zip-compressed", "application/gzip",
+            "application/zip; charset=binary",
+        ):
+            verdict = verify.classify_access(
+                {"status": "verified", "httpStatus": 200, "contentType": content_type}
+            )
+            assert verdict["access"] == verify.ACCESS_MANUAL, content_type
+            assert "archive" in verdict["why"]
+
+    def test_an_archive_suffix_wins_over_a_generic_content_type(self):
+        observation = {"status": "verified", "httpStatus": 200,
+                       "contentType": "application/octet-stream"}
+        assert verify.classify_access(
+            observation, "https://data.example.org/tracts.zip"
+        )["access"] == verify.ACCESS_MANUAL
+        # Where the redirect landed is what was served.
+        assert verify.classify_access(
+            {**observation, "finalUrl": "https://cdn.example.org/tracts.tar.gz"},
+            "https://data.example.org/tracts",
+        )["access"] == verify.ACCESS_MANUAL
+        assert verify.classify_access(
+            observation, "https://data.example.org/tracts.csv"
+        )["access"] == verify.ACCESS_FETCHABLE
+
+    def test_the_steps_say_to_download_and_unpack_it(self):
+        steps = verify.download_steps(
+            {"url": "https://data.example.org/tracts.zip", "format": "Shapefile (zip)"},
+            {"status": "verified", "contentType": "application/zip"},
+        )
+        assert steps[0] == "Download the archive: https://data.example.org/tracts.zip"
+        assert "Unpack it" in steps[1]
+        assert steps[-1].startswith("Then use Import dataset below")
+        assert not any("portal page" in step for step in steps)
 
 
 class TestDownloadSteps:

@@ -11,6 +11,8 @@ starts.
 
 from __future__ import annotations
 
+import json
+
 from utk_curio.backend.app.agents import agent_jobs
 from utk_curio.backend.app.agents import dataset_resolution as dr
 from utk_curio.backend.app.agents import services as services_mod
@@ -243,3 +245,208 @@ class TestAMidSessionDatasetStillGetsItsPath:
         # The top-up is consulted, and it is the one that skips a resolved id.
         assert len(called) == 1
         assert services_mod._dataset_ids_in([code]) == ["imported.known"]
+
+
+#: A connector row the Finder found with datalake.search: a portal landing page,
+#: and the coordinate that lets Curio download the resource itself.
+CHICAGO = "lake.cityofchicago.data-portal@1"
+LAKE_CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
+    "external": [{
+        "name": "Chicago community areas", "sourceType": "lake",
+        "url": "https://data.example.org/areas.geojson",
+        "sourceId": CHICAGO, "resourceId": "cauq-8yn6",
+    }, {
+        "name": "Chicago wards", "sourceType": "lake",
+        "sourceId": CHICAGO, "resourceId": "sp34-6z76",
+    }],
+    "catalog": [],
+}}})
+ROSTER = {CHICAGO: {"dirName": CHICAGO, "provider": "socrata",
+                    "capabilities": {"download": True, "formats": ["csv", "geojson"]}}}
+
+
+class _FakeLake:
+    """``DataLakeService`` as the confirmation sees it."""
+
+    def __init__(self, started=None, job=None, error=None):
+        self.started, self.job, self.error = started, job, error
+        self.calls: list = []
+
+    def start_acquire(self, source_id, resource_id, fmt=None):
+        from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+
+        self.calls.append((source_id, resource_id, fmt))
+        if self.error:
+            raise DataLakeError(self.error)
+        return self.started
+
+    def get_job(self, job_id):
+        return self.job
+
+
+def _lake_harness(client, user, token, monkeypatch, lake):
+    roster = services_mod._LazyRoster
+    monkeypatch.setattr(services_mod, "_LazyRoster", lambda: roster(dict(ROSTER)))
+    monkeypatch.setattr(services_mod, "_lake_service", lambda: lake)
+    monkeypatch.setattr(services_mod, "_LAKE_APPLY_WAIT_S", 0.2)
+    return _await_candidates(client, user, token, monkeypatch,
+                             discover_replies=[LAKE_CANDIDATES])
+
+
+class TestAnAcquirableRowIsDownloaded:
+    """A row Curio can download is downloaded by the Data Lake when it is
+    confirmed, and recorded as the catalog pick it becomes. It never reaches
+    the builder as a URL to write fetch code for."""
+
+    def test_the_delegated_discovery_marks_the_row(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h, finder_id = _lake_harness(client, user, token, monkeypatch, _FakeLake())
+        part = next(
+            p for turn in h.session_turns(finder_id)
+            for p in turn.get("content") or [] if p.get("type") == "datasetCandidates"
+        )
+        assert [r.get("acquirable") for r in part["lanes"]["external"]] == [True, True]
+
+    def test_a_held_resource_resolves_the_node_and_starts_the_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        lake = _FakeLake(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
+        h, finder_id = _lake_harness(client, user, token, monkeypatch, lake)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda config, messages, **k: (
+                "Title" if messages[0].get("content") == services_mod.TITLE_PROMPT else loader
+            ),
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: dict(PORTAL_OBSERVATION),
+        )
+        body = _select(h, finder_id, [
+            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
+        ]).get_json()
+        assert lake.calls == [(CHICAGO, "cauq-8yn6", None)]
+        assert body["status"] == dr.STATE_RESOLVED
+        pick = body["picks"][0]
+        assert pick["lane"] == "catalog" and pick["datasetId"] == dataset_id
+        assert pick["imported"] is True
+        assert pick["lakeSource"] == {"sourceId": CHICAGO, "resourceId": "cauq-8yn6"}
+        assert body["acquisitions"][0]["status"] == "acquired"
+        assert body["delegated"]["status"] == "delegating"
+        events = _drain(h, body["delegated"]["attachmentId"])
+        assert next(p for k, p in events if k == "done")["verdict"] == "pass"
+        assert f'curio_dataset_path("{dataset_id}")' in h.node_content(h.load)
+
+    def test_a_row_with_no_url_is_confirmed_by_its_coordinate(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        lake = _FakeLake(started={"jobId": "job-1", "status": "queued"},
+                         job={"status": "running"})
+        h, finder_id = _lake_harness(client, user, token, monkeypatch, lake)
+        body = _select(h, finder_id, [
+            {"lane": "external", "key": f"{CHICAGO}/sp34-6z76"},
+        ]).get_json()
+        assert lake.calls == [(CHICAGO, "sp34-6z76", None)]
+        assert body["picks"][0]["acquiring"] == {"jobId": "job-1"}
+
+    def test_a_slow_download_waits_and_is_settled_once_it_lands(
+        self, app, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        lake = _FakeLake(started={"jobId": "job-1", "status": "queued"},
+                         job={"status": "running"})
+        h, finder_id = _lake_harness(client, user, token, monkeypatch, lake)
+        body = _select(h, finder_id, [
+            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
+        ]).get_json()
+        assert body["status"] == dr.STATE_AWAITING_INSTALL
+        assert body["picks"][0]["acquiring"] == {"jobId": "job-1"}
+        assert body["delegated"]["status"] == "acquiring"
+        assert "downloading into your Data Catalog" in body["delegated"]["reason"]
+        assert agent_jobs.latest_job(h.ukey, h.load) is None
+        assert "downloading" in dr.node_source_state(h.spec(), h.load)["detail"]
+
+        # The file lands; the next Solve's entry reads what the account holds.
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "lake_resource_index",
+            lambda self: {(CHICAGO, "cauq-8yn6"): "lake.areas"},
+        )
+        monkeypatch.setattr(services_mod, "_acting_user", lambda: user)
+        services_mod._settle_lake_acquisitions(h.ukey, h.pid)
+        record = dr.source_record(h.spec(), h.load)
+        assert record["status"] == dr.STATE_RESOLVED
+        assert record["picks"][0]["datasetId"] == "lake.areas"
+        assert record["picks"][0]["imported"] is True
+
+    def test_a_failed_download_is_reported_and_nothing_is_built(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        lake = _FakeLake(error="the portal refused the request")
+        h, finder_id = _lake_harness(client, user, token, monkeypatch, lake)
+        # Even a probe that reads data does not send a downloadable row to the
+        # builder as fetch code.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: dict(DATA_OBSERVATION),
+        )
+        body = _select(h, finder_id, [
+            {"lane": "external", "key": "https://data.example.org/areas.geojson"},
+        ]).get_json()
+        assert body["acquisitions"][0]["status"] == "failed"
+        assert body["delegated"]["status"] == "acquire-failed"
+        assert "the portal refused the request" in body["delegated"]["reason"]
+        assert agent_jobs.latest_job(h.ukey, h.load) is None
+
+
+class TestSettlingAcquisitions:
+    def _spec(self, picks, status=dr.STATE_AWAITING_INSTALL):
+        return {"dataflow": {"agentAttachments": [{
+            "attachmentId": "f1", "coord": f"{dr.FINDER_AGENT_ID}@1.0.0",
+            "target": {"kind": "node", "targetId": "n1"},
+            dr.RECORD_KEY: {"status": status, "picks": picks},
+        }]}}
+
+    def test_only_a_landed_download_resolves(self):
+        waiting = dr.acquiring_pick(
+            {"name": "Areas", "sourceId": CHICAGO, "resourceId": "a"}, "job-1")
+        spec = self._spec([waiting])
+        assert dr.has_acquiring_picks(spec)
+        assert dr.settle_acquisitions(spec, {}) == []
+        assert dr.settle_acquisitions(spec, {(CHICAGO, "a"): "lake.areas"}) == ["f1"]
+        state = spec["dataflow"]["agentAttachments"][0][dr.RECORD_KEY]
+        assert state["status"] == dr.STATE_RESOLVED
+        assert not dr.has_acquiring_picks(spec)
+
+    def test_another_pick_still_waiting_keeps_the_node_waiting(self):
+        spec = self._spec([
+            dr.acquiring_pick({"name": "Areas", "sourceId": CHICAGO, "resourceId": "a"}, "j1"),
+            dr.acquiring_pick({"name": "Wards", "sourceId": CHICAGO, "resourceId": "b"}, "j2"),
+        ])
+        dr.settle_acquisitions(spec, {(CHICAGO, "a"): "lake.areas"})
+        state = spec["dataflow"]["agentAttachments"][0][dr.RECORD_KEY]
+        assert state["status"] == dr.STATE_AWAITING_INSTALL
+        assert state["picks"][0]["imported"] is True and state["picks"][1]["acquiring"]
+
+    def test_an_installed_catalog_pick_beside_a_downloaded_one_resolves(self):
+        spec = self._spec([
+            {"lane": "catalog", "datasetId": "d1", "installed": False},
+            dr.acquired_pick({"name": "Areas", "sourceId": CHICAGO, "resourceId": "a"}, "lake.a"),
+        ])
+        assert dr.mark_dataset_installed(spec, "d1") == ["f1"]
+
+    def test_the_builder_is_told_the_coordinate(self):
+        spec = self._spec([{
+            "lane": "external", "name": "Areas", "url": "https://x.example/a",
+            "sourceId": CHICAGO, "resourceId": "a", "acquirable": True,
+        }], status=dr.STATE_RESOLVED)
+        pick = dr.confirmed_source(spec, "n1")["picks"][0]
+        assert pick["sourceId"] == CHICAGO and pick["acquirable"] is True
