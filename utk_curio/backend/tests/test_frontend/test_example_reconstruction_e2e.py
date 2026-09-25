@@ -47,6 +47,7 @@ from .utils import (
     canvas_nodes,
     dismiss_toasts,
     install_session_cookie,
+    open_tools_palette,
     read_node_code,
     require_project_page,
     require_user_auth,
@@ -175,8 +176,10 @@ def _attach_builder(session, project_id: str) -> str:
 def _script_the_oracle(session, *, solve_content: bool = True) -> dict:
     """Script the plan and, optionally, one content reply per node.
 
-    The provider is scripted positionally here (``script_agent_replies``), so
-    the content replies are ordered by wave. The plan is what this module is
+    The plan is the first queued reply. Content replies are keyed by each
+    node's ref, which its delegated ``intent`` names: Solve asks per node, in
+    wave order and interleaved with dataset discovery, so a position in the
+    queue cannot know which node it answers. The plan is what this module is
     about; a Solve that fills nodes with the example's own code is scripted
     only so the browser has something real to render.
     """
@@ -197,12 +200,10 @@ def _script_the_oracle(session, *, solve_content: bool = True) -> dict:
         FIXTURE.expected, example=example, origins=graph.origins,
         only_executable=False,
     )
-    replies = [plan.as_reply()]
-    if solve_content:
-        # More replies than calls is harmless; the script is a queue and the
-        # provider falls back to the last entry.
-        replies.extend(contents.values())
-    script_agent_replies(session["backend"], *replies)
+    script_agent_replies(
+        session["backend"], plan.as_reply(),
+        by_intent=dict(contents) if solve_content else None,
+    )
     return {"plan": plan, "contents": contents, "example": example}
 
 
@@ -249,10 +250,12 @@ class TestPaletteShowsWhatWasProvisioned:
         dismiss_toasts(page)
 
         dataset_id = FIXTURE.required["datasets"][0]
-        row = page.locator(f'[data-dataset-id="{dataset_id}"]').first
-        expect(row).to_be_visible(timeout=45000)
+        open_tools_palette(page, "datasets")
+        row = page.locator(f'#datasets-palette [data-dataset-id="{dataset_id}"]')
+        expect(row).to_have_count(1, timeout=45000)
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="dataset_palette_row",
+            fit_reactflow=False,
         )
 
     def test_a_package_contributes_its_templates_to_the_palette(
@@ -275,10 +278,17 @@ class TestPaletteShowsWhatWasProvisioned:
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")
         dismiss_toasts(page)
-        row = page.locator(
-            '[data-pkg-template-id="curio.example-ui/column-filter"]'
-        ).first
-        expect(row).to_be_visible(timeout=45000)
+        open_tools_palette(page, "packages")
+        package = page.locator(
+            '#packages-palette [data-pkg-palette-coords~="curio.example-ui@1"]'
+        )
+        expect(package).to_have_count(1, timeout=45000)
+        # The package's kinds are rows inside its accordion; the grip carries
+        # data-pkg-template-id and the label sits beside it.
+        row = package.locator("div:has(> [data-pkg-template-id])").filter(
+            has_text="Column Filter"
+        )
+        expect(row).to_have_count(1, timeout=15000)
 
 
 class TestReviewCardAndApply:
@@ -317,6 +327,7 @@ class TestReviewCardAndApply:
         assert not attempt_mod.spec_nodes(_saved_spec(session, project_id))
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="plan_review_card",
+            fit_reactflow=False,
         )
 
         apply_control = panel.get_by_role(
@@ -407,11 +418,9 @@ class TestSolveProgressAndReconnection:
         page.wait_for_load_state("domcontentloaded")
         dismiss_toasts(page)
         panel = _open_chat(page)
-        expect(
-            panel.get_by_label("Plan node progress").or_(
-                panel.get_by_text(re.compile(r"solved|verified", re.I)).first
-            )
-        ).to_be_visible(timeout=60000)
+        # The per-node list survives the run's end, so it is the proof either
+        # way; a text match would also hit the agent's own description.
+        expect(panel.get_by_label("Plan node progress")).to_be_visible(timeout=60000)
 
         # Whatever the run's outcome, what landed must be on disk and on the
         # canvas -- and every executable node that passed carries its code.
@@ -438,10 +447,6 @@ class TestSolveProgressAndReconnection:
                 "the content Solve wrote is on the server but not in the "
                 "node's editor on the canvas"
             )
-        dismiss_toasts(page)
-        save_workflow_test_screenshot(
-            page, SCREENSHOT_STEM, test_name="solved_canvas",
-        )
 
 
 class TestEvaluationModeRunsFromAiSettings:
@@ -491,9 +496,12 @@ class TestEvaluationModeRunsFromAiSettings:
         section.locator("summary").click()
 
         # Readiness: the panel must name the model that will actually answer,
-        # not merely that something is configured.
+        # not merely that something is configured. Matched as the sentence,
+        # because an earlier run's summary in the same panel names it too.
         expect(
-            section.get_by_text(re.compile(rf"{re.escape(SCRIPTED_MODEL)}"))
+            section.get_by_text(
+                re.compile(rf"{re.escape(SCRIPTED_MODEL)}(?: at \S+)? will answer")
+            )
         ).to_be_visible(timeout=20000)
 
         # The prompt is shown BEFORE it is sent -- seeing what goes to the
