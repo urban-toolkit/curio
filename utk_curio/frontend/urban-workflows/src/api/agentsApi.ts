@@ -275,9 +275,16 @@ export interface AgentDatasetCandidateRow {
   sourceId?: string;
   resourceId?: string;
   /** Whether Curio can actually download this row. **Set by the runtime**
-   *  against the real source roster, never by the model: it may name a source,
-   *  it may not claim the run can act on one. */
+   *  against the real source roster and the probe, never by the model: it may
+   *  name a source, it may not claim the run can act on one. A row Curio
+   *  downloads offers only that, never the portal steps. */
   acquirable?: boolean;
+  /** A confirmed pick Curio downloaded, or is downloading: where it came from. */
+  lakeSource?: { sourceId?: string; resourceId?: string };
+  /** A confirmed pick whose download is still running. */
+  acquiring?: { jobId: string };
+  /** Why a confirmed row's download failed. */
+  acquireError?: string;
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {
@@ -372,13 +379,27 @@ export interface AgentDatasetSelection {
       | "manual-download"
       | "no-builder"
       | "skipped"
+      | "acquiring"
+      | "acquire-failed"
       | string;
     reason?: string;
     attachmentId?: string;
     nodeId?: string;
     executionId?: string;
     sources?: string[];
+    jobIds?: string[];
   };
+  /** The Data Lake downloads the confirmation started, one per acquirable row. */
+  acquisitions?: {
+    name?: string;
+    sourceId: string;
+    resourceId: string;
+    status: "acquired" | "acquiring" | "failed" | string;
+    datasetId?: string;
+    jobId?: string;
+    error?: string;
+    alreadyPresent?: boolean;
+  }[];
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */

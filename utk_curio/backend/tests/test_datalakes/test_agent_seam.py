@@ -16,10 +16,12 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import content, tools
+from utk_curio.backend.app.agents import content, tools, verify
 from utk_curio.backend.app.agents.services import (
     _egress_cost,
-    _mark_acquirable_candidates,
+    _LazyRoster,
+    _mint_row_acquirable,
+    _verify_candidate_parts,
 )
 
 
@@ -144,48 +146,81 @@ class TestTheCandidateLane:
 
 
 class TestOnlyTheRuntimeSaysActionable:
-    """The model may NAME a source; it may not claim the run can act on it.
+    """The model may NAME a source; it may not claim Curio can download it.
 
     This is the catalog lane's mandatory-``datasetId`` discipline applied one
-    lane over.
+    lane over. One function answers it, from the roster and the probe.
     """
 
-    def _parts(self, **row):
-        base = {"name": "Bike Routes", "sourceType": "lake"}
-        base.update(row)
-        return [{"type": "datasetCandidates", "lanes": {"external": [base]}}]
+    CHICAGO = {"sourceId": "lake.cityofchicago.data-portal@1", "resourceId": "ijzp-q8t2"}
+    DIRECT = "lake.curio.direct-url@1"
+    URL = "https://data.example.org/areas.geojson"
+    GEOJSON = {"status": "verified", "httpStatus": 200, "contentType": "application/geo+json"}
 
-    def _row(self, parts):
-        return parts[0]["lanes"]["external"][0]
+    def _row(self, **fields):
+        row = {"name": "Bike Routes", "sourceType": "lake", **fields}
+        if "verification" in row:
+            row["access"] = verify.classify_access(row["verification"], row.get("url"))["access"]
+        _mint_row_acquirable(row, _LazyRoster())
+        return row
 
     def test_a_model_claim_is_stripped(self, app, shipped_root):
-        parts = self._parts(acquirable=True)
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(acquirable=True).get("acquirable") is None
 
-    def test_a_real_source_with_the_grant_is_marked(self, app, shipped_root):
-        parts = self._parts(
-            sourceId="lake.cityofchicago.data-portal@1", resourceId="ijzp-q8t2"
-        )
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts)["acquirable"] is True
+    def test_a_real_connector_source_is_marked(self, app, shipped_root):
+        assert self._row(**self.CHICAGO)["acquirable"] is True
 
-    def test_without_the_grant_nothing_is_marked(self, app, shipped_root):
-        parts = self._parts(
-            sourceId="lake.cityofchicago.data-portal@1", resourceId="ijzp-q8t2"
-        )
-        _mark_acquirable_candidates(parts, {"catalog.search"})
-        assert self._row(parts).get("acquirable") is None
+    def test_the_run_grant_does_not_decide_it(self, app, shipped_root):
+        # A person confirming the row uses the download route, which needs only
+        # their sign-in; there is no grant to consult here at all.
+        row = {"name": "Bike Routes", "sourceType": "lake", **self.CHICAGO}
+        parts = [{"type": "datasetCandidates", "lanes": {"external": [row]}}]
+        _verify_candidate_parts(parts)
+        assert row["acquirable"] is True
+
+    def test_a_connector_row_whose_landing_page_is_a_portal_is_still_downloadable(
+        self, app, shipped_root
+    ):
+        row = self._row(**self.CHICAGO, url="https://data.cityofchicago.org/d/ijzp-q8t2",
+                        verification={"status": "verified", "httpStatus": 200,
+                                      "contentType": "text/html"})
+        assert row["access"] == verify.ACCESS_MANUAL
+        assert row["acquirable"] is True
 
     def test_an_invented_source_is_not_marked(self, app, shipped_root):
-        parts = self._parts(sourceId="lake.made.up@1", resourceId="x")
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(sourceId="lake.made.up@1", resourceId="x").get("acquirable") is None
 
     def test_a_row_with_no_coordinate_is_not_marked(self, app, shipped_root):
-        parts = self._parts(url="https://a.example/x")
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(url="https://a.example/x").get("acquirable") is None
+
+    def test_a_direct_url_row_needs_the_probe(self, app, shipped_root):
+        row = self._row(sourceId=self.DIRECT, resourceId=self.URL, url=self.URL,
+                        verification=self.GEOJSON)
+        assert row["acquirable"] is True
+
+    def test_a_direct_url_row_is_refused_on_any_missing_condition(self, app, shipped_root):
+        http = self.URL.replace("https://", "http://")
+        cases = {
+            "not https": dict(resourceId=http, url=http, verification=self.GEOJSON),
+            "resourceId is not the probed url": dict(
+                resourceId="https://elsewhere.example/x.geojson", url=self.URL,
+                verification=self.GEOJSON),
+            "the probe saw a page": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200, "contentType": "text/html"}),
+            "a type the source cannot store": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200,
+                "contentType": "application/octet-stream"}),
+            "an archive": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200, "contentType": "application/zip"}),
+        }
+        for why, fields in cases.items():
+            assert self._row(sourceId=self.DIRECT, **fields).get("acquirable") is None, why
+
+    def test_a_charset_parameter_does_not_hide_the_type(self, app, shipped_root):
+        row = self._row(sourceId=self.DIRECT, resourceId=self.URL, url=self.URL,
+                        verification={**self.GEOJSON,
+                                      "contentType": "application/geo+json; charset=utf-8"})
+        assert row["acquirable"] is True
 
 
 class TestTheInstructionIsGrantShaped:

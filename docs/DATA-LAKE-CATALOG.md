@@ -386,9 +386,13 @@ for it. It just stops being the only answer.
 
 A candidate row may carry a `sourceId` and `resourceId` copied from a
 `datalake.search` result. Whether Curio can actually download it is decided
-**server-side**, against the real roster and the run's own grants - the model
-may name a source, it may not claim the run can act on one. Any `acquirable`
-the model sets is stripped before the check.
+**server-side**: a connector source must be in the roster and offer downloads,
+and a Direct URL row must be an https link the probe read as a format the
+source stores, with the link itself as its `resourceId`. The model may name a
+source; it may not claim Curio can act on one, and any `acquirable` it sets is
+stripped before the check. Confirming a downloadable row on the card downloads
+it with your own sign-in; an agent's download proposal still needs the
+`datalake.acquire` grant.
 
 This is the same discipline the catalog lane already has, where a row without a
 `datasetId` from `catalog.search` is dropped.

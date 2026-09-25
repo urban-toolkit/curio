@@ -145,6 +145,10 @@ def _picks_detail(record: dict) -> str:
 
 
 def _pending_detail(record: dict, status: str) -> str:
+    if status == STATE_AWAITING_INSTALL and any(
+        p.get("acquiring") for p in record.get("picks") or [] if isinstance(p, dict)
+    ):
+        return f"{_picks_detail(record)}: downloading into the Data Catalog"
     if status == STATE_AWAITING_INSTALL:
         return f"{_picks_detail(record)} — waiting for the reviewed install"
     count = record.get("candidates")
@@ -200,7 +204,8 @@ def resolve_picks(
     """Resolve client-supplied ``{lane, key}`` picks against the runtime's OWN
     candidate rows (the persisted ``datasetCandidates`` part).
 
-    The key is a catalog row's ``datasetId`` or an external row's ``url`` — the
+    The key is a catalog row's ``datasetId`` or an external row's ``url``, or
+    for an external row with no url its Data Lake coordinate (``row_key``). The
     client never sends a name, path or URL of its own, so a selection cannot
     introduce a source the runtime did not propose and probe. Raises
     ``DatasetResolutionError`` naming the first key that does not resolve.
@@ -228,9 +233,8 @@ def resolve_picks(
                 f"each pick needs a lane ({' or '.join(_LANES)}) and a key, got {pick!r}"
             )
         rows = lanes.get(lane) or []
-        field = "datasetId" if lane == "catalog" else "url"
         row = next(
-            (r for r in rows if isinstance(r, dict) and str(r.get(field) or "") == key.strip()),
+            (r for r in rows if isinstance(r, dict) and row_key(lane, r) == key.strip()),
             None,
         )
         if row is None and lane == "catalog":
@@ -250,6 +254,97 @@ def resolve_picks(
         seen.add((lane, key))
         resolved.append({"lane": lane, **row})
     return resolved
+
+
+def row_key(lane: str, row: dict) -> str:
+    """How a pick addresses a candidate row: a catalog row by ``datasetId``, an
+    external row by ``url``, or by ``sourceId/resourceId`` when it has none."""
+    if lane == "catalog":
+        return str(row.get("datasetId") or "")
+    if row.get("url"):
+        return str(row["url"])
+    if row.get("sourceId") and row.get("resourceId"):
+        return f"{row['sourceId']}/{row['resourceId']}"
+    return ""
+
+
+def _needs_install(pick: dict) -> bool:
+    """A catalog pick whose file is not readable yet: neither installed into the
+    dataflow nor held in the account store (a download still running counts)."""
+    return pick.get("lane") == "catalog" and not pick.get("installed") and not pick.get("imported")
+
+
+def acquired_pick(row: dict, dataset_id: str) -> dict:
+    """The catalog pick a downloaded external row becomes. The file is in the
+    account store, so ``curio_dataset_path("<id>")`` resolves it like an import."""
+    return {
+        "lane": "catalog",
+        "name": str(row.get("name") or dataset_id)[:120],
+        "sourceType": "catalog",
+        "datasetId": str(dataset_id),
+        "installed": False,
+        "imported": True,
+        "lakeSource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+    }
+
+
+def acquiring_pick(row: dict, job_id: object) -> dict:
+    """The catalog pick for a download still running. It waits like an
+    uninstalled dataset until ``settle_acquisitions`` sees the file held."""
+    return {
+        "lane": "catalog",
+        "name": str(row.get("name") or row.get("resourceId") or "")[:120],
+        "sourceType": "catalog",
+        "installed": False,
+        "lakeSource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+        "acquiring": {"jobId": str(job_id or "")},
+    }
+
+
+def has_acquiring_picks(spec: dict | None) -> bool:
+    """Whether any node waits on a download, so a caller can skip the lookup."""
+    from utk_curio.backend.app.agents import attachments
+
+    for record in attachments.list_attachments(spec or {}):
+        state = record.get(RECORD_KEY)
+        if isinstance(state, dict) and any(
+            isinstance(p, dict) and p.get("acquiring") for p in state.get("picks") or []
+        ):
+            return True
+    return False
+
+
+def settle_acquisitions(spec: dict, held: dict) -> list[str]:
+    """Resolve picks whose download has landed since they were confirmed.
+
+    ``held`` maps ``(sourceId, resourceId)`` to the id of the dataset the
+    account holds from that resource. Returns the attachment ids that changed.
+    """
+    from utk_curio.backend.app.agents import attachments
+
+    changed: list[str] = []
+    for record in attachments.list_attachments(spec):
+        state = record.get(RECORD_KEY)
+        if not isinstance(state, dict) or state.get("status") != STATE_AWAITING_INSTALL:
+            continue
+        picks = state.get("picks") or []
+        settled = False
+        for index, pick in enumerate(picks):
+            if not isinstance(pick, dict) or not pick.get("acquiring"):
+                continue
+            lake = pick.get("lakeSource") or {}
+            dataset_id = held.get((lake.get("sourceId"), lake.get("resourceId")))
+            if dataset_id:
+                picks[index] = acquired_pick({**lake, "name": pick.get("name")}, dataset_id)
+                settled = True
+        if not settled:
+            continue
+        if not any(_needs_install(p) for p in picks if isinstance(p, dict)):
+            state["status"] = STATE_RESOLVED
+        state["recordedAt"] = _now()
+        record["revision"] = int(record.get("revision", 1)) + 1
+        changed.append(record.get("attachmentId"))
+    return changed
 
 
 def _catalog_row(catalog_rows: list[dict] | None, dataset_id: str) -> dict | None:
@@ -284,18 +379,13 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
         return None
-    needs_install = [
-        r for r in rows
-        if r["lane"] == "catalog"
-        and not r.get("installed")
-        # dev/132: a dataset the user brought in themselves after the card was
-        # minted — the Import button under a portal row's download steps. Its
-        # file is in their own account store and ``curio_dataset_path("<id>")``
-        # resolves it, so the node is RESOLVED: the reviewed install lane adds
-        # a dataset to the DATAFLOW, which is a separate act and not what
-        # reading the file needs.
-        and not r.get("imported")
-    ]
+    # dev/132: a dataset the user brought in themselves after the card was
+    # minted (the Import button under a portal row's download steps) is
+    # ``imported``: its file is in their own account store and
+    # ``curio_dataset_path("<id>")`` resolves it, so the node is RESOLVED. The
+    # reviewed install lane adds a dataset to the DATAFLOW, which is a separate
+    # act and not what reading the file needs.
+    needs_install = [r for r in rows if _needs_install(r)]
     unreachable = [
         r for r in rows
         if r["lane"] == "external" and (r.get("verification") or {}).get("status") == "unreachable"
@@ -333,7 +423,7 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
         for pick in picks:
             if str(pick.get("datasetId") or "") == str(dataset_id):
                 pick["installed"] = True
-        if all(p.get("installed") for p in picks if p.get("lane") == "catalog"):
+        if not any(_needs_install(p) for p in picks if isinstance(p, dict)):
             state["status"] = STATE_RESOLVED
             state["recordedAt"] = _now()
             record["revision"] = int(record.get("revision", 1)) + 1
@@ -362,7 +452,10 @@ def confirmed_source(spec: dict | None, node_id: str) -> dict | None:
               # dev/132: whether code can fetch this row, and the portal steps
               # when it cannot — the builder must not author a fetch for a
               # source that only exists behind a browser download.
-              "verification", "access", "accessWhy", "downloadSteps")}
+              "verification", "access", "accessWhy", "downloadSteps",
+              # The Data Lake coordinate, and whether Curio downloads it: a
+              # builder must not write fetch code for a row Curio downloads.
+              "sourceId", "resourceId", "acquirable", "lakeSource")}
             for pick in picks
         ],
     }
