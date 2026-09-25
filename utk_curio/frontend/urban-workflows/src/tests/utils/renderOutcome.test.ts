@@ -31,6 +31,18 @@ describe("renderOutcome", () => {
     expect(outcome.message).toContain("available: table_osm");
   });
 
+  it("blames the upstream, not the names, when no data was at hand at all", () => {
+    const outcome = renderOutcome({
+      rowsIn: 0,
+      layersRequested: 2,
+      layersDrawn: 0,
+      requestedRefs: ["table_osm_roads", "table_osm_parks"],
+      availableRefs: [],
+    });
+    expect(outcome.cause).toBe("no-input-rows");
+    expect(outcome.message).toContain("not at fault");
+  });
+
   it("blames the UPSTREAM when nothing arrived", () => {
     const outcome = renderOutcome({ rowsIn: 0, drawn: 0 });
     expect(outcome.cause).toBe("no-input-rows");

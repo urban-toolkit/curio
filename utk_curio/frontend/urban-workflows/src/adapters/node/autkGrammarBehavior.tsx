@@ -477,10 +477,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     requestedRefs,
                     availableRefs,
                     emptyRefs,
-                    // No claim when the document names no table to count.
-                    rowsIn: resolvedRows.length > 0
-                        ? totalCount(resolvedRows.map((t) => t.rows))
-                        : undefined,
+                    // A table named while none is at hand is a known zero:
+                    // nothing arrived and nothing was loaded. Otherwise no
+                    // claim when the document names no table to count.
+                    rowsIn: knownNames.size === 0 && requestedRefs.length > 0
+                        ? 0
+                        : resolvedRows.length > 0
+                            ? totalCount(resolvedRows.map((t) => t.rows))
+                            : undefined,
                     sourceRows: ownRows.length > 0
                         ? totalCount(ownRows.map((t) => t.rows))
                         : undefined,

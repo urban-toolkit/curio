@@ -10,7 +10,8 @@
  * The rule's ORDER is the attribution, and attribution is the point: the fix
  * for an empty plot depends entirely on what emptied it.
  *
- * 1. `no-layers`: the document names data this dataflow does not produce.
+ * 1. `no-layers`: the document names data this dataflow does not produce,
+ *    while other data is at hand. With no data at all, rule 3 applies.
  * 2. `empty-source`: the node's OWN data sources loaded zero rows; a data
  *    node loads its own rows, so the document is what must change.
  * 3. `no-input-rows`: nothing arrived; the UPSTREAM is what must change.
@@ -103,9 +104,13 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
 
   // 1. Every layer the document asked for was dropped: there is nothing to
   //    draw FROM, whatever the data holds. The document is what must change.
+  //    Unless nothing was at hand at all: then no name could have resolved,
+  //    and what must change is whatever should have fed the node.
+  const nothingAtHand = Array.isArray(counts.availableRefs) && counts.availableRefs.length === 0;
   if (
     typeof layersRequested === "number" && layersRequested > 0 &&
-    typeof layersResolved === "number" && layersResolved === 0
+    typeof layersResolved === "number" && layersResolved === 0 &&
+    !nothingAtHand
   ) {
     return {
       empty: true,

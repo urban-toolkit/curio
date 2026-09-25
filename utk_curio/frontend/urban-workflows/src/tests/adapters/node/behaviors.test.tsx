@@ -826,6 +826,27 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         mockAutkDbGetLayerTables.mockReturnValue([]);
       });
 
+      test('a map whose upstream delivered nothing blames the upstream, not its layerRefs', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: undefined as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            map: { layerRefs: [{ dataRef: 'table_osm_roads' }] },
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // No table arrived at all, so no name could have resolved: the node
+        // that should feed this one is what must change.
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).not.toContain('does not produce');
+      });
+
       test('a compute node fed an empty upstream reports no-input-rows', async () => {
         const setOutput = jest.fn();
         const result = await callBehavior(
