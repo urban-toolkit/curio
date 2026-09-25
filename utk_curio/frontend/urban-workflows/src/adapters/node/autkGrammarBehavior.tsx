@@ -14,6 +14,7 @@ import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
+import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -159,10 +160,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         // (water/parks/buildings) re-load with the right processing.
                         ...(layerType ? { layerType } : {}),
                     }));
-                    if (!layers.some((l) => l.name === 'upstream')) {
+                    if (!layers.some((l) => l.name === AUTK_UPSTREAM_LAYER)) {
                         const { fc } = layers[0];
                         upstreamSources.unshift({
-                            type: 'geojson', geojsonObject: fc, outputTableName: 'upstream',
+                            type: 'geojson', geojsonObject: fc, outputTableName: AUTK_UPSTREAM_LAYER,
                             coordinateFormat: detectCoordinateFormat(fc),
                         });
                     }
@@ -1924,7 +1925,7 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
         arg.data.forEach((item: any, i: number) => {
             if (item && item.dataType === 'geodataframe' && item.data?.type === 'FeatureCollection') {
                 out.push({
-                    name: item.layerName ?? `upstream_${i}`,
+                    name: item.layerName ?? `${AUTK_UPSTREAM_LAYER}_${i}`,
                     fc: item.data as FeatureCollection,
                     layerType: item.layerType,
                 });
@@ -1936,7 +1937,7 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
         const fc = arg.data;
         if (fc.type === 'FeatureCollection') {
             return [{
-                name: arg.layerName ?? 'upstream',
+                name: arg.layerName ?? AUTK_UPSTREAM_LAYER,
                 fc: fc as FeatureCollection,
                 layerType: arg.layerType,
             }];
@@ -1968,7 +1969,7 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
             const fc = asFc(item);
             if (fc) {
                 const u = unwrap(item);
-                const name = u && typeof u === 'object' && u.name ? String(u.name) : `upstream_${i}`;
+                const name = u && typeof u === 'object' && u.name ? String(u.name) : `${AUTK_UPSTREAM_LAYER}_${i}`;
                 // u.type is the autk-db layer type ('surface'/'roads'/…) on a layer
                 // record; ignore a bare FeatureCollection's own type field.
                 const layerType = u && typeof u === 'object' && u.geojson && typeof u.type === 'string'
@@ -1981,7 +1982,7 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
 
     // Direct FeatureCollection (e.g. a single Python GeoDataFrame).
     const fc = asFc(arg);
-    return fc ? [{ name: 'upstream', fc }] : [];
+    return fc ? [{ name: AUTK_UPSTREAM_LAYER, fc }] : [];
 }
 
 async function resolveUpstreamAsGeoJson(raw: any): Promise<FeatureCollection | null> {

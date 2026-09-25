@@ -15,15 +15,6 @@ const lite = require('vega-lite');
 export const vegaLiteAdapter: GrammarAdapter = {
   grammarId: 'vega-lite',
 
-  validate(spec: unknown): boolean {
-    try {
-      const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed);
-    } catch {
-      return false;
-    }
-  },
-
   async render(
     container: HTMLElement,
     spec: unknown,

@@ -11,7 +11,7 @@ saved spec, so the mint, both apply paths, and the applied summary agree:
    exclude them.
 2. Are the plan's interaction edges legal?  The default preamble teaches the
    rule ("Visualizations can be connected to DATA_POOL with an edge of type
-   Interaction"; capable nodes: VIS_VEGA, AUTK_MAP, VIS_SIMPLE, DATA_POOL) —
+   Interaction"; capable nodes: VIS_VEGA, AUTK_GRAMMAR, VIS_SIMPLE, DATA_POOL) —
    here it is executable: one endpoint is a data-pool node, the other an
    interaction-capable visualization.
 
