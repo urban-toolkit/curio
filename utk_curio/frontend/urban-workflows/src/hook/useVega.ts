@@ -8,6 +8,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
+import { usableCounts } from "../utils/vegaUsableRows";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 // The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
@@ -268,42 +269,6 @@ export const useVega = ({
     return counts;
   };
 
-  // dev/137: the fields this document plots, and how many rows hold a usable
-  // value in them. A chart handed rows that are all null in its encoded field
-  // draws nothing whether the renderer drops those rows or draws zero-extent
-  // marks — so the DATA decides, not the scene graph.
-  const encodedFields = (spec: any): string[] => {
-    const out: string[] = [];
-    const walk = (node: any) => {
-      if (!node || typeof node !== "object") return;
-      if (Array.isArray(node)) { node.forEach(walk); return; }
-      for (const [key, value] of Object.entries(node)) {
-        if (key === "encoding" && value && typeof value === "object") {
-          for (const channel of Object.values(value as Record<string, any>)) {
-            const field = (channel as any)?.field;
-            if (typeof field === "string" && field && !out.includes(field)) {
-              out.push(field);
-            }
-          }
-        }
-        walk(value);
-      }
-    };
-    walk(spec);
-    return out;
-  };
-
-  const usableRowCount = (values: any[], fields: string[]): number | undefined => {
-    if (!Array.isArray(values) || fields.length === 0) return undefined;
-    return values.filter((row) =>
-      fields.some((field) => {
-        const value = row?.[field];
-        return value !== null && value !== undefined && value !== ""
-          && !(typeof value === "number" && Number.isNaN(value));
-      }),
-    ).length;
-  };
-
   const compileGrammar = async (specObj: any) => {
     // Prepare before the spec is handed to vega-lite: resolving geometry can
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the
@@ -313,8 +278,8 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.values;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
-    const usableFields = encodedFields(specObj);
-    const usableRows = usableRowCount(values, usableFields);
+    // dev/137: judged over the fields the input carries; see vegaUsableRows.
+    const { usableRows, usableFields } = usableCounts(values, specObj);
 
     if (prepared.emptyReason != null) {
       // Nothing was injected and there is nothing sensible to draw. Compiling
