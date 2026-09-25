@@ -9,7 +9,7 @@ import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
-import { partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
+import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
@@ -183,6 +183,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
+        // What a data or compute run can count about itself, read by the
+        // empty-render gate below. Null when the run made no count at all.
+        let runCounts: RenderCounts | null = null;
+        // Whether `summary` lists what the run produced. An empty list reads
+        // "the spec names no tables", which must not follow an empty-render
+        // verdict that already said what went wrong.
+        let summaryListsItems = false;
         try {
             // ── Data section → backend sandbox ──────────────────────────────
             // The authored data sources are compiled to autk-db JavaScript and
@@ -241,6 +248,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // compute/map/plot in the browser. Backend layers are already
                 // projected to the workspace CRS (EPSG:3395).
                 let dataSectionSources = upstreamSources;
+                // The sources this node's own data section loaded, as opposed to
+                // what arrived from upstream: an empty one is the document's fault.
+                let ownSources: any[] = [];
                 if (specDataSources.length > 0) {
                     let layers: Array<{ name: string; type?: string; geojson: any }> = [];
                     try {
@@ -271,7 +281,21 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         coordinateFormat: detectCoordinateFormat(l.geojson as any),
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                     }));
+                    ownSources = backendAsSources;
                     dataSectionSources = [...upstreamSources, ...backendAsSources];
+                }
+                // What the document can draw from, counted BEFORE any source is
+                // dropped: an empty table still exists, so a ref to it is not a
+                // ref to data the dataflow does not produce (that would be rule
+                // 1, `no-layers`, blaming the wrong thing). `rows` is undefined
+                // when the collection could not be counted.
+                const tableRows = new Map<string, { rows: number | undefined; own: boolean }>();
+                for (const s of dataSectionSources) {
+                    if (typeof s?.outputTableName !== 'string' || !s.outputTableName) continue;
+                    tableRows.set(s.outputTableName, {
+                        rows: featureCount(s.geojsonObject),
+                        own: ownSources.includes(s),
+                    });
                 }
                 // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection,
                 // where 2.0.1 created an empty table that refs could still resolve
@@ -284,10 +308,11 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // Drop empty sources, then keep only refs that point at a table this
                 // node can actually create. Net effect mirrors 2.0.1: layers with
                 // data render; empty/absent ones contribute nothing. Each drop is
-                // logged — a silently stripped layer otherwise reads as a blank map.
+                // logged, since a silently stripped layer otherwise reads as a
+                // blank map. A collection that cannot be counted cannot be loaded
+                // either, so it is dropped too; its count above stays unknown.
                 const emptySources = dataSectionSources.filter(
-                    (s: any) => s?.type === 'geojson'
-                        && (s?.geojsonObject?.features?.length ?? 0) === 0,
+                    (s: any) => s?.type === 'geojson' && !hasFeatures(s?.geojsonObject),
                 );
                 if (emptySources.length > 0) {
                     console.warn(
@@ -318,33 +343,48 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         : []),
                     ...(spec.plot?.dataRef ? [String(spec.plot.dataRef)] : []),
                 ];
-                let availableRefs: string[] = [];
-                if (dataSectionSources.length > 0) {
+                // Every table this node holds, empty ones included, is what the
+                // document could have named; only the non-empty ones can be
+                // handed to the grammar.
+                const knownNames = new Set<string>(tableRows.keys());
+                const availableRefs: string[] = [...knownNames];
+                if (knownNames.size > 0) {
                     const availableNames = new Set<string>(
                         dataSectionSources
                             .map((s: any) => s?.outputTableName)
                             .filter(Boolean),
                     );
-                    availableRefs = [...availableNames];
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && !availableNames.has(r.dataRef),
+                            (r: any) => r?.dataRef && !knownNames.has(r.dataRef),
+                        );
+                        const empty = spec.map.layerRefs.filter(
+                            (r: any) => r?.dataRef && knownNames.has(r.dataRef)
+                                && !availableNames.has(r.dataRef),
                         );
                         if (dangling.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
                                 + dangling.map((r: any) => r.dataRef).join(', ')
-                                + ' — available: ' + [...availableNames].join(', '),
+                                + ' - available: ' + [...availableNames].join(', '),
                             );
+                        }
+                        if (empty.length > 0) {
+                            console.warn(
+                                '[autk-grammar] dropping map layerRef(s) to empty table(s): '
+                                + empty.map((r: any) => r.dataRef).join(', '),
+                            );
+                        }
+                        if (dangling.length > 0 || empty.length > 0) {
                             spec.map = {
                                 ...spec.map,
                                 layerRefs: spec.map.layerRefs.filter(
-                                    (r: any) => !dangling.includes(r),
+                                    (r: any) => !dangling.includes(r) && !empty.includes(r),
                                 ),
                             };
                         }
                     }
-                    // A plot bound to an unavailable layer has nothing to draw —
+                    // A plot bound to an unavailable layer has nothing to draw:
                     // drop it rather than fail resolving the missing table.
                     if (spec.plot && (
                         (spec.plot.dataRef && !availableNames.has(spec.plot.dataRef))
@@ -353,12 +393,18 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         console.warn(
                             '[autk-grammar] dropping plot bound to unavailable table: '
                             + (spec.plot.dataRef ?? spec.plot.mapRef)
-                            + ' — available: ' + [...availableNames].join(', '),
+                            + ' - available: ' + [...availableNames].join(', '),
                         );
                         const { plot, ...rest } = spec;
                         spec = rest;
                     }
                 }
+                // The refs that name a table this node holds, whether or not it
+                // had rows: what the document resolved against, and what its
+                // row counts are read from.
+                const resolvedRefs = [...new Set(requestedRefs)].filter((r) => knownNames.has(r));
+                const resolvedRows = resolvedRefs.map((r) => tableRows.get(r)!);
+                const ownRows = resolvedRows.filter((t) => t.own);
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
@@ -408,21 +454,41 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 }
 
                 // dev/136: did this map/plot actually draw? The layers that
-                // survived resolution are what there was to draw FROM, so an
-                // empty set is an empty render — reported, not warned about.
+                // resolved are what there was to draw FROM, so an empty set is
+                // an empty render, reported rather than warned about. A ref to
+                // an EMPTY table resolved; its zero rows are what `rowsIn` and
+                // `sourceRows` report instead. The layers handed to the grammar
+                // are what it drew, and the gap is what the partial note names.
+                // autk-grammar's run() returns nothing, so there is no
+                // drawn-mark count.
+                const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
+                    + (spec.plot && !spec.plot.dataRef ? 1 : 0);
                 const layersDrawn = (Array.isArray(spec.map?.layerRefs)
                     ? spec.map.layerRefs.length
                     : 0) + (spec.plot ? 1 : 0);
-                const renderCounts = {
+                const emptyRefs = requestedRefs.filter((r) => {
+                    const table = tableRows.get(r);
+                    return !!table && !(typeof table.rows === 'number' && table.rows > 0);
+                });
+                const renderCounts: RenderCounts = {
                     layersRequested: requestedRefs.length,
+                    layersResolved,
                     layersDrawn,
                     requestedRefs,
                     availableRefs,
+                    emptyRefs,
+                    // No claim when the document names no table to count.
+                    rowsIn: resolvedRows.length > 0
+                        ? totalCount(resolvedRows.map((t) => t.rows))
+                        : undefined,
+                    sourceRows: ownRows.length > 0
+                        ? totalCount(ownRows.map((t) => t.rows))
+                        : undefined,
                 };
                 const outcome = renderOutcome(renderCounts);
                 if (outcome.empty) {
                     emit({ code: 'error', content: outcome.message,
-                           kind: `empty-render:${outcome.cause}` } as any);
+                           kind: emptyRenderKind(outcome.cause) } as any);
                     showToast(outcome.message, 'error');
                     return;
                 }
@@ -430,9 +496,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     data.outputCallback(data.nodeId, data.input ?? null);
                 }
                 // A partial drop still drew something; say what it lost rather
-                // than leaving the console as the only record.
+                // than leaving the console as the only record. It rides as the
+                // success output, since a render node's body is its map.
                 const note = partialRenderNote(renderCounts);
-                if (note) setRunSummary(note);
+                if (note) summary = note;
             } else {
                 // Data-only node: emit the data downstream.
                 grammarRef.current = null;
@@ -453,10 +520,18 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // The backend path hands back an artifact ref, not the
                     // tables, so name what the spec asked autk-db to create -
                     // a short load has already failed above, so these exist.
+                    // Their rows are unknown there, so no emptiness is claimed;
+                    // only layers in hand are counted.
                     const tables = backendLayers
-                        ? backendLayers.map((l) => `${l.name} (${l.geojson?.features?.length ?? 0} features)`)
+                        ? backendLayers.map((l) => countedItem(l.name, featureCount(l.geojson), 'features'))
                         : requestedLayerTables(specDataSources);
                     summary = describeAutkRun('Loaded', 'table', tables);
+                    summaryListsItems = tables.length > 0;
+                    runCounts = {
+                        sourceRows: backendLayers
+                            ? totalCount(backendLayers.map((l) => featureCount(l.geojson)))
+                            : undefined,
+                    };
                 } else {
                     // Compute-only node: skip the extra AutkDb round-trip — upstream layers
                     // (from backend, or the in-browser fallback) are already normalized and
@@ -464,6 +539,12 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // strip custom per-feature properties. Apply WGSL blocks directly so the
                     // outputs (feature.properties.compute.<col>) reach downstream untouched.
                     const upstream = await resolveUpstreamLayers(data.input);
+                    // The rows that arrived, counted before the empty-layer drop
+                    // below hides them. No layer at all (nothing connected, or
+                    // an input this node cannot read) is no claim, not zero.
+                    const rowsIn = upstream.length > 0
+                        ? totalCount(upstream.map((u) => featureCount(u.fc)))
+                        : undefined;
                     let layers = upstream.map((u) => ({
                         name: u.name,
                         type: u.layerType ?? 'polygons',
@@ -474,9 +555,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // blank tab in the downstream Data Pool). Mirrors 2.0.1's
                     // empty-table tolerance; the compute below then only runs on
                     // layers that have features.
-                    const emptyLayers = layers.filter(
-                        (l) => ((l.geojson as any)?.features?.length ?? 0) === 0,
-                    );
+                    const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
                             '[autk-grammar] compute node dropping empty upstream layer(s): '
@@ -504,21 +583,28 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
-                        layers.map((l) => `${l.name} (${(l.geojson as any)?.features?.length ?? 0} rows)`),
+                        layers.map((l) => countedItem(l.name, featureCount(l.geojson), 'rows')),
                     );
+                    summaryListsItems = layers.length > 0;
+                    runCounts = {
+                        rowsIn,
+                        drawn: totalCount(layers.map((l) => featureCount(l.geojson))),
+                    };
                 }
             }
 
             // dev/136: a data or compute run that produced only EMPTY tables
-            // produced nothing, and `describeAutkRun` was already counting the
-            // rows — the count was in the sentence and nothing read it.
-            if (summary && emptyRunRows(summary) === 0) {
-                const message =
-                    'rendered nothing — every layer this run produced is empty ('
-                    + summary + '). The source it loads, or the query that '
-                    + 'filters it, is what must change.';
+            // produced nothing. The counts ride as data, so the same rules
+            // that judge a map decide who is at fault: a data node's own
+            // sources loading nothing is `empty-source`, a compute node fed
+            // nothing is `no-input-rows`.
+            const outcome = runCounts ? renderOutcome(runCounts) : null;
+            if (outcome?.empty) {
+                const message = summary && summaryListsItems
+                    ? `${outcome.message} ${summary.replace(/\.+$/, '')}.`
+                    : outcome.message;
                 emit({ code: 'error', content: message,
-                       kind: 'empty-render:nothing-drawn' } as any);
+                       kind: emptyRenderKind(outcome.cause) } as any);
                 showToast(message, 'error');
                 return;
             }
@@ -1010,19 +1096,36 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 export type { AutkSpecKind } from '../../utils/autkSpecKind';
 export { classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 
-/** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
 /**
- * The total rows a run summary reports, or ``undefined`` when it names none
- * (memo dev/136). ``describeAutkRun`` composes "Loaded 3 tables: a (0 rows),
- * b (0 rows), c (0 rows)" — the counts were already there; this reads them, so
- * an all-empty run stops reporting success.
+ * Features in a collection, or `undefined` when it is not one: an uncountable
+ * collection is unknown, never a guessed 0 (memo dev/136).
  */
-export function emptyRunRows(summary: string): number | undefined {
-    const matches = [...String(summary || "").matchAll(/\((\d+)\s+(?:rows|features)\)/g)];
-    if (matches.length === 0) return undefined;
-    return matches.reduce((total, m) => total + Number(m[1] || 0), 0);
+function featureCount(fc: any): number | undefined {
+    return Array.isArray(fc?.features) ? fc.features.length : undefined;
 }
 
+/** Whether a collection is known to hold at least one feature. */
+function hasFeatures(fc: any): boolean {
+    const count = featureCount(fc);
+    return typeof count === 'number' && count > 0;
+}
+
+/** The sum of the counts, or `undefined` when any of them is unknown. */
+function totalCount(counts: Array<number | undefined>): number | undefined {
+    let total = 0;
+    for (const count of counts) {
+        if (typeof count !== 'number') return undefined;
+        total += count;
+    }
+    return total;
+}
+
+/** ``name (N unit)`` when the count is known, else the bare name. */
+export function countedItem(name: string, count: number | undefined, unit: string): string {
+    return typeof count === 'number' ? `${name} (${count} ${unit})` : name;
+}
+
+/** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
 export function describeAutkRun(verb: string, noun: string, items: string[]): string {
     if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
     const plural = items.length === 1 ? noun : `${noun}s`;

@@ -5,7 +5,7 @@ import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useToastContext } from '../../providers/ToastProvider';
 import { fetchPreviewData } from '../../services/api';
-import { renderOutcome } from '../../utils/renderOutcome';
+import { emptyRenderKind, renderOutcome } from '../../utils/renderOutcome';
 import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
 import { activeGeometryName } from '../../utils/parsing';
@@ -105,7 +105,7 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
           code: 'error', content: outcome.message, outputType: '',
           // dev/136: the harness reads this rather than the prose — the
           // cause rides the kind, because the fix differs per cause.
-          kind: `empty-render:${outcome.cause}`,
+          kind: emptyRenderKind(outcome.cause),
         } as any);
         showToast(outcome.message, 'error');
         return;

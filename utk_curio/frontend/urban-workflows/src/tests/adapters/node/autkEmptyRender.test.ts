@@ -1,4 +1,4 @@
-import { emptyRunRows } from "../../../adapters/node/autkGrammarBehavior";
+import { countedItem, describeAutkRun } from "../../../adapters/node/autkGrammarBehavior";
 import { partialRenderNote, renderOutcome } from "../../../utils/renderOutcome";
 
 /**
@@ -7,33 +7,44 @@ import { partialRenderNote, renderOutcome } from "../../../utils/renderOutcome";
  * `autkGrammarBehavior` resolves `layerRefs` against the tables the data
  * section produced and DROPS the ones it cannot find, with a `console.warn` as
  * the only trace. When every ref is dropped, `grammar.run` renders a map with
- * no layers — a grey canvas — and the node emitted `success`. A data/compute
- * run whose every table is empty did the same: `describeAutkRun` had the
- * counts in its sentence and nothing read them.
+ * no layers (a grey canvas) and the node emitted `success`. A data/compute run
+ * whose every table is empty did the same.
  *
  * The decision itself is `renderOutcome`'s (tested in full beside it); these
- * pin the two Autark-specific readings that feed it.
+ * pin the Autark-specific readings that feed it. The counts ride as data, not
+ * as text parsed back out of the summary line.
  */
 
-describe("emptyRunRows — the counts describeAutkRun already wrote", () => {
-  it("totals the rows a load reports", () => {
-    expect(emptyRunRows("Loaded 2 tables: a (12 rows), b (3 rows)")).toBe(15);
+describe("the run summary prints only the counts it has", () => {
+  it("names the count when it is known", () => {
+    expect(countedItem("roads", 12, "features")).toBe("roads (12 features)");
+    expect(countedItem("roads", 0, "rows")).toBe("roads (0 rows)");
   });
 
-  it("is 0 when every table came back empty", () => {
-    expect(emptyRunRows("Loaded 3 tables: a (0 rows), b (0 rows), c (0 rows)")).toBe(0);
+  it("an unknown count is the bare name, never '(undefined features)'", () => {
+    expect(countedItem("roads", undefined, "features")).toBe("roads");
+    const line = describeAutkRun("Loaded", "table", [
+      countedItem("a", undefined, "features"),
+      countedItem("b", 3, "features"),
+    ]);
+    expect(line).toBe("Loaded 2 tables: a, b (3 features)");
+    expect(line).not.toContain("undefined");
+  });
+});
+
+describe("a data or compute run's own counts", () => {
+  it("a data node whose sources loaded zero rows is the document's fault", () => {
+    const outcome = renderOutcome({ sourceRows: 0 });
+    expect(outcome.empty).toBe(true);
+    expect(outcome.cause).toBe("empty-source");
   });
 
-  it("reads features as well as rows (a layer's own word)", () => {
-    expect(emptyRunRows("Loaded 2 tables: roads (0 features), parks (4 features)")).toBe(4);
+  it("a compute node fed zero rows is the upstream's fault", () => {
+    expect(renderOutcome({ rowsIn: 0, drawn: 0 }).cause).toBe("no-input-rows");
   });
 
-  it("makes no claim when the summary names no counts", () => {
-    // "Loaded nothing - the spec names no tables." and a render node's summary
-    // carry no counts: undefined, so nothing is reported as empty.
-    expect(emptyRunRows("Loaded nothing - the spec names no tables.")).toBeUndefined();
-    expect(emptyRunRows("")).toBeUndefined();
-    expect(emptyRunRows("Rendered the map")).toBeUndefined();
+  it("uncounted sources, the default sandbox path, give no verdict", () => {
+    expect(renderOutcome({ sourceRows: undefined }).empty).toBe(false);
   });
 });
 
@@ -62,6 +73,44 @@ describe("the map's own reading of what survived resolution", () => {
     };
     expect(renderOutcome(counts).empty).toBe(false);
     expect(partialRenderNote(counts)).toContain("drew 1 of 2 layers");
+  });
+
+  it("a ref to an EMPTY table resolved: its source is blamed, not the ref", () => {
+    // The table exists with zero rows, so it is not "data the dataflow does
+    // not produce"; the counts are kept from before empty sources are dropped.
+    // Nothing reached the grammar, but the ref resolved.
+    const outcome = renderOutcome({
+      layersRequested: 1,
+      layersResolved: 1,
+      layersDrawn: 0,
+      requestedRefs: ["parks"],
+      availableRefs: ["parks"],
+      rowsIn: 0,
+      sourceRows: 0,
+    });
+    expect(outcome.cause).toBe("empty-source");
+    // The same empty table arriving from UPSTREAM is the upstream's fault.
+    expect(renderOutcome({ layersRequested: 1, layersResolved: 1, layersDrawn: 0, rowsIn: 0 }).cause)
+      .toBe("no-input-rows");
+  });
+
+  it("a layer dropped for being empty is still noted on a render that drew", () => {
+    // roads drew; parks resolved but held no rows, so it never reached the
+    // grammar. Rule 1 does not fire, and the note names the empty table.
+    const counts = {
+      layersRequested: 2,
+      layersResolved: 2,
+      layersDrawn: 1,
+      requestedRefs: ["roads", "parks"],
+      availableRefs: ["roads", "parks"],
+      emptyRefs: ["parks"],
+      rowsIn: 12,
+    };
+    expect(renderOutcome(counts).empty).toBe(false);
+    const note = partialRenderNote(counts);
+    expect(note).toContain("drew 1 of 2 layers");
+    expect(note).toContain("parks has no rows");
+    expect(note).not.toContain("does not produce");
   });
 
   it("a map that asked for nothing is not reported as empty", () => {

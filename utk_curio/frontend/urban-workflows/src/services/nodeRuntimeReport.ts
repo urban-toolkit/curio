@@ -1,5 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import type { EMPTY_RENDER_KIND } from "../generated/renderCauses";
 
 /**
  * Report a node's own execution outcome to the runtime journal (memo dev/135).
@@ -43,7 +44,7 @@ export interface NodeRuntimeReport {
    * same problem as a render that drew nothing, and the corrections differ —
    * so the harness must not have to match prose to tell them apart.
    */
-  kind?: "empty-render" | string;
+  kind?: typeof EMPTY_RENDER_KIND | string;
 }
 
 const MESSAGE_CHARS = 2000;

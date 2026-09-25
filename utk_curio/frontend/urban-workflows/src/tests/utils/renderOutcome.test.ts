@@ -1,4 +1,13 @@
-import { partialRenderNote, renderOutcome } from "../../utils/renderOutcome";
+import {
+  emptyRenderKind,
+  partialRenderNote,
+  renderOutcome,
+} from "../../utils/renderOutcome";
+import {
+  DOCUMENT_AT_FAULT,
+  EMPTY_RENDER_KIND,
+  RENDER_CAUSES,
+} from "../../generated/renderCauses";
 
 /**
  * dev/136: the order of the rules IS the attribution, so the tests are mostly
@@ -28,6 +37,34 @@ describe("renderOutcome", () => {
     expect(outcome.message).toContain("0 rows arrived");
     // dev/133's rule, said out loud: this document is not at fault.
     expect(outcome.message).toContain("not at fault");
+  });
+
+  it("blames the document when its OWN sources loaded zero rows", () => {
+    const outcome = renderOutcome({ sourceRows: 0 });
+    expect(outcome.empty).toBe(true);
+    expect(outcome.cause).toBe("empty-source");
+    expect(outcome.message).toContain("returned 0 rows");
+    expect(outcome.message).not.toContain("not at fault");
+  });
+
+  it("an empty source outranks an empty input: the document names the source", () => {
+    expect(renderOutcome({ sourceRows: 0, rowsIn: 0, drawn: 0 }).cause)
+      .toBe("empty-source");
+    // But every layer dangling is still the first thing to fix.
+    expect(renderOutcome({
+      sourceRows: 0, rowsIn: 0, layersRequested: 1, layersDrawn: 0,
+    }).cause).toBe("no-layers");
+  });
+
+  it("an empty source is not an empty render when other rows arrived", () => {
+    // Own sources came back empty, but the upstream fed the render rows.
+    expect(renderOutcome({ sourceRows: 0, rowsIn: 5 }).empty).toBe(false);
+    expect(renderOutcome({ sourceRows: 0, rowsIn: 5, drawn: 0 }).cause)
+      .toBe("nothing-drawn");
+  });
+
+  it("some source rows with none arriving is the upstream's fault", () => {
+    expect(renderOutcome({ sourceRows: 4, rowsIn: 0 }).cause).toBe("no-input-rows");
   });
 
   it("reports an all-null encoded field, whatever the scene graph drew", () => {
@@ -81,11 +118,35 @@ describe("renderOutcome", () => {
     expect(outcome.empty).toBe(false);
   });
 
+  it("a resolved ref is not a missing layer, even when nothing was drawn", () => {
+    // Rule 1 reads the resolution count; the refs to empty tables resolved.
+    expect(renderOutcome({ layersRequested: 1, layersResolved: 1, layersDrawn: 0 }).empty)
+      .toBe(false);
+    expect(renderOutcome({ layersRequested: 1, layersResolved: 0, layersDrawn: 0 }).cause)
+      .toBe("no-layers");
+  });
+
   it("makes no claim when it cannot count", () => {
     expect(renderOutcome({}).empty).toBe(false);
     expect(renderOutcome({ drawn: 0 }).empty).toBe(false);          // rows unknown
     expect(renderOutcome({ rowsIn: 5 }).empty).toBe(false);         // marks unknown
     expect(renderOutcome({ layersRequested: 2 }).empty).toBe(false); // drawn unknown
+    expect(renderOutcome({ sourceRows: undefined }).empty).toBe(false); // sources unknown
+    expect(renderOutcome({ rowsIn: undefined, sourceRows: undefined, drawn: undefined }))
+      .toEqual({ empty: false, cause: null, message: "" });
+  });
+
+  it("every cause it reports is in the generated vocabulary", () => {
+    const reported = [
+      renderOutcome({ layersRequested: 1, layersDrawn: 0 }).cause,
+      renderOutcome({ sourceRows: 0 }).cause,
+      renderOutcome({ rowsIn: 0 }).cause,
+      renderOutcome({ rowsIn: 1, drawn: 0 }).cause,
+    ];
+    expect([...reported].sort()).toEqual([...RENDER_CAUSES].sort());
+    // Only an empty INPUT spares the document; the backend reads the same table.
+    expect(DOCUMENT_AT_FAULT["no-input-rows"]).toBe(false);
+    expect(DOCUMENT_AT_FAULT["empty-source"]).toBe(true);
   });
 
   it("bounds every message", () => {
@@ -120,9 +181,31 @@ describe("partialRenderNote", () => {
     expect(note).toContain("available: a");
   });
 
+  it("names empty tables apart from refs to data the dataflow does not produce", () => {
+    const note = partialRenderNote({
+      layersRequested: 3, layersDrawn: 1,
+      requestedRefs: ["a", "b", "c"], availableRefs: ["a", "b"],
+      emptyRefs: ["b"],
+    });
+    expect(note).toContain("drew 1 of 3 layers");
+    expect(note).toContain("b has no rows");
+    expect(note).toContain("the others name data the dataflow does not produce");
+  });
+
   it("says nothing when nothing was dropped, or when nothing was drawn", () => {
     expect(partialRenderNote({ layersRequested: 2, layersDrawn: 2 })).toBe("");
     expect(partialRenderNote({ layersRequested: 2, layersDrawn: 0 })).toBe("");
     expect(partialRenderNote({})).toBe("");
+  });
+});
+
+describe("emptyRenderKind", () => {
+  it("stamps the generated prefix and the cause", () => {
+    expect(emptyRenderKind("empty-source")).toBe(`${EMPTY_RENDER_KIND}:empty-source`);
+    expect(emptyRenderKind("no-input-rows")).toBe("empty-render:no-input-rows");
+  });
+
+  it("a missing cause leaves the bare prefix", () => {
+    expect(emptyRenderKind(null)).toBe(EMPTY_RENDER_KIND);
   });
 });
