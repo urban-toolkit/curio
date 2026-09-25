@@ -235,62 +235,143 @@ def _vega_message(exc: Exception) -> str:
     return _detail(" — ".join(parts))
 
 
-#: AUTK grammar: what the renderer requires of any document (memo dev/129,
-#: corrected by dev/134). Deliberately structural — the parts a document cannot
-#: run without — and honest that it is not the whole grammar.
-#:
-#: dev/134: the document has FOUR shapes, not one. ``autkGrammarBehavior``'s own
-#: ``classifyAutkSpec`` is the authority: ``map``/``plot`` render, ``compute``
-#: runs WGSL over upstream layers, and ``data`` only loads sources (the OSM/PBF
-#: pipelines six shipped examples use). dev/129 was written from one example and
-#: refused the other three families — invisible while the validator was
-#: unreachable, and a false refusal the moment dev/134 put it on the path.
+#: At most this many schema errors are reported, in the order the schema meets
+#: them, so the refusal stays inside ``_DETAIL_CHARS``.
+_MAX_SCHEMA_ERRORS = 5
+
+
 def validate_autk_grammar(content: str, *, columns: list | None = None) -> dict:
+    """An Autark document, against the grammar's own JSON Schema.
+
+    The schema is the vendored copy of what autk-grammar publishes
+    (``contracts.AUTK_SCHEMA_PATH``). One rule sits on top, because no schema
+    form says it: the document must load, compute or draw something, and a map
+    must list a layer (``_draws_nothing``).
+    """
+    from utk_curio.backend.app.agents import contracts
+
     payload, error = _parse_json(content)
     if error:
         return {"status": STATUS_INVALID, "detail": _detail(error)}
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
-                "detail": "an AUTK grammar document must be a JSON object"}
-    renders = payload.get("map") is not None or payload.get("plot") is not None
-    computes = isinstance(payload.get("compute"), list) and bool(payload["compute"])
-    loads = isinstance(payload.get("data"), list) and bool(payload["data"])
-    if not (renders or computes or loads):
-        return {"status": STATUS_INVALID,
-                "detail": 'the document names none of "map", "plot", "compute" or '
-                          '"data", so there is nothing for Autark to run — a map is '
-                          '{"map": {"layerRefs": [{"dataRef": "upstream", …}]}}, a '
-                          'loader is {"data": [{"type": "osm", …}]}'}
-    if not isinstance(payload.get("map"), dict):
-        # A plot-, compute- or data-only document: nothing more is structural.
-        return {"status": STATUS_VALID}
-    grammar = payload["map"]
-    layers = grammar.get("layerRefs")
-    if not isinstance(layers, list) or not layers:
-        return {"status": STATUS_INVALID,
-                "detail": '"map.layerRefs" must be a non-empty list — a map with no '
-                          "layer renders nothing"}
-    for index, layer in enumerate(layers):
-        if not isinstance(layer, dict):
-            return {"status": STATUS_INVALID,
-                    "detail": f'"map.layerRefs[{index}]" must be an object'}
-        if not str(layer.get("dataRef") or "").strip():
-            return {"status": STATUS_INVALID,
-                    "detail": f'"map.layerRefs[{index}].dataRef" is missing — a layer '
-                              "must name the data it draws (the metadata name the "
-                              "upstream node set)"}
-    view = grammar.get("initialView")
-    if view is not None:
-        if not isinstance(view, dict):
-            return {"status": STATUS_INVALID, "detail": '"map.initialView" must be an object'}
-        center = view.get("center")
-        if center is not None and not (
-            isinstance(center, list) and len(center) == 2
-            and all(isinstance(v, (int, float)) for v in center)
-        ):
-            return {"status": STATUS_INVALID,
-                    "detail": '"map.initialView.center" must be [longitude, latitude]'}
+                "detail": "an Autark grammar document must be a JSON object"}
+    try:
+        import jsonschema
+    except Exception as exc:  # noqa: BLE001
+        return {"status": STATUS_UNCHECKED,
+                "why": _detail(f"jsonschema is unavailable, so the Autark schema could not be applied: {exc}")}
+    try:
+        schema = contracts.load_autk_schema()
+        validator_class = jsonschema.validators.validator_for(schema, default=jsonschema.Draft7Validator)
+        validator_class.check_schema(schema)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": STATUS_UNCHECKED,
+                "why": _detail(f"the Autark schema could not be read: {exc}")}
+    messages: list[str] = []
+    for err in validator_class(schema).iter_errors(payload):
+        for message in _messages(err, jsonschema):
+            if message not in messages:
+                messages.append(message)
+    if messages:
+        return {"status": STATUS_INVALID, "detail": _detail("; ".join(messages[:_MAX_SCHEMA_ERRORS]))}
+    empty = _draws_nothing(payload, schema)
+    if empty:
+        return {"status": STATUS_INVALID, "detail": _detail(empty)}
     return {"status": STATUS_VALID}
+
+
+#: JSON type names, for a value that fits none of a field's forms.
+_JSON_TYPES = {dict: "object", list: "array", str: "string", bool: "boolean",
+               int: "number", float: "number", type(None): "null"}
+
+
+def _messages(error, jsonschema) -> list[str]:
+    """What *error* says. An ``anyOf`` failure (``map`` and ``plot`` are one
+    object or a list of them) is explained by the branch that fits the value."""
+    if error.validator not in ("anyOf", "oneOf") or not error.context:
+        return [_schema_message(error)]
+    branches: dict = {}
+    for sub in error.context:
+        if sub.validator == "type" and not sub.relative_path:
+            continue  # that branch is for another kind of value
+        branches.setdefault(sub.relative_schema_path[0], []).append(sub)
+    if not branches:
+        types = [t for sub in error.context
+                 for t in ([sub.validator_value] if isinstance(sub.validator_value, str) else sub.validator_value)]
+        given = _JSON_TYPES.get(type(error.instance), "value")
+        return [f"{_where(error)}: expected {_or(dict.fromkeys(types))}, not {given}"]
+    lacking = [_lacking(subs) for subs in branches.values()]
+    if len(lacking) > 1 and all(lacking):
+        # Every branch that fits only lacks fields: what all of them need, then the choice.
+        common = [f for f in lacking[0] if all(f in fields for fields in lacking)]
+        choice = [f for fields in lacking for f in fields if f not in common]
+        needs = ([_and([f'"{f}"' for f in common])] if common else []) + (
+            [f"one of {_or(dict.fromkeys(choice))}"] if choice else [])
+        return [f"{_where(error)}: missing " + ", and ".join(needs)]
+    best = jsonschema.exceptions.best_match([sub for subs in branches.values() for sub in subs])
+    return [m for sub in branches[best.relative_schema_path[0]] for m in _messages(sub, jsonschema)]
+
+
+def _lacking(errors) -> list[str]:
+    """The fields a branch is missing, if missing fields are all that is wrong with it."""
+    if not all(e.validator == "required" and not e.relative_path for e in errors):
+        return []
+    return list(dict.fromkeys(name for e in errors for name in e.validator_value
+                              if name not in (e.instance or {})))
+
+
+def _where(error) -> str:
+    """``map.layerRefs[0]``, or "the document" at the root."""
+    path = ""
+    for part in error.absolute_path:
+        path += f"[{part}]" if isinstance(part, int) else (f".{part}" if path else str(part))
+    return path or "the document"
+
+
+def _and(items) -> str:
+    items = list(items)
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _or(values) -> str:
+    quoted = [f'"{v}"' for v in values]
+    return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " or " + quoted[-1]
+
+
+def _schema_message(error) -> str:
+    """``map.layerRefs[0]: missing "dataRef"``, with the field's own description."""
+    where = _where(error)
+    if error.validator == "required":
+        properties = error.schema.get("properties", {}) if isinstance(error.schema, dict) else {}
+        missing = [name for name in error.validator_value if name not in (error.instance or {})]
+        if not missing:
+            return f"{where}: {error.message}"
+        named = []
+        for name in missing:
+            described = properties.get(name, {}).get("description")
+            named.append(f'"{name}"' + (f" ({described})" if described else ""))
+        return f"{where}: missing " + _and(named)
+    described = error.schema.get("description") if isinstance(error.schema, dict) else None
+    return f"{where}: {error.message}" + (f" ({described})" if described else "")
+
+
+def _draws_nothing(payload: dict, schema: dict) -> str | None:
+    """Why a schema-valid document would still run nothing, or None."""
+    from utk_curio.backend.app.agents import contracts
+
+    if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_families(schema)):
+        return (
+            "the document has nothing for Autark to run; it must be "
+            + contracts.render_autk_shape(schema)
+        )
+    layers, _ = contracts.map_layers(schema)
+    maps = payload.get("map")
+    for index, grammar in enumerate(maps if isinstance(maps, list) else [maps] if maps else []):
+        if isinstance(grammar, dict) and not grammar.get(layers):
+            where = f"map[{index}]" if isinstance(maps, list) else "map"
+            return f'"{where}.{layers}" is empty, and a map with no layers renders nothing'
+    return None
 
 
 #: GRAMMAR ID → validator (dev/134: the manifest's own ``grammarId``, so a
@@ -315,13 +396,20 @@ _GRAMMAR_SHAPES = {
         'vega-lite/v6.json", "mark": …, "encoding": …}. Do NOT include a "data" '
         "block: Curio injects this node's input as the data at render time"
     ),
-    "autk-grammar": (
-        'an AUTK grammar JSON document — a map ({"map": {"layerRefs": [{"dataRef": '
-        '"upstream", …}], "initialView": …}}, where "upstream" is this node\'s own '
-        'input), a plot ("plot"), a WGSL compute pass ("compute") or a loader '
-        '("data": [{"type": "osm", …}])'
-    ),
 }
+
+
+def grammar_shape(grammar: str | None) -> str:
+    """What a document in *grammar* is, for the refusal a non-document reply gets."""
+    if grammar == "autk-grammar":
+        from utk_curio.backend.app.agents import contracts
+
+        try:
+            return contracts.render_autk_shape(contracts.load_autk_schema())
+        except Exception:  # noqa: BLE001
+            return "an Autark grammar JSON document"
+    return _GRAMMAR_SHAPES.get(grammar or "", "a JSON document")
+
 
 #: Kinds whose content is never authored (the preamble's "uncontrollable"
 #: boxes): nothing to validate, and nothing to write.
@@ -373,7 +461,7 @@ def validate(
                 "detail": _detail(
                     "there is no document here at all"
                     + (f" (the reply was {stripped!r})" if stripped else "")
-                    + f" — this node's content must be {_GRAMMAR_SHAPES.get(grammar, 'a JSON document')}"
+                    + f"; this node's content must be {grammar_shape(grammar)}"
                 ),
             }
         # A wired box's marker, or nothing at all: there is no document.
@@ -390,8 +478,8 @@ def validate(
         return {
             "status": STATUS_INVALID,
             "detail": _detail(
-                f"the reply is prose, not a document ({stripped[:120]!r}…) — this "
-                f"node's content must be {_GRAMMAR_SHAPES.get(grammar, 'a JSON document')}"
+                f"the reply is prose, not a document ({stripped[:120]!r}…); this "
+                f"node's content must be {grammar_shape(grammar)}"
             ),
         }
     try:
@@ -406,7 +494,7 @@ def refusal_text(node_type: object, verdict: dict, *, grammar_id: object = None)
     """What the model is told, and what a human reads in the trail."""
     grammar = grammar_of(node_type, grammar_id)
     what = "Vega-Lite" if grammar == "vega-lite" else (
-        "AUTK map grammar" if grammar == "autk-grammar" else
+        "Autark grammar" if grammar == "autk-grammar" else
         grammar or canonical_suffix(node_type) or "document"
     )
     return (

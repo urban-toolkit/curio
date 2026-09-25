@@ -157,7 +157,7 @@
     },
     {
       "category": "computation",
-      "description": "Reproject the merged census GeoDataFrame from UTM 32632 to EPSG:3395 (the projection AUTK_MAP's tile pipeline expects), drop polygons with non-positive UTCI, and tag the table with metadata.name='census' so downstream views can reference it by name.",
+      "description": "Reproject the merged census GeoDataFrame from UTM 32632 to EPSG:3395, drop polygons with non-positive UTCI, and tag the table with metadata.name='census' so downstream views can reference it by name.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

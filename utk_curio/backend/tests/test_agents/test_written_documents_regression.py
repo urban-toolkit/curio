@@ -80,8 +80,7 @@ VALID_VEGA = json.dumps({
 })
 
 VALID_AUTK = json.dumps({
-    "map": {"layerRefs": [{"dataRef": "upstream", "isPick": True, "isColorMap": True}],
-            "initialView": {"center": [-87.63, 41.88], "zoom": 11}},
+    "map": {"layerRefs": [{"dataRef": "upstream", "isPick": True, "isColorMap": True}]},
 })
 
 LOADER = 'import pandas as pd\nreturn pd.DataFrame({"community": ["Loop"], "density": [1.0]})'

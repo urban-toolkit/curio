@@ -29,15 +29,6 @@ const DEFAULT_SPEC = JSON.stringify(
 export const autkGrammarAdapter: GrammarAdapter = {
   grammarId: 'autk-grammar',
 
-  validate(spec: unknown): boolean {
-    try {
-      const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
-      return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
-    } catch {
-      return false;
-    }
-  },
-
   // render is not called for autk-grammar — applyGrammar in the behavior
   // drives execution directly via AutkGrammar.run(). This stub satisfies
   // the GrammarAdapter interface contract.

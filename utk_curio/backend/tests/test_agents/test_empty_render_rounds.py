@@ -19,10 +19,12 @@ from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rou
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
 #: A data-only Autark document: it loads its own rows, so an empty load is its
-#: own fault, not an upstream's.
+#: own fault, not an upstream's. (An inline collection with no features is not
+#: one: autk-db throws on it, and the schema refuses it.)
 PARKS_DOC = json.dumps({"data": [{
-    "type": "geojson", "outputTableName": "parks",
-    "geojsonObject": {"type": "FeatureCollection", "features": []},
+    "type": "osm", "outputTableName": "parks",
+    "queryArea": {"geocodeArea": "Boston", "areas": ["Boston Harbor"]},
+    "autoLoadLayers": {"coordinateFormat": "EPSG:3395", "layers": ["parks"]},
 }]})
 FIXED_PARKS_DOC = json.dumps({"data": [{
     "type": "geojson", "outputTableName": "parks",
