@@ -723,7 +723,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           three with no detail view anywhere; `PackageDetailModal` is that view,
           and it shows the FULL node list where this drawer caps it. */}
       {detailPkg ? (
-        <PackageDetailModal pkg={detailPkg} onClose={() => setDetailPkg(null)} />
+        <PackageDetailModal
+          pkg={detailPkg}
+          isPublished={catalogPublishedDirs.has(detailPkg.dirName)}
+          onClose={() => setDetailPkg(null)}
+        />
       ) : null}
 
       {installCandidate ? (
