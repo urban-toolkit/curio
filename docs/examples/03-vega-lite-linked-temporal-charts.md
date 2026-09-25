@@ -117,8 +117,7 @@ The second view sums across the same five cameras to show the year-over-year tre
     {
       "aggregate": [{"op": "sum", "field": "total_violations", "as": "total"}],
       "groupby": ["Year"]
-    },
-    {"sort": {"field": "Year"}}
+    }
   ],
   "mark": {"type": "line", "point": true},
   "encoding": {

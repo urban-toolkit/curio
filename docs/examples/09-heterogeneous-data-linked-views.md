@@ -257,8 +257,8 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this vi
     "y": {"field": "mean",  "type": "quantitative", "scale": {"domain": [37, 42]}},
     "fillOpacity": {"condition": {"param": "clickSelect", "value": 1}, "value": 0.3},
     "color": {
-      "field": "interacted", "type": "nominal",
-      "condition": {"test": "datum.interacted === '1'", "value": "red", "else": "blue"}
+      "condition": {"test": "datum.interacted === '1'", "value": "red"},
+      "value": "blue"
     }
   }
 }
