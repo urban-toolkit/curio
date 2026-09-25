@@ -1,0 +1,24 @@
+name: Autark schema
+
+# Re-fetches the autk-grammar release named in
+# utk_curio/backend/app/agents/schemas/autk-grammar.v1.source.json and fails
+# when the vendored schema differs from the published file. The backend suite
+# checks the copy against that record offline; only this job reaches npm.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python scripts/sync_autk_schema.py --check

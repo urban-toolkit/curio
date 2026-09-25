@@ -43,7 +43,8 @@ pyseccomp>=0.1.2; sys_platform == "linux"
 # ------------------------------------------------------------------------------
 # Validates node-package manifests against docs/schemas/node-package.v4.json and
 # dataflow specs against docs/schemas/trill.v1.json, in both the test suite and
-# scripts/validate_trill.py. Until now this was pulled in only as an altair
+# scripts/validate_trill.py, and at runtime validates Autark documents against
+# the vendored autk-grammar schema (utk_curio/backend/app/agents/schemas/). Until now this was pulled in only as an altair
 # transitive and imported anyway - the same "used but declared nowhere" trap
 # psutil was in above, and altair asks only for jsonschema>=3.0, so a resolver
 # was free to land somewhere without Draft 2020-12. A floor rather than an exact
