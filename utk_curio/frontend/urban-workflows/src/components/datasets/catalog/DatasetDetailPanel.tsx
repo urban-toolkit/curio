@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -11,6 +10,7 @@ import {
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import { DetailLink } from "./DetailLink";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   downstreamFromDataflowUsage,
@@ -220,7 +220,8 @@ const LineageMainSection: React.FC<{
   dataset: DatasetCatalogItem;
   lineage: DatasetLineage;
   canvasAvailable: boolean;
-}> = ({ dataset, lineage, canvasAvailable }) => {
+  onFollowLink?: (to: string) => void;
+}> = ({ dataset, lineage, canvasAvailable, onFollowLink }) => {
   const { consumingNodes } = lineage.downstream;
   return (
     <div className={styles.lineageSection}>
@@ -247,7 +248,7 @@ const LineageMainSection: React.FC<{
 
       {/* Cross-dataflow usage (resolved from saved specs by the backend, so it
           works even without a live canvas). */}
-      <DatasetDataflowUsageSection datasetId={dataset.id} />
+      <DatasetDataflowUsageSection datasetId={dataset.id} onFollowLink={onFollowLink} />
     </div>
   );
 };
@@ -271,6 +272,9 @@ export interface DatasetDetailPanelProps {
   onBack?: () => void;
   /** Called after publish/unpublish so the parent can refetch the dataset. */
   onMutated?: () => void;
+  /** How an in-app link in these details is followed; see `DetailLink`. The
+   *  modal passes one, the full-page view does not. */
+  onFollowLink?: (to: string) => void;
 }
 
 export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
@@ -284,6 +288,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   initialTab = "Overview",
   onBack,
   onMutated,
+  onFollowLink,
 }) => {
   const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
@@ -468,6 +473,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               dataset={dataset}
               lineage={effectiveLineage}
               canvasAvailable={canvasAvailable}
+              onFollowLink={onFollowLink}
             />
           ) : (
             <div className={styles.previewSection}>
@@ -537,9 +543,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div>
                   <dt>Portal</dt>
                   <dd>
-                    <Link to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}>
+                    <DetailLink
+                      to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}
+                      onFollow={onFollowLink}
+                    >
                       {dataset.lakeSource.lakeName}
-                    </Link>
+                    </DetailLink>
                   </dd>
                 </div>
                 <div>
@@ -550,7 +559,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                       target="_blank"
                       rel="noreferrer noopener"
                     >
-                      {dataset.lakeSource.resourceId}
+                      {dataset.lakeSource.resourceId} ↗
                     </a>
                   </dd>
                 </div>
@@ -597,7 +606,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             {/* Cross-dataflow usage — resolved from saved specs by the backend,
                 so it works on the canvas-less standalone catalog page too. */}
             {lineageTabActive ? null : (
-              <DatasetDataflowUsageSection datasetId={dataset.id} />
+              <DatasetDataflowUsageSection datasetId={dataset.id} onFollowLink={onFollowLink} />
             )}
           </div>
 

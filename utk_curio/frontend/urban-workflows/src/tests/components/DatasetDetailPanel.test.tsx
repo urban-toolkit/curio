@@ -456,7 +456,8 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
   it("links the resource out to the portal's own page", () => {
     renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
 
-    const resource = screen.getByRole("link", { name: "ijzp-q8t2" });
+    // With the arrow every link that opens a new tab carries.
+    const resource = screen.getByRole("link", { name: "ijzp-q8t2 ↗" });
     expect(resource).toHaveAttribute("href", lakeSource.resourceUrl);
     // An outbound link to a third party: no window handle back to this tab.
     expect(resource).toHaveAttribute("rel", expect.stringContaining("noopener"));

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   DatasetDataflowUsageRef,
   datasetCatalogApi,
 } from "../../../services/datasetCatalog";
 import { formatNodeTypeLabel } from "../../../services/datasetLineage";
+import { DetailLink } from "./DetailLink";
 import styles from "./DatasetDataflowUsage.module.css";
 
 /**
@@ -58,7 +58,9 @@ function consumerLabel(flow: DatasetDataflowUsageRef): string | null {
  */
 export const DatasetDataflowUsageSection: React.FC<{
   datasetId: string | undefined;
-}> = ({ datasetId }) => {
+  /** See `DetailLink`: the modal's way of following a row's link. */
+  onFollowLink?: (to: string) => void;
+}> = ({ datasetId, onFollowLink }) => {
   const usage = useDatasetDataflowUsage(datasetId);
 
   // One row per project id. The backend already emits one entry per project,
@@ -101,9 +103,13 @@ export const DatasetDataflowUsageSection: React.FC<{
           const name = flow.dataflowName || "Untitled dataflow";
           return (
             <li key={flow.dataflowId} className={styles.item}>
-              <Link to={`/dataflow/${flow.dataflowId}`} className={styles.link}>
+              <DetailLink
+                to={`/dataflow/${flow.dataflowId}`}
+                className={styles.link}
+                onFollow={onFollowLink}
+              >
                 {name}
-              </Link>
+              </DetailLink>
               {collidingNames.has(name) ? (
                 <span className={styles.disambiguator} title={flow.dataflowId}>
                   {flow.dataflowId.slice(0, 8)}

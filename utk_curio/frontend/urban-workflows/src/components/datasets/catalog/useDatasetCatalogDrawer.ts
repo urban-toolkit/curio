@@ -45,7 +45,7 @@ export interface DatasetConfirmAction {
 
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  const { projectId, projectDirty, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
@@ -604,6 +604,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
   return {
     fileInputRef,
     projectId,
+    projectDirty,
     tab,
     setTab,
     search,
