@@ -444,7 +444,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               )}
               {info.keyLink && (
                 <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
-                  {info.keyLinkLabel} →
+                  {info.keyLinkLabel} ↗
                 </a>
               )}
               {keyBelongsHere && (
@@ -568,7 +568,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 rel="noreferrer"
                 className={styles.keyLink}
               >
-                Get your HuggingFace token →
+                Get your HuggingFace token ↗
               </a>
               {user?.has_huggingface_token && (
                 <button
@@ -623,7 +623,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 rel="noreferrer"
                 className={styles.keyLink}
               >
-                Get a Socrata app token →
+                Get a Socrata app token ↗
               </a>
               {user?.has_socrata_app_token && (
                 <button
