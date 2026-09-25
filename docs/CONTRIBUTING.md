@@ -25,6 +25,7 @@ This guide is for students getting their first taste of open-source work and for
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
+  * [Generated Files](#generated-files)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
   * [Pull Request Template](#pull-request-template)
@@ -60,6 +61,7 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                     # Manages database access and user authentication
+│   │   ├── app/agents/contracts.py  # The single source of every generated contract (see Generated Files)
 │   │   ├── migrations/              # Alembic migrations
 │   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
 │   ├── sandbox/                     # Executes user Python code in a secure environment
@@ -68,13 +70,14 @@ curio/
 │       └── urban-workflows/         # Main Curio interface for dataflow editing
 │           └── src/
 │               ├── components/      # React components and CSS
+│               ├── generated/       # Written by scripts/generate_contracts.py; never edited by hand
 │               └── tests/           # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
-├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
@@ -422,6 +425,27 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 # apply any pending migrations
 FLASK_APP=server.py flask db upgrade
 ```
+
+### Generated Files
+
+Some files are generated from a single source and committed. Today that is
+everything under `utk_curio/frontend/urban-workflows/src/generated/`, rendered
+from `utk_curio/backend/app/agents/contracts.py`. Each generated file starts
+with a header naming its generator and source. Do not edit one by hand: change
+`contracts.py`, then regenerate and commit both.
+
+```bash
+# rewrite every generated file
+python scripts/generate_contracts.py
+
+# write nothing; exit non-zero and list the stale files
+python scripts/generate_contracts.py --check
+```
+
+The backend suite runs the same check
+(`utk_curio/backend/tests/test_agents/test_generated_contracts.py`), so a stale
+or hand-edited output fails CI. See
+[ARCHITECTURE.md, Generated Contracts](ARCHITECTURE.md#generated-contracts).
 
 ## Organizing Contributions
 

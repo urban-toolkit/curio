@@ -23,11 +23,13 @@ This document describes the internal architecture of Curio for contributors who 
   * [Connection Validation](#connection-validation)
 * [Execution Pipeline](#execution-pipeline)
   * [Step-by-Step: Running a Node](#step-by-step-running-a-node)
+  * [Render Outcomes](#render-outcomes)
   * [The Python Wrapper](#the-python-wrapper)
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
+* [Generated Contracts](#generated-contracts)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -389,7 +391,7 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 
 When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
 
-A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
+A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
 
@@ -446,6 +448,21 @@ When a user clicks the play button on a node, the following sequence occurs:
 ```
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
+
+### Render Outcomes
+
+A node the browser renders (Vega-Lite, Autark) can run without an error and still draw nothing. [`renderOutcome.ts`](../utk_curio/frontend/urban-workflows/src/utils/renderOutcome.ts) is the one decision every such renderer calls. It takes what the renderer could count (`RenderCounts`: rows handed in, rows the node's own data sources loaded, rows holding a usable value in the plotted fields, marks drawn, layers requested and resolved) and returns whether the render is empty and why. An empty render is reported as an error whose runtime journal `kind` is `empty-render:<cause>`. The rules run in order and the first match is the cause:
+
+| Cause | When | At fault |
+|---|---|---|
+| `no-layers` | Every layer the document asks for names data the dataflow does not produce | the document |
+| `empty-source` | The node's own data sources loaded zero rows, and no other rows arrived to draw from | the document |
+| `no-input-rows` | Zero rows arrived from upstream | the upstream node |
+| `nothing-drawn` | Rows arrived and none of them holds a usable value in the plotted fields, or none became a mark | the document |
+
+A renderer that already knows why nothing was drawn (a `geoshape` over data with no geometry column, for example) passes that sentence as `explanation`, and a `nothing-drawn` message carries it in place of the generic reason. A count the renderer could not make stays `undefined`, and an uncounted render gets no verdict. The default Autark data path is the common case: the sandbox hands back a DuckDB artifact reference rather than the layers, so a data-only node there lists the tables it loaded without claiming anything about their rows. Autark counts are taken before empty sources are dropped, so an empty table is still known to exist.
+
+The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once and generated for the frontend (see [Generated Contracts](#generated-contracts)).
 
 ### The Python Wrapper
 
@@ -746,6 +763,25 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 ---
 
+## Generated Contracts
+
+Some contracts are read on both sides of the stack: by Python and TypeScript, or by the code and a model prompt. Each one is defined once and every other copy is generated from it, so the copies cannot disagree.
+
+- **Source module.** [`utk_curio/backend/app/agents/contracts.py`](../utk_curio/backend/app/agents/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and it has no dependencies beyond the standard library. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
+- **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
+- **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
+- **Outputs.** Committed to the repository, each starting with a header that names the generator and the source module. TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated.
+
+  | Output | Contract |
+  |---|---|
+  | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
+
+- **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
+
+To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
+
+---
+
 ## Python Dependencies
 
 Curio's Python deps live in two places:
@@ -1012,6 +1048,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
+| `src/utils/renderOutcome.ts` | The empty-render decision every browser renderer calls (see [Render Outcomes](#render-outcomes)) |
+| `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
@@ -1044,6 +1082,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
+| `backend/app/agents/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
 | `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
 | `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
 | `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |

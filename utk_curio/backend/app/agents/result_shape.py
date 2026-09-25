@@ -31,6 +31,16 @@ network. Total — an unknown shape is never a failure.
 
 from __future__ import annotations
 
+from utk_curio.backend.app.agents.contracts import (  # noqa: F401 (re-exported)
+    CAUSE_EMPTY_SOURCE,
+    CAUSE_NO_INPUT_ROWS,
+    CAUSE_NO_LAYERS,
+    CAUSE_NOTHING_DRAWN,
+    EMPTY_RENDER_CAUSES,
+    EMPTY_RENDER_KIND,
+    is_document_at_fault,
+)
+
 #: The summary kinds emptiness is defined for. A ``VALUE``, a ``dict``, a raster
 #: or a plot has no row count, and inventing one would be a guess.
 COUNTABLE_KINDS = ("table", "geotable")
@@ -285,15 +295,9 @@ def refusal_text(
 # perfectly valid — so the renderer counts what it drew (frontend
 # ``renderOutcome``) and reports the verdict here as a journal record whose
 # ``kind`` is ``empty-render:<cause>``. The cause decides who is at fault, and
-# therefore what the harness does next.
-
-#: The kind a renderer stamps on an empty render, with its cause appended.
-EMPTY_RENDER_KIND = "empty-render"
-#: The causes the frontend's ``renderOutcome`` can report, in its own words.
-CAUSE_NO_LAYERS = "no-layers"
-CAUSE_NO_INPUT_ROWS = "no-input-rows"
-CAUSE_NOTHING_DRAWN = "nothing-drawn"
-EMPTY_RENDER_CAUSES = (CAUSE_NO_LAYERS, CAUSE_NO_INPUT_ROWS, CAUSE_NOTHING_DRAWN)
+# therefore what the harness does next. The prefix, the causes and who each one
+# blames are defined once in ``contracts`` (imported above), which also
+# generates the frontend's copy.
 
 
 def empty_render_cause(kind: object) -> str | None:
@@ -309,16 +313,6 @@ def empty_render_cause(kind: object) -> str | None:
     _, _, cause = text.partition(":")
     cause = cause.strip()
     return cause if cause in EMPTY_RENDER_CAUSES else ""
-
-
-def is_document_at_fault(cause: object) -> bool:
-    """Whether an empty render is the DOCUMENT's problem (dev/136).
-
-    ``no-input-rows`` is the one that is not: nothing arrived, so no document
-    could have drawn anything and rewriting it would be the wrong repair —
-    dev/133's rule, applied to a picture.
-    """
-    return str(cause or "") != CAUSE_NO_INPUT_ROWS
 
 
 def empty_render_refusal(

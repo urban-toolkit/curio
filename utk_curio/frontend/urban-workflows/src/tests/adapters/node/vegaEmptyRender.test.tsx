@@ -67,6 +67,14 @@ describe('useVegaBehavior — an empty plot is a failed render', () => {
     expect(outputs[0].content).toContain('encoding');
   });
 
+  test('a spec that could not be drawn names its own reason, not the generic one', async () => {
+    const reason = 'This spec uses mark: "geoshape", but the incoming data has no geometry column.';
+    const outputs = await applyWith({ rowsIn: 61, drawn: 0, explanation: reason });
+    expect(outputs[0].code).toBe('error');
+    expect(outputs[0].content).toBe(`rendered nothing: ${reason}`);
+    expect(outputs[0].kind).toBe('empty-render:nothing-drawn');
+  });
+
   test('a chart that drew marks is a success, exactly as before', async () => {
     const outputs = await applyWith({ rowsIn: 12, drawn: 12 });
     expect(outputs[0]).toEqual({ code: 'success', content: '', outputType: '' });
