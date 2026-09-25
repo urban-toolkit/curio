@@ -49,7 +49,7 @@ export function useDatasetImport({
       // the only in-list feedback until it lands.
       onBegin?.("import", file.name);
       try {
-        const imported = await importDataset(file, opts);
+        const imported = opts ? await importDataset(file, opts) : await importDataset(file);
         notifyDatasetCatalogRefresh();
         if ((imported as { alreadyPresent?: boolean } | null | undefined)?.alreadyPresent) {
           showToast(`${file.name} is already in the Data Catalog.`, "success");
