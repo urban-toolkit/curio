@@ -288,8 +288,9 @@ export const useVega = ({
       // row array and renders NaN paths, silently.
       //
       // dev/136: still counts, and `drawn: 0` is the truth -- the badge must
-      // not read green over the explanation this just put on the node.
-      return { rowsIn, drawn: 0, usableRows, usableFields };
+      // not read green over the explanation this just put on the node, and
+      // the verdict carries that same explanation.
+      return { rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail };
     }
 
     specObj["data"] = { values: values, name: "data" };

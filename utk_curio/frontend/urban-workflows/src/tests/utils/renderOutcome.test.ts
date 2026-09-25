@@ -99,6 +99,21 @@ describe("renderOutcome", () => {
     expect(outcome.message).toContain("all null");
   });
 
+  it("a known reason replaces the generic one for an empty picture", () => {
+    const outcome = renderOutcome({ rowsIn: 3, drawn: 0, explanation: "no geometry column" });
+    expect(outcome.cause).toBe("nothing-drawn");
+    expect(outcome.message).toBe("rendered nothing: no geometry column");
+    expect(
+      renderOutcome({ rowsIn: 3, usableRows: 0, usableFields: ["v"], explanation: "why" }).message,
+    ).toBe("rendered nothing: why");
+  });
+
+  it("a known reason never overrides who is at fault", () => {
+    const outcome = renderOutcome({ rowsIn: 0, drawn: 0, explanation: "no geometry column" });
+    expect(outcome.cause).toBe("no-input-rows");
+    expect(outcome.message).toContain("0 rows arrived");
+  });
+
   it("says one row in the singular", () => {
     expect(renderOutcome({ rowsIn: 1, drawn: 0 }).message).toContain("1 row arrived");
   });

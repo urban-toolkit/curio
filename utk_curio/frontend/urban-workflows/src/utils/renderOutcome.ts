@@ -49,6 +49,12 @@ export interface RenderCounts {
   usableFields?: string[];
   /** Marks/items the renderer actually drew. `undefined` = could not count. */
   drawn?: number;
+  /**
+   * Why nothing was drawn, when the renderer already knows (a geoshape over
+   * data with no geometry column, say). Replaces the generic reason in a
+   * `nothing-drawn` message, so the correction names the real cause.
+   */
+  explanation?: string;
   /** Layers the document asked for (Autark). */
   layersRequested?: number;
   /** Layers that survived resolution and were drawn (Autark). */
@@ -157,7 +163,7 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
     return {
       empty: true,
       cause: "nothing-drawn",
-      message: bounded(
+      message: counts.explanation ? bounded(`rendered nothing: ${counts.explanation}`) : bounded(
         `rendered nothing — ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
         `every value of ${fields} is null, so there is nothing to plot. The ` +
         "upstream node that produces those columns is what must change — a " +
@@ -175,7 +181,7 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
     return {
       empty: true,
       cause: "nothing-drawn",
-      message: bounded(
+      message: counts.explanation ? bounded(`rendered nothing: ${counts.explanation}`) : bounded(
         `rendered nothing — ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
         "no mark was drawn: an encoding, a transform or a scale domain removed " +
         "every row. Check that the encoded fields hold values (not all null) " +
