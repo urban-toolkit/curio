@@ -14,7 +14,10 @@ backend loop under test - tools, the ledger, the content parser
 
 Scripted through ``push_reply(...)`` / ``push_replies(...)``: an in-process
 FIFO. Each call pops one reply; the queue is per-process and cleared by
-:func:`reset`.
+:func:`reset`. :func:`route_by_intent` adds replies keyed by what a delegated
+call asks for: Solve requests one node's content per call, in wave order and
+interleaved with other delegations, so a position in the queue cannot know
+which node it answers, but the call's ``intent`` can.
 
 Out-of-process e2e reaches the same FIFO over HTTP, through
 ``/api/testing/agent-script`` (see ``app/testing/routes.py``). A previous
@@ -37,6 +40,7 @@ on the assertion it cares about, not on an exception from the provider.
 
 from __future__ import annotations
 
+import json
 import threading
 from collections import deque
 
@@ -57,6 +61,8 @@ MAX_CAPTURED = 64
 _lock = threading.Lock()
 _queue: deque = deque()
 _captured: deque = deque(maxlen=MAX_CAPTURED)
+#: Replies keyed by a substring of a delegated call's ``intent``.
+_by_intent: dict = {}
 
 
 class TestingProviderUnavailable(RuntimeError):
@@ -82,6 +88,52 @@ def push_replies(*replies: str) -> None:
         push_reply(reply)
 
 
+def route_by_intent(routes: dict) -> None:
+    """Answer a delegated call whose ``intent`` contains a key with its reply.
+
+    Checked before the queue, longest key first, so a short key never answers
+    for a longer one it is part of. A call that matches no key pops the queue
+    as before.
+    """
+    with _lock:
+        _by_intent.clear()
+        _by_intent.update({str(k): str(v) for k, v in (routes or {}).items() if k})
+
+
+def _delegated_intent(messages: list) -> str:
+    """The ``intent`` of a delegated request, or "".
+
+    A delegated request's last message is ``[delegated task from ...]`` followed
+    by a JSON object. Only its ``intent`` names the node being asked about: the
+    rest of the object lists sibling nodes too.
+    """
+    if not isinstance(messages, list) or not messages:
+        return ""
+    last = messages[-1]
+    text = str(last.get("content") or "") if isinstance(last, dict) else ""
+    start = text.find("{")
+    if start < 0:
+        return ""
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(text[start:])
+    except ValueError:
+        return ""
+    return str(parsed.get("intent") or "") if isinstance(parsed, dict) else ""
+
+
+def _routed_reply(messages: list):
+    """The routed reply for this call, or None. Caller holds ``_lock``."""
+    if not _by_intent:
+        return None
+    intent = _delegated_intent(messages)
+    if not intent:
+        return None
+    for key in sorted(_by_intent, key=len, reverse=True):
+        if key in intent:
+            return _by_intent[key]
+    return None
+
+
 def reset() -> None:
     """Drop anything still queued and everything captured. Call between tests.
 
@@ -91,6 +143,7 @@ def reset() -> None:
     with _lock:
         _queue.clear()
         _captured.clear()
+        _by_intent.clear()
     reset_fine_tuning()
 
 
@@ -135,8 +188,12 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None) -> st
         # Recorded before the pop, so a reply and the prompt that drew it keep
         # the same index in a multi-round run.
         _captured.append(list(messages) if isinstance(messages, list) else [])
-        queued = _queue.popleft() if _queue else None
-    reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
+        routed = _routed_reply(messages)
+        queued = None if routed is not None else (_queue.popleft() if _queue else None)
+    if routed is not None:
+        reply, usage = routed, None
+    else:
+        reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
 
     counts = usage if isinstance(usage, dict) else DEFAULT_USAGE
     if usage_out is not None:

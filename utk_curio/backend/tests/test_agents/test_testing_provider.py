@@ -71,6 +71,43 @@ class TestQueue:
         assert "curio.v1" not in testing_provider.FALLBACK_REPLY
 
 
+def _delegated(intent: str, siblings: str = "") -> list:
+    """A delegated request as the runtime sends it: a header, then JSON."""
+    body = json.dumps({"intent": intent, "planSiblings": siblings})
+    return [{"role": "user", "content": f"[delegated task from agent.x@1 - capability c]\n{body}"}]
+
+
+class TestRoutingByIntent:
+    def test_a_delegated_call_gets_the_reply_its_intent_names(self):
+        """Solve asks per node in wave order, interleaved with other delegations,
+        so only the call's own intent can say which node it is asking about."""
+        testing_provider.route_by_intent({"load_labels": "LOAD", "plot_counts": "PLOT"})
+        assert testing_provider.run_scripted_completion(_delegated("write plot_counts")) == "PLOT"
+        assert testing_provider.run_scripted_completion(_delegated("write load_labels")) == "LOAD"
+
+    def test_only_the_intent_is_matched_not_the_siblings(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.push_reply("queued")
+        messages = _delegated("write the chart", siblings="load_labels feeds this node")
+        assert testing_provider.run_scripted_completion(messages) == "queued"
+
+    def test_the_longest_key_wins(self):
+        testing_provider.route_by_intent({"load": "SHORT", "load_labels": "LONG"})
+        assert testing_provider.run_scripted_completion(_delegated("write load_labels")) == "LONG"
+
+    def test_an_unrouted_call_still_pops_the_queue(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.push_replies("plan")
+        assert testing_provider.run_scripted_completion([{"role": "user", "content": "build it"}]) == "plan"
+        assert testing_provider.pending() == 0
+
+    def test_reset_drops_the_routes(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.reset()
+        reply = testing_provider.run_scripted_completion(_delegated("write load_labels"))
+        assert reply == testing_provider.FALLBACK_REPLY
+
+
 class TestUsageAccounting:
     def test_default_counts_are_reported(self):
         usage: dict = {}
