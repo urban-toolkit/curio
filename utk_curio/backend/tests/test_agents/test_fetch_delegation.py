@@ -25,6 +25,12 @@ DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
     "sampleKeys": ["features", "type"], "checkedAt": "now",
 }
+#: Data code can read, in a format the Data Lake does not store, so the row is
+#: handed to the builder rather than downloaded.
+API_OBSERVATION = {
+    "status": "verified", "httpStatus": 200, "contentType": "application/xml",
+    "checkedAt": "now",
+}
 PORTAL_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "text/html",
     "pageTitle": "Downloads — community areas", "checkedAt": "now",
@@ -68,7 +74,7 @@ class TestAFetchableRowIsDelegated:
         )
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.verify.verify_external_source",
-            lambda url, **k: dict(DATA_OBSERVATION),
+            lambda url, **k: dict(API_OBSERVATION),
         )
         body = _select(h, finder_id, [
             {"lane": "external", "key": "https://data.example.org/areas.geojson"},
@@ -131,7 +137,7 @@ class TestAFetchableRowIsDelegated:
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.verify.verify_external_source",
-            lambda url, **k: dict(DATA_OBSERVATION),
+            lambda url, **k: dict(API_OBSERVATION),
         )
         monkeypatch.setattr(
             agent_jobs, "live_job", lambda user_key, attachment_id: _FakeJob(),
@@ -341,6 +347,40 @@ class TestAnAcquirableRowIsDownloaded:
         events = _drain(h, body["delegated"]["attachmentId"])
         assert next(p for k, p in events if k == "done")["verdict"] == "pass"
         assert f'curio_dataset_path("{dataset_id}")' in h.node_content(h.load)
+
+    def test_a_plain_file_link_is_downloaded_through_direct_url(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        lake = _FakeLake(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
+        direct = "lake.curio.direct-url@1"
+        roster = services_mod._LazyRoster
+        monkeypatch.setattr(services_mod, "_LazyRoster", lambda: roster({direct: {
+            "dirName": direct, "provider": "direct",
+            "capabilities": {"download": True, "formats": ["csv", "geojson"]},
+        }}))
+        monkeypatch.setattr(services_mod, "_lake_service", lambda: lake)
+        # The Finder's row names only a link: no coordinate was ever proposed.
+        h, finder_id = _await_candidates(client, user, token, monkeypatch)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda config, messages, **k: (
+                "Title" if messages[0].get("content") == services_mod.TITLE_PROMPT else loader
+            ),
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: dict(DATA_OBSERVATION),
+        )
+        url = "https://data.example.org/areas.geojson"
+        body = _select(h, finder_id, [{"lane": "external", "key": url}]).get_json()
+        assert lake.calls == [(direct, url, "geojson")]
+        assert body["picks"][0]["datasetId"] == dataset_id
+        assert body["picks"][0]["lakeSource"] == {"sourceId": direct, "resourceId": url}
+        events = _drain(h, body["delegated"]["attachmentId"])
+        assert next(p for k, p in events if k == "done")["verdict"] == "pass"
 
     def test_a_row_with_no_url_is_confirmed_by_its_coordinate(
         self, client, user_and_token, tmp_curio, monkeypatch
