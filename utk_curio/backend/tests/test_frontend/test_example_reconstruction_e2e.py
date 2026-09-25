@@ -403,7 +403,10 @@ class TestSolveProgressAndReconnection:
 
         strip = page.get_by_role("group", name="Dataflow Builder").first
         expect(strip).to_be_visible(timeout=20000)
-        solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry)")).first
+        # The whole-plan button, named by its text. Each pending node's row has
+        # its own "Solve node <id> on its own" button, which a prefix match
+        # would also hit, and those rows may render before this one.
+        solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
         expect(solve).to_be_visible(timeout=20000)
         solve.click()
 
