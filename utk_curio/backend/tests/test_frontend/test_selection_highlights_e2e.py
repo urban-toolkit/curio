@@ -118,6 +118,34 @@ def _spec() -> dict:
     }
 
 
+def _direct_spec() -> dict:
+    """The same charts fed straight by the loader and joined to each other by
+    a direct interaction edge: no Data Pool anywhere."""
+    return {
+        "dataflow": {
+            "name": "Direct selection",
+            "task": "",
+            "timestamp": 1789193389280,
+            "provenance_id": "Direct selection",
+            "nodes": [
+                _node(LOADER_ID, "curio.builtin/data-loading", 0, 0, LOADER_CODE),
+                _node(BAR_ID, "curio.builtin/vis-vega", 700, -300, BAR_SPEC),
+                _node(SCATTER_ID, "curio.builtin/vis-vega", 700, 300, SCATTER_SPEC),
+            ],
+            "edges": [
+                _data_edge(LOADER_ID, BAR_ID),
+                _data_edge(LOADER_ID, SCATTER_ID),
+                {
+                    "type": "Interaction",
+                    "id": f"reactflow__edge-{BAR_ID}in/out-{SCATTER_ID}in/out",
+                    "source": BAR_ID,
+                    "target": SCATTER_ID,
+                },
+            ],
+        }
+    }
+
+
 # Every canvas vega puts into a chart's container after this point, and the
 # canvases each chart holds now, so a rebuild shows up as either signal.
 _WATCH_CANVASES_JS = """(ids) => {
@@ -167,42 +195,14 @@ def _red_pixels(page, node_id: str) -> int:
     return page.evaluate(_RED_PIXELS_JS, node_id)
 
 
-def test_a_selection_highlights_linked_charts_without_rebuilding_them(
-    app_frontend: "FrontendPage",
-    current_server: str,
-    page,
-):
-    require_project_page()
-    require_user_auth()
-
-    page.emulate_media(reduced_motion="reduce")
-    stub_login_and_enter_workflow(
-        page,
-        frontend_url=app_frontend.base_url,
-        backend_url=current_server,
-        name="Selection Highlights",
-        username="selection_highlights",
-        project_name="Selection highlights",
-        project_spec=_spec(),
-    )
-    require_owner_view(page)
-    for node_id in (LOADER_ID, POOL_ID, BAR_ID, SCATTER_ID):
-        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
-
-    run_all_and_wait(page, timeout_ms=180000)
-    for node_id in (BAR_ID, SCATTER_ID):
-        page.locator(f"#vega{node_id} canvas").first.wait_for(state="attached", timeout=60000)
-    # Let the post-run renders settle before recording which canvases exist.
-    page.wait_for_timeout(1500)
-    assert _red_pixels(page, SCATTER_ID) == 0, "a row was marked before any selection"
-
+def _hover_bars_and_measure(page) -> tuple[bool, dict, int]:
+    """Walk the pointer across the bars until the scatterplot shows a marked
+    row; report whether it did, which canvases survived, and the red left."""
     charts = [BAR_ID, SCATTER_ID]
     assert page.evaluate(_WATCH_CANVASES_JS, charts) == [True, True]
 
-    # Walk the pointer across the bars until the scatterplot shows a marked row:
-    # the chart is one canvas, so bars are found by position, not by element.
-    bar_canvas = page.locator(f"#vega{BAR_ID} canvas").first
-    box = bar_canvas.bounding_box()
+    # The chart is one canvas, so bars are found by position, not by element.
+    box = page.locator(f"#vega{BAR_ID} canvas").first.bounding_box()
     assert box, "the bar chart has no canvas box"
     saw_highlight = False
     y = box["y"] + box["height"] * 0.75
@@ -218,13 +218,63 @@ def test_a_selection_highlights_linked_charts_without_rebuilding_them(
 
     # Give a rebuild, if one is coming, the time it takes to land.
     page.wait_for_timeout(2500)
-    probe = page.evaluate(_READ_PROBE_JS, charts)
-    red_now = _red_pixels(page, SCATTER_ID)
-    report = f"highlight seen: {saw_highlight}; red pixels now: {red_now}; canvases: {probe}"
+    return saw_highlight, page.evaluate(_READ_PROBE_JS, charts), _red_pixels(page, SCATTER_ID)
 
+
+def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> None:
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name=spec["dataflow"]["name"],
+        username=username,
+        project_name=spec["dataflow"]["name"],
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
+
+    run_all_and_wait(page, timeout_ms=180000)
+    for node_id in (BAR_ID, SCATTER_ID):
+        page.locator(f"#vega{node_id} canvas").first.wait_for(state="attached", timeout=60000)
+    # Let the post-run renders settle before recording which canvases exist.
+    page.wait_for_timeout(1500)
+    assert _red_pixels(page, SCATTER_ID) == 0, "a row was marked before any selection"
+
+
+def _assert_highlighted_not_rebuilt(saw_highlight: bool, probe: dict, red_now: int) -> None:
+    report = f"highlight seen: {saw_highlight}; red pixels now: {red_now}; canvases: {probe}"
     assert saw_highlight, f"the selection never reached the scatterplot ({report})"
-    for node_id in charts:
-        assert probe[node_id]["kept"] and probe[node_id]["added"] == 0, (
+    for node_id, state in probe.items():
+        assert state["kept"] and state["added"] == 0, (
             f"a selection rebuilt chart {node_id} instead of highlighting it ({report})"
         )
     assert red_now > 0, f"the highlight did not stay ({report})"
+
+
+def test_a_selection_highlights_linked_charts_without_rebuilding_them(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+
+    _open(page, app_frontend, current_server, username="selection_highlights", spec=_spec())
+    _assert_highlighted_not_rebuilt(*_hover_bars_and_measure(page))
+
+
+def test_a_direct_edge_between_two_charts_highlights_the_other(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """No pool: the scatterplot matches the bar chart's selection against its
+    own rows (both read the loader's rows, so positions line up)."""
+    require_project_page()
+    require_user_auth()
+
+    _open(page, app_frontend, current_server, username="direct_selection", spec=_direct_spec())
+    _assert_highlighted_not_rebuilt(*_hover_bars_and_measure(page))
