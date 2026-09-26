@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { packagesApi } from "../../api/packagesApi";
 import {
   DATASET_FORMAT_LABEL,
@@ -42,7 +43,21 @@ export const DataCatalogBrowse: React.FC = () => {
   const [format, setFormat] = useState<DatasetFormat | "">("");
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
-  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  // `/catalog/data/<id>` is this page with that dataset's details open, so a
+  // link to a dataset lands where every "View details" does.
+  const { datasetId: linkedDatasetId } = useParams<{ datasetId?: string }>();
+  const navigate = useNavigate();
+  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(
+    linkedDatasetId ? decodeURIComponent(linkedDatasetId) : null,
+  );
+  useEffect(() => {
+    if (linkedDatasetId) setDetailDatasetId(decodeURIComponent(linkedDatasetId));
+  }, [linkedDatasetId]);
+  const closeDetails = () => {
+    setDetailDatasetId(null);
+    // Back to the plain page, so a reload does not reopen what was closed.
+    if (linkedDatasetId) navigate("/catalog/data", { replace: true });
+  };
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
   const [defaultsBusyId, setDefaultsBusyId] = useState<string | null>(null);
@@ -481,7 +496,7 @@ export const DataCatalogBrowse: React.FC = () => {
         <DatasetDetailModal
           datasetId={detailDatasetId}
           fallbackDataset={detailDataset}
-          onClose={() => setDetailDatasetId(null)}
+          onClose={closeDetails}
         />
       ) : null}
     </div>

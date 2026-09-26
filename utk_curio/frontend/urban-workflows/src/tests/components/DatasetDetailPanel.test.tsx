@@ -104,7 +104,7 @@ function lineageFixture(overrides: Partial<DatasetLineage> = {}): DatasetLineage
 function renderPanel(lineage: DatasetLineage, dataset = catalogItem()) {
   mockUseDatasetLineage.mockReturnValue(lineage);
   return render(
-    <DatasetDetailPanel dataset={dataset} variant="modal" dataflowId="flow-1" />,
+    <DatasetDetailPanel dataset={dataset} dataflowId="flow-1" />,
   );
 }
 
@@ -435,7 +435,7 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     mockUseDatasetLineage.mockReturnValue(lineageFixture());
     return render(
       <MemoryRouter>
-        <DatasetDetailPanel dataset={dataset} variant="modal" dataflowId="flow-1" />
+        <DatasetDetailPanel dataset={dataset} dataflowId="flow-1" />
       </MemoryRouter>,
     );
   }

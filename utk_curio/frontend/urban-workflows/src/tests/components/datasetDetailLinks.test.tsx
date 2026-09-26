@@ -88,7 +88,10 @@ const LocationProbe: React.FC = () => {
   return null;
 };
 
-function renderModal(entry: string, props: { unsavedChanges?: boolean } = {}) {
+function renderModal(
+  entry: string,
+  props: { unsavedChanges?: boolean; fallbackDataset?: DatasetCatalogItem | null } = {},
+) {
   const onClose = jest.fn();
   render(
     <MemoryRouter initialEntries={[entry]}>
@@ -185,6 +188,19 @@ describe("leaving a dataflow with unsaved changes from its details", () => {
     expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
     expect(onClose).toHaveBeenCalled();
     expect(location).toBe(PORTAL);
+  });
+});
+
+describe("a link to a dataset that does not exist", () => {
+  test("says the dataset was not found, not the server's 404", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { datasetCatalogApi } = require("../../services/datasetCatalog");
+    datasetCatalogApi.getDataset.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error("HTTP 404"), { status: 404 })),
+    );
+    renderModal("/catalog/data/data.nope", { fallbackDataset: null });
+    expect(await within(details()).findByText("Dataset not found.")).toBeInTheDocument();
+    expect(within(details()).queryByText("HTTP 404")).toBeNull();
   });
 });
 

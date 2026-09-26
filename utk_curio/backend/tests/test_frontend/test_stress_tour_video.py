@@ -1945,7 +1945,7 @@ def chapter_data(run: StressRun) -> None:
         _close_modal(page)
         close_drawer(page, DRAWER_DATA, "Data Catalog drawer")
 
-    with run.step("The Data Catalog page and a dataset's own page"):
+    with run.step("The Data Catalog page and a link to one dataset"):
         page.goto(f"{run.frontend}/catalog/data")
         page.wait_for_load_state("domcontentloaded")
         expect(

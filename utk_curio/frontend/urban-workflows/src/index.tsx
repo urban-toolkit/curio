@@ -80,7 +80,6 @@ import ProjectsList from "./pages/projects/ProjectsList";
 import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
-import DataCatalogDetail from "./pages/dataCatalog/DataCatalogDetail";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
 import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
@@ -184,8 +183,9 @@ const App: React.FC = () => {
                     >
                       <Route index element={<Navigate to="nodes" replace />} />
                       <Route path="nodes" element={<NodeCatalogBrowse />} />
-                      <Route path="data" element={<DataCatalogBrowse />} />
-                      <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                      {/* One page for both: a dataset's link opens that
+                          dataset's details over the Data Catalog. */}
+                      <Route path="data/:datasetId?" element={<DataCatalogBrowse />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
                       <Route path="lakes" element={<DataLakeCatalogBrowse />} />
                       <Route

@@ -59,10 +59,15 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         if (!cancelled) setDataset(item);
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError((err as Error)?.message || "Could not load dataset.");
-          if (fallbackDataset) setDataset(fallbackDataset);
+        if (cancelled) return;
+        // An id nothing answers to, typically a stale link: the panel's own
+        // "Dataset not found." says that better than the server's 404 text.
+        if ((err as { status?: number } | null)?.status === 404 && !fallbackDataset) {
+          setDataset(null);
+          return;
         }
+        setError((err as Error)?.message || "Could not load dataset.");
+        if (fallbackDataset) setDataset(fallbackDataset);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -98,7 +103,6 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         dataset={dataset}
         loading={loading}
         error={error}
-        variant="modal"
         canvasAvailable={canvasAvailable}
         dataflowId={dataflowId}
         liveOutputs={liveOutputs}

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * implementation has:
  *
  * - **`loading` is true only while there is no data yet.** The convention
- *   `DataCatalogDetail` already follows. A poll must never blank a page that
+ *   `DatasetDetailModal` already follows. A poll must never blank a page that
  *   is already showing numbers.
  * - **A failed tick keeps the previous data.** The page shows a stale banner
  *   over live numbers rather than throwing away what it has, because the most

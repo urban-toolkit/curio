@@ -10,9 +10,9 @@ import path from "path";
  * names and the two containers described one screen — and the arrow on the card
  * promised a navigation that the drawer did not make.
  *
- * Both now open the modal and stay on the browse page. The route survives for
- * deep links (and the screenshot gallery navigates to it directly), it is simply
- * not something the UI walks you into any more.
+ * Both now open the modal and stay on the browse page. A link to
+ * `/catalog/data/:id` is the same page with that dataset's modal open, so there
+ * is no full-page details view left at all.
  *
  * Read from disk rather than rendered: these are assertions about what the page
  * does *not* do, and a component test can only show what a rendered tree does.
@@ -49,7 +49,19 @@ describe("dataset detail entry points", () => {
   it("does not navigate away from the browse page", () => {
     const browse = read(BROWSE);
     expect(browse).not.toContain("/catalog/data/$");
-    expect(browse).not.toContain("useNavigate");
+    // Its one navigation drops a linked dataset's id when its modal closes.
+    expect(browse.match(/navigate\(/g)).toHaveLength(1);
+    expect(browse).toContain('navigate("/catalog/data", { replace: true })');
+  });
+
+  it("has no full-page details view to link to", () => {
+    expect(fs.existsSync(path.join(SRC, "pages/dataCatalog/DataCatalogDetail.tsx"))).toBe(false);
+    expect(read("index.tsx")).toContain(
+      '<Route path="data/:datasetId?" element={<DataCatalogBrowse />} />',
+    );
+    // The panel renders one way, inside the modal.
+    expect(read(PANEL)).not.toContain('variant?: "page"');
+    expect(read(PANEL)).not.toContain("onBack");
   });
 
   it("opens the same first tab from either entry point", () => {
