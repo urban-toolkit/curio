@@ -201,7 +201,11 @@ def _expand_package(anchor) -> None:
     details = anchor.locator("details").first
     details.wait_for(state="attached", timeout=15000)
     if not details.evaluate("(el) => el.open"):
-        anchor.locator("summary").first.click(force=True)
+        # The title, not the summary's centre: the centre is where the row's
+        # action buttons sit (View details, Export, ...), and a forced click
+        # there opens one of them instead of the accordion. Unforced, so
+        # Playwright checks the title is what receives it.
+        anchor.locator("summary").first.locator("span[title]").first.click()
     expect(details).to_have_attribute("open", "", timeout=10000)
 
 
