@@ -115,6 +115,7 @@ os.environ["DATABASE_URL"] = os.environ["DATABASE_URL_TEST"]
 # Phase 2: imports (now safe — config.py sees the test env).
 # ---------------------------------------------------------------------------
 
+from . import netguard  # noqa: E402
 from .test_frontend.fixtures import *  # noqa: E402,F401,F403
 import pytest  # noqa: E402
 
@@ -174,6 +175,25 @@ def _reset_computed_id_migration_guard():
     migrations._migrated_users.clear()
     yield
     migrations._migrated_users.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_external_network(request):
+    """Refuse outbound network access for the duration of every test.
+
+    A flag flip rather than a patch per test: ``netguard.install()`` patches
+    socket once per process from ``pytest_configure``, so the per-test cost
+    here is two assignments across a suite of thousands.
+
+    See ``netguard`` for why this exists, why its exception derives from
+    ``BaseException``, and what it cannot cover (the e2e backend subprocess and
+    the browser are separate processes).
+    """
+    netguard.set_allowed(netguard.allowed_by(request.node))
+    try:
+        yield
+    finally:
+        netguard.set_allowed(False)
 
 
 def _find_system_chrome() -> str | None:
@@ -394,6 +414,21 @@ def pytest_configure(config):
         "markers",
         "examples: needs a stack seeded with the examples; needs --with-examples",
     )
+    # Registered here so applying them stops emitting PytestUnknownMarkWarning.
+    # ``externalapi`` has been referenced by the exclusion list below since
+    # before this comment and was never registered or applied to anything;
+    # ``netguard`` gives it its first users. ``contract`` is deliberately NOT
+    # in the exclusion list: those tests run in CI and are written so that an
+    # unreachable endpoint skips rather than fails.
+    config.addinivalue_line(
+        "markers",
+        "externalapi: may reach the network; needs --longrun",
+    )
+    config.addinivalue_line(
+        "markers",
+        "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
+    )
+    netguard.install()
     # Imported only when the flag is passed, so an ordinary run never pays for
     # (or is broken by) importing the e2e helper module.
     if getattr(config.option, "mint_baselines", False):

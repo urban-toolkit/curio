@@ -1,12 +1,15 @@
-"""The dataset-index migration must agree with the model that reads the table.
+"""The dataset-index migrations must agree with the model that reads the table.
 
 The test suite builds its schema with ``db.create_all()`` (see ``conftest.py``),
-so the alembic revision is never executed by any other test. A column added to
-``DatasetIndexEntry`` but forgotten in ``d4e5f6a7b8c9`` therefore passes CI and
+so the alembic revisions are never executed by any other test. A column added
+to ``DatasetIndexEntry`` but forgotten in a migration therefore passes CI and
 fails only on a real deployment, at the first query after ``flask db upgrade``.
 
-This runs the migration against a scratch SQLite database and compares the
-resulting table with the model's own metadata.
+This runs the migration CHAIN against a scratch SQLite database and compares
+the resulting table with the model's own metadata. The chain rather than the
+one creating revision: a column may perfectly well be added later, and a test
+that only ran ``d4e5f6a7b8c9`` would report every such column as missing from a
+migration that was never supposed to have it.
 """
 from __future__ import annotations
 
@@ -18,29 +21,62 @@ REVISION = "d4e5f6a7b8c9"
 TABLE = "dataset_index_entry"
 
 
-def _run_upgrade(engine) -> None:
-    """Execute the revision's ``upgrade()`` against *engine*."""
+def _load(path):
     import importlib.util
-    from pathlib import Path
 
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
-    versions = (
-        Path(__file__).resolve().parents[2] / "migrations" / "versions"
-    )
-    matches = list(versions.glob(f"{REVISION}_*.py"))
-    assert len(matches) == 1, f"expected one {REVISION} revision, found {matches}"
-
-    spec = importlib.util.spec_from_file_location(f"_rev_{REVISION}", matches[0])
+    spec = importlib.util.spec_from_file_location(f"_rev_{path.stem}", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
+    return module
 
-    with engine.begin() as conn:
-        ctx = MigrationContext.configure(conn)
-        with Operations.context(ctx):
-            module.upgrade()
+
+def _chain_from(revision: str) -> list:
+    """Every revision from *revision* to the head, in order.
+
+    Walked from ``down_revision`` links rather than listed by hand, so a
+    migration added later is picked up without anyone remembering to come back
+    here.
+    """
+    import re
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[2] / "migrations" / "versions"
+    modules = {}
+    children: dict[str, str] = {}
+    for path in versions.glob("*.py"):
+        text = path.read_text()
+        rev = re.search(r'^revision\s*=\s*["\']([^"\']+)', text, re.M)
+        down = re.search(r'^down_revision\s*=\s*["\']?([^"\'\s]+)', text, re.M)
+        if not rev:
+            continue
+        modules[rev.group(1)] = path
+        if down and down.group(1) != "None":
+            children[down.group(1)] = rev.group(1)
+
+    assert revision in modules, f"no {revision} revision under {versions}"
+    ordered = [modules[revision]]
+    current = revision
+    while current in children:
+        current = children[current]
+        ordered.append(modules[current])
+    # Only the ones that touch THIS table. The scratch database holds nothing
+    # else, so a revision altering `user` would fail here for a reason that has
+    # nothing to do with what is being checked.
+    return [p for p in ordered if TABLE in p.read_text()]
+
+
+def _run_upgrade(engine) -> None:
+    """Execute every revision from the table's creation to the head."""
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    for path in _chain_from(REVISION):
+        module = _load(path)
+        with engine.begin() as conn:
+            ctx = MigrationContext.configure(conn)
+            with Operations.context(ctx):
+                module.upgrade()
 
 
 def _migrated_engine():

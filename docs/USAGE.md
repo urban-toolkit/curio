@@ -89,6 +89,8 @@ Node-execution isolation has no flag of its own: `--deploy` turns it on wherever
 
 Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
 
+`CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
+
 The three startup modes control which pages are shown when a user first opens Curio:
 
 | Mode | Login page | Project page | Typical use |
@@ -439,6 +441,14 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
 For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+
+## Data Lake Catalog
+
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach - Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback - so you can browse one and download into your Data Catalog rather than hand-writing fetch code.
+
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They are operator-authored: there is no import route, because a source declares a host the server makes outbound requests to on your behalf.
+
+See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 

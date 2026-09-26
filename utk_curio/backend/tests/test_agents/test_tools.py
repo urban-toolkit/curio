@@ -28,6 +28,8 @@ class TestRegistry:
             "web.fetch", "web.search",
             "packages.catalog", "packages.resolve", "package.install",  # dev/84
             "package.draft.apply",  # dev/89
+            # The Data Lake Catalog: roster, live search, reviewed download.
+            "datalake.sources", "datalake.search", "datalake.acquire",
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -40,6 +42,11 @@ class TestRegistry:
         assert tools.REGISTRY["node.runtime.read"].effect == "read"
         assert tools.REGISTRY["web.fetch"].effect == "read"
         assert tools.REGISTRY["web.search"].effect == "read"
+        assert tools.REGISTRY["datalake.sources"].effect == "read"
+        assert tools.REGISTRY["datalake.search"].effect == "read"
+        # A download writes bytes into the user's store and mints a catalog
+        # row, so it goes through review and never executes in the model loop.
+        assert tools.REGISTRY["datalake.acquire"].effect == "mutate"
         assert tools.REGISTRY["packages.catalog"].effect == "read"
         assert tools.REGISTRY["packages.resolve"].effect == "read"
         assert tools.REGISTRY["package.install"].effect == "mutate"

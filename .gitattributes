@@ -1,1 +1,6 @@
 *.sh text eol=lf
+
+# Recorded portal responses. A fixture is a recording of what a third party
+# actually sent, so git must not rewrite its line endings: the point of the
+# corpus is that it is byte-for-byte what the parser will meet in production.
+utk_curio/backend/tests/test_datalakes/fixtures/** -text

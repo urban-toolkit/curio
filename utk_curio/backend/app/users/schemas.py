@@ -60,6 +60,7 @@ class UserOut:
     llm_model: Optional[str]
     # Reported as a boolean only; the token itself never leaves the server.
     has_huggingface_token: bool = False
+    has_socrata_app_token: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +76,7 @@ class UserOut:
             "llm_base_url": self.llm_base_url,
             "llm_model": self.llm_model,
             "has_huggingface_token": self.has_huggingface_token,
+            "has_socrata_app_token": self.has_socrata_app_token,
         }
 
 
@@ -97,3 +99,4 @@ class UserPatchIn:
     llm_api_key: Optional[str] = None
     llm_model: Optional[str] = None
     huggingface_token: Optional[str] = None
+    socrata_app_token: Optional[str] = None

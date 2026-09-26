@@ -141,6 +141,7 @@ describe("the browse cards are informational, and the drawer acts", () => {
     ["data", "pages/dataHub/DataCatalogBrowseCard.tsx"],
     ["node", "pages/catalog/PackageBrowseCard.tsx"],
     ["agent", "pages/agents/AgentCatalogBrowseCard.tsx"],
+    ["data lake", "pages/dataLakes/DataLakeSourceCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
@@ -454,11 +455,12 @@ describe("the Data catalog has the all-projects scope its peers had", () => {
 
 // ── Every details view is the same shape ─────────────────────────────────────
 
-describe("all three catalogs have a details view, and it is the same shape", () => {
+describe("all four catalogs have a details view, and it is the same shape", () => {
   const MODALS: [string, string][] = [
     ["dataset", "components/datasets/catalog/DatasetDetailModal.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
+    ["data lake", "pages/dataLakes/DataLakeSourceDetailModal.tsx"],
   ];
 
   test.each(MODALS)("the %s details view fills the panel, not a small box", (_k, rel) => {
@@ -479,6 +481,28 @@ describe("all three catalogs have a details view, and it is the same shape", () 
     // And it is NOT wired to the same setter as the drawer - that is the bug
     // (#189) that made the Agent page's own "View details" a no-op.
     expect(page).toContain("const [detailDirName");
+  });
+
+  test("the Data Lake catalog has a details view at all", () => {
+    // It was the last one with none: a source's facts lived in the drawer
+    // alone, which CatalogBrowseLayout hides below 1100px. And it has its own
+    // state, not the drawer's setter (#189).
+    const page = read("pages/dataLakes/DataLakeCatalogBrowse.tsx");
+    expect(page).toContain("DataLakeSourceDetailModal");
+    expect(page).toContain("const [detailDir");
+    expect(page).toContain("onViewDetails={() => setDetailDir(source.dirName)}");
+    expect(read("pages/dataLakes/DataLakeSourceDetailModal.tsx")).toContain("ModalShell");
+  });
+
+  test("the lake drawer and its details view read the same facts", () => {
+    for (const rel of [
+      "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx",
+      "pages/dataLakes/DataLakeSourceDetailModal.tsx",
+    ]) {
+      const src = read(rel);
+      expect(src).toContain("lakeSourceInfoRows(source)");
+      expect(src).toContain("lakeSourceAccessItems(source)");
+    }
   });
 
   test.each([

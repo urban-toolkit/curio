@@ -33,6 +33,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const {
     projectId,
+    projectDirty,
     tab,
     setTab,
     search,
@@ -277,6 +278,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       {detailDatasetId ? (
         <DatasetDetailModal
           canvasAvailable
+          unsavedChanges={projectDirty}
           datasetId={detailDatasetId}
           dataflowId={projectId}
           liveOutputs={liveOutputs}

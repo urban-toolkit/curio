@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
 import { packagesApi } from "../../../api/packagesApi";
@@ -8,7 +8,8 @@ import styles from "../../agents/catalog/AgentDetailModal.module.css";
 
 export interface PackageDetailModalProps {
   pkg: PackagePayload;
-  /** In the user's "all projects" defaults list. */
+  /** In the user's "all projects" defaults list. Left out, the modal reads
+   *  the list itself rather than claiming "No". */
   inAllProjects?: boolean;
   /** Listed in the shared catalog. */
   isPublished?: boolean;
@@ -55,12 +56,31 @@ function dependencyLines(pkg: PackagePayload): string[] {
  */
 export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
   pkg,
-  inAllProjects = false,
-  isPublished = false,
+  inAllProjects,
+  isPublished,
   onClose,
 }) => {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // The Node Catalog page holds the defaults list and passes it. The canvas
+  // drawer keeps none (#204), so from there the modal asks, and says nothing
+  // until it knows: it used to fall back to "No" and "Not published" for every
+  // package opened from the canvas.
+  const [fetchedInAllProjects, setFetchedInAllProjects] = useState<boolean | undefined>();
+  useEffect(() => {
+    if (inAllProjects !== undefined) return;
+    let cancelled = false;
+    void packagesApi
+      .getDefaults()
+      .then((resp) => {
+        if (!cancelled) setFetchedInAllProjects(resp.packages.includes(pkg.dirName));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [inAllProjects, pkg.dirName]);
+  const inAll = inAllProjects ?? fetchedInAllProjects;
 
   // `packagesApi.download` streams `GET /api/packages/<dir>/archive`, the same
   // `.curio.zip` the Node Catalog's import accepts - so a package exported from
@@ -91,9 +111,13 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
     ["License", pkg.license || "—"],
     ["Channel", pkg.channel || "stable"],
     ["Nodes", String(pkg.templates.length)],
-    ["In all projects", inAllProjects ? "Yes" : "No"],
-    ["In the catalog", isPublished ? "Published" : "Not published"],
   ];
+  if (inAll !== undefined) {
+    rows.push(["In all projects", inAll ? "Yes" : "No"]);
+  }
+  if (isPublished !== undefined) {
+    rows.push(["In the catalog", isPublished ? "Published" : "Not published"]);
+  }
 
   return (
     <ModalShell onClose={onClose} size="xlarge" layer="overlay" label="Package details">

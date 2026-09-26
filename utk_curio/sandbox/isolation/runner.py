@@ -98,7 +98,7 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
     from utk_curio.sandbox.app.worker import _exec_lock
     from utk_curio.sandbox.util import staging
 
-    with _exec_lock:
+    with _exec_lock.hold("isolated_persist"):
         # Before persist_output, which moves the file out of scratch.
         dataset_file = (
             staging.copy_output_dataset(descriptor) if save_dataset else None

@@ -117,6 +117,21 @@ def wait_for_backend(backend_url: str, timeout_s: float = 180.0) -> None:
     raise SystemExit(f"[stress] backend {backend_url} never came up: {last}")
 
 
+def read_exec_lock(backend_url: str) -> dict | None:
+    """The sandbox's execution-lock counters, or None if unavailable.
+
+    Public and unauthenticated, like the rest of /api/monitor. Best effort:
+    a tier that cannot read them reports no lock section rather than failing.
+    """
+    try:
+        resp = requests.get(f"{backend_url}/api/monitor", timeout=10)
+        payload = resp.json() or {}
+    except (requests.RequestException, ValueError):
+        return None
+    sandbox = (payload.get("execution") or {}).get("sandbox") or {}
+    return sandbox.get("execLock")
+
+
 def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict:
     """Run each example alone, first, and keep its output hashes.
 
@@ -220,14 +235,25 @@ def main(argv: list[str] | None = None) -> int:
     all_results = []
     for position, tier in enumerate(tiers):
         print(f"[stress] tier {tier}: starting", flush=True)
+        # Bracketing the tier, because the counters are cumulative since the
+        # sandbox started and the baseline runs before the first tier.
+        lock_before = read_exec_lock(backend_url)
         results, seconds = run_tier(backend_url, args.run_id, tier, examples,
                                     baselines, args.register_concurrency,
                                     args.profile, label=f"{tier}x{position}")
         all_results.extend(results)
-        summary = reporting.tier_summary(tier, results, seconds, args.profile)
+        lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
+        summary = reporting.tier_summary(tier, results, seconds, args.profile,
+                                         exec_lock=lock)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
+        if lock:
+            waits = ", ".join(
+                f"{label} {stat['wait_seconds']}s over {stat['acquisitions']}"
+                for label, stat in sorted(lock["labels"].items())
+            )
+            print(f"[stress] tier {tier}: exec lock waited {waits}", flush=True)
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
                                     args.stats_log, profile=args.profile)

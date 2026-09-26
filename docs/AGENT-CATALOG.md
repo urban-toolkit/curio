@@ -442,6 +442,22 @@ history and nothing else. Nothing expires the files automatically.
 
 ---
 
+## Data portals
+
+The **Dataset Finder** can reach the portals in the
+[Data Lake Catalog](DATA-LAKE-CATALOG.md), not only the datasets you already
+hold. It lists the connected portals, searches them live, and can propose
+downloading one resource into your Data Catalog.
+
+That download is a **reviewed proposal**: it writes bytes into your store, so
+it goes through the same Apply gate every other mutation does and cannot be
+executed inside the model loop. The proposal card shows the portal's own
+description of the resource, fetched at mint time, rather than the model's
+account of it.
+
+A portal Curio has no connector for still reaches Node Builder, which writes
+the fetch code - that path did not go away, it stopped being the only one.
+
 ## See also
 
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this mirrors.

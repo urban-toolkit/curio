@@ -1102,6 +1102,18 @@
   justify-content: center;
 }
 
+/* A centred note standing in for the primary action, when there is no action
+   left to offer - a package already in your defaults, a portal that cannot be
+   searched. Shared because both of those pages wanted it and one of them was
+   reaching for an inline `textAlign: center` to get it. */
+.drawerNote {
+  margin: 0;
+  text-align: center;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  line-height: 1.5;
+}
+
 /* ══════════════════════════════════════════
    RESPONSIVE
    ══════════════════════════════════════════ */

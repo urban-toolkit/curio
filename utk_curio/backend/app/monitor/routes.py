@@ -93,7 +93,7 @@ def _unreachable_sandbox() -> dict:
         "memoryLimitMb": None, "cpuSecondsLimit": None,
         "wallTimeoutSeconds": None,
         "total": None, "isolated": None, "inProcess": None,
-        "childDeaths": None,
+        "childDeaths": None, "execLock": None,
     }
 
 
@@ -114,6 +114,10 @@ def _sandbox_section(payload) -> dict:
         "isolated": payload.get("isolated"),
         "inProcess": payload.get("inProcess"),
         "childDeaths": payload.get("childDeaths") or {},
+        # Per-call-site wait and hold time on the sandbox's process-wide
+        # execution lock. Cumulative since the sandbox started: the stress
+        # harness diffs two readings to get one tier's contention.
+        "execLock": payload.get("exec_lock"),
     }
 
 

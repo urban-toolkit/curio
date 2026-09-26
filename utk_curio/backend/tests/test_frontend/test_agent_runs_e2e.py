@@ -57,7 +57,17 @@ CODE_NODE_ID = "agent-e2e-code"
 # outside this process. web.search / web.fetch are deliberately absent: they
 # really open sockets (app/agents/egress.py), and agent.node-researcher and
 # agent.researcher both declare a local read tool as well, so nothing is lost.
-SAFE_READ_TOOLS = ("dataflow.read", "node.read", "node.runtime.read", "packages.catalog")
+#
+# datalake.search is absent for the same reason, with one qualification worth
+# knowing: this harness exports CURIO_DATALAKE_FIXTURES, so in THIS stack it
+# would answer from the recorded corpus rather than a portal. It stays out
+# anyway, because the safety would then depend on a harness detail rather than
+# on the tool, and agent.dataset-finder declares datalake.sources too - which
+# reads manifests off disk and is safe unconditionally.
+SAFE_READ_TOOLS = (
+    "dataflow.read", "node.read", "node.runtime.read", "packages.catalog",
+    "datalake.sources",
+)
 
 # Mutate tools whose mint needs only what a test can state up front. The other
 # mutate contracts (dataset.install, package.install, package.draft.apply,

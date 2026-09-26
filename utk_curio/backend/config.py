@@ -61,6 +61,21 @@ CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
 # Seed example projects from docs/examples/ on startup.
 CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
 
+# Flask debug mode on the backend's dev server. Off by default, and the reason
+# is throughput rather than safety: Flask's DefaultJSONProvider pretty-prints
+# every jsonify with indent=2 whenever app.debug is true, which measured 1.00s
+# against 0.25s to encode and 30.8MB against 19.2MB on a 200k-row frame. /get
+# pays that on every artifact fetch, and artifact fetches are 42% of the
+# blocked time in the 100-user stress run.
+#
+# Nothing is lost by it. The interactive debugger debug mode also enables never
+# fired anyway: app/__init__.py registers a catch-all errorhandler, so every
+# in-request fault is answered there and the response bodies are identical
+# either way. Reloading is a separate switch (FLASK_USE_RELOADER in server.py).
+#
+# The sandbox has always run debug=False; this makes the two processes match.
+CURIO_BACKEND_DEBUG = _env_flag("CURIO_BACKEND_DEBUG", False)
+
 # Real-time collaboration (opt-in). When False, the SocketIO server is never
 # instantiated and the flask-socketio package is never imported — installs
 # without this feature pay zero runtime cost.
@@ -91,6 +106,12 @@ DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.
 GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
 GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
 GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)
+
+# Data Lake Catalog: a deployment-wide Socrata app token, inherited by any user
+# who has not set their own. Same shape as the LLM key above, including the
+# reason there is no CLI flag for it: an argument is visible in the process
+# list to every user on the host.
+DEFAULT_SOCRATA_APP_TOKEN = os.environ.get("CURIO_DEFAULT_SOCRATA_APP_TOKEN") or None
 GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", DEFAULT_LLM_MODEL)
 
 

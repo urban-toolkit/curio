@@ -4,6 +4,7 @@ import json
 import time
 import secrets
 import sqlite3
+from pathlib import Path
 import tempfile
 import pytest
 import subprocess
@@ -317,6 +318,21 @@ def curio_servers(session_app, request):
     # An env var, not a flag: this only seeds a per-node UI toggle, so curio.py
     # deliberately has no argument for it and reads the environment instead.
     env["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1"
+    # Point the Data Lake Catalog at the recorded portal corpus, so the e2e
+    # stack answers portal searches and downloads from disk.
+    #
+    # This is what lets the lake specs drive the REAL backend - routes,
+    # providers, format detection, the download, the hand-off into the Data
+    # Catalog - while opening no socket. Stubbing at ``page.route`` instead
+    # would test the page against a fiction and leave every one of those
+    # layers uncovered in e2e, which is where they actually meet.
+    #
+    # Honoured only because the harness also passes ``--testing``: the
+    # transport refuses a fixture corpus in any process that is not a test rig
+    # (see datalakes/infrastructure/transport.py::build_transport).
+    env["CURIO_DATALAKE_FIXTURES"] = str(
+        Path(__file__).resolve().parents[1] / "test_datalakes" / "fixtures"
+    )
     # The examples are what #200 was about, and the gap that let it through:
     # this harness launched with ``--deploy`` but never ``--with-examples``, so
     # the one configuration where the gallery came up empty was the one

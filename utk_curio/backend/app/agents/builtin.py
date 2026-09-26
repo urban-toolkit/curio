@@ -214,13 +214,22 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # code. Deviations recorded in the memo (canvas target added for mission-
     # first discovery; foreground-only; no auto-install).
     BuiltinAgentSpec("agent.dataset-finder", "Dataset Finder", "data",
-                     "Discover and select datasets across external sources and the Data "
-                     "Catalog; hand external picks to Node Builder. Never authors fetch code.",
+                     "Discover and select datasets across connected data portals and the "
+                     "Data Catalog; download portal picks into the Data Catalog as a "
+                     "reviewed proposal. Never authors fetch code.",
                      "discovery_instruction.txt",
                      ("dataset.discover", "dataset.select"), ("discovery", "selection"),
                      targets=("node", "canvas"),
                      reads=("mission", "nodeContext", "catalog"),
-                     tools=("catalog.search", "dataset.install", "dataflow.read"),
+                     # The external lane used to dead-end: it could NAME a
+                     # portal dataset and nothing could act on it, so the only
+                     # move was the Node Builder handoff. The three lake
+                     # contracts make it actionable - roster, live search, and
+                     # a reviewed download. node-builder stays in delegates_to
+                     # because a source no provider covers is still real; it
+                     # just stops being the only answer.
+                     tools=("catalog.search", "datalake.sources", "datalake.search",
+                            "datalake.acquire", "dataset.install", "dataflow.read"),
                      delegates_to=("agent.node-builder", "agent.workflow-suggester",
                                    "agent.keyword-binding-agent", "agent.node-researcher"),
                      review_policy="review-before-apply",

@@ -143,7 +143,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
             Update all projects
           </button>
         ) : (
-          <p className={browseStyles.drawerDescription} style={{ textAlign: "center" }}>
+          <p className={browseStyles.drawerNote}>
             This package is in your defaults list for new and existing projects.
           </p>
         )

@@ -19,16 +19,59 @@ import path from "path";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
+/**
+ * The drawers whose item can be PUBLISHED to the shared catalog, so the
+ * publish-pill assertions apply to them.
+ */
 const DRAWERS = [
   "pages/catalog/PackageBrowseDrawer.tsx",
   "pages/dataHub/DataCatalogBrowseDrawer.tsx",
   "pages/agents/AgentCatalogBrowseDrawer.tsx",
 ];
 
+/**
+ * Every browse drawer, including the Data Lake Catalog's.
+ *
+ * A lake source is deliberately absent from `DRAWERS`: it has no publish
+ * concept at all. Sources are operator-authored - there is no import route,
+ * because a source declares a host the server makes outbound requests to on a
+ * user's behalf - so "publish this portal" is not an action that exists. The
+ * assertions about layout and shared components still apply to it, which is
+ * what this list is for; forcing a publish pill onto it to satisfy a loop
+ * would be inventing a control to pass a test.
+ */
+const ALL_DRAWERS = [...DRAWERS, "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx"];
+
 describe("catalog drawer parity", () => {
-  test("both drawers are built from the shared drawer body", () => {
-    for (const drawer of DRAWERS) {
+  test("every browse drawer is built from the shared drawer body", () => {
+    for (const drawer of ALL_DRAWERS) {
       expect(read(drawer)).toMatch(/<CatalogBrowseDrawerBody\b/);
+    }
+  });
+
+  test("every browse drawer sits in the shared shell", () => {
+    for (const drawer of ALL_DRAWERS) {
+      expect(read(drawer)).toMatch(/<CatalogBrowseDrawerShell\b/);
+    }
+  });
+
+  test("no browse drawer paints with a file-format colour", () => {
+    // `dfmt_*` is the per-FORMAT palette. A category, a provider or a kind is
+    // not a file format, and borrowing one is how the package drawer once
+    // rendered its category in the Parquet orange.
+    for (const drawer of ALL_DRAWERS) {
+      const tsx = read(drawer);
+      if (drawer.includes("dataHub")) continue; // the Data drawer legitimately shows a format
+      expect(tsx).not.toMatch(/dfmt_/);
+    }
+  });
+
+  test("no browse drawer styles itself with inline styles", () => {
+    // CSS modules resolve through identity-obj-proxy under jest, so a render
+    // assertion cannot tell a styled element from an unstyled one - which is
+    // why this reads the source.
+    for (const drawer of ALL_DRAWERS) {
+      expect(read(drawer)).not.toMatch(/style=\{\{/);
     }
   });
 

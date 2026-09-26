@@ -72,13 +72,14 @@ curio/
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
+├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
 ├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -237,6 +238,33 @@ playwright install chromium
 pytest utk_curio/backend/tests/
 pytest utk_curio/sandbox/tests/
 ```
+
+#### Tests do not reach the network
+
+The backend suite refuses outbound connections. Loopback is allowed, because the
+sandbox, the backend health polls and the Playwright stack all need it; anything
+else raises `NetworkAccessDenied` naming the host it blocked. The guard lives in
+`utk_curio/backend/tests/netguard.py`, which explains how it works and what it
+cannot cover.
+
+A test that talks to a third party fails when that third party is slow, down, or
+answers differently than it did yesterday. Rather than trust every author to
+remember to inject a fake, the suite makes forgetting a loud, immediate failure.
+If you hit it, the fix is almost always to inject a fake transport -- most
+network-touching code in this repo already takes one (`egress.fetch`'s
+`request_fn` and `resolver`, `RegistryFetcher`, `LakeTransport`).
+
+Two markers opt out, and they mean different things:
+
+| Marker | Runs by default | Use it for |
+|---|---|---|
+| `@pytest.mark.contract` | **yes**, including CI | Checking that a third party's response *shape* still matches what our parser expects. Must skip -- never fail -- when the endpoint is unreachable, returns a non-2xx, or answers something other than the expected content type. The only permitted failure is a successful response whose shape changed. |
+| `@pytest.mark.externalapi` | no, needs `--longrun` | Anything else that genuinely needs the network. |
+
+Writing a contract test that can fail for a reason outside our control puts a
+third party in the critical path of every PR, which is the problem the guard
+exists to solve. Skip generously; a contract test that skips has cost nothing,
+and its skip reason is printed under `pytest -v`.
 
 ### Frontend Unit Tests
 

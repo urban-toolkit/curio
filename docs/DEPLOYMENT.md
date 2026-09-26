@@ -55,10 +55,39 @@ The three directories you created are bind-mounted into the container and persis
 |---|---|---|
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
+| `datalakes/` | The Data Lake Catalog: one manifest per data portal. Ships with the image | No |
 | `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
 
 `packages/` is **not** mounted. The node catalog is baked into the image so it
-always matches the deployed commit.
+always matches the deployed commit. Neither is `datalakes/`, for the same
+reason: a data lake source declares a host the server makes outbound requests
+to, so which sources exist should match the deployed commit rather than be
+editable in a mounted volume. Set `CURIO_DATALAKE_ROOT` if you need it
+elsewhere.
+
+### Outbound requests
+
+The Data Lake Catalog is the one feature that makes outbound requests on a
+user's behalf, so it is worth knowing what bounds them. Every URL - search,
+describe, download, and each redirect hop - passes the same default-deny
+address policy the agent tools use: https/http only, private, loopback,
+link-local and reserved addresses refused *after* DNS resolution, and the
+connected peer re-checked before any response body is read.
+
+Two things a deployment should know:
+
+- **A source manifest can never exempt a host from that policy.** The one
+  exemption in the codebase is for an operator-configured search provider, and
+  this catalog does not use it.
+- **The residual documented in `app/common/egress_policy.py` applies here
+  too**: the request line and headers are on the wire before the peer can be
+  confirmed, so a blind request to an internal service is not *prevented*, only
+  its response is withheld. Closing that needs connection-factory work.
+
+Rate limiting is per user, per source, and **in-process**. Under several
+workers the effective rate is the configured rate times the worker count. It is
+a politeness mechanism toward portals you do not own and a brake on accidental
+loops, not a guarantee you can make to a third party.
 
 > [!TIP]
 > `datasets/` lives inside the git checkout, so publishing a dataset dirties your
@@ -338,4 +367,5 @@ flooding it cannot push real errors out of the log.
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
+  `datalakes/` ships with the image and holds no user data, so it needs none.
 

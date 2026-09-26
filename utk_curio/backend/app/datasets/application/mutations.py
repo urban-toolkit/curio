@@ -110,6 +110,7 @@ class CatalogMutations:
         group_id: str | None = None,
         layer_name: str | None = None,
         source_updated_at: str | None = None,
+        lake_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -147,6 +148,7 @@ class CatalogMutations:
                 layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
+                lake_source=lake_source,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc

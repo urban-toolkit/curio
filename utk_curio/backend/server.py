@@ -45,6 +45,30 @@ with app.app_context():
 def health():
     return 'OK', 200
 
+def _run_kwargs():
+    """The arguments both server flavours share, resolved from the environment.
+
+    A function rather than two literal argument lists because ``debug`` has to
+    be the same on both paths and neither path can be exercised by a test that
+    starts a server. ``CURIO_BACKEND_DEBUG`` is read here rather than left to
+    Flask's own ``FLASK_DEBUG``: the explicit ``debug=`` argument to ``run()``
+    overrides that variable, and socketio.run has to be handed the value
+    regardless, so honouring FLASK_DEBUG would mean reimplementing its parsing
+    in two places.
+
+    Note that ``use_reloader`` is separate and unchanged, so turning debug off
+    does not turn auto-reload off with it.
+    """
+    from utk_curio.backend.config import CURIO_BACKEND_DEBUG
+
+    return {
+        'host': os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
+        'port': int(os.getenv('FLASK_BACKEND_PORT', 5002)),
+        'debug': CURIO_BACKEND_DEBUG,
+        'use_reloader': os.getenv('FLASK_USE_RELOADER', '1') != '0',
+    }
+
+
 if __name__ == '__main__':
     from utk_curio.backend.config import ENABLE_COLLAB
     if ENABLE_COLLAB:
@@ -52,22 +76,12 @@ if __name__ == '__main__':
         # The Werkzeug dev server is not officially supported but is fine for
         # local dev; allow_unsafe_werkzeug=True suppresses the refusal.
         from utk_curio.backend.extensions import socketio
-        socketio.run(
-            app,
-            host=os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
-            port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
-            debug=True,
-            use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
-            allow_unsafe_werkzeug=True,
-        )
+        socketio.run(app, allow_unsafe_werkzeug=True, **_run_kwargs())
     else:
         app.run(
-            host=os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
-            port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
             threaded=True,
-            debug=True,
-            use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
             exclude_patterns=RELOADER_EXCLUDE_PATTERNS,
             reloader_type=DEFAULT_RELOADER_TYPE,
+            **_run_kwargs(),
         )
 

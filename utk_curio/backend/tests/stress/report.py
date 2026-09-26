@@ -44,8 +44,49 @@ def endpoint_stats(results: list[UserResult]) -> dict[str, dict]:
     }
 
 
+def exec_lock_delta(before: dict | None, after: dict | None) -> dict | None:
+    """What one tier cost on the sandbox's execution lock.
+
+    The counters are cumulative since the sandbox started, so a tier's own
+    contention is the difference between a reading taken before it and one
+    taken after. Returns None when either reading is missing rather than
+    inventing a zero, which would read as "no contention".
+    """
+    if not before or not after:
+        return None
+    labels = {}
+    for label, end in (after.get("labels") or {}).items():
+        start = (before.get("labels") or {}).get(label) or {}
+        acquisitions = end["acquisitions"] - start.get("acquisitions", 0)
+        if acquisitions <= 0:
+            continue
+        waited = end["wait_seconds"] - start.get("wait_seconds", 0.0)
+        labels[label] = {
+            "acquisitions": acquisitions,
+            "wait_seconds": round(waited, 1),
+            "held_seconds": round(
+                end["held_seconds"] - start.get("held_seconds", 0.0), 1
+            ),
+            "mean_wait_seconds": round(waited / acquisitions, 2),
+            # Not a delta: the peak is a high-water mark, so the run's largest
+            # single wait is the honest number to carry here.
+            "max_wait_seconds": round(end["max_wait_seconds"], 1),
+        }
+    if not labels:
+        return None
+    return {
+        "labels": labels,
+        "total_wait_seconds": round(
+            sum(e["wait_seconds"] for e in labels.values()), 1
+        ),
+        "total_held_seconds": round(
+            sum(e["held_seconds"] for e in labels.values()), 1
+        ),
+    }
+
+
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
-                 profile: str = "burst") -> dict:
+                 profile: str = "burst", exec_lock: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -65,6 +106,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
             "max": round(max(durations), 1) if durations else 0.0,
         },
         "endpoints": endpoint_stats(results),
+        "exec_lock": exec_lock,
         "failures": [
             {
                 "user": result.user,
@@ -88,16 +130,30 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
 
 
 def peak_container_stats(stats_log: str | None) -> dict | None:
-    """Peak memory and PID count from a ``docker stats`` sample log.
+    """Peak memory, PID count and CPU from a ``docker stats`` sample log.
 
     The log is written by the CI job (one ``docker stats --no-stream`` line per
-    sample). Absent or unreadable, this is simply left out of the report: the
-    run's own numbers do not depend on it.
+    sample, plus a ``HOST`` line carrying the load average and core count).
+    Absent or unreadable, this is simply left out of the report: the run's own
+    numbers do not depend on it.
+
+    Docker reports CPU as a percentage of ONE core, so 800% is eight cores
+    busy, and the useful reading is that number against the host's core count.
+    That comparison is the point of collecting it: a tier that saturates a
+    lock rather than the machine shows up here as a nearly idle host, and no
+    amount of extra execution parallelism would change it.
+
+    Reads both the current four-field format and the three-field one that
+    every run before this wrote, so old logs still parse.
     """
     if not stats_log or not os.path.exists(stats_log):
         return None
     peak_mib = 0.0
     peak_pids = 0
+    peak_cpu = 0.0
+    cpu_samples = []
+    peak_load = 0.0
+    host_cores = None
     units = {"kib": 1 / 1024, "mib": 1.0, "gib": 1024.0}
     try:
         with open(stats_log, encoding="utf-8", errors="replace") as fh:
@@ -105,6 +161,26 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
                 parts = [p.strip() for p in line.split("|")]
                 if len(parts) < 3:
                     continue
+                if parts[0] == "HOST":
+                    # HOST|load1|load5|load15|cores
+                    try:
+                        peak_load = max(peak_load, float(parts[1]))
+                    except ValueError:
+                        pass
+                    if len(parts) >= 5:
+                        try:
+                            host_cores = int(parts[4])
+                        except ValueError:
+                            pass
+                    continue
+                if len(parts) >= 4 and parts[1].endswith("%"):
+                    try:
+                        cpu = float(parts[1][:-1])
+                        peak_cpu = max(peak_cpu, cpu)
+                        cpu_samples.append(cpu)
+                    except ValueError:
+                        pass
+                    parts = [parts[0]] + parts[2:]  # fall through as name|mem|pids
                 raw_mem = parts[1].split("/")[0].strip().lower()
                 for unit, factor in units.items():
                     if raw_mem.endswith(unit):
@@ -121,7 +197,17 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
         return None
     if peak_mib == 0.0 and peak_pids == 0:
         return None
-    return {"peak_memory_mib": round(peak_mib, 1), "peak_pids": peak_pids}
+    stats = {"peak_memory_mib": round(peak_mib, 1), "peak_pids": peak_pids}
+    if cpu_samples:
+        stats["peak_cpu_percent"] = round(peak_cpu, 1)
+        stats["mean_cpu_percent"] = round(sum(cpu_samples) / len(cpu_samples), 1)
+        # The reading that matters: cores actually busy, against cores present.
+        stats["peak_cores_busy"] = round(peak_cpu / 100, 1)
+    if peak_load:
+        stats["peak_host_load"] = round(peak_load, 2)
+    if host_cores:
+        stats["host_cores"] = host_cores
+    return stats
 
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
@@ -140,7 +226,11 @@ def build_report(run_id: str, backend_url: str, tiers: list[dict],
 
 
 def markdown(report: dict) -> str:
-    lines = [f"## Stress run `{report['run_id']}` ({report.get('profile', 'burst')} profile)", ""]
+    # Artifacts are fetched the way the canvas fetches them, as Arrow. Said
+    # here because a report outlives the run that made it, and a reader
+    # comparing this against an older one needs to know the wire changed.
+    lines = [f"## Stress run `{report['run_id']}` "
+             f"({report.get('profile', 'burst')} profile, arrow artifacts)", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
     lines.append("| ---: | ----: | --------: | ---: | -------: | -------: |")
     for tier in report["tiers"]:
@@ -152,8 +242,17 @@ def markdown(report: dict) -> str:
         )
     peaks = report.get("container_peaks")
     if peaks:
-        lines += ["", f"Container peak: {peaks['peak_memory_mib']} MiB, "
-                      f"{peaks['peak_pids']} PIDs."]
+        peak_line = (f"Container peak: {peaks['peak_memory_mib']} MiB, "
+                     f"{peaks['peak_pids']} PIDs")
+        if "peak_cores_busy" in peaks:
+            peak_line += (f", {peaks['peak_cpu_percent']}% CPU "
+                          f"({peaks['peak_cores_busy']} cores busy at peak, "
+                          f"{peaks['mean_cpu_percent']}% mean)")
+        if "peak_host_load" in peaks:
+            cores = peaks.get("host_cores")
+            peak_line += (f". Host load peaked at {peaks['peak_host_load']}"
+                          + (f" on {cores} cores" if cores else ""))
+        lines += ["", peak_line + "."]
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]
@@ -164,6 +263,19 @@ def markdown(report: dict) -> str:
                 f"| `{endpoint}` | {stat['calls']} | {stat['errors']} "
                 f"| {stat['p50_s']}s | {stat['p95_s']}s | {stat['max_s']}s |"
             )
+        lock = tier.get("exec_lock")
+        if lock:
+            lines += ["", "Execution lock, this tier:", ""]
+            lines.append("| Call site | Acquisitions | Waited | Held | Mean wait | Max wait |")
+            lines.append("| --------- | -----------: | -----: | ---: | --------: | -------: |")
+            for label, stat in sorted(
+                lock["labels"].items(), key=lambda kv: -kv[1]["wait_seconds"]
+            ):
+                lines.append(
+                    f"| `{label}` | {stat['acquisitions']} "
+                    f"| {stat['wait_seconds']}s | {stat['held_seconds']}s "
+                    f"| {stat['mean_wait_seconds']}s | {stat['max_wait_seconds']}s |"
+                )
         if tier["failures"]:
             lines += ["", "<details><summary>"
                           f"{len(tier['failures'])} failure(s)</summary>", ""]

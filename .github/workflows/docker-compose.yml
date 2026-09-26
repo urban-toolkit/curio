@@ -1104,7 +1104,9 @@ jobs:
       - name: 📈 Start the container stats sampler
         run: |
           nohup bash -c 'while true; do
-            docker stats --no-stream --format "{{.Name}}|{{.MemUsage}}|{{.PIDs}}" \
+            docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}" \
+              >> "$GITHUB_WORKSPACE/docker-stats.log" 2>/dev/null || true
+            echo "HOST|$(cut -d" " -f1-3 /proc/loadavg | tr " " "|")|$(nproc)" \
               >> "$GITHUB_WORKSPACE/docker-stats.log" 2>/dev/null || true
             sleep 5
           done' > /dev/null 2>&1 &

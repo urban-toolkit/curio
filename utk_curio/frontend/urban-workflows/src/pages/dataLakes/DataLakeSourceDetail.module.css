@@ -1,0 +1,47 @@
+/*
+ * The source's identity block inside the shared detail header.
+ *
+ * Only what the header does not already own: the header supplies the title,
+ * subtitle, actions and all of the surrounding geometry.
+ */
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.blurb {
+  margin: 0;
+  max-width: 720px;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  line-height: 1.5;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.homepage {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.count {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-meta);
+}
+
+/* The result list: rows on a card surface, bounded so the page scrolls its
+   results rather than the whole document. */
+.results {
+  background: var(--curio-card-bg);
+  border-top: 1px solid var(--curio-border);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}

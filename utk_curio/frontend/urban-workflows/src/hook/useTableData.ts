@@ -6,6 +6,7 @@ import { formatDate, mapTypes } from "../utils/formatters";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { fetchData } from "../services/api";
 import { sandboxArtifactId } from "../utils/flowOutputRef";
+import { lazyRows } from "../utils/rowSource";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -50,41 +51,13 @@ const useTableData = ({ data }: { data: INodeData }) => {
   }, [data.input]);
 
   const createTableData = (parsedOutput: ICodeDataContent) => {
-    let tableData = [];
-
-    // @ts-ignore
-    if (parsedOutput != "") {
-        // let parsedOutput = parsedOutput;
-        // parsedOutput.data = parsedOutput.data;
-        // console.log("Creating table", parsedOutput);
-        if (parsedOutput.dataType == "dataframe") {
-            let columns = Object.keys(parsedOutput.data);
-            let dfIndices = Object.keys(parsedOutput.data[columns[0]]);
-            for (let i = 0; i < dfIndices.length; i++) {
-                let element: any = {};
-                for (const column of columns) {
-                    element[column] = parsedOutput.data[column][dfIndices[i]];
-                }
-                tableData.push(element);
-            }
-        }
-        else if(parsedOutput.dataType == "geodataframe" && parsedOutput.data.features.length > 0) {
-            let columns = Object.keys(parsedOutput.data.features[0].properties);
-
-            for (let i = 0; i < parsedOutput.data.features.length; i++) {
-                let element: any = {};
-
-                for (const column of columns) {
-                    element[column] =
-                        parsedOutput.data.features[i].properties[column];
-                }
-
-                tableData.push(element);
-            }
-        }
-    }
-
-    return tableData;
+    // Lazy on purpose. DataPoolContent renders the 100-row preview from
+    // /get-preview whenever it has one and falls back to this only when it
+    // does not, so flattening the whole artifact here built 200k row objects
+    // to display 100 of them. `lazyRows` builds a row when one is read: the
+    // table's `rows.slice(0, maxRows)` costs a page, not an artifact.
+    // @ts-ignore - parsedOutput is `any`-shaped through this hook
+    return lazyRows(parsedOutput);
   };
 
   const customWidgetsCallback = (div: HTMLElement) => {

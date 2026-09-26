@@ -1,0 +1,24 @@
+{
+  "id": "lake.curio.direct-url",
+  "name": "Direct URL",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Fetch a dataset straight from an https link. Use this for a portal Curio has no connector for: paste the URL of the file itself and it is downloaded into your Data Catalog. There is nothing to browse, so this source has no search.",
+  "publisher": "Curio",
+  "homepage": null,
+  "license": "Whatever the linked file carries",
+  "tags": ["any", "url", "fallback"],
+  "provider": { "type": "direct", "baseUrl": "", "options": {} },
+  "auth": { "mode": "public" },
+  "capabilities": {
+    "search": false,
+    "describe": true,
+    "download": true,
+    "formats": ["csv", "geojson", "json", "parquet", "geotiff"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": false
+  },
+  "limits": { "requestsPerMinute": 30 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

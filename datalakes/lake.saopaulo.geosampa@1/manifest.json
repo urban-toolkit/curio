@@ -1,0 +1,29 @@
+{
+  "id": "lake.saopaulo.geosampa",
+  "name": "GeoSampa",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "The Mapa Digital da Cidade de Sao Paulo: the city's geospatial layers, from zoning and land use to transport, drainage and census geography, served as OGC web features.",
+  "publisher": "Prefeitura de Sao Paulo",
+  "homepage": "https://geosampa.prefeitura.sp.gov.br",
+  "license": "See each layer's own terms",
+  "tags": ["sao-paulo", "brazil", "municipal", "geospatial", "wfs"],
+  "icon": "icon.png",
+  "provider": {
+    "type": "wfs",
+    "baseUrl": "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows",
+    "options": { "version": "2.0.0", "outputFormat": "application/json" }
+  },
+  "auth": { "mode": "public" },
+  "capabilities": {
+    "search": true,
+    "describe": true,
+    "download": true,
+    "formats": ["geojson"],
+    "maxDownloadBytes": 67108864,
+    "allowOffBaseDistributions": false
+  },
+  "limits": { "requestsPerMinute": 20 },
+  "createdAt": "2026-09-23T00:00:00Z",
+  "updatedAt": "2026-09-23T00:00:00Z"
+}

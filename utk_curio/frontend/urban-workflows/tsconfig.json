@@ -11,6 +11,10 @@
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
+    // The WKB test imports its golden fixture as JSON. tsc is check-only here
+    // (webpack handles JSON natively), so this makes the checker agree with
+    // what the bundler and jest already do.
+    "resolveJsonModule": true,
     "sourceMap": true,
     "baseUrl": "src",
     // `moduleResolution: node10` and `baseUrl` are both deprecated in TS 7.

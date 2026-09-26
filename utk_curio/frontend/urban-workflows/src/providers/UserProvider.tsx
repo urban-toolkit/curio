@@ -55,6 +55,7 @@ interface UserProviderProps {
     apiKey?: string;
     model?: string;
     huggingfaceToken?: string;
+    socrataAppToken?: string;
   }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
@@ -267,6 +268,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
       apiKey?: string;
       model?: string;
       huggingfaceToken?: string;
+      socrataAppToken?: string;
     }) => {
       const updated = await authApi.patchMe({
         llm_api_type: config.apiType,
@@ -274,6 +276,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         llm_api_key: config.apiKey,
         llm_model: config.model,
         huggingface_token: config.huggingfaceToken,
+        socrata_app_token: config.socrataAppToken,
       });
       setUser(updated);
     },

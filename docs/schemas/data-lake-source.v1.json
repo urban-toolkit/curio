@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/data-lake-source.v1.json",
+  "title": "Curio Data Lake Source Manifest (v1)",
+  "description": "Schema for a Curio data lake source manifest.json. A source describes a data PORTAL (a Socrata or CKAN site, an ArcGIS hub, an OGC WFS server, or a bare https link), not a dataset: the datasets it holds are discovered live. It ships in a directory named '<sourceId>@<major>' containing this manifest and an optional icon.png. Field names are camelCase. Source ids begin with 'lake.' to distinguish them from dataset and node package ids, and they name the PUBLISHER, never the software - 'lake.socrata.chicago' would bake a fact that belongs in provider.type into an immutable coordinate, and it is wrong the day a portal migrates. Manifests are operator-authored: there is no import route, because a source declares a host the server will make outbound requests to on a user's behalf. This schema is the canonical spec; the backend validator in utk_curio/backend/app/datalakes/domain/manifest.py implements the supported subset, and tests/test_datalakes/test_schema_matches_validator.py keeps the two from drifting. User-facing overview: docs/DATA-LAKE-CATALOG.md.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "provider"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^lake\\.[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,4}$",
+      "description": "lake.<publisher>.<portal>, 3 to 6 dot-separated lowercase segments."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        }
+      }
+    },
+    "description": {
+      "type": "string"
+    },
+    "publisher": {
+      "type": "string"
+    },
+    "homepage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "icon": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\.png$",
+      "description": "A single .png filename inside the source folder. PNG only: an SVG served from the app's own origin can carry script, and this is the one file here whose bytes are rendered rather than parsed. Omitted or unreadable means the shared lake glyph is shown instead."
+    },
+    "provider": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": [
+            "arcgis",
+            "ckan",
+            "direct",
+            "socrata",
+            "wfs"
+          ]
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own - a 'direct' resource id IS the URL."
+        },
+        "options": {
+          "type": "object",
+          "description": "Provider-specific wiring. Never served to clients."
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "enum": [
+            "optional-token",
+            "public",
+            "required-token"
+          ]
+        },
+        "secretId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){0,2}$",
+          "description": "Names a per-user credential SLOT, never a value. Shared across sources of a family, so one socrata.app-token serves every Socrata portal."
+        },
+        "scheme": {
+          "enum": [
+            "header"
+          ],
+          "description": "header only in v1. That single constraint means no secret ever enters a URL, which is what makes the egress audit record, refusal messages and job records safe to store verbatim."
+        },
+        "headerName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "helpUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "optional-token",
+                  "required-token"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "secretId",
+              "headerName"
+            ]
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "search": {
+          "type": "boolean"
+        },
+        "describe": {
+          "type": "boolean"
+        },
+        "download": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "csv",
+              "geojson",
+              "geotiff",
+              "json",
+              "parquet"
+            ]
+          },
+          "description": "An upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time: a manifest can narrow what may be ingested, never widen it."
+        },
+        "maxDownloadBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864,
+          "description": "A manifest may lower the server's ceiling, never raise it."
+        },
+        "allowOffBaseDistributions": {
+          "type": "boolean",
+          "description": "Let a download follow a URL off baseUrl. CKAN distributions legitimately live off-portal. It widens what a hostile search response can steer a request at, so it is an operator's decision per portal rather than a provider default."
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "requestsPerMinute": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "createdAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updatedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}
