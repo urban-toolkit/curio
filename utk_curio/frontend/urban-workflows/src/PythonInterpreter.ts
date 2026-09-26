@@ -4,6 +4,7 @@ import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 // import { pythonCode } from "./pythonWrapper";
 import { backendUrl } from "./utils/backendUrl";
+import { executionInputRef } from "./utils/flowOutputRef";
 
 export class PythonInterpreter {
     // protected _pythonWrapperCode: string[];
@@ -73,7 +74,7 @@ export class PythonInterpreter {
             method: "POST",
             body: JSON.stringify({
                 code: unifiedLines,
-                input: input, // new
+                input: executionInputRef(input), // new
                 inputTypes: inputTypes, // new
                 nodeType: nodeType, // new
                 nodeId: nodeId,
