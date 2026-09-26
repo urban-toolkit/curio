@@ -289,8 +289,13 @@ export const useVega = ({
       //
       // dev/136: still counts, and `drawn: 0` is the truth -- the badge must
       // not read green over the explanation this just put on the node, and
-      // the verdict carries that same explanation.
-      return { rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail };
+      // the verdict carries that same explanation. A refused input type is
+      // the upstream's to fix, and its sentence says which type it was, as the
+      // Autark node's refusal does.
+      return {
+        rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail,
+        ...(prepared.emptyReason === "input-type-rejected" ? { inputProblem: prepared.detail } : {}),
+      };
     }
 
     specObj["data"] = { values: values, name: "data" };
