@@ -27,6 +27,7 @@ import { useAgentCatalogBrowse } from "./useAgentCatalogBrowse";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
+import { AgentCatalogSettingsModal } from "../../components/agents/catalog/AgentCatalogSettingsModal";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   agentCardActions,
@@ -41,6 +42,7 @@ export const AgentCatalogBrowse: React.FC = () => {
   // (#189). The Data Catalog keeps the same two surfaces apart.
   const [detailCoord, setDetailCoord] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Right-click. The card reports the event, the grid owns the menu - the same
   // division the projects page has used all along (#285).
   const [contextMenu, setContextMenu] = useState<{
@@ -94,9 +96,7 @@ export const AgentCatalogBrowse: React.FC = () => {
   };
 
   // From the unfiltered roster on purpose - the modal outlives a filter change.
-  const detailAgent = detailCoord
-    ? (agents.find((a) => a.dirName === detailCoord) ?? null)
-    : null;
+  const detailAgent = detailCoord ? (agents.find((a) => a.dirName === detailCoord) ?? null) : null;
 
   return (
     <div
@@ -155,8 +155,8 @@ export const AgentCatalogBrowse: React.FC = () => {
           </div>
           <p className={browseStyles.pageIntro}>
             Agents in the shared catalog. Adding one here makes it available to{" "}
-            <strong>all your projects</strong>, present and future; add it to a single
-            project from that project&apos;s Agent Catalog.
+            <strong>all your projects</strong>, present and future; add it to a single project from
+            that project&apos;s Agent Catalog.
           </p>
           <div className={browseStyles.headerTools}>
             <input
@@ -173,6 +173,14 @@ export const AgentCatalogBrowse: React.FC = () => {
               onClick={() => setImportOpen(true)}
               title="Upload your own agent definition"
             />
+            <button
+              type="button"
+              className={browseStyles.publishButton}
+              title="Values your agents read when they run"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Settings
+            </button>
           </div>
         </section>
 
@@ -208,9 +216,7 @@ export const AgentCatalogBrowse: React.FC = () => {
                   categoryFilter === category ? browseStyles.chipActive : ""
                 }`}
                 type="button"
-                onClick={() =>
-                  setCategoryFilter((prev) => (prev === category ? "" : category))
-                }
+                onClick={() => setCategoryFilter((prev) => (prev === category ? "" : category))}
               >
                 <span className={`${browseStyles.chipDot} ${dotClass}`} />
                 {category}
@@ -298,6 +304,8 @@ export const AgentCatalogBrowse: React.FC = () => {
       {detailAgent ? (
         <AgentDetailModal agent={detailAgent} onClose={() => setDetailCoord(null)} />
       ) : null}
+
+      {settingsOpen ? <AgentCatalogSettingsModal onClose={() => setSettingsOpen(false)} /> : null}
 
       {/* The same modal the drawer's footer opens. Uploading writes a new
           definition into the account, so the roster has to be re-read. */}
