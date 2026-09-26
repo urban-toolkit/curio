@@ -407,7 +407,8 @@ def test_catalog_settings_round_trip(
         return page.get_by_role("dialog", name="Catalog settings")
 
     dialog = open_settings()
-    first = dialog.get_by_label("Name 1")
+    # Exact: "Name 1" is also a prefix of "Name 10" and "Name 11".
+    first = dialog.get_by_label("Name 1", exact=True)
     expect(first).to_have_value("Action", timeout=15000)
     first.fill("Hazard")
     dialog.get_by_role("button", name="Save", exact=True).click()
@@ -420,8 +421,8 @@ def test_catalog_settings_round_trip(
 
     page.reload()
     dialog = open_settings()
-    expect(dialog.get_by_label("Name 1")).to_have_value("Hazard", timeout=15000)
+    expect(dialog.get_by_label("Name 1", exact=True)).to_have_value("Hazard", timeout=15000)
     dialog.get_by_role("button", name="Restore default", exact=True).click()
-    expect(dialog.get_by_label("Name 1")).to_have_value("Action", timeout=10000)
+    expect(dialog.get_by_label("Name 1", exact=True)).to_have_value("Action", timeout=10000)
     restored = api_json(f"{current_server}/api/agents/settings", token)
     assert next(s for s in restored["settings"] if s["key"] == "keywordTypes")["isDefault"] is True
