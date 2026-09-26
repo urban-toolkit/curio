@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Feature, FeatureCollection } from 'geojson';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
@@ -7,7 +7,11 @@ import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
-import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
+import { useFlowContext } from '../../providers/FlowProvider';
+import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
+import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
+import { isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
 import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
@@ -16,7 +20,7 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
 import {
-    autkSourcesFrom, autkTableName, documentTableRefs, loadableSource, ownTableNames, readAutkInput,
+    autkNeedsInput, autkSourcesFrom, autkTableName, documentTableRefs, loadableSource, ownTableNames, readAutkInput,
     swappedIndex, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
@@ -92,6 +96,48 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // swappedIndex, so positions still mean the input's rows.
     const loadSwapsRef = useRef<Record<string, number>>({});
 
+    // What the node knows about its input edge, asked the way the Vega-Lite
+    // node asks (hook/useGrammarInputState).
+    const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+    // A failed node says so to the nodes it feeds, as a failed code node does.
+    const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
+    // Whether a run has been tried, whether one is under way, and what the last
+    // one could not read from its input: the pre-run notice reads these.
+    const hasRunRef = useRef(false);
+    const runningRef = useRef(false);
+    const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
+    // The notice the body should show now, kept so a container that mounts
+    // later (the editor remounting its output pane) gets it too.
+    const noticeRef = useRef<{ reason: NodeEmptyReason; words: { title?: string; hint?: string } } | null>(null);
+    const writeNotice = () => {
+        const host = wrapperRef.current;
+        if (!host || runningRef.current || grammarRef.current != null) return;
+        const notice = noticeRef.current;
+        if (notice) {
+            writeEmptyState(host, notice.reason, notice.words);
+        } else if (host.hasAttribute('data-curio-node-empty')) {
+            // A notice that no longer applies is not left behind.
+            host.replaceChildren();
+            clearEmptyState(host);
+        }
+    };
+    const attachWrapper = useCallback((el: HTMLDivElement | null) => {
+        wrapperRef.current = el;
+        if (el) writeNotice();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    // A run that ends on an input it cannot draw names it in the body at once,
+    // as the Vega-Lite node does when it prepares its input.
+    const showInputProblem = (kind: AutkSpecKind) => {
+        const problem = inputProblemRef.current;
+        if (!problem) return;
+        noticeRef.current = {
+            reason: problem.reason,
+            words: emptyStateWords(problem.reason, kind, problem.detail),
+        };
+        writeEmptyState(wrapperRef.current, problem.reason, noticeRef.current.words);
+    };
+
     const runGrammar = async (
         specString: string,
         emit: (o: { code: string; content: string }) => void,
@@ -146,6 +192,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             pickFixCleanupRef.current?.();
             pickFixCleanupRef.current = null;
             while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
+            clearEmptyState(wrapper);
             if (hasMaps) {
                 const canvas = document.createElement('canvas');
                 canvas.id = mapCanvasId;
@@ -177,6 +224,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             try {
                 const prepared = autkSourcesFrom(await readInput(data.input), spec);
                 preparedInput = prepared;
+                if (prepared.emptyReason && prepared.sources.length === 0) {
+                    inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
+                }
                 const swaps: Record<string, number> = {};
                 upstreamSources = prepared.sources.map((source) => {
                     const loadable = loadableSource(source);
@@ -481,6 +531,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 if (outcome.empty) {
                     grammarRef.current = null;
                     specRef.current = null;
+                    showInputProblem('render');
                     emit({ code: 'error', content: outcome.message,
                            kind: emptyRenderKind(outcome.cause) } as any);
                     showToast(outcome.message, 'error');
@@ -586,6 +637,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     const computeInput = data.input
                         ? autkSourcesFrom(await readInput(data.input), spec, { alias: false })
                         : null;
+                    if (computeInput?.emptyReason && computeInput.sources.length === 0) {
+                        inputProblemRef.current = { reason: computeInput.emptyReason, detail: computeInput.detail };
+                    }
                     const upstream = (computeInput?.sources ?? []).map((source) => ({
                         name: source.outputTableName,
                         fc: source.geojsonObject,
@@ -657,6 +711,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             // nothing is `no-input-rows`.
             const outcome = runCounts ? renderOutcome(runCounts) : null;
             if (outcome?.empty) {
+                showInputProblem(classifyAutkSpec(spec));
                 const message = summary && summaryListsItems
                     ? `${outcome.message} ${summary.replace(/\.+$/, '')}.`
                     : outcome.message;
@@ -693,27 +748,35 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
      */
     const applyGrammar = async (specString: string) => {
         lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+        hasRunRef.current = true;
+        runningRef.current = true;
+        inputProblemRef.current = null;
         let settled = false;
         const emit = (o: { code: string; content: string }) => {
             if (o.code === 'success' || o.code === 'error') settled = true;
+            if (o.code === 'error') markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
         };
         // The net itself lives in autkRunSettlement so it can be tested; see the
         // note there for why it is unreachable through this hook.
-        await runAndAlwaysSettle(() => runGrammar(specString, emit), {
-            settled: () => settled,
-            onError: (msg) => {
-                // The toast is transient and the node UI has no error tab, so
-                // also log to console - the only durable place tooling (and the
-                // e2e browser-log dump) can read the failure from.
-                console.error('[autk-grammar] node error:', msg);
-                emit({ code: 'error', content: msg });
-                showToast(msg, 'error');
-            },
-            onUnreported: () => {
-                emit({ code: 'error', content: UNREPORTED_MESSAGE });
-            },
-        });
+        try {
+            await runAndAlwaysSettle(() => runGrammar(specString, emit), {
+                settled: () => settled,
+                onError: (msg) => {
+                    // The toast is transient and the node UI has no error tab, so
+                    // also log to console - the only durable place tooling (and the
+                    // e2e browser-log dump) can read the failure from.
+                    console.error('[autk-grammar] node error:', msg);
+                    emit({ code: 'error', content: msg });
+                    showToast(msg, 'error');
+                },
+                onUnreported: () => {
+                    emit({ code: 'error', content: UNREPORTED_MESSAGE });
+                },
+            });
+        } finally {
+            runningRef.current = false;
+        }
     };
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
@@ -785,6 +848,48 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             console.error("[autk-grammar] interaction sync failed:", err);
         });
     }, [data.input]);
+
+    // The states before anything is drawn: nothing connected, an upstream that
+    // has not run or failed, an input this node cannot read, an empty editor, a
+    // document not run yet. Written into the container the map draws into, the
+    // way the Vega-Lite node writes into its own (utils/writeEmptyState), so no
+    // React state changes while someone types. A document that draws only what
+    // it loads itself has nothing to say about an input.
+    const liveCode = nodeState.code;
+    const liveKind = classifyAutkSpecString(liveCode);
+    const hasSpec = !isEmptySpecBuffer(liveCode);
+    const needsInput = (() => {
+        if (!hasSpec) return true;
+        try {
+            return autkNeedsInput(JSON.parse(liveCode));
+        } catch {
+            return true;
+        }
+    })();
+    const hasInput = data.input != null && data.input !== '';
+    useEffect(() => {
+        if (runningRef.current || gpuBlocked) return;
+        // A map, a plot or a run summary is what the body shows then.
+        if (grammarRef.current != null || runSummary) {
+            noticeRef.current = null;
+            return;
+        }
+        const problem = inputProblemRef.current;
+        const reason = resolveGrammarEmptyReason({
+            connected,
+            upstreamErrored,
+            hasInput,
+            hasSpec,
+            needsInput,
+            hasRun: hasRunRef.current,
+            inputProblem: problem?.reason ?? null,
+        });
+        noticeRef.current = reason == null
+            ? null
+            : { reason, words: emptyStateWords(reason, liveKind, problem?.detail) };
+        writeNotice();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connected, upstreamErrored, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
@@ -926,19 +1031,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             >
                                 {runSummary}
                             </div>
-                        ) : (
-                            <NodeEmptyState
-                                reason="upstream-not-run"
-                                hint={
-                                    specKind === 'data'
-                                        ? 'This step loads data; run it to pass tables downstream.'
-                                        : 'This step computes on upstream layers; run it to pass results downstream.'
-                                }
-                            />
-                        )
+                        ) : null
                     ) : null}
                     <div
-                        ref={wrapperRef}
+                        ref={attachWrapper}
                         style={{
                             position: 'relative',
                             width: '100%',
@@ -1181,6 +1277,28 @@ function totalCount(counts: Array<number | undefined>): number | undefined {
 /** ``name (N unit)`` when the count is known, else the bare name. */
 export function countedItem(name: string, count: number | undefined, unit: string): string {
     return typeof count === 'number' ? `${name} (${count} ${unit})` : name;
+}
+
+/**
+ * The words for a pre-run notice. A data or compute step is "not run", not
+ * "not drawn", and says what running it does; an input problem says what it
+ * is. Everything else is the shared copy.
+ */
+export function emptyStateWords(
+    reason: NodeEmptyReason | null,
+    kind: AutkSpecKind,
+    detail?: string,
+): { title?: string; hint?: string } {
+    if (reason === 'not-run' && kind === 'data') {
+        return { title: 'Not run yet', hint: 'This step loads data; run it to pass tables downstream.' };
+    }
+    if (reason === 'not-run' && kind === 'compute') {
+        return { title: 'Not run yet', hint: 'This step computes on upstream layers; run it to pass results downstream.' };
+    }
+    if (detail && (reason === 'input-type-rejected' || reason === 'geometry-unresolved' || reason === 'geometry-ambiguous')) {
+        return { hint: detail };
+    }
+    return {};
 }
 
 /** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */

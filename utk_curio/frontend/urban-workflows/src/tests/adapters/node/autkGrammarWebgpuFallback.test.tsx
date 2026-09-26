@@ -16,6 +16,11 @@ import React from 'react';
 import { render, act, waitFor, fireEvent } from '@testing-library/react';
 
 const mockShowToast = jest.fn();
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+}));
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));

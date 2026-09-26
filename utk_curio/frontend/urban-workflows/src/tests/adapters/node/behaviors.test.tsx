@@ -20,8 +20,16 @@ jest.mock('../../../providers/ProvenanceProvider', () => ({
   }),
 }));
 
+// The edges and exec statuses a grammar node reads its input state from
+// (hook/useGrammarInputState); settable per test, reset in afterEach.
+let mockFlowEdges: any[] = [];
+let mockNodeExecStatus: Record<string, string> = {};
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ workflowNameRef: { current: 'test-workflow' } }),
+  useFlowContext: () => ({
+    workflowNameRef: { current: 'test-workflow' },
+    edges: mockFlowEdges,
+    nodeExecStatus: mockNodeExecStatus,
+  }),
 }));
 
 jest.mock('../../../providers/ToastProvider', () => ({
@@ -672,26 +680,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     test('data-only node before its first run says what running it will do (#282)', async () => {
-      const result = await callBehavior(useAutkGrammarBehavior, {
-        code: JSON.stringify({
-          data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
-        }),
-      } as any);
+      const code = JSON.stringify({
+        data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
+      });
+      const result = await callBehavior(useAutkGrammarBehavior, { code } as any, { code } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      const empty = container.querySelector('[data-curio-node-empty="upstream-not-run"]');
+      // It loads its own data, so it is "not run", and says what running it does.
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
       expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('Not run yet');
       expect(empty!.textContent).toContain('This step loads data');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
-    test('render node body is the map box, not an empty-state or summary (#282)', async () => {
+    test('render node before its first run says it has not been drawn, as a Vega chart does', async () => {
       const result = await callBehavior(useAutkGrammarBehavior, {
         code: JSON.stringify({ map: { layerRefs: [] } }),
-      } as any);
+      } as any, { code: JSON.stringify({ map: { layerRefs: [] } }) } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
+      expect(empty?.textContent).toContain('Not drawn yet');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
@@ -761,6 +771,74 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // The counts behind the empty-render verdict ride as data. Where they
     // cannot be counted there is no verdict and no invented zero; where a node's
     // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('what an Autark node says before it draws, as a Vega chart does', () => {
+      const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
+      const body = async (code: string, data: any = {}) => {
+        const result = await callBehavior(useAutkGrammarBehavior, { code, ...data } as any, { code } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        return { result, container, reason: container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty') };
+      };
+
+      afterEach(() => {
+        mockFlowEdges = [];
+        mockNodeExecStatus = {};
+      });
+
+      test('a map on its input with nothing connected asks for a connection', async () => {
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('disconnected');
+      });
+
+      test('connected to a node that has not run: run it', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-not-run');
+      });
+
+      test('connected to a node that failed: says so', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        mockNodeExecStatus = { py: 'errored' };
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-errored');
+      });
+
+      test('a compute step needs its input; a data step does not', async () => {
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+          .toBe('disconnected');
+        const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
+        expect((await body(data)).reason).toBe('not-run');
+      });
+
+      test('an empty editor asks for a connection first, as Vega does', async () => {
+        expect((await body('')).reason).toBe('disconnected');
+      });
+
+      test('after a run, an input it cannot draw is named in the body', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        const { result, container } = await body(MAP_ON_UPSTREAM, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { pop: [1, 2] } },
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(MAP_ON_UPSTREAM);
+        });
+        const empty = container.querySelector('[data-curio-node-empty]');
+        expect(empty?.getAttribute('data-curio-node-empty')).toBe('geometry-unresolved');
+        expect(empty?.textContent).toContain('upstream has no geometry column');
+      });
+
+      test("typing does not change the body's identity, so the editor keeps its tab", async () => {
+        const stableData = makeMockData({ code: MAP_ON_UPSTREAM } as any);
+        // The node's output is state in the app: the same object until a run.
+        const output = { code: '', content: '', outputType: '' };
+        let code = MAP_ON_UPSTREAM;
+        const { result, rerender } = renderHook(
+          () => useAutkGrammarBehavior(stableData, makeMockNodeState({ code, output } as any)),
+        );
+        const before = result.current.contentComponent;
+        code = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream', getFnv: 'v' }] } });
+        rerender();
+        expect(result.current.contentComponent).toBe(before);
+      });
+    });
+
     describe('its input, read the way the Vega-Lite node reads its own', () => {
       const api = () => jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
       const lastRunSpec = () => {

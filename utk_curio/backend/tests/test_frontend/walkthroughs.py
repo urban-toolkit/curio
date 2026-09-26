@@ -1605,7 +1605,8 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     # The body lives in the editor's Output pane; before a run the grammar
     # tab is the active one, so open the pane the way a user would.
     node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
-    before = node.locator('[data-curio-node-empty="upstream-not-run"]')
+    # It loads its own data, so it is "not run" (not waiting on an upstream).
+    before = node.locator('[data-curio-node-empty="not-run"]')
     before.first.wait_for(state="visible", timeout=15000)
     assert "loads data" in (before.first.inner_text() or ""), (
         "the pre-run body should say this step loads data"
