@@ -214,7 +214,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
 }
 
 AUTK_GRAMMAR nodes (curio.builtin/autk-grammar) are controlled through grammar: their content is one JSON document that follows the Autark grammar's JSON Schema (https://autarkjs.org/schema/autk-grammar/v1.json). Keys the schema does not name are allowed. A document names at least one of "compute", "data", "map" or "plot".
-In the document, the node's own input is the layer named "upstream"; the layers an upstream AUTK_GRAMMAR node produces keep their table names, such as "table_osm_buildings".
+In the document, the node's own input is the layer named "upstream"; the layers an upstream AUTK_GRAMMAR node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its input.
 
 - "data": Tables to load, in order. Each entry's "type" selects its fields:
   - "osm": Loads OpenStreetMap data for a named area, from Overpass or from a PBF extract. Requires "outputTableName" and "queryArea".
@@ -316,6 +316,28 @@ value per row -- it is an identifier and produces one bar per row.
 
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.
+
+### The starter document an AUTK_GRAMMAR node writes for itself
+
+When an AUTK_GRAMMAR node is connected to a node that has already run, and its
+editor is still empty, Curio fills it with a starter document chosen from the
+input's layers, the same way a VIS_VEGA node fills itself. Generate documents
+that agree with this ladder unless the user asks for something else. First match
+wins:
+
+- two or more layers with geometry -> a map with one layerRef per table, each
+  named by its table
+- one layer with a quantitative column -> a map layer colored by the first
+  quantitative column: "getFnv": that column, "getFnvType": "quantitative",
+  "colorMapInterpolator": "interpolateViridis"
+- one layer with a nominal column -> a map layer colored by the first nominal
+  column: "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10"
+- one layer with geometry only -> a plain map layer
+- no geometry -> no document at all
+
+A map draws only tables with geometry. A DataFrame input is read through its one
+geometry column; one with no geometry column, or with several, cannot be drawn,
+so have the upstream node return a GeoDataFrame with its active geometry set.
 
 ### Maps in Vega-Lite
 

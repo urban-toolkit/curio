@@ -407,7 +407,7 @@ export default function UpMenu() {
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots - all in the browser.",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON) or draw the data connected to it, run GPU compute, and render maps or plots.",
                 },
                 {
                     element: "#step-vega",

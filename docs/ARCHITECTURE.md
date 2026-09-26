@@ -350,6 +350,31 @@ CREATE TABLE artifacts (
 5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object, with no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
 
+### Reading a Grammar Node's Input
+
+The `vis-vega` and `autk-grammar` nodes read their input through one path,
+[`grammarInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/grammarInput.ts):
+the same gate on the input's type and the same refusal sentence, the same fetch
+(Arrow first, JSON as the fallback), and frames that carry the payload, its
+`schema` and its declared geometry column. [`vegaInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaInput.ts)
+turns the one frame a Vega-Lite spec draws into rows;
+[`autkInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/autkInput.ts)
+turns a frame or a bundle of named layers into the tables an Autark document
+names. A `DataFrame`'s geometry column is found by value in both, through
+[`geometryField.ts`](../utk_curio/frontend/urban-workflows/src/utils/geometryField.ts).
+
+The rest is shared too. Both nodes resolve their pre-run state with
+`resolveGrammarEmptyReason` from the edge state in
+[`useGrammarInputState.ts`](../utk_curio/frontend/urban-workflows/src/hook/useGrammarInputState.ts)
+and write it into the element they draw into with
+[`writeEmptyState.ts`](../utk_curio/frontend/urban-workflows/src/utils/writeEmptyState.ts);
+an Autark document that loads everything it draws passes `needsInput: false`.
+Both fill an empty editor through
+[`useStarterSpec.ts`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts),
+each with its own ladder (`vegaDefaultSpec.ts`, `autkDefaultSpec.ts`) over the
+column roles in `starterSpec.ts`. Both mark themselves errored on a failed run,
+so a node they feed shows `upstream-errored`.
+
 ### Resolving Geometry in Vega-Lite Nodes
 
 The `vis-vega` node also resolves upstream data in its own way, for a narrower
@@ -376,7 +401,7 @@ charts, and the rows are re-shipped through `changeset()` on every brush.
 
 ### Referencing Upstream Data in Autark Nodes
 
-The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
+The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) reads the input once, through the path shared with the Vega-Lite node (see [Reading a Grammar Node's Input](#reading-a-grammar-nodes-input)), and injects it as named `geojson` sources the spec can reference. A document that only loads data of its own does not read its input. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
 
 **1. Single frame, the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
 
@@ -390,7 +415,9 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
 ```
 
-When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
+When the document names `upstream` and no table has that name, `upstream` is added as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array or a named frame. It is not loaded when the document does not name it.
+
+A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its place in the table. autk-db refuses a collection whose first feature has none, so that one trades places with the first that has one, and a map leaves such features out: map picks, plot selections and highlights go through the table's load order (`loadableSource`), so a position always names the input's row.
 
 The name `upstream` is defined once, as `AUTK_UPSTREAM_LAYER` in `contracts.py`; the behavior hook imports the generated copy, and the preamble states it (see [Generated Contracts](#generated-contracts)).
 
@@ -463,7 +490,7 @@ A node the browser renders (Vega-Lite, Autark) can run without an error and stil
 | `no-input-rows` | Zero rows arrived from upstream | the upstream node |
 | `nothing-drawn` | Rows arrived and none of them holds a usable value in the plotted fields, or none became a mark | the document |
 
-A renderer that already knows why nothing was drawn (a `geoshape` over data with no geometry column, for example) passes that sentence as `explanation`, and a `nothing-drawn` message carries it in place of the generic reason. A count the renderer could not make stays `undefined`, and an uncounted render gets no verdict. The default Autark data path is the common case: the sandbox hands back a DuckDB artifact reference rather than the layers, so a data-only node there lists the tables it loaded without claiming anything about their rows. Autark counts are taken before empty sources are dropped, so an empty table is still known to exist.
+A renderer that already knows why nothing was drawn (a `geoshape` over data with no geometry column, for example) passes that sentence as `explanation`, and a `nothing-drawn` message carries it in place of the generic reason. One that knows why its input cannot be drawn (a `DataFrame` with no geometry column, a refused input type) passes `inputProblem`: a `no-input-rows` message carries it, the upstream stays at fault, and a partial note adds it. A count the renderer could not make stays `undefined`, and an uncounted render gets no verdict. The default Autark data path is the common case: the sandbox hands back a DuckDB artifact reference rather than the layers, so a data-only node there lists the tables it loaded without claiming anything about their rows. Autark counts are taken before empty sources are dropped, so an empty table is still known to exist.
 
 The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once and generated for the frontend (see [Generated Contracts](#generated-contracts)).
 
