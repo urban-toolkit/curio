@@ -382,6 +382,8 @@ Visualizations can be connected to DATA_POOL with an edge of type: "Interaction"
 } 
 ```
 
+Two visualizations can also be connected to each other directly with an Interaction edge, without a DATA_POOL: the receiving visualization marks its own rows in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
+
 Nodes that can have interaction connection edge:
 
 - VIS_VEGA
