@@ -88,8 +88,8 @@ export function useCode(): IUseCode {
     const { getPosition } = usePosition();
 
     const outputCallback = useCallback(
-        (nodeId: string, output: string) => {
-            applyNewOutput({nodeId: nodeId, output: output});
+        (nodeId: string, output: string, options?: { selectionEcho?: boolean }) => {
+            applyNewOutput({nodeId: nodeId, output: output, selectionEcho: options?.selectionEcho});
         },
         [setOutputs]
     );
