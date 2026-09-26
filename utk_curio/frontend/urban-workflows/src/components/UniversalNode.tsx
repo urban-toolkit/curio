@@ -11,6 +11,7 @@ import { isRegistryReady, subscribeToRegistryReady } from '../registry/packageRe
 import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { isSelectionEcho } from "../utils/selectionEcho";
+import { detectWebGpuSupport } from "../utils/webgpuSupport";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { classifyAutkSpecString } from '../utils/autkSpecKind';
@@ -167,8 +168,15 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // until its watchdog. Whatever a run leaves behind is what this draws from
   // the next time an input arrives.
   const runInFlight = !!isRunActive;
+  const runInFlightRef = useRef(runInFlight);
+  runInFlightRef.current = runInFlight;
+  // The grammar nodes that draw from their input on their own, by one rule: a
+  // Vega chart, and an Autark document that renders (a map or a plot). An
+  // Autark data or compute step stays on Play.
+  const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
+  const drawsFromInput = kind === NodeType.VIS_VEGA || autarkRender;
   useEffect(() => {
-    if (kind !== NodeType.VIS_VEGA) return;
+    if (kind !== NodeType.VIS_VEGA && kind !== NodeType.AUTK_GRAMMAR) return;
     // An input that lands while the buffer is still empty belongs to a node
     // somebody is wiring up right now: `vegaBehavior` fetches a preview and
     // fills the buffer with a spec guessed from that input's columns a moment
@@ -181,6 +189,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (!dashboardOn && hasInput && specIsEmpty) {
       starterFillInputRef.current = data.input;
     }
+    // Recorded above for either grammar, even before an empty Autark editor can
+    // say whether it renders: the starter it is about to receive does.
+    if (!drawsFromInput) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
@@ -191,15 +202,28 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     lastRenderedInputRef.current = data.input;
-    setOutputCallback({ code: "exec", content: "" });
-    sendCode(nodeState.code);
-  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+    const code = nodeState.code;
+    if (!autarkRender) {
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+      return;
+    }
+    // An Autark map needs WebGPU. Without it, opening a project must not raise
+    // one error per map: the node keeps its "not drawn yet" body, and a Play
+    // shows the in-node explanation. The probe is async, so the run state is
+    // read again once it answers.
+    void detectWebGpuSupport().then((support) => {
+      if (!support.supported) return;
+      if (runInFlightRef.current || outputCodeRef.current === "exec") return;
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+    });
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
-  // An Autark tile is drawn once, and only on the dashboard. Its render spec
-  // needs a WebGPU canvas, so this is real work rather than a recompile: the
-  // page it is pinned to is the only place worth doing it, and only for the tile
-  // itself. Its upstream data and compute nodes are not run - their layers come
-  // from the Data Catalog, which is the point.
+  // A wired Autark render tile draws by the rule above when its input lands. An
+  // unwired one never receives an input, so it is drawn once here, on the
+  // dashboard: its document loads everything it draws. Its upstream data and
+  // compute nodes are not run - their layers come from the Data Catalog.
   const autoRenderedRef = useRef(false);
   const isPinnedAutarkTile =
     dashboardOn
@@ -210,9 +234,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (!isPinnedAutarkTile || autoRenderedRef.current) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
-    // Wait for the input a wired tile needs; an unwired one has everything in
-    // its own spec.
-    if (connected && !hasInput) return;
+    if (connected) return;
     autoRenderedRef.current = true;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);

@@ -478,6 +478,14 @@ failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
 
+A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
+chart does: when a project opens with its input restored, and when the node
+feeding it runs again. It does not redraw while it is being wired up or while
+a run is going, and a selection only highlights it (see
+[Linking charts](#linking-charts)). A data or compute step runs only when you
+press play or run the dataflow. Without WebGPU nothing is drawn on its own;
+pressing play says why.
+
 ### The starter document
 
 A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and

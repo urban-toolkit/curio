@@ -106,6 +106,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
     const runningRef = useRef(false);
+    const pendingSpecRef = useRef<string | null>(null);
     const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
     // The notice the body should show now, kept so a container that mounts
     // later (the editor remounting its output pane) gets it too.
@@ -751,7 +752,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
      */
-    const applyGrammar = async (specString: string) => {
+    const applyGrammar = async (specString: string): Promise<void> => {
+        if (runningRef.current) {
+            // A run is under way (a redraw on new input, or a Play): run once
+            // more when it ends, with the latest document, rather than two runs
+            // racing for the same canvas.
+            pendingSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+            return;
+        }
         lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
         hasRunRef.current = true;
         runningRef.current = true;
@@ -782,6 +790,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         } finally {
             runningRef.current = false;
         }
+        const next = pendingSpecRef.current;
+        pendingSpecRef.current = null;
+        if (next != null) await applyGrammar(next);
     };
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */

@@ -13,9 +13,10 @@
  *    It is a client-side recompile, so the canvas benefits too. A selection
  *    coming back through a Data Pool is not a new input: the chart highlights
  *    the flagged rows in the view it has.
- *  - Autark: only a PINNED tile, only on the dashboard, only a render spec, and
- *    only once. It needs WebGPU; it is real work. Upstream data/compute nodes
- *    are never run: their layers come from the Data Catalog.
+ *  - Autark: a render spec (a map or a plot) by the same rule as Vega, when
+ *    WebGPU is there; a selection coming back re-highlights it. A data or
+ *    compute step never: on the dashboard their layers come from the Data
+ *    Catalog. A pinned tile with no input draws once on the dashboard.
  *  - Code nodes: never. Their pane shows a run's stdout, which nothing restores,
  *    and running one would execute the user's code because a page was opened.
  */
@@ -27,6 +28,10 @@ const mockSetOutput = jest.fn();
 let mockDashboardOn = false;
 let mockFlowEdges: any[] = [];
 let mockIsRunActive = false;
+let mockWebGpuSupported = true;
+jest.mock("../../utils/webgpuSupport", () => ({
+  detectWebGpuSupport: () => Promise.resolve({ supported: mockWebGpuSupported }),
+}));
 
 jest.mock("reactflow", () => ({
   Handle: () => null,
@@ -149,6 +154,7 @@ beforeEach(() => {
   mockDashboardOn = false;
   mockFlowEdges = [];
   mockIsRunActive = false;
+  mockWebGpuSupported = true;
 });
 
 describe("a Vega chart", () => {
@@ -263,53 +269,91 @@ describe("a Vega chart", () => {
   });
 });
 
-describe("an Autark tile", () => {
-  test("draws once, pinned, on the dashboard", async () => {
-    mockDashboardOn = true;
+describe("an Autark map, by the rule a Vega chart follows", () => {
+  // The WebGPU probe answers asynchronously.
+  const settle = () => act(async () => {});
 
-    await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
+  test("draws from a restored input on the canvas", async () => {
+    await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
     expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });
 
-  test("never on the canvas", async () => {
-    await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, input: INPUT_A }));
+  test("the same input is never drawn twice; a new one draws again", async () => {
+    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_B }));
+    await settle();
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+  });
+
+  test("a selection coming back through a Data Pool re-highlights, it does not redraw", async () => {
+    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
+
+    await rerenderWith(utils, data(AUTARK, {
+      code: MAP_SPEC,
+      input: markSelectionEcho({ dataType: "geodataframe", data: { type: "FeatureCollection", features: [] } }),
+    }));
+    await settle();
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("the document the starter fill guessed is not drawn on its own", async () => {
+    const utils = await mount(data(AUTARK, { code: "", input: INPUT_A }));
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("never when it is not the tile", async () => {
-    mockDashboardOn = true;
+  test("without WebGPU nothing is drawn on its own", async () => {
+    mockWebGpuSupported = false;
 
     await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await settle();
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("never for a data or compute step", async () => {
+  test("a data or compute step is never run by an input or a page", async () => {
     // Those make layers. On the dashboard the layers come from the Data Catalog,
     // so running this would re-execute the data load for no reason.
+    await mount(data(AUTARK, { code: DATA_SPEC, input: INPUT_A }));
     mockDashboardOn = true;
-
     await mount(data(AUTARK, { code: DATA_SPEC, dashboardPinned: true }));
+    await settle();
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("a wired tile waits for its input, then draws once", async () => {
+  test("a wired tile on the dashboard draws when its input lands", async () => {
     mockDashboardOn = true;
     mockFlowEdges = [{ id: "e", source: "pool", target: "n1" }];
     const utils = await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
-
+    await settle();
     expect(mockSendCode).not.toHaveBeenCalled();
 
     await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, input: INPUT_A }));
+    await settle();
     expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
 
-    // A Data Pool re-emits on every brush; the map syncs highlights itself.
-    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, input: INPUT_B }));
+  test("an unwired pinned tile draws once on the dashboard", async () => {
+    mockDashboardOn = true;
+
+    await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
+    await settle();
+
     expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });
 });
 
