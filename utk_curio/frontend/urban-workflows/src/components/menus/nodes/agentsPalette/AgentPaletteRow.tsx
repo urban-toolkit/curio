@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../../api/agentsApi";
@@ -6,6 +6,8 @@ import { AGENT_DRAG_MIME } from "../../../../utils/agentCatalogEvents";
 import { agentCategoryIcon, agentCategoryKey } from "./agentCategoryStyle";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import rowStyles from "./AgentPaletteRow.module.css";
+import { DetailsButton } from "../../../DetailsButton";
+import { AgentDetailModal } from "../../../agents/catalog/AgentDetailModal";
 
 /** Shorten the install coordinate for display: ``agent.foo@1`` (major only). */
 function shortCoord(agent: AgentCard): string {
@@ -41,6 +43,8 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
   // Show one pill per compatible target kind (Canvas / Node / Connection) so a
   // dual-compatible agent clearly advertises both. Deduped, order preserved.
   const hooks = Array.from(new Set(agent.hooks));
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const onDragStart = useCallback(
     (event: React.DragEvent) => {
@@ -86,6 +90,15 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
           })}
         </span>
       </button>
+      {/* The way into the agent's details, as every catalog card offers. */}
+      <DetailsButton
+        label={`View ${agent.name} details`}
+        className={rowStyles.detailsButton}
+        onClick={() => setDetailsOpen(true)}
+      />
+      {detailsOpen ? (
+        <AgentDetailModal agent={agent} onClose={() => setDetailsOpen(false)} />
+      ) : null}
     </div>
   );
 });

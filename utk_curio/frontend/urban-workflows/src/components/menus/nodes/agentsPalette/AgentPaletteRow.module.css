@@ -39,3 +39,9 @@
 .chip_data     { background: color-mix(in srgb, var(--curio-category-agent-data-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-data-fg) 55%, white); }
 .chip_evaluate { background: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-evaluate-fg) 55%, white); }
 .chip_package  { background: color-mix(in srgb, var(--curio-category-agent-package-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-category-agent-package-fg) 55%, white); }
+
+.detailsButton {
+    flex-shrink: 0;
+    align-self: center;
+    margin-left: auto;
+}
