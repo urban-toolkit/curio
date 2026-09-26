@@ -21,6 +21,7 @@ Environment:
 ``CURIO_TOUR_SCENES``        comma-separated scene ids to record (default: all)
 ``CURIO_TOUR_OUT``           output directory (default ``.curio/tour/``)
 ``CURIO_TOUR_SPEED``         pacing multiplier, >1 is faster (default 1.0)
+``CURIO_TOUR_CAPTIONS=0``    record without captions, chapter cards or chip
 ===========================  ==================================================
 
 Scene ids, in order: see ``SCENES`` at the bottom of this file.
@@ -1819,9 +1820,12 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     failures: list[tuple[str, str]] = []
     for name, scene in scenes:
         _log(f"[tour] scene: {name}")
+        tour.mark(name, "start")
         try:
             scene(ctx)
+            tour.mark(name, "end")
         except Exception:  # noqa: BLE001 - one bad scene must not lose the take
+            tour.mark(name, "failed")
             failures.append((name, traceback.format_exc()))
             _log(f"[tour] scene {name} FAILED:\n{traceback.format_exc()}")
             # A still of the moment it broke localises the failure much faster
@@ -1839,7 +1843,10 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     page.close()
     context.close()
     written = finalize_video(page, stem="curio-feature-tour")
-    for kind, path in written.items():
+    # Where each scene starts and ends in the video, to cut one clip per scene.
+    marks = os.path.join(out_dir(), "curio-feature-tour.marks.json")
+    tour.write_marks(marks)
+    for kind, path in {**written, "marks": marks}.items():
         _log(f"[tour] wrote {kind}: {path}")
 
     assert written, "no video was recorded"

@@ -13,10 +13,12 @@ above the app, so it narrates without changing what is being demonstrated.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
 
 REPO_ROOT = os.path.abspath(
@@ -40,6 +42,19 @@ def out_dir() -> str:
     path = os.environ.get("CURIO_TOUR_OUT") or DEFAULT_OUT_DIR
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def captions_on() -> bool:
+    """Whether the overlay narrates: captions, chapter cards and the chapter chip.
+
+    ``CURIO_TOUR_CAPTIONS=0`` records the same scenes with only the cursor, the
+    click pulse and the spotlight ring, for clips that are shown next to their
+    own text (the project page on urbantk.org, for one) and would otherwise
+    say everything twice.
+    """
+    return os.environ.get("CURIO_TOUR_CAPTIONS", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
 
 
 def speed() -> float:
@@ -249,10 +264,17 @@ class Tour:
     described, and there is a beat either side for the viewer to follow it.
     """
 
-    def __init__(self, page, *, pace: float | None = None) -> None:
+    def __init__(
+        self, page, *, pace: float | None = None, captions: bool | None = None,
+    ) -> None:
         self.page = page
         self.pace = pace if pace is not None else speed()
+        self.captions = captions if captions is not None else captions_on()
         self._chapter = ""
+        # Seconds since the page was created, which is where Playwright starts
+        # the recording, so a mark is also a position in the video.
+        self._started = time.monotonic()
+        self.marks: list[dict[str, Any]] = []
         page.add_init_script(f"({_INSTALL_OVERLAY_JS})();")
 
     # -- plumbing ---------------------------------------------------------
@@ -265,6 +287,17 @@ class Tour:
     def beat(self, ms: float = 700) -> None:
         self.page.wait_for_timeout(max(40, ms / self.pace))
 
+    def mark(self, name: str, event: str) -> None:
+        """Note where something starts or ends in the recording."""
+        self.marks.append({
+            "name": name, "event": event,
+            "seconds": round(time.monotonic() - self._started, 2),
+        })
+
+    def write_marks(self, path: str) -> None:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"captions": self.captions, "marks": self.marks}, handle, indent=2)
+
     # -- narration --------------------------------------------------------
 
     def chapter(
@@ -272,6 +305,9 @@ class Tour:
     ) -> None:
         """Full-frame chapter break, then leave the chip showing."""
         self._chapter = title
+        if not self.captions:
+            self.beat(500)
+            return
         words = len((f"{title} {sub}").split())
         self._js(
             "([k, t, s]) => { window.__curioTour.clearAll();"
@@ -291,6 +327,10 @@ class Tour:
         twenty. Callers can still pass *hold* to pin a beat (a one-word label
         under a spotlight, say), and it is treated as a floor, not a ceiling.
         """
+        if not self.captions:
+            # Nothing to read, so only the pause that was asked for, if any.
+            self.beat(hold or 600)
+            return
         words = len((f"{title} {sub}").split())
         # ~2.6 words/second, which is a slow, comfortable read, plus a beat at
         # each end for the fade.
