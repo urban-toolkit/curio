@@ -21,6 +21,7 @@ Environment:
 ``CURIO_TOUR_SCENES``        comma-separated scene ids to record (default: all)
 ``CURIO_TOUR_OUT``           output directory (default ``.curio/tour/``)
 ``CURIO_TOUR_SPEED``         pacing multiplier, >1 is faster (default 1.0)
+``CURIO_TOUR_CAPTIONS=0``    record without captions, chapter cards or chip
 ===========================  ==================================================
 
 Scene ids, in order: see ``SCENES`` at the bottom of this file.
@@ -301,6 +302,16 @@ def _new_dataflow_from_menu(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.click(_menu(page, "File"), force=True)
     tour.click(page.get_by_role("button", name="New dataflow", exact=True))
+    # The guard is an in-app modal now, which the page's native "dialog"
+    # handler never sees. It only appears when an autosave is still pending,
+    # so its absence is not an error.
+    guard = page.get_by_role("dialog", name="Discard unsaved changes?")
+    try:
+        guard.wait_for(state="visible", timeout=1500)
+    except PlaywrightTimeoutError:
+        pass
+    else:
+        tour.click(guard.get_by_role("button", name="Discard and continue", exact=True))
     page.wait_for_url("**/dataflow/new", timeout=20000)
     page.wait_for_timeout(1200)
 
@@ -1803,6 +1814,15 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
             name=USER_NAME,
             password=USER_PASSWORD,
             project_name="Feature Tour",
+            # Without a spec the canvas is titled with the harness default,
+            # "StubbedWorkflow", which then sits in every frame of the video.
+            project_spec={
+                "name": "Feature Tour",
+                "dataflow": {
+                    "name": "Feature Tour", "nodes": [], "edges": [], "task": "",
+                    "timestamp": 0, "provenance_id": "Feature Tour",
+                },
+            },
         )
         # Land where the first selected scene expects to be: the canvas scenes
         # assume a dataflow is already open, and dropping them on /projects
@@ -1819,9 +1839,12 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     failures: list[tuple[str, str]] = []
     for name, scene in scenes:
         _log(f"[tour] scene: {name}")
+        tour.mark(name, "start")
         try:
             scene(ctx)
+            tour.mark(name, "end")
         except Exception:  # noqa: BLE001 - one bad scene must not lose the take
+            tour.mark(name, "failed")
             failures.append((name, traceback.format_exc()))
             _log(f"[tour] scene {name} FAILED:\n{traceback.format_exc()}")
             # A still of the moment it broke localises the failure much faster
@@ -1839,7 +1862,10 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     page.close()
     context.close()
     written = finalize_video(page, stem="curio-feature-tour")
-    for kind, path in written.items():
+    # Where each scene starts and ends in the video, to cut one clip per scene.
+    marks = os.path.join(out_dir(), "curio-feature-tour.marks.json")
+    tour.write_marks(marks)
+    for kind, path in {**written, "marks": marks}.items():
         _log(f"[tour] wrote {kind}: {path}")
 
     assert written, "no video was recorded"
