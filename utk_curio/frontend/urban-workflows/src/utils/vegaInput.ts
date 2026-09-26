@@ -15,7 +15,7 @@
  *
  * No `vega` / `vega-lite` import here, so it stays testable under jest.
  */
-import { fetchData } from "../services/api";
+import { readGrammarInput } from "./grammarInput";
 import { parseDataframe, parseGeoDataframeWithGeometry } from "./parsing";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { normalizeGeoSpec, specNeedsGeometry } from "./vegaGeoSpec";
@@ -27,8 +27,6 @@ export type PreparedVegaInput = {
   /** A longer, spec-specific explanation, when there is one. */
   detail?: string;
 };
-
-const TABULAR_TYPES = ["dataframe", "geodataframe"];
 
 /**
  * Turn `data.input` into render-ready rows for `spec`.
@@ -42,19 +40,14 @@ export async function prepareVegaInput(
   input: any,
   spec: any,
 ): Promise<PreparedVegaInput> {
-  if (input == null || input === "") return { values: [] };
-
-  const dataType = input.dataType;
-  if (!TABULAR_TYPES.includes(dataType)) {
-    return {
-      values: [],
-      emptyReason: "input-type-rejected",
-      detail: `${dataType} is not a valid input type for the 2D Plot (Vega-Lite).`,
-    };
+  // The gate, the fetch and the refusal are the ones every grammar node uses.
+  const read = await readGrammarInput(input, { label: "the 2D Plot (Vega-Lite)" });
+  if (read.emptyReason) {
+    return { values: [], emptyReason: read.emptyReason, detail: read.detail };
   }
-
-  const payload = input.path ? (await fetchData(input.path)).data : input.data;
-  if (payload == null) return { values: [] };
+  const frame = read.frames[0];
+  if (!frame) return { values: [] };
+  const { dataType, payload } = frame;
 
   const wantsGeometry = specNeedsGeometry(spec);
   let result: PreparedVegaInput;
