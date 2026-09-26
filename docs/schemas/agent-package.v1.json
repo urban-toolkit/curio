@@ -21,7 +21,7 @@
     "id": {
       "type": "string",
       "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "description": "Agent package id. Always begins with 'agent.' followed by a kebab-case name, e.g. 'agent.node-explainer' or 'agent.dataflow-builder'."
+      "description": "Agent package id. Always begins with 'agent.' followed by a kebab-case name, e.g. 'agent.my-helper' or 'agent.dataflow-builder'."
     },
     "version": {
       "type": "string",

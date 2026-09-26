@@ -964,7 +964,7 @@ Catalog and account scope:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/agents/catalog` | GET | List the agent definitions available to add (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
+| `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
 | `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
 | `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
@@ -1102,7 +1102,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
 | `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
 | `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
-| `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |
+| `backend/app/agents/builtin.py` | The 19 built-in agents, as a data-driven roster. `in_catalog` marks the ten catalog cards; the rest are internal: never listed, installed or attached, and resolved from the roster when delegated to |
 | `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
 | `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
 | `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |

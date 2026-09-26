@@ -484,9 +484,11 @@ See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 
-Agents are AI assistants you attach to your dataflow. Curio ships twenty-one of
-them, covering chat, debugging, node authoring, dataset discovery, planning and
-evaluation. Which model answers is the provider set in **AI Settings** above.
+Agents are AI assistants you attach to your dataflow. The catalog lists ten:
+**Chat**, which explains a node or the whole dataflow, diagnoses errors and
+helps you define what to build, and nine that build dataflows and nodes, find
+data, connect nodes, research, and recommend or author packages. Which model
+answers is the provider set in **AI Settings** above.
 
 There are two scopes:
 
@@ -553,8 +555,8 @@ the loop (this node's 15-minute repair budget, which is normally what stops it,
 or a builder that kept returning the same code). Nothing is written when nothing passed.
 
 The goal box in the dock is shared with your agents: several of them, the
-Dataflow Task Planner most of all, are written around knowing what the dataflow
-is for. It is saved with the project.
+Dataflow Builder most of all, are written around knowing what the dataflow is
+for. It is saved with the project.
 
 ### What an agent may reach
 
