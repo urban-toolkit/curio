@@ -15,7 +15,10 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
-import { autkSourcesFrom, autkTableName, loadableSource, readAutkInput, swappedIndex } from '../../utils/autkInput';
+import {
+    autkSourcesFrom, autkTableName, documentTableRefs, loadableSource, ownTableNames, readAutkInput,
+    swappedIndex, type PreparedAutkInput,
+} from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
@@ -168,10 +171,12 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // is data the browser already holds, so it stays client-side and is NOT
         // sent to the backend. A data-only document does not read it.
         let upstreamSources: any[] = [];
+        let preparedInput: PreparedAutkInput | null = null;
         const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
         if (data.input && readsInput) {
             try {
                 const prepared = autkSourcesFrom(await readInput(data.input), spec);
+                preparedInput = prepared;
                 const swaps: Record<string, number> = {};
                 upstreamSources = prepared.sources.map((source) => {
                     const loadable = loadableSource(source);
@@ -310,6 +315,20 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         own: ownSources.includes(s),
                     });
                 }
+                // Tables the document reads from its input that the input could
+                // not provide (a DataFrame with no geometry column, a refused
+                // input type) are known zeros from upstream: the verdict blames
+                // the upstream and says why, instead of calling the ref one to
+                // data the dataflow does not produce.
+                if (preparedInput?.inputProblem) {
+                    const own = new Set(ownTableNames(spec));
+                    const unusable = new Set(preparedInput.unusable);
+                    const refused = preparedInput.sources.length === 0;
+                    for (const ref of documentTableRefs(spec)) {
+                        if (tableRows.has(ref) || own.has(ref)) continue;
+                        if (refused || unusable.has(ref)) tableRows.set(ref, { rows: 0, own: false });
+                    }
+                }
                 // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection,
                 // where 2.0.1 created an empty table that refs could still resolve
                 // against. Two consequences for sparse data (e.g. a PBF area with no
@@ -419,6 +438,55 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 const resolvedRows = resolvedRefs.map((r) => tableRows.get(r)!);
                 const ownRows = resolvedRows.filter((t) => t.own);
 
+                // dev/136: did this map/plot actually draw? The layers that
+                // resolved are what there was to draw FROM, so an empty set is
+                // an empty render, reported rather than warned about. A ref to
+                // an EMPTY table resolved; its zero rows are what `rowsIn` and
+                // `sourceRows` report instead. The layers handed to the grammar
+                // are what it drew, and the gap is what the partial note names.
+                // autk-grammar's run() returns nothing, so there is no
+                // drawn-mark count, and nothing here depends on the run: an empty
+                // verdict is reached before it, so the grammar is never handed a
+                // plot with no data context to fail on.
+                const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
+                    + (spec.plot && !spec.plot.dataRef ? 1 : 0);
+                const layersDrawn = (Array.isArray(spec.map?.layerRefs)
+                    ? spec.map.layerRefs.length
+                    : 0) + (spec.plot ? 1 : 0);
+                const emptyRefs = requestedRefs.filter((r) => {
+                    const table = tableRows.get(r);
+                    return !!table && !(typeof table.rows === 'number' && table.rows > 0);
+                });
+                const renderCounts: RenderCounts = {
+                    layersRequested: requestedRefs.length,
+                    layersResolved,
+                    layersDrawn,
+                    requestedRefs,
+                    availableRefs,
+                    emptyRefs,
+                    // A table named while none is at hand is a known zero:
+                    // nothing arrived and nothing was loaded. Otherwise no
+                    // claim when the document names no table to count.
+                    rowsIn: knownNames.size === 0 && requestedRefs.length > 0
+                        ? 0
+                        : resolvedRows.length > 0
+                            ? totalCount(resolvedRows.map((t) => t.rows))
+                            : undefined,
+                    sourceRows: ownRows.length > 0
+                        ? totalCount(ownRows.map((t) => t.rows))
+                        : undefined,
+                    ...(preparedInput?.inputProblem ? { inputProblem: preparedInput.inputProblem } : {}),
+                };
+                const outcome = renderOutcome(renderCounts);
+                if (outcome.empty) {
+                    grammarRef.current = null;
+                    specRef.current = null;
+                    emit({ code: 'error', content: outcome.message,
+                           kind: emptyRenderKind(outcome.cause) } as any);
+                    showToast(outcome.message, 'error');
+                    return;
+                }
+
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
                 // DuckDB worker that failed to fetch the spatial extension keeps
@@ -469,49 +537,6 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     interactionOffRef.current = [off1, off2];
                 }
 
-                // dev/136: did this map/plot actually draw? The layers that
-                // resolved are what there was to draw FROM, so an empty set is
-                // an empty render, reported rather than warned about. A ref to
-                // an EMPTY table resolved; its zero rows are what `rowsIn` and
-                // `sourceRows` report instead. The layers handed to the grammar
-                // are what it drew, and the gap is what the partial note names.
-                // autk-grammar's run() returns nothing, so there is no
-                // drawn-mark count.
-                const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
-                    + (spec.plot && !spec.plot.dataRef ? 1 : 0);
-                const layersDrawn = (Array.isArray(spec.map?.layerRefs)
-                    ? spec.map.layerRefs.length
-                    : 0) + (spec.plot ? 1 : 0);
-                const emptyRefs = requestedRefs.filter((r) => {
-                    const table = tableRows.get(r);
-                    return !!table && !(typeof table.rows === 'number' && table.rows > 0);
-                });
-                const renderCounts: RenderCounts = {
-                    layersRequested: requestedRefs.length,
-                    layersResolved,
-                    layersDrawn,
-                    requestedRefs,
-                    availableRefs,
-                    emptyRefs,
-                    // A table named while none is at hand is a known zero:
-                    // nothing arrived and nothing was loaded. Otherwise no
-                    // claim when the document names no table to count.
-                    rowsIn: knownNames.size === 0 && requestedRefs.length > 0
-                        ? 0
-                        : resolvedRows.length > 0
-                            ? totalCount(resolvedRows.map((t) => t.rows))
-                            : undefined,
-                    sourceRows: ownRows.length > 0
-                        ? totalCount(ownRows.map((t) => t.rows))
-                        : undefined,
-                };
-                const outcome = renderOutcome(renderCounts);
-                if (outcome.empty) {
-                    emit({ code: 'error', content: outcome.message,
-                           kind: emptyRenderKind(outcome.cause) } as any);
-                    showToast(outcome.message, 'error');
-                    return;
-                }
                 if (data.outputCallback) {
                     data.outputCallback(data.nodeId, data.input ?? null);
                 }
@@ -571,7 +596,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // an input this node cannot read) is no claim, not zero.
                     const rowsIn = upstream.length > 0
                         ? totalCount(upstream.map((u) => featureCount(u.fc)))
-                        : undefined;
+                        : computeInput?.inputProblem ? 0 : undefined;
                     let layers = upstream.map((u) => ({
                         name: u.name,
                         type: u.layerType ?? 'polygons',
@@ -605,8 +630,6 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             return;
                         }
                     }
-                    const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
-                    if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
@@ -616,7 +639,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     runCounts = {
                         rowsIn,
                         drawn: totalCount(layers.map((l) => featureCount(l.geojson))),
+                        ...(computeInput?.inputProblem ? { inputProblem: computeInput.inputProblem } : {}),
                     };
+                    // An empty result is not passed on: downstream would get
+                    // nothing under this node's error. The verdict below says why.
+                    if (!renderOutcome(runCounts).empty) {
+                        const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
+                        if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
+                    }
                 }
             }
 

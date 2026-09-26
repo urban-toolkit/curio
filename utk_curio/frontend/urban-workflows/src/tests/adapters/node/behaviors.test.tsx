@@ -819,6 +819,61 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(1);
       });
 
+      test('a DataFrame with no geometry column is refused with the reason, blaming the upstream', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          {
+            outputCallback: jest.fn(),
+            input: { dataType: 'dataframe', data: { zone: ['n'], pop: [3] } } as any,
+          },
+          { setOutput },
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const constructed = AutkGrammar.mock.calls.length;
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('upstream has no geometry column');
+        expect(errCall![0].content).toContain('not at fault');
+        // Nothing drawable, so the grammar is never handed the document.
+        expect(AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test('an input type it cannot read says so', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].content).toContain('raster is not a valid input type for the Autark node.');
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
+      });
+
+      test('a compute step with nothing it can read passes nothing on', async () => {
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { dataType: 'dataframe', data: { pop: [3] } } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('has no geometry column');
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
       test('a data step does not read its input', async () => {
         const interpretCode = jest.fn(
           (_unresolved, _code, _input, _inputTypes, cb) =>

@@ -56,6 +56,13 @@ export interface RenderCounts {
    * `nothing-drawn` message, so the correction names the real cause.
    */
   explanation?: string;
+  /**
+   * Why the input that arrived cannot be drawn, when the node knows (a
+   * DataFrame with no geometry column, a refused input type). Becomes the
+   * `no-input-rows` message and joins a partial note; the upstream is still
+   * what is at fault.
+   */
+  inputProblem?: string;
   /** Layers the document asked for (Autark). */
   layersRequested?: number;
   /** Layers that survived resolution and were drawn (Autark). */
@@ -149,7 +156,10 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
     return {
       empty: true,
       cause: "no-input-rows",
-      message: bounded(
+      message: counts.inputProblem ? bounded(
+        `rendered nothing: ${counts.inputProblem} The upstream node that feeds ` +
+        "it is what must change; this document is not at fault.",
+      ) : bounded(
         "rendered nothing — 0 rows arrived at this node, so there was nothing " +
         "to draw. The upstream node that feeds it is what must change; this " +
         "document is not at fault.",
@@ -236,5 +246,6 @@ export function partialRenderNote(counts: RenderCounts): string {
       `available: ${names(counts.availableRefs)})`,
     );
   }
-  return bounded(`drew ${layersDrawn} of ${layersRequested} layers: ${reasons.join("; ")}.`);
+  const note = `drew ${layersDrawn} of ${layersRequested} layers: ${reasons.join("; ")}.`;
+  return bounded(counts.inputProblem ? `${note} ${counts.inputProblem}` : note);
 }
