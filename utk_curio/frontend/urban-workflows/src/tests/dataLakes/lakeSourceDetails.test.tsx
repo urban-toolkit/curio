@@ -95,7 +95,7 @@ function renderPage() {
 }
 
 async function card(dirName: string): Promise<HTMLElement> {
-  await screen.findByText('Alpha Portal');
+  await screen.findAllByText('Alpha Portal');
   const el = document.querySelector(`[data-lake-source="${dirName}"]`);
   if (!el) throw new Error(`no card for ${dirName}`);
   return el as HTMLElement;

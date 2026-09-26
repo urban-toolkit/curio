@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { DataLakeCatalogBrowse } from '../../pages/dataLakes/DataLakeCatalogBrowse';
@@ -124,14 +124,14 @@ describe('DataLakeCatalogBrowse', () => {
       response([source(), source({ sourceId: 'lake.b.other', dirName: 'lake.b.other@1', name: 'Beta Portal', provider: 'ckan' })])
     );
     renderPage();
-    expect(await screen.findByText('Alpha Portal')).toBeInTheDocument();
+    expect(await screen.findAllByText('Alpha Portal')).not.toHaveLength(0);
     expect(screen.getByText('Beta Portal')).toBeInTheDocument();
   });
 
   test('a card shows its provider, publisher and the formats it can deliver', async () => {
     apiFetch.mockResolvedValue(response([source()]));
     renderPage();
-    await screen.findByText('Alpha Portal');
+    await screen.findAllByText('Alpha Portal');
     const tile = within(card('lake.a.portal@1'));
     expect(tile.getByText('Socrata')).toBeInTheDocument();
     expect(tile.getByText('Alpha City')).toBeInTheDocument();
@@ -149,12 +149,52 @@ describe('DataLakeCatalogBrowse', () => {
       ])
     );
     renderPage();
-    await screen.findByText('Alpha datasets.');
+    await screen.findAllByText('Alpha datasets.');
     const tile = within(card('lake.a.portal@1'));
     expect(tile.getByText('Link only')).toBeInTheDocument();
-    // "Browse datasets" would be a lie: there is nothing to browse.
-    expect(tile.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    // "Browse datasets" would be a lie: there is nothing to browse. The card
+    // offers what the drawer offers, and the drawer offers no browse here.
     expect(tile.queryByRole('button', { name: 'Browse datasets' })).toBeNull();
+    expect(tile.queryByRole('button', { name: 'Open' })).toBeNull();
+    expect(tile.getByRole('button', { name: 'View details' })).toBeInTheDocument();
+  });
+
+  test('a source that needs a token it does not have offers no browse either', async () => {
+    // The drawer already said "needs a token before it can be searched" while
+    // the card beside it offered Browse datasets.
+    apiFetch.mockResolvedValue(
+      response([
+        source({
+          auth: { mode: 'required-token', required: true, usesToken: true,
+                  secretId: 'socrata.app-token', present: false, helpUrl: null },
+        }),
+      ])
+    );
+    renderPage();
+    await screen.findAllByText('Alpha datasets.');
+    const tile = within(card('lake.a.portal@1'));
+    expect(tile.queryByRole('button', { name: 'Browse datasets' })).toBeNull();
+    expect(tile.getByRole('button', { name: 'View details' })).toBeInTheDocument();
+  });
+
+  test('the drawer opens on the first source, as on the other catalog pages', async () => {
+    apiFetch.mockResolvedValue(
+      response([source(), source({ sourceId: 'lake.b.other', dirName: 'lake.b.other@1', name: 'Beta Portal' })])
+    );
+    renderPage();
+    await screen.findAllByText('Beta Portal');
+    const drawer = document.querySelector('[data-curio-drawer-ctas]') as HTMLElement;
+    expect(drawer).not.toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Browse datasets' })).toBeInTheDocument();
+    expect(card('lake.a.portal@1').className).toMatch(/cardActive/);
+  });
+
+  test('a closed drawer stays closed', async () => {
+    apiFetch.mockResolvedValue(response([source()]));
+    renderPage();
+    await screen.findAllByText('Alpha datasets.');
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    expect(document.querySelector('[data-curio-drawer-ctas]')).toBeNull();
   });
 
   test('a token-needing source is marked, and not as an error', async () => {
@@ -167,7 +207,7 @@ describe('DataLakeCatalogBrowse', () => {
       ])
     );
     renderPage();
-    await screen.findByText('Alpha Portal');
+    await screen.findAllByText('Alpha Portal');
     const tile = within(card('lake.a.portal@1'));
     expect(tile.getByText('Token needed')).toBeInTheDocument();
   });
@@ -192,7 +232,7 @@ describe('DataLakeCatalogBrowse', () => {
     // cannot disagree with each other.
     apiFetch.mockResolvedValue(response([source()]));
     renderPage();
-    await screen.findByText('Alpha Portal');
+    await screen.findAllByText('Alpha Portal');
     expect(apiFetch).toHaveBeenCalledWith('/api/datalakes/catalog');
   });
 });

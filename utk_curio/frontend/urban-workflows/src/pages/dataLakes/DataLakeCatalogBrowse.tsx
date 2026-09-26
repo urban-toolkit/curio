@@ -61,7 +61,10 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const [provider, setProvider] = useState<LakeProviderType | "">("");
   const [auth, setAuth] = useState<LakeAuthMode | "">("");
   const [sort, setSort] = useState<SortMode>("name");
-  const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  // The peers' tri-state: undefined follows the first card, so the drawer is
+  // open on arrival as it is on the other three pages; null is the user having
+  // closed it.
+  const [selectedDir, setSelectedDir] = useState<string | null | undefined>(undefined);
   // Its own state, not `selectedDir`: the card click drives the drawer and
   // "View details" opens the modal. Sharing one setter is the bug (#189) that
   // made the Agent page's "View details" a no-op on an already-selected card.
@@ -96,10 +99,15 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     return rows;
   }, [data.sources, sort]);
 
-  const selected = useMemo(
-    () => sources.find((s) => s.dirName === selectedDir) ?? null,
-    [sources, selectedDir]
-  );
+  const selected = useMemo(() => {
+    // A federated search replaces the cards, so there is no card for the
+    // drawer to describe until the search box is cleared.
+    if (searching || selectedDir === null) return null;
+    if (selectedDir !== undefined) {
+      return sources.find((s) => s.dirName === selectedDir) ?? sources[0] ?? null;
+    }
+    return sources[0] ?? null;
+  }, [searching, sources, selectedDir]);
   const detailSource = useMemo(
     () => (detailDir ? sources.find((s) => s.dirName === detailDir) ?? null : null),
     [sources, detailDir]
@@ -337,7 +345,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
               <DataLakeSourceCard
                 key={source.dirName}
                 source={source}
-                selected={selectedDir === source.dirName}
+                selected={selected?.dirName === source.dirName}
                 onSelect={() => setSelectedDir(source.dirName)}
                 onBrowse={() => openSource(source)}
                 onViewDetails={() => setDetailDir(source.dirName)}

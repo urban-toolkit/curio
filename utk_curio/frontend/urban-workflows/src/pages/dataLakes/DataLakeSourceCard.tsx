@@ -3,6 +3,7 @@ import React from "react";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import {
   LAKE_PROVIDER_LABEL,
+  unsearchableReason,
   type LakeSourceRow,
 } from "../../services/dataLakeCatalog";
 import { LakeSourceIcon } from "./LakeSourceIcon";
@@ -126,7 +127,9 @@ export function DataLakeSourceCard({
         {/* "View details" is the peers' one way in, and opens the same kind of
             modal. Browsing stays on the card as well: it is what this page is
             for, and it writes nothing, unlike the account-level actions the
-            peer cards leave to their drawers. */}
+            peer cards leave to their drawers. It is offered where the drawer
+            offers it, and a source that cannot be browsed says why in its
+            details instead: a link-only portal, or one missing its token. */}
         <div className={styles.cardActionsLeft} />
         <div className={styles.cardActionsRight}>
           <button
@@ -139,16 +142,18 @@ export function DataLakeSourceCard({
           >
             View details
           </button>
-          <button
-            className={styles.linkButton}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onBrowse();
-            }}
-          >
-            {capabilities.search ? "Browse datasets" : "Open"}
-          </button>
+          {unsearchableReason(source) == null ? (
+            <button
+              className={styles.linkButton}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onBrowse();
+              }}
+            >
+              Browse datasets
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
