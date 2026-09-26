@@ -96,9 +96,11 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
     // Register-only: import must NOT attach the dataset to the open dataflow.
     expect(mockSetDataflowDatasets).not.toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
+    // With the way into what was just registered, like every dataset toast.
     expect(mockShowToast).toHaveBeenCalledWith(
       "Registered Imported.csv in the Data Catalog.",
       "success",
+      { action: expect.objectContaining({ label: "View details" }) },
     );
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
@@ -208,6 +210,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       "Added 2 layers from back_bay to this project.",
       "success",
+      { action: expect.objectContaining({ label: "View details" }) },
     );
 
     installSpy.mockRestore();

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 import { DataLakeCatalogBrowse } from '../../pages/dataLakes/DataLakeCatalogBrowse';
+import { DatasetDetailsProvider } from '../../components/datasets/catalog/DatasetDetailsProvider';
 import { DataLakeSourceDetail } from '../../pages/dataLakes/DataLakeSourceDetail';
 import { invalidateLakeCatalogCache } from '../../services/dataLakeCatalog';
 import type { LakeSourceRow } from '../../services/dataLakeCatalog';
@@ -21,6 +22,12 @@ import type { LakeSourceRow } from '../../services/dataLakeCatalog';
 jest.mock('../../utils/authApi', () => ({
   apiFetch: jest.fn(),
   getToken: jest.fn(() => 'token'),
+}));
+
+// A finished download raises a toast; which toast is asserted where a download
+// finishes, not here.
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
 jest.mock('../../components/datasets/catalog/DatasetDetailModal', () => ({
@@ -106,11 +113,13 @@ const LocationProbe: React.FC = () => {
 function renderAt(entry: string) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/catalog/lakes" element={<DataLakeCatalogBrowse />} />
-        <Route path="/catalog/lakes/:sourceDir" element={<DataLakeSourceDetail />} />
-        <Route path="/catalog/data/:datasetId" element={<p>Dataset page</p>} />
-      </Routes>
+      <DatasetDetailsProvider closeOnNavigate>
+        <Routes>
+          <Route path="/catalog/lakes" element={<DataLakeCatalogBrowse />} />
+          <Route path="/catalog/lakes/:sourceDir" element={<DataLakeSourceDetail />} />
+          <Route path="/catalog/data/:datasetId" element={<p>Dataset page</p>} />
+        </Routes>
+      </DatasetDetailsProvider>
       <LocationProbe />
     </MemoryRouter>
   );

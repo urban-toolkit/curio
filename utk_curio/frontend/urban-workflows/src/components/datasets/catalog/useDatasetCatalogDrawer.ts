@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useDatasetDetails, viewDatasetDetailsToast } from "./datasetDetailsContext";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   beginDatasetDrag,
@@ -45,7 +46,11 @@ export interface DatasetConfirmAction {
 
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { projectId, projectDirty, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
+  // The canvas's one dataset details modal, the same one the palettes and the
+  // Dataset Finder open (`CanvasDatasetDetailsProvider`), and the one this
+  // drawer's toasts offer.
+  const { openDatasetDetails: openDetails } = useDatasetDetails();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
@@ -54,7 +59,6 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const [pinned, setPinned] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<DatasetConfirmAction | null>(null);
   const [, startUiTransition] = useTransition();
 
@@ -166,14 +170,6 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const tabComputedCount =
     catalogItems.length > 0 ? computedCount : (catalog.facets.origin.computed ?? 0);
 
-  const detailFallback = useMemo(
-    () =>
-      detailDatasetId
-        ? catalogItems.find((item) => item.id === detailDatasetId) ?? null
-        : null,
-    [catalogItems, detailDatasetId],
-  );
-
   const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
@@ -219,6 +215,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             ? `Added ${installedItems.length} layers from ${dataset.title} to this project.`
             : `Added ${dataset.title} to this project.`,
           "success",
+          viewDatasetDetailsToast(openDetails, dataset.id, { fallbackDataset: dataset }),
         );
       } catch (err) {
         showToast((err as Error)?.message || "Could not add dataset.", "error");
@@ -227,7 +224,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
+    [ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall, openDetails],
   );
 
   // #196: the Data catalog confirms an add too, so all three catalogs agree.
@@ -279,6 +276,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             ? `Removed ${title} (${memberIds.length} layers) from this project.`
             : `Removed ${title} from this project.`,
           "success",
+          viewDatasetDetailsToast(openDetails, dataset.id, { fallbackDataset: dataset }),
         );
       } catch (err) {
         showToast((err as Error)?.message || "Could not remove dataset.", "error");
@@ -286,7 +284,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [ensureProjectId, setDataflowDatasets, showToast],
+    [ensureProjectId, setDataflowDatasets, showToast, openDetails],
   );
 
   /** Would removing this from the dataflow also delete it from the account?
@@ -406,14 +404,18 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         });
         // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
-        showToast("Dataset published to Data Catalog.", "success");
+        showToast(
+          "Dataset published to Data Catalog.",
+          "success",
+          viewDatasetDetailsToast(openDetails, published.id),
+        );
       } catch (err) {
         showToast((err as Error)?.message || "Could not publish dataset.", "error");
       } finally {
         setPublishingId(null);
       }
     },
-    [ensureProjectId, liveOutputs, setDataflowDatasets, showToast],
+    [ensureProjectId, liveOutputs, setDataflowDatasets, showToast, openDetails],
   );
 
   const performUnpublish = useCallback(
@@ -436,14 +438,18 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         );
         // Single refresh event; this hook's own listener does the reload (#178).
         notifyDatasetCatalogRefresh();
-        showToast(`${title} unpublished from the Data Catalog.`, "success");
+        showToast(
+          `${title} unpublished from the Data Catalog.`,
+          "success",
+          viewDatasetDetailsToast(openDetails, dataset.id, { fallbackDataset: dataset }),
+        );
       } catch (err) {
         showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
       } finally {
         setBusyId(null);
       }
     },
-    [ensureProjectId, setDataflowDatasets, showToast],
+    [ensureProjectId, setDataflowDatasets, showToast, openDetails],
   );
 
   const onUnpublish = useCallback(
@@ -564,6 +570,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
   const { importFile: runDatasetImport } = useDatasetImport({
     importDataset: catalog.importDataset,
     showToast,
+    openDatasetDetails: openDetails,
     onBegin: (key, label) => beginPendingInstall({ key, label }),
     onEnd: (key) => endPendingInstall(key),
   });
@@ -593,18 +600,14 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
     endDatasetDrag();
   }, []);
 
-  const openDatasetDetails = useCallback((dataset: DatasetCatalogItem) => {
-    setDetailDatasetId(dataset.id);
-  }, []);
-
-  const closeDatasetDetails = useCallback(() => {
-    setDetailDatasetId(null);
-  }, []);
+  const openDatasetDetails = useCallback(
+    (dataset: DatasetCatalogItem) => openDetails(dataset.id, { fallbackDataset: dataset }),
+    [openDetails],
+  );
 
   return {
     fileInputRef,
     projectId,
-    projectDirty,
     tab,
     setTab,
     search,
@@ -615,8 +618,6 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
     setPinned,
     busyId,
     publishingId,
-    detailDatasetId,
-    detailFallback,
     liveOutputs,
     catalog,
     items,
@@ -633,7 +634,6 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
     handleDatasetDragStart,
     handleDatasetDragEnd,
     openDatasetDetails,
-    closeDatasetDetails,
     confirmAction,
     dismissConfirm: useCallback(() => setConfirmAction(null), []),
   };

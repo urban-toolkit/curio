@@ -73,6 +73,7 @@ import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import { RequireAuth } from "./components/RequireAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { DatasetDetailsProvider } from "./components/datasets/catalog/DatasetDetailsProvider";
 
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
@@ -146,6 +147,9 @@ const App: React.FC = () => {
                         from page chrome rather than from a node still has to
                         land somewhere other than a blank document. */}
                     <ErrorBoundary label="route">
+                    {/* The catalog pages' one dataset details modal; the canvas
+                        mounts its own, with the dataflow behind it. */}
+                    <DatasetDetailsProvider closeOnNavigate>
                     <Routes>
                     <Route path="/auth/signin" element={<SignIn />} />
                     <Route path="/auth/signup" element={<SignUp />} />
@@ -210,6 +214,7 @@ const App: React.FC = () => {
                       }
                     />
                     </Routes>
+                    </DatasetDetailsProvider>
                     </ErrorBoundary>
                   </UserProvider>
                 </ProvenanceProvider>

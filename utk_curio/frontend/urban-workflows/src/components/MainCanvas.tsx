@@ -18,6 +18,10 @@ import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
 import { usePackagePalette } from "../providers/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
+import {
+    useDatasetDetails,
+    viewDatasetDetailsToast,
+} from "./datasets/catalog/datasetDetailsContext";
 import { packageKeyFromCanonicalNodeType } from "../registry/packageKeys";
 import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
@@ -52,6 +56,7 @@ import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvid
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
+    const { openDatasetDetails } = useDatasetDetails();
     const { setActivePackageKey } = usePackagePalette();
     const {
         nodes,
@@ -284,10 +289,14 @@ export function MainCanvas() {
         if (dataset) {
             const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
             createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position));
-            showToast(`Created a Data Loading node for ${dataset.title}.`, "success");
+            showToast(
+                `Created a Data Loading node for ${dataset.title}.`,
+                "success",
+                viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
+            );
             markDirty();
         }
-    }, [screenToFlowPosition, createCodeNode, markDirty, showToast]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, showToast, openDatasetDetails]);
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {

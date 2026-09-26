@@ -213,10 +213,10 @@ describe("a link to a dataset that does not exist", () => {
   });
 });
 
-describe("the canvas drawer tells the modal", () => {
+describe("the canvas tells the modal", () => {
   test("whether the dataflow has unsaved changes", () => {
     const src = fs.readFileSync(
-      path.resolve(__dirname, "../../components/datasets/catalog/DatasetCatalogDrawer.tsx"),
+      path.resolve(__dirname, "../../components/datasets/catalog/CanvasDatasetDetailsProvider.tsx"),
       "utf8"
     );
     expect(src).toContain("unsavedChanges={projectDirty}");

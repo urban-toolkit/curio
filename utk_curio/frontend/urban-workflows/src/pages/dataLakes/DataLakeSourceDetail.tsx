@@ -2,7 +2,11 @@ import React from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeader";
-import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
+import {
+  useDatasetDetails,
+  viewDatasetDetailsToast,
+} from "../../components/datasets/catalog/datasetDetailsContext";
+import { useToastContext } from "../../providers/ToastProvider";
 import {
   LAKE_AUTH_LABEL,
   LAKE_PROVIDER_LABEL,
@@ -38,7 +42,8 @@ export const DataLakeSourceDetail: React.FC = () => {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   // The same details modal the Data Catalog opens, over this page, so the
   // search that found the resource is still there when it closes.
-  const [detailDatasetId, setDetailDatasetId] = React.useState<string | null>(null);
+  const { openDatasetDetails } = useDatasetDetails();
+  const { showToast } = useToastContext();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -57,7 +62,18 @@ export const DataLakeSourceDetail: React.FC = () => {
   // A finished download is a new Data Catalog dataset, so every surface that
   // lists datasets - in this tab and in any other - has to be told. Skipping
   // this is how the download succeeds and the dataset appears to be missing.
-  const acquisition = useLakeAcquire(() => notifyDatasetCatalogRefresh());
+  const acquisition = useLakeAcquire((job) => {
+    notifyDatasetCatalogRefresh();
+    // Reported like an import into the Data Catalog, which is what it is.
+    if (job.datasetId) {
+      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      showToast(
+        `Downloaded ${title} to your Data Catalog.`,
+        "success",
+        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
+      );
+    }
+  });
 
   const blocked = source ? unsearchableReason(source) : null;
   const search = useLakeSearch({
@@ -166,7 +182,7 @@ export const DataLakeSourceDetail: React.FC = () => {
                 resource={resource}
                 iconUrl={source.iconUrl}
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
-                onViewDataset={setDetailDatasetId}
+                onViewDataset={(id) => openDatasetDetails(id)}
                 onDownload={(r, fmt) =>
                   // The portal's own title, or the dataset lands named after
                   // the remote FILE - "ijzp-q8t2.csv" rather than "Crimes -
@@ -194,12 +210,6 @@ export const DataLakeSourceDetail: React.FC = () => {
         </>
       )}
 
-      {detailDatasetId ? (
-        <DatasetDetailModal
-          datasetId={detailDatasetId}
-          onClose={() => setDetailDatasetId(null)}
-        />
-      ) : null}
     </div>
   );
 };

@@ -70,6 +70,7 @@ jest.mock("../../services/datasetCatalog", () => {
 });
 
 import { DataCatalogBrowse } from "../../pages/dataCatalog/DataCatalogBrowse";
+import { DatasetDetailsProvider } from "../../components/datasets/catalog/DatasetDetailsProvider";
 
 let location = "";
 const LocationProbe: React.FC = () => {
@@ -81,9 +82,11 @@ const LocationProbe: React.FC = () => {
 function renderAt(entry: string) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
-      <Routes>
-        <Route path="/catalog/data/:datasetId?" element={<DataCatalogBrowse />} />
-      </Routes>
+      <DatasetDetailsProvider closeOnNavigate>
+        <Routes>
+          <Route path="/catalog/data/:datasetId?" element={<DataCatalogBrowse />} />
+        </Routes>
+      </DatasetDetailsProvider>
       <LocationProbe />
     </MemoryRouter>,
   );

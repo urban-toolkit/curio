@@ -10,6 +10,7 @@ import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
 import { PackagePaletteProvider } from "../providers/PackagePaletteContext";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
+import { CanvasDatasetDetailsProvider } from "./datasets/catalog/CanvasDatasetDetailsProvider";
 
 /**
  * Everything a dataflow's nodes need, for either route that renders them.
@@ -36,6 +37,9 @@ export const DataflowProviders: React.FC<{
     // only reaches *descendants*. Putting it on the inside would hand
     // FlowProvider the no-op default value and silently drop every broadcast.
     <FlowProvider dashboardOn={presentation}>
+      {/* Above the drawers and the palettes: every one of them opens a
+          dataset's details through it, and the modal reads the live graph. */}
+      <CanvasDatasetDetailsProvider>
       {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and
           a portal preserves React tree context, not DOM position. Outside
@@ -54,6 +58,7 @@ export const DataflowProviders: React.FC<{
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>
+      </CanvasDatasetDetailsProvider>
     </FlowProvider>
   );
 

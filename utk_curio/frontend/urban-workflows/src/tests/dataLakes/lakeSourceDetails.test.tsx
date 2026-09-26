@@ -22,10 +22,10 @@ jest.mock('../../utils/authApi', () => ({
   getToken: jest.fn(() => 'token'),
 }));
 
-// The page also renders the Data Catalog's dataset modal, whose table preview
-// imports vega, which Jest does not transform. Not the subject here.
-jest.mock('../../components/datasets/catalog/DatasetDetailModal', () => ({
-  DatasetDetailModal: () => null,
+// A finished download raises a toast; which toast is asserted where a download
+// finishes, not here.
+jest.mock('../../providers/ToastProvider', () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

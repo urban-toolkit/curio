@@ -26,7 +26,8 @@ const CARD = "pages/dataCatalog/DataCatalogBrowseCard.tsx";
 const DRAWER = "pages/dataCatalog/DataCatalogBrowseDrawer.tsx";
 const PANEL = "components/datasets/catalog/DatasetDetailPanel.tsx";
 const MODAL = "components/datasets/catalog/DatasetDetailModal.tsx";
-const CANVAS_DRAWER = "components/datasets/catalog/DatasetCatalogDrawer.tsx";
+const CANVAS_DETAILS = "components/datasets/catalog/CanvasDatasetDetailsProvider.tsx";
+const PAGE_DETAILS = "components/datasets/catalog/DatasetDetailsProvider.tsx";
 
 describe("dataset detail entry points", () => {
   it("gives the card and the drawer the same callback", () => {
@@ -82,9 +83,11 @@ describe("canvasAvailable means a canvas, not a modal", () => {
     expect(panel).toContain("canvasAvailable = false");
   });
 
-  it("is set only by the in-canvas drawer", () => {
-    expect(read(CANVAS_DRAWER)).toContain("canvasAvailable");
-    // The browse page renders the same modal with no canvas behind it.
+  it("is set only by the canvas's details provider", () => {
+    // Every canvas surface opens the modal through it, the drawer included.
+    expect(read(CANVAS_DETAILS)).toContain("canvasAvailable");
+    // The catalog pages open the same modal with no canvas behind it.
+    expect(read(PAGE_DETAILS)).not.toContain("canvasAvailable");
     expect(read(BROWSE)).not.toContain("canvasAvailable");
   });
 

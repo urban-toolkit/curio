@@ -7,7 +7,11 @@ import {
   lakeSourceCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
-import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
+import {
+  useDatasetDetails,
+  viewDatasetDetailsToast,
+} from "../../components/datasets/catalog/datasetDetailsContext";
+import { useToastContext } from "../../providers/ToastProvider";
 import {
   acquireKey,
   notifyDatasetCatalogRefresh,
@@ -77,7 +81,8 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   // A downloaded resource opens in the Data Catalog's details modal, over this
   // page, rather than sending you to the dataset's own route.
-  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  const { openDatasetDetails } = useDatasetDetails();
+  const { showToast } = useToastContext();
 
   // The roster is always loaded: the rail counts and the source names shown
   // beside federated rows both come from it, and it is disk-backed and cheap.
@@ -89,7 +94,18 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   // it. Idle lists the portals; a query fans out across them.
   const searching = search.trim().length > 0;
   const results = useLakeSearch({ q: searching ? search : "", provider });
-  const acquisition = useLakeAcquire(() => notifyDatasetCatalogRefresh());
+  const acquisition = useLakeAcquire((job) => {
+    notifyDatasetCatalogRefresh();
+    // Reported like an import into the Data Catalog, which is what it is.
+    if (job.datasetId) {
+      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      showToast(
+        `Downloaded ${title} to your Data Catalog.`,
+        "success",
+        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
+      );
+    }
+  });
 
   const sources = useMemo(() => {
     const rows = [...data.sources];
@@ -300,7 +316,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                     )
                   ]
                 }
-                onViewDataset={setDetailDatasetId}
+                onViewDataset={(id) => openDatasetDetails(id)}
                 onDownload={(r, fmt) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
@@ -391,12 +407,6 @@ export const DataLakeCatalogBrowse: React.FC = () => {
         />
       ) : null}
 
-      {detailDatasetId ? (
-        <DatasetDetailModal
-          datasetId={detailDatasetId}
-          onClose={() => setDetailDatasetId(null)}
-        />
-      ) : null}
     </div>
   );
 };
