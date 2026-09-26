@@ -302,6 +302,16 @@ def _new_dataflow_from_menu(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.click(_menu(page, "File"), force=True)
     tour.click(page.get_by_role("button", name="New dataflow", exact=True))
+    # The guard is an in-app modal now, which the page's native "dialog"
+    # handler never sees. It only appears when an autosave is still pending,
+    # so its absence is not an error.
+    guard = page.get_by_role("dialog", name="Discard unsaved changes?")
+    try:
+        guard.wait_for(state="visible", timeout=1500)
+    except PlaywrightTimeoutError:
+        pass
+    else:
+        tour.click(guard.get_by_role("button", name="Discard and continue", exact=True))
     page.wait_for_url("**/dataflow/new", timeout=20000)
     page.wait_for_timeout(1200)
 
@@ -1804,6 +1814,15 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
             name=USER_NAME,
             password=USER_PASSWORD,
             project_name="Feature Tour",
+            # Without a spec the canvas is titled with the harness default,
+            # "StubbedWorkflow", which then sits in every frame of the video.
+            project_spec={
+                "name": "Feature Tour",
+                "dataflow": {
+                    "name": "Feature Tour", "nodes": [], "edges": [], "task": "",
+                    "timestamp": 0, "provenance_id": "Feature Tour",
+                },
+            },
         )
         # Land where the first selected scene expects to be: the canvas scenes
         # assume a dataflow is already open, and dropping them on /projects
