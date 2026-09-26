@@ -234,7 +234,12 @@ def _scripted_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, 
 
 # ── the roster ───────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=_spec_id)
+#: The catalog cards: the internal built-ins run only as delegates, so they
+#: are never installed or attached.
+_CARDS = [s for s in builtin.BUILTIN_AGENTS if s.in_catalog]
+
+
+@pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
 def test_agent_installs_attaches_and_runs(spec, current_server: str):
     """One built-in agent, all the way through: install, attach, run, persist.
 
@@ -385,7 +390,7 @@ def test_the_roster_matches_the_served_catalog(current_server: str):
         )["items"]
         if row["provenance"]["trust"] == "built-in"
     }
-    covered = {f"{s.agent_id}@{builtin.BUILTIN_VERSION}" for s in builtin.BUILTIN_AGENTS}
+    covered = {f"{s.agent_id}@{builtin.BUILTIN_VERSION}" for s in _CARDS}
     assert served == covered, (
         f"served but not covered: {sorted(served - covered)}; "
         f"covered but not served: {sorted(covered - served)}"

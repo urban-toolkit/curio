@@ -132,6 +132,8 @@ def _manifest_to_card(
         "publishable": publishable,
         "scope": scope,
         "requiresAgents": list(requires_agents or []),
+        # An internal built-in runs only as a delegate; no listing shows one.
+        "inCatalog": not builtin.is_internal(m.dir_name),
     }
 
 
@@ -385,7 +387,8 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
     # Global Catalog = built-in roster ∪ published definitions (published wins on dupes).
     by_dir: dict[str, tuple[AgentManifest, bool]] = {}
     for m in builtin.list_builtin_manifests():
-        by_dir[m.dir_name] = (m, False)
+        if not builtin.is_internal(m.dir_name):
+            by_dir[m.dir_name] = (m, False)
     for m in publications.list_published():
         by_dir[m.dir_name] = (m, True)
     return [
@@ -416,7 +419,7 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
             installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in sorted(imported):
-        m = _resolve_definition(user_key, coord)
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
         if m is None:
             continue
         # Publishable only when it is an owned imported definition (trust=imported) —
@@ -444,7 +447,7 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in project_agents.project_agents(spec):
-        m = _resolve_definition(user_key, coord)
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
         if m is None:
             continue
         out.append(
@@ -495,6 +498,20 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     return results
 
 
+def _refuse_internal(coord: str) -> None:
+    """An internal built-in runs only as a delegate of other agents: it is
+    never imported, installed or attached."""
+    if builtin.is_internal(coord):
+        spec = builtin.get_builtin_spec(coord) or builtin.get_builtin_spec(
+            f"{coord}@{builtin.BUILTIN_VERSION}"
+        )
+        name = spec.name if spec else coord
+        raise AgentServiceError(
+            f"{name} runs only as a delegate of other agents; it is not installed or attached",
+            400,
+        )
+
+
 def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     """Record *coord* in My Imports and install it into every project.
 
@@ -502,6 +519,7 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     ``user_key`` keep working unchanged; without it this records the coordinate
     and nothing else, exactly as before.
     """
+    _refuse_internal(coord)
     _require_definition(user_key, coord)
     _materialize_builtin(user_key, coord)
     imports.add_imported_agent(user_key, coord)
@@ -555,6 +573,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     Returns ``{"agents": lockfile, "installed": [coords newly added, root
     first], "required": [the closure's coords]}``.
     """
+    _refuse_internal(coord)
     root = _require_definition(user_key, coord)
     required, missing = delegation.required_closure(user_key, root)
     if missing:
@@ -10683,6 +10702,10 @@ def _delegation_home(
             att_id = _attach_node_builder(spec, target_node)
             if att_id:
                 return attachments.get_attachment(spec, att_id), True
+        return None, False
+    if builtin.is_internal(coord):
+        # An internal agent is never attached, so its work has no home of its
+        # own: the parent's trace carries it.
         return None, False
     agent_id = coord.split("@", 1)[0]
     fallback = None

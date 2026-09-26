@@ -1,4 +1,4 @@
-"""Built-in agent definitions — the twenty-one agents Curio ships with.
+"""Built-in agent definitions: the nineteen agents Curio ships with, ten of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``,
@@ -96,33 +96,40 @@ class BuiltinAgentSpec:
     # indicator from the live job (docs/11:178). Every other built-in stays
     # "foreground" byte-identically.
     execution: str = "foreground"
+    # Whether the agent is a catalog card. A card can change the user's
+    # project, is one whose input or output the runtime treats as structure,
+    # or is the only agent for a canvas target; the chat agent is the one
+    # conversational surface. Every other built-in is internal: it runs only
+    # as a delegate, resolves from this roster without being installed, and
+    # is never listed, installed or attached.
+    in_catalog: bool = True
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
 
 # The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
-# (dev/48) and the package-authoring agents: twenty-one in all, which is the
-# number docs/AGENT-CATALOG.md quotes and test_prompt_assets parametrizes over.
+# (dev/48) and the package-authoring agents: nineteen in all, ten of them
+# catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
+# and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
+    # The one conversational surface. It explains and debugs as well as
+    # chatting, so it reads the node and the dataflow as they are on screen,
+    # unsaved edits included, and holds the read tools to look further.
     BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
-                     "Conversational assistant for a node or the canvas.",
-                     "chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",),
-                     targets=("node", "canvas"), reads=("userMessage",)),
-    BuiltinAgentSpec("agent.debug-agent", "Debug", "node",
-                     "Diagnose errors and propose fixes for a node or the canvas.",
-                     "debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),
-                     targets=("node", "canvas"), reads=("dataflowContext",),
-                     tools=("dataflow.read", "node.runtime.read")),
+                     "Talk with an assistant about a node or the whole dataflow: it "
+                     "explains what they do, diagnoses errors, and helps you define "
+                     "what to build.",
+                     "chat_prompt.txt",
+                     ("conversation.respond", "attachment.refine", "node.explain",
+                      "code.debug.diagnose"), ("chat",),
+                     targets=("node", "canvas"),
+                     reads=("userMessage", "nodeContext", "dataflowContext"),
+                     tools=("dataflow.read", "node.read", "node.runtime.read")),
     BuiltinAgentSpec("agent.dataflow-explainer", "Dataflow Explainer", "canvas",
                      "Explain what the whole dataflow does.",
                      "explanation_prompt.txt", ("dataflow.explain",), ("explanation",),
-                     reads=("dataflowContext",), tools=("dataflow.read",)),
-    BuiltinAgentSpec("agent.node-explainer", "Node Explainer", "node",
-                     "Explain what a node or its output does.",
-                     "single_box_explanation_prompt.txt",
-                     ("node.explain", "node.output.interpret"), ("explanation",),
-                     reads=("nodeContext",), tools=("node.read", "node.runtime.read")),
+                     reads=("dataflowContext",), tools=("dataflow.read",), in_catalog=False),
     BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
                      "Generate node content for a target.",
                      "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
@@ -132,11 +139,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.execution-subtask-planner", "Execution Subtask Planner", "canvas",
                      "Plan follow-up subtasks from an execution.",
                      "new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",),
-                     reads=("nodeContent", "nodeType", "currentTask")),
+                     reads=("nodeContent", "nodeType", "currentTask"), in_catalog=False),
     BuiltinAgentSpec("agent.dataflow-task-planner", "Dataflow Task Planner", "canvas",
                      "Create a workflow plan from a goal.",
                      "new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",),
-                     reads=("currentTask", "dataflowContext")),
+                     reads=("currentTask", "dataflowContext"), in_catalog=False),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
@@ -156,23 +163,23 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.workflow-suggester", "Workflow Suggester", "canvas",
                      "Suggest workflow next steps.",
                      "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),
-                     reads=("dataflowContext", "workflowGoal"), tools=("dataflow.read",)),
+                     reads=("dataflowContext", "workflowGoal"), tools=("dataflow.read",), in_catalog=False),
     BuiltinAgentSpec("agent.plan-coherence-validator", "Plan Coherence Validator", "evaluate",
                      "Validate that a plan's subtasks are coherent.",
                      "evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",),
-                     reads=("workflowGoal", "dataflowContext")),
+                     reads=("workflowGoal", "dataflowContext"), in_catalog=False),
     BuiltinAgentSpec("agent.syntax-analysis-agent", "Syntax Analysis", "evaluate",
                      "Analyze code syntax.",
                      "syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",),
-                     preamble_file="syntax_analysis_preamble.txt", reads=("codeContext",)),
+                     preamble_file="syntax_analysis_preamble.txt", reads=("codeContext",), in_catalog=False),
     BuiltinAgentSpec("agent.task-refresh-agent", "Task Refresh", "canvas",
                      "Refresh a workflow plan.",
                      "task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",),
-                     reads=("currentTask", "keywords", "dataflowContext")),
+                     reads=("currentTask", "keywords", "dataflowContext"), in_catalog=False),
     BuiltinAgentSpec("agent.keyword-binding-agent", "Keyword Binding", "canvas",
                      "Bind keywords for a workflow.",
                      "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),
-                     reads=("keywords", "dataflowContext")),
+                     reads=("keywords", "dataflowContext"), in_catalog=False),
     # dev/67-4 (DEC-053): the research agent — concise factual verification
     # of external sources (dataset ids, endpoints, schemas) other agents
     # chain to via research.verify; policy-gated web tools; never mutates.
@@ -342,7 +349,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      ("content.quality.evaluate",), ("validation",),
                      targets=("node", "canvas"),
                      reads=("nodeContext", "targetContext"),
-                     tools=("node.read", "node.runtime.read", "dataflow.read")),
+                     tools=("node.read", "node.runtime.read", "dataflow.read"),
+                     in_catalog=False),
     # The twentieth built-in (memo dev/89). Net-new instruction. The package
     # AUTHORING specialist, deliberately separate from Package Recommendation
     # (dev/89 §3): recommendation stays catalog-grounded discovery + reviewed
@@ -459,6 +467,18 @@ def _by_coord() -> dict[str, BuiltinAgentSpec]:
 def get_builtin_spec(coord: str) -> BuiltinAgentSpec | None:
     """Resolve a ``<agentId>@<version>`` coordinate to its roster spec, or None."""
     return _by_coord().get(coord)
+
+
+def internal_agent_ids() -> frozenset[str]:
+    """The built-ins that run only as delegates (``in_catalog`` false)."""
+    return frozenset(spec.agent_id for spec in BUILTIN_AGENTS if not spec.in_catalog)
+
+
+def is_internal(coord: object) -> bool:
+    """Whether *coord* (or a bare agent id) is an internal built-in. A
+    definition of the same id at another version is the owner's own, and is not."""
+    agent_id, _, version = str(coord or "").partition("@")
+    return agent_id in internal_agent_ids() and version in ("", BUILTIN_VERSION)
 
 
 def get_builtin_manifest(coord: str) -> AgentManifest | None:

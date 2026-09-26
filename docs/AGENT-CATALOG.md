@@ -31,7 +31,7 @@ An **agent** in Curio is a small self-contained folder, shaped like a node
 package, identified by a reverse-domain id and a version:
 
 ```
-<agentId>@<version>     e.g.   agent.node-explainer@1.0.0
+<agentId>@<version>     e.g.   agent.chat-agent@1.0.0
                                agent.dataflow-builder@1.0.0
 ```
 
@@ -39,9 +39,9 @@ The folder holds a `manifest.json` (the contract) and the prompt assets the
 manifest references by digest:
 
 ```
-agent.node-explainer@1.0.0/
+agent.chat-agent@1.0.0/
   manifest.json
-  prompts/single_box_explanation_prompt.txt
+  prompts/chat_prompt.txt
 ```
 
 Agent ids always begin with **`agent.`**, which keeps them distinct from node
@@ -50,10 +50,21 @@ package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids
 [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json); see
 [part 6](#6-writing-your-own-agent) for the field table.
 
-**Twenty-one agents ship with Curio**, declared in
-[`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py) and
-materialized into each user's store on first use. They cover the five categories
-below.
+**Nineteen agents ship with Curio**, declared in
+[`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py). Ten of
+them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**,
+**Node Builder**, **Node Content Builder**, **Node Researcher**, **Package
+Builder**, **Package Recommendation**, **Researcher** and **Connection
+Builder**. Each of them can change your project, or produces or reads
+something Curio acts on rather than just displays, or is the only agent for a
+kind of target (the Connection Builder, for connections). Chat is the one
+agent for conversation: it explains a node or the whole dataflow, diagnoses
+errors, and helps you define what to build.
+
+The other nine plan, explain and check work only on behalf of those ten. They
+are never listed, added or attached, and a catalog agent can delegate to one
+without it being added to the dataflow. A catalog agent is materialized into
+your store on first use. The ten cover the five categories below.
 
 ### Categories
 
@@ -207,6 +218,11 @@ either.
 Not every agent accepts every target: an agent declares which kinds it is
 compatible with, and its category implies a default. A `canvas` agent dropped on
 a node is refused.
+
+Chat reads the dataflow as it is on screen with every message, unsaved edits
+included, and when it is attached to a node, that node's content, what feeds it
+and its last run. That makes each message larger than a bare question: it
+carries a summary of the whole dataflow.
 
 Each attachment carries its own chat transcript, its own **intent** (the editable
 first instruction, defaulting to the definition's own prompt), and its own
@@ -749,8 +765,8 @@ A minimal, complete manifest:
 ```json
 {
   "$schema": "../../docs/schemas/agent-package.v1.json",
-  "id": "agent.node-explainer",
-  "name": "Node Explainer",
+  "id": "agent.my-helper",
+  "name": "My Helper",
   "category": "node",
   "version": "1.0.0",
   "purpose": "Explain what a node or its output does.",
@@ -761,13 +777,13 @@ A minimal, complete manifest:
   ],
   "prompts": {
     "system": { "path": "prompts/default_preamble.txt", "sha256": "<sha256>", "variables": [] },
-    "instruction": { "path": "prompts/single_box_explanation.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
+    "instruction": { "path": "prompts/explain_node.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
   },
   "compatibleTargets": [{ "kind": "node", "requires": ["code-or-output"] }],
   "inputs": { "reads": ["nodeContext"], "requiredConfig": [] },
   "outputs": ["explanation"],
   "runtime": { "execution": "foreground", "reviewPolicy": "report-only" },
-  "provenance": { "publisher": "curio", "license": "MIT", "trust": "built-in" }
+  "provenance": { "publisher": "you", "license": "MIT", "trust": "imported" }
 }
 ```
 

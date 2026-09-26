@@ -64,6 +64,9 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     installed matches but a ``delegatesTo`` entry is visible in the catalog,
     the outcome is ``not-installed`` (the missing-specialist proposal path);
     a capability nobody declares is ``unresolvable``.
+
+    An internal built-in is never installed: it resolves from the roster, so
+    it is ``ok`` wherever the walk reaches it, and never an install proposal.
     """
     from utk_curio.backend.app.agents import project_agents, services
     from utk_curio.backend.app.projects import storage as projects_storage
@@ -77,6 +80,9 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
             m = services._resolve_definition(user_key, coord)
             if m is not None and capability in m.capability_ids:
                 return Resolution("ok", coord, m)
+        internal = _internal_resolution(user_key, agent_id, capability)
+        if internal is not None:
+            return internal
         if missing is None:
             visible_coord, visible_m = find_visible(user_key, agent_id)
             if visible_m is not None and capability in visible_m.capability_ids:
@@ -97,9 +103,25 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
 
         for m in builtin.list_builtin_manifests():
             if capability in m.capability_ids:
+                if builtin.is_internal(m.dir_name):
+                    return Resolution("ok", m.dir_name, m)
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
     return missing or Resolution("unresolvable")
+
+
+def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resolution | None:
+    """The roster's own definition of an internal built-in, when it declares
+    *capability*."""
+    from utk_curio.backend.app.agents import builtin, services
+
+    if not builtin.is_internal(agent_id):
+        return None
+    coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
+    m = services._resolve_definition(user_key, coord)
+    if m is not None and capability in m.capability_ids:
+        return Resolution("ok", coord, m)
+    return None
 
 
 def find_visible(user_key: str, agent_id: str) -> tuple[str | None, AgentManifest | None]:

@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from utk_curio.backend.app.agents import ledger, publications, storage
+from utk_curio.backend.app.agents import builtin, ledger, publications, storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -141,32 +141,30 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the node researcher (dev/67-4) + package recommendation (dev/84)
-        # + the authored evaluator (DEC-055) + the package builder (dev/89)
-        # + the notes researcher (dev/90).
-        assert len(agents) == 21
+        # The ten catalog cards; the internal built-ins run only as delegates.
+        assert len(agents) == 10
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
+        assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
-        assert "agent.node-explainer" in ids
-        assert "agent.node-builder" in ids
+        assert ids == {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        assert "agent.dataflow-task-planner" not in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.chat-agent@1.0.0"
         r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
         imports_listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in imports_listed] == [coord]
         # And the catalog now marks it imported.
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        ne = next(a for a in cat if a["id"] == "agent.node-explainer")
-        assert ne["imported"] is True
+        chat = next(a for a in cat if a["id"] == "agent.chat-agent")
+        assert chat["imported"] is True
 
     def test_install_a_builtin_into_project(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.dataflow-task-planner@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -177,8 +175,28 @@ class TestGlobalCatalog:
         cat = client.get(
             f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
-        planner = next(a for a in cat if a["id"] == "agent.dataflow-task-planner")
-        assert planner["installedInProject"] is True
+        builder = next(a for a in cat if a["id"] == "agent.connection-builder")
+        assert builder["installedInProject"] is True
+
+    def test_an_internal_agent_is_never_imported_or_installed(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        _, token = user_and_token
+        coord = "agent.dataflow-task-planner@1.0.0"
+        imported = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        assert imported.status_code == 400
+        assert "runs only as a delegate" in imported.get_json()["error"]
+        installed = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        assert installed.status_code == 400
+        # So it cannot be attached either: attaching needs it installed.
+        attached = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}}, headers=_auth(token),
+        )
+        assert attached.status_code == 400
 
 
 class TestProjectInstall:
@@ -367,10 +385,10 @@ class TestPublish:
     def test_publish_builtin_rejected(self, client, user_and_token, tmp_curio):
         # A built-in is not an owned store-backed import → cannot be published.
         _, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
         r = client.post(
             "/api/agents/publications",
-            json={"coord": "agent.node-explainer@1.0.0"},
+            json={"coord": "agent.connection-builder@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -383,11 +401,11 @@ class TestPublish:
 
     def test_publishable_flag_owned_vs_builtin(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
         coord = _write_def(user, "agent.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.node-explainer"]["publishable"] is False  # built-in
+        assert by_id["agent.connection-builder"]["publishable"] is False  # built-in
         assert by_id["agent.my-custom"]["publishable"] is True  # owned store-backed
 
     def test_unpublish(self, client, user_and_token, tmp_curio):
@@ -440,14 +458,14 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.connection-builder@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         )
         assert r.status_code == 400
 
     def test_attach_bad_node_target_rejected(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -463,7 +481,7 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0"},
+            json={"coord": "agent.connection-builder@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -475,7 +493,7 @@ class TestMaterialize:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         # Not in the store before install (it's a built-in resolved from the roster).
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
@@ -485,15 +503,15 @@ class TestMaterialize:
         # After install, the definition + its prompt asset are on disk in the store.
         d = storage.agent_definition_dir(_user_dir_key(user), coord)
         assert (d / "manifest.json").is_file()
-        assert (d / "prompts" / "single_box_explanation_prompt.txt").is_file()
+        assert (d / "prompts" / "new_connection_prompt.txt").is_file()
 
     def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
         # Even after its bytes are in the store, a built-in stays non-publishable.
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.node-explainer"]["publishable"] is False
+        assert by_id["agent.connection-builder"]["publishable"] is False
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
@@ -540,8 +558,12 @@ class TestRun:
         instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
         from utk_curio.backend.app.agents import content as content_mod
 
-        # dev/39: the runtime-owned structured-tail instruction composes last.
-        assert msgs[0]["content"] == f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+        # dev/39: the runtime-owned structured-tail instruction composes last,
+        # followed by the read tools the chat agent is granted.
+        assert msgs[0]["content"].startswith(
+            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+        )
+        assert "- dataflow.read:" in msgs[0]["content"]
         assert msgs[1] == {"role": "user", "content": "explain this node"}
 
     def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -635,8 +657,8 @@ class TestPruneAttachmentsOnDelete:
 
     def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        node_coord = "agent.node-explainer@1.0.0"  # node-only
-        canvas_coord = "agent.dataflow-explainer@1.0.0"  # canvas-only
+        node_coord = "agent.node-content-builder@1.0.0"  # node-only
+        canvas_coord = "agent.dataflow-builder@1.0.0"  # canvas-only
         for c in (node_coord, canvas_coord):
             client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
         # Persist a node so a node-target attachment validates against the spec.
@@ -684,9 +706,9 @@ class TestAttachCompatibility:
         )
 
     def test_canvas_only_agent_rejected_on_a_node(self, client, user_and_token, tmp_curio, alice_project):
-        # dataflow-explainer is a canvas-category (canvas-only) built-in.
+        # dataflow-builder is a canvas-only built-in.
         _, token = user_and_token
-        coord = "agent.dataflow-explainer@1.0.0"
+        coord = "agent.dataflow-builder@1.0.0"
         self._install(client, token, alice_project, coord)
         # Persist a node so the node target would otherwise exist.
         client.put(
@@ -702,7 +724,7 @@ class TestAttachCompatibility:
 
     def test_node_only_agent_rejected_on_canvas(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"  # node-only
+        coord = "agent.node-content-builder@1.0.0"  # node-only
         self._install(client, token, alice_project, coord)
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 400
@@ -720,24 +742,11 @@ class TestAttachCompatibility:
         assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
         assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
 
-    def test_chat_and_debug_declare_both_targets(self, client, user_and_token, tmp_curio):
+    def test_chat_declares_both_targets(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
         by_id = {a["id"]: a for a in cat}
         assert sorted(by_id["agent.chat-agent"]["hooks"]) == ["canvas", "node"]
-        assert sorted(by_id["agent.debug-agent"]["hooks"]) == ["canvas", "node"]
-
-    def test_debug_attaches_to_canvas_and_node(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        coord = "agent.debug-agent@1.0.0"
-        self._install(client, token, alice_project, coord)
-        client.put(
-            f"/api/projects/{alice_project}",
-            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
-            headers=_auth(token),
-        )
-        assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
-        assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
 
     def test_stale_materialized_builtin_resolves_fresh_roster_metadata(
         self, client, user_and_token, tmp_curio, alice_project
@@ -870,10 +879,10 @@ class TestIntent:
         from utk_curio.backend.app.agents import content as content_mod
 
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
-        assert calls[0][0] == {
-            "role": "system",
-            "content": f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}",
-        }
+        assert calls[0][0]["role"] == "system"
+        assert calls[0][0]["content"].startswith(
+            f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}"
+        )
 
 
 class TestSession:
@@ -1023,7 +1032,7 @@ class TestSession:
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.node-content-builder@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         client.put(
             f"/api/projects/{alice_project}",
@@ -1262,7 +1271,7 @@ class TestExecutionRecords:
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
         # dev/39: granted tools are pinned; the registry ships empty.
-        assert pins["tools"] == []
+        assert pins["tools"] == ["dataflow.read", "node.read", "node.runtime.read"]
         # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
             "maxOutputTokens": services_mod.DEPLOYMENT_MAX_OUTPUT_TOKENS,
@@ -1923,7 +1932,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "print(1)"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-explainer@1.0.0",
+            client, token, alice_project, "agent.chat-agent@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1975,10 +1984,10 @@ class TestToolLoop:
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
         _, token = user_and_token
         # Chat agent declares no tools → nothing granted.
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.node-researcher@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         r = client.post(
@@ -2010,7 +2019,7 @@ class TestToolLoop:
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-explainer@1.0.0",
+            client, token, alice_project, "agent.chat-agent@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -2081,22 +2090,31 @@ class TestToolLoop:
             return "ok"
 
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
-        _, token = user_and_token
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        att_id = client.post(
-            f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
-            headers=_auth(token),
-        ).get_json()["attachmentId"]
-        client.post(
+        user, token = user_and_token
+        # No built-in card is both tool-free and delegate-free, so an owned
+        # definition that declares neither stands in for a grant-less run.
+        coord = "agent.plain-helper@1.0.0"
+        storage.write_definition(_user_dir_key(user), coord, {
+            "id": "agent.plain-helper", "name": "Plain Helper", "category": "node",
+            "version": "1.0.0",
+            "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+            "compatibleTargets": [{"kind": "node", "requires": []}],
+            "provenance": {"publisher": "curio", "trust": "imported"},
+            "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
+        }, {"prompts/instruction.txt": "Answer briefly."})
+        self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "x"})
+        att_id = self._install_attach(
+            client, token, alice_project, coord, {"kind": "node", "targetId": "n1"},
+        )
+        r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q"}, headers=_auth(token),
         )
-        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
-        instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
-        assert calls[0][0]["content"] == (
-            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
-        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        system = calls[0][0]["content"]
+        assert system == f"Answer briefly.\n\n{content_mod.TAIL_INSTRUCTION}"
+        assert "You may also use these tools" not in system
+        assert "delegateRequest" not in system
 
 
 class TestReviewProposals:
@@ -2704,14 +2722,14 @@ class TestMaterializePreamble:
         from utk_curio.backend.app.agents import storage as agents_storage
 
         user, token = user_and_token
-        coord = "agent.syntax-analysis-agent@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token)
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         d = agents_storage.agent_definition_dir(_user_dir_key(user), coord)
-        assert (d / "prompts/syntax_analysis_prompt.txt").is_file()
-        assert (d / "prompts/syntax_analysis_preamble.txt").is_file()
+        assert (d / "prompts/new_connection_prompt.txt").is_file()
+        assert (d / "prompts/default_preamble.txt").is_file()
 
 
 class TestNodeCreate:
@@ -3878,7 +3896,7 @@ class TestAttachRequiresGating:
         pid = self._project_with_nodes(client, token)
         r = self._attach(
             client, token, pid, {"kind": "node", "targetId": "comp1"},
-            coord="agent.node-explainer@1.0.0",
+            coord="agent.node-content-builder@1.0.0",
         )
         assert r.status_code == 201, r.get_data(as_text=True)
 
@@ -4207,21 +4225,21 @@ class TestDataflowPlanMint:
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[
-                '```curio.v1\n{"delegateRequest": {"capability": "workflow.plan.create", '
-                '"inputs": {"currentTask": "decompose this"}}}\n```',
+                '```curio.v1\n{"delegateRequest": {"capability": "connection.propose", '
+                '"inputs": {"subtask": "connect these"}}}\n```',
                 "I asked for an install.",
             ],
         )
         body = self._run(client, token, alice_project, att_id).get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "project.install"
-        assert proposal["pins"]["coord"] == "agent.dataflow-task-planner@1.0.0"
+        assert proposal["pins"]["coord"] == "agent.connection-builder@1.0.0"
         installed = {
             a["dirName"] for a in client.get(
                 f"/api/agents/projects/{alice_project}", headers=_auth(token)
             ).get_json()["agents"]
         }
-        assert "agent.dataflow-task-planner@1.0.0" not in installed
+        assert "agent.connection-builder@1.0.0" not in installed
 
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -6067,10 +6085,10 @@ class TestDestructiveReplan:
             replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
         )
         # A node-target attachment on the victim (dies with it, dev/32) …
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token))
         victim_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
+            json={"coord": "agent.node-content-builder@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         # … and a stale nodeRuns entry for it in the builder session.

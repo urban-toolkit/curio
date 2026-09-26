@@ -974,7 +974,9 @@ class TestEvaluatorDelegation:
             assert r.outcome == "ok", parent
             assert r.coord == self.EV
 
-    def test_missing_evaluator_is_missing_specialist_never_assumed(self, client, user_and_token, tmp_curio):
+    def test_the_internal_evaluator_resolves_without_being_installed(self, client, user_and_token, tmp_curio):
+        # It runs only as a delegate, so it is never installed, and never the
+        # subject of an install proposal.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
@@ -982,5 +984,16 @@ class TestEvaluatorDelegation:
             key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
             "content.quality.evaluate",
         )
-        assert r.outcome == "not-installed"
+        assert r.outcome == "ok"
         assert r.coord == self.EV
+
+    def test_a_card_that_is_not_installed_is_still_a_missing_specialist(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(
+            key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
+            "research.verify",
+        )
+        assert r.outcome == "not-installed"
+        assert r.coord == "agent.node-researcher@1.0.0"
