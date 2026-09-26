@@ -271,6 +271,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useVegaBehavior', () => {
+    test('text typed into a fresh chart is not overwritten when its first input arrives', async () => {
+      const result = await callBehavior(
+        useVegaBehavior,
+        { input: { dataType: 'dataframe', data: { a: [1, 2] } } } as any,
+        { code: '{"mark": "line"}' } as any,
+      );
+      await act(async () => {});
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
     test('returns applyGrammar', async () => {
       const result = await callBehavior(useVegaBehavior);
       assertValidBehaviorResult(result.current);

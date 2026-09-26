@@ -11,7 +11,7 @@ import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
 import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
-import { isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
+import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
