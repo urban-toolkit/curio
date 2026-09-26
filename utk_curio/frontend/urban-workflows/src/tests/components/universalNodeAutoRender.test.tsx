@@ -10,7 +10,9 @@
  * The rules are narrow on purpose, and each case below is one of them:
  *
  *  - Vega: whenever it has an input and a spec, on either route, once per input.
- *    It is a client-side recompile, so the canvas benefits too.
+ *    It is a client-side recompile, so the canvas benefits too. A selection
+ *    coming back through a Data Pool is not a new input: the chart highlights
+ *    the flagged rows in the view it has.
  *  - Autark: only a PINNED tile, only on the dashboard, only a render spec, and
  *    only once. It needs WebGPU; it is real work. Upstream data/compute nodes
  *    are never run: their layers come from the Data Catalog.
@@ -113,6 +115,7 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 }));
 
 import UniversalNode from "../../components/UniversalNode";
+import { markSelectionEcho } from "../../utils/selectionEcho";
 
 const VEGA = "curio.builtin/vis-vega";
 const AUTARK = "curio.builtin/autk-grammar";
@@ -176,6 +179,31 @@ describe("a Vega chart", () => {
   test("a new input compiles again", async () => {
     // A chart behind a Data Pool gets its rows when the pool's fetch lands.
     const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
+    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+  });
+
+  test("a selection coming back through a Data Pool highlights, it does not recompile", async () => {
+    // Same rows, new `interacted` flags: useVega's hot reload swaps them into
+    // the view it has. Rebuilding the chart would throw its own selection away.
+    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+
+    await rerenderWith(utils, data(VEGA, {
+      code: VEGA_SPEC,
+      input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }),
+    }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("new data after a selection still compiles", async () => {
+    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+    await rerenderWith(utils, data(VEGA, {
+      code: VEGA_SPEC,
+      input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }),
+    }));
 
     await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
 

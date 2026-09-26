@@ -60,7 +60,8 @@ export interface INodeData {
   defaultCode?: string;
   pythonInterpreter?: PythonInterpreter;
   jsInterpreter?: JavaScriptInterpreter;
-  outputCallback?: (nodeId: string, output: string) => void;
+  /** `options.selectionEcho`: the output is a selection coming back, not new data (see utils/selectionEcho). */
+  outputCallback?: (nodeId: string, output: string, options?: { selectionEcho?: boolean }) => void;
   codeChangeCallback?: (nodeId: string, output: string) => void;
   interactionsCallback?: (interactions: any, nodeId: string) => void;
   propagationCallback?: (propagation: IPropagation) => void;

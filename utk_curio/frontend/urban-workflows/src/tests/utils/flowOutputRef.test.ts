@@ -1,6 +1,7 @@
 import {
   flowOutputRefFromRaw,
   normalizeFlowInput,
+  executionInputRef,
   sandboxArtifactId,
 } from '../../utils/flowOutputRef';
 
@@ -66,6 +67,26 @@ describe('normalizeFlowInput', () => {
     expect(second).not.toBe(first);
   });
 
+  test('keeps rows that travel inline, even when they name their artifact', () => {
+    // A Data Pool emits its fetched envelope (filename included) with the
+    // `interacted` flags set. Reduced to a reference, every chart it feeds
+    // re-fetched the original rows and never saw a selection.
+    const poolOut = {
+      dataType: 'dataframe',
+      data: { label: ['a', 'b'], interacted: { 0: '0', 1: '1' } },
+      schema: { label: 'object' },
+      filename: 'art_1',
+    };
+    const normalized = normalizeFlowInput(poolOut);
+    expect(normalized).toEqual(poolOut);
+    expect(normalized).not.toBe(poolOut);
+  });
+
+  test('a payload with a path is still a reference', () => {
+    expect(normalizeFlowInput({ path: 'art_1', dataType: 'dataframe', data: { a: [1] } }))
+      .toEqual({ path: 'art_1', dataType: 'dataframe' });
+  });
+
   test('passes through merge output bundles without artifact paths', () => {
     const mergeOut = {
       dataType: 'outputs',
@@ -96,5 +117,26 @@ describe('sandboxArtifactId', () => {
       dataset: '1780437932988_443646f8_output.parquet',
       dataType: 'dataframe',
     })).toBe('1780437932988_443646f8_output.parquet');
+  });
+});
+
+describe('executionInputRef', () => {
+  test('sends a code node only the reference an inline payload names', () => {
+    expect(executionInputRef({
+      dataType: 'dataframe',
+      data: { label: ['a'] },
+      schema: {},
+      filename: 'art_1',
+    })).toEqual({ dataType: 'dataframe', filename: 'art_1' });
+  });
+
+  test('leaves references, merge bundles and unnamed inline rows alone', () => {
+    const ref = { path: 'art_1', dataType: 'dataframe' };
+    expect(executionInputRef(ref)).toBe(ref);
+    const merge = { dataType: 'outputs', data: [{ path: 'a', dataType: 'dataframe' }] };
+    expect(executionInputRef(merge)).toBe(merge);
+    const inline = { dataType: 'geodataframe', data: { type: 'FeatureCollection', features: [] } };
+    expect(executionInputRef(inline)).toBe(inline);
+    expect(executionInputRef('')).toBe('');
   });
 });

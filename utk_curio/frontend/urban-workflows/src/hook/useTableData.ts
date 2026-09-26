@@ -102,7 +102,9 @@ const useTableData = ({ data }: { data: INodeData }) => {
     div.appendChild(selectIntra);
   };
 
-  const processDataAsync = async () => {
+  // `selectionEcho`: this run re-emits the same rows because of a selection
+  // (another pool's propagation), so linked charts highlight rather than redraw.
+  const processDataAsync = async (options?: { selectionEcho?: boolean }) => {
     try {
       // Normalize input wrappers: handle merge outputs
       let wrappers: any[] = [];
@@ -305,7 +307,8 @@ const useTableData = ({ data }: { data: INodeData }) => {
       }
 
       if (callbackOutput !== null && data.outputCallback) {
-        data.outputCallback(data.nodeId, callbackOutput);
+        data.outputCallback(data.nodeId, callbackOutput,
+          options?.selectionEcho ? { selectionEcho: true } : undefined);
       }
 
       setTabData(tabd);
