@@ -4,10 +4,11 @@ import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
-import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { useGrammarInputState } from '../../hook/useGrammarInputState';
+import { useStarterSpec } from '../../hook/useStarterSpec';
+import { autkStarterText } from '../../utils/autkDefaultSpec';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
 import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
@@ -49,7 +50,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // never ran or silently failed (#282). Seeded from the authored spec so the
     // pre-run body already says what running it will do; updated on every run.
     const [specKind, setSpecKind] = useState<AutkSpecKind>(() =>
-        classifyAutkSpecString((data as any).code || data.defaultCode || autkGrammarAdapter.getDefaultSpec?.()),
+        classifyAutkSpecString((data as any).code || data.defaultCode),
     );
     // One line per table/layer the last successful run produced. Null while
     // running and after an error, so a stale summary never outlives its data.
@@ -1055,26 +1056,30 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
 
-    // Editor seed, decided ONCE at mount: a node that arrives with no code gets
-    // the default example spec. This must NOT be re-derived per render from
-    // ``data.code`` — that field is written back by the editor one commit late
-    // (useNodeState's post-commit mutation), so a render-time check flip-flops
-    // while the user types, oscillating ``defaultValue`` and resetting the
-    // editor to the default spec (dev/70, the same bug as #157).
-    const seedSpecRef = useRef<string | undefined>(
-        (data.defaultCode || (data as any).code)
-            ? undefined
-            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
-    );
+    // A starter document chosen from the arriving input, the way every grammar
+    // node fills an empty editor (hook/useStarterSpec): once, only into an
+    // empty editor, only after an input has arrived, never over a document
+    // written in from outside. A bundle is read the way the run reads it, so
+    // it downloads once; a single frame needs only its preview.
+    const starterSpec = useStarterSpec({
+        input: data.input,
+        buffer: nodeState.code,
+        written: data.defaultCode,
+        read: (input) => {
+            const type = (input as any)?.dataType;
+            return type === 'list' || type === 'dict' || type === 'outputs'
+                ? readInput(input)
+                : readAutkInput(input, { preview: true });
+        },
+        choose: autkStarterText,
+    });
 
     return {
         applyGrammar,
         contentComponent,
-        // Yield to a real external update: dataset drop / LLM apply write
-        // ``data.defaultCode`` via updateDefaultCode, and that must win over
-        // the mount-time seed. (``data.defaultCode`` only changes through
-        // setNodes, never mid-keystroke, so this stays stable while typing.)
-        defaultValueOverride: data.defaultCode ? undefined : seedSpecRef.current,
+        // Only ever offered for an empty editor, so it cannot displace real
+        // work, and it steps aside for a document written in from outside.
+        defaultValueOverride: starterSpec,
     };
 };
 

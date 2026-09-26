@@ -28,9 +28,6 @@ jest.mock('../../../services/api', () => ({ fetchData: jest.fn() }));
 jest.mock('../../../JavaScriptInterpreter', () => ({
   JavaScriptInterpreter: class { },
 }));
-jest.mock('../../../adapters/autkGrammarAdapter', () => ({
-  autkGrammarAdapter: { getDefaultSpec: () => '{"map":{}}' },
-}));
 
 const mockGrammarRun = jest.fn().mockResolvedValue(undefined);
 const mockAutkGrammar = jest.fn().mockImplementation(() => ({

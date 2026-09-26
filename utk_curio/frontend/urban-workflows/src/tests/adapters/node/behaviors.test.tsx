@@ -573,12 +573,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
     });
 
-    test('returns applyGrammar, contentComponent, and default spec', async () => {
+    test('returns applyGrammar and contentComponent; a fresh node opens empty, like a Vega chart', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
     test('omits defaultValueOverride when node already has code', async () => {
@@ -589,34 +589,41 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
-    // dev/70 regression: the seed decision is frozen at mount. ``data.code`` is
-    // mutated by useNodeState one commit behind the editor (and the old reset
-    // chain even wrote ``undefined`` into it), so deriving the override from it
-    // per render flip-flopped ``defaultValue`` and reset the editor to the
-    // default spec while the user typed.
-    test('defaultValueOverride stays stable while data.code mutates mid-typing (dev/70)', async () => {
-      const stableData = makeMockData();
+    // dev/70 regression: ``data.code`` is mutated by useNodeState one commit
+    // behind the editor (and the old reset chain even wrote ``undefined`` into
+    // it), so an override derived from it per render flip-flopped
+    // ``defaultValue`` and reset the editor while the user typed. The starter,
+    // once offered, stays put until a document is written in from outside.
+    test('the starter stays stable while data.code mutates mid-typing (dev/70)', async () => {
+      const stableData = makeMockData({
+        input: {
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { pop: 1 } },
+          ] },
+        },
+      } as any);
       const stableNodeState = makeMockNodeState();
       let rendered: any;
       await act(async () => {
         rendered = renderHook(() => useAutkGrammarBehavior(stableData, stableNodeState));
       });
-
-      const seed = rendered.result.current.defaultValueOverride;
-      expect(typeof seed).toBe('string');
+      await waitFor(() => expect(rendered.result.current.defaultValueOverride).toBeDefined());
+      const starter = rendered.result.current.defaultValueOverride;
+      expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('upstream');
 
       // Editor floats a keystroke back into the mutable node data.
       (stableData as any).code = '{"user":"typed"}';
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
-      // The old reset chain cleared it again — the override must not flip back.
+      // The old reset chain cleared it again: the override must not flip.
       (stableData as any).code = undefined;
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
       // An explicit external update (dataset drop / LLM apply) writes
-      // data.defaultCode via updateDefaultCode and must win over the seed.
+      // data.defaultCode via updateDefaultCode and must win over the starter.
       (stableData as any).defaultCode = '{"map":{}}';
       await act(async () => { rendered.rerender(); });
       expect(rendered.result.current.defaultValueOverride).toBeUndefined();
