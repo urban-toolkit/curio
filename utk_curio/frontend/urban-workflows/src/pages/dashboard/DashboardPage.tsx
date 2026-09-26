@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   ConnectionMode,
   EdgeChange,
@@ -17,7 +17,7 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
 import { dataflowPath } from "../../utils/shareLinks";
-import DashboardTopBar, { useCanEditLayout } from "./DashboardTopBar";
+import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
 import "reactflow/dist/style.css";
@@ -129,6 +129,10 @@ export const DashboardPage: React.FC = () => {
   }, [reactFlow, updateDataNode]);
 
   const dataflowLink = id ? dataflowPath(id) : "/projects";
+  // The top bar's "Open dataflow" asks before dropping an unsaved layout, and
+  // so does this one: the same destination, the same question.
+  const navigate = useNavigate();
+  const { leave, dialog: leaveDialog } = useDashboardLeaveGuard();
 
   return (
     <div className={styles.page}>
@@ -184,12 +188,21 @@ export const DashboardPage: React.FC = () => {
           <div className={styles.state} data-testid="dashboard-empty">
             <span className={styles.stateTitle}>{NOTHING_PINNED_TITLE}</span>
             <span>{NOTHING_PINNED_BODY}</span>
-            <Link className={styles.stateLink} to={dataflowLink}>
+            <Link
+              className={styles.stateLink}
+              to={dataflowLink}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                leave(() => navigate(dataflowLink));
+              }}
+            >
               Open the dataflow
             </Link>
           </div>
         ) : null}
       </div>
+      {leaveDialog}
     </div>
   );
 };

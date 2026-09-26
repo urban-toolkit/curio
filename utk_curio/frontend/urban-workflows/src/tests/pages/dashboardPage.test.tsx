@@ -299,6 +299,34 @@ describe("the states", () => {
     expect(screen.getByText("Open the dataflow").getAttribute("href")).toBe(`/dataflow/${ID}`);
   });
 
+  test("the empty state's way out asks before dropping an unsaved layout", async () => {
+    // The top bar's "Open dataflow" always asked; this link, to the same place,
+    // did not, so the same unsaved layout was protected on one control only.
+    mockFlow = flow({ dashboardPins: {}, dashboardLocked: false, projectDirty: true });
+    await renderPage();
+
+    fireEvent.click(screen.getByText("Open the dataflow"));
+    expect(screen.getByRole("dialog", { name: "Discard unsaved layout?" })).toBeTruthy();
+    expect(screen.queryByTestId("canvas")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(screen.queryByRole("dialog", { name: "Discard unsaved layout?" })).toBeNull();
+    expect(screen.queryByTestId("canvas")).toBeNull();
+
+    fireEvent.click(screen.getByText("Open the dataflow"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard and continue" }));
+    expect(screen.getByTestId("canvas")).toBeTruthy();
+  });
+
+  test("with nothing unsaved, the empty state's link simply goes", async () => {
+    mockFlow = flow({ dashboardPins: {} });
+    await renderPage();
+
+    fireEvent.click(screen.getByText("Open the dataflow"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("canvas")).toBeTruthy();
+  });
+
   test("a link that does not open says so", async () => {
     mockLoadState = "failed";
     mockFlow = flow({ nodes: [], dashboardPins: {} });

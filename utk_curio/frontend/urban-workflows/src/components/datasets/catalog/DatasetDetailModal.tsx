@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import ModalShell from "../../ModalShell";
-import ConfirmDialog from "../../ConfirmDialog";
+import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { DatasetCatalogItem, datasetCatalogApi, type DatasetCatalogQuery } from "../../../services/datasetCatalog";
 import { DatasetDetailPanel } from "./DatasetDetailPanel";
 
@@ -46,7 +46,9 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [pendingLeave, setPendingLeave] = useState<string | null>(null);
+  const { leave, dialog: leaveDialog } = useLeaveGuard(unsavedChanges, LEAVE_DATAFLOW, {
+    layer: "overlay",
+  });
   const [dataset, setDataset] = useState<DatasetCatalogItem | null>(fallbackDataset);
   const [loading, setLoading] = useState(!fallbackDataset);
   const [error, setError] = useState<string | null>(null);
@@ -110,12 +112,10 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
       onClose();
       return;
     }
-    if (unsavedChanges) {
-      setPendingLeave(to);
-      return;
-    }
-    onClose();
-    navigate(to);
+    leave(() => {
+      onClose();
+      navigate(to);
+    });
   };
 
   return (
@@ -132,23 +132,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         onFollowLink={followLink}
         inAllProjects={inAllProjects ?? fetchedInAllProjects}
       />
-      {pendingLeave ? (
-        <ConfirmDialog
-          title="Discard unsaved changes?"
-          body="Leaving this dataflow discards the changes you have not saved."
-          confirmLabel="Discard and continue"
-          cancelLabel="Stay here"
-          destructive
-          layer="overlay"
-          onConfirm={() => {
-            const to = pendingLeave;
-            setPendingLeave(null);
-            onClose();
-            navigate(to);
-          }}
-          onCancel={() => setPendingLeave(null)}
-        />
-      ) : null}
+      {leaveDialog}
     </ModalShell>
   );
 };
