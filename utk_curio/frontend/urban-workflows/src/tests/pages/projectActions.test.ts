@@ -16,6 +16,16 @@ import { projectActions } from "../../pages/projects/projectActions";
 const ids = () => projectActions().map((a) => a.id);
 
 describe("projectActions", () => {
+  it("names Open the way the drawer does", () => {
+    // The drawer's primary button reads "Open dataflow"; the menu said "Open".
+    expect(projectActions()[0]).toEqual({ id: "open", label: "Open dataflow" });
+    const drawer = require("fs").readFileSync(
+      require("path").resolve(__dirname, "../../pages/projects/ProjectsList.tsx"),
+      "utf8",
+    );
+    expect(drawer).toContain("Open dataflow");
+  });
+
   test("a project the user made offers four actions", () => {
     // No Archive. The one piece of state left subtracts Delete from a seeded
     // example; nothing adds an action, so the two surfaces still cannot show
