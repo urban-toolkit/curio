@@ -115,7 +115,7 @@ export type UseNodeStateReturn = ReturnType<typeof import('../hook/useNodeState'
  */
 export interface NodeBehaviorData extends INodeData {
   /** FlowProvider callback — push this node's output to downstream nodes. */
-  outputCallback: (nodeId: string, output: any) => void;
+  outputCallback: (nodeId: string, output: any, options?: { selectionEcho?: boolean }) => void;
   /** FlowProvider callback — propagate interaction resolution data. */
   propagationCallback: (propagation: IPropagation) => void;
   /** FlowProvider callback — push interactions to connected interaction nodes. */
