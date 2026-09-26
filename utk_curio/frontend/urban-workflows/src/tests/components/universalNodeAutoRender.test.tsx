@@ -9,14 +9,15 @@
  *
  * The rules are narrow on purpose, and each case below is one of them:
  *
- *  - Vega: whenever it has an input and a spec, on either route, once per input.
- *    It is a client-side recompile, so the canvas benefits too. A selection
- *    coming back through a Data Pool is not a new input: the chart highlights
- *    the flagged rows in the view it has.
- *  - Autark: a render spec (a map or a plot) by the same rule as Vega, when
- *    WebGPU is there; a selection coming back re-highlights it. A data or
- *    compute step never: on the dashboard their layers come from the Data
- *    Catalog. A pinned tile with no input draws once on the dashboard.
+ *  - A Vega chart and an Autark map (a document that draws a map or a plot)
+ *    follow one rule, and the table below runs every case for both: draw
+ *    whenever an input and a document are there, on either route, once per
+ *    input. A selection, coming back through a Data Pool or across a direct
+ *    interaction edge, is not a new input: the node highlights the matched
+ *    rows in the view it has.
+ *  - Only an Autark node: it needs WebGPU; a data or compute step never draws
+ *    on its own (on the dashboard their layers come from the Data Catalog);
+ *    a pinned tile with no input draws once on the dashboard.
  *  - Code nodes: never. Their pane shows a run's stdout, which nothing restores,
  *    and running one would execute the user's code because a page was opened.
  */
@@ -157,164 +158,200 @@ beforeEach(() => {
   mockWebGpuSupported = true;
 });
 
-describe("a Vega chart", () => {
-  test("compiles from a restored input on the canvas, like a Play would", async () => {
-    await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+// The redraw rule, one table: every case runs for a Vega chart and for an
+// Autark map. What only an Autark node does follows the table.
+describe.each([
+  ["a Vega chart", VEGA, VEGA_SPEC, "spec"],
+  ["an Autark map", AUTARK, MAP_SPEC, "document"],
+])("%s", (_name, type, spec, docWord) => {
+  const node = (extra: Record<string, unknown> = {}) => data(type, { code: spec, ...extra });
+  // An Autark draw waits for its WebGPU probe, which answers asynchronously.
+  const settle = () => act(async () => {});
+  const open = async (nodeData: any) => {
+    const utils = await mount(nodeData);
+    await settle();
+    return utils;
+  };
+  const next = async (utils: ReturnType<typeof render>, nodeData: any) => {
+    await rerenderWith(utils, nodeData);
+    await settle();
+  };
+  const wire = () => { mockFlowEdges = [{ id: "e", source: "up", target: "n1" }]; };
+
+  test("draws from a restored input on the canvas, like a Play would", async () => {
+    await open(node({ input: INPUT_A }));
 
     expect(mockSetOutput).toHaveBeenCalledWith({ code: "exec", content: "" });
     expect(mockSendCode).toHaveBeenCalledTimes(1);
-    expect(mockSendCode).toHaveBeenCalledWith(VEGA_SPEC);
+    expect(mockSendCode).toHaveBeenCalledWith(spec);
   });
 
-  test("and on the dashboard", async () => {
+  test("and as a tile on the dashboard", async () => {
     mockDashboardOn = true;
+    wire();
 
-    await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A, dashboardPinned: true }));
-
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-  });
-
-  test("the same input is never compiled twice", async () => {
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
-
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+    await open(node({ input: INPUT_A, dashboardPinned: true }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
 
-  test("a new input compiles again", async () => {
-    // A chart behind a Data Pool gets its rows when the pool's fetch lands.
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+  test("a wired tile draws when its input lands", async () => {
+    mockDashboardOn = true;
+    wire();
+    const utils = await open(node({ dashboardPinned: true }));
+    expect(mockSendCode).not.toHaveBeenCalled();
 
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
+    await next(utils, node({ dashboardPinned: true, input: INPUT_A }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("the same input is never drawn twice", async () => {
+    const utils = await open(node({ input: INPUT_A }));
+
+    await next(utils, node({ input: INPUT_A }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("a new input draws again", async () => {
+    // A node behind a Data Pool gets its rows when the pool's fetch lands.
+    const utils = await open(node({ input: INPUT_A }));
+
+    await next(utils, node({ input: INPUT_B }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(2);
   });
 
-  test("a selection coming back through a Data Pool highlights, it does not recompile", async () => {
-    // Same rows, new `interacted` flags: useVega's hot reload swaps them into
-    // the view it has. Rebuilding the chart would throw its own selection away.
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+  test("a selection coming back through a Data Pool highlights; it does not redraw", async () => {
+    // Same rows, new `interacted` flags, highlighted in the view the node has.
+    // Rebuilding it would throw its own selection away.
+    const utils = await open(node({ input: INPUT_A }));
 
-    await rerenderWith(utils, data(VEGA, {
-      code: VEGA_SPEC,
-      input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }),
+    await next(utils, node({ input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }) }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("new data after a selection still draws", async () => {
+    const utils = await open(node({ input: INPUT_A }));
+    await next(utils, node({ input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }) }));
+
+    await next(utils, node({ input: INPUT_B }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(2);
+  });
+
+  test("a selection across a direct interaction edge highlights; it does not redraw", async () => {
+    const utils = await open(node({ input: INPUT_A }));
+
+    await next(utils, node({
+      input: INPUT_A,
+      interactions: [{ nodeId: "bars", type: "POINT", data: { selected: [0] }, source: "bars" }],
     }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
 
-  test("new data after a selection still compiles", async () => {
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
-    await rerenderWith(utils, data(VEGA, {
-      code: VEGA_SPEC,
-      input: markSelectionEcho({ dataType: "dataframe", data: { a: [1] } }),
-    }));
-
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
-
-    expect(mockSendCode).toHaveBeenCalledTimes(2);
-  });
-
-  test("nothing to draw from, nothing compiled", async () => {
-    // Compiling against no rows would replace the "connect something" message
-    // with an empty set of axes and mark the node done.
-    await mount(data(VEGA, { code: VEGA_SPEC, input: "" }));
+  test("nothing to draw from, nothing drawn", async () => {
+    // Drawing against no rows would replace the "connect something" message
+    // with an empty frame and mark the node done.
+    await open(node({ input: "" }));
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("no spec, nothing compiled", async () => {
-    // The starter spec arrives a beat later; compiling "" would throw on parse.
-    await mount(data(VEGA, { code: "", input: INPUT_A }));
+  test(`no ${docWord}, nothing drawn`, async () => {
+    // The starter arrives a beat later; drawing "" would throw on parse.
+    await open(node({ code: "", input: INPUT_A }));
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("the spec the starter fill guessed is not drawn on its own", async () => {
-    // Wiring a fresh chart to a node that has already run: the input lands on an
-    // empty buffer, `vegaBehavior` fetches a preview and writes a spec guessed
-    // from its columns, and that arrives as a second render. Drawing it would
-    // run the node on connect and pull the editor to its output pane while the
-    // author is still typing the real spec into it.
-    const utils = await mount(data(VEGA, { code: "", input: INPUT_A }));
+  test(`the ${docWord} the starter fill guessed is not drawn on its own`, async () => {
+    // Wiring a fresh node to one that has already run: the input lands on an
+    // empty buffer, the behavior writes a starter guessed from its columns,
+    // and that arrives as a second render. Drawing it would run the node on
+    // connect and pull the editor to its output pane while the author is
+    // still typing the real one into it.
+    const utils = await open(node({ code: "", input: INPUT_A }));
 
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+    await next(utils, node({ input: INPUT_A }));
 
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("but the next input draws, because the author has a spec by then", async () => {
-    const utils = await mount(data(VEGA, { code: "", input: INPUT_A }));
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
+  test(`but the next input draws, because the author has a ${docWord} by then`, async () => {
+    const utils = await open(node({ code: "", input: INPUT_A }));
+    await next(utils, node({ input: INPUT_A }));
 
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_B }));
+    await next(utils, node({ input: INPUT_B }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
-    expect(mockSendCode).toHaveBeenCalledWith(VEGA_SPEC);
+    expect(mockSendCode).toHaveBeenCalledWith(spec);
   });
 
-  test("a tile is never held back that way, it opens with its spec loaded", async () => {
-    // The dashboard has no author to interrupt, and a pinned tile's spec comes
-    // back from the save before its data does.
+  test(`a tile is never held back that way; it opens with its ${docWord} loaded`, async () => {
+    // The dashboard has no author to interrupt, and a pinned tile's document
+    // comes back from the save before its data does.
     mockDashboardOn = true;
-    const utils = await mount(data(VEGA, { code: "", input: INPUT_A, dashboardPinned: true }));
+    wire();
+    const utils = await open(node({ code: "", input: INPUT_A, dashboardPinned: true }));
 
-    await rerenderWith(
-      utils,
-      data(VEGA, { code: VEGA_SPEC, input: INPUT_A, dashboardPinned: true }),
-    );
+    await next(utils, node({ input: INPUT_A, dashboardPinned: true }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("a run in flight is left to draw the node itself", async () => {
+    // The runner triggers the node it is running. Doing it here as well puts two
+    // `sendCode` calls in one tick, and each toggles the widgets pass: two
+    // toggles in a batch cancel, the marker round trip never happens, and the
+    // node sits at "exec" until its watchdog. Found by the end-to-end run.
+    mockIsRunActive = true;
+
+    await open(node({ input: INPUT_A }));
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("a node already drawing is not asked again", async () => {
+    await open({ ...node({ input: INPUT_A }), output: { code: "exec" } });
+
+    expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("once the run ends, a restored input still draws", async () => {
+    mockIsRunActive = true;
+    const utils = await open(node({ input: INPUT_A }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    mockIsRunActive = false;
+    await next(utils, node({ input: INPUT_A }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("but a node the run drew is not drawn again when it ends", async () => {
+    // The run's own trigger records which input it drew, so the end of a Run
+    // All does not redraw every node it just drew.
+    mockIsRunActive = true;
+    const utils = await open(node({ input: INPUT_A, triggerExec: 0 }));
+
+    await next(utils, node({ input: INPUT_A, triggerExec: 1 }));
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+
+    mockIsRunActive = false;
+    await next(utils, node({ input: INPUT_A, triggerExec: 1 }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("an Autark map, by the rule a Vega chart follows", () => {
-  // The WebGPU probe answers asynchronously.
+describe("only an Autark node", () => {
   const settle = () => act(async () => {});
 
-  test("draws from a restored input on the canvas", async () => {
-    await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
-    await settle();
-
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-    expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
-  });
-
-  test("the same input is never drawn twice; a new one draws again", async () => {
-    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
-    await settle();
-    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
-    await settle();
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-
-    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_B }));
-    await settle();
-    expect(mockSendCode).toHaveBeenCalledTimes(2);
-  });
-
-  test("a selection coming back through a Data Pool re-highlights, it does not redraw", async () => {
-    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
-    await settle();
-
-    await rerenderWith(utils, data(AUTARK, {
-      code: MAP_SPEC,
-      input: markSelectionEcho({ dataType: "geodataframe", data: { type: "FeatureCollection", features: [] } }),
-    }));
-    await settle();
-
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-  });
-
-  test("the document the starter fill guessed is not drawn on its own", async () => {
-    const utils = await mount(data(AUTARK, { code: "", input: INPUT_A }));
-    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
-    await settle();
-
-    expect(mockSendCode).not.toHaveBeenCalled();
-  });
-
-  test("without WebGPU nothing is drawn on its own", async () => {
+  test("needs WebGPU: without it nothing is drawn on its own", async () => {
     mockWebGpuSupported = false;
 
     await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
@@ -334,19 +371,8 @@ describe("an Autark map, by the rule a Vega chart follows", () => {
     expect(mockSendCode).not.toHaveBeenCalled();
   });
 
-  test("a wired tile on the dashboard draws when its input lands", async () => {
-    mockDashboardOn = true;
-    mockFlowEdges = [{ id: "e", source: "pool", target: "n1" }];
-    const utils = await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
-    await settle();
-    expect(mockSendCode).not.toHaveBeenCalled();
-
-    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, dashboardPinned: true, input: INPUT_A }));
-    await settle();
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-  });
-
   test("an unwired pinned tile draws once on the dashboard", async () => {
+    // Its document loads everything it draws, so no input will ever arrive.
     mockDashboardOn = true;
 
     await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
@@ -355,60 +381,14 @@ describe("an Autark map, by the rule a Vega chart follows", () => {
     expect(mockSendCode).toHaveBeenCalledTimes(1);
     expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });
-});
 
-describe("a run already in flight", () => {
-  test("is left to compile the chart itself", async () => {
-    // The runner triggers the node it is running. Doing it here as well puts two
-    // `sendCode` calls in one tick, and each toggles the widgets pass: two
-    // toggles in a batch cancel, the marker round trip never happens, and the
-    // node sits at "exec" until its watchdog. Found by the end-to-end run.
-    mockIsRunActive = true;
-
-    await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
-
-    expect(mockSendCode).not.toHaveBeenCalled();
-  });
-
-  test("the same holds for an Autark tile", async () => {
+  test("but not while a run is in flight", async () => {
     mockDashboardOn = true;
     mockIsRunActive = true;
 
     await mount(data(AUTARK, { code: MAP_SPEC, dashboardPinned: true }));
 
     expect(mockSendCode).not.toHaveBeenCalled();
-  });
-
-  test("and a node already compiling is not asked again", async () => {
-    await mount({ ...data(VEGA, { code: VEGA_SPEC, input: INPUT_A }), output: { code: "exec" } });
-
-    expect(mockSendCode).not.toHaveBeenCalled();
-  });
-
-  test("once the run ends, a restored input still draws", async () => {
-    mockIsRunActive = true;
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
-    expect(mockSendCode).not.toHaveBeenCalled();
-
-    mockIsRunActive = false;
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A }));
-
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-  });
-
-  test("but a node the run compiled is not compiled again when it ends", async () => {
-    // The run's own trigger records which input it compiled, so the end of a Run
-    // All does not recompile every chart it just drew.
-    mockIsRunActive = true;
-    const utils = await mount(data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 0 }));
-
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 1 }));
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
-
-    mockIsRunActive = false;
-    await rerenderWith(utils, data(VEGA, { code: VEGA_SPEC, input: INPUT_A, triggerExec: 1 }));
-
-    expect(mockSendCode).toHaveBeenCalledTimes(1);
   });
 });
 

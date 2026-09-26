@@ -888,13 +888,34 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(syncHighlightsNow, [data.input, (data as any).interactions]);
 
+    // A starter document chosen from the arriving input, the way every grammar
+    // node fills an empty editor (hook/useStarterSpec): once, only into an
+    // empty editor, only after an input has arrived, never over a document
+    // written in from outside. A bundle is read the way the run reads it, so
+    // it downloads once; a single frame needs only its preview.
+    const starterSpec = useStarterSpec({
+        input: data.input,
+        buffer: nodeState.code,
+        written: data.defaultCode,
+        read: (input) => {
+            const type = (input as any)?.dataType;
+            return type === 'list' || type === 'dict' || type === 'outputs'
+                ? readInput(input)
+                : readAutkInput(input, { preview: true });
+        },
+        choose: autkStarterText,
+    });
+
     // The states before anything is drawn: nothing connected, an upstream that
     // has not run or failed, an input this node cannot read, an empty editor, a
     // document not run yet. Written into the container the map draws into, the
     // way the Vega-Lite node writes into its own (utils/writeEmptyState), so no
     // React state changes while someone types. A document that draws only what
-    // it loads itself has nothing to say about an input.
-    const liveCode = nodeState.code;
+    // it loads itself has nothing to say about an input. The editor counts as
+    // holding the starter once one is chosen, as the Vega-Lite node counts it.
+    const liveCode = isEmptySpecBuffer(nodeState.code) && starterSpec !== undefined
+        ? starterSpec
+        : nodeState.code;
     const liveKind = classifyAutkSpecString(liveCode);
     const hasSpec = !isEmptySpecBuffer(liveCode);
     const needsInput = (() => {
@@ -1087,24 +1108,6 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
-
-    // A starter document chosen from the arriving input, the way every grammar
-    // node fills an empty editor (hook/useStarterSpec): once, only into an
-    // empty editor, only after an input has arrived, never over a document
-    // written in from outside. A bundle is read the way the run reads it, so
-    // it downloads once; a single frame needs only its preview.
-    const starterSpec = useStarterSpec({
-        input: data.input,
-        buffer: nodeState.code,
-        written: data.defaultCode,
-        read: (input) => {
-            const type = (input as any)?.dataType;
-            return type === 'list' || type === 'dict' || type === 'outputs'
-                ? readInput(input)
-                : readAutkInput(input, { preview: true });
-        },
-        choose: autkStarterText,
-    });
 
     return {
         applyGrammar,
