@@ -127,8 +127,10 @@ function DataCatalogBrowseDrawerContent({
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
-          {dataset.installed ? (
-            <span className={styles.drawerInstalledBadge}>✓ In project</span>
+          {/* The account-level fact, as on the Node and Agent drawers: this
+              page has no project for "In project" to be about. */}
+          {inAllProjects ? (
+            <span className={styles.drawerInstalledBadge}>✓ In all projects</span>
           ) : null}
         </>
       }

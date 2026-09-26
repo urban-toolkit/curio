@@ -269,9 +269,11 @@ export interface DatasetDetailPanelProps {
   initialTab?: (typeof TABS)[number];
   /** Called after publish/unpublish so the parent can refetch the dataset. */
   onMutated?: () => void;
-  /** How an in-app link in these details is followed; see `DetailLink`. The
-   *  modal passes one, the full-page view does not. */
+  /** How an in-app link in these details is followed; see `DetailLink`. */
   onFollowLink?: (to: string) => void;
+  /** In the account's "all projects" list. Left out until it is known, so the
+   *  row never guesses. */
+  inAllProjects?: boolean;
 }
 
 export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
@@ -284,6 +286,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   initialTab = "Overview",
   onMutated,
   onFollowLink,
+  inAllProjects,
 }) => {
   const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
@@ -516,6 +519,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
               <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In project" : "Available"}</span></dd></div>
+              {/* The two account-level facts the Node and Agent details show,
+                  under the same names. */}
+              {inAllProjects !== undefined ? (
+                <div><dt>In all projects</dt><dd>{inAllProjects ? "Yes" : "No"}</dd></div>
+              ) : null}
+              <div><dt>In the catalog</dt><dd>{published ? "Published" : "Not published"}</dd></div>
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (

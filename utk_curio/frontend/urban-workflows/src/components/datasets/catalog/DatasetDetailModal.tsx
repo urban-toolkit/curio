@@ -16,6 +16,9 @@ export interface DatasetDetailModalProps {
   /** The dataflow behind the modal has changes not yet saved, so a link that
    *  leaves it asks first. Set only by the in-canvas drawer. */
   unsavedChanges?: boolean;
+  /** In the account's "all projects" list. Left out, the modal reads the
+   *  list itself. */
+  inAllProjects?: boolean;
   onClose: () => void;
 }
 
@@ -38,6 +41,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   initialTab = "Overview",
   canvasAvailable = false,
   unsavedChanges = false,
+  inAllProjects,
   onClose,
 }) => {
   const navigate = useNavigate();
@@ -77,6 +81,23 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
     };
   }, [dataflowId, datasetId, liveOutputs, reloadToken]);
 
+  // The Data Catalog page holds the account's "all projects" list and passes
+  // it; everywhere else the modal asks, as the Node details modal does.
+  const [fetchedInAllProjects, setFetchedInAllProjects] = useState<boolean | undefined>();
+  useEffect(() => {
+    if (inAllProjects !== undefined) return;
+    let cancelled = false;
+    void datasetCatalogApi
+      .listDatasetDefaults()
+      .then((resp) => {
+        if (!cancelled) setFetchedInAllProjects(resp.datasets.includes(datasetId));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [inAllProjects, datasetId]);
+
   // A link in the details (the portal a download came from, a dataflow that
   // uses the dataset) opens a page, so the modal closes on the way. A plain
   // `<Link>` left it open: on that portal's own page it stayed over the
@@ -109,6 +130,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         initialTab={initialTab}
         onMutated={() => setReloadToken((token) => token + 1)}
         onFollowLink={followLink}
+        inAllProjects={inAllProjects ?? fetchedInAllProjects}
       />
       {pendingLeave ? (
         <ConfirmDialog

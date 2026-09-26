@@ -496,6 +496,7 @@ export const DataCatalogBrowse: React.FC = () => {
         <DatasetDetailModal
           datasetId={detailDatasetId}
           fallbackDataset={detailDataset}
+          inAllProjects={defaults.has(detailDatasetId)}
           onClose={closeDetails}
         />
       ) : null}

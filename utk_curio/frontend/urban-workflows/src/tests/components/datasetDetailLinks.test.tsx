@@ -49,6 +49,7 @@ jest.mock("../../services/datasetCatalog", () => {
     datasetCatalogApi: {
       ...actual.datasetCatalogApi,
       getDataset: jest.fn(() => new Promise(() => {})),
+      listDatasetDefaults: jest.fn(() => Promise.resolve({ datasets: ["imported.xabc"] })),
       datasetUsage: jest.fn(() =>
         Promise.resolve([
           { dataflowId: "flow-other", dataflowName: "Other flow", nodeCount: 1, nodes: [] },
@@ -188,6 +189,14 @@ describe("leaving a dataflow with unsaved changes from its details", () => {
     expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
     expect(onClose).toHaveBeenCalled();
     expect(location).toBe(PORTAL);
+  });
+});
+
+describe("the modal's account status", () => {
+  test("reads the all-projects list when the caller does not pass it", async () => {
+    renderModal("/catalog/data");
+    const term = await within(details()).findByText("In all projects", { selector: "dt" });
+    expect(term.nextElementSibling).toHaveTextContent("Yes");
   });
 });
 

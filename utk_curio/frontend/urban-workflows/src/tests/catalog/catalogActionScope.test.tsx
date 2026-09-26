@@ -428,6 +428,13 @@ describe("the Data catalog has the all-projects scope its peers had", () => {
     expect(drawer).toContain("styles.drawerLinkButton");
   });
 
+  test("the drawer states the account scope, like its peers", () => {
+    // It badged "In project" on a page that has no project.
+    const drawer = read("pages/dataCatalog/DataCatalogBrowseDrawer.tsx");
+    expect(drawer).toContain("✓ In all projects");
+    expect(drawer).not.toContain("✓ In project");
+  });
+
   test("the card states the wider scope and does not also state the narrower", () => {
     const card = read("pages/dataCatalog/DataCatalogBrowseCard.tsx");
     expect(card).toContain("In all projects");

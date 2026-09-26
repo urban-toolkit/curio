@@ -418,6 +418,43 @@ describe("DatasetDetailPanel lineage", () => {
   });
 });
 
+describe("DatasetDetailPanel account status", () => {
+  // The Node and Agent details both end their info rows with "In all projects"
+  // and "In the catalog". Dataset details had neither, so the same question had
+  // an answer in two catalogs and none in the third.
+  function status(label: string): string | null {
+    const term = screen.queryByText(label, { selector: "dt" });
+    return term ? (term.nextElementSibling?.textContent ?? null) : null;
+  }
+
+  beforeEach(() => {
+    mockUseDatasetLineage.mockReset();
+    mockUseDatasetLineage.mockReturnValue(lineageFixture());
+  });
+
+  it("says whether the dataset is in all projects and in the catalog", () => {
+    render(<DatasetDetailPanel dataset={catalogItem({ origin: "hub" })} inAllProjects />);
+    expect(status("In all projects")).toBe("Yes");
+    expect(status("In the catalog")).toBe("Published");
+  });
+
+  it("says No and Not published when that is the answer", () => {
+    render(
+      <DatasetDetailPanel
+        dataset={catalogItem({ origin: "imported", publishedToHub: false })}
+        inAllProjects={false}
+      />,
+    );
+    expect(status("In all projects")).toBe("No");
+    expect(status("In the catalog")).toBe("Not published");
+  });
+
+  it("leaves out a status it has not been told", () => {
+    render(<DatasetDetailPanel dataset={catalogItem()} />);
+    expect(status("In all projects")).toBeNull();
+  });
+});
+
 describe("DatasetDetailPanel provenance for a portal download", () => {
   beforeEach(() => {
     mockUseDatasetLineage.mockReset();
