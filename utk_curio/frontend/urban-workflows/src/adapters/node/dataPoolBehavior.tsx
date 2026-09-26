@@ -8,6 +8,7 @@ import DataPoolContent from './components/DataPoolContent';
 import { hasIncomingEdge, incomingSourceIds } from '../../utils/nodeEmptyState';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 import { isSelectionEcho } from '../../utils/selectionEcho';
+import { columnRows, featureRows, matchSelections } from '../../utils/selectionMatch';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Which empty state to show turns on whether anything is wired in, which
@@ -189,8 +190,6 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
       if (interactionsForLayer.length === 0) continue;
 
-      let interactedIndices: any = []; // between visualizations
-
       let columns: string[] = [];
       let dfIndices: string[] = [];
 
@@ -198,176 +197,19 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
           columns = Object.keys(parsedInput.data);
           dfIndices = Object.keys(parsedInput.data[columns[0]]);
       }
-      // console.log(data.interactions);
-      for (const interaction of interactionsForLayer) {
-          let localInteractedIndices: any = [];
 
-          let details = interaction.details;
-
-          let selects = Object.keys(details);
-
-          for (const select of selects) {
-              if (details[select].type == VisInteractionType.POINT) {
-                  // solve point interaction
-                  localInteractedIndices.push({
-                      priority: details[select].priority,
-                      indices: details[select].data.map(
-                          (index: number) => {
-                              return index;
-                          }
-                      ),
-                  });
-              } else if (details[select].type == VisInteractionType.INTERVAL) {
-                  // solve interval (brushing) interaction
-                  let brushedColumns = Object.keys(details[select].data);
-
-                  let interactedObj: {
-                      priority: number;
-                      indices: number[];
-                  } = {
-                      priority: details[select].priority,
-                      indices: [],
-                  };
-
-                  let objectsCounter = 0;
-
-                  if (parsedInput.dataType == "dataframe")
-                      objectsCounter = dfIndices.length;
-                  else if (parsedInput.dataType == "geodataframe")
-                      objectsCounter = parsedInput.data.features.length;
-
-                  for (let i = 0; i < objectsCounter; i++) {
-                      let interacted = true;
-
-                      for (const brushedColumn of brushedColumns) {
-                          let brushBoundaries = details[select].data[brushedColumn];
-
-                          if (brushBoundaries.length > 0 && typeof brushBoundaries[0] == "string") {
-                              // categorial or ordinal variable
-
-                              if (parsedInput.dataType == "dataframe") {
-                                  if (!brushBoundaries.includes(parsedInput.data[brushedColumn][dfIndices[i]])) {
-                                      interacted = false;
-                                      break;
-                                  }
-                              } else if (parsedInput.dataType == "geodataframe") {
-                                  if (!brushBoundaries.includes(parsedInput.data.features[i].properties[brushedColumn])) {
-                                      interacted = false;
-                                      break;
-                                  }
-                              }
-                          } else if (brushBoundaries.length == 2) {
-                              // numerical interval
-
-                              let value = -1;
-
-                              if (parsedInput.dataType == "dataframe") {
-                                  value = parsedInput.data[brushedColumn][dfIndices[i]];
-                              } else if (
-                                  parsedInput.dataType == "geodataframe"
-                              ) {
-                                  value = parsedInput.data.features[i].properties[brushedColumn];
-                              }
-
-                              if (
-                                  value < brushBoundaries[0] ||
-                                  value > brushBoundaries[1]
-                              ) {
-                                  interacted = false;
-                                  break;
-                              }
-                          }
-                      }
-
-                      if (brushedColumns.length == 0) {
-                          interacted = false;
-                      }
-
-                      if (interacted) {
-                          interactedObj.indices.push(i);
-                      }
-                  }
-
-                  localInteractedIndices.push(interactedObj);
-              } else if (
-                  details[select].type == VisInteractionType.UNDETERMINED
-              ) {
-                  localInteractedIndices.push({
-                      priority: details[select].priority,
-                      indices: [],
-                  });
-              }
-          }
-
-          let interactedList: number[] = [];
-
-          if (plotResolutionMode == ResolutionType.OVERWRITE) {
-              for (const elem of localInteractedIndices) {
-                  // using the interactions of the plot with higher priority
-                  if (elem.priority == 1) {
-                      interactedList = [...elem.indices];
-                  }
-              }
-          } else if (plotResolutionMode == ResolutionType.MERGE_AND) {
-              let allArrays = localInteractedIndices.map((elem: any) => {
-                  return [...elem.indices];
-              });
-
-              if (allArrays.length > 0)
-                  interactedList = allArrays.reduce(
-                      (a: number[], b: number[]) =>
-                          a.filter((c) => b.includes(c))
-                  ); // index is only include if it was interacted in all plots
-          } else if (plotResolutionMode == ResolutionType.MERGE_OR) {
-              let auxSet = new Set();
-
-              for (const elem of localInteractedIndices) {
-                  // using the interactions of the plot with higher priority
-                  for (const value of elem.indices) {
-                      auxSet.add(value);
-                  }
-              }
-
-              interactedList = Array.from(auxSet) as number[];
-          }
-
-          interactedIndices.push({
-              priority: interaction.priority,
-              indices: [...interactedList],
-          });
-      }
-
-      let interactedList: number[] = [];
-
-      if (resolutionMode == ResolutionType.OVERWRITE) {
-          for (const elem of interactedIndices) {
-              // using the interactions of the plot with higher priority
-              if (elem.priority == 1) {
-                  interactedList = [...elem.indices];
-              }
-          }
-      } else if (resolutionMode == ResolutionType.MERGE_AND) {
-          let allArrays = interactedIndices.map((elem: any) => {
-              return [...elem.indices];
-          });
-
-          if (allArrays.length > 0)
-              interactedList = allArrays.reduce(
-                  (a: number[], b: number[]) =>
-                      a.filter((c) => b.includes(c))
-              ); // index is only include if it was interacted in all plots
-      } else if (resolutionMode == ResolutionType.MERGE_OR) {
-          let auxSet = new Set();
-
-          for (const elem of interactedIndices) {
-              // using the interactions of the plot with higher priority
-              for (const value of elem.indices) {
-                  auxSet.add(value);
-              }
-          }
-
-          interactedList = Array.from(auxSet) as number[];
-      }
+      // Which rows the selections pick out, resolved within each chart and
+      // across charts: the matcher a chart joined by a direct interaction edge
+      // uses too (utils/selectionMatch).
+      const rows = parsedInput.dataType == "geodataframe"
+          ? featureRows(parsedInput.data)
+          : parsedInput.dataType == "dataframe"
+              ? columnRows(parsedInput.data)
+              : { count: 0, value: () => undefined };
+      const interactedList: number[] = matchSelections(interactionsForLayer, rows, {
+          plot: plotResolutionMode,
+          between: resolutionMode,
+      });
 
       // O(1) lookup replaces O(n) Array.includes inside the marking loop below.
       const interactedSet = new Set<number>(interactedList);
