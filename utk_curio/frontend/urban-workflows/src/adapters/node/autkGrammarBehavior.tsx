@@ -15,6 +15,8 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
+import { autkSourcesFrom, autkTableName, loadableSource, readAutkInput, swappedIndex } from '../../utils/autkInput';
+import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -67,6 +69,25 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // the backend. The cached DuckDB artifact stays valid until the data section
     // or the upstream input changes.
     const dataCacheRef = useRef<{ key: string; ref: { path: string; dataType: string } } | null>(null);
+
+    // The input, read once per input object and shared by the render path,
+    // the compute path and the highlight sync (utils/autkInput).
+    const inputReadRef = useRef<{ input: unknown; read: Promise<GrammarInput> } | null>(null);
+    const readInput = (input: unknown): Promise<GrammarInput> => {
+        if (inputReadRef.current?.input !== input) {
+            const read = readAutkInput(input);
+            inputReadRef.current = { input, read };
+            // A failed read is not kept: the next run tries again.
+            read.catch(() => {
+                if (inputReadRef.current?.read === read) inputReadRef.current = null;
+            });
+        }
+        return inputReadRef.current!.read;
+    };
+    // Tables whose first feature traded places so autk-db would load them
+    // (loadableSource), by name: a pick or a highlight on one goes through
+    // swappedIndex, so positions still mean the input's rows.
+    const loadSwapsRef = useRef<Record<string, number>>({});
 
     const runGrammar = async (
         specString: string,
@@ -141,35 +162,26 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // autk-db. Capture them before we touch spec.data.
         const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
 
-        // Inject upstream input as 'geojson' data sources the spec can reference.
-        // A single upstream frame (e.g. a Python GeoDataFrame) is exposed as
-        // "upstream"; a multi-layer array from an upstream grammar node is exposed
-        // under each layer's own name (table_osm_buildings, …), with "upstream"
-        // kept as an alias for the first layer (back-compat). Upstream geojson is
-        // already serialized data the browser holds, so it stays client-side and
-        // is NOT sent to the backend.
+        // The input as the tables the document reads (utils/autkInput): a single
+        // frame is `upstream`, a bundle's layers keep their own names, and
+        // `upstream` is added only when the document names it. Upstream geojson
+        // is data the browser already holds, so it stays client-side and is NOT
+        // sent to the backend. A data-only document does not read it.
         let upstreamSources: any[] = [];
-        if (data.input) {
+        const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
+        if (data.input && readsInput) {
             try {
-                const layers = await resolveUpstreamLayers(data.input);
-                if (layers.length > 0) {
-                    upstreamSources = layers.map(({ name, fc, layerType }) => ({
-                        type: 'geojson', geojsonObject: fc, outputTableName: name,
-                        coordinateFormat: detectCoordinateFormat(fc),
-                        // Preserve the autk-db layer type so relation-built layers
-                        // (water/parks/buildings) re-load with the right processing.
-                        ...(layerType ? { layerType } : {}),
-                    }));
-                    if (!layers.some((l) => l.name === AUTK_UPSTREAM_LAYER)) {
-                        const { fc } = layers[0];
-                        upstreamSources.unshift({
-                            type: 'geojson', geojsonObject: fc, outputTableName: AUTK_UPSTREAM_LAYER,
-                            coordinateFormat: detectCoordinateFormat(fc),
-                        });
-                    }
-                }
-            } catch {
-                // Non-fatal: upstream injection is best-effort only
+                const prepared = autkSourcesFrom(await readInput(data.input), spec);
+                const swaps: Record<string, number> = {};
+                upstreamSources = prepared.sources.map((source) => {
+                    const loadable = loadableSource(source);
+                    if (loadable.swap != null) swaps[source.outputTableName] = loadable.swap;
+                    return loadable.source;
+                });
+                loadSwapsRef.current = swaps;
+            } catch (e) {
+                // What the render then cannot find is what gets reported.
+                console.warn('[autk-grammar] reading the input failed:', e);
             }
         }
 
@@ -438,10 +450,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 
                     const emitInteraction = (selection: number[], layerRef: string | undefined) => {
                         const d = dataRef.current;
+                        // Positions in the input, not in the loaded table.
+                        const swap = layerRef ? loadSwapsRef.current[layerRef] : undefined;
+                        const rows = selection.map((index) => swappedIndex(index, swap));
                         d.interactionsCallback?.({
                             autk_selection: {
-                                type: selection.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
-                                data: selection,
+                                type: rows.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
+                                data: rows,
                                 priority: 1,
                                 source: NodeType.AUTK_GRAMMAR,
                                 layerRef,
@@ -543,7 +558,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // exploded. Re-loading them through DuckDB + the buildings clusterer can
                     // strip custom per-feature properties. Apply WGSL blocks directly so the
                     // outputs (feature.properties.compute.<col>) reach downstream untouched.
-                    const upstream = await resolveUpstreamLayers(data.input);
+                    const computeInput = data.input
+                        ? autkSourcesFrom(await readInput(data.input), spec, { alias: false })
+                        : null;
+                    const upstream = (computeInput?.sources ?? []).map((source) => ({
+                        name: source.outputTableName,
+                        fc: source.geojsonObject,
+                        layerType: source.layerType,
+                    }));
                     // The rows that arrived, counted before the empty-layer drop
                     // below hides them. No layer at all (nothing connected, or
                     // an input this node cannot read) is no claim, not zero.
@@ -697,13 +719,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         if (!grammar || !spec || !data.input) return;
 
         (async () => {
-            const layers = await resolveUpstreamLayers(data.input);
+            const layers = autkSourcesFrom(await readInput(data.input), spec).sources;
             if (layers.length === 0) return;
 
             const indicesByLayer = new Map<string, number[]>();
-            for (const { name, fc } of layers) {
-                const sel = fc.features.reduce<number[]>((acc, f, i) => {
-                    if (f.properties?.interacted === '1') acc.push(i);
+            for (const { outputTableName: name, geojsonObject: fc } of layers) {
+                const swap = loadSwapsRef.current[name];
+                const sel = (fc.features as any[]).reduce<number[]>((acc, f, i) => {
+                    if (f.properties?.interacted === '1') acc.push(swappedIndex(i, swap));
                     return acc;
                 }, []);
                 indicesByLayer.set(name, sel);
@@ -1225,15 +1248,17 @@ async function runDataInBackend(
 
 // Resolve the backend data load into in-browser layers for the render path:
 // the in-memory fallback layers if present, otherwise fetch + normalize the
-// DuckDB artifact (resolveUpstreamLayers handles the {path} fetch and unwrap).
+// DuckDB artifact (framesFromPayload unwraps it, as it does an input).
 async function materializeBackendLayers(
     fallbackLayers: Array<{ name: string; type?: string; geojson: any }> | null,
     ref: { path: string; dataType: string } | null,
 ): Promise<Array<{ name: string; type?: string; geojson: any }>> {
     if (fallbackLayers) return fallbackLayers;
     if (!ref) return [];
-    const layers = await resolveUpstreamLayers(ref);
-    return layers.map((l) => ({ name: l.name, type: l.layerType, geojson: l.fc }));
+    const fetched = await fetchData(ref.path);
+    return framesFromPayload(fetched).frames
+        .filter((frame) => frame.dataType === 'geodataframe')
+        .map((frame) => ({ name: autkTableName(frame), type: frame.layerType, geojson: frame.payload }));
 }
 
 // Flatten any (possibly nested) geometry into a single MultiPolygon by collecting
@@ -1502,7 +1527,7 @@ async function toPoolOutput(
 // and `dataType: 'outputs'` (multi-layer envelope) — but not bare layer arrays. So
 // when a compute-only or data-only autk-grammar node feeds a Data Pool, we wrap
 // the output in a shape the pool can ingest, carrying `layerName`/`layerType`
-// metadata at the wrapper level so downstream `resolveUpstreamLayers` can restore
+// metadata at the wrapper level so a downstream Autark node's input can restore
 // the original layer identity (e.g. `dataRef: "table_osm_buildings"`).
 function layersToPoolWrapper(
     layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
@@ -1877,119 +1902,6 @@ async function applyComputeBlocks(
     }
     return result;
 }
-
-// Resolve an upstream input into named GeoJSON layers.
-//  - a single frame (e.g. a Python GeoDataFrame) -> one layer named "upstream"
-//  - a multi-layer array from an upstream grammar node -> one layer per element,
-//    keyed by the layer's own name (table_osm_buildings, …) so the downstream
-//    spec can reference each layer individually.
-async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc: FeatureCollection; layerType?: string }>> {
-    if (!raw || raw === '') return [];
-
-    let arg: any = raw;
-
-    // Resolve DuckDB artifact reference
-    if (typeof arg === 'object' && arg !== null && arg.path) {
-        arg = (await fetchData(arg.path)) ?? null;
-    }
-    if (!arg) return [];
-
-    // Peel any generic envelope (`dict`, `list`, …) the sandbox adds around a
-    // persisted artifact until we reach a recognised application-level shape
-    // (`outputs` / `geodataframe`) or a non-envelope value. This must happen
-    // BEFORE the outputs/geodataframe checks below, because a multi-layer
-    // wrapper persisted via `persistLayersToBackend` arrives as
-    //   { dataType:'dict', data:{ dataType:'outputs', data:[…] } }
-    // and the previous single-step unwrap would skip the outputs check and
-    // fall through to the asFc fallback — which would silently collapse the
-    // whole multi-layer wrapper to its FIRST layer (renamed 'upstream'),
-    // losing every other layer (including the one a downstream compute block
-    // had targeted).
-    const KNOWN_SHAPES = new Set(['outputs', 'geodataframe']);
-    while (
-        arg && typeof arg === 'object' &&
-        typeof arg.dataType === 'string' &&
-        !KNOWN_SHAPES.has(arg.dataType) &&
-        'data' in arg
-    ) {
-        arg = arg.data;
-    }
-    if (!arg) return [];
-
-    // Curio Data Pool wrapper round-trip: recognise the pool-compatible
-    // shape produced by `layersToPoolWrapper` (and re-emitted by the pool
-    // with `interacted` flags applied) before the generic envelope unwrap
-    // strips the layerName/layerType metadata that lives at the wrapper level.
-    if (typeof arg === 'object' && arg && arg.dataType === 'outputs' && Array.isArray(arg.data)) {
-        const out: Array<{ name: string; fc: FeatureCollection; layerType?: string }> = [];
-        arg.data.forEach((item: any, i: number) => {
-            if (item && item.dataType === 'geodataframe' && item.data?.type === 'FeatureCollection') {
-                out.push({
-                    name: item.layerName ?? `${AUTK_UPSTREAM_LAYER}_${i}`,
-                    fc: item.data as FeatureCollection,
-                    layerType: item.layerType,
-                });
-            }
-        });
-        if (out.length > 0) return out;
-    }
-    if (typeof arg === 'object' && arg && arg.dataType === 'geodataframe' && arg.data) {
-        const fc = arg.data;
-        if (fc.type === 'FeatureCollection') {
-            return [{
-                name: arg.layerName ?? AUTK_UPSTREAM_LAYER,
-                fc: fc as FeatureCollection,
-                layerType: arg.layerType,
-            }];
-        }
-    }
-
-    // Strip Curio's {dataType, data} envelope. The sandbox's parseOutput (run by
-    // GET /get) wraps every artifact, and for a 'list' it ALSO wraps each element,
-    // so a backend layer array round-trips as
-    //   { dataType:'list', data:[ { dataType:'dict', data:{name,type,geojson} }, … ] }.
-    // Unwrap recursively so the real layer record / FeatureCollection underneath is
-    // reachable (a raw, un-enveloped value passes through untouched).
-    const unwrap = (v: any): any =>
-        (v && typeof v === 'object' && 'data' in v && 'dataType' in v) ? unwrap(v.data) : v;
-
-    const asFc = (v: any): FeatureCollection | null => {
-        const u = unwrap(v);
-        if (!u || typeof u !== 'object') return null;
-        if (u.geojson?.type === 'FeatureCollection') return u.geojson as FeatureCollection;
-        if (u.type === 'FeatureCollection') return u as FeatureCollection;
-        return null;
-    };
-
-    // Layer array from an upstream grammar node / backend DuckDB ref: keep every
-    // layer, named. Read name/type from the UNWRAPPED record, not the envelope.
-    if (Array.isArray(arg)) {
-        const out: Array<{ name: string; fc: FeatureCollection; layerType?: string }> = [];
-        arg.forEach((item, i) => {
-            const fc = asFc(item);
-            if (fc) {
-                const u = unwrap(item);
-                const name = u && typeof u === 'object' && u.name ? String(u.name) : `${AUTK_UPSTREAM_LAYER}_${i}`;
-                // u.type is the autk-db layer type ('surface'/'roads'/…) on a layer
-                // record; ignore a bare FeatureCollection's own type field.
-                const layerType = u && typeof u === 'object' && u.geojson && typeof u.type === 'string'
-                    ? u.type : undefined;
-                out.push({ name, fc, layerType });
-            }
-        });
-        return out;
-    }
-
-    // Direct FeatureCollection (e.g. a single Python GeoDataFrame).
-    const fc = asFc(arg);
-    return fc ? [{ name: AUTK_UPSTREAM_LAYER, fc }] : [];
-}
-
-async function resolveUpstreamAsGeoJson(raw: any): Promise<FeatureCollection | null> {
-    const layers = await resolveUpstreamLayers(raw);
-    return layers.length > 0 ? layers[0].fc : null;
-}
-
 
 // Re-exported so existing importers keep this module as their entry point
 // while the implementations live in autkDataCompile.

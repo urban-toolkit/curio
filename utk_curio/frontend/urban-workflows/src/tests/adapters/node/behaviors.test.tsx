@@ -761,6 +761,84 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // The counts behind the empty-render verdict ride as data. Where they
     // cannot be counted there is no verdict and no invented zero; where a node's
     // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('its input, read the way the Vega-Lite node reads its own', () => {
+      const api = () => jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      const lastRunSpec = () => {
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const instances = AutkGrammar.mock.results.map((r: any) => r.value);
+        const run = instances[instances.length - 1]?.run as jest.Mock | undefined;
+        return run?.mock.calls[run.mock.calls.length - 1]?.[0];
+      };
+      const point = (x: number, y: number) => ({ type: 'Point', coordinates: [x, y] });
+
+      afterEach(() => {
+        api().fetchData.mockReset();
+        api().fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      });
+
+      test('a DataFrame with a geometry column reaches the map as the table upstream', async () => {
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { zone: ['n', 's'], where: [point(0, 0), point(1, 1)] } } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const upstream = lastRunSpec()?.data?.find((s: any) => s.outputTableName === 'upstream');
+        expect(upstream?.type).toBe('geojson');
+        expect(upstream?.geojsonObject.features.map((f: any) => f.properties.zone)).toEqual(['n', 's']);
+      });
+
+      test('upstream is added only when the document names it', async () => {
+        const layer = (name: string) => ({
+          dataType: 'geodataframe', layerName: name,
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'outputs', data: [layer('table_osm_roads'), layer('table_osm_water')] } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'table_osm_roads' }] } }));
+        });
+        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads', 'table_osm_water']);
+      });
+
+      test('a compute step reads its input once', async () => {
+        api().fetchData.mockResolvedValue({
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(1);
+      });
+
+      test('a data step does not read its input', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+        );
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          jsInterpreter: { interpretCode } as any,
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(0);
+      });
+    });
+
     describe('empty-render counts', () => {
       const setOutputKinds = (setOutput: jest.Mock) =>
         setOutput.mock.calls.map((c: any[]) => c[0]?.kind).filter(Boolean);
