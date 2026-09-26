@@ -498,6 +498,13 @@ There are two scopes:
   Catalog** or the agents tab in the left rail, adds an agent to **this
   dataflow**.
 
+### Catalog settings
+
+**Settings** on `/catalog/agents` holds values agents work with that are yours
+to decide, such as the keyword types used to describe a dataflow. They belong
+to your account and apply in every project. See
+[Catalog settings](AGENT-CATALOG.md#catalog-settings).
+
 ### Attaching an agent
 
 Drag an agent from the left rail's agents palette onto the canvas. Where you

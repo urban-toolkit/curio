@@ -50,7 +50,7 @@ package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids
 [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json); see
 [part 6](#6-writing-your-own-agent) for the field table.
 
-**Nineteen agents ship with Curio**, declared in
+**Thirteen agents ship with Curio**, declared in
 [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py). Ten of
 them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**,
 **Node Builder**, **Node Content Builder**, **Node Researcher**, **Package
@@ -61,9 +61,13 @@ kind of target (the Connection Builder, for connections). Chat is the one
 agent for conversation: it explains a node or the whole dataflow, diagnoses
 errors, and helps you define what to build.
 
-The other nine plan, explain and check work only on behalf of those ten. They
-are never listed, added or attached, and a catalog agent can delegate to one
-without it being added to the dataflow. A catalog agent is materialized into
+The other three work only on behalf of those ten: the **Dataflow Planner**
+plans, refreshes and checks a dataflow's tasks and extracts and binds the
+keywords that describe it, the **Dataflow Reader** explains a whole dataflow and
+suggests its next steps, and the **Generated Content Evaluator** checks
+generated node content against its goal. They are never listed, added or
+attached, and a catalog agent can delegate to one without it being added to the
+dataflow. A catalog agent is materialized into
 your store on first use. The ten cover the five categories below.
 
 ### Categories
@@ -106,6 +110,7 @@ after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
 |---|---|---|
 | **Definition store**, the immutable agent itself | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` + `prompts/`) | Seeded from the built-ins; **Import agent** adds one; **Publish** copies one to the shared catalog. |
 | **My imports** (account) | `.curio/users/<user-key>/imported-agents.json` | **Import agent** adds a coordinate; removing an import drops it. The analogue of `default-packages.json`. |
+| **Catalog settings** (account) | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **In dataflow** (per-dataflow lockfile) | `spec.trill.json` then `dataflow.agents[]` | **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
 | **Attachments**, a private agent instance bound to a target | `spec.trill.json` then `dataflow.agentAttachments` | **Attach** (dragging an agent onto a node or the canvas) creates one; **Detach** deletes it and its transcript. |
 | **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only, not user-editable, and not surfaced in the interface. |
@@ -189,6 +194,22 @@ account** to keep it. Open a dataflow afterwards to add it there.
 listed on `/catalog/agents` alongside the built-in and published agents, where
 **Publish** offers it to everyone on the install. Adding it to a dataflow and
 publishing it are separate actions.
+
+### Catalog settings
+
+Some values agents work with are yours to decide rather than Curio's. They are
+**catalog settings**: open **Settings** on the `/catalog/agents` page to edit
+them. They belong to your account, so one edit applies in every project.
+
+| Setting | What it holds | Read by |
+|---|---|---|
+| **Keyword types** | The types a keyword in a dataflow's description can take, each with a description and examples. | The Dataflow Planner, when it extracts the keywords of a description, binds them to nodes and edges, and refreshes a dataflow's task. |
+
+Each setting lists the agents that read it. **Restore default** returns a
+setting to the value Curio ships, and only settings you changed are stored. A
+run receives the settings its agent declares after its instruction, as data
+rather than instructions. A guest on a hosted instance can read the settings
+but not change them, because every guest shares one account.
 
 ---
 
@@ -793,14 +814,14 @@ A minimal, complete manifest:
 | `version` | Yes | Semver-style version string. |
 | `name` | Yes | Human-readable name shown in the catalog. |
 | `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
-| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the semantic contracts this agent implements. |
+| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the semantic contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
-| `delegatesTo` | | Other `agent.` ids this agent may call. A preferred implementation only: it grants nothing and never adds or imports anything. |
+| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. A preferred implementation only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one is not functional without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt assets by package-relative `path` + `sha256` + declared `variables`. Absolute paths and `..` escapes are rejected. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. |
-| `inputs`, `outputs` | | Context the agent reads, config it requires, and the named outputs it produces. |
+| `inputs`, `outputs` | | Context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
@@ -827,6 +848,31 @@ a capability id must not contain a prompt filename, a path separator, an
 underscore, or `.txt`: `node.explain` is valid, `single_box_explanation_prompt`
 and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced
 without changing the contract.
+
+### Modes
+
+A capability can run an instruction of its own. Add the prompt under `prompts`
+and name its key as the capability's `instruction`:
+
+```json
+"capabilities": [
+  { "id": "node.explain", "contractVersion": "1" },
+  { "id": "node.output.interpret", "contractVersion": "1",
+    "instruction": "interpret", "reads": ["nodeContext"], "requiredConfig": ["keywordTypes"] }
+],
+"prompts": {
+  "system": { "path": "prompts/default_preamble.txt" },
+  "instruction": { "path": "prompts/explain_node.txt" },
+  "interpret": { "path": "prompts/interpret_output.txt" }
+}
+```
+
+When another agent delegates `node.output.interpret`, the run uses
+`prompts/interpret_output.txt` in place of the `instruction` prompt, and
+receives the [catalog settings](#catalog-settings) named in that capability's
+`requiredConfig` as well as those in `inputs.requiredConfig`. An attached run,
+and a delegated run of a capability without an `instruction` of its own, uses
+the `instruction` prompt. A setting key Curio does not define is skipped.
 
 Once written, import the package through the drawer's **Import agent** button
 ([part 4](#4-importing-publishing-and-sharing)).
