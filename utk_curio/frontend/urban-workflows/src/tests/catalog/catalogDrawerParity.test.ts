@@ -25,7 +25,7 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
  */
 const DRAWERS = [
   "pages/catalog/PackageBrowseDrawer.tsx",
-  "pages/dataHub/DataCatalogBrowseDrawer.tsx",
+  "pages/dataCatalog/DataCatalogBrowseDrawer.tsx",
   "pages/agents/AgentCatalogBrowseDrawer.tsx",
 ];
 
@@ -61,7 +61,7 @@ describe("catalog drawer parity", () => {
     // rendered its category in the Parquet orange.
     for (const drawer of ALL_DRAWERS) {
       const tsx = read(drawer);
-      if (drawer.includes("dataHub")) continue; // the Data drawer legitimately shows a format
+      if (drawer.includes("dataCatalog")) continue; // the Data drawer legitimately shows a format
       expect(tsx).not.toMatch(/dfmt_/);
     }
   });
@@ -122,7 +122,7 @@ describe("catalog drawer parity", () => {
     // disagree about where uppercasing came from.
     for (const card of [
       "pages/catalog/PackageBrowseCard.tsx",
-      "pages/dataHub/DataCatalogBrowseCard.tsx",
+      "pages/dataCatalog/DataCatalogBrowseCard.tsx",
     ]) {
       expect(read(card)).not.toMatch(/>\s*✓ (DEFAULTS|IN DATAFLOW)\s*</);
     }
@@ -130,7 +130,7 @@ describe("catalog drawer parity", () => {
 
   test("the orange NEW chip is gone from the Data Catalog filter bar", () => {
     // It only re-applied the default sort, and the Node Catalog had no twin.
-    expect(read("pages/dataHub/DataCatalogBrowse.tsx")).not.toContain("newChip");
+    expect(read("pages/dataCatalog/DataCatalogBrowse.tsx")).not.toContain("newChip");
     expect(read("pages/catalog/CatalogBrowseLayout.module.css")).not.toContain(".newChip");
   });
 });
@@ -140,7 +140,7 @@ describe("publish wording is shared across both catalogs", () => {
     const sources = [
       "pages/catalog/useNodeCatalogBrowse.ts",
       "components/packages/publishing/NodeCatalogDrawer.tsx",
-      "pages/dataHub/DataCatalogBrowse.tsx",
+      "pages/dataCatalog/DataCatalogBrowse.tsx",
       // `DatasetDetailPanel` used to be on this list. It no longer publishes:
       // it is the DETAILS view, and it carried a second, ungated publish
       // control beside the drawer's gated one - which is how an unpublishable

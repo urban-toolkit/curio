@@ -21,9 +21,9 @@ import path from "path";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-const BROWSE = "pages/dataHub/DataCatalogBrowse.tsx";
-const CARD = "pages/dataHub/DataCatalogBrowseCard.tsx";
-const DRAWER = "pages/dataHub/DataCatalogBrowseDrawer.tsx";
+const BROWSE = "pages/dataCatalog/DataCatalogBrowse.tsx";
+const CARD = "pages/dataCatalog/DataCatalogBrowseCard.tsx";
+const DRAWER = "pages/dataCatalog/DataCatalogBrowseDrawer.tsx";
 const PANEL = "components/datasets/catalog/DatasetDetailPanel.tsx";
 const MODAL = "components/datasets/catalog/DatasetDetailModal.tsx";
 const CANVAS_DRAWER = "components/datasets/catalog/DatasetCatalogDrawer.tsx";

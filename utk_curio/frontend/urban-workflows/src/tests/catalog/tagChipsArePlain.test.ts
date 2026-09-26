@@ -23,7 +23,7 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 /** The three cards that used to tint, and the drawer body that never did. */
 const CARDS = [
-  "pages/dataHub/DataCatalogBrowseCard.tsx",
+  "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/catalog/CatalogBrowseDrawerBody.tsx",

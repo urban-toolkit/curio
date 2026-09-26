@@ -58,7 +58,7 @@ SEARCH_PLACEHOLDER = "Search datasets, publishers, tags…"
 CARD = 'article:not([role="status"])'
 
 #: The formats the Data Catalog's rail offers, in its own order. Mirrors
-#: ``FORMAT_FILTERS`` in pages/dataHub/dataHubBrowseConstants.ts - the chip row
+#: ``FORMAT_FILTERS`` in pages/dataCatalog/dataCatalogBrowseConstants.ts - the chip row
 #: is derived from these, so the expected chip set is derivable from the facet
 #: counts alone (#232).
 RAIL_FORMATS = ("geojson", "csv", "json", "parquet", "geotiff", "shp")

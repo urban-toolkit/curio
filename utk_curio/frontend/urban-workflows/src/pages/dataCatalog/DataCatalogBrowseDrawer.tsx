@@ -20,7 +20,7 @@ import {
 } from "../../services/datasetCatalog";
 import { useUserContext } from "../../providers/UserProvider";
 import { DataCatalogGeoPreview } from "./DataCatalogGeoPreview";
-import { datasetCount, formatBytes, metaLeft } from "./dataHubBrowseFormat";
+import { datasetCount, formatBytes, metaLeft } from "./dataCatalogBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface DataCatalogBrowseDrawerProps {

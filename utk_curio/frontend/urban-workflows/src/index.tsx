@@ -79,12 +79,11 @@ import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
 import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
-import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
-import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
+import DataCatalogDetail from "./pages/dataCatalog/DataCatalogDetail";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
 import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
-import DataHubPage from "./pages/dataHub/DataHubPage";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
@@ -194,14 +193,6 @@ const App: React.FC = () => {
                         element={<DataLakeSourceDetail />}
                       />
                     </Route>
-                    <Route
-                      path="/data-hub/:datasetId?"
-                      element={
-                        <RequireAuth>
-                          <DataHubPage />
-                        </RequireAuth>
-                      }
-                    />
                     {/* Deliberately outside RequireAuth: the monitor is
                         public, so whoever is hitting a problem can read it and
                         share it without an account. */}

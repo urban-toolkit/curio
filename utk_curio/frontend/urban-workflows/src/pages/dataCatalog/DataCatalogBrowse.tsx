@@ -24,7 +24,7 @@ import {
   FORMAT_FILTERS,
   ORIGIN_FILTERS,
   quickFormatFilters,
-} from "./dataHubBrowseConstants";
+} from "./dataCatalogBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {

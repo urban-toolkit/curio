@@ -44,7 +44,7 @@ export function datasetCount(dataset?: DatasetCatalogItem | null): string | null
 }
 
 /** Compact ``datasetCount`` (``"feat."`` abbreviation) for tight UIs — dataset
- * cards, the dataset palette, and the data-hub browse rows. */
+ * cards, the dataset palette, and the Data Catalog browse rows. */
 export function datasetCountCompact(dataset?: DatasetCatalogItem | null): string | null {
   if (!dataset) return null;
   if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;

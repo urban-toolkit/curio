@@ -42,7 +42,6 @@ SOME_PROJECT = "11111111-2222-3333-4444-555555555555"
 
 DEEP_LINKS = [
     f"/catalog/data/{DOTTED_DATASET}",
-    f"/data-hub/{DOTTED_DATASET}",
     # Undotted routes, which always worked and must keep working.
     "/catalog/data",
     "/projects",

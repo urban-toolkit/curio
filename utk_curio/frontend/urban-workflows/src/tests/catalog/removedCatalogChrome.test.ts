@@ -37,7 +37,7 @@ describe("removed catalog chrome stays removed", () => {
     }
     for (const page of [
       "pages/catalog/NodeCatalogBrowse.tsx",
-      "pages/dataHub/DataCatalogBrowse.tsx",
+      "pages/dataCatalog/DataCatalogBrowse.tsx",
       "pages/agents/AgentCatalogBrowse.tsx",
     ]) {
       expect(read(page)).not.toMatch(/viewToggle/);
@@ -45,11 +45,11 @@ describe("removed catalog chrome stays removed", () => {
   });
 
   test("the data browse page has no Popular chip", () => {
-    expect(read("pages/dataHub/DataCatalogBrowse.tsx")).not.toMatch(/>\s*Popular\s*</);
+    expect(read("pages/dataCatalog/DataCatalogBrowse.tsx")).not.toMatch(/>\s*Popular\s*</);
   });
 
   test("no Verified badge or trust note on the dataset drawer", () => {
-    const tsx = read("pages/dataHub/DataCatalogBrowseDrawer.tsx");
+    const tsx = read("pages/dataCatalog/DataCatalogBrowseDrawer.tsx");
     expect(tsx).not.toMatch(/Verified/);
     expect(tsx).not.toMatch(/Published by verified author/);
 
@@ -60,7 +60,7 @@ describe("removed catalog chrome stays removed", () => {
   });
 
   test("an unspecified license reads Unknown, not an invented CC BY 4.0", () => {
-    const tsx = read("pages/dataHub/DataCatalogBrowseDrawer.tsx");
+    const tsx = read("pages/dataCatalog/DataCatalogBrowseDrawer.tsx");
     expect(tsx).not.toContain("CC BY 4.0");
     expect(tsx).toMatch(/license\s*\|\|\s*"Unknown"/);
   });
