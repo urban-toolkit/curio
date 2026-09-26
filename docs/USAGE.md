@@ -443,6 +443,8 @@ The receiving chart styles the marked rows through its spec, for example `"color
 
 A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+
 
 ## Autark node
 

@@ -797,6 +797,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
       const grammarMock = () => jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
 
+      test('a selection across a direct interaction edge highlights the matching feature, without a redraw', async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(MAP); });
+        const constructed = grammarMock().AutkGrammar.mock.calls.length;
+
+        const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
+        await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
+
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('upstream', [1]));
+        expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
         const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
         const result = await callBehavior(useAutkGrammarBehavior, base as any);
