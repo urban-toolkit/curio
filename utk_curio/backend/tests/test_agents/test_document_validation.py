@@ -242,6 +242,13 @@ class TestRouting:
             assert verdict["status"] == dv.STATUS_UNCHECKED
             assert verdict["passive"] is True
 
+    def test_passive_is_the_rosters_content_kind(self):
+        # A template that authors nothing is passive, whatever its name.
+        assert dv.validate("acme.flows/fan-in", "not controllable",
+                           content_kind="none")["passive"] is True
+        assert dv.validate("curio.builtin/merge-flow", "not controllable",
+                           content_kind="note")["passive"] is False
+
     def test_an_empty_document_is_now_refused_for_a_grammar_kind(self):
         # dev/134 corrects dev/129 here: for a kind that HAS a validator, "no
         # document" is not "cannot be checked" — it is a refusal the loop must

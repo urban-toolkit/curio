@@ -244,7 +244,7 @@
      Reusing one here would recreate exactly the collision the role split was
      introduced to end.
 
-     Keys match `AgentCategory` in api/agentsApi.ts. Guarded by
+     Keys match `AgentCategory` in src/generated/agentCategories.ts. Guarded by
      src/tests/styles/agentCategoryPalette.test.ts.
      ───────────────────────────────────────────────────────────────────── */
   --curio-category-agent-data-fg: var(--curio-category-data-fg);

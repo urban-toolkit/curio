@@ -1,4 +1,4 @@
-"""Built-in agent definitions: the nineteen agents Curio ships with, ten of them catalog cards.
+"""Built-in agent definitions: the thirteen agents Curio ships with, ten of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
 ``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``,
@@ -37,6 +37,9 @@ BUILTIN_VERSION = "1.0.0"
 # Where the legacy prompt files currently live. This module is
 # utk_curio/backend/app/agents/builtin.py, so parents[3] is utk_curio/.
 PROMPT_SOURCE_DIR = (Path(__file__).resolve().parents[3] / "llm-prompts")
+# The one preamble every built-in composes before its instruction. The
+# contract regions in it are generated (``contracts.render_default_preamble``).
+PREAMBLE_FILE = "default_preamble.txt"
 
 # category -> the single compatible attachment target kind.
 _TARGET_BY_CATEGORY = {
@@ -49,6 +52,23 @@ _TARGET_BY_CATEGORY = {
 
 
 @dataclass(frozen=True)
+class BuiltinMode:
+    """One capability of a merged agent: its own instruction file, the context
+    it reads, and the catalog settings it needs. A delegated run of that
+    capability runs this mode."""
+
+    capability: str
+    prompt_file: str
+    reads: tuple[str, ...]
+    required_config: tuple[str, ...] = ()
+
+
+#: A ``delegates_to`` entry: an agent id, or ``(agent id, capabilities)`` to
+#: delegate only those capabilities of it.
+Delegate = "str | tuple[str, tuple[str, ...]]"
+
+
+@dataclass(frozen=True)
 class BuiltinAgentSpec:
     agent_id: str
     name: str
@@ -57,11 +77,6 @@ class BuiltinAgentSpec:
     prompt_file: str  # instruction filename in llm-prompts/
     capabilities: tuple[str, ...]
     roles: tuple[str, ...] = field(default_factory=tuple)
-    # System preamble filename in llm-prompts/ — the dev/05 roster's "System
-    # file" column: default_preamble.txt for all but the syntax agent. Every
-    # legacy call site composed preamble + prompt, so migration parity
-    # (dev/06) requires the asset and its runtime composition.
-    preamble_file: str = "default_preamble.txt"
     # inputs.reads — the context the agent consumes, grounded in what each
     # legacy call site actually passed (dev/06 migration map).
     reads: tuple[str, ...] = field(default_factory=tuple)
@@ -79,8 +94,9 @@ class BuiltinAgentSpec:
     node_requires: tuple[str, ...] = field(default_factory=tuple)
     # Preferred delegate agents, in preference order (memo dev/48 / dev/15
     # §3.2). Expresses composition only — grants nothing; resolution is
-    # current-project-only at run time.
-    delegates_to: tuple[str, ...] = field(default_factory=tuple)
+    # current-project-only at run time. An entry may name the capabilities it
+    # delegates, so a merged agent is not offered whole to every parent.
+    delegates_to: tuple = field(default_factory=tuple)
     # Hard dependencies (memo dev/106): the subset of delegates_to a SERVER
     # code path of this agent invokes without model choice. Installing the
     # agent installs the closure at the user's explicit click; uninstalling a
@@ -103,13 +119,37 @@ class BuiltinAgentSpec:
     # as a delegate, resolves from this roster without being installed, and
     # is never listed, installed or attached.
     in_catalog: bool = True
+    # A merged agent's modes, one per capability. Empty for an agent with one
+    # instruction for everything it does.
+    modes: tuple[BuiltinMode, ...] = field(default_factory=tuple)
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
+    def delegate_ids(self) -> tuple[str, ...]:
+        return tuple(d if isinstance(d, str) else d[0] for d in self.delegates_to)
+
+    def prompt_files(self) -> dict[str, str]:
+        """Every prompt key this agent declares and the file behind it."""
+        files = {"system": PREAMBLE_FILE, "instruction": self.prompt_file}
+        files.update({mode.capability: mode.prompt_file for mode in self.modes})
+        return files
+
+
+def _merged(agent_id: str, name: str, category: str, purpose: str,
+            modes: tuple[BuiltinMode, ...], **kwargs) -> BuiltinAgentSpec:
+    """An internal agent made of *modes*: its capabilities are the modes',
+    its default instruction the first mode's, and its reads their union."""
+    reads = tuple(dict.fromkeys(r for mode in modes for r in mode.reads))
+    return BuiltinAgentSpec(
+        agent_id, name, category, purpose, modes[0].prompt_file,
+        tuple(mode.capability for mode in modes), reads=reads, modes=modes,
+        in_catalog=False, **kwargs,
+    )
+
 
 # The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
-# (dev/48) and the package-authoring agents: nineteen in all, ten of them
+# (dev/48) and the package-authoring agents: thirteen in all, ten of them
 # catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
 # and test_prompt_assets parametrizes over.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
@@ -126,24 +166,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      targets=("node", "canvas"),
                      reads=("userMessage", "nodeContext", "dataflowContext"),
                      tools=("dataflow.read", "node.read", "node.runtime.read")),
-    BuiltinAgentSpec("agent.dataflow-explainer", "Dataflow Explainer", "canvas",
-                     "Explain what the whole dataflow does.",
-                     "explanation_prompt.txt", ("dataflow.explain",), ("explanation",),
-                     reads=("dataflowContext",), tools=("dataflow.read",), in_catalog=False),
     BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
                      "Generate node content for a target.",
                      "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
                      reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
                      tools=("dataflow.read", "node.read", "node.content.write",
                             "node.runtime.read")),
-    BuiltinAgentSpec("agent.execution-subtask-planner", "Execution Subtask Planner", "canvas",
-                     "Plan follow-up subtasks from an execution.",
-                     "new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",),
-                     reads=("nodeContent", "nodeType", "currentTask"), in_catalog=False),
-    BuiltinAgentSpec("agent.dataflow-task-planner", "Dataflow Task Planner", "canvas",
-                     "Create a workflow plan from a goal.",
-                     "new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",),
-                     reads=("currentTask", "dataflowContext"), in_catalog=False),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
@@ -160,26 +188,32 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # connection's required packages surface as reviewed
                      # proposals. Its connection.propose capability is unchanged.
                      delegates_to=("agent.package-recommendation",)),
-    BuiltinAgentSpec("agent.workflow-suggester", "Workflow Suggester", "canvas",
-                     "Suggest workflow next steps.",
-                     "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),
-                     reads=("dataflowContext", "workflowGoal"), tools=("dataflow.read",), in_catalog=False),
-    BuiltinAgentSpec("agent.plan-coherence-validator", "Plan Coherence Validator", "evaluate",
-                     "Validate that a plan's subtasks are coherent.",
-                     "evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",),
-                     reads=("workflowGoal", "dataflowContext"), in_catalog=False),
-    BuiltinAgentSpec("agent.syntax-analysis-agent", "Syntax Analysis", "evaluate",
-                     "Analyze code syntax.",
-                     "syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",),
-                     preamble_file="syntax_analysis_preamble.txt", reads=("codeContext",), in_catalog=False),
-    BuiltinAgentSpec("agent.task-refresh-agent", "Task Refresh", "canvas",
-                     "Refresh a workflow plan.",
-                     "task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",),
-                     reads=("currentTask", "keywords", "dataflowContext"), in_catalog=False),
-    BuiltinAgentSpec("agent.keyword-binding-agent", "Keyword Binding", "canvas",
-                     "Bind keywords for a workflow.",
-                     "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),
-                     reads=("keywords", "dataflowContext"), in_catalog=False),
+    # The planning and keyword agents, merged: six capabilities that shared
+    # their tools (none), delegates (none), review and execution, each still
+    # running its own instruction as a mode. Internal: a delegate only.
+    _merged("agent.dataflow-planner", "Dataflow Planner", "canvas",
+            "Plan, refresh and check a dataflow's tasks, and extract and bind "
+            "the keywords that describe it.",
+            (BuiltinMode("workflow.plan.create", "new_subtasks_prompt.txt",
+                         ("currentTask", "dataflowContext")),
+             BuiltinMode("execution.followup.plan", "new_subtask_from_exec_prompt.txt",
+                         ("nodeContent", "nodeType", "currentTask")),
+             BuiltinMode("workflow.plan.refresh", "task_refresh_prompt.txt",
+                         ("currentTask", "keywords", "dataflowContext"), ("keywordTypes",)),
+             BuiltinMode("workflow.coherence.validate", "evaluate_coherence_subtasks_prompt.txt",
+                         ("workflowGoal", "dataflowContext")),
+             BuiltinMode("workflow.keyword.bind", "keywords_binding_prompt.txt",
+                         ("keywords", "dataflowContext"), ("keywordTypes",)),
+             BuiltinMode("workflow.keywords.extract", "syntax_analysis_prompt.txt",
+                         ("workflowGoal",), ("keywordTypes",))),
+            roles=("planning", "validation"), targets=("canvas",)),
+    # The two dataflow readers, merged the same way.
+    _merged("agent.dataflow-reader", "Dataflow Reader", "canvas",
+            "Explain what the whole dataflow does, and suggest its next steps.",
+            (BuiltinMode("dataflow.explain", "explanation_prompt.txt", ("dataflowContext",)),
+             BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.txt",
+                         ("dataflowContext", "workflowGoal"))),
+            roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
     # dev/67-4 (DEC-053): the research agent — concise factual verification
     # of external sources (dataset ids, endpoints, schemas) other agents
     # chain to via research.verify; policy-gated web tools; never mutates.
@@ -212,7 +246,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # other file the code opens.
                      tools=("dataflow.read", "node.create", "node.template.create",
                             "node.runtime.read", "node.content.write", "catalog.search"),
-                     delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
+                     delegates_to=("agent.node-content-builder",
+                                   ("agent.dataflow-planner", ("execution.followup.plan",)),
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
                                    "agent.package-recommendation",
@@ -257,8 +292,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # just stops being the only answer.
                      tools=("catalog.search", "datalake.sources", "datalake.search",
                             "datalake.acquire", "dataset.install", "dataflow.read"),
-                     delegates_to=("agent.node-builder", "agent.workflow-suggester",
-                                   "agent.keyword-binding-agent", "agent.node-researcher"),
+                     delegates_to=("agent.node-builder",
+                                   ("agent.dataflow-reader", ("workflow.suggest",)),
+                                   ("agent.dataflow-planner", ("workflow.keyword.bind",)),
+                                   "agent.node-researcher"),
                      review_policy="review-before-apply",
                      node_requires=("data-loading",)),
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
@@ -283,10 +320,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # at that node's own agent; plans stay content-free).
                      delegates_to=("agent.dataset-finder", "agent.node-builder",
                                    "agent.node-content-builder",
-                                   "agent.connection-builder", "agent.dataflow-task-planner",
-                                   "agent.execution-subtask-planner", "agent.task-refresh-agent",
-                                   "agent.workflow-suggester", "agent.plan-coherence-validator",
-                                   "agent.dataflow-explainer", "agent.node-researcher",
+                                   "agent.connection-builder",
+                                   ("agent.dataflow-planner", (
+                                       "workflow.plan.create", "execution.followup.plan",
+                                       "workflow.plan.refresh", "workflow.coherence.validate")),
+                                   ("agent.dataflow-reader", ("workflow.suggest", "dataflow.explain")),
+                                   "agent.node-researcher",
                                    # dev/84: the "Recommend packages" plan step.
                                    "agent.package-recommendation",
                                    # dev/89: package-scale plan steps — one
@@ -331,7 +370,6 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("mission", "targetContext", "installedTemplates"),
                      tools=("packages.catalog", "packages.resolve", "package.install",
                             "dataflow.read"),
-                     delegates_to=("agent.syntax-analysis-agent",),
                      review_policy="review-before-apply"),
     # The DEC-055 authored built-in (memo dev/85 resolved OQ-007; impl dev/86).
     # The advisory semantic-validation layer over the empirical stack: judges
@@ -427,10 +465,10 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "version": BUILTIN_VERSION,
         "purpose": spec.purpose,
         "roles": list(spec.roles),
-        "capabilities": [{"id": c, "contractVersion": "1"} for c in spec.capabilities],
+        "capabilities": [_capability_entry(spec, c) for c in spec.capabilities],
         "prompts": {
-            "system": {"path": f"prompts/{spec.preamble_file}", "variables": []},
-            "instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []},
+            key: {"path": f"prompts/{filename}", "variables": []}
+            for key, filename in spec.prompt_files().items()
         },
         "compatibleTargets": [
             {
@@ -449,10 +487,24 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
     # Only composites carry the key — the thirteen migrated manifests stay
     # byte-identical (memo dev/48 regression requirement).
     if spec.delegates_to:
-        manifest["delegatesTo"] = list(spec.delegates_to)
+        manifest["delegatesTo"] = [
+            d if isinstance(d, str) else {"id": d[0], "capabilities": list(d[1])}
+            for d in spec.delegates_to
+        ]
     if spec.requires_agents:
         manifest["requiresAgents"] = list(spec.requires_agents)
     return manifest
+
+
+def _capability_entry(spec: BuiltinAgentSpec, capability: str) -> dict:
+    """A capability, with its mode's instruction, reads and settings when it has one."""
+    entry: dict = {"id": capability, "contractVersion": "1"}
+    mode = next((m for m in spec.modes if m.capability == capability), None)
+    if mode is not None:
+        entry["instruction"] = mode.capability
+        entry["reads"] = list(mode.reads)
+        entry["requiredConfig"] = list(mode.required_config)
+    return entry
 
 
 def list_builtin_manifests() -> list[AgentManifest]:
@@ -493,12 +545,14 @@ def read_prompt_text(coord: str, name: str) -> str | None:
     """Read a built-in's prompt asset text from ``llm-prompts/``, or None.
 
     ``name`` is the manifest prompt key: ``"instruction"`` (the agent's task
-    prompt) or ``"system"`` (its preamble).
+    prompt), ``"system"`` (its preamble), or a mode's capability id.
     """
     spec = _by_coord().get(coord)
     if spec is None:
         return None
-    filename = spec.prompt_file if name == "instruction" else spec.preamble_file
+    filename = spec.prompt_files().get(name)
+    if filename is None:
+        return None
     path = PROMPT_SOURCE_DIR / filename
     if path.is_file():
         return path.read_text(encoding="utf-8")

@@ -37,12 +37,12 @@ Your warnings should contribute to a more coherent dataflow. Keep your warnings 
 - Lack of supporting nodes. A subtask that does is not correctly supported by previous boxes. For example: trying to do analysis on data that was not loaded.
 - Underspecified subtask. Not enough details to implement it.
 
-Do not generate warnings for these node types:
+Do not generate warnings for nodes made from these templates:
 
-- DATA_POOL
-- MERGE_FLOW
-- VIS_VEGA
-- AUTK_GRAMMAR
+- Data Pool
+- Merge Flow
+- Vega-Lite
+- Autark
 
 **BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
 

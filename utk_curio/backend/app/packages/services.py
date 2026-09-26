@@ -633,6 +633,14 @@ def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
 _RENDERED_INPUT_CAPACITY: dict[str, int] = {"curio.builtin/merge-flow": 5}
 
 
+def input_capacity(canonical: str, port_count: int) -> int:
+    """How many incoming edges a node of this template accepts: one per
+    rendered input handle, or the rendered slot count where the canvas renders
+    more (DEC-051). The one rule ``maxIncomingEdges`` and the agents' preamble
+    both read."""
+    return _RENDERED_INPUT_CAPACITY.get(canonical, port_count)
+
+
 def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     """Per-port ``{types, min, max}`` rows + the template's incoming-edge
     capacity.
@@ -652,8 +660,7 @@ def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     for port in template.input_ports:
         lo, hi = parse_cardinality(port.cardinality)
         inputs.append({"types": list(port.types), "min": lo, "max": hi})
-    max_incoming = _RENDERED_INPUT_CAPACITY.get(canonical, len(inputs))
-    return inputs, max_incoming
+    return inputs, input_capacity(canonical, len(inputs))
 
 
 # One value, three legal spellings (memo dev/93 D3; the dev/90 A14 family).
@@ -861,6 +868,11 @@ def _template_entry(package_id: str, template) -> dict:
         "id": canonical,
         "label": template.label,
         "description": template.description,
+        "category": template.category,
+        # Whether a node of this template can carry an interaction edge: its
+        # third, "in/out" handle. plan_topology reads the interaction rule
+        # from this and the category.
+        "bidirectional": bool(template.bidirectional),
         # dev/90 A14: a PRESENTATION template (editor none + a custom
         # behavior — the dev/89 post-it profile) holds authorable CONTENT
         # (the note text its behavior renders) even though it has no code

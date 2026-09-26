@@ -103,6 +103,25 @@ def install_refusal(user, *, noun: str = "packages") -> str | None:
     return None
 
 
+def settings_refusal(user) -> str | None:
+    """Why *user* may not change the account's catalog settings, or ``None``.
+
+    The same two parts as :func:`install_refusal`: a local run always may, and
+    a hosted guest may not, because every guest shares one account and one
+    visitor's keyword types would become every visitor's.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH or user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Changing catalog settings is not available for guest users, because "
+            "every guest shares one account. Sign in with an account to change them."
+        )
+    return None
+
+
 def library_install_refusal(user) -> str | None:
     """Why *user* may not install or remove a library. See :func:`install_refusal`."""
     return install_refusal(user, noun="libraries")

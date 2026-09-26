@@ -214,17 +214,13 @@ class TestResolution:
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        # Both node-builder delegates installed; the capability that only the
-        # SECOND declares resolves to it deterministically.
+        # The capability that only the SECOND node-builder delegate declares
+        # resolves to it deterministically. That one is internal, so it
+        # resolves from the roster without an install.
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
-        client.post(
-            f"/api/agents/projects/{pid}/install",
-            json={"coord": "agent.execution-subtask-planner@1.0.0"},
-            headers=_auth(token),
-        )
         r = delegation.resolve(key, pid, self._manifest(key), "execution.followup.plan")
         assert r.outcome == "ok"
-        assert r.coord == "agent.execution-subtask-planner@1.0.0"
+        assert r.coord == "agent.dataflow-planner@1.0.0"
 
 
 class TestDelegateChildRun:
@@ -997,3 +993,113 @@ class TestEvaluatorDelegation:
         )
         assert r.outcome == "not-installed"
         assert r.coord == "agent.node-researcher@1.0.0"
+
+
+class TestMergedAgentModes:
+    """A merged internal agent runs the delegated capability's own mode, with
+    the catalog settings that mode reads; a parent delegates only the
+    capabilities its entry names."""
+
+    PLANNER = "agent.dataflow-planner@1.0.0"
+
+    def _config(self):
+        from utk_curio.backend.app.agents.providers import ProviderConfig
+
+        return ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m")
+
+    def _delegate(self, key, pid, monkeypatch, capability):
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            calls.append(messages)
+            return "{}"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        status, _, record = delegation.run_delegate(
+            key, pid, self.PLANNER, capability, {"keywords": {}}, self._config(),
+            parent_execution_id="parent", parent_coord=DF, attachment_id=None,
+        )
+        assert status == "ok"
+        (messages,) = calls
+        return messages[0]["content"], record
+
+    def test_a_scoped_entry_delegates_only_its_capabilities(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        nb = builtin.get_builtin_manifest(NB)
+        assert delegation.resolve(key, pid, nb, "execution.followup.plan").coord == self.PLANNER
+        # The planner's other modes are not the Node Builder's to delegate,
+        # and the capability fallback never reaches an internal agent.
+        assert delegation.resolve(key, pid, nb, "workflow.plan.create").outcome == "unresolvable"
+        offered = {cap for cap, _ in delegation.visible_capability_entries(key, nb)}
+        assert "execution.followup.plan" in offered
+        assert "workflow.plan.create" not in offered
+
+    def test_a_delegated_mode_runs_its_own_instruction(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import contracts
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        system, record = self._delegate(key, _project(client, token), monkeypatch, "workflow.keyword.bind")
+        bind = builtin.read_prompt_text(self.PLANNER, "workflow.keyword.bind")
+        plan = builtin.read_prompt_text(self.PLANNER, "workflow.plan.create")
+        assert bind.strip() in system
+        assert plan.strip() not in system
+        # Pinned by its configuration.
+        assert len(record["pins"]["configurationSha256"]) == 64
+        # Slot order: preamble, instruction, configuration; no tool protocol.
+        preamble = builtin.read_prompt_text(self.PLANNER, "system")
+        configuration = system.index(contracts.CONFIGURATION_FRAME)
+        assert system.index(preamble.strip()[:200]) < system.index(bind.strip()) < configuration
+        assert "curio.v1" not in system
+
+    def test_the_digest_pins_the_modes_own_prompt(self):
+        # A roster manifest carries no digests, so stamp one per prompt as a
+        # materialized definition would.
+        import hashlib
+
+        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.manifest import parse_agent_manifest
+
+        def sha(text):
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.PLANNER))
+        for key, asset in raw["prompts"].items():
+            asset["sha256"] = sha(key)
+        m = parse_agent_manifest(raw)
+        assert services._prompt_digest(m, capability="workflow.keyword.bind") == sha("workflow.keyword.bind")
+        assert services._prompt_digest(m) == sha("instruction")
+        # A capability with no mode of its own runs, and pins, the instruction.
+        assert services._prompt_digest(m, capability="dataflow.orchestrate") == sha("instruction")
+
+    def test_the_keyword_types_reach_the_keyword_modes_only(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import contracts
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        taxonomy = contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default)
+        for capability in ("workflow.keywords.extract", "workflow.keyword.bind", "workflow.plan.refresh"):
+            system, _ = self._delegate(key, pid, monkeypatch, capability)
+            assert taxonomy in system, capability
+        for capability in ("workflow.plan.create", "workflow.coherence.validate"):
+            system, record = self._delegate(key, pid, monkeypatch, capability)
+            assert contracts.CONFIGURATION_FRAME not in system, capability
+            assert "configurationSha256" not in record["pins"]
+
+    def test_edited_keyword_types_change_the_next_run(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import catalog_settings
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        _, before = self._delegate(key, pid, monkeypatch, "workflow.keyword.bind")
+        catalog_settings.update(key, {"keywordTypes": [
+            {"name": "Hazard", "description": "a natural hazard.", "examples": ["flood", "heat wave"]},
+        ]})
+        system, after = self._delegate(key, pid, monkeypatch, "workflow.keyword.bind")
+        assert '- Hazard: a natural hazard. Examples: "flood", "heat wave".' in system
+        assert "- Action:" not in system
+        assert after["pins"]["configurationSha256"] != before["pins"]["configurationSha256"]

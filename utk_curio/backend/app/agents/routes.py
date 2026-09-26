@@ -16,8 +16,10 @@ from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.app.users.capabilities import settings_refusal
 from utk_curio.backend.app.users.dependencies import require_auth
 
+from utk_curio.backend.app.agents import catalog_settings
 from utk_curio.backend.app.agents import services as agents_services
 from utk_curio.backend.app.agents.provider_config import ProviderConfigError
 from utk_curio.backend.app.agents.services import AgentServiceError
@@ -91,6 +93,41 @@ def list_catalog():
     agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id)
     facets = agents_services.agent_catalog_facets(agents)
     return jsonify({"items": agents, "agents": agents, "facets": facets}), 200
+
+
+# ── Catalog settings (account scope) ────────────────────────────────────────
+def _settings_payload():
+    refusal = settings_refusal(g.user)
+    return {
+        "settings": agents_services.catalog_settings_listing(_user_dir_key(g.user)),
+        "editable": refusal is None,
+        "reason": refusal,
+    }
+
+
+@agents_bp.route("/settings", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def get_catalog_settings():
+    """Every catalog setting with the account's value and the agents that read
+    it, and whether this account may change them."""
+    return jsonify(_settings_payload()), 200
+
+
+@agents_bp.route("/settings", methods=["PUT"])
+@require_auth
+@_map_agent_errors
+def put_catalog_settings():
+    """Change settings: a JSON object of key to value, where ``null`` restores
+    the default. Nothing is saved unless every value is valid."""
+    refusal = settings_refusal(g.user)
+    if refusal:
+        return _error(refusal, 403)
+    try:
+        catalog_settings.update(_user_dir_key(g.user), request.get_json(silent=True))
+    except catalog_settings.SettingError as exc:
+        return _error(str(exc), 400)
+    return jsonify(_settings_payload()), 200
 
 
 # ── My Imports (account scope) ───────────────────────────────────────────────

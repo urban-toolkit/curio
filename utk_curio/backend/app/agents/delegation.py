@@ -76,6 +76,8 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     missing: Resolution | None = None
     preferred_ids = list(parent.delegates_to)
     for agent_id in preferred_ids:
+        if not parent.delegates(agent_id, capability):
+            continue  # this entry delegates other capabilities of that agent
         for coord in _candidate_coords(agent_id, installed):
             m = services._resolve_definition(user_key, coord)
             if m is not None and capability in m.capability_ids:
@@ -88,7 +90,7 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
     # Capability-first fallback: any other installed template declaring it.
-    preferred = set(preferred_ids)
+    preferred = {a for a in preferred_ids if parent.delegates(a, capability)}
     for coord in sorted(installed):
         if coord.split("@", 1)[0] in preferred:
             continue  # already walked above
@@ -102,9 +104,9 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
         from utk_curio.backend.app.agents import builtin
 
         for m in builtin.list_builtin_manifests():
-            if capability in m.capability_ids:
-                if builtin.is_internal(m.dir_name):
-                    return Resolution("ok", m.dir_name, m)
+            # An internal agent is reached only through a parent that
+            # delegates it that capability, which the walk above covers.
+            if capability in m.capability_ids and not builtin.is_internal(m.dir_name):
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
     return missing or Resolution("unresolvable")
@@ -148,7 +150,7 @@ def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tup
         if m is None:
             continue
         for cap in m.capability_ids:
-            if cap not in seen:
+            if cap not in seen and parent.delegates(agent_id, cap):
                 seen.add(cap)
                 entries.append((cap, m.name))
     return entries
@@ -188,7 +190,7 @@ def run_delegate(
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
     """
-    from utk_curio.backend.app.agents import ledger, services
+    from utk_curio.backend.app.agents import catalog_settings, contracts, ledger, services
     from utk_curio.backend.app.projects import storage as projects_storage
 
     child_id = uuid.uuid4().hex
@@ -204,16 +206,26 @@ def run_delegate(
     pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model}
     try:
         manifest = services._resolve_definition(user_key, coord)
-        instruction = services._resolve_instruction_text(user_key, coord)
+        # The capability is the mode: a merged agent runs that capability's
+        # own instruction.
+        instruction = services._resolve_instruction_text(user_key, coord, capability=capability)
         if instruction is None:
             return (
                 "error",
                 f"delegate {coord} has no instruction prompt available",
                 _record("error", {}, pins),
             )
-        preamble = services._resolve_prompt_text(user_key, coord, "system")
-        # Depth-1 structurally: the delegate's own prompts, NO tail instruction.
-        system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
+        configuration = (
+            catalog_settings.configuration_for(user_key, manifest.config_keys(capability))
+            if manifest is not None else None
+        )
+        # Depth-1 structurally: the delegate's own prompts and configuration,
+        # NO tool protocol and no runtime blocks.
+        system_content = contracts.join_system(contracts.compose_system(
+            preamble=services._resolve_prompt_text(user_key, coord, "system"),
+            instruction=instruction,
+            configuration=configuration,
+        ))
         spec = projects_storage.read_spec(user_key, project_id)
         run_policy = services._run_policy(user_key, project_id, coord, spec or {})
         admit = dict(run_policy["admit"])
@@ -221,12 +233,13 @@ def run_delegate(
         admit["attachment_key"] = attachment_id
         pins = {
             "coord": coord,
-            "promptSha256": services._prompt_digest(manifest),
+            "promptSha256": services._prompt_digest(manifest, capability=capability),
             "intentEdited": False,
             "provider": config.api_type,
             "model": config.model,
             "tools": [],  # structurally tool-less (DEC-046)
             "policy": run_policy["policy_pins"],
+            **services._configuration_pin(configuration),
         }
         reservation = ledger.reserve(user_key, reservation_id=child_id, **admit)
     except Exception as exc:  # resolution/policy failure - data, not an error

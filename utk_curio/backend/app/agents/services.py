@@ -18,6 +18,7 @@ import uuid
 from utk_curio.backend.app.agents import (
     attachments,
     builtin,
+    catalog_settings,
     content,
     delegation,
     imports,
@@ -261,10 +262,13 @@ def _materialize_builtin(user_key: str, coord: str) -> None:
     instruction = builtin.read_prompt_text(coord, "instruction")
     if instruction is None:
         return  # prompt file missing — leave the built-in fallback to handle runtime
-    files = {manifest["prompts"]["instruction"]["path"]: instruction}
-    preamble = builtin.read_prompt_text(coord, "system")
-    if preamble is not None:
-        files[manifest["prompts"]["system"]["path"]] = preamble
+    # Every prompt the manifest declares: the preamble, the instruction, and
+    # each mode's own.
+    files = {}
+    for key, asset in manifest["prompts"].items():
+        text = builtin.read_prompt_text(coord, key)
+        if text is not None:
+            files[asset["path"]] = text
     storage.write_definition(user_key, coord, manifest, files)
 
 
@@ -510,6 +514,53 @@ def _refuse_internal(coord: str) -> None:
             f"{name} runs only as a delegate of other agents; it is not installed or attached",
             400,
         )
+
+
+def catalog_settings_listing(user_key: str) -> list[dict]:
+    """Every catalog setting: its schema and default, the account's value, and
+    each agent and capability that reads it. Account-level and independent of
+    cards: internal agents are listed as readers, and nothing here depends on
+    what a project installed."""
+    readers = _settings_readers(user_key)
+    stored = catalog_settings.stored_values(user_key)
+    current = catalog_settings.values(user_key)
+    return [
+        {
+            "key": key,
+            "label": setting.label,
+            "description": setting.description,
+            "schema": setting.schema,
+            "default": setting.default,
+            "value": current[key],
+            "isDefault": key not in stored,
+            "readBy": readers.get(key, []),
+        }
+        for key, setting in contracts.CATALOG_SETTINGS.items()
+    ]
+
+
+def _settings_readers(user_key: str) -> dict[str, list[dict]]:
+    """Setting key to the ``{agentId, agentName, capability, internal}`` entries
+    that read it, over the built-ins and the account's own definitions. A
+    ``capability`` of ``None`` means every run of the agent."""
+    manifests = list(builtin.list_builtin_manifests())
+    for coord in sorted(imports.load_imported_agents(user_key)):
+        m = _resolve_definition(user_key, coord)
+        if m is not None and m.provenance.trust != "built-in":
+            manifests.append(m)
+    readers: dict[str, list[dict]] = {}
+    for m in manifests:
+        declared = [(None, key) for key in m.inputs_required_config] + [
+            (cap.id, key) for cap in m.capabilities for key in cap.required_config
+        ]
+        for capability, key in declared:
+            readers.setdefault(key, []).append({
+                "agentId": m.agent_id,
+                "agentName": m.name,
+                "capability": capability,
+                "internal": builtin.is_internal(m.dir_name),
+            })
+    return readers
 
 
 def import_agent(user_key: str, coord: str, *, user=None) -> dict:
@@ -1905,7 +1956,7 @@ def _mint_dataflow_plan(
         node = existing_nodes.get(endpoint)
         return node.get("type") if node else None
 
-    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint)
+    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available)
     if kind_errors:
         return "refused", "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors), None
     net_pairs = plan_topology.net_data_edges(
@@ -8522,9 +8573,12 @@ def _verified_content_rounds(
             # dev/134: routed by the roster's own grammarId, and checked
             # against the columns this node's input actually has — the same
             # rows the generation request was handed (DEC-063).
+            # The roster's own row only: an unknown kind is not passive.
+            roster_row = (loop_templates or {}).get(str(node_type).split("@", 1)[0]) or {}
             document = document_validation.validate(
                 node_type, candidate,
                 grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                content_kind=roster_row.get("contentKind"),
                 columns=upstream_schema.columns_of(
                     (extra_inputs or {}).get("upstreamOutputs")
                 ),
@@ -9024,7 +9078,8 @@ def _validate_events(
 
 
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
-    """A definition's prompt asset text (``"instruction"`` or ``"system"``).
+    """A definition's prompt asset text, by prompts key: ``"instruction"``,
+    ``"system"``, or a mode's own.
 
     **Built-in trust follows the ROSTER bytes** (dev/60) — the same rule
     ``_resolve_definition`` applies to metadata, for the same reason: an
@@ -9056,9 +9111,22 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     return builtin.read_prompt_text(coord, name)
 
 
-def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
-    """The agent's instruction prompt text (see ``_resolve_prompt_text``)."""
-    return _resolve_prompt_text(user_key, coord, "instruction")
+def _resolve_instruction_text(
+    user_key: str, coord: str, *, capability: str | None = None
+) -> str | None:
+    """The agent's instruction prompt text (see ``_resolve_prompt_text``), or
+    *capability*'s own when the agent declares it as a mode."""
+    return _resolve_prompt_text(user_key, coord, _instruction_key(user_key, coord, capability))
+
+
+def _instruction_key(user_key: str, coord: str, capability: str | None) -> str:
+    """The prompts key a run of *capability* reads: its mode's, else ``instruction``."""
+    if capability:
+        m = _resolve_definition(user_key, coord)
+        declared = m.capability(capability) if m is not None else None
+        if declared is not None and declared.instruction:
+            return declared.instruction
+    return "instruction"
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
@@ -9156,13 +9224,26 @@ def _run_policy(
     }
 
 
-def _prompt_digest(m: AgentManifest | None) -> str | None:
-    """The resolved definition's instruction-prompt sha256 (a DEC-031 pin).
+def _configuration_pin(configuration: str | None) -> dict:
+    """The run pin for the configuration slot: its sha256, when the run had one."""
+    if not configuration:
+        return {}
+    import hashlib
+
+    return {"configurationSha256": hashlib.sha256(configuration.encode("utf-8")).hexdigest()}
+
+
+def _prompt_digest(m: AgentManifest | None, *, capability: str | None = None) -> str | None:
+    """The resolved definition's instruction-prompt sha256 (a DEC-031 pin):
+    *capability*'s mode prompt when it declares one.
 
     Read from the manifest asset, not recomputed — the digest identifies the
     definition bytes that were dispatched. ``None`` when the manifest carries
     no digest (tolerated; pre-upload-import definitions may be unstamped)."""
-    asset = m.prompts.get("instruction") if m is not None else None
+    if m is None:
+        return None
+    declared = m.capability(capability) if capability else None
+    asset = m.prompts.get(declared.instruction if declared and declared.instruction else "instruction")
     return asset.sha256 if asset is not None else None
 
 
@@ -9261,19 +9342,18 @@ def _prepare_run(
         raise AgentServiceError(
             f"no instruction prompt available for {coord!r} (not materialized)", 422
         )
-    # Migration parity (dev/06): the legacy call sites composed the system
-    # preamble + the prompt; an edited intent replaces the instruction portion
-    # only, so the preamble still applies.
+    # An edited intent replaces the instruction slot only, so the preamble,
+    # the configuration and every runtime-owned slot still apply
+    # (contracts.compose_system).
     preamble = _resolve_prompt_text(user_key, coord, "system")
-    system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
-    # Structured-tail protocol (memos dev/39/41): the runtime-owned
-    # instruction composes AFTER the preamble + intent, so an edited intent
-    # can neither strip nor spoof it. Grant-less runs keep the T2 instruction
-    # byte-identical; granted runs get the toolRequest paragraph.
-    granted = tools.resolve_grants(requested_tools)
-    system_content = (
-        f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
+    configuration = (
+        catalog_settings.configuration_for(user_key, manifest.config_keys())
+        if manifest is not None else None
     )
+    # Grant-less runs keep the T2 tail byte-identical; granted runs get the
+    # toolRequest paragraph (memos dev/39/41).
+    granted = tools.resolve_grants(requested_tools)
+    runtime_blocks: list[str | None] = []
     # Reuse-first (dev/48; plans too, dev/52): a grant that can put a template
     # on the canvas, into the project, or author a new one carries the live
     # template roster, composed fresh per run from the packages registry — the
@@ -9309,26 +9389,30 @@ def _prepare_run(
                 getattr(manifest, "capability_ids", None) or []
             ),
         )
-        if templates_block:
-            system_content = f"{system_content}\n\n{templates_block}"
+        runtime_blocks.append(templates_block)
         # dev/93 D4: the second half of the roster — what the user owns but
         # this project has not enlisted — goes only to a run that can act on
         # it. Offering it without the grant would name a door the model
         # cannot open, which is how the Researcher ended up authoring a
         # duplicate package instead.
         if "package.install" in granted:
-            enlistable = _enlistable_templates_block(
+            runtime_blocks.append(_enlistable_templates_block(
                 project_id, landscape, _TEMPLATES_BLOCK_MAX_ENTRIES
-            )
-            if enlistable:
-                system_content = f"{system_content}\n\n{enlistable}"
+            ))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list.
     if manifest is not None and manifest.delegates_to:
         entries = delegation.visible_capability_entries(user_key, manifest)
         if entries:
-            system_content = f"{system_content}\n\n{content.delegation_instruction(entries)}"
+            runtime_blocks.append(content.delegation_instruction(entries))
+    system_content = contracts.join_system(contracts.compose_system(
+        preamble=preamble,
+        instruction=instruction,
+        configuration=configuration,
+        tool_protocol=content.tail_instruction(tools.grant_descriptions(granted)),
+        runtime=runtime_blocks,
+    ))
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -9363,6 +9447,7 @@ def _prepare_run(
         # Granted tool ids (dev/39): requested ∩ registry ∩ policy.
         "tools": granted,
         "policy": run_policy["policy_pins"],
+        **_configuration_pin(configuration),
     }
     loop_ctx = {
         "granted": granted,
