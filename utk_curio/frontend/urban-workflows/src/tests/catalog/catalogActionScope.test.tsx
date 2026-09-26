@@ -490,6 +490,14 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     expect(page).toContain("const [detailDirName");
   });
 
+  test("the Node details modal outlives a filter change, as the Agent one does", () => {
+    // It was looked up in the filtered list only, so a filter that hid the
+    // package closed its details out from under the reader.
+    const page = read("pages/catalog/NodeCatalogBrowse.tsx");
+    expect(page).toContain("installedByDir.get(detailDirName)");
+    expect(page).toContain("catalogByDir.get(detailDirName)");
+  });
+
   test("the Data Lake catalog has a details view at all", () => {
     // It was the last one with none: a source's facts lived in the drawer
     // alone, which CatalogBrowseLayout hides below 1100px. And it has its own
