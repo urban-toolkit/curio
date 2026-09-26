@@ -6,6 +6,7 @@ import {
   composeConfirmationPrompt,
 } from "../../components/agents/content/AgentDatasetCandidatesCard";
 import type { AgentDatasetCandidatesPart } from "../../api/agentsApi";
+import { DatasetDetailsContext } from "../../components/datasets/catalog/datasetDetailsContext";
 
 const PART: AgentDatasetCandidatesPart = {
   type: "datasetCandidates",
@@ -40,10 +41,56 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     expect(screen.getAllByText("Not installed")).toHaveLength(1);
   });
 
-  it("rows carry NO action buttons — checkboxes only (docs/06)", () => {
+  it("selection is the only action a row takes (docs/06)", () => {
     render(<AgentDatasetCandidatesCard part={PART} />);
-    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    // The one button per catalog row opens what it names, read-only; nothing
+    // here applies, installs or downloads.
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["View details", "View details"]);
+  });
+
+  it("a catalog row opens the dataset's details, like the same row anywhere else", () => {
+    const openDatasetDetails = jest.fn();
+    const onComposePrompt = jest.fn();
+    render(
+      <DatasetDetailsContext.Provider value={{ openDatasetDetails }}>
+        <AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} />
+      </DatasetDetailsContext.Provider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "View details" })[0]);
+    expect(openDatasetDetails).toHaveBeenCalledWith("imported.abc@1");
+    // Opening details is not a selection.
+    expect(onComposePrompt).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select Cities" })).not.toBeChecked();
+  });
+
+  it("links an external row to its portal only when the runtime vouched for the URL", () => {
+    const part: AgentDatasetCandidatesPart = {
+      type: "datasetCandidates",
+      lanes: {
+        external: [
+          { name: "Verified", sourceType: "api", url: "https://ok.example/x",
+            verification: { status: "verified" } } as any,
+          { name: "Downloadable", sourceType: "lake", url: "https://lake.example/r",
+            acquirable: true, sourceId: "lake.a", resourceId: "r" },
+          { name: "Model claim", sourceType: "api", url: "https://claimed.example/y" },
+          { name: "Bad scheme", sourceType: "api", url: "javascript:alert(1)",
+            verification: { status: "verified" } } as any,
+        ],
+        catalog: [],
+      },
+    };
+    render(<AgentDatasetCandidatesCard part={part} />);
+    const links = screen.getAllByRole("link", { name: "View on the portal ↗" });
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "https://ok.example/x",
+      "https://lake.example/r",
+    ]);
+    links.forEach((a) => expect(a).toHaveAttribute("rel", expect.stringContaining("noopener")));
+    // Unvouched URLs stay plain text, as before.
+    expect(screen.getByText("https://claimed.example/y")).toBeInTheDocument();
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument();
   });
 
   it("hostile metadata renders inert as plain text", () => {
