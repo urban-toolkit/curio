@@ -83,6 +83,23 @@ describe("autkNeedsInput", () => {
 });
 
 describe("autkSourcesFrom", () => {
+  test("an empty layer an Autark data node stored comes back with no feature list: a table with no rows", () => {
+    // What /get hands back for a layer the load found empty, e.g. a PBF area
+    // with no water. The render drops it as it drops any empty table.
+    const empty = { type: "FeatureCollection", features: null };
+    const prepared = autkSourcesFrom(
+      read(
+        frame({ name: "table_osm_roads", fromBundle: true, index: 0, payload: fc([point(1, 1), point(2, 2)]) }),
+        frame({ name: "table_osm_water", fromBundle: true, index: 1, payload: empty }),
+      ),
+      MAP_ON("table_osm_roads", "table_osm_water"),
+    );
+    expect(prepared.tables).toEqual(["table_osm_roads", "table_osm_water"]);
+    expect(prepared.rowsIn).toBe(2);
+    expect(prepared.inputProblem).toBeUndefined();
+    expect(loadableSource(prepared.sources[1]).order).toEqual({ load: null, map: null });
+  });
+
   test("a single frame is the table `upstream`, in the CRS it declares", () => {
     const prepared = autkSourcesFrom(
       read(frame({ payload: fc([point(1, 1)], "urn:ogc:def:crs:EPSG::32632") })),

@@ -952,6 +952,34 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
       });
 
+      test('an empty layer from an Autark data node reaches a compute step as an empty table', async () => {
+        // The data node's artifact, as /get returns it: a list of layer
+        // records, where a layer the load found empty has no feature list.
+        api().fetchData.mockResolvedValue({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_water', type: 'water', geojson: {
+              type: 'FeatureCollection', features: null } } },
+          ],
+        });
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { path: 'art-db', dataType: 'list' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        // One layer left, so it is passed on as a single frame.
+        const passedOn = outputCallback.mock.calls[0]?.[1];
+        expect(passedOn).toMatchObject({ dataType: 'geodataframe', layerName: 'table_osm_roads' });
+      });
+
       test('a compute step with nothing it can read passes nothing on', async () => {
         const setOutput = jest.fn();
         const outputCallback = jest.fn();

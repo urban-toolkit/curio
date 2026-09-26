@@ -249,7 +249,10 @@ export function autkSourcesFrom(
       firstRefusal ??= result;
       continue;
     }
-    rowsIn += result.fc.features.length;
+    // A layer an Autark data node stored empty comes back with no feature
+    // list: it has no rows, and the render leaves it out like any empty table.
+    const features = (result.fc as any).features;
+    rowsIn += Array.isArray(features) ? features.length : 0;
     sources.push({
       type: "geojson",
       geojsonObject: result.fc,

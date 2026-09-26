@@ -823,7 +823,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             // Input rows per layer; each target turns them into its own positions.
             const indicesByLayer = new Map<string, number[]>();
             for (const { outputTableName: name, geojsonObject: fc } of layers) {
-                const sel = (fc.features as any[]).reduce<number[]>((acc, f, i) => {
+                const sel = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
                     if (f.properties?.interacted === '1') acc.push(i);
                     return acc;
                 }, []);
