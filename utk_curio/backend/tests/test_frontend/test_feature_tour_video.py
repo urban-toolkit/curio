@@ -138,12 +138,12 @@ _DEFAULT_BASE_URL = "https://sage200.evl.uic.edu/"
 _DEFAULT_MODEL = "gemma4"
 
 # Agents the tour adds to the dataflow. The order matters on screen:
-#   node-explainer   attaches to a node and is the one that answers live;
+#   chat-agent       attaches to a node and is the one that answers live;
 #   connection-builder is the only built-in that accepts a connection target,
 #                    which is the gesture this branch added;
 #   dataflow-builder is the only built-in declaring requiresAgents, so its
 #                    button reads "Add to project (+1 required)".
-AGENT_EXPLAINER = "agent.node-explainer@1.0.0"
+AGENT_EXPLAINER = "agent.chat-agent@1.0.0"
 AGENT_CONNECTION = "agent.connection-builder@1.0.0"
 AGENT_BUILDER = "agent.dataflow-builder@1.0.0"
 
@@ -1170,7 +1170,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     drawer = _open_agent_drawer(ctx)
     tour.say(
         "Nodes, data - and agents",
-        "Twenty-one ship built in, each a versioned package like any other.",
+        "Ten ship built in, each a versioned package like any other.",
         hold=2900,
     )
     tour.say(
@@ -1306,7 +1306,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         "A live model, answering about this dataflow.",
     )
     badge = page.get_by_role(
-        "button", name=re.compile(r"^Open chat with Node Explainer")
+        "button", name=re.compile(r"^Open chat with Chat")
     ).first
     badge.wait_for(state="visible", timeout=20000)
     tour.click(badge)

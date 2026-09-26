@@ -83,7 +83,6 @@ from .utils import (
 from .test_feature_tour_video import (  # noqa: E402
     AGENT_BUILDER,
     AGENT_CONNECTION,
-    AGENT_EXPLAINER,
     Ctx,
     LLM_API_KEY,
     LLM_BASE_URL,
@@ -105,6 +104,10 @@ from .test_feature_tour_video import (  # noqa: E402
     _reset_zoom,
     scene_ai_settings,
 )
+
+
+#: A node-only agent: the drop onto the canvas below must be refused.
+AGENT_NODE_ONLY = "agent.node-content-builder@1.0.0"
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CURIO_STRESS") != "1",
@@ -1688,7 +1691,7 @@ class TestSessionExtending:
                     "A node agent, a connection agent, and a canvas agent.",
                     chapter="Agents"):
             drawer = _open_agent_drawer(ctx)
-            for coord in (AGENT_EXPLAINER, AGENT_CONNECTION, AGENT_BUILDER):
+            for coord in (AGENT_NODE_ONLY, AGENT_CONNECTION, AGENT_BUILDER):
                 _add_agent(ctx, drawer, coord, hold=700)
             drawer.get_by_role("button", name="Close Agent Catalog drawer").click()
             s.tour.beat(900)
@@ -1696,7 +1699,7 @@ class TestSessionExtending:
         with s.step("Attach the node agent to a node", expect="either"):
             open_tools_palette(page, "agents")
             _drag_agent_to(
-                ctx, AGENT_EXPLAINER,
+                ctx, AGENT_NODE_ONLY,
                 lambda: _node_client_point(page, s.state["transform"]),
             )
             toast = page.locator('[aria-label="Notifications"] .toast').first
@@ -1717,7 +1720,7 @@ class TestSessionExtending:
             point = _empty_canvas_point(page)
             if not point:
                 raise AssertionError("no empty canvas point found")
-            _drag_agent_to(ctx, AGENT_EXPLAINER, point)
+            _drag_agent_to(ctx, AGENT_NODE_ONLY, point)
             toast = page.locator('[aria-label="Notifications"] .toast').first
             toast.wait_for(state="visible", timeout=45000)
             said = " ".join((toast.text_content() or "").split())
@@ -1727,7 +1730,7 @@ class TestSessionExtending:
                     "a node-only agent was accepted onto the canvas",
                     severity="bug",
                     detail_full=(
-                        "agent.node-explainer declares node targets only, so the "
+                        "agent.node-content-builder declares node targets only, so the "
                         f"canvas drop should have been refused. The app said: {said!r}"
                     ),
                 )
@@ -1776,7 +1779,7 @@ class TestSessionExtending:
                     "A live model, over this dataflow.", expect="either",
                     quiet_console=True):
             badge = page.get_by_role(
-                "button", name=re.compile(r"^Open chat with Node Explainer")
+                "button", name=re.compile(r"^Open chat with Node Content Builder")
             ).first
             badge.wait_for(state="visible", timeout=25000)
             s.tour.click(badge)

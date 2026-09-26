@@ -521,7 +521,7 @@ CURIO_NO_PROJECT=1 pytest \
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
 reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
-sees five packages, three datasets and twenty-one agents.
+sees five packages, three datasets and ten agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
@@ -561,7 +561,7 @@ Other things that surprise people here:
   conflicts); Data and Agent use the plain ConfirmDialog.
 - **`get_by_role("dialog")` is ambiguous while a drawer is open.** The drawers
   are themselves `role="dialog"`, so scope by accessible name -
-  `page.get_by_role("dialog", name="Remove Node Explainer?")` - which
+  `page.get_by_role("dialog", name="Remove Chat?")` - which
   ConfirmDialog wires from its heading via `aria-labelledby`.
 - **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
   blanket `page.on("dialog", lambda d: d.accept())` is still required for
@@ -626,13 +626,13 @@ agent arriving by some other path cannot slip past.
 | `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
-**What gets captured, and why it differs by agent.** Only 4 of the 21 built-ins
+**What gets captured, and why it differs by agent.** Only 4 of the 10 catalog agents
 can mutate anything - the rest are `report-only` by contract - so there are two
 kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
-| report-only (17) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| report-only (6) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
 | mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:

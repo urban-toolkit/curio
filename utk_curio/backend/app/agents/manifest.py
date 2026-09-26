@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # ── identifier grammars ─────────────────────────────────────────────────────
-# Agent package id: 'agent.' + kebab-case, e.g. 'agent.node-explainer'.
+# Agent package id: 'agent.' + kebab-case, e.g. 'agent.my-helper'.
 AGENT_ID_RE = re.compile(r"^agent\.[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # Semantic capability id: two or more dot-separated lowercase segments, e.g.
