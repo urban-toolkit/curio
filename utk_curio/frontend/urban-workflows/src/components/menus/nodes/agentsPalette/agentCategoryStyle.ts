@@ -7,6 +7,9 @@ import {
   faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import type { AgentCategory } from "../../../../generated/agentCategories";
+
+export type { AgentCategory };
 
 /**
  * How an agent's category is drawn: one colour and one glyph per category.
@@ -39,9 +42,6 @@ import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
  * for "an agent" in general (`CatalogKindVisuals`) and in the chat surfaces,
  * where the subject is one known agent and the category adds nothing.
  */
-
-/** The manifest's category vocabulary (`docs/schemas/agent-package.v1.json`). */
-export type AgentCategory = "data" | "node" | "canvas" | "package" | "evaluate";
 
 /**
  * The palette key a category paints with, and the suffix of its CSS-module

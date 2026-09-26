@@ -31,6 +31,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Generated Contracts](#generated-contracts)
   * [The Autark Schema](#the-autark-schema)
+* [Agent Prompt Composition](#agent-prompt-composition)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -779,7 +780,8 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   |---|---|
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
-  | `utk_curio/llm-prompts/default_preamble.txt` | The shared agent preamble: the `curio.builtin/autk-grammar` rows, read from the built-in manifest, and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
+  | `utk_curio/llm-prompts/default_preamble.txt` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
 
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 
@@ -794,6 +796,26 @@ Everything Curio says about Autark documents is read from that file:
 - **Validation.** `document_validation.validate_autk_grammar` validates a document against the schema, choosing the validator by the schema's draft. An error inside a field that takes one object or a list of them is explained by the branch that fits the value, and a missing field is named with its description from the schema. One rule sits on top, because no schema form states it: the document must load, compute or draw something, and a map must list a layer. Without `jsonschema` or the schema file, a document is *unchecked*, never invalid.
 - **Refusal text.** `contracts.render_autk_shape` renders the schema as one line naming the families and what each requires, for the refusal a reply that is not a document gets.
 - **Preamble.** `contracts.render_autk_region` renders the preamble's section on Autark documents: the data source types and what each requires, the compute fields, the map and plot requirements and the closed enums.
+
+---
+
+## Agent Prompt Composition
+
+Every system turn an agent receives is built by one function, `contracts.compose_system`, from fixed slots in a fixed order. The attached run (`services._prepare_run`), the delegated run (`delegation.run_delegate`) and a training example (`training/dataset.py`) all call it.
+
+| Slot | Holds | Owner |
+|---|---|---|
+| preamble | The built-ins' shared `default_preamble.txt`, an imported definition's own `prompts.system`, or none | the repository, or the definition |
+| instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, or the attachment's edited intent | the repository, or the user |
+| configuration | The catalog settings the run reads, framed as data | the user |
+| tool protocol | The `toolRequest` syntax and the granted tools, with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
+| runtime | The template roster, the enlistable templates and the delegation paragraph, each its own slot | the runtime |
+
+A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots: it is tool-less and depth-1.
+
+- **Modes.** A capability that names an `instruction` (a `prompts` key) is a mode. A delegated run of it runs that prompt in place of the agent's `instruction`, and pins that prompt's digest. The two merged internal agents are built this way: each of the Dataflow Planner's six capabilities and the Dataflow Reader's two keeps its own prompt file (`builtin.BuiltinMode`).
+- **Scoped delegation.** A `delegatesTo` entry may name the capabilities it delegates (`{"id", "capabilities"}`). `delegation.resolve` and the delegation paragraph honour the scope, and the capability fallback never reaches an internal agent, which is reached only through a parent that delegates it.
+- **Catalog settings.** `contracts.CATALOG_SETTINGS` defines each setting once: its key, JSON Schema, shipped default and renderer. [`catalog_settings.py`](../utk_curio/backend/app/agents/catalog_settings.py) stores the values an account changed in `.curio/users/<u>/catalog-settings.json` (the read never raises: a missing, corrupt or no longer valid value reads as the default) and renders the configuration slot for the keys a run reads, `inputs.requiredConfig` for every run and a delegated capability's own `requiredConfig`. A key no setting defines is skipped with a warning. The slot's digest is pinned as `configurationSha256`.
 
 ---
 
@@ -967,6 +989,7 @@ Catalog and account scope:
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
 | `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
 | `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
+| `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
 | `/api/agents/imports/upload` | POST | Upload a user-authored definition (`manifest` + `prompts` as JSON, no archives). Trust forced to `imported`, digests stamped from the bytes, **409** on an existing coordinate |
@@ -1102,9 +1125,10 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
 | `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
 | `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
-| `backend/app/agents/builtin.py` | The 19 built-in agents, as a data-driven roster. `in_catalog` marks the ten catalog cards; the rest are internal: never listed, installed or attached, and resolved from the roster when delegated to |
+| `backend/app/agents/builtin.py` | The 13 built-in agents, as a data-driven roster. `in_catalog` marks the ten catalog cards; the rest are internal: never listed, installed or attached, and resolved from the roster when delegated to. Two are merged agents whose capabilities are modes (see [Agent Prompt Composition](#agent-prompt-composition)) |
 | `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
 | `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |
 | `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
 | `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
 | `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |

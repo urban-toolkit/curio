@@ -327,3 +327,73 @@ class TestLoadFromDisk:
         (d / "manifest.json").write_text("{not json", encoding="utf-8")
         with pytest.raises(AgentManifestError, match="invalid JSON"):
             load_agent_manifest(d)
+
+
+class TestModesAndScopedDelegates:
+    def _with_mode(self) -> dict:
+        raw = _valid_manifest()
+        raw["prompts"]["node.output.interpret"] = {"path": "prompts/interpret.txt", "variables": []}
+        raw["capabilities"][1] = {
+            "id": "node.output.interpret", "contractVersion": "1",
+            "instruction": "node.output.interpret", "reads": ["nodeContext"],
+            "requiredConfig": ["keywordTypes"],
+        }
+        return raw
+
+    def test_a_capability_can_be_a_mode(self):
+        m = parse_agent_manifest(self._with_mode())
+        mode = m.capability("node.output.interpret")
+        assert mode.instruction == "node.output.interpret"
+        assert mode.reads == ("nodeContext",)
+        assert m.capability("node.explain").instruction is None
+        assert m.capability("node.nope") is None
+
+    def test_a_mode_must_name_a_declared_prompt(self):
+        raw = self._with_mode()
+        del raw["prompts"]["node.output.interpret"]
+        with pytest.raises(AgentManifestError, match="names no prompts entry"):
+            parse_agent_manifest(raw)
+
+    def test_config_keys_are_every_runs_and_the_capabilitys(self):
+        raw = self._with_mode()
+        raw["inputs"]["requiredConfig"] = ["units"]
+        m = parse_agent_manifest(raw)
+        assert m.config_keys() == ("units",)
+        assert m.config_keys("node.explain") == ("units",)
+        assert m.config_keys("node.output.interpret") == ("units", "keywordTypes")
+
+    def test_a_scoped_entry_delegates_only_its_capabilities(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [
+            "agent.node-builder",
+            {"id": "agent.dataflow-planner", "capabilities": ["workflow.keyword.bind"]},
+        ]
+        m = parse_agent_manifest(raw)
+        assert m.delegates_to == ["agent.node-builder", "agent.dataflow-planner"]
+        assert m.delegates("agent.dataflow-planner", "workflow.keyword.bind")
+        assert not m.delegates("agent.dataflow-planner", "workflow.plan.create")
+        # A plain entry delegates everything; an unlisted agent nothing.
+        assert m.delegates("agent.node-builder", "node.build")
+        assert not m.delegates("agent.researcher", "research.notes.compose")
+
+    @pytest.mark.parametrize("entry", [
+        {"id": "agent.dataflow-planner"},
+        {"id": "agent.dataflow-planner", "capabilities": []},
+        {"id": "agent.dataflow-planner", "capabilities": ["not a capability"]},
+        {"capabilities": ["workflow.keyword.bind"]},
+    ])
+    def test_a_malformed_scoped_entry_is_refused(self, entry):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [entry]
+        with pytest.raises(AgentManifestError):
+            parse_agent_manifest(raw)
+
+    def test_an_agent_is_named_once(self):
+        # Two entries could scope it two ways.
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [
+            "agent.node-builder",
+            {"id": "agent.node-builder", "capabilities": ["node.build"]},
+        ]
+        with pytest.raises(AgentManifestError, match="duplicate"):
+            parse_agent_manifest(raw)

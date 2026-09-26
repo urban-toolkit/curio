@@ -9,6 +9,7 @@ import {
   agentCategoryIcon,
   agentCategoryKey,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
+import { AGENT_CATEGORIES } from "../../generated/agentCategories";
 
 /**
  * How an agent is drawn by category: one colour and one glyph each.
@@ -51,7 +52,7 @@ const AGENT_CATEGORY_SURFACES = [
 ];
 
 /** The manifest's category vocabulary, which is now also the palette's. */
-const MANIFEST_CATEGORIES = ["data", "node", "canvas", "package", "evaluate"];
+const MANIFEST_CATEGORIES: readonly string[] = AGENT_CATEGORIES;
 
 describe("agentCategoryKey", () => {
   it("keeps every manifest category distinct", () => {

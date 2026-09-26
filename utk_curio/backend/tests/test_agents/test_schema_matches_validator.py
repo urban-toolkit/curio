@@ -102,3 +102,28 @@ class TestReservedFields:
             f"{name} is in the schema but never read by parse_agent_manifest; "
             "saying so stops an author from relying on it"
         )
+
+
+class TestModesAndScopedDelegates:
+    """A capability can be a mode, and a delegatesTo entry can name the
+    capabilities it delegates. The schema has to accept every built-in
+    manifest the roster emits, since those use both."""
+
+    def test_every_builtin_manifest_validates_against_the_schema(self):
+        from jsonschema import Draft202012Validator
+
+        from utk_curio.backend.app.agents import builtin
+
+        validator = Draft202012Validator(SCHEMA)
+        for spec in builtin.BUILTIN_AGENTS:
+            errors = [e.message for e in validator.iter_errors(builtin.build_builtin_manifest(spec))]
+            assert not errors, (spec.agent_id, errors[:3])
+
+    def test_the_mode_fields_are_declared(self):
+        declared = PROPS["capabilities"]["items"]["properties"]
+        assert {"instruction", "reads", "requiredConfig"} <= set(declared)
+
+    def test_a_scoped_entry_uses_the_capability_grammar(self):
+        (plain, scoped) = PROPS["delegatesTo"]["items"]["oneOf"]
+        assert plain["type"] == "string"
+        assert scoped["properties"]["capabilities"]["items"]["pattern"] == CAPABILITY_ID_RE.pattern

@@ -243,8 +243,8 @@ describe("the dataflow goal", () => {
   });
 
   test("round-trips through the spec's task field", () => {
-    // Five built-in agents declare `workflowGoal` in their manifest reads, and
-    // the Dataflow Task Planner exists to turn a goal into a plan. `task` has
+    // Built-in agents declare `workflowGoal` in their manifest reads, and
+    // planning exists to turn a goal into a plan. `task` has
     // always been a spec field, but both save paths hardcoded "" and the load
     // path ignored the argument it was handed, so a goal never survived a
     // reload and the agents always saw an empty string.

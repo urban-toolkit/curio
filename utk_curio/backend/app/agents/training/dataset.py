@@ -17,9 +17,10 @@ Four properties, each deliberate and each test-pinned:
 2. **What the contract cannot express is excluded by construction.** An
    interaction edge raises ``Unrepresentable``, so those fixtures are omitted
    *with their reason recorded* rather than trained on a weakened graph.
-3. **The system turn is composed by the runtime's formatter**
-   (``services.roster_block`` plus the coordinate's own prompt bytes), so the
-   model is trained against the prompt shape it will actually be served.
+3. **The system turn is composed by the runtime's own composer**
+   (``contracts.compose_system``, with ``services.roster_block`` and the
+   coordinate's own prompt bytes), so the model is trained against the prompt
+   shape it will actually be served.
 4. **Approval and split are gates, not filters.** The rows come from
    ``evaluation.export.rows_for_split(..., purpose="training")``, which already
    refuses the held-out and validation splits by name and refuses a prompt no
@@ -35,6 +36,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
+from utk_curio.backend.app.agents import contracts
 from utk_curio.backend.app.agents.evaluation import export as export_mod
 from utk_curio.backend.app.agents.evaluation import oracle
 
@@ -117,14 +119,14 @@ def system_turn(
     tail: str,
     roster: str | None,
 ) -> str:
-    """The system content a run would carry, assembled in the runtime's order.
+    """The system content a run would carry, composed as a run composes it.
 
-    Order matters and is the runtime's: preamble, instruction, tail, roster.
     The caller supplies each piece from the production source rather than
     letting this module invent any of them.
     """
-    parts = [p for p in (preamble, instruction, tail, roster) if p and p.strip()]
-    return "\n\n".join(part.strip() for part in parts)
+    return contracts.join_system(contracts.compose_system(
+        preamble=preamble, instruction=instruction, tool_protocol=tail, runtime=[roster],
+    ))
 
 
 def data_content_of(fixture) -> str:

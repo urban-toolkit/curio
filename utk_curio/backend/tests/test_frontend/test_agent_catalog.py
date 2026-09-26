@@ -381,3 +381,47 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     assert any(coord.startswith(REQUIRED_ID) for coord in installed), (
         f"the required {REQUIRED_ID} was not installed alongside it: {sorted(installed)}"
     )
+
+
+def test_catalog_settings_round_trip(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Settings on the account catalog edits a value the server stores, a
+    reload shows it, and Restore default returns the shipped one.
+
+    The editor's rows and the server's validation are covered by
+    ``AgentCatalogSettingsModal.test.tsx`` and ``test_catalog_settings.py``;
+    the wire between the page and the per-account file is what needs a browser.
+    """
+    require_project_page()
+    require_user_auth()
+    result = _enter_dataflow(
+        page, app_frontend, current_server,
+        username="agentcat_settings", project="Agent Catalog Settings",
+    )
+    token = result["token"]
+
+    def open_settings():
+        page.goto(f"{app_frontend.base_url}/catalog/agents")
+        page.get_by_role("button", name="Settings", exact=True).click()
+        return page.get_by_role("dialog", name="Catalog settings")
+
+    dialog = open_settings()
+    first = dialog.get_by_label("Name 1")
+    expect(first).to_have_value("Action", timeout=15000)
+    first.fill("Hazard")
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(dialog.get_by_text("Saved", exact=True)).to_be_visible(timeout=10000)
+
+    stored = api_json(f"{current_server}/api/agents/settings", token)
+    keyword_types = next(s for s in stored["settings"] if s["key"] == "keywordTypes")
+    assert keyword_types["value"][0]["name"] == "Hazard"
+    assert keyword_types["isDefault"] is False
+
+    page.reload()
+    dialog = open_settings()
+    expect(dialog.get_by_label("Name 1")).to_have_value("Hazard", timeout=15000)
+    dialog.get_by_role("button", name="Restore default", exact=True).click()
+    expect(dialog.get_by_label("Name 1")).to_have_value("Action", timeout=10000)
+    restored = api_json(f"{current_server}/api/agents/settings", token)
+    assert next(s for s in restored["settings"] if s["key"] == "keywordTypes")["isDefault"] is True

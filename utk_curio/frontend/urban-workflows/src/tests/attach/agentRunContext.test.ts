@@ -84,7 +84,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("generic reads compose labeled fragments in declared order", () => {
     const att = attachment({
-      coord: "agent.workflow-suggester@1.0.0",
+      coord: "agent.dataflow-reader@1.0.0",
       reads: ["dataflowContext", "workflowGoal"],
     });
     const context = composeAgentRunContext(att, canvas)!;
@@ -110,7 +110,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("node-scoped reads are omitted for canvas attachments", () => {
     const att = attachment({
-      coord: "agent.execution-subtask-planner@1.0.0",
+      coord: "agent.dataflow-planner@1.0.0",
       target: { kind: "canvas" },
       reads: ["nodeContent", "nodeType", "currentTask"],
     });

@@ -1,0 +1,170 @@
+/* Catalog settings modal: values the user owns, read by agents at run time. */
+
+.body {
+  padding: 4px 8px 8px;
+  min-width: 380px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+}
+
+.notice {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+  background: var(--curio-surface-muted);
+  border: 1px solid var(--curio-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.setting {
+  border-top: 1px solid var(--curio-border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.settingTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--curio-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--curio-text-secondary);
+}
+
+.readers {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  padding: 0 6px 6px 0;
+}
+
+.table td {
+  padding: 0 6px 6px 0;
+  vertical-align: top;
+}
+
+.fieldNote {
+  font-weight: 400;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.input:read-only {
+  background: var(--curio-surface-muted);
+}
+
+.remove {
+  border: 0;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--curio-danger-text);
+}
+
+.error {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--curio-danger-text);
+  white-space: pre-wrap;
+}
+
+.actions,
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.footer {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.saved {
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+}
+
+.secondary {
+  border: 1px solid var(--curio-border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.primary {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  cursor: pointer;
+}
+
+.secondary:disabled,
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
