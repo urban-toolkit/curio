@@ -162,30 +162,49 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
 }
 
 /**
- * The source as autk-db will load it. autk-db refuses a collection whose first
- * feature has no geometry, so that one trades places with the first that has
- * one. `swap` is the position it traded with (null when nothing moved); a pick
- * or a highlight on the table goes through `swappedIndex`.
+ * Which input row each position of a loaded table stands for. `load` is the
+ * table as autk-db holds it (what a plot reads and selects in); `map` is what a
+ * map draws, which leaves out every feature without a geometry. `null` means
+ * positions and input rows agree.
  */
-export function loadableSource(source: AutkSource): { source: AutkSource; swap: number | null } {
+export type LoadOrder = { load: number[] | null; map: number[] | null };
+
+/**
+ * The source as autk-db will load it, and the order that lets a pick or a
+ * highlight still name the input's rows. autk-db refuses a collection whose
+ * first feature has no geometry, so that one trades places with the first that
+ * has one; a map then leaves out the features without geometry.
+ */
+export function loadableSource(source: AutkSource): { source: AutkSource; order: LoadOrder } {
   const features: any[] = (source.geojsonObject as any)?.features ?? [];
-  if (features.length === 0 || hasGeometry(features[0])) return { source, swap: null };
-  const j = features.findIndex(hasGeometry);
-  if (j < 0) return { source, swap: null };
-  const reordered = features.slice();
-  [reordered[0], reordered[j]] = [reordered[j], reordered[0]];
+  let load: number[] | null = null;
+  if (features.length > 0 && !hasGeometry(features[0])) {
+    const j = features.findIndex(hasGeometry);
+    if (j > 0) {
+      load = features.map((_, i) => i);
+      [load[0], load[j]] = [load[j], load[0]];
+    }
+  }
+  const rows = load ?? features.map((_, i) => i);
+  const map = features.some((f) => !hasGeometry(f)) ? rows.filter((i) => hasGeometry(features[i])) : load;
   return {
-    source: { ...source, geojsonObject: { ...source.geojsonObject, features: reordered } },
-    swap: j,
+    source: load
+      ? { ...source, geojsonObject: { ...source.geojsonObject, features: load.map((i) => features[i]) } }
+      : source,
+    order: { load, map },
   };
 }
 
-/** A position in the input and in the loaded table, either way round. */
-export function swappedIndex(index: number, swap: number | null | undefined): number {
-  if (swap == null) return index;
-  if (index === 0) return swap;
-  if (index === swap) return 0;
-  return index;
+/** The input row a table position stands for. */
+export function inputRow(position: number, order: number[] | null | undefined): number {
+  return order ? order[position] ?? position : position;
+}
+
+/** The table positions of these input rows; a row that is not drawn has none. */
+export function tablePositions(rows: number[], order: number[] | null | undefined): number[] {
+  if (!order) return rows;
+  const at = new Map(order.map((row, position) => [row, position]));
+  return rows.flatMap((row) => (at.has(row) ? [at.get(row)!] : []));
 }
 
 /** Read the Autark node's input: the fetch, done once per input object. */

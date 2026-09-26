@@ -20,8 +20,8 @@ import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
 import {
-    autkNeedsInput, autkSourcesFrom, autkTableName, documentTableRefs, loadableSource, ownTableNames, readAutkInput,
-    swappedIndex, type PreparedAutkInput,
+    autkNeedsInput, autkSourcesFrom, autkTableName, documentTableRefs, inputRow, loadableSource, ownTableNames,
+    readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
 import {
@@ -91,10 +91,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
         return inputReadRef.current!.read;
     };
-    // Tables whose first feature traded places so autk-db would load them
-    // (loadableSource), by name: a pick or a highlight on one goes through
-    // swappedIndex, so positions still mean the input's rows.
-    const loadSwapsRef = useRef<Record<string, number>>({});
+    // How each loaded input table's positions map to the input's rows
+    // (loadableSource), by name: a pick or a highlight goes through it, so a
+    // position always names the row the Data Pool and the other charts mean.
+    const loadOrdersRef = useRef<Record<string, LoadOrder>>({});
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
@@ -227,13 +227,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 if (prepared.emptyReason && prepared.sources.length === 0) {
                     inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
                 }
-                const swaps: Record<string, number> = {};
+                const orders: Record<string, LoadOrder> = {};
                 upstreamSources = prepared.sources.map((source) => {
                     const loadable = loadableSource(source);
-                    if (loadable.swap != null) swaps[source.outputTableName] = loadable.swap;
+                    orders[source.outputTableName] = loadable.order;
                     return loadable.source;
                 });
-                loadSwapsRef.current = swaps;
+                loadOrdersRef.current = orders;
             } catch (e) {
                 // What the render then cannot find is what gets reported.
                 console.warn('[autk-grammar] reading the input failed:', e);
@@ -567,11 +567,15 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         ?? spec.map?.layerRefs?.[0]?.dataRef;
                     const plotLayerRef: string | undefined = spec.plot?.dataRef;
 
-                    const emitInteraction = (selection: number[], layerRef: string | undefined) => {
+                    const emitInteraction = (
+                        selection: number[],
+                        layerRef: string | undefined,
+                        from: 'map' | 'plot',
+                    ) => {
                         const d = dataRef.current;
-                        // Positions in the input, not in the loaded table.
-                        const swap = layerRef ? loadSwapsRef.current[layerRef] : undefined;
-                        const rows = selection.map((index) => swappedIndex(index, swap));
+                        // Rows of the input, not positions in what was drawn.
+                        const order = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
+                        const rows = selection.map((position) => inputRow(position, order));
                         d.interactionsCallback?.({
                             autk_selection: {
                                 type: rows.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
@@ -583,8 +587,8 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         }, d.nodeId);
                     };
 
-                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef));
-                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef));
+                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef, 'map'));
+                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
                     interactionOffRef.current = [off1, off2];
                 }
 
@@ -815,29 +819,31 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             const layers = autkSourcesFrom(await readInput(data.input), spec).sources;
             if (layers.length === 0) return;
 
+            // Input rows per layer; each target turns them into its own positions.
             const indicesByLayer = new Map<string, number[]>();
             for (const { outputTableName: name, geojsonObject: fc } of layers) {
-                const swap = loadSwapsRef.current[name];
                 const sel = (fc.features as any[]).reduce<number[]>((acc, f, i) => {
-                    if (f.properties?.interacted === '1') acc.push(swappedIndex(i, swap));
+                    if (f.properties?.interacted === '1') acc.push(i);
                     return acc;
                 }, []);
                 indicesByLayer.set(name, sel);
             }
+            const positions = (name: string, from: 'map' | 'load') =>
+                tablePositions(indicesByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
 
             const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
             const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
 
             for (const mapSpec of maps) {
                 for (const lr of mapSpec.layerRefs) {
-                    const sel = indicesByLayer.get(lr.dataRef) ?? [];
+                    const sel = positions(lr.dataRef, 'map');
                     sel.length === 0
                         ? grammar.clearHighlightOnMap?.(lr.dataRef)
                         : grammar.highlightOnMap?.(lr.dataRef, sel);
                 }
             }
             for (const plotSpec of plots) {
-                const sel = indicesByLayer.get(plotSpec.dataRef) ?? [];
+                const sel = positions(plotSpec.dataRef, 'load');
                 sel.length === 0
                     ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
                     : grammar.setPlotSelection?.(plotSpec.dataRef, sel);

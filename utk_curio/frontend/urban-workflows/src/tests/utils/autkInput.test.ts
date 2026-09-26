@@ -14,8 +14,9 @@ import {
   documentTableRefs,
   loadableSource,
   ownTableNames,
+  inputRow,
   prepareAutkInput,
-  swappedIndex,
+  tablePositions,
 } from "../../utils/autkInput";
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
 
@@ -199,31 +200,35 @@ describe("autkSourcesFrom", () => {
 });
 
 describe("loadableSource", () => {
-  test("a first feature without geometry trades places with the first that has one", () => {
-    const source = {
-      type: "geojson" as const,
-      geojsonObject: fc([null, null, point(2, 2), point(3, 3)]) as any,
-      outputTableName: "upstream",
-      coordinateFormat: "EPSG:4326",
-    };
-    const { source: loaded, swap } = loadableSource(source);
-    expect(swap).toBe(2);
-    expect((loaded.geojsonObject.features as any[]).map((f) => f.properties.value)).toEqual([2, 1, 0, 3]);
-    // A pick on table row 0 is input row 2, and back.
-    expect(swappedIndex(0, swap)).toBe(2);
-    expect(swappedIndex(2, swap)).toBe(0);
-    expect(swappedIndex(3, swap)).toBe(3);
-    expect(swappedIndex(3, null)).toBe(3);
+  const source = (geoms: any[]) => ({
+    type: "geojson" as const,
+    geojsonObject: fc(geoms) as any,
+    outputTableName: "upstream",
+    coordinateFormat: "EPSG:4326",
   });
 
-  test("a loadable source is left alone", () => {
-    const source = {
-      type: "geojson" as const,
-      geojsonObject: fc([point(0, 0), null]) as any,
-      outputTableName: "upstream",
-      coordinateFormat: "EPSG:4326",
-    };
-    expect(loadableSource(source)).toEqual({ source, swap: null });
+  test("a first feature without geometry trades places with the first that has one", () => {
+    const { source: loaded, order } = loadableSource(source([null, null, point(2, 2), point(3, 3)]));
+    expect((loaded.geojsonObject.features as any[]).map((f) => f.properties.value)).toEqual([2, 1, 0, 3]);
+    // The table holds rows 2, 1, 0, 3; a map draws only 2 and 3.
+    expect(order).toEqual({ load: [2, 1, 0, 3], map: [2, 3] });
+  });
+
+  test("a map pick and a highlight name the input's rows, not positions in what was drawn", () => {
+    const { order } = loadableSource(source([point(0, 0), null, point(2, 2)]));
+    expect(order).toEqual({ load: null, map: [0, 2] });
+    // The second thing the map drew is input row 2...
+    expect(inputRow(1, order.map)).toBe(2);
+    // ...and a highlight on rows 1 and 2 lights map position 1 (row 1 is not drawn).
+    expect(tablePositions([1, 2], order.map)).toEqual([1]);
+    // A plot reads the table as loaded, so its positions are the rows.
+    expect(inputRow(1, order.load)).toBe(1);
+    expect(tablePositions([1, 2], order.load)).toEqual([1, 2]);
+  });
+
+  test("a table with geometry everywhere is left alone", () => {
+    const plain = source([point(0, 0), point(1, 1)]);
+    expect(loadableSource(plain)).toEqual({ source: plain, order: { load: null, map: null } });
   });
 });
 
