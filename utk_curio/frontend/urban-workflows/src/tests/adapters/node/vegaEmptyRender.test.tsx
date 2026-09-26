@@ -17,6 +17,11 @@ const mockToasts: Array<[string, string]> = [];
 
 // The behavior reads its incoming edges to decide the empty state, which
 // needs React Flow's store; this suite renders the hook bare.
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [{ source: 'up', target: 'vega-1' }], nodeExecStatus: {} }),
+}));
 jest.mock('reactflow', () => ({ useEdges: () => [{ source: 'up', target: 'vega-1' }] }));
 
 jest.mock('../../../hook/useVega', () => ({

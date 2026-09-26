@@ -72,7 +72,7 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   // The grammar states below are reported by a chart node rather than a table.
   "no-spec": {
     title: "No spec yet",
-    hint: "Write a Vega-Lite spec, or connect an input to generate one.",
+    hint: "Write a spec, or connect an input to generate one.",
   },
   "not-run": {
     title: "Not drawn yet",
@@ -183,7 +183,7 @@ export function resolveNodeEmptyReason(inputs: NodeEmptyInputs): NodeEmptyReason
 }
 
 
-/** What a *grammar* node (Vega-Lite, and later autk-grammar) has, or lacks. */
+/** What a *grammar* node (Vega-Lite or Autark) has, or lacks. */
 export interface GrammarEmptyInputs {
   /** True when an edge terminates on this node. */
   connected: boolean;
@@ -199,6 +199,12 @@ export interface GrammarEmptyInputs {
   inputProblem?: NodeEmptyReason | null;
   /** True when a compile succeeded but produced no marks. */
   renderedEmpty?: boolean;
+  /**
+   * False when the document draws only what it loads itself (an Autark data
+   * section), so nothing about the input is worth saying. Defaults to true:
+   * a Vega-Lite spec always reads its input.
+   */
+  needsInput?: boolean;
 }
 
 /**
@@ -219,10 +225,12 @@ export interface GrammarEmptyInputs {
 export function resolveGrammarEmptyReason(
   inputs: GrammarEmptyInputs,
 ): NodeEmptyReason | null {
-  if (!inputs.connected) return "disconnected";
-  if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
-  if (!inputs.hasInput) return "upstream-not-run";
-  if (inputs.inputProblem) return inputs.inputProblem;
+  if (inputs.needsInput !== false) {
+    if (!inputs.connected) return "disconnected";
+    if (inputs.upstreamErrored) return "upstream-errored";  // see the note above
+    if (!inputs.hasInput) return "upstream-not-run";
+    if (inputs.inputProblem) return inputs.inputProblem;
+  }
   if (!inputs.hasSpec) return "no-spec";
   if (!inputs.hasRun) return "not-run";
   if (inputs.renderedEmpty) return "rendered-empty";

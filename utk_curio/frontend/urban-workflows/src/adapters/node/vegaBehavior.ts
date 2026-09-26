@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { useEdges } from 'reactflow';
 
 import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
+import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
 import { fetchPreviewData } from '../../services/api';
 import { emptyRenderKind, renderOutcome } from '../../utils/renderOutcome';
-import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
 import { activeGeometryName } from '../../utils/parsing';
 import { toRows } from '../../utils/rowSource';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
-  const edges = useEdges();
-  const connected = hasIncomingEdge(edges, data.nodeId);
+  const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+  // A failed chart says so to the nodes it feeds, as a failed code node does.
+  const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
 
   // A starter spec chosen from the arriving input's column types.
   //
@@ -32,7 +33,9 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     data,
     code: nodeState.code,
     connected,
-    hasSpec: !isEmptySpecBuffer(generatedSpec ?? currentBuffer),
+    upstreamErrored,
+    // What the editor holds now, typing included.
+    hasSpec: !isEmptySpecBuffer(nodeState.code) || generatedSpec != null,
   });
 
   useEffect(() => {
@@ -108,12 +111,14 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
           kind: emptyRenderKind(outcome.cause),
         } as any);
         showToast(outcome.message, 'error');
+        markNodeErrored?.(data.nodeId);
         return;
       }
       nodeState.setOutput({ code: 'success', content: '', outputType: '' });
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
+      markNodeErrored?.(data.nodeId);
     }
   };
 

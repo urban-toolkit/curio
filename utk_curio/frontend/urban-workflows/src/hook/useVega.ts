@@ -10,10 +10,8 @@ import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
-import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
-// The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
-// like a blank Data Pool or Simple View rather than merely similar.
-import emptyStyles from "../components/nodes/NodeEmptyState.module.css";
+import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
+import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -28,12 +26,15 @@ export const useVega = ({
   data,
   code,
   connected = true,
+  upstreamErrored = false,
   hasSpec = true,
 }: {
   data: any;
   code: string;
   /** Is anything wired into this node's input? */
   connected?: boolean;
+  /** Did the node feeding this one run and fail? */
+  upstreamErrored?: boolean;
   /** Does the editor hold a spec to compile? */
   hasSpec?: boolean;
 }) => {
@@ -70,42 +71,9 @@ export const useVega = ({
     renderEmptyState(prepared.emptyReason ?? null, prepared.detail ?? null);
   };
 
-  /**
-   * Write the empty state into the same div vega renders into.
-   *
-   * That div is addressed by DOM id and filled imperatively by vega, so there
-   * is no React subtree to put a component in -- NodeEditor renders either the
-   * output container or a `contentComponent`, never both. Writing the copy here
-   * keeps it in the node body where it persists, which is the whole point: the
-   * predecessor of this was a toast that vanished after a few seconds and left
-   * an unexplained blank node behind (#224).
-   *
-   * The copy itself still comes from NODE_EMPTY_COPY, so it cannot drift from
-   * what Data Pool and Simple View say for the shared states.
-   */
+  /** Write the empty state into the div vega renders into (utils/writeEmptyState). */
   const renderEmptyState = (reason: NodeEmptyReason | null, detail: string | null) => {
-    const host = document.getElementById("vega" + data.nodeId);
-    if (!host) return;
-    if (reason == null) return;
-
-    const copy = NODE_EMPTY_COPY[reason];
-    host.replaceChildren();
-    host.setAttribute("data-curio-node-empty", reason);
-
-    const wrapper = document.createElement("div");
-    wrapper.className = emptyStyles.root;
-
-    const title = document.createElement("span");
-    title.className = emptyStyles.title;
-    title.textContent = copy.title;
-    wrapper.appendChild(title);
-
-    const hint = document.createElement("span");
-    hint.className = emptyStyles.hint;
-    hint.textContent = detail ?? copy.hint;
-    wrapper.appendChild(hint);
-
-    host.appendChild(wrapper);
+    writeEmptyState(document.getElementById("vega" + data.nodeId), reason, { hint: detail });
   };
 
   // Build a tupleid → original-index map by traversing the scene graph.
@@ -212,13 +180,14 @@ export const useVega = ({
     if (currentViewRef.current != null) return;
     const reason = resolveGrammarEmptyReason({
       connected,
+      upstreamErrored,
       hasInput: data.input != null && data.input !== "",
       hasSpec,
       hasRun: hasRunRef.current,
       inputProblem: emptyReason,
     });
     if (reason != null) renderEmptyState(reason, emptyDetail);
-  }, [connected, hasSpec, data.input, emptyReason, emptyDetail]);
+  }, [connected, upstreamErrored, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => {
@@ -308,8 +277,7 @@ export const useVega = ({
 
     // vega replaces the container's contents, but the marker attribute is ours
     // and would otherwise outlive the message it described.
-    const host = document.getElementById("vega" + data.nodeId);
-    host?.removeAttribute("data-curio-node-empty");
+    clearEmptyState(document.getElementById("vega" + data.nodeId));
     hasRunRef.current = true;
 
     let view = new vega.View(vega.parse(vegaspec))
