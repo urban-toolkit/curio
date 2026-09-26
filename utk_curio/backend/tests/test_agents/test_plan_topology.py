@@ -99,6 +99,24 @@ class TestInteractionEdgeErrors:
         assert "'merge' is merge-flow" in err
         assert "target the data-pool" in err
 
+    def test_two_visualizations_linked_directly_when_one_highlights(self):
+        # A selection crosses a direct edge both ways, and a Vega-Lite chart or
+        # an Autark map highlights the rows it receives.
+        types = {
+            "bars": "curio.builtin/vis-vega@1",
+            "map": "curio.builtin/autk-grammar@1",
+            "table": "curio.builtin/vis-simple@1",
+        }
+        for src, dst in (("bars", "map"), ("map", "bars"), ("table", "bars"), ("map", "table")):
+            plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get) == [], (src, dst)
+
+    def test_two_visualizations_that_highlight_nothing_are_refused(self):
+        types = {"t1": "curio.builtin/vis-simple@1", "t2": "curio.builtin/vis-simple@1"}
+        plan = {"edges": [{"from": "t1", "to": "t2", "kind": "interaction"}]}
+        (err,) = pt.interaction_edge_errors(plan, types.get)
+        assert "a visualization that highlights what it receives (autk-grammar, vis-vega)" in err
+
     def test_pool_to_pool_is_refused(self):
         types = dict(TYPES, pool2="curio.builtin/data-pool")
         plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}

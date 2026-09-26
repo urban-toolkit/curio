@@ -61,6 +61,10 @@ INTERACTION_VIS_SUFFIXES = frozenset({
     "autk-map",
 })
 INTERACTION_CAPABLE_SUFFIXES = INTERACTION_VIS_SUFFIXES | {INTERACTION_POOL_SUFFIX}
+# The visualizations that highlight the rows another visualization, linked to
+# them directly by an interaction edge with no data-pool between, selects. A
+# selection crosses a direct edge both ways, so one such end is enough.
+INTERACTION_HIGHLIGHT_SUFFIXES = frozenset({"vis-vega", "autk-grammar"})
 
 
 def strip_type_version(node_type: object) -> str:
@@ -230,12 +234,20 @@ def interaction_edge_errors(plan: dict, type_of_endpoint) -> list[str]:
         other = dst_sfx if src_sfx == INTERACTION_POOL_SUFFIX else src_sfx
         if has_pool and other in INTERACTION_VIS_SUFFIXES:
             continue
+        if (
+            src_sfx in INTERACTION_VIS_SUFFIXES
+            and dst_sfx in INTERACTION_VIS_SUFFIXES
+            and INTERACTION_HIGHLIGHT_SUFFIXES & {src_sfx, dst_sfx}
+        ):
+            continue
         offender = edge["to"] if dst_sfx not in INTERACTION_CAPABLE_SUFFIXES else edge["from"]
         offender_sfx = dst_sfx if offender == edge["to"] else src_sfx
         errors.append(
             f"edges[{i}]: an interaction edge connects a visualization "
             f"({', '.join(sorted(INTERACTION_VIS_SUFFIXES))}) to a {INTERACTION_POOL_SUFFIX} "
-            f"node; {offender!r} is {offender_sfx or 'untyped'} — use a data edge, or "
-            f"target the {INTERACTION_POOL_SUFFIX}"
+            f"node, or to a visualization that highlights what it receives "
+            f"({', '.join(sorted(INTERACTION_HIGHLIGHT_SUFFIXES))}); {offender!r} is "
+            f"{offender_sfx or 'untyped'}: use a data edge, or target the "
+            f"{INTERACTION_POOL_SUFFIX}"
         )
     return errors
