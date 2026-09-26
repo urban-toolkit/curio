@@ -1,6 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
-import { sanitizeAgentUrl } from "./sanitizeAgentContent";
+import { Link } from "react-router-dom";
+import { agentLinkAppPath, sanitizeAgentUrl } from "./sanitizeAgentContent";
 import { AgentCodeBlock } from "./AgentCodeBlock";
 
 /**
@@ -13,23 +14,48 @@ import { AgentCodeBlock } from "./AgentCodeBlock";
  *   handlers or `<script>` can never reach the DOM.
  * - Link/image URLs pass through `sanitizeAgentUrl` (http(s)/mailto only);
  *   anything else is dropped.
- * - Links open in a new tab with `rel="noopener noreferrer"`.
+ * - A link to a Curio page goes through the router in the same tab, and
+ *   `onInternalLink` decides how (the chat panel asks before leaving unsaved
+ *   work). Any other link opens in a new tab with `rel="noopener noreferrer"`
+ *   and the "↗" every new-tab link carries.
  *
  * User bubbles stay plain text (the user's own words need no markdown); card
  * fields never pass through here either (cards are plain data by contract).
  */
-export const SafeAgentContent: React.FC<{ text: string }> = ({ text }) => (
+export const SafeAgentContent: React.FC<{
+  text: string;
+  /** Follows a link to a Curio page. Left out, it navigates like any in-app
+   *  link. */
+  onInternalLink?: (path: string) => void;
+}> = ({ text, onInternalLink }) => (
   <ReactMarkdown
     urlTransform={(url: string) => sanitizeAgentUrl(url) ?? ""}
     components={{
-      a: ({ href, children }) =>
-        href ? (
+      a: ({ href, children }) => {
+        if (!href) return <>{children}</>;
+        const appPath = agentLinkAppPath(href);
+        if (appPath) {
+          return (
+            <Link
+              to={appPath}
+              onClick={(event) => {
+                if (!onInternalLink) return;
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onInternalLink(appPath);
+              }}
+            >
+              {children}
+            </Link>
+          );
+        }
+        if (href.startsWith("mailto:")) return <a href={href}>{children}</a>;
+        return (
           <a href={href} target="_blank" rel="noopener noreferrer">
-            {children}
+            {children} ↗
           </a>
-        ) : (
-          <>{children}</>
-        ),
+        );
+      },
       // A sanitized-away image src must not leave an empty <img> behind.
       img: ({ src, alt }) => (src ? <img src={src} alt={alt ?? ""} /> : null),
       // Fenced code gets the copy affordance (dev/78); inline code has no

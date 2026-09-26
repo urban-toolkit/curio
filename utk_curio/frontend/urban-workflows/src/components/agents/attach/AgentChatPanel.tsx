@@ -27,6 +27,9 @@ import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCar
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
+import { useNavigate } from "react-router-dom";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
@@ -181,6 +184,11 @@ export const AgentChatPanel: React.FC<{
   onSaveTitle,
   onClearConversation,
 }) => {
+  // A link the agent writes to another Curio page leaves this dataflow, so it
+  // asks first when there is unsaved work, like every other way out of it.
+  const navigate = useNavigate();
+  const { projectDirty } = useFlowContext();
+  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [intentExpanded, setIntentExpanded] = useState(false);
@@ -714,7 +722,14 @@ export const AgentChatPanel: React.FC<{
                       (REQ-SEC-002); error markers are server-composed plain
                       text. Cards are informational plain data (docs/08);
                       proposals render the review card (dev/41). */}
-                  {t.error ? t.text : <SafeAgentContent text={t.text} />}
+                  {t.error ? (
+                    t.text
+                  ) : (
+                    <SafeAgentContent
+                      text={t.text}
+                      onInternalLink={(to) => leave(() => navigate(to))}
+                    />
+                  )}
                   {(t.content ?? [])
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (
@@ -923,6 +938,7 @@ export const AgentChatPanel: React.FC<{
           {sendBusy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
         </button>
       </div>
+      {leaveDialog}
     </div>
   );
 };

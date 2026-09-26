@@ -10,6 +10,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
+import { MemoryRouter } from "react-router-dom";
 import styles from "../../components/agents/attach/AgentChatPanel.module.css";
 
 jest.mock("../../providers/FlowProvider", () => ({
@@ -49,6 +50,8 @@ function renderPanel(props: Partial<any> = {}) {
       onExitComplete={onExitComplete}
       {...props}
     />,
+    // The panel routes an agent's links to Curio pages, so it needs a router.
+    { wrapper: MemoryRouter },
   );
   return { ...result, onClose, onExitComplete };
 }

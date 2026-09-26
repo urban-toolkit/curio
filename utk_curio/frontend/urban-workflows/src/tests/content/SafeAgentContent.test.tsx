@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 import { sanitizeAgentUrl } from "../../components/agents/content/sanitizeAgentContent";
 import { SafeAgentContent } from "../../components/agents/content/SafeAgentContent";
@@ -66,6 +67,55 @@ describe("SafeAgentContent (hostile-content fixtures, RISK-RENDER-001)", () => {
     expect(a?.getAttribute("href")).toBe("https://example.com");
     expect(a?.getAttribute("target")).toBe("_blank");
     expect(a?.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("marks a new-tab link with the arrow every new-tab link carries", () => {
+    render(<SafeAgentContent text={"[docs](https://example.com)"} />);
+    expect(screen.getByRole("link", { name: "docs ↗" })).toHaveAttribute("target", "_blank");
+  });
+
+  it("sends a link to a Curio page through the router, in the same tab", () => {
+    // It opened in a new tab as a raw href, which skipped the router's base
+    // path and the unsaved-changes question every other in-app link asks.
+    const onInternalLink = jest.fn();
+    render(
+      <MemoryRouter>
+        <SafeAgentContent
+          text={"See [Bike Routes](/catalog/data/imported.bikes)."}
+          onInternalLink={onInternalLink}
+        />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole("link", { name: "Bike Routes" });
+    expect(link).toHaveAttribute("href", "/catalog/data/imported.bikes");
+    expect(link).not.toHaveAttribute("target");
+    fireEvent.click(link);
+    expect(onInternalLink).toHaveBeenCalledWith("/catalog/data/imported.bikes");
+  });
+
+  it("treats an absolute URL on this origin as a Curio page too", () => {
+    const onInternalLink = jest.fn();
+    render(
+      <MemoryRouter>
+        <SafeAgentContent
+          text={`[flow](${window.location.origin}/dataflow/abc?x=1)`}
+          onInternalLink={onInternalLink}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "flow" }));
+    expect(onInternalLink).toHaveBeenCalledWith("/dataflow/abc?x=1");
+  });
+
+  it("leaves a new-tab click on a Curio link to the browser", () => {
+    const onInternalLink = jest.fn();
+    render(
+      <MemoryRouter>
+        <SafeAgentContent text={"[x](/projects)"} onInternalLink={onInternalLink} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "x" }), { metaKey: true });
+    expect(onInternalLink).not.toHaveBeenCalled();
   });
 
   it("drops images whose src was sanitized away", () => {

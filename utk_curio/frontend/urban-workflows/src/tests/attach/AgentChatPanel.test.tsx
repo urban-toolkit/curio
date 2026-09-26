@@ -1,11 +1,13 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 // The dev/52 builder strip imports useFlowContext; mocking the provider keeps
 // FlowProvider's heavy module graph (vega etc.) out of this presentational
 // suite — the strip itself is covered by AgentBuilderStrip.test.tsx.
+let mockProjectDirty = false;
 jest.mock("../../providers/FlowProvider", () => ({
-  useFlowContext: () => ({ playAllNodes: jest.fn() }),
+  useFlowContext: () => ({ playAllNodes: jest.fn(), projectDirty: mockProjectDirty }),
 }));
 
 // dev/84: the package-install review flow loads the catalog + conflict probe;
@@ -43,8 +45,34 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AgentChatPan
     onClose: jest.fn(),
     ...overrides,
   };
-  return { ...render(<AgentChatPanel {...props} />), props };
+  // The panel routes an agent's links to Curio pages, so it needs a router.
+  return { ...render(<AgentChatPanel {...props} />, { wrapper: MemoryRouter }), props };
 }
+
+describe("an agent's link to a Curio page", () => {
+  afterEach(() => {
+    mockProjectDirty = false;
+  });
+
+  it("asks before leaving a dataflow with unsaved changes", () => {
+    mockProjectDirty = true;
+    renderPanel({
+      turns: [{ role: "agent", text: "See [Bike Routes](/catalog/data/imported.bikes)." }],
+    });
+    fireEvent.click(screen.getByRole("link", { name: "Bike Routes" }));
+    expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
+  });
+
+  it("goes without asking when nothing is unsaved", () => {
+    renderPanel({
+      turns: [{ role: "agent", text: "See [Bike Routes](/catalog/data/imported.bikes)." }],
+    });
+    fireEvent.click(screen.getByRole("link", { name: "Bike Routes" }));
+    expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).toBeNull();
+  });
+});
 
 describe("AgentChatPanel", () => {
   it("renders the concept header: name and target", () => {
