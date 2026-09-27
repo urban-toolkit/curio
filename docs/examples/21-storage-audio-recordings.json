@@ -23,7 +23,7 @@
         "id": "noise-loader",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 0,
+        "y": 215,
         "content": "collection = curio_collection(\"data.curio.storage-noise\")\n\nreturn collection\n",
         "out": "DEFAULT",
         "in": "DEFAULT",

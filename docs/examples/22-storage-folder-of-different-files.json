@@ -55,7 +55,7 @@
         "id": "city-merge",
         "type": "curio.builtin/merge-flow",
         "x": 645,
-        "y": 215,
+        "y": 300,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -67,7 +67,7 @@
       {
         "id": "city-layers",
         "type": "curio.builtin/computation-analysis",
-        "x": 1290,
+        "x": 815,
         "y": 215,
         "content": "import geopandas as gpd\nimport pandas as pd\n\nroads, parks = arg[0], arg[1]\nroads = roads.assign(layer=\"road\")\nparks = parks.assign(layer=\"park\")\n\nreturn gpd.GeoDataFrame(pd.concat([parks, roads], ignore_index=True), crs=roads.crs)\n",
         "out": "DEFAULT",
@@ -80,7 +80,7 @@
       {
         "id": "city-map",
         "type": "curio.builtin/vis-vega",
-        "x": 1935,
+        "x": 1460,
         "y": 215,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Parks and roads on one map.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"strokeWidth\": 3,\n    \"fillOpacity\": 0.4\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"title\": \"Layer\"\n    },\n    \"stroke\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",

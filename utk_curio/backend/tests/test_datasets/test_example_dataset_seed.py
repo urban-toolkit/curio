@@ -17,6 +17,7 @@ import json
 
 import pytest
 
+from utk_curio.backend.app.datasets.domain.manifest import SUPPORTED_FORMATS
 from utk_curio.backend.app.datasets.infrastructure.storage import (
     catalog_root,
     dataset_dir,
@@ -199,15 +200,7 @@ def test_seeded_datasets_carry_their_real_metadata():
             f"{dir_name}: name is the directory name, so the palette would show "
             f"no real title"
         )
-        assert manifest["format"] in {
-            "csv",
-            "geojson",
-            "json",
-            "parquet",
-            "geotiff",
-            "shp",
-            "bundle",
-        }, manifest["format"]
+        assert manifest["format"] in SUPPORTED_FORMATS, manifest["format"]
 
 
 @pytest.mark.usefixtures("app")
