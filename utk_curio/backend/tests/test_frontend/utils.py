@@ -2989,6 +2989,50 @@ def assert_vega_canvas_rendered(
         )
 
 
+# An Autark map's canvas as it last drew, read after two animation frames. The
+# id is autkGrammarBehavior's ``'autk-grammar-map-' + nodeId``.
+_AUTK_MAP_PIXELS_JS = """async (id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return canvas.toDataURL('image/png');
+}"""
+
+
+def assert_autark_map_drawn(
+    page, node_id: str, *, timeout: float = 30000, attach_as: str = ""
+) -> None:
+    """Assert an Autark map node's canvas holds a drawn map.
+
+    Read in the page, never from a screenshot: on the GPU runner a screenshot
+    shows a WebGPU canvas blank although it drew (#427). A drawn map holds more
+    than 8 colours; a cleared or background-only canvas holds one or two. With
+    ``attach_as``, the canvas is attached to the Allure report under that name.
+    """
+    import base64
+
+    from PIL import Image
+
+    deadline = time.monotonic() + timeout / 1000
+    png, colours = None, 0
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        if url:
+            png = base64.b64decode(url.split(",", 1)[1])
+            colours = len(set(Image.open(BytesIO(png)).convert("RGBA").getdata()))
+            if colours > 8 or time.monotonic() >= deadline:
+                break
+        elif time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if png and attach_as:
+        allure.attach(png, name=attach_as, attachment_type=allure.attachment_type.PNG)
+    assert png, f"Autark node {node_id} has no map canvas"
+    assert colours > 8, (
+        f"Autark node {node_id}: the map canvas holds {colours} colours, so no map was drawn"
+    )
+
+
 def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: float = 30000) -> None:
     """Assert a VIS_VEGA node explains why it has nothing to draw.
 
