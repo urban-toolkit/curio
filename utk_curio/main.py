@@ -1760,7 +1760,7 @@ def main():
         "--guest-llm-api-key", default=None, metavar="KEY",
         help=(
             "API key that enables AI features for guest users (sets "
-            "GUEST_LLM_API_KEY). Without one, guests are refused. Guests "
+            "GUEST_LLM_API_KEY). Unset, guests use the default API key. Guests "
             "otherwise inherit the default provider; GUEST_LLM_API_TYPE / "
             "_BASE_URL / _MODEL remain env-only overrides for the rare "
             "deployment that wants guests on a different model."
