@@ -212,6 +212,14 @@ def thumbnail(service, found: Located, *, variant: str = "thumb") -> Path:
     target = cache / f"{found.row.file_id}-{variant}-{stamp}.jpg"
     if target.is_file():
         return target
+    _render(found, variant, target)
+    for stale in cache.glob(f"{found.row.file_id}-{variant}-*.jpg"):
+        if stale != target:
+            stale.unlink(missing_ok=True)
+    return target
+
+
+def _render(found: Located, variant: str, target: Path) -> None:
     try:
         image = _draw(found, variant)
     except DataLakeError:
@@ -222,10 +230,6 @@ def thumbnail(service, found: Located, *, variant: str = "thumb") -> Path:
     part = target.with_name(target.name + ".part")
     image.convert("RGB").save(part, "JPEG", quality=JPEG_QUALITY)
     os.replace(part, target)
-    for stale in cache.glob(f"{found.row.file_id}-{variant}-*.jpg"):
-        if stale != target:
-            stale.unlink(missing_ok=True)
-    return target
 
 
 def _source_path(found: Located) -> tuple[Path, bool]:
@@ -236,9 +240,12 @@ def _source_path(found: Located) -> tuple[Path, bool]:
         raise MediaUnavailable(
             f"{found.row.relpath} is in a bucket; cache the collection's files to preview it"
         )
+    body = found.provider.open(found.row.relpath).read(MAX_REMOTE_THUMB_SOURCE_BYTES + 1)
+    if len(body) > MAX_REMOTE_THUMB_SOURCE_BYTES:
+        raise MediaUnavailable(f"{found.row.relpath} is too large to preview before it is cached")
     handle = tempfile.NamedTemporaryFile(suffix="." + found.row.ext, delete=False)
     with handle:
-        handle.write(found.provider.open(found.row.relpath).read())
+        handle.write(body)
     return Path(handle.name), True
 
 
@@ -358,6 +365,31 @@ def _spectrogram(path: Path, *, seconds: float = 60.0):
     rgb = stops[low] * (1 - frac) + stops[low + 1] * frac
     image = Image.fromarray(rgb.astype("uint8"), mode="RGB")
     return image.resize((THUMB_EDGE, THUMB_EDGE // 3))
+
+
+# ── sample thumbnails, before anything is added ────────────────────────────
+
+
+def sample_thumbnail(manifest, provider, sample) -> Path:
+    """A thumbnail of one of a lake row's sample files, cached per source.
+
+    Shared by every user, like the listing the row belongs to, and cached
+    under Curio's state directory, never in the source.
+    """
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    if sample.kind not in ("image", "frame", "raster", "video", "audio"):
+        raise MediaUnavailable("no preview for this file")
+    folder = curio_root() / "datalakes-cache" / manifest.dir_name / "samples"
+    folder.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha1(f"{sample.relpath}:{sample.bytes}:{sample.mtime}".encode()).hexdigest()[:20]
+    target = folder / f"{key}.jpg"
+    if target.is_file():
+        return target
+    local = provider.local_path(sample.relpath)
+    row = IndexRow(key, sample.relpath, sample.relpath.rsplit(".", 1)[-1].lower(), sample.kind, sample.bytes, "")
+    _render(Located(dataset_id="", row=row, local=Path(local) if local else None, provider=provider), "thumb", target)
+    return target
 
 
 # ── signed links, for <video> and <audio> ──────────────────────────────────

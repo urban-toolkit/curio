@@ -74,3 +74,24 @@ def signed_media(token: str):
     found = media.locate(service, claims["d"], claims["f"])
     path, mimetype = media.original(found)
     return _served(path, mimetype, cache_seconds=0)
+
+
+@media_bp.route("/datalakes/sources/<source_dir>/samples/<int:index>/<path:resource_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def lake_row_sample(source_dir: str, index: int, resource_id: str):
+    """A thumbnail of one of a storage row's sample files, by position.
+
+    The row's id and a sample's position, never a path: the samples are the
+    ones the source's last listing reported for that row.
+    """
+    from utk_curio.backend.app.datalakes.application import scan
+    from utk_curio.backend.app.datalakes.domain.errors import ResourceNotFound
+
+    service = _service()
+    manifest = service.get_manifest(source_dir)
+    sample = scan.listings.sample(manifest, resource_id, index)
+    if sample is None:
+        raise ResourceNotFound("no such sample; list the source again")
+    path = media.sample_thumbnail(manifest, service._storage_for(manifest), sample)
+    return _served(path, "image/jpeg", cache_seconds=3600)

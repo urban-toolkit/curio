@@ -265,3 +265,18 @@ class TestExecutionResolution:
         code = 'a = curio_collection("imported.xa@1")\nb = curio_dataset_path("imported.xb")'
         assert dataset_ids_in_code(code) == ["imported.xa@1", "imported.xb"]
         assert collection_ids_in_code(code) == ["imported.xa@1"]
+
+
+class TestSampleThumbnails:
+    def test_a_rows_samples_are_drawn_by_position(self, client, auth, app, shipped_root):
+        for _ in range(100):
+            body = client.get(f"/api/datalakes/sources/{EXAMPLE}/search", headers=auth).get_json()
+            if body["sources"][0]["status"] == "ok":
+                break
+            time.sleep(0.05)
+        row = next(r for r in body["resources"] if r["resourceId"] == "orthos")
+        assert row["samples"]
+        res = client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/0/orthos", headers=auth)
+        assert res.status_code == 200 and res.mimetype == "image/jpeg"
+        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/99/orthos", headers=auth).status_code == 404
+        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/0/orthos").status_code == 401

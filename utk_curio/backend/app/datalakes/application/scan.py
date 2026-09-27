@@ -350,10 +350,30 @@ def to_resource(manifest: LakeSourceManifest, group: Group) -> LakeResource:
 # ── the shared listing cache ───────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class Sample:
+    """One of a row's sample files, as the row's thumbnails draw it."""
+
+    relpath: str
+    kind: str
+    bytes: int
+    mtime: float
+
+
+def samples_of(group: Group) -> list[Sample]:
+    from utk_curio.backend.app.datalakes.application.probe import file_kind
+
+    return [
+        Sample(f.relpath, file_kind(group.spec.kind, f.relpath), f.size, f.mtime)
+        for f in group.files[:MAX_SAMPLES]
+    ]
+
+
 @dataclass
 class _State:
     status: str = "idle"
     resources: list[LakeResource] = field(default_factory=list)
+    samples: dict[str, list[Sample]] = field(default_factory=dict)
     unmatched: int = 0
     truncated: bool = False
     scanned_at: float | None = None
@@ -407,6 +427,9 @@ class ListingCache:
         try:
             result = scan(manifest, build_provider())
             state.resources = [to_resource(manifest, group) for group in result.groups]
+            state.samples = {
+                group.resource_id: samples_of(group) for group in result.groups if group.spec.is_collection
+            }
             state.unmatched = result.unmatched
             state.truncated = result.truncated
             state.scanned_at = result.scanned_at
@@ -416,6 +439,15 @@ class ListingCache:
             state.status = "failed"
         finally:
             state.done.set()
+
+    def sample(self, manifest: LakeSourceManifest, resource_id: str, index: int) -> Sample | None:
+        """One sample the last finished scan reported, without starting another."""
+        with self._lock:
+            state = self._states.get(manifest.dir_name)
+        if state is None or state.status != "ready":
+            return None
+        found = state.samples.get(resource_id) or []
+        return found[index] if 0 <= index < len(found) else None
 
     def reset(self) -> None:
         with self._lock:
