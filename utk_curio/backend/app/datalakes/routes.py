@@ -233,8 +233,31 @@ def acquire_datalake_resource(source_dir: str, resource_id: str):
         fmt=(body.get("format") or None),
         title=(body.get("title") or None),
         refresh=bool(body.get("refresh")),
+        # A storage row only: keep some field values, or some of its files.
+        filters=body.get("filters") or None,
+        files=body.get("files"),
     )
     return jsonify(payload), (200 if payload.get("alreadyPresent") else 202)
+
+
+@datalakes_bp.route("/sources/<source_dir>/files/<path:resource_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def list_datalake_resource_files(source_dir: str, resource_id: str):
+    """One page of a storage row's files, from the source's last listing.
+
+    ``?offset=&limit=``. Each file's ``index`` is its position in the row,
+    which is what ``/thumbnails/<index>/<resource_id>`` draws.
+    """
+    try:
+        offset = int(request.args.get("offset", 0))
+        limit = int(request.args.get("limit", 100))
+    except ValueError:
+        return jsonify({"error": "offset and limit are numbers"}), 400
+    payload = _service().storage_files(
+        source_dir, unquote(resource_id), offset=offset, limit=limit
+    )
+    return jsonify(payload), 200
 
 
 @datalakes_bp.route("/collections/<dataset_id>/cache", methods=["POST"])

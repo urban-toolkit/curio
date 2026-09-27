@@ -29,7 +29,7 @@ from utk_curio.backend.app.datalakes.domain.errors import ResourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest, ResourceSpec
 from utk_curio.backend.app.datalakes.domain.resource import LakeResource
 from utk_curio.backend.app.datalakes.domain.templates import compile_template
-from utk_curio.backend.app.datalakes.providers.storage_base import FileEntry, is_sidecar
+from utk_curio.backend.app.datalakes.providers.storage_base import FileEntry, is_sidecar, validate_relpath
 
 #: How long a listing's summary is reused before the source is walked again.
 SUMMARY_TTL_SECONDS = 15 * 60
@@ -53,7 +53,7 @@ KIND_LABEL = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MatchedFile:
     relpath: str
     size: int
@@ -120,6 +120,83 @@ class Selection:
     split: dict[str, str] = field(default_factory=dict)
     #: One file, for a ``per-file`` row.
     relpath: str | None = None
+    #: Values to keep, as text, keyed by field: a row narrowed when added.
+    filters: dict[str, frozenset[str]] = field(default_factory=dict)
+    #: Inclusive ``(low, high)`` bounds to keep, typed like the field.
+    ranges: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    #: The files picked from the row's Files list, when only some were.
+    files: frozenset[str] | None = None
+
+    @property
+    def narrowed(self) -> bool:
+        return bool(self.filters or self.ranges) or self.files is not None
+
+    def describe(self) -> dict[str, Any]:
+        """What the narrowing kept, for the dataset's provenance."""
+        out: dict[str, Any] = {}
+        for name, values in self.filters.items():
+            out[name] = sorted(values)
+        for name, (low, high) in self.ranges.items():
+            out[name] = {"min": _value_text(low), "max": _value_text(high)}
+        return out
+
+
+#: Bounds on what one add may narrow by.
+MAX_FILTER_VALUES = 1000
+MAX_CHOSEN_FILES = 5000
+
+
+def _bound(capture, raw: Any) -> Any:
+    text = str(raw)[:64]
+    if capture.type == "int":
+        return int(text)
+    if capture.type == "date":
+        return date.fromisoformat(text)
+    if capture.type == "datetime":
+        # Captured times carry no zone, so neither does a bound.
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    return text
+
+
+def narrow(selection: Selection, *, filters: Any = None, files: Any = None) -> Selection:
+    """*selection*, keeping only the field values and files a user picked.
+
+    Each filter names one of the template's captures that the row is not
+    already split by, and either the values to keep or ``{"min", "max"}``
+    bounds. Files are relpaths of the row. Anything else is refused, so a
+    request can only ever select fewer of the files the manifest declares.
+    """
+    if not filters and files is None:
+        return selection
+    spec = selection.spec
+    if selection.relpath is not None:
+        raise ResourceNotFound(f"{spec.name} is one file; there is nothing to narrow")
+    captures = {c.name: c for c in spec.template.captures if c.name not in spec.split_by}
+    kept: dict[str, frozenset[str]] = {}
+    ranges: dict[str, tuple[Any, Any]] = {}
+    if filters:
+        if not isinstance(filters, dict):
+            raise ResourceNotFound("filters name fields and the values to keep")
+        for name, wanted in filters.items():
+            capture = captures.get(name)
+            if capture is None:
+                raise ResourceNotFound(f"{spec.name} has no field {name!r} to narrow by")
+            if isinstance(wanted, dict):
+                try:
+                    low, high = _bound(capture, wanted["min"]), _bound(capture, wanted["max"])
+                except (KeyError, ValueError, TypeError):
+                    raise ResourceNotFound(f"{name} needs a min and a max like its values") from None
+                ranges[name] = (low, high)
+            elif isinstance(wanted, list) and 0 < len(wanted) <= MAX_FILTER_VALUES:
+                kept[name] = frozenset(str(v)[:200] for v in wanted)
+            else:
+                raise ResourceNotFound(f"keep between 1 and {MAX_FILTER_VALUES} values of {name}")
+    chosen: frozenset[str] | None = None
+    if files is not None:
+        if not isinstance(files, list) or not files or len(files) > MAX_CHOSEN_FILES:
+            raise ResourceNotFound(f"pick between 1 and {MAX_CHOSEN_FILES} files")
+        chosen = frozenset(validate_relpath(str(f)) for f in files)
+    return Selection(spec=spec, split=selection.split, filters=kept, ranges=ranges, files=chosen)
 
 
 def parse_resource_id(manifest: LakeSourceManifest, resource_id: str) -> Selection:
@@ -261,6 +338,12 @@ def scan(
 def _selected(selection: Selection, found: MatchedFile) -> bool:
     if selection.relpath is not None:
         return found.relpath == selection.relpath
+    if selection.files is not None and found.relpath not in selection.files:
+        return False
+    if any(_value_text(found.values[name]) not in values for name, values in selection.filters.items()):
+        return False
+    if any(not low <= found.values[name] <= high for name, (low, high) in selection.ranges.items()):
+        return False
     return all(_value_text(found.values[name]) == value for name, value in selection.split.items())
 
 
@@ -352,7 +435,7 @@ def to_resource(manifest: LakeSourceManifest, group: Group) -> LakeResource:
 
 @dataclass(frozen=True)
 class Sample:
-    """One of a row's sample files, as the row's thumbnails draw it."""
+    """One file of a row, as the row's thumbnails draw it."""
 
     relpath: str
     kind: str
@@ -360,20 +443,20 @@ class Sample:
     mtime: float
 
 
-def samples_of(group: Group) -> list[Sample]:
+def sample_at(group: Group, index: int) -> Sample | None:
     from utk_curio.backend.app.datalakes.application.probe import file_kind
 
-    return [
-        Sample(f.relpath, file_kind(group.spec.kind, f.relpath), f.size, f.mtime)
-        for f in group.files[:MAX_SAMPLES]
-    ]
+    if not 0 <= index < len(group.files):
+        return None
+    f = group.files[index]
+    return Sample(f.relpath, file_kind(group.spec.kind, f.relpath), f.size, f.mtime)
 
 
 @dataclass
 class _State:
     status: str = "idle"
     resources: list[LakeResource] = field(default_factory=list)
-    samples: dict[str, list[Sample]] = field(default_factory=dict)
+    groups: dict[str, Group] = field(default_factory=dict)
     unmatched: int = 0
     truncated: bool = False
     scanned_at: float | None = None
@@ -427,9 +510,7 @@ class ListingCache:
         try:
             result = scan(manifest, build_provider())
             state.resources = [to_resource(manifest, group) for group in result.groups]
-            state.samples = {
-                group.resource_id: samples_of(group) for group in result.groups if group.spec.is_collection
-            }
+            state.groups = {group.resource_id: group for group in result.groups}
             state.unmatched = result.unmatched
             state.truncated = result.truncated
             state.scanned_at = result.scanned_at
@@ -440,14 +521,20 @@ class ListingCache:
         finally:
             state.done.set()
 
-    def sample(self, manifest: LakeSourceManifest, resource_id: str, index: int) -> Sample | None:
-        """One sample the last finished scan reported, without starting another."""
+    def group(self, manifest: LakeSourceManifest, resource_id: str) -> Group | None:
+        """One row of the last finished scan, without starting another."""
         with self._lock:
             state = self._states.get(manifest.dir_name)
         if state is None or state.status != "ready":
             return None
-        found = state.samples.get(resource_id) or []
-        return found[index] if 0 <= index < len(found) else None
+        return state.groups.get(resource_id)
+
+    def sample(self, manifest: LakeSourceManifest, resource_id: str, index: int) -> Sample | None:
+        """The file at *index* of a collection row, to draw a thumbnail of."""
+        group = self.group(manifest, resource_id)
+        if group is None or not group.spec.is_collection:
+            return None
+        return sample_at(group, index)
 
     def reset(self) -> None:
         with self._lock:

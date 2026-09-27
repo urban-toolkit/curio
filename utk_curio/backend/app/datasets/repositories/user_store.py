@@ -85,6 +85,9 @@ class UserDatasetRepository:
             lake = item.get("lakeSource") or {}
             if lake.get("lakeId") != lake_id or lake.get("resourceId") != resource_id:
                 continue
+            # Part of a storage row, picked when it was added: not the row.
+            if lake.get("narrowed"):
+                continue
             if fmt and item.get("format") != fmt:
                 continue
             return item
@@ -111,7 +114,7 @@ class UserDatasetRepository:
         for item in self.list_items():
             lake = item.get("lakeSource") or {}
             lake_id, resource_id = lake.get("lakeId"), lake.get("resourceId")
-            if not lake_id or not resource_id:
+            if not lake_id or not resource_id or lake.get("narrowed"):
                 continue
             index.setdefault((lake_id, resource_id), item["id"])
         return index

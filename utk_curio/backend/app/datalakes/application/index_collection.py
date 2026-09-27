@@ -297,6 +297,10 @@ def collection_block(
     }
     if selection.split:
         block["split"] = dict(selection.split)
+    if selection.narrowed:
+        block["narrowedBy"] = selection.describe()
+        if selection.files is not None:
+            block["chosenFiles"] = len(selection.files)
     if spec.fps:
         block["fps"] = spec.fps
     if spec.kind == "frames" and "sequence" in frame.columns:

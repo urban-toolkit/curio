@@ -76,14 +76,15 @@ def signed_media(token: str):
     return _served(path, mimetype, cache_seconds=0)
 
 
-@media_bp.route("/datalakes/sources/<source_dir>/samples/<int:index>/<path:resource_id>", methods=["GET"])
+@media_bp.route("/datalakes/sources/<source_dir>/thumbnails/<int:index>/<path:resource_id>", methods=["GET"])
 @require_auth
 @_map_lake_errors
-def lake_row_sample(source_dir: str, index: int, resource_id: str):
-    """A thumbnail of one of a storage row's sample files, by position.
+def lake_row_thumbnail(source_dir: str, index: int, resource_id: str):
+    """A thumbnail of one of a storage row's files, by its position in the row.
 
-    The row's id and a sample's position, never a path: the samples are the
-    ones the source's last listing reported for that row.
+    The row's id and a position, never a path: the files are the ones the
+    source's last listing found for that row, in the order its Files list
+    shows them. A row's samples are its first few.
     """
     from utk_curio.backend.app.datalakes.application import scan
     from utk_curio.backend.app.datalakes.domain.errors import ResourceNotFound
@@ -92,6 +93,6 @@ def lake_row_sample(source_dir: str, index: int, resource_id: str):
     manifest = service.get_manifest(source_dir)
     sample = scan.listings.sample(manifest, resource_id, index)
     if sample is None:
-        raise ResourceNotFound("no such sample; list the source again")
+        raise ResourceNotFound("no such file; list the source again")
     path = media.sample_thumbnail(manifest, service._storage_for(manifest), sample)
     return _served(path, "image/jpeg", cache_seconds=3600)

@@ -276,7 +276,7 @@ class TestSampleThumbnails:
             time.sleep(0.05)
         row = next(r for r in body["resources"] if r["resourceId"] == "orthos")
         assert row["samples"]
-        res = client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/0/orthos", headers=auth)
+        res = client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/0/orthos", headers=auth)
         assert res.status_code == 200 and res.mimetype == "image/jpeg"
-        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/99/orthos", headers=auth).status_code == 404
-        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/samples/0/orthos").status_code == 401
+        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/99/orthos", headers=auth).status_code == 404
+        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/0/orthos").status_code == 401

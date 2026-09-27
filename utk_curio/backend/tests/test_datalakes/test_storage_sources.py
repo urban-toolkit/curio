@@ -489,3 +489,92 @@ class TestTheExecUserAudit:
 
         monkeypatch.setenv("CURIO_ISOLATION", "off")
         assert audit_folder_roots() == []
+
+
+class TestNarrowingARow:
+    def _added(self, client, auth, resource_id, **body):
+        res = add(client, auth, resource_id, source=EXAMPLE, **body)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        job = wait_for(client, auth, res.get_json()["jobId"])
+        assert job["status"] == "completed", job.get("error")
+        return job["dataset"]
+
+    def test_field_values_keep_only_their_files(self, client, auth, app, shipped_root):
+        listing(client, auth, source=EXAMPLE)
+        dataset = self._added(client, auth, "orthos", filters={"year": ["2024"]})
+        assert dataset["rowCount"] == 2
+        assert dataset["collection"]["narrowedBy"] == {"year": ["2024"]}
+        # Part of the row is not the row: it stays offered whole.
+        row = next(r for r in listing(client, auth, source=EXAMPLE)["resources"] if r["resourceId"] == "orthos")
+        assert row["alreadyHeldDatasetId"] is None
+        again = self._added(client, auth, "orthos", filters={"year": ["2024"]})
+        assert again["id"] != dataset["id"]
+
+    def test_a_range_keeps_the_values_between_its_bounds(self, client, auth, app, shipped_root):
+        import pandas as pd
+
+        listing(client, auth, source=EXAMPLE)
+        dataset = self._added(client, auth, "air-quality", filters={
+            "day": {"min": "2024-01-02", "max": "2024-01-02"},
+        })
+        frame = pd.read_parquet(dataset["path"])
+        assert set(frame["day"].astype(str)) == {"2024-01-02"}
+        assert dataset["lakeSource"]["narrowed"] is True
+
+    def test_picked_files_are_the_only_ones_indexed(self, client, auth, app, shipped_root):
+        listing(client, auth, source=EXAMPLE)
+        page = client.get(f"/api/datalakes/sources/{EXAMPLE}/files/survey", headers=auth).get_json()
+        assert page["total"] == 4 and page["previews"] is True
+        picked = [f["relpath"] for f in page["files"][:2]]
+        dataset = self._added(client, auth, "survey", files=picked)
+        assert dataset["rowCount"] == 2 and dataset["collection"]["chosenFiles"] == 2
+
+    @pytest.mark.parametrize("body, needle", [
+        ({"filters": {"nope": ["x"]}}, "no field"),
+        ({"filters": {"year": []}}, "between 1 and"),
+        ({"filters": {"year": {"min": "x", "max": "2024"}}}, "min and a max"),
+        ({"files": ["../etc/passwd"]}, "not a file"),
+        ({"files": []}, "between 1 and"),
+    ])
+    def test_a_narrowing_it_cannot_satisfy_is_refused_before_a_job(
+        self, client, auth, app, shipped_root, body, needle
+    ):
+        res = add(client, auth, "orthos", source=EXAMPLE, **body)
+        assert res.status_code == 404 and needle in res.get_json()["error"]
+
+    def test_a_split_field_is_not_narrowed_again(self, client, auth, app, lake_root, tmp_path):
+        root = write_files(tmp_path / "f", {"a/1.csv": "n\n1\n", "b/1.csv": "n\n2\n"})
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "t", "name": "T", "kind": "table", "format": "csv", "path": "{part}/1.csv",
+             "datasets": "per:part"},
+        ]))
+        res = add(client, auth, "t@part=a", filters={"part": ["b"]})
+        assert res.status_code == 404 and "no field" in res.get_json()["error"]
+
+
+class TestTheFilesList:
+    def test_it_pages_a_rows_files_in_order(self, client, auth, app, shipped_root):
+        listing(client, auth, source=EXAMPLE)
+        url = f"/api/datalakes/sources/{EXAMPLE}/files/dashcam"
+        first = client.get(f"{url}?limit=5", headers=auth).get_json()
+        rest = client.get(f"{url}?offset=5&limit=100", headers=auth).get_json()
+        assert first["total"] == rest["total"] == 10
+        names = [f["relpath"] for f in first["files"] + rest["files"]]
+        assert names == sorted(names) and len(names) == 10
+        assert first["files"][0]["values"]["sequence"] == "trip01"
+        assert [f["index"] for f in rest["files"]][:2] == [5, 6]
+
+    def test_a_table_row_lists_its_files_without_previews(self, client, auth, app, shipped_root):
+        listing(client, auth, source=EXAMPLE)
+        page = client.get(f"/api/datalakes/sources/{EXAMPLE}/files/air-quality", headers=auth).get_json()
+        assert page["previews"] is False and page["total"] > 1
+        assert client.get(
+            f"/api/datalakes/sources/{EXAMPLE}/thumbnails/0/air-quality", headers=auth
+        ).status_code == 404
+
+    def test_a_portal_has_no_files(self, client, auth, app, shipped_root):
+        res = client.get("/api/datalakes/sources/lake.chicago.data-portal@1/files/x", headers=auth)
+        assert res.status_code in (400, 404, 422)
+
+    def test_it_needs_a_sign_in(self, client, app, shipped_root):
+        assert client.get(f"/api/datalakes/sources/{EXAMPLE}/files/orthos").status_code == 401

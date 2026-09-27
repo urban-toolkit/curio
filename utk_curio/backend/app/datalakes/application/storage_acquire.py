@@ -56,6 +56,11 @@ def _iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _narrowing(selection) -> dict[str, Any]:
+    """Marks a dataset made from part of a row, so it never stands in for the row."""
+    return {"narrowed": True} if selection.narrowed else {}
+
+
 class StorageAcquire:
     """Turns one storage resource row into Data Catalog datasets."""
 
@@ -81,15 +86,24 @@ class StorageAcquire:
         *,
         title: str | None = None,
         refresh: bool = False,
+        filters: dict[str, Any] | None = None,
+        files: list[str] | None = None,
         progress: Callable[[int, int | None], None] | None = None,
         items: Callable[[int, int | None], None] | None = None,
         stage: Callable[[str], None] | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Add the row *resource_id*. Returns ``{dataset, alreadyPresent, unchanged}``."""
-        selection = scanning.parse_resource_id(manifest, resource_id)
+        """Add the row *resource_id*. Returns ``{dataset, alreadyPresent, unchanged}``.
+
+        *filters* and *files* narrow the row to some of its files. A narrowed
+        add is always a new dataset: it is not the row, so holding one says
+        nothing about holding the other.
+        """
+        selection = scanning.narrow(
+            scanning.parse_resource_id(manifest, resource_id), filters=filters, files=files
+        )
         spec = selection.spec
-        held = self._find_held(manifest.dir_name, resource_id, None)
+        held = None if selection.narrowed else self._find_held(manifest.dir_name, resource_id, None)
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
@@ -112,7 +126,7 @@ class StorageAcquire:
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
         if len(files) > 1:
             dataset = self._add_combined(
-                manifest, provider, spec, files, resource_id=resource_id,
+                manifest, provider, spec, selection, files, resource_id=resource_id,
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
             )
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
@@ -125,6 +139,7 @@ class StorageAcquire:
             "sourcePath": only.relpath,
             "fileCount": 1,
             "fetchedAt": _iso_now(),
+            **_narrowing(selection),
         }
         dataset = self._add_file(
             manifest,
@@ -170,6 +185,7 @@ class StorageAcquire:
                 "fileCount": len(files),
                 "fields": ",".join(spec.template.names),
                 "fetchedAt": _iso_now(),
+                **_narrowing(selection),
             }
             label = scanning.KIND_LABEL.get(spec.kind, "Files").lower()
             return self._install_path(
@@ -188,7 +204,7 @@ class StorageAcquire:
     # ── many table files ───────────────────────────────────────────────────
 
     def _add_combined(
-        self, manifest, provider, spec, files, *, resource_id, title, items, stage, cancelled
+        self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage, cancelled
     ) -> dict[str, Any]:
         local = manifest.provider.type == "folder"
         combine_tables.check_bounds(files, local=local)
@@ -215,6 +231,7 @@ class StorageAcquire:
                 "fileCount": len(files),
                 "fields": ",".join(spec.template.names),
                 "fetchedAt": _iso_now(),
+                **_narrowing(selection),
             }
             return self._install_path(
                 combined.path,

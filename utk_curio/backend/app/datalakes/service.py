@@ -21,7 +21,12 @@ from utk_curio.backend.app.datalakes.application.storage_acquire import (
 from utk_curio.backend.app.datalakes.application import jobs as job_store
 from utk_curio.backend.app.datalakes.application.catalog import LakeCatalog
 from utk_curio.backend.app.agents import egress
-from utk_curio.backend.app.datalakes.domain.errors import DataLakeError, SourceNotFound
+from utk_curio.backend.app.datalakes.domain.errors import (
+    CapabilityUnsupported,
+    DataLakeError,
+    ResourceNotFound,
+    SourceNotFound,
+)
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
 from utk_curio.backend.app.datalakes.domain.resource import LakeField, LakeResourceDetail, SearchQuery
 from utk_curio.backend.app.datalakes.infrastructure import credentials, ratelimit
@@ -41,6 +46,9 @@ class JobNotFound(SourceNotFound):
 MAX_SEARCH_LIMIT = 50
 DEFAULT_SEARCH_LIMIT = 20
 
+
+#: One page of a storage row's Files list.
+FILES_PAGE = 100
 
 class DataLakeService:
     """Per-request entry point."""
@@ -238,6 +246,36 @@ class DataLakeService:
         payload["scannedAt"] = _iso(state.scanned_at)
         return payload
 
+    def storage_files(
+        self, dir_name: str, resource_id: str, *, offset: int = 0, limit: int = FILES_PAGE
+    ) -> dict[str, Any]:
+        """One page of a storage row's files, in the order its thumbnails number them."""
+        manifest = self._catalog.get_manifest(dir_name)
+        if not manifest.is_storage:
+            raise CapabilityUnsupported(f"{manifest.name} lists datasets, not files")
+        scanning.parse_resource_id(manifest, resource_id)
+        group = scanning.listings.group(manifest, resource_id)
+        if group is None:
+            raise ResourceNotFound(f"{resource_id!r} is not listed; list {manifest.name} again")
+        offset = max(0, int(offset))
+        limit = max(1, min(int(limit), FILES_PAGE))
+        page = group.files[offset:offset + limit]
+        return {
+            "files": [
+                {
+                    "index": offset + i,
+                    "relpath": f.relpath,
+                    "size": f.size,
+                    "updatedAt": _iso(f.mtime),
+                    "values": {k: scanning._value_text(v) for k, v in f.values.items()},
+                }
+                for i, f in enumerate(page)
+            ],
+            "total": len(group.files),
+            "offset": offset,
+            "previews": group.spec.is_collection,
+        }
+
     def _storage_detail(self, manifest: LakeSourceManifest, resource_id: str) -> LakeResourceDetail:
         state = scanning.listings.get(manifest, lambda: self._storage_for(manifest))
         for resource in state.resources:
@@ -297,7 +335,8 @@ class DataLakeService:
         )
 
     def start_acquire(
-        self, dir_name: str, resource_id: str, *, fmt=None, title=None, refresh=False
+        self, dir_name: str, resource_id: str, *, fmt=None, title=None, refresh=False,
+        filters=None, files=None,
     ) -> dict[str, Any]:
         """Begin a download, or answer immediately if we already hold it.
 
@@ -306,11 +345,17 @@ class DataLakeService:
         are present, and the route turns that into a 200 or a 202.
         """
         manifest = self._catalog.get_manifest(dir_name)
+        narrowed = False
         if manifest.is_storage:
-            # Refuses an id the manifest does not declare before a job exists.
-            scanning.parse_resource_id(manifest, resource_id)
+            # Refuses an id the manifest does not declare, or a narrowing it
+            # cannot satisfy, before a job exists.
+            narrowed = scanning.narrow(
+                scanning.parse_resource_id(manifest, resource_id), filters=filters, files=files
+            ).narrowed
             fmt = None
-        held = self._acquire.already_held(manifest, resource_id, fmt)
+        elif filters or files is not None:
+            raise CapabilityUnsupported(f"{manifest.name} is not narrowed by field or file")
+        held = None if narrowed else self._acquire.already_held(manifest, resource_id, fmt)
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
@@ -374,6 +419,8 @@ class DataLakeService:
                             resource_id,
                             title=title,
                             refresh=refresh,
+                            filters=filters,
+                            files=files,
                             progress=_progress,
                             items=_items,
                             stage=_stage,
