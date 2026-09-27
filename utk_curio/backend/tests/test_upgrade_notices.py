@@ -19,6 +19,7 @@ from utk_curio.backend.app import upgrade_notices
 def _clean(monkeypatch):
     for name in (
         "HUGGINGFACE_TOKEN",
+        "CURIO_DEFAULT_HUGGINGFACE_TOKEN",
         "STREETVISION_CACHE_DIR",
         "STREETVISION_MODEL_CACHE_DIR",
     ):
@@ -31,10 +32,11 @@ def _run(caplog):
 
 
 class TestLegacyEnvVars:
-    def test_the_old_huggingface_token_is_called_out(self, caplog, monkeypatch):
-        monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_old")
-        assert "HUGGINGFACE_TOKEN" in _run(caplog)
-        assert "CURIO_DEFAULT_HUGGINGFACE_TOKEN" in caplog.text
+    @pytest.mark.parametrize("name", ["HUGGINGFACE_TOKEN", "CURIO_DEFAULT_HUGGINGFACE_TOKEN"])
+    def test_a_deployment_huggingface_token_is_called_out(self, caplog, monkeypatch, name):
+        monkeypatch.setenv(name, "hf_old")
+        assert name in _run(caplog)
+        assert "AI Settings" in caplog.text
 
     @pytest.mark.parametrize(
         "name", ["STREETVISION_CACHE_DIR", "STREETVISION_MODEL_CACHE_DIR"]

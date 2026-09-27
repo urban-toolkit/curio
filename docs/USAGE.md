@@ -293,7 +293,7 @@ detected text never leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest shares one account, and all of them answer with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest shares one account, and all of them answer with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
 The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 

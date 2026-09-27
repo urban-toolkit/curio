@@ -13,11 +13,15 @@ const SIGNED_IN = { is_guest: false };
 // Mutable so the guest case can share one module registry with the rest.
 let mockUser: Record<string, unknown> = { ...SIGNED_IN };
 let mockSharedGuest = false;
+// Sign-in on (a --deploy Curio) unless a test says otherwise.
+let mockAuthOn = true;
 
 const mockUpdate = jest.fn().mockResolvedValue(undefined);
 
 jest.mock("../../providers/UserProvider", () => ({
-  useUserContext: () => ({ user: mockUser, updateTokens: mockUpdate, isSharedGuest: mockSharedGuest }),
+  useUserContext: () => ({
+    user: mockUser, updateTokens: mockUpdate, isSharedGuest: mockSharedGuest, enableUserAuth: mockAuthOn,
+  }),
 }));
 
 // The LLM configurations section fetches its listing; a minimal one keeps it
@@ -74,6 +78,7 @@ const saveTokens = () => screen.getByRole("button", { name: "Save tokens" });
 beforeEach(() => {
   mockUser = { ...SIGNED_IN };
   mockSharedGuest = false;
+  mockAuthOn = true;
   mockPublicConfig = {};
   jest.clearAllMocks();
 });
@@ -132,6 +137,31 @@ describe("AI Settings: the HuggingFace token", () => {
     open();
     fireEvent.click(screen.getAllByRole("button", { name: /Remove saved token/ })[0]);
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "" }));
+  });
+
+  it("is not offered to a guest on a Curio with sign-in", () => {
+    mockUser = { is_guest: true };
+    mockSharedGuest = true;
+    open();
+    expect(field()).toBeNull();
+    expect(screen.getByText("Personal tokens cannot be saved on a shared guest account.")).toBeInTheDocument();
+  });
+
+  it("the local guest saves its own, and is told the account is shared", async () => {
+    // Without --deploy the shared guest is the one local user, and AI Settings
+    // is the only place a HuggingFace token is set.
+    mockUser = { is_guest: true };
+    mockSharedGuest = true;
+    mockAuthOn = false;
+    open();
+    expect(screen.getByText(/tokens saved here are shared too/)).toBeInTheDocument();
+    fireEvent.change(field(), { target: { value: "hf_local" } });
+    fireEvent.click(saveTokens());
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "hf_local", socrataAppToken: undefined }),
+    );
+    // The panels that run on the account's models stay off for a guest.
+    expect(screen.queryByText("Evaluation mode")).toBeNull();
   });
 });
 

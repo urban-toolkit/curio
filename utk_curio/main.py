@@ -183,7 +183,7 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, huggingface_token=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -355,12 +355,6 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     # never reaches an endpoint the operator did not name.
     if agent_search_url:
         os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
-
-    # HuggingFace, for the Street Vision node's gated models. A user's own
-    # token in AI Settings wins over this; it is the fallback for everyone who
-    # has not set one.
-    if huggingface_token:
-        os.environ["CURIO_DEFAULT_HUGGINGFACE_TOKEN"] = str(huggingface_token)
 
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
@@ -1781,15 +1775,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--huggingface-token", default=None, metavar="TOKEN",
-        help=(
-            "Deployment-wide HuggingFace token for the Street Vision node's "
-            "gated models (sets CURIO_DEFAULT_HUGGINGFACE_TOKEN). Each user "
-            "can set their own in AI Settings, which wins over this; gated "
-            "access is a per-account entitlement. Public models need no token."
-        ),
-    )
-    parser.add_argument(
         "--collab", action="store_true", default=False,
         help=(
             "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
@@ -1852,7 +1837,6 @@ def main():
         llm_model=args.llm_model,
         guest_llm_api_key=args.guest_llm_api_key,
         agent_search_url=args.agent_search_url,
-        huggingface_token=args.huggingface_token,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither

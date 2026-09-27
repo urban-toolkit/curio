@@ -23,7 +23,10 @@ interface Props {
  * panels that run on the default configuration.
  */
 const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => {
-  const { user, updateTokens, isSharedGuest } = useUserContext();
+  const { user, updateTokens, isSharedGuest, enableUserAuth } = useUserContext();
+  // A guest under --deploy shares one account with every visitor, so it saves
+  // nothing personal. Without --deploy the shared guest is the one local user.
+  const hostedGuest = Boolean(user?.is_guest) && enableUserAuth;
 
   // HuggingFace gates some models behind a licence you accept with your own
   // account, so the token is per user rather than one the operator holds.
@@ -111,7 +114,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
 
         <LlmConfigsSection />
 
-        {user?.is_guest ? (
+        {hostedGuest ? (
           <>
             <p className={styles.guestNotice}>
               Personal tokens cannot be saved on a shared guest account.
@@ -125,6 +128,11 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
           </>
         ) : (
           <>
+            {isSharedGuest ? (
+              <p className={styles.sharedNote} role="note">
+                Everyone using this Curio shares this account, so tokens saved here are shared too.
+              </p>
+            ) : null}
             <div className={modal.field}>
               <label className={modal.label} htmlFor="ai-settings-hf-token">
                 HuggingFace token{" "}
@@ -239,14 +247,18 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
             </div>
 
             {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
-            <ConnectionKeysSection focus={focus} />
-            {/* dev/123 (DEC-079): run one of Curio's own examples through the
-                real lifecycle on your default configuration, and score what it
-                built. */}
-            <EvaluationModeSection />
-            {/* dev/122 (DEC-078): fine-tune a model on Curio's own approved
-                examples, on a configuration holding your own key. */}
-            <ModelTrainingSection />
+            <ConnectionKeysSection focus={focus} sharedGuest={isSharedGuest} />
+            {user?.is_guest ? null : (
+              <>
+                {/* dev/123 (DEC-079): run one of Curio's own examples through
+                    the real lifecycle on your default configuration, and score
+                    what it built. */}
+                <EvaluationModeSection />
+                {/* dev/122 (DEC-078): fine-tune a model on Curio's own
+                    approved examples, on a configuration holding your own key. */}
+                <ModelTrainingSection />
+              </>
+            )}
 
             <div className={modal.buttonRow}>
               <button className={modal.ghostBtn} onClick={onClose}>Close</button>

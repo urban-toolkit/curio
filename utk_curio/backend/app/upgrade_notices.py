@@ -28,16 +28,15 @@ def check_upgrade_notices() -> list[str]:
     """Log a warning per stale setting. Returns the names warned about."""
     warned: list[str] = []
 
-    # The Street Vision token became an account setting with a deployment
-    # fallback under a new name. An operator upgrading with the old variable
-    # exported sees gated model downloads start failing with a 401 and nothing
-    # pointing at the rename.
-    if _warn_legacy_env(
-        "HUGGINGFACE_TOKEN",
-        "Set CURIO_DEFAULT_HUGGINGFACE_TOKEN for the deployment-wide fallback, "
-        "or let each user save their own token in AI Settings, which wins over it.",
-    ):
-        warned.append("HUGGINGFACE_TOKEN")
+    # The Street Vision token is an account setting only. An operator upgrading
+    # with either deployment-wide variable exported sees gated model downloads
+    # start failing with a 401 and nothing pointing at the change.
+    for name in ("HUGGINGFACE_TOKEN", "CURIO_DEFAULT_HUGGINGFACE_TOKEN"):
+        if _warn_legacy_env(
+            name,
+            "Each user saves their own HuggingFace token in AI Settings.",
+        ):
+            warned.append(name)
 
     # The Street Vision caches moved under each user's directory, because the
     # overlay route is unauthenticated and a shared cache let anyone who could

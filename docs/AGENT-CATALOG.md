@@ -1105,7 +1105,6 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 | `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. With it or a key set, users are offered **This Curio install**. |
 | `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The Deployment default's model. Without one there is no Deployment default. |
 | `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The guest configuration's key. With neither it nor `CURIO_DEFAULT_LLM_API_KEY`, guests get no AI. |
-| `--huggingface-token` | `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | Fallback HuggingFace token for the Street Vision node's gated models. Each user can set their own in AI Settings, which wins over this. Not an agent setting, but it lives in the same panel. |
 | `--agent-search-url` | `CURIO_SEARCH_URL` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API. Point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked web results. |
 
 A flag writes its variable only when passed, so a value already set in the
