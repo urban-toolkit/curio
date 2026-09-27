@@ -3026,9 +3026,9 @@ def assert_autark_map_drawn(
     Read in the page, not from a screenshot. A drawn map is mostly opaque and
     holds more than 8 colours; a cleared canvas is transparent, and a
     background-only one holds one or two. With ``attach_as``, the Allure report
-    gets the canvas pixels, a screenshot of the same element, and how the canvas
-    is placed, so a map that drew but does not show can be told apart from one
-    that did not draw.
+    gets the canvas pixels, the canvas as an element, viewport and full-page
+    screenshot, and how the canvas is placed, so a map that drew but does not
+    show can be told apart from one that did not draw.
     """
     import base64
 
@@ -3056,6 +3056,13 @@ def assert_autark_map_drawn(
         if canvas.count():
             allure.attach(canvas.first.screenshot(), name=f"{attach_as}: canvas screenshot",
                           attachment_type=allure.attachment_type.PNG)
+        # The same moment as a viewport capture and as the full-page capture the
+        # baselines use, which re-renders the page into a larger surface.
+        page.evaluate("window.scrollTo(0, 0)")
+        allure.attach(page.screenshot(), name=f"{attach_as}: viewport screenshot",
+                      attachment_type=allure.attachment_type.PNG)
+        allure.attach(page.screenshot(full_page=True), name=f"{attach_as}: full-page screenshot",
+                      attachment_type=allure.attachment_type.PNG)
         placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, node_id)
         allure.attach(json.dumps({"opaqueShare": opaque, "opaqueColours": colours, "placement": placement}, indent=1),
                       name=f"{attach_as}: canvas placement", attachment_type=allure.attachment_type.JSON)
