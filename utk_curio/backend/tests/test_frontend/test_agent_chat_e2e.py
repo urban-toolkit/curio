@@ -42,6 +42,7 @@ from .test_agent_runs_e2e import (
     PROPOSED_CONTENT,
     VISIBLE_PROSE,
     _mint_node_id,
+    _native_replies,
     _project_spec,
     _scripted_replies,
     _target_for,
@@ -49,6 +50,8 @@ from .test_agent_runs_e2e import (
 from .utils import (
     _wait_for_reactflow_ready,
     api_json,
+    captured_agent_offers,
+    captured_agent_prompts,
     read_node_code,
     dismiss_toasts,
     install_session_cookie,
@@ -63,6 +66,7 @@ from .utils import (
 
 SCREENSHOT_STEM = "agent-run"
 REVIEW_STEM = "agent-review-card"
+NATIVE_STEM = "agent-native-call"
 
 # The gallery baseline is the chat panel, not the viewport. A full-page capture
 # here was more than half canvas and left rail - nothing about the agent - and a
@@ -137,7 +141,7 @@ def _goto_when_served(page, url: str, *, timeout: float = 90.0) -> None:
     )
 
 
-def _open_dataflow_with_agent(session, spec, *, project_name, replies):
+def _open_dataflow_with_agent(session, spec, *, project_name, replies, native_tools=False):
     """A fresh project carrying exactly this one agent, open on the canvas.
 
     Install and attach go over HTTP - they are covered assertion-by-assertion in
@@ -169,7 +173,7 @@ def _open_dataflow_with_agent(session, spec, *, project_name, replies):
 
     # Scripted before the page can send anything, so no turn can race ahead of
     # its reply and pick up the provider's fallback instead.
-    script_agent_replies(backend, *replies)
+    script_agent_replies(backend, *replies, native_tools=native_tools)
 
     _goto_when_served(page, f"{session['frontend']}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
@@ -543,3 +547,89 @@ class TestNodeAttachedChatHeader:
         tooltip = subtitle.get_attribute("title") or ""
         assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
         assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
+
+
+class TestNativeToolCall:
+    """A turn whose model calls its tool natively renders and applies like a
+    fenced one: the reply, the review card, and the node Apply adds.
+
+    What reached the model is read back from the scripted provider, since the
+    page cannot show how the tool was asked for. Its own class, so it gets a
+    clean DB and a fresh user, as the review-card test does.
+    """
+
+    def test_a_native_create_call_is_reviewed_and_applied(
+        self, page, frontend_server, current_server,
+    ):
+        from utk_curio.backend.app.agents import tools
+
+        require_project_page()
+        require_user_auth()
+        spec = next(s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-builder")
+        leg, tool, replies = _native_replies(spec)
+        assert (leg, tool) == ("mint", "node.create"), (
+            f"this test needs an agent whose characteristic call is node.create; "
+            f"{spec.agent_id} now calls {tool!r}"
+        )
+
+        page.emulate_media(reduced_motion="reduce")
+        login = stub_db_user(current_server, username="agentnative", name="Agent Native User")
+        install_session_cookie(page, frontend_server, login["token"])
+        use_scripted_llm(current_server, login["token"])
+        session = {
+            "page": page, "frontend": frontend_server,
+            "backend": current_server, "token": login["token"],
+            "username": "agentnative",
+        }
+        project_id, _attachment_id, _base = _open_dataflow_with_agent(
+            session, spec, project_name="Native tool call", replies=replies,
+            native_tools=True,
+        )
+        before = _saved_nodes(current_server, login["token"], project_id)
+
+        panel = _open_chat(page, spec)
+        _send(panel, "Add a node that prints a line.")
+
+        # 1. The reply and the review card render, as for a fenced request.
+        expect(panel.get_by_text(VISIBLE_PROSE, exact=False)).to_be_visible(timeout=30000)
+        apply_button = panel.get_by_role("button", name=re.compile(r"^Apply"))
+        expect(apply_button.first).to_be_visible(timeout=30000)
+
+        # 2. It really was a native call: the tool was offered, the system turn
+        #    taught no fenced syntax, and a tool message answered the call.
+        offers = captured_agent_offers(current_server)
+        assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
+        captured = captured_agent_prompts(current_server)
+        assert '"toolRequest"' not in captured[0][0]["content"]
+        result = captured[1][-1]
+        assert result["role"] == "tool" and result["is_error"] is False, result
+
+        # 3. Nothing changed before the review (DEC-006).
+        assert _saved_nodes(current_server, login["token"], project_id) == before
+
+        dismiss_toasts(page)
+        save_workflow_test_screenshot(
+            page, NATIVE_STEM, test_name="pending_review",
+            clip_selector=CHAT_PANEL_SELECTOR,
+        )
+
+        # 4. Apply, and the node the call proposed is saved and on the canvas.
+        _apply_the_proposal(page, panel, tool)
+        after = _wait_for_saved(
+            current_server, login["token"], project_id,
+            lambda nodes: len(nodes) > len(before),
+            what="the node the native call proposed",
+        )
+        added = [n for n in after if n["id"] not in {b["id"] for b in before}]
+        assert len(added) == 1 and CREATED_CONTENT in (added[0].get("content") or ""), added
+        expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(timeout=20000)
+
+        dismiss_toasts(page)
+        panel.get_by_role("button", name="Close chat").click()
+        expect(page.locator(CHAT_PANEL_SELECTOR)).to_have_count(0, timeout=10000)
+        # Closing the chat hands focus back to the agent's button, whose
+        # tooltip would otherwise sit in the capture.
+        page.evaluate("document.activeElement && document.activeElement.blur()")
+        page.mouse.move(0, 400)
+        expect(page.get_by_role("tooltip")).to_have_count(0, timeout=5000)
+        save_workflow_test_screenshot(page, NATIVE_STEM, test_name="applied")
