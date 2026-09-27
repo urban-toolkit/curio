@@ -25,9 +25,9 @@ export function GlobalPageHeader() {
         <img src={logo} alt="Curio" style={logoImgStyle} />
       </Link>
       <div style={topBarRightStyle}>
-        {/* The account's one credentials surface: the LLM provider, the
-            HuggingFace token, and the data-portal tokens the Data Lake Catalog
-            uses. The name has lagged the contents twice now (it was "LLM
+        {/* The account's one credentials surface: its LLM configurations,
+            the HuggingFace token, and the data-portal tokens the Data Lake
+            Catalog uses. The name has lagged the contents twice now (it was "LLM
             Settings" before the HuggingFace token); renaming it reaches about
             a hundred references, so it is worth its own change rather than a
             feature's. */}

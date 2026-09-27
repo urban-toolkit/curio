@@ -137,9 +137,9 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
     <div>
       <p className={styles.intro}>
         Runs one of Curio's own example prompts through the real agent
-        lifecycle with the model this account uses, in a project of its own,
-        then scores the dataflow it built against the saved example. Your
-        current dataflow is not touched.
+        lifecycle on the LLM configuration that answers your runs, in a
+        project of its own, then scores the dataflow it built against the
+        saved example. Your current dataflow is not touched.
       </p>
 
       {sharedGuest ? (
@@ -153,8 +153,8 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
       {readiness && !readiness.configured ? (
         <p className={styles.blocked}>
           No model is configured, so there is nothing to evaluate.{" "}
-          {readiness.reason} Set a provider and model in the fields above, or
-          start Curio with <code>--llm-provider</code>,{" "}
+          {readiness.reason} Add an LLM configuration above and make it your
+          default, or start Curio with <code>--llm-provider</code>,{" "}
           <code>--llm-base-url</code> and <code>--llm-model</code>.
         </p>
       ) : null}
@@ -163,14 +163,17 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
         <>
           <p className={styles.who}>
             <strong>{readiness.provider.model}</strong>
+            {readiness.provider.label ? ` (${readiness.provider.label})` : ""}
             {readiness.provider.baseUrlHost
               ? ` at ${readiness.provider.baseUrlHost}`
               : ""}{" "}
             will answer.{" "}
             <span className={styles.source}>
               {readiness.source === "deployment"
-                ? "Configured by this deployment's start command."
-                : "From your AI Settings above."}
+                ? "The deployment default, set by this deployment's start command."
+                : readiness.source === "guest"
+                  ? "The guest configuration this Curio's operator set."
+                  : "Your default LLM configuration, above."}
             </span>
           </p>
 

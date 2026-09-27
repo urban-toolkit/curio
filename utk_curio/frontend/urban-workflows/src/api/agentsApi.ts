@@ -16,14 +16,6 @@ const BACKEND_URL = backendUrl();
  * Import (account) and Install (project) are separate commands; neither chains.
  */
 
-/** The deployment-wide provider default, with no secret in it. */
-export interface ProviderDefault {
-  apiType: string | null;
-  baseUrl: string | null;
-  model: string | null;
-  hasApiKey: boolean;
-}
-
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
   id: string; // e.g. "agent.my-helper"
@@ -919,42 +911,6 @@ export const agentsApi = {
   catalog(projectId?: string): Promise<AgentListResponse> {
     const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return apiFetch(`/api/agents/catalog${q}`);
-  },
-
-  /** What a user inherits when they configure no provider of their own.
-   *
-   * The launcher's --llm-provider / --llm-base-url / --llm-model write exactly
-   * these, so AI Settings can present the deployment's choice as the inherited
-   * value rather than inventing a placeholder. The key is a boolean only. */
-  providerDefault(): Promise<ProviderDefault> {
-    return apiFetch("/api/agents/provider-default");
-  },
-
-  /** The models an OpenAI-compatible endpoint reports it serves.
-   *
-   * POSTed rather than GET because AI Settings calls it mid-edit: the user has
-   * typed a base URL and a key but not saved them yet, and a GET could only
-   * list models for the previous configuration. Anything omitted falls back to
-   * the account's saved provider server-side, so an already-configured user can
-   * refresh without retyping their key.
-   *
-   * Hybrid since #241, with both halves coming from the API. `source` is
-   * `"live"` when the endpoint answered just now, or `"remembered"` when it
-   * could not and Curio is replaying what it last reported - `rememberedAt`
-   * says when that was, and `warning` why the live call did not happen.
-   * `listable` means the endpoint itself answered; kept for older callers. */
-  providerModels(input?: { apiType?: string; baseUrl?: string; apiKey?: string }): Promise<{
-    models: string[];
-    listable: boolean;
-    source?: "live" | "remembered";
-    remembered?: string[];
-    rememberedAt?: string | null;
-    warning?: string | null;
-  }> {
-    return apiFetch("/api/agents/provider-models", {
-      method: "POST",
-      body: JSON.stringify(input || {}),
-    });
   },
 
   /** Every catalog setting with this account's value and who reads it. */

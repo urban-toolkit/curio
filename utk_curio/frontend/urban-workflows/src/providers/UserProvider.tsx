@@ -49,14 +49,9 @@ interface UserProviderProps {
     email?: string;
     type?: string;
   }) => Promise<void>;
-  updateLlmConfig: (config: {
-    apiType?: string;
-    baseUrl?: string;
-    apiKey?: string;
-    model?: string;
-    huggingfaceToken?: string;
-    socrataAppToken?: string;
-  }) => Promise<void>;
+  /** Save the account's personal tokens; "" removes one, undefined keeps it.
+   * LLM configurations are saved through `llmConfigsApi` instead. */
+  updateTokens: (tokens: { huggingfaceToken?: string; socrataAppToken?: string }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
 }
@@ -75,7 +70,7 @@ export const UserContext = createContext<UserProviderProps>({
   signinGuest: async () => null,
   signout: async () => {},
   updateProfile: async () => {},
-  updateLlmConfig: async () => {},
+  updateTokens: async () => {},
   saveUserType: async () => {},
   logout: () => {},
 });
@@ -261,22 +256,11 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     []
   );
 
-  const updateLlmConfig = useCallback(
-    async (config: {
-      apiType?: string;
-      baseUrl?: string;
-      apiKey?: string;
-      model?: string;
-      huggingfaceToken?: string;
-      socrataAppToken?: string;
-    }) => {
+  const updateTokens = useCallback(
+    async (tokens: { huggingfaceToken?: string; socrataAppToken?: string }) => {
       const updated = await authApi.patchMe({
-        llm_api_type: config.apiType,
-        llm_base_url: config.baseUrl,
-        llm_api_key: config.apiKey,
-        llm_model: config.model,
-        huggingface_token: config.huggingfaceToken,
-        socrata_app_token: config.socrataAppToken,
+        huggingface_token: tokens.huggingfaceToken,
+        socrata_app_token: tokens.socrataAppToken,
       });
       setUser(updated);
     },
@@ -308,7 +292,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         signinGuest,
         signout,
         updateProfile,
-        updateLlmConfig,
+        updateTokens,
         saveUserType,
         logout: signout,
       }}
