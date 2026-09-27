@@ -260,6 +260,15 @@ def list_datalake_resource_files(source_dir: str, resource_id: str):
     return jsonify(payload), 200
 
 
+@datalakes_bp.route("/collections/<dataset_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def get_datalake_collection(dataset_id: str):
+    """Where a collection's files are (all local, or how many are cached) and a
+    few of them, by id, for a thumbnail strip."""
+    return jsonify(_service().collection_status(dataset_id)), 200
+
+
 @datalakes_bp.route("/collections/<dataset_id>/cache", methods=["POST"])
 @require_auth
 @_map_lake_errors

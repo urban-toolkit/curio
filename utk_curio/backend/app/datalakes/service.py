@@ -490,6 +490,38 @@ class DataLakeService:
             raise ResourceNotFound(f"{dataset_id!r} is not a collection")
         return item, self._catalog.get_manifest(block["sourceId"])
 
+    def collection_status(self, dataset_id: str, *, samples: int = 12) -> dict[str, Any]:
+        """Where a collection's files are, and a few of them to show.
+
+        A folder's files are all on this machine; a bucket's are once cached.
+        """
+        import pandas as pd
+
+        from utk_curio.backend.app.datalakes.application import cache_collection
+
+        item, manifest = self.collection(dataset_id)
+        block = item.get("collection") or {}
+        total = int(block.get("fileCount") or 0)
+        local = manifest.provider.type == "folder"
+        if local:
+            cached, cached_bytes = total, int(block.get("totalBytes") or 0)
+        else:
+            cached, cached_bytes = cache_collection.cached_count(self.user_key, dataset_id)
+        rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"]).head(samples)
+        return {
+            "datasetId": dataset_id,
+            "provider": manifest.provider.type,
+            "local": local,
+            "fileCount": total,
+            "totalBytes": int(block.get("totalBytes") or 0),
+            "cachedFiles": min(cached, total),
+            "cachedBytes": cached_bytes,
+            "samples": [
+                {"fileId": r.file_id, "name": r.name, "kind": r.kind}
+                for r in rows.itertuples(index=False)
+            ],
+        }
+
     def start_cache(self, dataset_id: str) -> dict[str, Any]:
         """Fetch a bucket collection's files to this machine, as a job."""
         from utk_curio.backend.app.datalakes.application import cache_collection

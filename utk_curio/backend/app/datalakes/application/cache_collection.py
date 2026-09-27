@@ -49,6 +49,15 @@ def cached_file(user_key: str, dataset_id: str, file_id: str, ext: str) -> Path 
     return path if path.is_file() else None
 
 
+def cached_count(user_key: str, dataset_id: str) -> tuple[int, int]:
+    """How many of a collection's files are on this machine, and their bytes."""
+    folder = objects_dir(user_key, dataset_id, create=False)
+    if not folder.is_dir():
+        return 0, 0
+    files = [p for p in folder.iterdir() if p.is_file() and not p.name.endswith(".part")]
+    return len(files), sum(p.stat().st_size for p in files)
+
+
 def used_bytes(user_key: str) -> int:
     root = media_dirs.media_work_root(user_key) / "objects"
     if not root.is_dir():

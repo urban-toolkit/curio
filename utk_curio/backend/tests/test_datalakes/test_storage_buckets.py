@@ -191,6 +191,9 @@ class TestABucket:
         cached = wait_for(client, auth, res.get_json()["jobId"])
         assert cached["status"] == "completed", cached.get("error")
         assert cached["itemsDone"] == 2
+        status = client.get(f"/api/datalakes/collections/{dataset['id']}", headers=auth).get_json()
+        assert status["local"] is False and status["cachedFiles"] == status["fileCount"] == 2
+        assert [s["kind"] for s in status["samples"]] == ["image", "image"]
         user_key = "1"
         for row in index.itertuples():
             path = cache_collection.cached_file(user_key, dataset["id"], row.file_id, row.ext)
@@ -198,6 +201,8 @@ class TestABucket:
 
     def test_the_cache_cap_refuses_before_downloading(self, client, auth, app, bucket_corpus, monkeypatch):
         job = add(client, auth, "lake.example.bucket@1", "pics")
+        status = client.get(f"/api/datalakes/collections/{job['dataset']['id']}", headers=auth).get_json()
+        assert status["cachedFiles"] == 0 and status["fileCount"] == 2
         monkeypatch.setenv("CURIO_MEDIA_CACHE_MAX_GB", "0")
         res = client.post(f"/api/datalakes/collections/{job['dataset']['id']}/cache", headers=auth)
         cached = wait_for(client, auth, res.get_json()["jobId"])
@@ -208,6 +213,12 @@ class TestABucket:
         res = client.post(f"/api/datalakes/collections/{job['dataset']['id']}/cache", headers=auth)
         assert res.status_code == 400
         assert "already on this machine" in res.get_json()["error"]
+        status = client.get(f"/api/datalakes/collections/{job['dataset']['id']}", headers=auth).get_json()
+        assert status["local"] is True and status["cachedFiles"] == status["fileCount"] == 3
+
+    def test_a_status_is_only_for_ones_own_collection(self, client, auth, app, shipped_root):
+        assert client.get("/api/datalakes/collections/imported.xnope@1", headers=auth).status_code == 404
+        assert client.get("/api/datalakes/collections/imported.xnope@1").status_code == 401
 
 
 class TestHuggingFacePagination:
