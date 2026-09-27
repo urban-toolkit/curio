@@ -55,15 +55,14 @@ The three directories you created are bind-mounted into the container and persis
 |---|---|---|
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
-| `datalakes/` | The Data Lake Catalog: one manifest per data portal. Ships with the image | No |
-| `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
+| `datalakes/` | The Data Lake Catalog's shipped sources: one manifest per portal or storage source. Ships with the image | No |
+| `.curio/` | Per-user stores, logs, sandbox artifacts, and your own lake sources in `.curio/datalakes/` | Yes, if users' imported datasets and computed outputs matter |
 
 `packages/` is **not** mounted. The node catalog is baked into the image so it
-always matches the deployed commit. Neither is `datalakes/`, for the same
-reason: a data lake source declares a host the server makes outbound requests
-to, so which sources exist should match the deployed commit rather than be
-editable in a mounted volume. Set `CURIO_DATALAKE_ROOT` if you need it
-elsewhere.
+always matches the deployed commit. Neither is `datalakes/`: the shipped
+sources match the deployed commit too. Set `CURIO_DATALAKE_ROOT` if you need
+them elsewhere. Sources of your own go in `.curio/datalakes/`; see
+[Storage sources](#storage-sources).
 
 ### Outbound requests
 
@@ -93,6 +92,51 @@ loops, not a guarantee you can make to a third party.
 > `datasets/` lives inside the git checkout, so publishing a dataset dirties your
 > working tree. To avoid that, point the catalog at a path outside the checkout
 > with `CURIO_CATALOG_ROOT` (or `--catalog-root`) and mount that path instead.
+
+### Storage sources
+
+A storage source lists a folder, a public S3 bucket or a Hugging Face
+repository in the Data Lake Catalog. The manifest format is in
+[DATA-LAKE-CATALOG.md § The manifest](DATA-LAKE-CATALOG.md#8-the-manifest).
+
+- **Your own sources** go in
+  `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `./.curio`
+  mount keeps across image rebuilds. Restart to list a new one. An id a shipped
+  source uses is refused, and a `folder` source's `root` must be absolute.
+  Node code cannot write to this directory.
+- **Mount a folder read-only.** Curio never writes to one. Add the mount in a
+  compose override and give the manifest the path inside the container:
+
+  ```yaml
+  services:
+    curio:
+      volumes:
+        - /srv/media/urban-sensing:/data/urban-sensing:ro
+  ```
+
+  ```json
+  { "provider": { "type": "folder", "root": "/data/urban-sensing" } }
+  ```
+
+- **`curio-exec` must be able to read it.** Under `--deploy`, node code runs as
+  `curio-exec`, so every directory on the way to the files needs `o+x` and the
+  files `o+r` (or a group `curio-exec` is in). At boot the backend logs each
+  folder source it cannot read, with the directory that stops it.
+- **Buckets and repositories** are read over the same outbound policy as the
+  portals, public ones only. Their manifests usually raise
+  `limits.requestsPerMinute`, since a listing is many small requests.
+- **Disk.** A bucket collection's files are cached per account on request,
+  under `.curio/exec-scratch/users/<key>/media/objects/` with isolation on and
+  `.curio/users/<key>/media/objects/` without. `CURIO_MEDIA_CACHE_MAX_GB`
+  (default 20) caps each account. Thumbnails, posters and spectrograms are
+  cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
+  thumbnails under `.curio/datalakes-cache/`. Deleting a collection removes
+  its caches, never the source's files.
+- **Libraries.** Probing and thumbnails use `av` (PyAV) and `rasterio`, which
+  are dependencies of `curio.builtin@1`. The image installs them, and so does
+  `python curio.py setup`.
+- **Tokens.** `CURIO_DEFAULT_HUGGINGFACE_TOKEN` is a Hugging Face token every
+  account inherits until it saves its own.
 
 ## 2. Configure Caddy
 
@@ -347,5 +391,9 @@ flooding it cannot push real errors out of the log.
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
-  `datalakes/` ships with the image and holds no user data, so it needs none.
+  `datalakes/` ships with the image and holds no user data, so it needs none;
+  your own sources are in `.curio/datalakes/`, and a folder source's files are
+  wherever you mounted them from.
+- **A folder source is readable by every signed-in user**, through its lake
+  rows and the collections they add. Mount only what all of them may see.
 

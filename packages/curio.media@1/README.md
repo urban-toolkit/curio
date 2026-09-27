@@ -34,5 +34,11 @@ Each node's settings are constants at the top of its code:
 A frame or a window is a file the node writes beside the collection's other
 derived files, served back to Simple View by its id. The media files
 themselves are never written. A bucket collection's files must be cached first
-(Cache files, on the collection's page in the Data Catalog); a node that meets
-an uncached file says so.
+(**Cache files**, in the collection's details in the Data Catalog); a node
+that meets an uncached file says so.
+
+## Examples
+
+- [Storage: orthorectified imagery](../../docs/examples/17-storage-orthorectified-imagery.md) runs Mosaic Rasters on one year's tiles.
+- [Storage: photos and videos](../../docs/examples/20-storage-photos-and-videos.md) runs Sample Video Frames on a survey's video.
+- [Storage: audio recordings](../../docs/examples/21-storage-audio-recordings.md) runs Split Audio and charts the levels.
