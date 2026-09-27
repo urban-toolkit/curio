@@ -1,11 +1,21 @@
-/* dev/138: a node's last outcome, in the node. One line by default — a node
-   body is a few hundred pixels wide — with the rest behind a disclosure. */
+/* dev/138: a node's last outcome, in the node. One line by default (a node
+   body is a few hundred pixels wide), with the rest behind a disclosure.
+
+   It sits over the bottom of the node's content, just above the band that
+   holds the run button and the editor tabs (the last 30px of the body). In the
+   flow it landed on that band, which the node's hidden overflow then cut. The
+   offsets are from the `.resizable` node box, the nearest positioned ancestor;
+   the body inside it is 15px narrower on each side. */
 
 .strip {
+  position: absolute;
+  left: 17px;
+  right: 17px;
+  bottom: 32px;
+  z-index: 11;
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin: 2px 6px 4px;
   padding: 3px 6px;
   border-radius: 6px;
   font-size: 0.7rem;
@@ -14,6 +24,13 @@
      whose drag handlers otherwise swallow the gesture. */
   user-select: text;
   cursor: auto;
+}
+
+/* Opened, it grows upward over the content and scrolls before it reaches the
+   header. */
+.expanded {
+  max-height: calc(100% - 70px);
+  overflow-y: auto;
   overflow-wrap: anywhere;
 }
 
@@ -40,6 +57,14 @@
 .text {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expanded .text {
+  white-space: pre-wrap;
+  overflow: visible;
 }
 
 .more {
