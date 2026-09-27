@@ -789,6 +789,14 @@ blocks; on a Custom endpoint the model is then remembered that way.
 Either way an agent has the same tools, every change still waits for your
 review, and the chat shows the same reply.
 
+When Node Content Builder writes an Autark document on OpenAI or Anthropic,
+the model's reply is held to the Autark schema, so it is always a document
+the schema accepts. The document is still checked against the full schema
+and the renderer's requirements before it is written to the node, and a
+refused one is corrected as before. Gemini and Custom endpoints write it as
+free text. When an endpoint refuses the schema, the request is sent again
+without it.
+
 ### Choosing the model
 
 The **Fetch models** button under the Model field asks the endpoint what it
@@ -937,6 +945,13 @@ receives the [catalog settings](#catalog-settings) named in that capability's
 `requiredConfig` as well as those in `inputs.requiredConfig`. An attached run,
 and a delegated run of a capability without an `instruction` of its own, uses
 the `instruction` prompt. A setting key Curio does not define is skipped.
+
+A definition that declares `node.content.generate` may also declare an
+`autk-grammar` prompt. A run that writes an Autark document on a provider
+that takes a reply schema uses it in place of the capability's instruction,
+and holds the reply to the Autark schema; see
+[How an agent calls its tools](#how-an-agent-calls-its-tools). Without that
+prompt, its runs are never held to the schema.
 
 Once written, import the package through the drawer's **Import agent** button
 ([part 4](#4-importing-publishing-and-sharing)).
