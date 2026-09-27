@@ -8,6 +8,7 @@ import {
   writeLakeCatalogCache,
 } from "./dataLakeCatalogCache";
 import type {
+  LakeAcquireBody,
   LakeAcquireJob,
   LakeAcquireStart,
   LakeCatalogQuery,
@@ -189,6 +190,78 @@ export function useLakeSearch(
 }
 
 
+// ── Storage listings ───────────────────────────────────────────────────────
+
+/** How often a listing is asked again while its source is being scanned. */
+const SCAN_POLL_MS = 1000;
+/** A storage search is answered from memory, so it only waits out typing. */
+const STORAGE_DEBOUNCE_MS = 150;
+
+export interface UseStorageListingResult extends UseLakeSearchResult {
+  /** True while the source is being scanned, first or on Rescan. */
+  scanning: boolean;
+  /** Walk the source again, for files added since its last scan. */
+  rescan: () => void;
+}
+
+/**
+ * A storage source's rows: its declared resources as its last scan found them.
+ *
+ * A scan runs in the background on first use, so the first answer can be a
+ * leg that says `scanning`; the listing then asks again until the scan ends.
+ */
+export function useStorageListing(sourceDir: string | undefined, q: string): UseStorageListingResult {
+  const [data, setData] = useState<LakeSearchResponse>(EMPTY_SEARCH);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [rescanNonce, setRescanNonce] = useState(0);
+  const lastRescan = useRef(0);
+
+  useEffect(() => {
+    if (!sourceDir) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const rescan = rescanNonce !== lastRescan.current;
+    lastRescan.current = rescanNonce;
+    setLoading(true);
+
+    const ask = (withRescan: boolean) => {
+      dataLakeCatalogApi
+        .searchSource(sourceDir, { q: q.trim(), rescan: withRescan }, controller.signal)
+        .then((res) => {
+          if (cancelled) return;
+          const still = res.sources.some((leg) => leg.status === "scanning");
+          setScanning(still);
+          setData(res);
+          setError(null);
+          setSearched(true);
+          if (still) timer = setTimeout(() => ask(false), SCAN_POLL_MS);
+          else setLoading(false);
+        })
+        .catch((err: Error) => {
+          if (cancelled || err.name === "AbortError") return;
+          setError(err.message || "That source could not be listed.");
+          setSearched(true);
+          setScanning(false);
+          setLoading(false);
+        });
+    };
+    timer = setTimeout(() => ask(rescan), rescan ? 0 : STORAGE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sourceDir, q, rescanNonce]);
+
+  const rescan = useCallback(() => setRescanNonce((n) => n + 1), []);
+  return { data, loading, error, searched, scanning, rescan };
+}
+
+
 // ── Acquisition ────────────────────────────────────────────────────────────
 
 /** First poll delay, then backed off. Fast enough to feel responsive on a
@@ -199,11 +272,7 @@ const POLL_MAX_MS = 3000;
 export interface UseLakeAcquireResult {
   /** Jobs in flight or recently finished, keyed `<sourceId>:<resourceId>`. */
   jobs: Record<string, LakeAcquireJob>;
-  start: (
-    dirName: string,
-    resourceId: string,
-    opts?: { format?: string; title?: string; refresh?: boolean }
-  ) => Promise<LakeAcquireStart>;
+  start: (dirName: string, resourceId: string, opts?: LakeAcquireBody) => Promise<LakeAcquireStart>;
   cancel: (dirName: string, resourceId: string) => void;
   dismiss: (dirName: string, resourceId: string) => void;
 }

@@ -42,6 +42,8 @@ function source(over: Partial<LakeSourceRow> = {}): LakeSourceRow {
       search: true, describe: true, download: true,
       formats: ['csv', 'geojson'], maxDownloadBytes: 67108864,
     },
+    kind: 'portal',
+    resources: [],
     createdAt: null,
     updatedAt: null,
     ...over,

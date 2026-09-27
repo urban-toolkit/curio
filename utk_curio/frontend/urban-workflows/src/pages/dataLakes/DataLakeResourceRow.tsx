@@ -2,14 +2,32 @@ import React from "react";
 
 import { CatalogFormatBadge } from "../../components/catalog/CatalogKindVisuals";
 import {
-  formatBytes,
+  LAKE_RESOURCE_KIND_LABEL,
   jobProgress,
-  type LakeAcquirableFormat,
+  jobProgressLabel,
+  lakeThumbnailPath,
+  type LakeAcquireBody,
   type LakeAcquireJob,
+  type LakeDeclaredResource,
   type LakeResourceRow as Row,
 } from "../../services/dataLakeCatalog";
+import { useAuthedObjectUrl } from "../../utils/useAuthedObjectUrl";
+import { DataLakeAddDialog, narrowableFields } from "./DataLakeAddDialog";
+import { DataLakeFilesPanel } from "./DataLakeFilesPanel";
 import { LakeSourceIcon } from "./LakeSourceIcon";
 import styles from "./DataLakeResourceRow.module.css";
+
+/** Sample thumbnails a collection row shows. */
+const ROW_SAMPLES = 4;
+
+/** What a row of a storage source needs beyond a portal's. */
+export interface StorageRowContext {
+  dirName: string;
+  /** What the manifest declares about the row's resource. */
+  declared?: LakeDeclaredResource;
+  /** Adds the row, all of it or narrowed. */
+  onAdd: (resource: Row, body: LakeAcquireBody) => void;
+}
 
 export interface DataLakeResourceRowProps {
   resource: Row;
@@ -26,7 +44,19 @@ export interface DataLakeResourceRowProps {
    *  shows it in the Data Catalog's details modal, the one every other
    *  catalog opens, so reaching it never leaves the lake page. */
   onViewDataset?: (datasetId: string) => void;
+  /** Present on a storage source's rows, which are added rather than
+   *  downloaded, and can be narrowed or opened file by file. */
+  storage?: StorageRowContext;
 }
+
+const SampleThumb: React.FC<{ path: string; name: string }> = ({ path, name }) => {
+  const { url } = useAuthedObjectUrl(path);
+  return url ? (
+    <img className={styles.sample} src={url} alt={name} title={name} />
+  ) : (
+    <span className={styles.sample} title={name} />
+  );
+};
 
 /**
  * One dataset on a portal.
@@ -45,15 +75,27 @@ export function DataLakeResourceRow({
   onCancel,
   onDismiss,
   onViewDataset,
+  storage,
 }: DataLakeResourceRowProps) {
-  const [format, setFormat] = React.useState<LakeAcquirableFormat | "">(
-    resource.formats[0] ?? ""
-  );
+  const [format, setFormat] = React.useState<string>(resource.formats[0] ?? "");
+  const [adding, setAdding] = React.useState(false);
+  const [filesOpen, setFilesOpen] = React.useState(false);
   const held = Boolean(resource.alreadyHeldDatasetId);
   const running = job != null && (job.status === "queued" || job.status === "running");
   const finished = job?.status === "completed";
   const failed = job != null && (job.status === "failed" || job.status === "refused");
   const landedAt = job?.datasetId ?? resource.alreadyHeldDatasetId;
+  const kind = resource.kind ?? null;
+  const splitBy = storage?.declared?.splitBy ?? [];
+  const perFile = storage?.declared?.datasets === "per-file";
+  const samples =
+    storage && kind && kind !== "table" ? (resource.samples ?? []).slice(0, ROW_SAMPLES) : [];
+
+  const add = () => {
+    if (!storage) return;
+    if (narrowableFields(resource, splitBy).length > 0) setAdding(true);
+    else storage.onAdd(resource, { title: resource.name });
+  };
 
   return (
     <article className={styles.row} data-lake-resource={resource.resourceId}>
@@ -74,6 +116,7 @@ export function DataLakeResourceRow({
               {resource.sourceName}
             </span>
           ) : null}
+          {kind ? <span className={styles.kind}>{LAKE_RESOURCE_KIND_LABEL[kind] ?? kind}</span> : null}
           {resource.formats.map((f) => (
             <CatalogFormatBadge key={f} label={f.toUpperCase()} formatKey={f} />
           ))}
@@ -89,6 +132,17 @@ export function DataLakeResourceRow({
             </a>
           ) : null}
         </div>
+        {samples.length > 0 && storage ? (
+          <div className={styles.samples} aria-label={`Files in ${resource.name}`}>
+            {samples.map((relpath, index) => (
+              <SampleThumb
+                key={relpath}
+                name={relpath}
+                path={lakeThumbnailPath(storage.dirName, resource.resourceId, index)}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className={styles.actions}>
@@ -96,12 +150,22 @@ export function DataLakeResourceRow({
           <ProgressPanel job={job!} onCancel={() => onCancel?.(resource)} />
         ) : (
           <>
-            {resource.formats.length > 1 ? (
+            {storage && !perFile ? (
+              <button
+                type="button"
+                className={styles.filesToggle}
+                aria-expanded={filesOpen}
+                onClick={() => setFilesOpen((open) => !open)}
+              >
+                {filesOpen ? "Hide files" : "Files"}
+              </button>
+            ) : null}
+            {!storage && resource.formats.length > 1 ? (
               <select
                 className={styles.formatSelect}
                 value={format}
                 aria-label={`Download format for ${resource.name}`}
-                onChange={(e) => setFormat(e.target.value as LakeAcquirableFormat)}
+                onChange={(e) => setFormat(e.target.value)}
               >
                 {resource.formats.map((f) => (
                   <option key={f} value={f}>
@@ -118,6 +182,15 @@ export function DataLakeResourceRow({
               >
                 View dataset
               </button>
+            ) : storage ? (
+              <button
+                type="button"
+                className={styles.download}
+                disabled={!resource.acquirable}
+                onClick={add}
+              >
+                Add to Data Catalog
+              </button>
             ) : (
               <button
                 type="button"
@@ -132,6 +205,32 @@ export function DataLakeResourceRow({
           </>
         )}
       </div>
+
+      {filesOpen && storage ? (
+        <DataLakeFilesPanel
+          dirName={storage.dirName}
+          resourceId={resource.resourceId}
+          onAddFiles={(files) => {
+            setFilesOpen(false);
+            storage.onAdd(resource, {
+              title: `${resource.name} (${files.length.toLocaleString()} files)`,
+              files,
+            });
+          }}
+        />
+      ) : null}
+
+      {adding && storage ? (
+        <DataLakeAddDialog
+          resource={resource}
+          splitBy={splitBy}
+          onCancel={() => setAdding(false)}
+          onAdd={(body) => {
+            setAdding(false);
+            storage.onAdd(resource, body);
+          }}
+        />
+      ) : null}
 
       {failed ? (
         /* The server's own words. It knows whether the file was too large, an
@@ -187,9 +286,7 @@ const ProgressPanel: React.FC<{ job: LakeAcquireJob; onCancel: () => void }> = (
           style={fraction == null ? undefined : { width: `${fraction * 100}%` }}
         />
       </div>
-      <span className={styles.progressLabel}>
-        {job.bytesRead > 0 ? formatBytes(job.bytesRead) : job.stageMessage}
-      </span>
+      <span className={styles.progressLabel}>{jobProgressLabel(job)}</span>
       <button type="button" className={styles.cancel} onClick={onCancel}>
         Cancel
       </button>

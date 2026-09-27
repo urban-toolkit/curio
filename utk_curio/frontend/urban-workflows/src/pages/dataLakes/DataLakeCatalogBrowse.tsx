@@ -14,12 +14,15 @@ import {
 import { useToastContext } from "../../providers/ToastProvider";
 import {
   acquireKey,
+  declaredResourceFor,
+  isStorageSource,
   notifyDatasetCatalogRefresh,
   partialFailureMessage,
   unsearchableReason,
   useLakeAcquire,
   useLakeCatalog,
   useLakeSearch,
+  type LakeAcquireBody,
   type LakeAuthMode,
   type LakeProviderType,
   type LakeSourceRow,
@@ -99,8 +102,9 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     // Reported like an import into the Data Catalog, which is what it is.
     if (job.datasetId) {
       const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      const fromStorage = data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s));
       showToast(
-        `Downloaded ${title} to your Data Catalog.`,
+        `${fromStorage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
         "success",
         viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
       );
@@ -133,6 +137,17 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     () => new Map(data.sources.map((s) => [s.sourceId, s])),
     [data.sources]
   );
+  // A storage source's rows are added rather than downloaded, and can be
+  // narrowed or opened file by file.
+  const storageContext = (source: LakeSourceRow | undefined, resourceId: string) =>
+    source && isStorageSource(source)
+      ? {
+          dirName: source.dirName,
+          declared: declaredResourceFor(source, resourceId),
+          onAdd: (r: { resourceId: string }, body: LakeAcquireBody) =>
+            void acquisition.start(source.dirName, r.resourceId, body),
+        }
+      : undefined;
   const partialFailure = useMemo(
     () =>
       partialFailureMessage(
@@ -317,6 +332,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                   ]
                 }
                 onViewDataset={(id) => openDatasetDetails(id)}
+                storage={storageContext(sourcesById.get(resource.sourceId), resource.resourceId)}
                 onDownload={(r, fmt) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.

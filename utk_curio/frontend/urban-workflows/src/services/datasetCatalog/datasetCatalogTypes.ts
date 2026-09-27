@@ -1,6 +1,16 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm" | "gpkg";
+export type DatasetFormat =
+  | "csv"
+  | "geojson"
+  | "json"
+  | "parquet"
+  | "geotiff"
+  | "shp"
+  | "bundle"
+  | "osm"
+  | "gpkg"
+  | "collection";
 
 export type DatasetSortMode = "recent" | "name";
 
@@ -130,7 +140,8 @@ export interface DatasetLoaderSnippet {
   language: "python";
   imports: string[];
   code: string;
-  pathVariable: string;
+  /** Null when the code names no path, as a collection's `curio_collection` call does. */
+  pathVariable: string | null;
   /** Variable name that should be returned from a standalone Data Loading node (e.g. "df"). */
   returnVariable?: string | null;
 }
@@ -147,10 +158,52 @@ export interface DatasetLakeSource {
   lakeId: string;
   lakeName: string;
   resourceId: string;
-  resourceUrl: string;
+  /** A portal resource's page. Absent for a storage source's, which is a
+   *  folder or a bucket rather than a page. */
+  resourceUrl?: string;
   finalUrl?: string;
   fetchedAt?: string;
   contentSha256?: string;
+  /** Storage sources: the one file added, or how many were combined. */
+  sourcePath?: string;
+  fileCount?: number;
+  /** The path fields that became columns, comma-separated. */
+  fields?: string;
+  /** Added from part of a storage row, picked by field value or by file. */
+  narrowed?: boolean;
+}
+
+/** A collection's kind. Mirrors the lake's collection `RESOURCE_KINDS`. */
+export type DatasetCollectionKind = "rasters" | "frames" | "images" | "videos" | "media" | "audio";
+
+/**
+ * The `collection` block of a `collection` dataset: which lake source and
+ * resource its files belong to, and what they are. Mirrors
+ * `index_collection.collection_block` in the backend.
+ */
+export interface DatasetCollection {
+  kind: DatasetCollectionKind;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  resourceId: string;
+  resource: string;
+  path: string;
+  fields: string[];
+  /** Files per kind: `image`, `video`, `frame`, `audio` or `raster`. */
+  counts: Record<string, number>;
+  fileCount: number;
+  totalBytes: number;
+  hasGps: boolean;
+  probeErrors: number;
+  indexedAt: string;
+  fingerprint: string;
+  split?: Record<string, string>;
+  narrowedBy?: Record<string, string[] | { min: string; max: string }>;
+  chosenFiles?: number;
+  fps?: number;
+  sequences?: number;
+  totalSeconds?: number;
 }
 
 export interface DatasetCatalogItem {
@@ -224,6 +277,8 @@ export interface DatasetCatalogItem {
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
   lakeSource?: DatasetLakeSource | null;
+  /** Present on `collection` datasets only. */
+  collection?: DatasetCollection | null;
   installed?: boolean;
   /** In the user's account-level "all projects" list. Independent of
    *  `installed`, which is one dataflow's spec refs. */
@@ -636,4 +691,15 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   bundle: "Bundle",
   osm: "OSM PBF",
   gpkg: "GeoPackage",
+  collection: "Collection",
+};
+
+/** Mirrors `KIND_LABEL` in the lake's `application/scan.py`. */
+export const DATASET_COLLECTION_KIND_LABEL: Record<DatasetCollectionKind, string> = {
+  rasters: "Rasters",
+  frames: "Frames",
+  images: "Images",
+  videos: "Videos",
+  media: "Photos and videos",
+  audio: "Audio",
 };

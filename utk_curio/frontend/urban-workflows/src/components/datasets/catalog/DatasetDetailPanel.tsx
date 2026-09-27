@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  DATASET_COLLECTION_KIND_LABEL,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetCatalogApi,
@@ -10,6 +11,11 @@ import {
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import {
+  CollectionInfoSection,
+  CollectionStrip,
+  useCollectionStatus,
+} from "./DatasetCollectionPanel";
 import { DetailLink } from "./DetailLink";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
@@ -311,6 +317,9 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     () => (dataset ? datasetReference(dataset) : null),
     [dataset],
   );
+  const collection = useCollectionStatus(
+    dataset?.format === "collection" ? dataset.id : undefined,
+  );
 
   const columnsLabel =
     fields.length > 0
@@ -343,9 +352,13 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Bundles are multi-part and have no single serialized file to export.
-  // Neither a multi-part bundle nor an OSM group is a single exportable file.
-  const canExport = dataset.format !== "bundle" && dataset.format !== "osm";
+  // Neither a multi-part bundle, an OSM group nor a collection (an index of
+  // files kept where they are) is a single exportable file.
+  const canExport =
+    dataset.format !== "bundle" && dataset.format !== "osm" && dataset.format !== "collection";
+  const lake = dataset.lakeSource;
+  // A storage source's resource is a folder or a bucket, not a portal page.
+  const fromStorage = Boolean(lake && !lake.resourceUrl);
   const activeDataset = dataset;
 
   const handleExport = async () => {
@@ -405,7 +418,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               title={
                 canExport
                   ? undefined
-                  : "Multi-part (bundle) datasets cannot be exported as a single file."
+                  : "This dataset has no single file to export."
               }
             >
               {exporting ? "Exporting…" : "Export"}
@@ -421,6 +434,11 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <span className={formatClass(dataset.format, styles)}>
               {DATASET_FORMAT_LABEL[dataset.format]}
             </span>
+            {dataset.collection ? (
+              <span className={styles.installedBadge}>
+                {DATASET_COLLECTION_KIND_LABEL[dataset.collection.kind] ?? dataset.collection.kind}
+              </span>
+            ) : null}
             {countLabel ? <span>{countLabel}</span> : null}
             {fields.length > 0 ? (
               <>
@@ -472,6 +490,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             />
           ) : (
             <div className={styles.previewSection}>
+              {dataset.collection ? <CollectionStrip status={collection.status} /> : null}
               <div className={styles.previewSubtab}>
                 <span className={styles.previewSubtabActive}>Table Preview</span>
               </div>
@@ -533,43 +552,64 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </dl>
           </div>
 
-          {dataset.lakeSource ? (
+          {dataset.collection ? (
+            <CollectionInfoSection
+              dataset={dataset}
+              status={collection.status}
+              error={collection.error}
+              job={collection.job}
+              onCacheFiles={collection.cacheFiles}
+              onFollowLink={onFollowLink}
+            />
+          ) : lake ? (
             // Where the bytes came from. Without it a downloaded dataset is
             // indistinguishable from a hand-uploaded one, and the question it
             // answers - "which portal is this, and can I go back to it?" - has
-            // no other home on this page.
+            // no other home on this page. A collection says it in its own
+            // section, above.
             <div className={styles.infoSection}>
-              <p className={styles.infoSectionLabel}>Downloaded from</p>
+              <p className={styles.infoSectionLabel}>
+                {fromStorage ? "Added from" : "Downloaded from"}
+              </p>
               <dl className={styles.infoRows}>
                 <div>
-                  <dt>Portal</dt>
+                  <dt>{fromStorage ? "Source" : "Portal"}</dt>
                   <dd>
                     <DetailLink
-                      to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}
+                      to={`/catalog/lakes/${encodeURIComponent(lake.lakeId)}`}
                       onFollow={onFollowLink}
                     >
-                      {dataset.lakeSource.lakeName}
+                      {lake.lakeName}
                     </DetailLink>
                   </dd>
                 </div>
                 <div>
                   <dt>Resource</dt>
                   <dd>
-                    <a
-                      href={dataset.lakeSource.resourceUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      {dataset.lakeSource.resourceId} ↗
-                    </a>
+                    {lake.resourceUrl ? (
+                      <a href={lake.resourceUrl} target="_blank" rel="noreferrer noopener">
+                        {lake.resourceId} ↗
+                      </a>
+                    ) : (
+                      lake.resourceId
+                    )}
                   </dd>
                 </div>
-                {dataset.lakeSource.fetchedAt ? (
+                {lake.fileCount != null && lake.fileCount > 1 ? (
                   <div>
-                    <dt>Downloaded</dt>
-                    <dd title={absoluteDate(dataset.lakeSource.fetchedAt)}>
-                      {relativeTime(dataset.lakeSource.fetchedAt)}
-                    </dd>
+                    <dt>Combined from</dt>
+                    <dd>{lake.fileCount.toLocaleString()} files</dd>
+                  </div>
+                ) : lake.sourcePath ? (
+                  <div>
+                    <dt>File</dt>
+                    <dd>{lake.sourcePath}</dd>
+                  </div>
+                ) : null}
+                {lake.fetchedAt ? (
+                  <div>
+                    <dt>{fromStorage ? "Added" : "Downloaded"}</dt>
+                    <dd title={absoluteDate(lake.fetchedAt)}>{relativeTime(lake.fetchedAt)}</dd>
                   </div>
                 ) : null}
               </dl>

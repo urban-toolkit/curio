@@ -1,0 +1,130 @@
+/*
+ * A storage row's Files list, opened under the row. Colours, type and
+ * geometry come from ../../styles/curioTokens.css.
+ */
+
+.panel {
+  flex-basis: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+}
+
+.table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  color: var(--curio-text-meta);
+  background: var(--curio-page-bg);
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--curio-border);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.path {
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+}
+
+.size {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.thumb {
+  display: block;
+  width: 48px;
+  height: 36px;
+  border-radius: var(--curio-radius-sm);
+  object-fit: cover;
+  background: var(--curio-surface-muted);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--curio-border);
+  background: var(--curio-page-bg);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+}
+
+.pageButton {
+  height: 26px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pageButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dark filled = an action, matching every other catalog surface. */
+.addButton {
+  height: 28px;
+  border: 0;
+  border-radius: var(--curio-radius-lg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.addButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--curio-danger-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-danger-bg);
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-sm);
+}

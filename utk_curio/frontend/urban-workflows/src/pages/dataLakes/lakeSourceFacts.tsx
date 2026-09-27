@@ -23,9 +23,11 @@ function bytesLabel(bytes: number): string {
 
 export function lakeSourceInfoRows(source: LakeSourceRow): LakeSourceFact[] {
   const { capabilities } = source;
+  const storage = source.kind === "storage";
   const rows: (LakeSourceFact | null)[] = [
     { label: "Provider", value: LAKE_PROVIDER_LABEL[source.provider] ?? source.provider },
     source.baseUrl ? { label: "Endpoint", value: source.baseUrl } : null,
+    storage ? { label: "Resources", value: String(source.resources?.length ?? 0) } : null,
     source.homepage
       ? {
           label: "Homepage",
@@ -42,7 +44,10 @@ export function lakeSourceInfoRows(source: LakeSourceRow): LakeSourceFact[] {
       label: "Formats",
       value: capabilities.formats.map((f) => f.toUpperCase()).join(", ") || "None",
     },
-    { label: "Max download", value: bytesLabel(capabilities.maxDownloadBytes) },
+    // A folder is read from this machine, so no download ceiling applies.
+    source.provider === "folder"
+      ? null
+      : { label: "Max download", value: bytesLabel(capabilities.maxDownloadBytes) },
   ];
   return rows.filter((row): row is LakeSourceFact => row != null);
 }

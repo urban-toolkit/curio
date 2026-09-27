@@ -184,6 +184,12 @@
   --curio-format-gpkg-bg: #F7E7DC;
   --curio-format-gpkg-on-tint: #8A4319;
 
+  /* Collection: an index of files kept where they are. A rose that no other
+     format uses, so a folder of images never reads as a table. */
+  --curio-format-collection-fg: #B83A5E;
+  --curio-format-collection-bg: #F9E1E8;
+  --curio-format-collection-on-tint: #9E2F4F;
+
   /* ── Node category palette ─────────────────────────────────────────────
      One colour per node category. Promoted from the canvas, which is where
      this colour already meant something: `nodeTypeBorderColor` in

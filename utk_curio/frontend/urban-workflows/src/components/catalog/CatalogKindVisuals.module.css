@@ -198,6 +198,11 @@
   color: var(--curio-format-gpkg-on-tint);
 }
 
+.formatBadge_collection {
+  background: var(--curio-format-collection-bg);
+  color: var(--curio-format-collection-on-tint);
+}
+
 .categoryBadge {
   flex-shrink: 0;
   border-radius: 4px;

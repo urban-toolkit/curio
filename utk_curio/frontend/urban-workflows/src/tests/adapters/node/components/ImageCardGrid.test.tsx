@@ -8,10 +8,10 @@
  */
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import ImageCardGrid from '../../../../adapters/node/components/ImageCardGrid';
+import ImageCardGrid, { CARD_PAGE_SIZE } from '../../../../adapters/node/components/ImageCardGrid';
 
 jest.mock('../../../../utils/backendUrl', () => ({ backendUrl: () => 'http://backend.test' }));
-jest.mock('../../../../utils/authApi', () => ({ getToken: () => 'tok-123' }));
+jest.mock('../../../../utils/authApi', () => ({ getToken: () => 'tok-123', apiFetch: jest.fn() }));
 
 const rows = [
   { image_url: 'https://example.test/a?size=640', image_id: 'CAoSL1', dominant_class: 'vegetation' },
@@ -126,5 +126,50 @@ describe('ImageCardGrid', () => {
     });
     expect(screen.queryAllByRole('img')).toHaveLength(0);
     expect(document.getElementById('imageBox_content_sv-1_0')).toBeInTheDocument();
+  });
+
+  it('draws a page of cards at a time', () => {
+    const many = Array.from({ length: CARD_PAGE_SIZE + 3 }, (_, i) => ({
+      image_url: `https://example.test/${i}.png`,
+    }));
+    render(
+      <ImageCardGrid
+        {...defaultProps}
+        rows={many}
+        interacted={many.map(() => '0')}
+      />,
+    );
+    expect(screen.getAllByRole('img')).toHaveLength(CARD_PAGE_SIZE);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getAllByRole('img')).toHaveLength(3);
+    // Row indices stay absolute, so a selection reaches the right row.
+    expect(document.getElementById(`imageBox_content_sv-1_${CARD_PAGE_SIZE}`)).toBeInTheDocument();
+  });
+
+  it('plays a collection video through a signed link', async () => {
+    const { apiFetch } = require('../../../../utils/authApi') as { apiFetch: jest.Mock };
+    apiFetch.mockResolvedValue({ url: '/api/media/signed-token' });
+    const video = [{
+      thumbnail: 'https://example.test/poster.png',
+      kind: 'video',
+      dataset_id: 'imported.xc1@1',
+      file_id: 'b'.repeat(16),
+      name: 'clip.mp4',
+    }];
+    const onClickRow = jest.fn();
+    const { container } = render(
+      <ImageCardGrid {...defaultProps} rows={video} imageColumns={['thumbnail']} interacted={['0']} onClickRow={onClickRow} />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Play clip.mp4' }));
+    });
+    expect(apiFetch).toHaveBeenCalledWith(
+      `/api/datasets/imported.xc1%401/media/${'b'.repeat(16)}/link`,
+      { method: 'POST' },
+    );
+    await waitFor(() => {
+      expect(container.querySelector('video')).toHaveAttribute('src', 'http://backend.test/api/media/signed-token');
+    });
+    expect(onClickRow).not.toHaveBeenCalled();
   });
 });

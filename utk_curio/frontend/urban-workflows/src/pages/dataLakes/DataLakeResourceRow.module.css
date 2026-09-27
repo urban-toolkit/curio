@@ -253,3 +253,54 @@
   cursor: pointer;
   padding: 0 2px;
 }
+
+/* ── Storage rows ─────────────────────────────────────────────────────── */
+
+/* What a storage row's files are: rasters, frames, audio... Neutral, beside
+   the format badge that carries the colour. */
+.kind {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  border-radius: 10px;
+  padding: 0 8px;
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.samples {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sample {
+  display: block;
+  width: 64px;
+  height: 48px;
+  border-radius: var(--curio-radius-sm);
+  object-fit: cover;
+  background: var(--curio-surface-muted);
+}
+
+/* Navigation into the row, like View dataset. */
+.filesToggle {
+  height: 30px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filesToggle:hover {
+  background: var(--curio-page-bg);
+}
