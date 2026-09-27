@@ -347,6 +347,45 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         return {}
 
 
+def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, str | None]:
+    """Where the files of each collection *code* reads are, for this execution.
+
+    Returns ``({datasetId: {root, objects, kind}}, media_dir)``. A folder
+    collection's files are read in place under ``root``; a bucket collection's
+    cached copies sit in ``objects``. ``media_dir`` is where a node may write
+    the frames or clips it derives. Fail-open like dataset paths: the
+    injected ``curio_collection`` raises a clear error for anything missing.
+    """
+    from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code
+
+    ids = collection_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
+    if not ids or not user_key:
+        return {}, None
+    try:
+        from utk_curio.backend.app.datalakes.application import cache_collection
+        from utk_curio.backend.app.datalakes.infrastructure import media_dirs, storage
+        from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        service = DataLakeService(user_key, user=getattr(g, "user", None))
+        out = {}
+        for dataset_id in ids:
+            try:
+                item, manifest = service.collection(dataset_id)
+            except Exception:  # noqa: BLE001 - one missing collection is its node's error
+                continue
+            entry = {"kind": (item.get("collection") or {}).get("kind")}
+            if manifest.provider.type == "folder":
+                entry["root"] = str(storage.storage_root(manifest))
+            else:
+                entry["objects"] = str(cache_collection.objects_dir(user_key, dataset_id))
+            out[dataset_id] = entry
+        media_dir = str(media_dirs.media_work_dir(user_key)) if out else None
+        return out, media_dir
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] collection resolution failed: {e}", flush=True)
+        return {}, None
+
+
 def _exec_user_key():
     """The current user's on-disk storage key, or None when there is no user.
 
@@ -392,6 +431,7 @@ def process_python_code():
     # this route knows it: the sandbox has no notion of who is logged in, and
     # the in-process path ignores it entirely.
     exec_user_key = _exec_user_key()
+    collections, media_dir = _resolve_exec_collections(code, exec_user_key)
     t1 = _time.perf_counter()
     # The gauge wraps only the sandbox round trip, which is where a node
     # actually spends its time. Counting the surrounding parse and JSON work
@@ -409,6 +449,8 @@ def process_python_code():
                 "save_dataset": bool(save_output_dataset),
                 "dataset_paths": dataset_paths,
                 "user_key": exec_user_key,
+                "collections": collections,
+                "media_dir": media_dir,
             }),
             headers={"Content-Type": "application/json"},
         )

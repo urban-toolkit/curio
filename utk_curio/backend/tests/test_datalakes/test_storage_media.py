@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import time
 from urllib.parse import quote
 
@@ -203,3 +204,64 @@ def test_the_sniffer_knows_the_allowlisted_formats():
     assert sniff(b"\x00\x00\x00\x18ftypisom") == "video/mp4"
     assert sniff(b"<svg xmlns=") is None
     assert sniff(b"<html>") is None
+
+
+class TestDerivedFiles:
+    def test_a_frame_a_node_wrote_is_served_by_its_id(self, client, auth, app, shipped_root, user_and_token):
+        from PIL import Image
+
+        from utk_curio.backend.app.datalakes.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        video_id = file_id_of(index, "clip_01.mp4")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], video_id, 500)
+        Image.new("RGB", (64, 48), (200, 30, 30)).save(row["path"], "JPEG")
+        thumb = client.get(row["thumbnail"], headers=auth)
+        assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"
+        original = client.get(row["image_url"], headers=auth)
+        assert original.status_code == 200 and original.mimetype == "image/jpeg"
+        assert media(client, auth, dataset["id"], f"{video_id}@999").status_code == 404
+
+    def test_only_a_video_or_recording_has_derived_files(self, client, auth, app, shipped_root):
+        dataset, index = collection(client, auth, "survey")
+        photo = file_id_of(index, "IMG_0001.jpg")
+        assert media(client, auth, dataset["id"], f"{photo}@500").status_code == 404
+
+
+class TestExecutionResolution:
+    def test_code_that_reads_a_collection_gets_its_root_and_a_media_directory(
+        self, client, auth, app, shipped_root, user_and_token
+    ):
+        from flask import g
+
+        from utk_curio.backend.app.api.routes import _resolve_exec_collections, _resolve_exec_dataset_paths
+        from utk_curio.backend.app.datalakes.infrastructure.storage import storage_root
+        from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
+        from utk_curio.backend.tests.test_datalakes.conftest import SHIPPED_ROOT
+
+        user, _token = user_and_token
+        dataset, _index = collection(client, auth, "noise")
+        code = f'    frame = curio_collection("{dataset["id"]}")\n    x = curio_collection("imported.xnone")\n'
+        with app.test_request_context():
+            g.user = user
+            collections, media_dir = _resolve_exec_collections(code, str(user.id))
+            paths = _resolve_exec_dataset_paths(code, None)
+        root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
+        assert collections == {dataset["id"]: {"kind": "audio", "root": str(root)}}
+        assert media_dir and os.path.isdir(media_dir)
+        assert paths[dataset["id"]] == dataset["path"]
+
+    def test_a_collection_call_counts_as_using_the_dataset(self):
+        from utk_curio.backend.app.datasets.domain.code_refs import (
+            collection_ids_in_code,
+            dataset_ids_in_code,
+        )
+
+        code = 'a = curio_collection("imported.xa@1")\nb = curio_dataset_path("imported.xb")'
+        assert dataset_ids_in_code(code) == ["imported.xa@1", "imported.xb"]
+        assert collection_ids_in_code(code) == ["imported.xa@1"]

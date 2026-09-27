@@ -541,6 +541,13 @@ def run_node(request, namespace_factory):
             namespace["curio_dataset_path"] = _make_dataset_path_resolver(
                 request.get("dataset_paths") or {}, scratch_dir
             )
+            from utk_curio.sandbox.util.collections import make_collection_helpers
+
+            namespace.update(make_collection_helpers(
+                namespace["curio_dataset_path"],
+                request.get("collections") or {},
+                request.get("media_dir"),
+            ))
 
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process

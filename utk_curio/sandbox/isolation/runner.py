@@ -176,6 +176,8 @@ def execute_isolated(
     dataset_paths=None,
     user_key=None,
     config,
+    collections=None,
+    media_dir=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -245,6 +247,8 @@ def execute_isolated(
             work_dir=work_dir,
             overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
+            collections=collections,
+            media_dir=media_dir,
             session_imports=_imports_for(session_id),
             limits=config.limits,
             wall_timeout=config.wall_timeout,

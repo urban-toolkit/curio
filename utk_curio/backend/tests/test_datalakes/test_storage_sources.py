@@ -462,3 +462,30 @@ class TestAddingACollection:
         index = pd.read_parquet(dataset["path"])
         assert len(index) == 2 and index["probe_error"].notna().all()
         assert dataset["collection"]["probeErrors"] == 2
+
+
+class TestTheExecUserAudit:
+    def test_a_closed_parent_hides_an_open_folder(self, tmp_path):
+        """Readable means the mode allows it AND every parent can be traversed."""
+        from utk_curio.backend.app.datalakes.infrastructure.storage import readable_by
+
+        closed = tmp_path / "closed"
+        shared = closed / "shared"
+        shared.mkdir(parents=True)
+        os.chmod(shared, 0o755)
+        os.chmod(closed, 0o700)
+        other_uid = os.getuid() + 12345
+        try:
+            assert not readable_by(shared, other_uid, set())
+            assert readable_by(shared, os.getuid(), set())
+            os.chmod(shared, 0o300)
+            assert not readable_by(shared, os.getuid(), set())
+        finally:
+            os.chmod(shared, 0o755)
+            os.chmod(closed, 0o755)
+
+    def test_without_isolation_nothing_is_audited(self, monkeypatch):
+        from utk_curio.backend.app.datalakes.infrastructure.storage import audit_folder_roots
+
+        monkeypatch.setenv("CURIO_ISOLATION", "off")
+        assert audit_folder_roots() == []

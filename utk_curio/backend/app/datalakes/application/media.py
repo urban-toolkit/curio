@@ -139,15 +139,27 @@ class Located:
     provider: Any
 
 
+_DERIVED_ID_RE = __import__("re").compile(r"^([0-9a-f]{16})@([0-9]{1,12})$")
+
+
 def locate(service, dataset_id: str, file_id: str) -> Located:
-    """Find one file of this account's collection, by id."""
+    """Find one file of this account's collection, by id.
+
+    ``<file_id>@<t_ms>`` names a file a node derived from one of the
+    collection's: a video's frame or a recording's window, written where
+    ``curio_derived_file`` put it.
+    """
     from utk_curio.backend.app.datalakes.application import cache_collection
 
     item, manifest = service.collection(dataset_id)
     path = item.get("path")
     if not path or not os.path.isfile(path):
         raise ResourceNotFound(f"{dataset_id!r} has no index on disk")
-    row = index_cache.rows(path).get(file_id)
+    rows = index_cache.rows(path)
+    derived = _DERIVED_ID_RE.match(file_id)
+    if derived:
+        return _locate_derived(service, dataset_id, rows, derived.group(1), int(derived.group(2)))
+    row = rows.get(file_id)
     if row is None:
         raise ResourceNotFound(f"{file_id!r} is not a file of {dataset_id!r}")
     provider = service._storage_for(manifest)
@@ -155,6 +167,26 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     if local is None:
         local = cache_collection.cached_file(service.user_key, dataset_id, row.file_id, row.ext)
     return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=provider)
+
+
+def _locate_derived(service, dataset_id: str, rows, source_id: str, t_ms: int) -> Located:
+    from utk_curio.sandbox.util.collections import DERIVED, derived_relpath
+
+    source = rows.get(source_id)
+    if source is None or source.kind not in DERIVED:
+        raise ResourceNotFound(f"{source_id!r} is not a video or recording of {dataset_id!r}")
+    folder, ext, kind = DERIVED[source.kind]
+    path = media_dirs.media_work_root(service.user_key) / derived_relpath(
+        folder, dataset_id, source_id, t_ms, ext
+    )
+    if not path.is_file():
+        raise ResourceNotFound("this file has not been extracted; run the node that makes it again")
+    stat = path.stat()
+    row = IndexRow(
+        file_id=f"{source_id}@{t_ms}", relpath=f"{source.relpath}@{t_ms}", ext=ext, kind=kind,
+        bytes=stat.st_size, mtime=str(stat.st_mtime_ns),
+    )
+    return Located(dataset_id=dataset_id, row=row, local=path, provider=None)
 
 
 # ── what is served ─────────────────────────────────────────────────────────

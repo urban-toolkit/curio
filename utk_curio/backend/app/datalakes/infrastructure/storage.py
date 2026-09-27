@@ -146,3 +146,79 @@ def storage_root(manifest) -> Path:
     if not resolved.is_dir():
         raise StorageRootError(f"{manifest.name}: the folder {raw} is not available")
     return resolved
+
+
+def readable_by(path: Path, uid: int, gids: set[int]) -> bool:
+    """Whether *uid* can read *path* and reach it through every parent.
+
+    From the mode bits, since ``os.access`` answers for this process's user
+    and the backend runs as root.
+    """
+    import stat as stat_module
+
+    def allows(st, read: int, owner_bit: int, group_bit: int, other_bit: int) -> bool:
+        if st.st_uid == uid:
+            return bool(st.st_mode & owner_bit)
+        if st.st_gid in gids:
+            return bool(st.st_mode & group_bit)
+        return bool(st.st_mode & other_bit)
+
+    try:
+        target = Path(path).resolve()
+        st = target.stat()
+        if not allows(st, 0, stat_module.S_IRUSR, stat_module.S_IRGRP, stat_module.S_IROTH):
+            return False
+        for parent in [target] + list(target.parents):
+            pst = parent.stat()
+            if stat_module.S_ISDIR(pst.st_mode) and not allows(
+                pst, 0, stat_module.S_IXUSR, stat_module.S_IXGRP, stat_module.S_IXOTH
+            ):
+                return False
+        return True
+    except OSError:
+        return False
+
+
+def audit_folder_roots(log=logger) -> list[str]:
+    """Warn about every folder source a sandboxed node could not read.
+
+    Under fork isolation a node runs as the execution user and reads a folder
+    collection's files by path, so a root that user cannot read is a
+    collection whose nodes fail. Checked once at boot; returns the warnings.
+    """
+    if (os.environ.get("CURIO_ISOLATION") or "").strip().lower() != "fork":
+        return []
+    user = (os.environ.get("CURIO_EXEC_USER") or "").strip()
+    if not user:
+        return []
+    try:
+        import pwd
+
+        entry = pwd.getpwnam(user)
+    except (ImportError, KeyError):
+        return []
+    gids = {entry.pw_gid} | set(os.getgrouplist(user, entry.pw_gid)) if hasattr(os, "getgrouplist") else {entry.pw_gid}
+    from utk_curio.backend.app.datalakes.domain.manifest import ManifestError, load_source_manifest_from_dir
+
+    warnings = []
+    for path in list_lake_sources():
+        try:
+            manifest = load_source_manifest_from_dir(path)
+        except (ManifestError, ValueError):
+            continue
+        if manifest.provider.type != "folder":
+            continue
+        try:
+            from dataclasses import replace
+
+            root = storage_root(replace(manifest, origin=origin_of(path)))
+        except StorageRootError as exc:
+            warnings.append(f"{manifest.dir_name}: {exc}")
+            continue
+        if not readable_by(root, entry.pw_uid, gids):
+            warnings.append(
+                f"{manifest.dir_name}: {root} is not readable by {user}; nodes cannot open its files"
+            )
+    for warning in warnings:
+        log.warning("data lake folder source %s", warning)
+    return warnings
