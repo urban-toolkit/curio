@@ -1805,6 +1805,93 @@ def scene_quickstart(ctx: Ctx) -> None:
     tour.hush()
 
 
+def scene_collaboration(ctx: Ctx) -> None:
+    """Two people in one dataflow, seen from the owner's screen.
+
+    Needs a stack started with ``--collab`` (``CURIO_E2E_COLLAB=1``). The second
+    person drives a context of their own that is not recorded: the video shows
+    what the owner sees when someone joins, adds a node and proposes a change.
+    """
+    page, tour = ctx.page, ctx.tour
+    if os.environ.get("CURIO_E2E_COLLAB", "0").strip().lower() not in ("1", "true", "yes", "on"):
+        _log("[tour] collaboration needs a --collab stack (CURIO_E2E_COLLAB=1); skipped")
+        return
+    if "/dataflow/" in page.url:
+        _new_dataflow_from_menu(ctx)
+    else:
+        page.goto(f"{ctx.frontend}/dataflow/new")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    tour.beat(900)
+    _rename_dataflow(ctx, "Shared dataflow")
+    _reset_zoom(page)
+    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER)
+    set_node_code(page, loader_id, QUICKSTART_CODE)
+    tour.beat(700)
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url and r.request.method in ("POST", "PUT") and r.ok,
+        timeout=40000,
+    ):
+        tour.click(page.locator("[data-curio-save-state]").first, force=True)
+    page.wait_for_url(re.compile(r".*/dataflow/[0-9a-f-]{36}"), timeout=30000)
+    project_id = re.search(r"/dataflow/([0-9a-f-]{36})", page.url).group(1)
+    # Only rendered when the server runs with --collab.
+    people = page.locator('button[title^="Collaboration"]')
+    people.wait_for(state="visible", timeout=30000)
+
+    other = page.context.browser.new_context(viewport=VIDEO_SIZE)
+    try:
+        page2 = other.new_page()
+        page2.emulate_media(reduced_motion="reduce")
+        stub_db_login(
+            page2, frontend_url=ctx.frontend, backend_url=ctx.backend,
+            username="ben_planner", name="Ben Planner", password=USER_PASSWORD,
+        )
+        page2.goto(f"{ctx.frontend}/dataflow/{project_id}")
+        page2.wait_for_selector(".react-flow__node", timeout=45000)
+        expect(people).to_have_attribute("title", "Collaboration (2 online)", timeout=30000)
+        tour.say(
+            "Someone else opens the same dataflow",
+            "The people icon counts who is here; the panel lists them.",
+            hold=2400,
+        )
+        # The panel opens with the canvas; the icon only toggles it.
+        listed = page.get_by_text("Users (2)", exact=True)
+        if listed.is_visible():
+            tour.focus(listed, hold=1400)
+        else:
+            tour.click(people, hold=1400)
+        tour.still("collaboration-users")
+
+        # Ben adds a node, and it appears on this canvas.
+        _reset_zoom(page2)
+        drag_to_canvas(page2, page2.locator(VEGA_TILE), at=POS_TRANSFORM)
+        page.wait_for_function(
+            "() => document.querySelectorAll('.react-flow__node').length >= 2", timeout=30000,
+        )
+        tour.beat(1500)
+        _fit_view(page)
+        tour.beat(900)
+
+        # Ben edits the loader's code: this canvas shows his lock while he types,
+        # and a proposal once he leaves the editor.
+        node_locator(page2, loader_id).locator(".view-lines").first.click()
+        page2.keyboard.press("ControlOrMeta+End")
+        page2.keyboard.press("Enter")
+        page2.keyboard.type("# checked by Ben", delay=40)
+        tour.beat(1800)
+        tour.still("collaboration-lock")
+        page2.mouse.click(1100, 720)
+        banner = node_locator(page, loader_id).get_by_text("proposed a code change")
+        banner.wait_for(state="visible", timeout=30000)
+        tour.focus(banner, hold=1400)
+        tour.still("collaboration-proposal", cursor=True)
+        tour.click(node_locator(page, loader_id).get_by_role("button", name="Approve", exact=True), hold=1800)
+    finally:
+        other.close()
+    tour.hush()
+
+
 def _example_node_count(path: str) -> int:
     with open(path, encoding="utf-8") as handle:
         return len(json.load(handle)["dataflow"]["nodes"])
@@ -1984,6 +2071,9 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("catalogpages", scene_catalog_pages),
     ("datalakes", scene_data_lakes),
     ("monitor", scene_monitor),
+    # Needs a --collab stack (CURIO_E2E_COLLAB=1), so the full tour skips it
+    # unless that is set; see scene_collaboration.
+    ("collaboration", scene_collaboration),
     ("outro", scene_outro),
 ]
 
@@ -1995,6 +2085,7 @@ CANVAS_SCENES = {
     "datacatalog", "build", "saveload", "lineage", "nodecatalog", "libraries",
     "agentcatalog", "agentattach", "agentrun",
     "linkedviews", "dashboard", "provenance", "interaction", "autark", "quickstart",
+    "collaboration",
 }
 
 
