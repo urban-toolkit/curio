@@ -39,7 +39,7 @@ data.urbanlab.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twelve datasets ship in the shared catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels). They are the inputs to the example dataflows in `docs/examples/`.
+Twelve datasets ship in the shared catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels).
 
 ### Origins
 
@@ -50,9 +50,8 @@ Every dataset carries an `origin`, which the browse filters and provenance chips
 | `hub` | Published into the shared catalog and browsable by every user on this install. |
 | `imported` | A file you uploaded from your machine, or downloaded from the [Data Lake Catalog](DATA-LAKE-CATALOG.md). |
 | `computed` | The output of a node in one of your dataflows, saved when it ran. |
-| `source_node` | A dataset carried by a node's own configuration rather than the catalog. |
 
-The UI groups `hub`, `imported`, and `source_node` under one **Imported** label, leaving **Computed** as the distinction to filter on.
+The UI groups `hub` and `imported` under one **Imported** label, leaving **Computed** as the distinction to filter on.
 
 ### Dataset ids
 
@@ -60,11 +59,10 @@ Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 c
 
 | Kind | Id form | Note |
 |---|---|---|
-| Shipped or published | `data.urbanlab.chicago-boundary` | Written by hand in the manifest. |
+| Shipped | `data.urbanlab.chicago-boundary` | Written by hand in the manifest. |
 | Imported | `imported.x<uuid12>` | New for every import: uploading the same bytes twice creates **two** datasets. |
 | Computed | `computed.<dataflowId>.<nodeId>` | One per node per dataflow, so the same node id in two dataflows never collides. |
 | OSM PBF group | `osm.x<uuid8>` | The parent of one import's layers. |
-| Published from an id that does not fit the grammar | `local.data.<slug>` | Given at publish time. |
 
 ### Storage layers
 
@@ -78,7 +76,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 | **Per-dataflow refs**, what one dataflow declares it needs | `dataflow.datasets` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. The shipped examples carry theirs already. |
 
 > [!NOTE]
-> The example projects declare the datasets they need, and Curio copies those into your store when the examples are seeded (`--with-examples`) and the first time you open one.
+> The example projects declare the datasets they need, and Curio copies those into your store the first time you open one.
 
 **Computed datasets belong to your account, not to a project.** Running a node saves its output into your store and writes *no* `dataflow.datasets` ref. It appears in the catalog at once, but it is only "in" a dataflow once you add it there.
 
@@ -89,7 +87,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 There are three places you work with datasets, and they are **not** interchangeable:
 
 - **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
-- **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, publishing, unpublishing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
+- **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
 - **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
 ### Action matrix
@@ -99,10 +97,10 @@ There are three places you work with datasets, and they are **not** interchangea
 | **Add to project** | Drawer | This dataflow's refs, plus your store if the dataset came from the shared catalog | The dataset appears in this dataflow's **Data Catalog** palette, ready to drag. |
 | **Add to all projects** | `/catalog/data`, in the right-hand drawer or the right-click menu | Your defaults and every project's refs, plus your store if needed | The dataset is in every dataflow's palette, and new projects start with it. |
 | **Remove from all projects** | `/catalog/data`, in the right-hand drawer or the right-click menu | Your defaults and every project's refs | It leaves every dataflow. The dataset stays in your account. |
-| **Remove from project** | Drawer, or the trash icon in the **In project** tab | This dataflow's refs; your own upload is deleted too when no other dataflow uses it | It leaves this dataflow's palette. The confirmation says when an upload will be deleted, and its button then reads **Remove and delete**. |
+| **Remove from project** | Drawer | This dataflow's refs; your own upload is deleted too when no other dataflow uses it | It leaves this dataflow's palette. The confirmation says when an upload will be deleted, and its button then reads **Remove and delete**. |
 | **Import dataset** | Drawer footer | Your store | The file is registered in your catalog. It is **not** added to the open dataflow; add it afterwards. |
-| **Publish** | Drawer, `/catalog/data` cards, or the details | The shared catalog | Every user on this install can browse the dataset. |
-| **Unpublish** | Drawer or the details | The shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
+| **Publish** | `/catalog/data`, in the right-hand drawer | The shared catalog | Every user on this install can browse the dataset. |
+| **Unpublish** | `/catalog/data`, in the right-hand drawer | The shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
 | **Delete** | Drawer, on computed datasets and your own imports | Your store, and refs in every project | The dataset is **permanently** removed from your account, and every dataflow's reference to it is stripped. |
 
 ### Workflows
@@ -121,7 +119,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want a dataset gone for good.** Use **Delete** in the drawer. It removes your stored copy and strips the references from every dataflow that used it, and its confirmation says how many nodes are affected.
 
-**I want other users on this deployment to see my dataset.** Click **Publish**. It is copied into the shared catalog, and only you, as its publisher, can unpublish it later. Publishing is per deployment: there is no hosted dataset registry.
+**I want other users on this deployment to see my dataset.** On `/catalog/data`, click the dataset's card, then **Publish** in the drawer. It is copied into the shared catalog, and only you, as its publisher, can unpublish it later. Publishing is per deployment: there is no hosted dataset registry.
 
 ---
 
@@ -139,7 +137,7 @@ The generated Python depends on the format:
 | `csv` | `pd.read_csv(dataset_path)` → `df` |
 | `geojson`, `shp` | `gpd.read_file(dataset_path)` → `gdf` |
 | `parquet` | `gpd.read_parquet`, falling back to `pd.read_parquet` → `df` |
-| `json` | `json.load(f)` → `data` |
+| `json` | `json.loads(...)` → `data` |
 | `geotiff` | `rasterio.open(dataset_path)` → `src` |
 | `bundle` | Rebuilds every part and returns a tuple → `bundle` |
 | OSM group | A `layers` dict of per-layer GeoParquet reads |
@@ -148,7 +146,7 @@ The generated code names the dataset with `curio_dataset_path("<datasetId>")` in
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
-A node tied to a dataset shows a pill on its title bar: **DATASET** when the node reads one, **OUTPUT** when it produced one. Clicking the pill reveals the dataset in the palette. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers, counted from your current dataflows.
+A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
 
 ---
 
@@ -158,9 +156,9 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when the nod
 
 Every runnable node has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
 
-A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input: save it, then read it downstream with `gpd.read_parquet(curio_dataset_path("computed.<dataflowId>.<nodeId>"))`. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
+A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
-In preview tables, a geometry column is shown as WKT (`POINT (0.67 0.33)`), in both the catalog and the Data Pool.
+In the catalog's preview of a saved output, a geometry column is shown as WKT (`POINT (0.67 0.33)`).
 
 Every output type a node can declare is saved, not only tables:
 
@@ -174,17 +172,12 @@ Every output type a node can declare is saved, not only tables:
 
 A `json` output is stored as plain, uncompressed JSON, readable with `json.load` and exported as is.
 
-The toggle is forced **off**, and nothing is saved, for:
+Nothing is saved for:
 
 - **Visualization sinks** (`curio.builtin/vis-vega`, `curio.builtin/vis-simple`), which pass their input straight through.
 - **Dataset-palette nodes**, the loader nodes created by dragging a dataset in.
 
-A node's output appears in the drawer's **Computed** tab and in the palette as soon as the node runs. Running it again rewrites the same dataset.
-
-> [!IMPORTANT]
-> **A dataflow must be saved before its node outputs are stored.** In an
-> unsaved dataflow, a node's output shows in the catalog but nothing is written
-> to disk until the next save.
+A node's output appears in the drawer's **Computed** tab as soon as the node runs. Running it again rewrites the same dataset.
 
 ### Lineage
 
@@ -225,8 +218,6 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `geotiff` | Not previewable: *"Raster preview is not available in the catalog yet. Use the map canvas."* |
 | `shp` | Not previewable. |
 
-When a manifest carries no `schema`, Curio infers field names, types, and nullability from the first page of the preview.
-
 **Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles and OSM groups cannot be exported.
 
 ---
@@ -250,7 +241,7 @@ Anything else is rejected with *"Unsupported dataset format"*.
 
 ### Text imports are stored as UTF-8
 
-`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. CSVs are also re-saved comma-delimited. Curio tries UTF-8 first and only guesses the encoding when that fails. A file already in the store that is not UTF-8 still previews.
+`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails.
 
 ### Multi-layer imports: OSM PBF and GeoPackage
 
@@ -258,7 +249,7 @@ A `.pbf` extract is not stored as is. On import, Curio reads every non-empty lay
 
 This needs the geospatial extras (`geopandas`, `pyogrio`) and a GDAL build with the OSM driver; Curio says so if either is missing.
 
-A `.gpkg` is handled the same way, since a GeoPackage can hold any number of layers: each layer becomes its own parquet dataset, folded into one **GeoPackage** entry. Two things differ from the PBF path:
+A `.gpkg` is handled the same way, since a GeoPackage can hold any number of layers: each layer becomes its own parquet dataset, folded into one **GeoPackage** entry in the drawer. Two things differ from the PBF path:
 
 - **CRS.** A GeoPackage layer that is not in EPSG:4326 is **reprojected**. Only a layer with no CRS at all is labelled 4326.
 - **Attribute-only tables.** A table with no geometry is kept, as plain parquet.
@@ -267,13 +258,13 @@ A GeoPackage holding exactly one layer is imported as an ordinary parquet datase
 
 ### Publish, unpublish, delete
 
-**Publish** copies the dataset folder into the shared catalog. For a bundle, the whole `data/` tree is copied, not just the index.
+For a bundle, **Publish** copies the whole `data/` tree, not just the index.
 
 **Unpublish** removes the shared listing only. Copies already added to dataflows keep working, and the confirmation says so.
 
 **Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog.
 
-Only the dataset's publisher may unpublish or delete it; anyone else is refused with *"You can only unpublish or delete datasets you published."* The shipped datasets are published by `"Data Catalog"`, so ordinary users cannot remove them.
+Only the dataset's publisher may unpublish or delete it.
 
 ---
 
@@ -294,7 +285,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `publisher` | | Defaults to `"Data Catalog"`. It decides who may unpublish or delete (see [part 6](#publish-unpublish-delete)). |
 | `license` | | Free text, e.g. `"Open Data"`. |
 | `tags` | | Array of strings; feeds search and the Tags panel. |
-| `sourceLabel` | | Short provenance label shown on cards; falls back to `publisher`. |
+| `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
 | `lakeSource` | | Where a Data Lake download came from: the portal (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
@@ -311,12 +302,11 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 |---|---|---|
 | `CURIO_CATALOG_ROOT` | `--catalog-root` | The shared catalog's location. Defaults to `<repo_root>/datasets/`. |
 | `CURIO_LAUNCH_CWD` | none | Where per-user stores live (`.curio/users/<key>/datasets/` under it). Defaults to the process's working directory. |
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Shows or hides **Publish** and **Unpublish** on `/catalog/data`, as it does for node packages. |
 
-**Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails, and in Docker it does not persist across restarts. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.
+**Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.
 
-**The catalog root is never created for you.** A missing root means nothing is published: listings come back empty, and unpublishing or deleting a shared dataset reports *"Dataset is not in the Data Catalog"*.
-
-**Anyone signed in can publish.** Dataset publishing has no on/off switch (unlike node packages, see [NODE-CATALOG.md](NODE-CATALOG.md#operator-notes)). On a multi-tenant deployment with a writable catalog root, any signed-in user can publish a dataset into the shared catalog; only its publisher can unpublish or delete it.
+**The publish switch only hides the buttons.** The dataset API does not check `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`, so any signed-in user other than a guest can still publish a dataset through it. Only a dataset's publisher can unpublish or delete it.
 
 **The dataset index needs no care.** Listings are served from a database table that mirrors each user's store, checked against disk on every listing. Dropping every row is safe, since the next listing rebuilds it, and there is no cleanup job to schedule.
 

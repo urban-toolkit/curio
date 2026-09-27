@@ -155,7 +155,7 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 
 ## 8. The manifest
 
-A source's `manifest.json` is validated against [`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json), which is the full reference. The shipped sources in [`datalakes/`](../datalakes/) are the canonical examples.
+[`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json) is the full reference for a source's `manifest.json`. The shipped sources in [`datalakes/`](../datalakes/) are the canonical examples.
 
 | Field | Required | What it declares |
 |---|---|---|

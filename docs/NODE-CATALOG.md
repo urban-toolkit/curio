@@ -195,6 +195,7 @@ A package you save or import lands in your package store:
 | Variable | Flag | Effect |
 |---|---|---|
 | `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish**. When forbidden, both are refused and their buttons are hidden. |
+| `CURIO_PACKAGES_ROOT` | none | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. |
 
 **`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.
 

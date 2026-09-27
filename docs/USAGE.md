@@ -422,21 +422,21 @@ console output is not restored: no saved dataset carries it.
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`.
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, publish, or delete.
-- The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
+- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
+- The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
 
-Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
+Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is always `<install_root>/packages/`, with no env override.
+> package* catalog is `<install_root>/packages/`, relocated with `CURIO_PACKAGES_ROOT`.
 > On a pip install that path is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
