@@ -301,11 +301,11 @@ One Autark-specific note: an Autark node's spec references incoming data by name
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.
-- See the packages added to this dataflow, grouped by fork family, in the **In dataflow** tab.
+- See the packages added to this dataflow, grouped by fork family, in the **In project** tab.
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node Catalog** dropdown.
 
-For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+For the full guide, covering the storage layers, the action matrix, **Save as package node**, the metadata editor, exporting and importing, publishing, and versions and forks, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Vega-Lite node
 
@@ -426,9 +426,9 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Install datasets into the open dataflow, import files from your machine, publish, or delete.
+- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data ⏷ → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, publish, or delete.
 - The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
-- The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
+- The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
 
@@ -440,15 +440,15 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 > On a pip install that path is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
-For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+For the full guide, covering the storage layers, the action matrix, computed datasets and lineage, previews, OSM PBF and GeoPackage imports, and publishing, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
 ## Data Lake Catalog
 
-The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach - Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback - so you can browse one and download into your Data Catalog rather than hand-writing fetch code.
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code.
 
-Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They are operator-authored: there is no import route, because a source declares a host the server makes outbound requests to on your behalf.
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They ship with the deployment; users cannot import one.
 
-See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
+For the full guide, covering searching, downloading, API tokens, and the Dataset Finder, see [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 
@@ -458,11 +458,12 @@ evaluation. Which model answers is the provider set in **AI Settings** above.
 
 There are two scopes:
 
-- **`/catalog/agents`**, the third tab beside the node and data catalogs, is
-  your **account**. Adding an agent here makes it available to every dataflow.
-- **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
-  Catalog** or the agents tab in the left rail, adds an agent to **this
-  dataflow**.
+- **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
+  **Add to all projects** there adds an agent to every dataflow you have, and
+  to every new one.
+- **The Agent Catalog drawer**, opened on the canvas from **Data ⏷ → Agent
+  Catalog** or the **Agent Catalog** dropdown in the left Tools panel, adds an
+  agent to **this dataflow**.
 
 ### Attaching an agent
 
@@ -506,8 +507,8 @@ The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
 Operators who would rather not send queries to a third party can point
 `--agent-search-url` at their own provider, or elsewhere entirely.
 
-For the full guide, covering the roster, agent packages, delegation, publishing,
-and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
+For the full guide, covering the roster, the storage layers, attaching, the
+provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 

@@ -130,6 +130,8 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Add usage diagrams, screenshots, or schema explanations
 * Contribute inline documentation and docstrings
 
+The four catalog guides (`NODE-CATALOG.md`, `DATA-CATALOG.md`, `AGENT-CATALOG.md`, `DATA-LAKE-CATALOG.md`) share one outline, so a reader who knows one knows where to look in the others: **1. What is the X Catalog?** (Concept, What ships with Curio, Storage layers), **2. Surfaces and workflows** (Action matrix, Workflows), **3. Using X in a dataflow**, the catalog's own parts, then **Importing, publishing, and sharing**, **The manifest**, **Operator notes**, and **See also**. Keep them at user level: name UI labels exactly as the app shows them, and leave routes, module names, internal mechanism and design rationale to [ARCHITECTURE.md](ARCHITECTURE.md) and code comments.
+
 ### Community and Support
 
 * Test Curio across platforms (Windows, macOS, Linux)

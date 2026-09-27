@@ -117,7 +117,7 @@ When a download fails, the row says why in the server's own words, for example t
 
 Some portals take an API token. The City of Chicago portal answers without one, and a token raises your rate limit.
 
-A token belongs to your account. Set it in **AI Settings**, from the button in the page header, in the **Socrata app token** field. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, optional, or inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, optional, or inherited from whoever runs this Curio. Your own token overrides the inherited one.
 
 Guest accounts cannot save a token.
 

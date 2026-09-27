@@ -410,7 +410,7 @@ def _open_ai_settings(ctx: Ctx) -> None:
     Two exist, and which one is available depends on where the tour is: the
     header button lives in ``GlobalPageHeader``, which renders on /projects and
     /catalog/* but *not* on the canvas, where the Agent Catalog drawer's cog is
-    the only route (``docs/AGENT-CATALOG.md`` §5).
+    the only route (``docs/AGENT-CATALOG.md``, The provider).
 
     Handling both is what lets ``aisettings`` be re-recorded alongside the canvas
     scenes: ``CURIO_TOUR_SCENES`` picks one landing page for the whole subset, so
