@@ -158,11 +158,13 @@ class DataLakeService:
 
     def search_all(
         self, *, q: str = "", fmt: str | None = None, limit: int | None = None,
-        provider: str | None = None,
+        provider: str | None = None, include_storage: bool = True,
     ) -> dict[str, Any]:
         manifests = self._catalog.manifests()
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
+        if not include_storage:
+            manifests = [m for m in manifests if not m.is_storage]
         names = {m.id: m.name for m in manifests}
         portals = [m for m in manifests if not m.is_storage]
         query = _query(q, fmt, limit, None)

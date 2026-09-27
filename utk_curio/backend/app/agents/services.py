@@ -2432,6 +2432,13 @@ def _mint_datalake_acquire(
         )
     if not manifest.capabilities.download:
         return "refused", f"{manifest.name} does not offer downloads", None
+    if manifest.is_storage:
+        return (
+            "refused",
+            f"{manifest.name} is a storage source; add its resources from its "
+            "page in the Data Lake Catalog",
+            None,
+        )
 
     held = service._acquire.already_held(manifest, resource_id, fmt)
     if held is not None:
@@ -6060,7 +6067,7 @@ def _mark_acquirable_candidates(parts: list, granted: set[str]) -> None:
     downloadable = {
         source.get("dirName")
         for source in listing.get("sources") or []
-        if (source.get("capabilities") or {}).get("download")
+        if (source.get("capabilities") or {}).get("download") and source.get("kind") != "storage"
     }
     for row in candidates:
         if row.get("sourceId") in downloadable:

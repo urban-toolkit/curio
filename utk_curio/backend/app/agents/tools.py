@@ -549,11 +549,17 @@ def _datalake_service():
     )
 
 
+def _portal_rows(sources) -> list[dict]:
+    """The portals among *sources*. Storage sources are added from the Data
+    Lake page, where a row can be narrowed, so no agent tool offers them."""
+    return [s for s in sources or [] if s.get("kind") != "storage"]
+
+
 def _datalake_source_rows() -> list[dict]:
     """The roster. Disk only - no portal is contacted."""
     listing = _datalake_service().list_catalog()
     rows = []
-    for source in (listing.get("sources") or [])[:_DATALAKE_MAX_ROWS]:
+    for source in _portal_rows(listing.get("sources"))[:_DATALAKE_MAX_ROWS]:
         auth = source.get("auth") or {}
         rows.append(
             {
@@ -584,11 +590,21 @@ def _datalake_search_rows(params: dict) -> list[dict]:
     source_id = _param("sourceId")
     fmt = _param("format")
     if source_id:
+        from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+
+        try:
+            storage = service.get_manifest(source_id).is_storage
+        except DataLakeError:
+            storage = False
+        if storage:
+            return [], [{"sourceId": source_id, "status": "unsupported"}]
         payload = service.search_source(
             source_id, q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS
         )
     else:
-        payload = service.search_all(q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS)
+        payload = service.search_all(
+            q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS, include_storage=False
+        )
     rows = []
     for row in (payload.get("resources") or [])[:_DATALAKE_MAX_ROWS]:
         rows.append(
@@ -631,7 +647,7 @@ def datalake_sources_contacted(params: dict) -> int:
         1,
         sum(
             1
-            for s in (listing.get("sources") or [])
+            for s in _portal_rows(listing.get("sources"))
             if (s.get("capabilities") or {}).get("search")
         ),
     )

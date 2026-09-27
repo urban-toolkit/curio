@@ -227,3 +227,54 @@ class TestTheRosterExecutor:
                 "sourceId", "name", "provider", "publisher", "description",
                 "formats", "searchable", "credentialReady",
             }
+
+
+class TestStorageSourcesAreNotOffered:
+    """A storage row is added from the Data Lake page, where it can be
+    narrowed, so no agent tool lists, searches, or proposes one."""
+
+    EXAMPLE = "lake.curio.example-storage@1"
+
+    def test_the_roster_leaves_them_out(self, app, shipped_root):
+        status, text = tools.execute_read_tool(
+            "datalake.sources", user_key="1", project_id="p", target=None, params={}
+        )
+        assert status == "ok"
+        assert self.EXAMPLE not in text
+        assert "lake.cityofchicago.data-portal@1" in text
+
+    def test_a_search_of_one_says_it_is_unsupported(self, app, shipped_root):
+        rows, legs = tools._datalake_search_rows({"sourceId": self.EXAMPLE, "q": "noise"})
+        assert rows == [] and legs == [{"sourceId": self.EXAMPLE, "status": "unsupported"}]
+
+    def test_a_fan_out_neither_contacts_nor_charges_for_them(self, app, shipped_root, monkeypatch):
+        from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        seen = {}
+
+        def search_all(self, **kwargs):
+            seen.update(kwargs)
+            return {"resources": [], "sources": []}
+
+        monkeypatch.setattr(DataLakeService, "search_all", search_all)
+        tools._datalake_search_rows({"q": "noise"})
+        assert seen["include_storage"] is False
+        listing = tools._datalake_service().list_catalog()["sources"]
+        portals = [s for s in listing if s["kind"] != "storage" and s["capabilities"]["search"]]
+        assert _egress_cost("datalake.search", {}) == len(portals)
+
+    def test_a_row_from_one_is_not_marked_acquirable(self, app, shipped_root):
+        parts = [{"type": "datasetCandidates", "lanes": {"external": [
+            {"name": "Noise", "sourceType": "lake", "sourceId": self.EXAMPLE, "resourceId": "noise"}
+        ]}}]
+        _mark_acquirable_candidates(parts, {"datalake.acquire"})
+        assert parts[0]["lanes"]["external"][0].get("acquirable") is None
+
+    def test_a_proposal_for_one_is_refused(self, app, shipped_root, monkeypatch):
+        from utk_curio.backend.app.agents import services
+
+        status, text, card = services._mint_datalake_acquire(
+            "1", "p", {}, {"params": {"sourceId": self.EXAMPLE, "resourceId": "noise"}}
+        )
+        assert status == "refused" and card is None
+        assert "storage source" in text
