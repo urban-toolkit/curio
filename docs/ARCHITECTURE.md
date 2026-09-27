@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work, including how to add a new behavior hook or icon, see [NODE-CATALOG.md](NODE-CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how node packages are installed and shared see [NODE-CATALOG.md](NODE-CATALOG.md) (to add a built-in behavior hook, icon or grammar adapter, see [Behavior Hooks](#behavior-hooks)), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -29,6 +29,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Python Dependencies](#python-dependencies)
+* [Data Lake Catalog](#data-lake-catalog)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
 
@@ -265,6 +266,26 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 | `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling, emitting a GEODATAFRAME |
 
 Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets two custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+
+#### Adding a built-in behavior, icon, or grammar adapter
+
+A package ships its own behavior as a `behaviorScript` bundle (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). The recipes below are for the other case: changing Curio itself, so every install has the behavior, icon, or adapter before any package loads.
+
+**A behavior hook.** The built-ins are registered in [`src/registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts).
+
+1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/), conforming to `NodeBehaviorHook` in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). `useCodeNodeBehavior` and `useVegaBehavior` are the references.
+2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
+3. Reference it from a manifest: `"behavior": "my-key"` on each kind that wants it.
+
+**An icon.** [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) maps `iconRef` strings (e.g. `"fa-solid:upload"`) to FontAwesome `IconDefinition` constants.
+
+1. Import the icon constant at the top of `iconRegistry.ts`.
+2. Add `registerIcon("fa-solid:my-icon", faMyIcon);`
+3. Reference it in a manifest: `"iconRef": "fa-solid:my-icon"`.
+
+An unknown ref falls back to `faCube`, so a missing icon is visible but not fatal.
+
+**A grammar adapter.** Same pattern, in [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-workflows/src/registry/grammarAdapter.ts). The Vega-Lite adapter, [`src/adapters/vegaLiteAdapter.ts`](../utk_curio/frontend/urban-workflows/src/adapters/vegaLiteAdapter.ts), is the canonical example.
 
 ### UniversalNode: One Component for All Types
 
@@ -793,9 +814,94 @@ The same route is reachable without opening that modal: when a node run ends in 
 
 ---
 
+## Data Lake Catalog
+
+The user-facing model is in [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md) and the routes are in [Data Lake Routes](#data-lake-routes). The backend is `backend/app/datalakes/`: `domain/` (manifest, source ids, formats), `application/` (catalog, browse, acquire, jobs), `infrastructure/` (credentials, rate limits, storage, transport) and `providers/` (one module per portal software). Every outbound request passes the egress policy described in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests).
+
+### Sources and manifests
+
+A source describes one portal in `datalakes/<sourceId>@<major>/manifest.json`, under `CURIO_DATALAKE_ROOT` when that is set. The root is never created eagerly. [`domain/manifest.py`](../utk_curio/backend/app/datalakes/domain/manifest.py) validates a manifest, [`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json) publishes the same contract, and `tests/test_datalakes/test_schema_matches_validator.py` derives its assertions from the validator, so the two cannot drift.
+
+- **Ids** (`domain/source_id.py`) are three to six dot-separated lowercase segments, the first always `lake`. They name the publisher, never the software: `provider.type` can change when a portal migrates, and an id cannot.
+- **`provider.type`** is one of `PROVIDER_TYPES`, which must equal the keys of `PROVIDERS` in `providers/__init__.py`. An assert checks this at import time.
+- **Formats.** `capabilities.formats` is an upper bound, intersected at download time with `LAKE_ACQUIRABLE_FORMATS` (`csv`, `geojson`, `json`, `parquet`, `geotiff`). That set is narrower than the Data Catalog's: a `shp` needs sibling files a single download cannot bring, and a `bundle` is a node output.
+- **Size.** `capabilities.maxDownloadBytes` may lower the 64 MiB ceiling (`DEFAULT_MAX_DOWNLOAD_BYTES`), never raise it.
+- **`provider.options`** is provider wiring and is never sent to a client.
+- **`auth.secretId`** must name a slot in `SLOT_COLUMNS` (see [Credentials](#credentials)), or the manifest fails to load.
+- **Icons** are PNG only and resolved inside the source's own folder. An SVG served from the app's own origin can carry script.
+
+Sources have no import route. A manifest names a host the server calls on a user's behalf, with a credential attached, so sources ship with the deployment.
+
+### Search
+
+[`application/browse.py`](../utk_curio/backend/app/datalakes/application/browse.py) runs a federated search as one request per searchable source, at most `MAX_FANOUT_WORKERS` (4) at a time.
+
+- Each leg takes its own source's rate limit (`limits.requestsPerMinute`, default 30, per user and per source, in process), so a fan-out cannot multiply one user's rate against a portal.
+- Each leg reports a status from `LEG_STATUSES`: `ok`, `failed`, `refused`, `rate-limited`, `unsupported` or `needs-token`. The response is a 200 either way. The page names the portals that did not answer, and ignores `unsupported`, which a link-only source reports on every search.
+- Rows are interleaved round-robin across portals. Only the single-source search paginates.
+- The page debounces the search box and aborts the request in flight on every keystroke.
+
+The roster is cached; search results never are. The one cache on the search path is a WFS server's capabilities document (`providers/wfs.py`, `CAPABILITIES_TTL_S`, 15 minutes per source), which lists layers rather than answering a query.
+
+### Downloads
+
+[`application/acquire.py`](../utk_curio/backend/app/datalakes/application/acquire.py) fetches the bytes server-side and hands them to the Data Catalog's own importer, so the result is an ordinary `imported.x<uuid>` dataset.
+
+- **Jobs** ([`application/jobs.py`](../utk_curio/backend/app/datalakes/application/jobs.py)) are per account, process-local (a restart loses them), and swept `TTL_SECONDS` (15 minutes) after they finish. A job id owned by another account reads as unknown. Cancel is checked between chunks.
+- **Concurrency.** `MAX_CONCURRENT_DOWNLOADS` (2) per account, in `infrastructure/ratelimit.py`.
+- **Provenance and idempotency.** A download writes a `lakeSource` block (`lakeId`, `lakeName`, `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, `contentSha256`) on the dataset manifest, and `dataset_index_entry` mirrors it: a manifest field missing from the index vanishes from every listing. A request for a `(lakeId, resourceId, format)` already held answers 200 with that dataset and contacts no portal. Search rows carry `alreadyHeldDatasetId`, from one `UserDatasetRepository.lake_resource_index()` walk per page.
+- **`refresh: true`** fetches anyway. Identical bytes (by hash) mint nothing; different bytes mint a new dataset and leave the old one alone, since a saved dataflow loads a dataset by id.
+- **Format detection** (`domain/formats.py`), most trusted first: the format the provider put in the URL; the final URL's suffix after redirects; the `Content-Disposition` filename; the `Content-Type`; the first bytes (`PAR1` for Parquet, the TIFF magic, and a JSON probe that tells GeoJSON from JSON by looking for a geometry type). The result is checked against the source's formats, and anything unidentified is an error.
+- **Bounds.** A `Content-Length` over the bound is refused before any body byte is read, and the stream is capped again while writing. Archives are refused by content type and by suffix (`ARCHIVE_CONTENT_TYPES`, `ARCHIVE_SUFFIXES`); nothing is unpacked.
+- **Files.** Bytes are staged under the user's `.curio/users/<id>/` tree. Remote filenames are sanitised, and the importer mints the dataset directory name, so no remote input reaches the filesystem path.
+- **Errors** carry the server's reason ("that resource is a application/zip archive"), which the page shows as is.
+
+### Credentials
+
+[`infrastructure/credentials.py`](../utk_curio/backend/app/datalakes/infrastructure/credentials.py) owns the allowlist of credential slots, `SLOT_COLUMNS`, which maps a slot to a column on the `user` row (today only `socrata.app-token`). Adding a slot is a column, a migration, and one line there.
+
+- A token is saved through `PATCH /api/auth/me`, the same path as the HuggingFace token, and read back only as a boolean. A guest is refused with a 403.
+- `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
+- `auth.scheme` is `header` only. That keeps secrets out of every URL, which is what makes egress audit records, refusal messages and job records safe to store verbatim. The transport binds the credential when it is built, so no provider ever handles a token.
+
+### Providers
+
+A provider is one module in [`providers/`](../utk_curio/backend/app/datalakes/providers/) implementing `LakeProvider` (`providers/base.py`): `search`, `describe` and `download_url`. To add one:
+
+1. Write the module, subclassing `BaseProvider`.
+2. Add its type to `PROVIDER_TYPES` (`domain/manifest.py`), to `PROVIDERS` (`providers/__init__.py`), and to the schema's `provider.type` enum.
+3. Export a transport-free `recognize(url)` and `metadata_evidence(payload)`, and add the module to `RECOGNISERS`. `agents/verify.py` uses them to refine an agent's external-source check, so a provider's URL knowledge lives in one place.
+
+Every provider keeps two invariants:
+
+1. A `resourceId` is validated against the provider's own pattern **before** it goes into any URL. Ids arrive from search results, saved agent proposals and typed URLs, so none is trusted.
+2. Every URL a provider builds starts with the manifest's `baseUrl` (`assert_on_base`). Redirects off the base are allowed and each hop is re-checked; it is construction that is pinned. The `direct` provider has no base and relies on the egress check alone.
+
+### Tests
+
+Providers take their transport as a required constructor argument, so a missing fake is a `TypeError` rather than a request, and the suite-wide guard in [CONTRIBUTING.md § Tests do not reach the network](CONTRIBUTING.md#tests-do-not-reach-the-network) catches anything else.
+
+- `tests/test_datalakes/fixtures/` is a corpus recorded from the live portals by `scripts/record_datalake_fixtures.py`. Socrata, CKAN and ArcGIS put the page size in the URL and the corpus is keyed on the exact URL, so the recorder searches with the app's `DEFAULT_SEARCH_LIMIT`.
+- `test_provider_contracts.py` (`@pytest.mark.contract`) hits the real portals in CI, asserts only the response shape, and skips on any unreachable, non-2xx or non-JSON answer.
+- The Playwright specs drive the real backend against the corpus through `CURIO_DATALAKE_FIXTURES`, which `docker-compose.ci.yml` and `docker-compose.ci-isolated.yml` set for the container.
+
+### Agent tools
+
+The Dataset Finder reaches the catalog through three contracts in `agents/tools.py`:
+
+| Tool | Effect | What it does |
+|---|---|---|
+| `datalake.sources` | read | The roster, from disk. Costs no web budget. |
+| `datalake.search` | read | Live search. The per-run web budget is charged per portal contacted, so a fan-out over five sources costs five. |
+| `datalake.acquire` | mutate | Proposes a download. It goes through the review path, and the read executor has no branch for it, so the model loop cannot run it. The proposal card is grounded in a real `describe()` call. |
+
+A candidate row's `acquirable` flag is set server-side only, by `services.py::_mark_acquirable_candidates`, against the real roster and the run's grants; a value the model supplies is stripped first.
+
+---
+
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -884,6 +990,8 @@ The **unit is a portal, not a dataset**: manifests under `datalakes/` describe
 where datasets can be fetched from, and the datasets themselves are discovered
 live. A download hands the bytes to the Data Catalog's own importer, so what
 comes out is an ordinary dataset carrying a `lakeSource` provenance block.
+[Data Lake Catalog](#data-lake-catalog) describes the mechanism behind these
+routes.
 
 | Route | Method | Purpose |
 |---|---|---|
