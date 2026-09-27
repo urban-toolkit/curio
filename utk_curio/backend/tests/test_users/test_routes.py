@@ -121,10 +121,10 @@ class TestHuggingFaceToken:
 
     def test_omitting_it_leaves_it_alone(self, client):
         # AI Settings sends the field only when the user typed something, so a
-        # save that changes the model must not wipe a stored token.
+        # save that changes another field must not wipe a stored token.
         token = _signup(client).get_json()["token"]
         self._patch(client, token, {"huggingface_token": "hf_secret"})
-        r = self._patch(client, token, {"llm_model": "some-model"})
+        r = self._patch(client, token, {"name": "Renamed"})
         assert r.get_json()["has_huggingface_token"] is True
 
 

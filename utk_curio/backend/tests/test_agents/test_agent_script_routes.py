@@ -126,7 +126,7 @@ class TestRead:
         assert [c[0]["content"] for c in captured] == ["a", "b"]
 
     def test_nothing_captured_reads_as_empty(self, client):
-        assert client.get(SCRIPT_URL).get_json() == {"pending": 0, "captured": []}
+        assert client.get(SCRIPT_URL).get_json() == {"pending": 0, "captured": [], "calls": []}
 
 
 class TestReset:
@@ -135,4 +135,4 @@ class TestReset:
         testing_provider.run_scripted_completion([{"role": "user", "content": "x"}])
         assert client.delete(SCRIPT_URL).get_json() == {"pending": 0}
         body = client.get(SCRIPT_URL).get_json()
-        assert body == {"pending": 0, "captured": []}
+        assert body == {"pending": 0, "captured": [], "calls": []}

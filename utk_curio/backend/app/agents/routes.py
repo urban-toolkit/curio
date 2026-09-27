@@ -31,6 +31,22 @@ def _error(message: str, status: int = 400):
     return jsonify({"error": message}), status
 
 
+def _provider_error(exc: ProviderConfigError):
+    """No LLM configuration answers: a 400 whose remedy opens AI Settings."""
+    return jsonify({"error": str(exc), "remedy": exc.remedy}), 400
+
+
+def _llm_for_attachment(project_id: str, attachment_id: str):
+    """The LLM configuration a run of this attachment's agent answers with."""
+    from utk_curio.backend.app.agents.provider_config import resolve_llm
+
+    user_key = _user_dir_key(g.user)
+    return resolve_llm(
+        user_key, agents_services.attachment_agent_id(user_key, project_id, attachment_id),
+        guest=bool(getattr(g.user, "is_guest", False)),
+    )
+
+
 def _svc_error(exc: AgentServiceError):
     """One place decides what an AgentServiceError looks like on the wire.
 
@@ -67,7 +83,7 @@ def _map_agent_errors(fn):
         except ProviderConfigError as exc:
             # Curio ships no built-in provider; say where to configure one
             # rather than surfacing a bare 500 from deep in a provider SDK.
-            return _error(str(exc), 400)
+            return _provider_error(exc)
         except NotFoundError:
             return _error("Dataflow not found", 404)
 
@@ -130,30 +146,143 @@ def put_catalog_settings():
     return jsonify(_settings_payload()), 200
 
 
-# ── My Imports (account scope) ───────────────────────────────────────────────
-@agents_bp.route("/provider-default", methods=["GET"])
+# ── LLM configurations (account scope) ──────────────────────────────────────
+def _llm_error(exc):
+    return _error(str(exc), getattr(exc, "status", 400))
+
+
+def _llm_refusal():
+    from utk_curio.backend.app.users.capabilities import llm_config_refusal
+
+    return llm_config_refusal(g.user)
+
+
+def _deployment_offered() -> bool:
+    from utk_curio.backend.app.agents.provider_config import deployment_endpoint
+
+    return deployment_endpoint(
+        _user_dir_key(g.user), guest=bool(getattr(g.user, "is_guest", False))
+    ) is not None
+
+
+def _training_locked_ids() -> frozenset:
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    return frozenset(training_service.running_config_ids(_user_dir_key(g.user)))
+
+
+@agents_bp.route("/llm", methods=["GET"])
 @require_auth
-@_map_agent_errors
-def get_provider_default():
-    """What a user inherits when they configure no provider of their own.
+def get_llm():
+    """The account's LLM configurations (never a key), its default, what the
+    deployment offers, what answers a run now, and whether this account may
+    change any of it."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError
+    from utk_curio.backend.app.agents.provider_config import llm_listing
 
-    ``curio.py start``'s ``--llm-provider`` / ``--llm-base-url`` /
-    ``--llm-model`` set exactly these three, so the flags are one more way of
-    writing the same account-wide setting AI Settings edits. The panel reads
-    this to show the deployment's choice as the inherited value rather than
-    inventing a placeholder model of its own.
+    try:
+        return jsonify(llm_listing(g.user)), 200
+    except LlmConfigError as exc:
+        return _llm_error(exc)
 
-    The API key is reported only as a boolean. Its value never leaves the
-    server, which is also why there is no ``--llm-api-key``.
-    """
-    from utk_curio.backend import config
 
-    return jsonify({
-        "apiType": config.DEFAULT_LLM_API_TYPE or None,
-        "baseUrl": config.DEFAULT_LLM_BASE_URL or None,
-        "model": config.DEFAULT_LLM_MODEL or None,
-        "hasApiKey": bool(config.DEFAULT_LLM_API_KEY),
-    }), 200
+@agents_bp.route("/llm/configs", methods=["POST"])
+@require_auth
+def create_llm_config():
+    """Add a configuration: ``{label, endpoint?, apiType, baseUrl?, apiKey?, model}``."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    try:
+        config = default_store().create(
+            _user_dir_key(g.user), request.get_json(silent=True),
+            deployment_offered=_deployment_offered(),
+        )
+    except LlmConfigError as exc:
+        return _llm_error(exc)
+    return jsonify({"config": config}), 201
+
+
+@agents_bp.route("/llm/configs/<config_id>", methods=["PATCH"])
+@require_auth
+def update_llm_config(config_id: str):
+    """Change a configuration. A blank ``apiKey`` keeps the stored key and
+    ``clearApiKey: true`` removes it."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    try:
+        config = default_store().update(
+            _user_dir_key(g.user), config_id, request.get_json(silent=True),
+            deployment_offered=_deployment_offered(), locked_ids=_training_locked_ids(),
+        )
+    except LlmConfigError as exc:
+        return _llm_error(exc)
+    return jsonify({"config": config}), 200
+
+
+@agents_bp.route("/llm/configs/<config_id>", methods=["DELETE"])
+@require_auth
+def delete_llm_config(config_id: str):
+    """Remove a configuration; the default resets when it was the default."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    try:
+        result = default_store().delete(
+            _user_dir_key(g.user), config_id, locked_ids=_training_locked_ids()
+        )
+    except LlmConfigError as exc:
+        return _llm_error(exc)
+    return jsonify(result), 200
+
+
+@agents_bp.route("/llm/configs/<config_id>/duplicate", methods=["POST"])
+@require_auth
+def duplicate_llm_config(config_id: str):
+    """Copy a configuration, key included, server-side: ``{label?, model?}``."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or set(body) - {"label", "model"}:
+        return _error("send {label?, model?}")
+    try:
+        config = default_store().duplicate(
+            _user_dir_key(g.user), config_id, label=body.get("label"), model=body.get("model"),
+        )
+    except LlmConfigError as exc:
+        return _llm_error(exc)
+    return jsonify({"config": config}), 201
+
+
+@agents_bp.route("/llm/default", methods=["PUT"])
+@require_auth
+def put_llm_default():
+    """Choose the default configuration: ``{configId}``, or null for the
+    deployment's own."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+    from utk_curio.backend.app.agents.provider_config import llm_listing
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or "configId" not in body:
+        return _error("send {configId}, a configuration id or null")
+    try:
+        default_store().set_default(_user_dir_key(g.user), body["configId"])
+        return jsonify(llm_listing(g.user)), 200
+    except LlmConfigError as exc:
+        return _llm_error(exc)
 
 
 @agents_bp.route("/provider-models", methods=["POST"])
@@ -167,10 +296,12 @@ def list_provider_models():
     endpoint actually has. A GET reading the stored config could only ever list
     models for the previous configuration.
 
-    The request body is optional; each field falls back to what the account has
-    already resolved, so an already-configured user can refresh the list without
-    retyping a secret. A blank ``apiKey`` in particular means "use the saved
-    one", matching the panel's own "blank means keep" rule.
+    The body names the endpoint as it is on screen: ``apiType``, ``baseUrl``
+    and ``apiKey``. A stored key is used instead of a typed one in two cases
+    only: ``configId`` borrows that configuration's key while the endpoint
+    asked about is still that configuration's own, and ``endpoint:
+    "deployment"`` asks this Curio install's endpoint with its own key. With
+    neither, no key is borrowed.
 
     **Hybrid, per #241 - and both halves come from the API.** Two sources:
 
@@ -196,14 +327,15 @@ def list_provider_models():
     remembered - a new account that has not pasted a key - the reason *is* the
     answer and this is a 400.
     """
+    from utk_curio.backend.app.agents.llm_configs import ENDPOINT_DEPLOYMENT, default_store
     from utk_curio.backend.app.agents.model_catalog import (
         provider_key,
         remember_models,
         remembered_models,
     )
     from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
+        deployment_endpoint,
+        is_hosted_guest,
     )
     from utk_curio.backend.app.agents.providers import (
         ModelListingUnavailable,
@@ -216,44 +348,42 @@ def list_provider_models():
     base_url = (data.get("baseUrl") or "").strip()
     api_key = (data.get("apiKey") or "").strip()
 
-    # Fall back to the account's resolved provider for whatever the caller left
-    # blank - but only as far as the caller is asking about that same endpoint.
-    # An account holds one credential triple, so filling the blanks in
-    # unconditionally lent the Anthropic tab the key saved for someone's Ollama,
-    # then labelled the answer "From this endpoint" and filed the recording
-    # under the wrong provider. That is the same thing ``provider_config``'s own
-    # same-provider rule exists to prevent, undone one layer up.
-    if not (api_type and base_url and api_key):
-        try:
-            # A model is what the user is on this screen to choose, so it cannot
-            # be a precondition for asking what models exist - and the resolve
-            # raising over it used to take the deployment's API key down with
-            # it. A guest with no key deployed still raises, and inherits
-            # nothing.
-            resolved = resolve_provider_config(g.user, require_model=False)
-        except ProviderConfigError:
-            resolved = None
-        if resolved is not None:
-            api_type = api_type or (resolved.api_type or "")
-            if provider_key(api_type) == provider_key(resolved.api_type):
-                # A blank base URL still means "the endpoint this account
-                # resolved to": the panel sends "" on every non-custom tab, and
-                # inheriting the deployment's endpoint there is what "leave a
-                # field blank to use it" promises.
-                base_url = base_url or (resolved.base_url or "")
-            if provider_key(api_type, base_url) == provider_key(
-                resolved.api_type, resolved.base_url
-            ):
-                # A key belongs to the endpoint it was saved against, and
-                # ``provider_key`` is where Curio already says what "the same
-                # endpoint" means. Once the caller names a different one - a
-                # different provider, or a URL typed on the Custom tab -
-                # inheriting the key would post the account's, or the operator's,
-                # secret to a host neither of them chose.
-                api_key = api_key or (resolved.api_key or "")
+    user_key = _user_dir_key(g.user)
+    guest = bool(getattr(g.user, "is_guest", False))
+    if data.get("endpoint") == "deployment":
+        endpoint = deployment_endpoint(user_key, guest=guest)
+        if endpoint is None:
+            return _error("this Curio install offers no endpoint of its own")
+        api_type, base_url, api_key = endpoint
+    elif data.get("configId"):
+        # A key belongs to the endpoint it was saved against, and
+        # ``provider_key`` is where Curio says what "the same endpoint" means.
+        # Once the caller names a different one - another provider, or a URL
+        # typed in the editor - borrowing the key would post it to a host its
+        # owner never chose.
+        config_id = str(data["configId"])
+        record = (
+            None if is_hosted_guest(user_key, guest=guest)
+            else default_store().record(user_key, config_id)
+        )
+        if record is None:
+            return _error(f"no LLM configuration {config_id!r}", 404)
+        if record.get("endpoint") == ENDPOINT_DEPLOYMENT:
+            endpoint = deployment_endpoint(user_key, guest=guest)
+            if endpoint is None:
+                return _error("this Curio install offers no endpoint of its own")
+            saved_type, saved_url, saved_key = endpoint
+        else:
+            saved_type = record.get("apiType") or ""
+            saved_url = record.get("baseUrl") or ""
+            saved_key = record.get("apiKey") or ""
+        api_type = api_type or saved_type
+        if provider_key(api_type) == provider_key(saved_type):
+            base_url = base_url or saved_url
+        if not api_key and provider_key(api_type, base_url) == provider_key(saved_type, saved_url):
+            api_key = saved_key
 
     api_type = api_type or "openai_compatible"
-    user_key = _user_dir_key(g.user)
 
     try:
         live = fetch_models(
@@ -524,10 +654,6 @@ def record_dataset_selection(project_id: str, attachment_id: str):
     node's next Solve reads the record instead of asking the model what the
     user picked.
     """
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     if "picks" not in body:
@@ -539,7 +665,7 @@ def record_dataset_selection(project_id: str, attachment_id: str):
         # user with no provider still records the selection (the delegation
         # says why it did not start).
         try:
-            config = resolve_provider_config(g.user)
+            config = _llm_for_attachment(project_id, attachment_id)
         except ProviderConfigError:
             config = None
         payload = agents_services.record_dataset_selection(
@@ -722,10 +848,6 @@ def solve_attachment(project_id: str, attachment_id: str):
     action fills the applied plan's pending nodes through bounded-concurrency
     depth-1 children. The endpoint consumes no quota; each child reserves
     under its own policy. Body: optional ``{"nodeIds": [...]}`` for Retry."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     node_ids = body.get("nodeIds")
@@ -738,7 +860,7 @@ def solve_attachment(project_id: str, attachment_id: str):
         return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         payload = agents_services.solve_attachment(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
             verify=verify,
@@ -746,7 +868,7 @@ def solve_attachment(project_id: str, attachment_id: str):
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
@@ -765,10 +887,6 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
     ``verify: false`` in the body keeps the legacy unexecuted write.
     Validation errors (409/404/…) return normal JSON statuses before any
     streaming starts; the persisted session stays the single truth."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     node_ids = body.get("nodeIds")
@@ -784,7 +902,7 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.solve_attachment_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
             mode=mode, verify=verify,
@@ -792,7 +910,7 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
 
@@ -818,10 +936,6 @@ def simulate(project_id: str, attachment_id: str):
     create → validate → auto-approve-on-PASS per node in topological order,
     then the connection stage — pausing on any failure with the reason and
     the pending review. Resume = calling this endpoint again."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     mode = body.get("mode", "step")
@@ -829,14 +943,14 @@ def simulate(project_id: str, attachment_id: str):
         return _error("'mode' must be 'step' or 'auto' when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.simulate_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, mode=mode
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
 
@@ -922,10 +1036,6 @@ def solve_node(project_id: str, attachment_id: str):
     as an already-executed content review, an empty one is written on PASS.
     Detached: the response subscribes to the job (replay + tail); closing it
     does not stop the run — ``GET …/jobs/stream`` re-attaches."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     node_id = body.get("nodeId")
@@ -933,14 +1043,14 @@ def solve_node(project_id: str, attachment_id: str):
         return _error("'nodeId' is required")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.solve_node_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
 
@@ -999,10 +1109,6 @@ def validate_node(project_id: str, attachment_id: str):
     Body: ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. The
     outcome lands as a reviewed content proposal carrying the validation
     verdict; the saved spec is never mutated by validation itself."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     ref = body.get("ref")
@@ -1013,7 +1119,7 @@ def validate_node(project_id: str, attachment_id: str):
         return _error("'nodeId' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.validate_node_stream(
             _user_dir_key(g.user), project_id, attachment_id, config,
             ref=ref or None, node_id=node_id or None,
@@ -1021,7 +1127,7 @@ def validate_node(project_id: str, attachment_id: str):
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
 
@@ -1061,10 +1167,6 @@ def cancel_solve(project_id: str, attachment_id: str):
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):
     """Run one turn of an attached agent and return its reply."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     message = body.get("message")
@@ -1075,14 +1177,14 @@ def run_attachment(project_id: str, attachment_id: str):
         return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         payload = agents_services.run_attachment(
             _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
@@ -1107,10 +1209,6 @@ def stream_attachment(project_id: str, attachment_id: str):
     errors (404/422/…) return normal JSON statuses before any streaming
     starts. Session persistence matches the blocking run.
     """
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
 
     body = request.get_json(silent=True) or {}
     message = body.get("message")
@@ -1121,14 +1219,14 @@ def stream_attachment(project_id: str, attachment_id: str):
         return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        config = resolve_provider_config(g.user)
+        config = _llm_for_attachment(project_id, attachment_id)
         events = agents_services.stream_attachment(
             _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except ProviderConfigError as exc:
-        return _error(str(exc), 400)
+        return _provider_error(exc)
     except AgentServiceError as exc:
         return _svc_error(exc)
 
@@ -1170,20 +1268,21 @@ def _training_error(exc) -> tuple:
 @require_auth
 @_map_agent_errors
 def training_capability():
-    """Can this account's endpoint fine-tune, and if not, why not.
+    """Can this configuration's endpoint fine-tune, and if not, why not.
 
-    ``?refresh=0`` serves the recording instead of asking again, so opening the
-    panel twice in a minute does not re-probe. A recording always carries the
-    date it was true.
+    ``?configId=`` names the LLM configuration (the default when absent); it
+    must hold the user's own key. ``?refresh=0`` serves the recording instead of
+    asking again, so opening the panel twice in a minute does not re-probe. A
+    recording always carries the date it was true.
     """
     from utk_curio.backend.app.agents.training import service as training_service
 
     user_key = _user_dir_key(g.user)
     refresh = (request.args.get("refresh") or "1").strip() not in ("0", "false", "no")
     try:
-        return jsonify(
-            training_service.capability(g.user, user_key, refresh=refresh)
-        ), 200
+        return jsonify(training_service.capability(
+            g.user, user_key, config_id=request.args.get("configId") or None, refresh=refresh,
+        )), 200
     except training_service.TrainingServiceError as exc:
         return _training_error(exc)
 
@@ -1194,15 +1293,17 @@ def training_capability():
 def training_dataset_preview():
     """What would be sent: rows, bytes, fixtures, licences, destination host.
 
-    POST because it is an action with a body (the split), and because its
-    answer carries the digest a later start must echo.
+    POST because it is an action with a body (the split and ``configId``), and
+    because its answer carries the digest and the host a later start must echo.
     """
     from utk_curio.backend.app.agents.training import service as training_service
 
     body = request.get_json(silent=True) or {}
     split = str(body.get("split") or "train")
     try:
-        return jsonify(training_service.preview(g.user, split=split)), 200
+        return jsonify(training_service.preview(
+            g.user, _user_dir_key(g.user), config_id=body.get("configId") or None, split=split,
+        )), 200
     except training_service.TrainingServiceError as exc:
         return _training_error(exc)
 
@@ -1223,6 +1324,8 @@ def training_start_job():
             base_model=str(body.get("baseModel") or ""),
             rows_digest=str(body.get("rowsDigest") or ""),
             confirmed=bool(body.get("confirmed")),
+            destination_host=str(body.get("destinationHost") or ""),
+            config_id=body.get("configId") or None,
             split=str(body.get("split") or "train"),
             price_per_mtoken=[float(price)] if isinstance(price, (int, float)) else None,
         )), 201
@@ -1272,7 +1375,8 @@ def training_cancel_job(job_id: str):
 @require_auth
 @_map_agent_errors
 def training_activate(job_id: str):
-    """Point the account at a trained model — refused without an evaluation.
+    """Give a trained model a configuration and make it the default, refused
+    without an evaluation.
 
     The four refusals live in ``training/gate.py``; this route only carries
     them. Curio does not decide that a trained model is better: it refuses to
@@ -1292,7 +1396,7 @@ def training_activate(job_id: str):
 @require_auth
 @_map_agent_errors
 def training_rollback(job_id: str):
-    """Put the account back on the model it had before this activation."""
+    """Restore the default configuration this activation replaced."""
     from utk_curio.backend.app.agents.training import service as training_service
 
     try:

@@ -12,29 +12,28 @@ This module is the ONE place values are read back. Everyone else — routes,
 grounding, cards — holds :class:`ConnectionKeyRef` (name, host, delivery,
 timestamps) and nothing more.
 
-Storage: ``.curio/users/<key>/connection-keys.json``, mode 0600 in a 0700
-directory, written atomically (temp file + ``os.replace``) under the same
-two-layer lock the project spec uses. ``.curio/users`` is already in the
+Storage: ``.curio/users/<key>/connection-keys.json``, an owner-only file
+(``common.owner_only_file``): mode 0600 in a 0700 directory, written atomically
+under the same two-layer lock the project spec uses. ``.curio/users`` is already in the
 sandbox isolation's ``SENSITIVE_PATHS``, so node code running under isolation
-cannot open the file the resolver reads. **Plaintext at rest**: the same
-posture as the LLM key column today; encryption is T4's remainder and lands
-by swapping :class:`ConnectionKeyStore`'s backend — callers keep their refs.
+cannot open the file the resolver reads. **Plaintext at rest**, as the keys
+of LLM configurations are (``agents/llm_configs.py``, the same helper);
+encryption would land by swapping :class:`ConnectionKeyStore`'s backend, and
+callers would keep their refs.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlsplit
 
-from utk_curio.backend.app.common.file_locks import exclusive_lock
+from utk_curio.backend.app.common import owner_only_file
 from utk_curio.backend.app.common.user_storage import GUEST_KEY, user_key_segment, users_base
 
 log = logging.getLogger(__name__)
@@ -223,13 +222,9 @@ class ConnectionKeyStore:
         return self._user_dir(user_key) / STORE_FILENAME
 
     def _locked(self, user_key: str):
-        d = self._user_dir(user_key)
-        d.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(d, 0o700)
-        except OSError:
-            pass
-        return exclusive_lock(d / f".{STORE_FILENAME}.lock", namespace=_LOCK_NAMESPACE, key=user_key)
+        return owner_only_file.locked(
+            self._user_dir(user_key), STORE_FILENAME, namespace=_LOCK_NAMESPACE, key=user_key
+        )
 
     # -- file I/O ---------------------------------------------------------------
 
@@ -252,21 +247,7 @@ class ConnectionKeyStore:
         return {"version": STORE_VERSION, "keys": keys}
 
     def _write(self, user_key: str, doc: dict) -> None:
-        path = self.path(user_key)
-        fd, tmp = tempfile.mkstemp(prefix=".connection-keys.", suffix=".tmp", dir=str(path.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(doc, handle, indent=2, sort_keys=True)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        owner_only_file.write_json(self.path(user_key), doc)
 
     @staticmethod
     def _ref(name: str, entry: dict) -> ConnectionKeyRef:

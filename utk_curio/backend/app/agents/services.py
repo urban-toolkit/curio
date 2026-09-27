@@ -32,6 +32,7 @@ from utk_curio.backend.app.agents import (
 from utk_curio.backend.app.agents import (
     agent_jobs,
     contracts,
+    provider_config,
     document_validation,
     egress,
     failure_text,
@@ -1285,6 +1286,16 @@ def _record_or_404(spec: dict, attachment_id: str) -> dict:
     if record is None:
         raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
     return record
+
+
+def attachment_agent_id(user_key: str, project_id: str, attachment_id: str) -> str | None:
+    """The agent id (the coordinate before ``@``) an attachment binds, or None
+    when the project or the attachment is not there (the run that follows says
+    so itself)."""
+    spec = projects_storage.read_spec(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id) if spec else None
+    coord = str((record or {}).get("coord") or "")
+    return coord.split("@", 1)[0] or None
 
 
 def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
@@ -4743,6 +4754,7 @@ def solve_attachment_stream(
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
         kind="solve-batch", job_id=solve_execution_id, events=events,
+        redact_values={"llm-api-key": config.api_key},
     )
     return agent_jobs.subscribe(job)
 
@@ -5318,7 +5330,8 @@ def _solve_events(
                         execution=_execution_record(
                             solve_execution_id,
                             {"coord": coord, "provider": config.api_type,
-                             "model": config.model, "tools": [], "intentEdited": False},
+                             "model": config.model, "tools": [], "intentEdited": False,
+                             "llm": provider_config.llm_pin(config)},
                             {}, started, "ok", delegations=delegations,
                             retry_of=retry_of,
                         ),
@@ -6873,6 +6886,7 @@ def solve_node_stream(
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
         kind="solve-node", job_id=execution_id, events=events,
+        redact_values={"llm-api-key": config.api_key},
     )
     return agent_jobs.subscribe(job)
 
@@ -9178,7 +9192,9 @@ def _generate_conversation_title(
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
         )
-        ledger.record_housekeeping_usage(user_key, usage_sink, note="title-call")
+        ledger.record_housekeeping_usage(
+            user_key, usage_sink, note="title-call", llm_config_id=config.config_id
+        )
         title = sanitize_title(raw)
         if title is None:
             return
@@ -9444,6 +9460,8 @@ def _prepare_run(
         "intentEdited": bool(record.get("intent")),
         "provider": config.api_type,
         "model": config.model,
+        # Which LLM configuration answered, never its key.
+        "llm": provider_config.llm_pin(config),
         # Granted tool ids (dev/39): requested ∩ registry ∩ policy.
         "tools": granted,
         "policy": run_policy["policy_pins"],
@@ -12030,6 +12048,7 @@ def run_attachment(
     reservation = ledger.reserve(
         user_key,
         reservation_id=execution_id,
+        llm_config_id=config.config_id,
         **run_policy["admit"],
     )
     usage_total: dict = {}
@@ -12250,14 +12269,16 @@ def run_attachment(
             session_id,
             attachment_id,
             message,
-            f"(error) {exc}",
+            f"(error) {provider_config.redact_error(exc, config)}",
             error=True,
             execution=_execution_record(
                 execution_id, pins, usage_total, started, "error", tool_calls,
                      delegations=delegations,
             ),
         )
-        raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
+        raise AgentServiceError(
+            f"agent run failed: {provider_config.redact_error(exc, config)}", 502
+        ) from exc
     reply_text = "\n\n".join(folded)
     run_parts = minted + final_parts  # proposals ride the turn (dev/41)
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
@@ -12325,6 +12346,7 @@ def stream_attachment(
     reservation = ledger.reserve(
         user_key,
         reservation_id=execution_id,
+        llm_config_id=config.config_id,
         **run_policy["admit"],
     )
 
@@ -12689,14 +12711,14 @@ def stream_attachment(
                 session_id,
                 attachment_id,
                 message,
-                f"(error) {exc}",
+                f"(error) {provider_config.redact_error(exc, config)}",
                 error=True,
                 execution=_execution_record(
                     execution_id, pins, usage_total, started, "error", tool_calls,
                      delegations=delegations,
                 ),
             )
-            yield ("error", f"agent run failed: {exc}")
+            yield ("error", f"agent run failed: {provider_config.redact_error(exc, config)}")
             return
         reply_text = "\n\n".join(folded)
         run_parts = minted + final_parts  # proposals ride the turn (dev/41)

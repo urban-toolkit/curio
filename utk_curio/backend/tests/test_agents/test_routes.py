@@ -1235,13 +1235,13 @@ class TestExecutionRecords:
 
     def test_run_persists_execution_record_with_pins_and_usage(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents import services as services_mod
-        # Read through the module, not as a from-import: the suite's conftest
-        # stands in for the operator and patches these attributes, so a
-        # module-level snapshot would see the (empty) shipped defaults.
-        from utk_curio.backend.app.agents.provider_config import (
-            DEFAULT_LLM_API_TYPE,
-            DEFAULT_LLM_MODEL,
-        )
+        # Read at call time: the suite's conftest stands in for the operator
+        # and patches the config module, so an import-time snapshot would see
+        # the (empty) shipped defaults.
+        from utk_curio.backend import config as backend_config
+
+        DEFAULT_LLM_API_TYPE = backend_config.DEFAULT_LLM_API_TYPE
+        DEFAULT_LLM_MODEL = backend_config.DEFAULT_LLM_MODEL
 
         self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
         _, token = user_and_token
@@ -1270,6 +1270,8 @@ class TestExecutionRecords:
         # Unconfigured test user → the deployment-default provider (DEC-039).
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
+        assert pins["llm"] == {"configId": None, "label": "Deployment default",
+                               "baseUrlHost": "127.0.0.1:9", "source": "deployment"}
         # dev/39: granted tools are pinned; the registry ships empty.
         assert pins["tools"] == ["dataflow.read", "node.read", "node.runtime.read"]
         # One pin left: the run caps and the budget it used to record are gone.
@@ -8317,57 +8319,6 @@ class TestRestartHonestyOnApply:
         assert "Restart Curio" not in applied_text
 
 
-class TestProviderDefault:
-    """What AI Settings shows as the inherited provider.
-
-    `curio.py start --llm-provider/--llm-base-url/--llm-model` and the AI
-    Settings panel write the same account-wide setting, so the deployment's
-    choice has to be readable by the panel it applies to.
-    """
-
-    URL = "/api/agents/provider-default"
-
-    def test_reports_what_the_launcher_flags_set(self, client, user_and_token, monkeypatch):
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "anthropic")
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "https://llm.example.test/v1")
-        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "some-model")
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
-        _, token = user_and_token
-        body = client.get(self.URL, headers=_auth(token)).get_json()
-        assert body == {
-            "apiType": "anthropic",
-            "baseUrl": "https://llm.example.test/v1",
-            "model": "some-model",
-            "hasApiKey": True,
-        }
-
-    def test_never_returns_the_key_itself(self, client, user_and_token, monkeypatch):
-        # The reason there is no --llm-api-key is that a key should not travel
-        # where it need not. The same rule applies to this response.
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
-        _, token = user_and_token
-        raw = client.get(self.URL, headers=_auth(token)).get_data(as_text=True)
-        assert "sk-secret" not in raw
-
-    def test_an_unconfigured_install_reports_nulls(self, client, user_and_token, monkeypatch):
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
-        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
-        _, token = user_and_token
-        body = client.get(self.URL, headers=_auth(token)).get_json()
-        assert body["baseUrl"] is None and body["model"] is None
-        assert body["hasApiKey"] is False
-
-    def test_requires_auth(self, client):
-        assert client.get(self.URL).status_code == 401
-
-
 class TestProviderModels:
     """The model list AI Settings offers instead of a free-text box.
 
@@ -8424,37 +8375,30 @@ class TestProviderModels:
 
     @staticmethod
     def _no_deployment_key(monkeypatch):
-        """Drop the suite's stand-in operator key.
+        """Drop the suite's stand-in operator key (``conftest`` configures one
+        for every agents test)."""
+        from utk_curio.backend import config
 
-        ``conftest`` configures one for every agents test, and the route
-        inherits it for any field the caller left blank - which is exactly the
-        behaviour under test when the question is "what happens with no key".
-        """
-        from utk_curio.backend.app.agents import provider_config
-
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
 
     @staticmethod
     def _no_deployment_base_url(monkeypatch):
         """Resolve to plain OpenAI rather than the suite's custom endpoint."""
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config
 
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
 
     @staticmethod
     def _no_deployment_model(monkeypatch):
         """Ship the real default: an operator key with no model named.
 
         ``conftest`` pins ``DEFAULT_LLM_MODEL`` to a stand-in for every test in
-        this package, which means ``resolve_provider_config`` always finds a
-        model and its "no model" refusal is never reached here. That pin is what
-        hid the bug this helper exists to expose: ``CURIO_DEFAULT_LLM_MODEL``
-        ships empty while an operator may well set the key, and the listing
-        route used to lose the key along with the refused config.
+        this package. ``CURIO_DEFAULT_LLM_MODEL`` ships empty while an operator
+        may well set the key, and the listing must still reach that endpoint.
         """
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config
 
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
 
     @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
@@ -8746,9 +8690,8 @@ class TestProviderModels:
     def test_an_unconfigured_account_can_still_ask(
         self, client, user_and_token, monkeypatch
     ):
-        # An account with nothing saved asks with only what is on screen. Note
-        # this omits apiType, so it also pins that a missing provider is
-        # inherited from the resolved account.
+        # An account with nothing saved asks with only what is on screen. It
+        # omits apiType, which reads as OpenAI-compatible.
         self._fake_openai(monkeypatch, models=["gemma4"])
         _, token = user_and_token
         res = client.post(
@@ -8764,11 +8707,9 @@ class TestProviderModels:
     ):
         """A model is what this screen is for, so it cannot gate asking (#241).
 
-        ``resolve_provider_config`` refuses when no model resolves, and the
-        route threw the whole config away with the refusal - including the
-        operator's API key. Since ``CURIO_DEFAULT_LLM_MODEL`` ships empty, an
-        operator who deploys a key and leaves the model to their users had
-        every one of them told to add a key the server was already holding.
+        ``CURIO_DEFAULT_LLM_MODEL`` ships empty, and an operator who deploys a
+        key and leaves the model to their users offers This Curio install: the
+        listing asks that endpoint with its own key.
         """
         self._no_deployment_model(monkeypatch)
         seen = self._fake_openai(monkeypatch, models=["gemma4"])
@@ -8777,7 +8718,7 @@ class TestProviderModels:
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "openai_compatible", "baseUrl": "", "apiKey": ""},
+            json={"endpoint": "deployment"},
         )
 
         assert res.status_code == 200, res.get_json()
@@ -8789,25 +8730,25 @@ class TestProviderModels:
     def test_a_key_saved_for_one_provider_is_not_lent_to_another(
         self, client, db, user_and_token, monkeypatch
     ):
-        """One credential per account must not mean one credential everywhere.
+        """A configuration's key is lent only to that configuration's endpoint.
 
-        The account holds a single provider triple, and the route filled every
-        blank field from it regardless of which tab asked. So opening Anthropic
-        with an Ollama credential saved listed the Ollama endpoint and labelled
-        the answer "From this endpoint" - the exact class of unverified claim
-        #241 exists to remove.
+        Asking about Anthropic while naming an Ollama configuration must not
+        list the Ollama endpoint, nor send its key to Anthropic.
         """
         self._no_deployment_key(monkeypatch)
-        user, token = user_and_token
-        user.llm_api_type = "openai_compatible"
-        user.llm_base_url = "http://ollama.local/v1"
-        user.llm_api_key = "sk-ollama-secret"
-        db.session.commit()
+        _, token = user_and_token
+        ollama = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Ollama", "apiType": "openai_compatible",
+                  "baseUrl": "http://ollama.local/v1", "apiKey": "sk-ollama-secret",
+                  "model": "llama3"},
+            headers=_auth(token),
+        ).get_json()["config"]
 
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+            json={"configId": ollama["id"], "apiType": "anthropic", "baseUrl": "", "apiKey": ""},
         )
 
         # Refused for want of a key, rather than answered with another
@@ -8819,12 +8760,8 @@ class TestProviderModels:
     def test_a_typed_endpoint_is_not_handed_another_endpoints_key(
         self, client, user_and_token, monkeypatch
     ):
-        """Typing a URL must not post the operator's secret to it.
-
-        The Custom tab sends a base URL the user typed. Inheriting the blank
-        key alongside it sent whatever the account resolved - here the
-        deployment's key - to a host neither the operator nor the user chose.
-        """
+        """Typing a URL must not post the operator's secret to it: a request
+        that names neither a configuration nor this install borrows no key."""
         seen = self._fake_openai(monkeypatch, models=["anything"])
         _, token = user_and_token
 
@@ -8848,13 +8785,9 @@ class TestProviderModels:
     def test_a_recording_is_filed_under_the_endpoint_that_answered(
         self, client, user_and_token, monkeypatch
     ):
-        """Record and replay have to agree on which endpoint spoke.
-
-        The base URL is part of an endpoint's identity, so inheriting the
-        deployment's URL into an Anthropic request filed that listing under
-        ``anthropic@<the openai-compatible url>``. The replay then looked for it
-        under plain ``anthropic`` and missed.
-        """
+        """Record and replay have to agree on which endpoint spoke: an
+        Anthropic listing is filed under ``anthropic``, never under a URL the
+        request did not name."""
         self._fake_anthropic(monkeypatch, models=["claude-haiku-4-5"])
         _, token = user_and_token
         recorded = client.post(
@@ -8865,12 +8798,8 @@ class TestProviderModels:
         assert recorded.status_code == 200
         assert recorded.get_json()["models"] == ["claude-haiku-4-5"]
 
-        # The recording must be filed under "anthropic", not under anthropic
-        # plus whatever unrelated base URL the account happened to resolve to.
-        # Proven by moving that URL: the replay below can only find the entry if
-        # the deployment's endpoint never entered its identity in the first
-        # place. Without the fix the write went to
-        # ``anthropic@http://127.0.0.1:9/v1`` and this lookup misses.
+        # Proven by moving the deployment's URL: the replay can only find the
+        # entry if that URL never entered its identity.
         self._no_deployment_base_url(monkeypatch)
         self._no_deployment_key(monkeypatch)
         replayed = client.post(

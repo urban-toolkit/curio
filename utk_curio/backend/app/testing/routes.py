@@ -426,7 +426,11 @@ def agent_script_read():
     agent's own instruction bytes - which a reply, being scripted, can never
     show.
 
-    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...]}``
+    ``calls`` holds ``{configId, model}`` for each of those calls: which LLM
+    configuration answered it.
+
+    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
+    "calls": [{configId, model}, ...]}``
     """
     denied = _scripted_guard()
     if denied is not None:
@@ -436,6 +440,7 @@ def agent_script_read():
             {
                 "pending": testing_provider.pending(),
                 "captured": testing_provider.captured(),
+                "calls": testing_provider.calls(),
             }
         ),
         200,

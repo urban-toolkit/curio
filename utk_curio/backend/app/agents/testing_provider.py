@@ -61,6 +61,9 @@ MAX_CAPTURED = 64
 _lock = threading.Lock()
 _queue: deque = deque()
 _captured: deque = deque(maxlen=MAX_CAPTURED)
+#: Which LLM configuration each call answered with: ``{configId, model}``, in
+#: the same order as ``_captured``.
+_calls: deque = deque(maxlen=MAX_CAPTURED)
 #: Replies keyed by a substring of a delegated call's ``intent``.
 _by_intent: dict = {}
 
@@ -143,6 +146,7 @@ def reset() -> None:
     with _lock:
         _queue.clear()
         _captured.clear()
+        _calls.clear()
         _by_intent.clear()
     reset_fine_tuning()
 
@@ -157,6 +161,13 @@ def captured() -> list:
         return [list(m) for m in _captured]
 
 
+def calls() -> list:
+    """``{configId, model}`` of every call since the last :func:`reset`: which
+    LLM configuration answered each, never its key."""
+    with _lock:
+        return [dict(c) for c in _calls]
+
+
 def last_messages() -> list | None:
     """The most recent call's ``messages``, or None when nothing ran yet."""
     with _lock:
@@ -169,7 +180,7 @@ def pending() -> int:
         return len(_queue)
 
 
-def run_scripted_completion(messages: list, usage_out: dict | None = None) -> str:
+def run_scripted_completion(messages: list, usage_out: dict | None = None, config=None) -> str:
     """Return the next scripted reply and record its token usage.
 
     ``messages`` does not choose the reply - the queue does, so a test's
@@ -188,6 +199,10 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None) -> st
         # Recorded before the pop, so a reply and the prompt that drew it keep
         # the same index in a multi-round run.
         _captured.append(list(messages) if isinstance(messages, list) else [])
+        _calls.append({
+            "configId": getattr(config, "config_id", None),
+            "model": getattr(config, "model", None),
+        })
         routed = _routed_reply(messages)
         queued = None if routed is not None else (_queue.popleft() if _queue else None)
     if routed is not None:

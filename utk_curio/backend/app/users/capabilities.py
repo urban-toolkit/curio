@@ -122,6 +122,27 @@ def settings_refusal(user) -> str | None:
     return None
 
 
+def llm_config_refusal(user) -> str | None:
+    """Why *user* may not change LLM configurations, or ``None``.
+
+    A hosted guest may not: every visitor shares the one guest account, so it
+    runs on the guest configuration the operator set. Without ``--deploy`` the
+    shared guest is the one local user and owns its configurations, like any
+    account.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "LLM configurations are not available to guests on this Curio, because "
+            "every guest shares one account and uses the model its operator set. "
+            "Sign in with an account to add your own."
+        )
+    return None
+
+
 def library_install_refusal(user) -> str | None:
     """Why *user* may not install or remove a library. See :func:`install_refusal`."""
     return install_refusal(user, noun="libraries")

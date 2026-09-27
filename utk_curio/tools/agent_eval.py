@@ -109,20 +109,37 @@ def cmd_list(args) -> int:
     return 0
 
 
-def _switch_account_model(client, model: str) -> str:
-    """Point the evaluation account at *model*; return the previous value.
+def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
+    """Make a temporary configuration naming *model* the evaluation account's
+    default; return ``(previous default, temporary configuration id)``.
 
-    This is how a model that is not active gets measured at all: the provider
-    config is an account setting, so evaluating a trained model means the
-    account points at it for the duration. The switch is the tool's, it is
-    always restored in a ``finally``, and the training panel reports an
-    account left on a trained model with no activation record — so an
-    interrupted run is visible rather than silent.
+    This is how a model that is not active gets measured at all: a run answers
+    with the account's default configuration, so evaluating a trained model
+    means a configuration naming it is the default for the duration. The copy
+    is made server-side from the configuration that answers now, so this tool
+    never reads a key, and the caller restores the default and removes the copy
+    in a ``finally``.
     """
-    me = client.json("/api/auth/me")
-    previous = str(me.get("llm_model") or "")
-    client.json("/api/auth/me", method="PATCH", payload={"llm_model": model})
-    return previous
+    listing = client.json("/api/agents/llm")
+    previous = listing.get("default")
+    label = f"agent_eval {tag}"
+    if previous:
+        created = client.json(
+            f"/api/agents/llm/configs/{previous}/duplicate", method="POST",
+            payload={"label": label, "model": model},
+        )["config"]
+    elif (listing.get("deployment") or {}).get("endpointOffered"):
+        created = client.json(
+            "/api/agents/llm/configs", method="POST",
+            payload={"label": label, "endpoint": "deployment", "model": model},
+        )["config"]
+    else:
+        raise live_mod.LiveEvalRefused(
+            "the evaluation account has no LLM configuration to evaluate a model "
+            "on; add one in AI Settings first"
+        )
+    client.json("/api/agents/llm/default", method="PUT", payload={"configId": created["id"]})
+    return previous, created["id"]
 
 
 def cmd_run(args) -> int:
@@ -178,30 +195,32 @@ def cmd_run(args) -> int:
         include_external=args.include_external,
         tiers=tiers,
     )
-    previous_model = None
+    previous_default = None
+    temporary_id = None
     try:
         if args.model:
-            previous_model = _switch_account_model(client, args.model)
+            previous_default, temporary_id = _switch_to_model(client, args.model, report.run_id)
             report.notes.append(
-                f"evaluated model {args.model!r} through a temporary account "
-                f"switch (previous: {previous_model or 'the deployment default'})"
+                f"evaluated model {args.model!r} through a temporary default "
+                f"configuration (previous default: {previous_default or 'the deployment default'})"
             )
         run.run(fixtures, examples=_examples_for(fixtures))
     except live_mod.LiveEvalRefused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 3
     finally:
-        if previous_model is not None:
+        if temporary_id is not None:
             try:
                 client.json(
-                    "/api/auth/me", method="PATCH",
-                    payload={"llm_model": previous_model},
+                    "/api/agents/llm/default", method="PUT",
+                    payload={"configId": previous_default},
                 )
+                client.json(f"/api/agents/llm/configs/{temporary_id}", method="DELETE")
             except Exception as exc:  # noqa: BLE001 - say so, do not hide it
                 print(
-                    f"WARNING: could not restore the account's model to "
-                    f"{previous_model!r}: {exc}. The training panel will report "
-                    "an account left on a trained model with no activation.",
+                    "WARNING: could not restore the evaluation account's default "
+                    f"configuration ({previous_default or 'the deployment default'}) "
+                    f"and remove {temporary_id}: {exc}. Do both in AI Settings.",
                     file=sys.stderr,
                 )
 
@@ -240,7 +259,7 @@ def _write_gate(args, fixtures, report, client) -> Path:
         fixture_digests={f.fixture_id: f.fixture_sha256() for f in fixtures},
         scores=scores,
         categories=categories,
-        evaluated_via="agent_eval --model (temporary account switch)",
+        evaluated_via="agent_eval --model (temporary default configuration)",
         provider=report.provider.as_dict(),
     )
     user_key = _user_key_for(client)
@@ -311,7 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
     run.add_argument("--model", default="",
                      help="evaluate this model instead of the account's saved "
-                          "one (a temporary account switch, always restored)")
+                          "one (a temporary default configuration, always restored)")
     run.add_argument("--gate-for", default="",
                      help="write an activation gate record for this training "
                           "job id; forces the held-out split and needs --model")

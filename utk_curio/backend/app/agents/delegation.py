@@ -190,7 +190,9 @@ def run_delegate(
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
     """
-    from utk_curio.backend.app.agents import catalog_settings, contracts, ledger, services
+    from utk_curio.backend.app.agents import (
+        catalog_settings, contracts, ledger, provider_config, services,
+    )
     from utk_curio.backend.app.projects import storage as projects_storage
 
     child_id = uuid.uuid4().hex
@@ -203,7 +205,8 @@ def run_delegate(
         record["capability"] = capability
         return record
 
-    pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model}
+    pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model,
+                  "llm": provider_config.llm_pin(config)}
     try:
         manifest = services._resolve_definition(user_key, coord)
         # The capability is the mode: a merged agent runs that capability's
@@ -237,11 +240,14 @@ def run_delegate(
             "intentEdited": False,
             "provider": config.api_type,
             "model": config.model,
+            "llm": provider_config.llm_pin(config),
             "tools": [],  # structurally tool-less (DEC-046)
             "policy": run_policy["policy_pins"],
             **services._configuration_pin(configuration),
         }
-        reservation = ledger.reserve(user_key, reservation_id=child_id, **admit)
+        reservation = ledger.reserve(
+            user_key, reservation_id=child_id, llm_config_id=config.config_id, **admit
+        )
     except Exception as exc:  # resolution/policy failure - data, not an error
         return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
 
@@ -262,7 +268,7 @@ def run_delegate(
         settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="error")
         return (
             "error",
-            f"delegate {coord} failed: {exc}",
+            f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
             _record("error", usage_sink, pins),
         )
     settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
