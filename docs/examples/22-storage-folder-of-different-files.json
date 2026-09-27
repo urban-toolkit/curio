@@ -93,14 +93,18 @@
     ],
     "edges": [
       {
-        "id": "reactflow__edge-roads-loaderout-city-mergein",
+        "id": "reactflow__edge-roads-loaderout-city-mergein_0",
         "source": "roads-loader",
-        "target": "city-merge"
+        "sourceHandle": "out",
+        "target": "city-merge",
+        "targetHandle": "in_0"
       },
       {
-        "id": "reactflow__edge-parks-loaderout-city-mergein",
+        "id": "reactflow__edge-parks-loaderout-city-mergein_1",
         "source": "parks-loader",
-        "target": "city-merge"
+        "sourceHandle": "out",
+        "target": "city-merge",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-city-mergeout-city-layersin",

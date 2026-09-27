@@ -82,6 +82,17 @@ class TestResolvesTheCommittedCatalog:
         assert resolved.is_absolute()
         assert resolved.is_file()
 
+    def test_a_collection_resolves_to_its_files_too(self, client):
+        """The harness also sends what ``curio_collection`` needs: where the
+        collection's files are, and where a node writes what it derives."""
+        code = 'media = curio_collection("data.curio.storage-orthos")'
+        body = _post(client, {"code": code}).get_json()
+        assert set(body["paths"]) == {"data.curio.storage-orthos"}
+        entry = body["collections"]["data.curio.storage-orthos"]
+        assert entry["kind"] == "rasters"
+        assert (Path(entry["root"]) / "orthos" / "2024" / "tile_0001.tif").is_file()
+        assert body["mediaDir"]
+
     def test_code_without_a_call_costs_nothing(self, client):
         resp = _post(client, {"code": "return 1 + 1"})
         assert resp.status_code == 200

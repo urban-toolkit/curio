@@ -111,14 +111,18 @@
         "target": "aq-line"
       },
       {
-        "id": "reactflow__edge-aq-loaderout-aq-mergein",
+        "id": "reactflow__edge-aq-loaderout-aq-mergein_0",
         "source": "aq-loader",
-        "target": "aq-merge"
+        "sourceHandle": "out",
+        "target": "aq-merge",
+        "targetHandle": "in_0"
       },
       {
-        "id": "reactflow__edge-stations-loaderout-aq-mergein",
+        "id": "reactflow__edge-stations-loaderout-aq-mergein_1",
         "source": "stations-loader",
-        "target": "aq-merge"
+        "sourceHandle": "out",
+        "target": "aq-merge",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-aq-mergeout-aq-joinin",

@@ -607,8 +607,14 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     the sandbox's injected resolver already raises a clear per-id error, and
     the assertion below still names an id the catalog does not have.
     """
-    if "curio_dataset_path" not in code:
-        return {}
+    return _catalog_resolution(code)["paths"]
+
+
+def _catalog_resolution(code: str) -> dict:
+    """``{"paths", "collections", "mediaDir"}`` for *code*, as the backend
+    resolves them for ``/processPythonCode``; see ``_catalog_dataset_paths``."""
+    if "curio_dataset_path" not in code and "curio_collection" not in code:
+        return {"paths": {}, "collections": {}, "mediaDir": None}
 
     url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
     payload = json.dumps({"code": code}).encode("utf-8")
@@ -618,9 +624,8 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     )
     try:
         with urlopen(req, timeout=15) as resp:  # noqa: S310
-            resolved = (json.loads(resp.read().decode("utf-8")) or {}).get(
-                "paths"
-            ) or {}
+            answer = json.loads(resp.read().decode("utf-8")) or {}
+            resolved = answer.get("paths") or {}
     except HTTPError as exc:
         raise AssertionError(
             f"POST {url} answered {exc.code}. The stack must expose the testing "
@@ -642,7 +647,11 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
         f"catalog could not resolve (it resolved: {sorted(resolved)}). Note the "
         f"call takes the bare manifest id with no '@major'."
     )
-    return resolved
+    return {
+        "paths": resolved,
+        "collections": answer.get("collections") or {},
+        "mediaDir": answer.get("mediaDir"),
+    }
 
 
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
@@ -690,6 +699,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         resolved = resolve_widget_placeholders(node.content)
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
+        resolution = _catalog_resolution(indented_code)
 
         resp = _req.post(
             f'{sandbox_url}/exec',
@@ -704,7 +714,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
-                "dataset_paths": _catalog_dataset_paths(indented_code),
+                "dataset_paths": resolution["paths"],
+                "collections": resolution["collections"],
+                "media_dir": resolution["mediaDir"],
             },
             headers=sandbox_auth_header(),
             timeout=120,
