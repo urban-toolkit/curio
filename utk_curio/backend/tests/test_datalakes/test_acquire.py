@@ -286,3 +286,28 @@ class TestASearchRowKnowsWhatYouAlreadyHold:
             headers={"Authorization": f"Bearer {token}"},
         ).get_json()["resources"]
         assert all(r["alreadyHeldDatasetId"] is None for r in rows)
+
+
+class TestTheDownloadNeverPassesThroughMemory:
+    def test_the_temp_file_is_moved_not_read(self, client, auth, live, monkeypatch):
+        """The staged download is handed to the Data Catalog as a file.
+
+        Reading it back into memory is what capped a download at the size of a
+        comfortable allocation.
+        """
+        from pathlib import Path
+
+        original = Path.read_bytes
+
+        def guarded(self):
+            if self.name.endswith(".part"):
+                raise AssertionError(f"{self} was read into memory")
+            return original(self)
+
+        monkeypatch.setattr(Path, "read_bytes", guarded)
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        assert job["status"] == "completed", job
+        assert job["dataset"]["rowCount"] == 2

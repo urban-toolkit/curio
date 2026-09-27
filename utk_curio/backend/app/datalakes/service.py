@@ -73,7 +73,7 @@ class DataLakeService:
             user_key=self.user_key,
             transport_for=self._transport_for,
             download_target=self._browse.download_target,
-            install_bytes=self._install_bytes,
+            install_path=self._install_path,
             find_held=self._find_held,
         )
 
@@ -167,13 +167,13 @@ class DataLakeService:
 
     # ── acquisition ────────────────────────────────────────────────────────
 
-    def _install_bytes(self, blob, filename, fmt, **kwargs):
+    def _install_path(self, path, filename, fmt, **kwargs):
         """The seam into the Data Catalog. Imported here so the roster, which
         needs none of it, does not drag the datasets domain in."""
         from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
         service = DatasetCatalogService(self.user)
-        return service._mutations._install_imported_bytes(blob, filename, fmt, **kwargs)
+        return service._mutations._install_imported_path(path, filename, fmt, **kwargs)
 
     def _held_index(self) -> dict[tuple[str, str], str]:
         """What this account already downloaded, for a whole page of rows.

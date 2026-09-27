@@ -166,6 +166,87 @@ def to_utf8(data: bytes, *, what: str = "file") -> tuple[bytes, str]:
     return text.encode("utf-8"), encoding
 
 
+#: Chunk size for the streaming transcode. Memory stays at a few of these.
+STREAM_CHUNK_BYTES = 1024 * 1024
+
+
+def _first_invalid_utf8(path) -> int | None:
+    """Offset of the first byte that is not valid UTF-8, or None if all are."""
+    import codecs
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
+    offset = 0
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(STREAM_CHUNK_BYTES)
+            try:
+                decoder.decode(chunk, final=not chunk)
+            except UnicodeDecodeError as exc:
+                # ``exc.start`` indexes the buffer the decoder held: its pending
+                # bytes plus this chunk. Pending bytes are at most three.
+                pending = len(decoder.getstate()[0]) if hasattr(decoder, "getstate") else 0
+                return max(0, offset - pending + exc.start)
+            if not chunk:
+                return None
+            offset += len(chunk)
+
+
+def transcode_file_to_utf8(src, dest, *, what: str = "file") -> str:
+    """Write *src* to *dest* as UTF-8 and return the encoding it was read as.
+
+    The file-sized sibling of :func:`to_utf8`, with the same answers: UTF-8
+    input is copied byte for byte (a BOM included), anything else is decoded
+    with the detected encoding and re-encoded, and :class:`TextDecodeError` is
+    raised when nothing decodes it. Detection reads a window anchored on the
+    first byte that is not UTF-8, exactly as :func:`detect_encoding` anchors
+    it, so the whole file never has to be in memory.
+    """
+    import codecs
+    import shutil
+    from pathlib import Path
+
+    src, dest = Path(src), Path(dest)
+    first_bad = _first_invalid_utf8(src)
+    if first_bad is None:
+        shutil.copyfile(src, dest)
+        return "utf-8"
+
+    start = max(0, first_bad - SNIFF_BYTES // 2)
+    with open(src, "rb") as handle:
+        handle.seek(start)
+        window = handle.read(SNIFF_BYTES)
+    encoding = detect_encoding(window)
+    if encoding is None:
+        raise TextDecodeError(
+            f"Could not read {what} as text: its character encoding is not "
+            "recognisable. Re-save it as UTF-8 and import it again."
+        )
+    if encoding.lower().replace("_", "-") in ("utf-8", "utf8"):
+        raise TextDecodeError(
+            f"Could not read {what} as text: it looked like UTF-8, but byte "
+            f"{first_bad} is not valid UTF-8. Re-save it as UTF-8 and import it again."
+        )
+    try:
+        decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+    except LookupError as exc:
+        raise TextDecodeError(f"Could not read {what} as text: unknown encoding {encoding}") from exc
+    try:
+        with open(src, "rb") as reader, open(dest, "wb") as writer:
+            while True:
+                chunk = reader.read(STREAM_CHUNK_BYTES)
+                writer.write(decoder.decode(chunk, final=not chunk).encode("utf-8"))
+                if not chunk:
+                    break
+    except UnicodeDecodeError as exc:
+        dest.unlink(missing_ok=True)
+        raise TextDecodeError(
+            f"Could not read {what} as text: it looked like {encoding}, but "
+            f"decoding it failed ({exc}). Re-save it as UTF-8 and import it again."
+        ) from exc
+    logger.info("Transcoded %s from %s to utf-8 on import", what, encoding)
+    return encoding
+
+
 def open_text(path, **kwargs):
     """``path.open`` for a stored text file, tolerating a legacy encoding.
 
