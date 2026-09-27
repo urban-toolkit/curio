@@ -623,7 +623,7 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
 **What gets captured, and why it differs by agent.** Only 4 of the 10 catalog agents
@@ -660,7 +660,8 @@ handed. Three things make that usable from a test:
 |---|---|
 | Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
-| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call |
+| Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools each call offered |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
 production guard every route in that blueprint carries - unlike `stub-login`,
