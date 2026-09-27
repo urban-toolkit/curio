@@ -9,6 +9,7 @@ import {
   authApi,
   clearToken,
   getToken,
+  isUnauthorized,
   setToken,
   UserData,
 } from "../utils/authApi";
@@ -135,21 +136,25 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (!authEnabled) {
           if (token) {
+            let current: UserData | null = null;
+            let refused = false;
             try {
-              const current = await authApi.getMe();
-              if (
-                !cancelled &&
-                current.is_guest &&
-                current.username === sharedGuestUsername
-              ) {
-                applyUser(current);
-                return;
-              }
-            } catch {
-              // fall through to shared auto guest bootstrap
+              current = await authApi.getMe();
+            } catch (e) {
+              refused = isUnauthorized(e);
             }
-            clearToken();
-            if (!cancelled) setUser(null);
+            // A check that ends after the provider unmounted leaves the token
+            // alone: the provider that replaced this one does its own.
+            if (cancelled) return;
+            if (current?.is_guest && current.username === sharedGuestUsername) {
+              applyUser(current);
+              return;
+            }
+            // Drop a token the server refused or one for another account. A
+            // check that failed any other way says nothing about the token,
+            // and the guest session below replaces it once it is issued.
+            if (refused || current) clearToken();
+            setUser(null);
           }
 
           const res = await authApi.signinAutoGuest();
@@ -181,8 +186,11 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
           if (!cancelled) {
             applyUser(current);
           }
-        } catch {
-          clearToken();
+        } catch (e) {
+          // Only a 401 ends the session. A check that was aborted (the page
+          // navigating away), could not connect or met a server error says
+          // nothing about it, so the token stays for the next load.
+          if (isUnauthorized(e)) clearToken();
           if (!cancelled) setUser(null);
         }
       } finally {

@@ -16,6 +16,16 @@ export function clearToken(): void {
   Cookies.remove(TOKEN_KEY);
 }
 
+/**
+ * Whether a failed request says the session is over. The server answers a dead
+ * session (no token, an unknown or expired one, a deleted account) with 401
+ * and nothing else. An aborted request, a network failure or a server error
+ * says nothing about the session.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 401;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {}
