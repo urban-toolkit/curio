@@ -368,14 +368,8 @@ your package (**In dataflow → remove**), then re-import the archive
 That catches the most common packaging mistake: a node that only works because
 of a file that never made it into the manifest.
 
-If you built a package under `packages/` and never installed it, there is no
-export button for it. Zip it by hand: `manifest.json`, `sources/`, `scripts/`,
-`README.md` and `LICENSE` at the **root of the zip**, no wrapper directory, and
-leave `integrity.json` out.
-
 To open someone else's submission: **Import package** in the drawer footer. An
-id collision is rejected rather than merged, so remove the previous package of
-the same id first.
+archive whose `<packageId>@<major>` you already have is refused.
 
 ---
 

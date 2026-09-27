@@ -2,7 +2,7 @@
 
 Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the behavior hook calls.
 
-This guide walks through adding a new node package end-to-end, using the [`curio.streetvision@1`](../packages/curio.streetvision@1/) package, which adds three CV nodes plus a generic Spatial Join, as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four behavior hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end, using the [`curio.streetvision@1`](../packages/curio.streetvision@1/) package, which adds three CV nodes plus a generic Spatial Join, as the worked example. It is a fairly involved case: it spans the manifest, four behavior hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
@@ -229,7 +229,7 @@ def inference_run():
 
 ## 4. Walked example: the Street Vision package
 
-The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into three small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
+The package's parts:
 
 ### 4.1 Two templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
 

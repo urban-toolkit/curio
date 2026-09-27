@@ -92,7 +92,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent and its attachments leave every dataflow. The definition stays on disk. |
 | **Import agent** | Drawer footer | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
-| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it can no longer use it. |
+| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it lose access to it. |
 | **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
 
@@ -180,7 +180,7 @@ Whoever runs the install can set a default for provider, base URL and model with
 
 **Import agent**, in the drawer's footer, takes a `manifest.json` and its `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
-**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it. Other users who added the agent can no longer use it.
+**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it. Other users who added the agent lose access to it.
 
 ---
 

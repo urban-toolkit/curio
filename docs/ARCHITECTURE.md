@@ -408,8 +408,6 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
 ```
 
-When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
-
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
@@ -667,10 +665,7 @@ startup audit reports it if it ever becomes writable.
 
 autk-db's `init()` runs `INSTALL spatial; LOAD spatial;`, and DuckDB autoloads
 `json` for the grammar's `json_object` SQL. duckdb-wasm resolves both against
-`https://extensions.duckdb.org/`, so an Autark node used to pull ~24 MB over
-the network — in the browser on **every** grammar run, since duckdb-wasm keeps
-no browser-side cache, and in the sandbox once per cold container. A CDN blip
-failed the node (#318) and an air-gapped install could not run one at all.
+`https://extensions.duckdb.org/`.
 
 Curio ships both extensions in `vendor/duckdb-extensions/`, laid out exactly as
 the CDN serves them (`<duckdb version>/<platform>/<name>.wasm`), and both
@@ -686,8 +681,8 @@ runtimes read that copy:
   `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
   looks before downloading. Nothing is intercepted there.
 
-Both fall back to the CDN for a file this checkout does not carry, so bumping
-`@duckdb/duckdb-wasm` degrades to the old behaviour instead of breaking; see
+Both fall back to the CDN for a file this checkout does not carry, so a newer
+`@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see
 `vendor/duckdb-extensions/README.md` for how to vendor the new version.
 
 ### Portable dataset paths
@@ -955,9 +950,7 @@ source of truth:
 Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
 the literal `"guest"` is a valid key. Writes go through on every install path
 (`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
-Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`,
-always *after* `ensure_computed_ids_migrated`, since that migration renames dirs
-and the index mirrors dir names.
+Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`.
 
 `application/listing.py::resolve_execution_paths` uses the index as a fast path
 for turning dataset ids into filesystem paths at execution time, falling back to
@@ -1070,11 +1063,9 @@ never an automatic write:
 Every run appends to a per-day ledger under a file lock
 (`.curio/users/<key>/agents/ledger/`), written from the token counts each
 provider returns on the completion itself. It is a record, not a gate: no run is
-refused for usage, no USD is computed, and no endpoint exposes it. There were
-three policy scopes here (account, per-dataflow, per-attachment) with
-tighten-only writes and optimistic revisions; all six endpoints are gone with
-the limits interface they served, and `maxOutputTokens` is now the deployment
-constant `services.DEPLOYMENT_MAX_OUTPUT_TOKENS`.
+refused for usage, no USD is computed, and no endpoint exposes it. A
+completion's output cap is the deployment constant
+`services.DEPLOYMENT_MAX_OUTPUT_TOKENS`.
 
 ### Starter Routes
 
@@ -1133,7 +1124,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | File | Purpose |
 |---|---|
 | `backend/server.py` | Flask app factory; Werkzeug reloader exclude patterns |
-| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, starters, file serving) |
+| `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
 | `backend/app/packages/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
 | `backend/app/packages/installer.py` | Catalog-source-dir → archive → user-store copy + integrity hashing |
 | `backend/app/packages/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
@@ -1144,7 +1135,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/service.py` | `DatasetCatalogService`, the façade every dataset route calls |
 | `backend/app/datasets/routes.py` | `/api/datasets/*` and `/api/dataflows/<id>/datasets/*` endpoints |
 | `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
-| `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install, migrations |
+| `backend/app/datasets/application/` | Listing, preview, export, mutations, path resolution, auto-install |
 | `backend/app/datasets/install/` | Dataset installer, multi-part bundles, OSM/PBF layer extraction |
 | `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
 | `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |

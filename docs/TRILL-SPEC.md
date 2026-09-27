@@ -26,11 +26,9 @@ spec
 │   ├── datasets[]              Data Catalog references    (backend-owned on update)
 │   ├── description
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
-│   ├── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-│   └── agentDefaults           deprecated
+│   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node execution history (browser-side only)
-├── dataflowProvenance          version history of the whole dataflow
-└── name                        deprecated top-level alias
+└── dataflowProvenance          version history of the whole dataflow
 ```
 
 ### A node
@@ -145,7 +143,3 @@ projects, since `.curio/` is gitignored, which is what the CLI is for.
   `metadata.appearance`, the handles, and all of `packages`, `datasets`, `agents`
   and `agentAttachments`. Until it is rewritten, LLM-generated specs will not
   validate against this schema.
-- **Two name conventions coexist.** `dataflow.name` is authoritative, but
-  `execution/workflow_spec.py` still reads a top-level `name`. Both are valid; a
-  top-level one *without* a `dataflow.name` is the footgun documented in
-  `backend/tests/test_frontend/README.md`.

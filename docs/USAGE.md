@@ -170,11 +170,6 @@ After cloning the repository (see above), run the full Curio stack with:
 docker compose up
 ```
 
-For older Docker versions, the following command may be required instead:
-```bash
-docker-compose up
-```
-
 This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.
 
 ⚠️ **Note:** Initial builds can take time. Use `--build` to rebuild if needed.
@@ -218,7 +213,7 @@ To force the re-initialization of the backend database:
 python curio.py start --force-db-init
 ```
 
-This will recreate the provenance database and apply all migrations.
+This will re-initialize the backend database and apply all migrations.
 
 If you want to manually perform `npm install`, you should then:
 

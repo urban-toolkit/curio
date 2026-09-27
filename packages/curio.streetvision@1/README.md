@@ -49,4 +49,4 @@ A GPU is *not* required, but with one you'll see roughly 10× faster inference.
 
 ## Origin
 
-The original CV pipeline + node design was contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The merged version decomposes the two original monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) into the two reusable nodes here plus a generic `Spatial Join` node in `curio.builtin@1`, and ports the FastAPI service to a Flask blueprint inside Curio so users don't need a separate companion service.
+The original CV pipeline + node design was contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project.
