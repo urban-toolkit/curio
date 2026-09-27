@@ -338,7 +338,7 @@ class TestTheShippedCorpus:
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 16, [p.name for p in curated]
+        assert len(curated) == 17, [p.name for p in curated]
         assert len(legacy) == 21, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
@@ -367,7 +367,7 @@ class TestTheShippedCorpus:
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
         """The T2 set. dev/112's ``edges[].kind`` is not on this branch, so
-        these eight cannot be reconstructed by any plan here -- a capability
+        these nine cannot be reconstructed by any plan here -- a capability
         gap the harness reports rather than a bar it lowers."""
         with_interaction = set()
         for path in example_paths():
@@ -378,6 +378,7 @@ class TestTheShippedCorpus:
             "07-autark-gpu-shader",
             "08-autark-spatial-join-regression",
             "09-heterogeneous-data-linked-views",
+            "17-autark-geodataframe-maps",
             "Interaction_Autark",
             "Interaction_Vega",
             "Interaction_Vega_Autark",

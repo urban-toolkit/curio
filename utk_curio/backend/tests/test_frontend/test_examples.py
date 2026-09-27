@@ -67,6 +67,9 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 8}, False),
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
+    ("17-autark-geodataframe-maps.json", 15, 15,
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 4,
+      "curio.builtin/autk-grammar": 5, "curio.builtin/vis-vega": 5}, True),
 ]
 
 

@@ -126,6 +126,7 @@ WORKFLOW_FILES = [
     "docs/examples/14-vega-lite-crs-and-geometry-types.json",
     "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
     "docs/examples/16-simple-view-tables-and-images.json",
+    "docs/examples/17-autark-geodataframe-maps.json",
 ]
 
 
