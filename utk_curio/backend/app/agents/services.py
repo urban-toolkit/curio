@@ -443,6 +443,29 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
     return out
 
 
+def choosable_agents(user_key: str) -> list[dict]:
+    """The agents whose LLM configuration this account may choose: the catalog
+    cards, the published definitions and the account's imports, one row
+    (``{id, name, category}``) per agent id, since a choice covers every
+    version. Never an internal built-in, which always runs on its caller's."""
+    internal = builtin.internal_agent_ids()
+    rows: dict[str, dict] = {}
+
+    def _add(m: AgentManifest) -> None:
+        if m.agent_id not in internal:
+            rows.setdefault(m.agent_id, {"id": m.agent_id, "name": m.name, "category": m.category})
+
+    for m in builtin.list_builtin_manifests():
+        _add(m)
+    for m in publications.list_published():
+        _add(m)
+    for coord in sorted(imports.load_imported_agents(user_key)):
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
+        if m is not None:
+            _add(m)
+    return sorted(rows.values(), key=lambda row: (row["name"].casefold(), row["id"]))
+
+
 def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     """The project's installed templates from its ``dataflow.agents`` lockfile."""
     spec = projects_storage.read_spec(user_key, project_id)
@@ -1059,7 +1082,7 @@ def update_attachment_title(
 
 def record_dataset_selection(
     user_key: str, project_id: str, attachment_id: str, picks: object,
-    config: "ProviderConfig | None" = None,
+    guest: bool = False,
 ) -> dict:
     """dev/126: record the user's confirmed dataset selection for a node.
 
@@ -1166,7 +1189,7 @@ def record_dataset_selection(
     # prompt they must compose. A manual row is not delegated: its file does
     # not exist yet, and its card teaches the download and offers Import.
     delegated = _delegate_confirmed_fetch(
-        user_key, project_id, str(target.get("targetId") or ""), rows, state, config,
+        user_key, project_id, str(target.get("targetId") or ""), rows, state, guest=guest,
     )
     if delegated is not None:
         payload["delegated"] = delegated
@@ -1193,7 +1216,8 @@ def _delegate_confirmed_fetch(
     node_id: str,
     rows: list[dict],
     state: dict,
-    config: "ProviderConfig | None",
+    *,
+    guest: bool = False,
 ) -> dict | None:
     """dev/132 (R1): start the node's own builder on the confirmed source.
 
@@ -1210,6 +1234,10 @@ def _delegate_confirmed_fetch(
     next pass (its record just moved, which is exactly its trigger),
     ``manual-download`` when the file is still on a portal, or a reason —
     never raising: a selection is recorded whether or not a build can start.
+
+    The build runs on the BUILDER's LLM configuration, resolved once it is
+    picked: the selection was posted to the Dataset Finder, whose choice in AI
+    Settings says nothing about what builds the node.
     """
     from utk_curio.backend.app.agents import agent_jobs, dataset_resolution
 
@@ -1228,8 +1256,6 @@ def _delegate_confirmed_fetch(
                 ),
             }
         return None
-    if config is None:
-        return {"status": "skipped", "reason": "no provider is configured for this user"}
     try:
         spec = _read_spec_or_404(user_key, project_id)
     except AgentServiceError:
@@ -1258,10 +1284,16 @@ def _delegate_confirmed_fetch(
             ),
         }
     builder_id = str(builder.get("attachmentId") or "")
+    builder_coord = str(builder.get("coord") or "")
+    builder_manifest = _resolve_definition(user_key, builder_coord)
+    builder_name = getattr(builder_manifest, "name", None) or builder_coord.split("@", 1)[0]
     try:
+        config = provider_config.resolve_llm(user_key, builder_coord.split("@", 1)[0], guest=guest)
         subscription = solve_node_stream(
             user_key, project_id, builder_id, config, node_id=node_id,
         )
+    except provider_config.ProviderConfigError as exc:
+        return {"status": "skipped", "reason": f"the node's {builder_name} cannot start: {exc}"}
     except AgentServiceError as exc:
         return {"status": "skipped", "reason": str(exc)}
     except Exception:  # noqa: BLE001 — a selection is recorded regardless
@@ -4573,6 +4605,38 @@ _SOLVE_STALE_SECONDS = 15 * 60
 _SOLVE_CANCEL_EVENTS: dict[str, object] = {}
 
 
+def _is_data_loading_node(node: object) -> bool:
+    from utk_curio.backend.app.packages import services as _pkg_services
+
+    return source_grounding.is_data_loading_type(
+        _pkg_services.canonical_template_id((node or {}).get("type") if isinstance(node, dict) else None)
+    )
+
+
+def _delegate_capabilities(nodes) -> list[str]:
+    """What a content run always delegates: the content, and discovery when a
+    data-loading node may need a source."""
+    capabilities = ["node.content.generate"]
+    if any(_is_data_loading_node(node) for node in nodes):
+        capabilities.append("dataset.discover")
+    return capabilities
+
+
+def _check_delegate_llms(user_key: str, project_id: str, manifest, config: ProviderConfig,
+                         capabilities: list[str]) -> None:
+    """Resolve the LLM configuration of each delegate a run always relies on,
+    BEFORE anything is written, so a broken choice in AI Settings refuses the
+    run once, with its remedy, instead of failing every node. Raises
+    ``ProviderConfigError``. A delegate that does not resolve at all is left
+    to the run, which reports a missing specialist its own way."""
+    if manifest is None:
+        return
+    for capability in capabilities:
+        resolution = delegation.resolve(user_key, project_id, manifest, capability)
+        if resolution.outcome == "ok" and resolution.coord:
+            provider_config.resolve_llm(user_key, resolution.coord.split("@", 1)[0], caller=config)
+
+
 def solve_attachment(
     user_key: str,
     project_id: str,
@@ -4715,6 +4779,11 @@ def solve_attachment_stream(
     # linked to the expired one — recorded, never replayed.
     retry_of = session.pop("interruptedExecutionId", None) if session.get("phase") == "interrupted" else None
     session.pop("interruptedAt", None)
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    _check_delegate_llms(
+        user_key, project_id, manifest, config,
+        _delegate_capabilities(nodes_by_id.get(node_id) for node_id in targets),
+    )
     # The in-flight guard + cancellation identity persist before any provider
     # work; the cancel endpoint finds the run through ``solveExecutionId``.
     session["phase"] = "solving"
@@ -4724,7 +4793,6 @@ def solve_attachment_stream(
     projects_storage.write_spec(user_key, project_id, spec)
     stop = threading.Event()
     _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
-    manifest = _resolve_definition(user_key, record.get("coord", ""))
     coord = record.get("coord", "")
     session_id = record.get("sessionId")
     # dev/115: everything that needs the REQUEST context is resolved here —
@@ -6025,6 +6093,10 @@ def simulate_stream(
     now = _time.time()
     if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < _SIMULATE_STALE_SECONDS:
         raise AgentServiceError("a simulation is already running for this attachment", 409)
+    _check_delegate_llms(
+        user_key, project_id, _resolve_definition(user_key, record.get("coord", "")), config,
+        _delegate_capabilities((proposal.get("plan") or {}).get("nodes") or []),
+    )
     simulate_execution_id = uuid.uuid4().hex
     session["simulatingSince"] = now
     session["simulateExecutionId"] = simulate_execution_id
@@ -6867,6 +6939,7 @@ def solve_node_stream(
             "Node Content Builder first",
             409,
         )
+    _check_delegate_llms(user_key, project_id, manifest, config, _delegate_capabilities([node]))
     try:
         agent_jobs.check_can_start(user_key, attachment_id)
     except agent_jobs.JobRefused as exc:
@@ -7224,6 +7297,7 @@ def validate_node_stream(
             "Node Content Builder first",
             409,
         )
+    _check_delegate_llms(user_key, project_id, manifest, config, _delegate_capabilities([node]))
     session_id = record.get("sessionId")
     coord = record.get("coord", "")
     if ref is None:
@@ -10930,8 +11004,10 @@ def _run_delegate_traced(
     return status, text, child, home_attachment_id
 
 
-def _delegation_part_for(resolution, capability: str, status: str, text: str, home_attachment_id: str | None) -> dict:
+def _delegation_part_for(resolution, capability: str, status: str, text: str,
+                         home_attachment_id: str | None, child: dict | None = None) -> dict:
     manifest = getattr(resolution, "manifest", None)
+    pins = (child or {}).get("pins") or {}
     return content.make_delegation_part(
         capability=capability,
         coord=getattr(resolution, "coord", "") or "",
@@ -10940,6 +11016,8 @@ def _delegation_part_for(resolution, capability: str, status: str, text: str, ho
         attachment_id=home_attachment_id,
         status=status,
         summary=(text or "")[:200],
+        model=str(pins.get("model") or ""),
+        llm_label=str((pins.get("llm") or {}).get("label") or ""),
     )
 
 
@@ -12233,7 +12311,8 @@ def run_attachment(
                         status = notes_outcome
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
-                        resolution, req["capability"], status, delegate_summary, home_att
+                        resolution, req["capability"], status, delegate_summary, home_att,
+                        child=child,
                     ))
                     result_msg = _delegate_result_message(
                         resolution.coord, req["capability"], status, text, final=final
@@ -12654,7 +12733,8 @@ def stream_attachment(
                             status = notes_outcome
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
-                            resolution, req["capability"], status, delegate_summary, home_att
+                            resolution, req["capability"], status, delegate_summary, home_att,
+                            child=child,
                         ))
                         yield (
                             "delegate_result",
@@ -12667,6 +12747,9 @@ def stream_attachment(
                                 if resolution.manifest else None,
                                 "status": status,
                                 "durationMs": child.get("durationMs"),
+                                # What the child ran on, which may not be the parent's.
+                                "model": (child.get("pins") or {}).get("model"),
+                                "llmLabel": ((child.get("pins") or {}).get("llm") or {}).get("label"),
                             },
                         )
                         result_msg = _delegate_result_message(

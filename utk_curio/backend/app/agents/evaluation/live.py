@@ -136,10 +136,15 @@ class LiveRun:
 
     # ── provider identity, never the key ───────────────────────────────────
     def provider_record(self) -> ProviderRecord:
-        # What answers a run now, as the account's LLM configurations resolve it
-        # (``GET /api/agents/llm``): never a key, only the host it goes to.
+        # What the attached Dataflow Builder answers with, as the account's LLM
+        # configurations resolve it (``GET /api/agents/llm``): its choice, else
+        # the default. Never a key, only the host it goes to.
         listing = self.client.json("/api/agents/llm")
-        active = listing.get("active") or {}
+        builder = next(
+            (row for row in listing.get("agents") or [] if row.get("id") == "agent.dataflow-builder"),
+            None,
+        )
+        active = (builder or {}).get("answers") or listing.get("active") or {}
         if not active.get("source"):
             raise LiveEvalRefused(
                 "no LLM configuration answers a run on the evaluation account ("

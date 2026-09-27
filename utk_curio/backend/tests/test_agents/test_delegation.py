@@ -341,6 +341,99 @@ class TestDelegateChildRun:
         assert execution["status"] == "ok"
 
 
+class TestTheChildRunsOnItsOwnConfiguration:
+    """A delegate runs on the configuration chosen for it in AI Settings, else
+    on its caller's; a broken choice is the child's failure, never the parent's."""
+
+    def _config(self, client, token, label, model):
+        body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
+                "apiKey": "sk-child-key-0123456789", "model": model}
+        response = client.post("/api/agents/llm/configs", json=body, headers=_auth(token))
+        assert response.status_code == 201, response.get_json()
+        return response.get_json()["config"]["id"]
+
+    def _choose(self, client, token, agent_id, config_id):
+        response = client.put("/api/agents/llm/assignments", json={agent_id: config_id},
+                              headers=_auth(token))
+        assert response.status_code == 200, response.get_json()
+
+    def _run_counting_models(self, client, token, pid, att_id, monkeypatch, *, child_fails=False):
+        models = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            models.append(config.model)
+            if len(models) == 1:
+                return _delegate_tail()
+            return "df.sum(axis=0)" if len(models) == 2 and not child_fails else "Here is the plan."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        response = _run(client, token, pid, att_id)
+        assert response.status_code == 200, response.get_json()
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+        execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
+        return models, turns, execution
+
+    def test_an_assigned_child_runs_on_and_pins_its_own(self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        child_config = self._config(client, token, "Child", "child-model")
+        self._choose(client, token, "agent.node-content-builder", child_config)
+        models, turns, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
+        # The parent on the deployment default, the child on its own choice.
+        assert models == ["test-model", "child-model", "test-model"]
+        (child,) = execution["delegations"]
+        assert child["pins"]["model"] == "child-model"
+        assert child["pins"]["llm"]["configId"] == child_config
+        assert child["pins"]["llm"]["source"] == "assigned"
+        assert execution["pins"]["llm"]["source"] == "deployment"
+        # The parent's entry names what the child ran on.
+        part = next(p for t in turns for p in (t.get("content") or []) if p.get("type") == "delegation")
+        assert (part["model"], part["llmLabel"]) == ("child-model", "Child")
+        assert "sk-child-key" not in json.dumps(turns)
+
+    def test_an_unassigned_child_inherits_its_callers(self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        parent_config = self._config(client, token, "Parent", "parent-model")
+        self._choose(client, token, "agent.node-builder", parent_config)
+        models, _, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
+        assert models == ["parent-model", "parent-model", "parent-model"]
+        (child,) = execution["delegations"]
+        assert child["pins"]["llm"] == {**execution["pins"]["llm"], "source": "caller"}
+
+    def test_a_broken_choice_does_not_start_the_child_and_the_parent_completes(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        child_config = self._config(client, token, "Child", "child-model")
+        self._choose(client, token, "agent.node-content-builder", child_config)
+        store = llm_configs.default_store()
+        doc = store.read(_user_dir_key(user))
+        del doc["configs"][child_config]  # a hand-edited file: the choice names nothing
+        store._write(_user_dir_key(user), doc)
+        models, _, execution = self._run_counting_models(
+            client, token, pid, att_id, monkeypatch, child_fails=True,
+        )
+        # The child's provider was never called; the parent carried on.
+        assert models == ["test-model", "test-model"]
+        (child,) = execution["delegations"]
+        assert child["status"] == "error"
+        assert execution["status"] == "ok"
+
+
 class TestADelegateFailureNeverCarriesTheKey:
     def test_the_childs_error_is_redacted_everywhere_it_goes(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend import config

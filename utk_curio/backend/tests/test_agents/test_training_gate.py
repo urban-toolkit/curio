@@ -231,7 +231,10 @@ class TestActivationThroughTheRoutes:
     def _listing(self, client, account):
         return client.get("/api/agents/llm", headers=_auth(account["token"])).get_json()
 
-    def test_activation_adds_a_trained_configuration_and_rollback_restores_the_default(
+    def _builder(self, listing):
+        return next(row for row in listing["agents"] if row["id"] == "agent.dataflow-builder")
+
+    def test_activation_chooses_a_trained_configuration_for_the_builder_and_rollback_restores(
         self, client, account, approved_corpus
     ):
         job = self._succeeded_job(client, account)
@@ -248,11 +251,16 @@ class TestActivationThroughTheRoutes:
         assert activated.status_code == 200, activated.get_json()
         payload = activated.get_json()
         trained_id = payload["activation"]["configId"]
-        assert payload["activation"]["previousDefault"] == account["configId"]
+        assert payload["activation"]["agentId"] == "agent.dataflow-builder"
+        # The Builder had no choice of its own: it followed the default.
+        assert payload["activation"]["previousChoice"] is None
         assert payload["activation"]["activatedAt"]
         assert payload["evaluation"]["meanScore"] == 0.94
         listing = self._listing(client, account)
-        assert listing["default"] == trained_id
+        # The Builder runs on the trained model; the default is untouched.
+        assert listing["assignments"] == {"agent.dataflow-builder": trained_id}
+        assert self._builder(listing)["answers"]["configId"] == trained_id
+        assert listing["default"] == account["configId"]
         trained = next(c for c in listing["configs"] if c["id"] == trained_id)
         assert trained["model"] == job["trainedModel"]
         assert trained["origin"] == "trained" and trained["label"] == "Scripted (trained)"
@@ -264,18 +272,34 @@ class TestActivationThroughTheRoutes:
         )
         assert rolled.status_code == 200
         assert rolled.get_json()["activation"]["rolledBackAt"]
-        assert rolled.get_json()["rollbackNote"] == "your default is 'Scripted' again"
+        assert rolled.get_json()["rollbackNote"] == "the Dataflow Builder follows your default again"
         listing = self._listing(client, account)
-        assert listing["default"] == account["configId"]
+        assert listing["assignments"] == {}
+        assert self._builder(listing)["answers"]["configId"] == account["configId"]
         # The trained configuration stays, to use or remove in AI Settings.
         assert any(c["id"] == trained_id for c in listing["configs"])
 
-    def test_rollback_after_the_default_was_changed_by_hand_is_refused(
+    def test_rollback_restores_a_previous_choice(self, client, account, approved_corpus):
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": account["configId"]},
+                   headers=_auth(account["token"]))
+        job = self._succeeded_job(client, account)
+        activated = self._activate(client, account, job).get_json()
+        assert activated["activation"]["previousChoice"] == account["configId"]
+        rolled = client.post(
+            f"/api/agents/training/jobs/{job['jobId']}/rollback",
+            headers=_auth(account["token"]),
+        ).get_json()
+        assert rolled["rollbackNote"] == "the Dataflow Builder runs on 'Scripted' again"
+        assert self._listing(client, account)["assignments"] == {
+            "agent.dataflow-builder": account["configId"]
+        }
+
+    def test_rollback_after_the_choice_was_changed_by_hand_is_refused(
         self, client, account, approved_corpus
     ):
         job = self._succeeded_job(client, account)
         assert self._activate(client, account, job).status_code == 200
-        client.put("/api/agents/llm/default", json={"configId": None},
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": None},
                    headers=_auth(account["token"]))
         refused = client.post(
             f"/api/agents/training/jobs/{job['jobId']}/rollback",
@@ -283,7 +307,7 @@ class TestActivationThroughTheRoutes:
         )
         assert refused.status_code == 409
         assert "has changed since this model was activated" in refused.get_json()["error"]
-        assert self._listing(client, account)["default"] is None
+        assert self._listing(client, account)["assignments"] == {}
 
     def test_activation_needs_the_configuration_the_job_trained_on(
         self, client, account, approved_corpus

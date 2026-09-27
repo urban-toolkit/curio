@@ -636,6 +636,27 @@ class TestTrainingRunsOnItsOwnConfiguration:
         assert response.status_code == 409
         assert "Choose the LLM configuration to train on" in response.get_json()["error"]
 
+    def test_it_trains_what_the_dataflow_builder_runs_on(self, client, account, approved_corpus):
+        builder = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Builder's", "apiType": "testing", "model": "builder-model",
+                  "apiKey": "sk-builder-000000", "baseUrl": "http://builder.example.com/v1"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": builder["id"]},
+                   headers=_auth(account["token"]))
+        preview = self._preview(client, account["token"])
+        assert preview["provider"]["configId"] == builder["id"]
+        assert preview["consent"]["destinationHost"] == "builder.example.com"
+
+    def test_a_builder_on_the_deployment_default_is_not_trained_on(self, client, account, approved_corpus):
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": "deployment"},
+                   headers=_auth(account["token"]))
+        response = client.post("/api/agents/training/dataset/preview", json={},
+                               headers=_auth(account["token"]))
+        assert response.status_code == 409
+        assert "the Dataflow Builder runs on this deployment's" in response.get_json()["error"]
+
     def test_a_hosted_guest_cannot_train(self, client, db, tmp_curio, approved_corpus, monkeypatch):
         from utk_curio.backend import config
         from utk_curio.backend.app.users.models import User, UserSession

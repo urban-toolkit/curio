@@ -5,9 +5,11 @@ configurations (``agents/llm_configs.py``) and the deployment
 (``config.DEFAULT_LLM_*`` / ``GUEST_LLM_*``, read at call time):
 
 - a hosted guest runs on the guest configuration;
-- a delegated run on its caller's;
-- otherwise the default configuration, else the deployment default, else a
-  refusal whose remedy opens AI Settings;
+- an internal agent on its caller's, always;
+- any other agent on the configuration chosen for it;
+- with no choice, a delegated agent on its caller's, and an attached one on
+  the default configuration, else the deployment default, else a refusal whose
+  remedy opens AI Settings;
 - a reference that does not resolve is refused, never replaced.
 
 Two regressions are pinned: a user's key never goes to the deployment's host,
@@ -75,9 +77,75 @@ class TestTheFallbackOrder:
         assert "AI Settings" in str(refused.value)
         assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.chat-agent"}
 
-    def test_a_delegated_run_answers_with_its_callers(self, deployment):
-        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude")
-        assert pc.resolve_llm(USER, "agent.dataflow-planner", caller=caller) is caller
+    def test_an_unchosen_delegate_answers_with_its_callers(self, deployment):
+        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
+                                config_id="llm-00000000000a", label="Caller", source="default")
+        out = pc.resolve_llm(USER, "agent.node-content-builder", caller=caller)
+        assert (out.api_key, out.model, out.config_id, out.label) == ("k", "claude", "llm-00000000000a", "Caller")
+        assert out.source == "caller"
+
+
+class TestAChoicePerAgent:
+    def _chosen(self, store, agent_id="agent.node-content-builder", **fields):
+        created = _own(store, label=fields.pop("label", "Chosen"), model=fields.pop("model", "chosen-model"), **fields)
+        store.set_choices(USER, {agent_id: created["id"]},
+                          choosable=frozenset({agent_id}), deployment_default=True)
+        return created
+
+    def test_an_attached_agent_runs_on_its_choice_over_the_default(self, deployment):
+        default = _own(deployment, label="Default")
+        deployment.set_default(USER, default["id"])
+        chosen = self._chosen(deployment, "agent.chat-agent")
+        out = pc.resolve_llm(USER, "agent.chat-agent")
+        assert (out.config_id, out.model, out.source) == (chosen["id"], "chosen-model", "assigned")
+        # Another agent still follows the default.
+        assert pc.resolve_llm(USER, "agent.dataflow-builder").config_id == default["id"]
+
+    def test_a_delegate_runs_on_its_own_choice_not_its_callers(self, deployment):
+        chosen = self._chosen(deployment)
+        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
+                                source="default")
+        out = pc.resolve_llm(USER, "agent.node-content-builder", caller=caller)
+        assert (out.config_id, out.api_key, out.source) == (chosen["id"], "user-secret-key", "assigned")
+
+    def test_an_internal_agent_always_runs_on_its_callers(self, deployment):
+        # A choice cannot be written for one; a hand-edited file is ignored.
+        created = _own(deployment, label="Planner")
+        doc = deployment.read(USER)
+        doc["agents"]["agent.dataflow-planner"] = created["id"]
+        deployment._write(USER, doc)
+        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude",
+                                source="assigned")
+        out = pc.resolve_llm(USER, "agent.dataflow-planner", caller=caller)
+        assert (out.api_key, out.model, out.source) == ("k", "claude", "caller")
+
+    def test_the_deployment_default_can_be_chosen(self, deployment):
+        deployment.set_choices(USER, {"agent.chat-agent": "deployment"},
+                               choosable=frozenset({"agent.chat-agent"}), deployment_default=True)
+        out = pc.resolve_llm(USER, "agent.chat-agent")
+        assert (out.model, out.source, out.label) == ("llama4", "assigned", "Deployment default")
+
+    def test_a_choice_that_names_nothing_is_refused_not_replaced(self, deployment):
+        chosen = self._chosen(deployment, "agent.chat-agent")
+        doc = deployment.read(USER)
+        del doc["configs"][chosen["id"]]  # a hand-edited file
+        deployment._write(USER, doc)
+        with pytest.raises(pc.ProviderConfigError, match="chosen for agent.chat-agent") as refused:
+            pc.resolve_llm(USER, "agent.chat-agent")
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.chat-agent"}
+
+    def test_a_withdrawn_deployment_choice_is_refused(self, deployment, monkeypatch):
+        deployment.set_choices(USER, {"agent.chat-agent": "deployment"},
+                               choosable=frozenset({"agent.chat-agent"}), deployment_default=True)
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
+        with pytest.raises(pc.ProviderConfigError, match="no longer offers"):
+            pc.resolve_llm(USER, "agent.chat-agent")
+
+    def test_a_guest_caller_keeps_its_delegates_on_the_guest_configuration(self, deployment):
+        self._chosen(deployment)
+        caller = pc.resolve_llm("guest", "agent.dataflow-builder")
+        assert caller.source == "guest"
+        assert pc.resolve_llm("guest", "agent.node-content-builder", caller=caller) is caller
 
     def test_a_default_that_names_nothing_is_refused_not_replaced(self, deployment):
         created = _own(deployment)

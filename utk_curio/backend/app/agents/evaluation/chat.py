@@ -110,24 +110,39 @@ def report_lines(record, fixture, *, solved: int = 0, solvable: int = 0) -> list
     provider = record.provider or {}
     usage = record.usage or {}
     tokens = int(usage.get("inputTokens") or 0) + int(usage.get("outputTokens") or 0)
-    detail = f"Model {provider.get('model') or 'unknown'}"
-    if provider.get("label"):
-        detail += f" ({provider['label']})"
-    if provider.get("baseUrlHost"):
-        detail += f" at {provider['baseUrlHost']}"
+    extras = []
     if tokens:
-        detail += (
-            f" · {usage.get('inputTokens', 0)} in / "
-            f"{usage.get('outputTokens', 0)} out tokens"
+        extras.append(
+            f"{usage.get('inputTokens', 0)} in / {usage.get('outputTokens', 0)} out tokens"
         )
     if record.latency_ms:
-        detail += f" · {round(record.latency_ms / 1000)}s"
-    lines.append(detail + ".")
+        extras.append(f"{round(record.latency_ms / 1000)}s")
+    rows = record.configurations or []
+    if len(rows) > 1:
+        # One line per distinct configuration, naming the agents on it.
+        for row in rows:
+            lines.append(
+                f"{', '.join(str(a) for a in row.get('agents') or [])}: "
+                f"{_model_phrase(row, 'model')}."
+            )
+        if extras:
+            lines.append("The run took " + " · ".join(extras) + ".")
+    else:
+        lines.append(" · ".join([_model_phrase(provider, "Model"), *extras]) + ".")
     lines.append(
         "Compared with Curio's saved example by deterministic code — no model "
         "graded this, and the example stayed on the server."
     )
     return lines
+
+
+def _model_phrase(provider: dict, lead: str) -> str:
+    phrase = f"{lead} {provider.get('model') or 'unknown'}"
+    if provider.get("label"):
+        phrase += f" ({provider['label']})"
+    if provider.get("baseUrlHost"):
+        phrase += f" at {provider['baseUrlHost']}"
+    return phrase
 
 
 def post_report(

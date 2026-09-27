@@ -140,6 +140,72 @@ class TestAFetchableRowIsDelegated:
         assert body["delegated"]["status"] == "session-running"
 
 
+class TestTheBuildRunsOnTheBuildersConfiguration:
+    """The selection is posted to the Dataset Finder, but the node is built by
+    its own builder, so the build answers with the builder's configuration."""
+
+    _API_ROW = [{"lane": "external", "key": "https://data.example.org/areas.geojson"}]
+
+    def _config(self, client, token, label, model):
+        body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
+                "apiKey": "sk-some-key-0123456789", "model": model}
+        return client.post("/api/agents/llm/configs", json=body, headers=_auth(token)).get_json()["config"]["id"]
+
+    def _ready(self, client, user, token, monkeypatch):
+        h, finder_id = _await_candidates(
+            client, user, token, monkeypatch,
+            dl_replies=[
+                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
+                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
+                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
+                'import geopandas as gpd\nreturn gpd.read_file('
+                '"https://data.example.org/areas.geojson")',
+            ],
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **k: dict(DATA_OBSERVATION),
+        )
+        return h, finder_id
+
+    def test_never_the_finders(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        h, finder_id = self._ready(client, user, token, monkeypatch)
+        client.put("/api/agents/llm/assignments", json={
+            "agent.dataset-finder": self._config(client, token, "Finder", "finder-model"),
+            "agent.node-builder": self._config(client, token, "Builder", "builder-model"),
+        }, headers=_auth(token))
+        inner = services_mod.run_chat_completion
+        models = []
+
+        def _recording(config, messages, **kwargs):
+            models.append(config.model)
+            return inner(config, messages, **kwargs)
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _recording)
+        delegated = _select(h, finder_id, self._API_ROW).get_json()["delegated"]
+        assert delegated["status"] == "delegating"
+        _drain(h, delegated["attachmentId"])
+        assert models and set(models) == {"builder-model"}
+
+    def test_a_builder_that_cannot_run_is_named(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import llm_configs
+
+        user, token = user_and_token
+        h, finder_id = self._ready(client, user, token, monkeypatch)
+        builder = self._config(client, token, "Builder", "builder-model")
+        client.put("/api/agents/llm/assignments", json={"agent.node-builder": builder},
+                   headers=_auth(token))
+        store = llm_configs.default_store()
+        doc = store.read(h.ukey)
+        del doc["configs"][builder]  # the choice now names nothing
+        store._write(h.ukey, doc)
+        body = _select(h, finder_id, self._API_ROW).get_json()
+        assert body["status"] == dr.STATE_RESOLVED  # the selection is recorded regardless
+        assert body["delegated"]["status"] == "skipped"
+        assert body["delegated"]["reason"].startswith("the node's Node Builder cannot start")
+
+
 class _FakeJob:
     kind = "solve-batch"
     job_id = "job-1"

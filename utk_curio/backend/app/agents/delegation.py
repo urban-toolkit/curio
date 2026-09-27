@@ -183,6 +183,10 @@ def run_delegate(
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
+    *config* is the caller's configuration. The child runs on its own, resolved
+    here when it starts (``provider_config.resolve_llm``), so a choice changed
+    in AI Settings reaches the delegates a running Solve starts after it.
+
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
     failure reason), and ``child_record`` is the child's execution record —
@@ -205,6 +209,12 @@ def run_delegate(
         record["capability"] = capability
         return record
 
+    try:
+        # The child's own choice in AI Settings, else its caller's
+        # configuration; an internal agent always runs on its caller's.
+        config = provider_config.resolve_llm(user_key, coord.split("@", 1)[0], caller=config)
+    except provider_config.ProviderConfigError as exc:
+        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, {"coord": coord}))
     pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model,
                   "llm": provider_config.llm_pin(config)}
     try:

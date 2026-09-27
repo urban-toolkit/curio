@@ -98,6 +98,9 @@ class EvaluationRecord:
     #: Kind, host and model only. The config is never serialized and the key is
     #: never read here (``RISK-SECRET-001``).
     provider: dict = field(default_factory=dict)
+    #: Each distinct configuration the run and the agents it requires use, with
+    #: the ``agents`` on it. Kind, host, model and label, never a key.
+    configurations: list = field(default_factory=list)
     digests: dict = field(default_factory=dict)
     project_id: str | None = None
     attachment_id: str | None = None
@@ -130,6 +133,7 @@ class EvaluationRecord:
             "runId": self.run_id,
             "fixtureId": self.fixture_id,
             "provider": dict(self.provider),
+            "configurations": [dict(c) for c in self.configurations],
             "digests": dict(self.digests),
             "projectId": self.project_id,
             "attachmentId": self.attachment_id,
@@ -156,6 +160,7 @@ class EvaluationRecord:
             run_id=str(payload.get("runId") or ""),
             fixture_id=str(payload.get("fixtureId") or ""),
             provider=dict(payload.get("provider") or {}),
+            configurations=[dict(c) for c in payload.get("configurations") or [] if isinstance(c, Mapping)],
             digests=dict(payload.get("digests") or {}),
             project_id=payload.get("projectId"),
             attachment_id=payload.get("attachmentId"),
