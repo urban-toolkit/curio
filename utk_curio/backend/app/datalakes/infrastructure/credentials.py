@@ -15,7 +15,8 @@ invent a credential slot would let it invent somewhere for a secret to go.
 
 Adding a slot is a column plus a migration plus one line here - deliberately
 the same cost as adding any other account credential, because that is what it
-is. Token-needing portal families are rare; there is one today.
+is. A slot may also name a column that already holds the account's token for
+another feature, as ``huggingface.token`` does.
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
 #: manifest ``auth.secretId`` -> the ``User`` column that holds it.
 SLOT_COLUMNS: dict[str, str] = {
     "socrata.app-token": "socrata_app_token",
+    # The same column Street Vision reads for gated models: one Hugging Face
+    # token per account, whichever part of Curio asks for it.
+    "huggingface.token": "huggingface_token",
 }
 
 #: manifest ``auth.secretId`` -> the deployment-wide fallback, read at call
@@ -34,6 +38,7 @@ SLOT_COLUMNS: dict[str, str] = {
 #: everyone else inherits, exactly as ``DEFAULT_LLM_API_KEY`` works.
 SLOT_DEFAULTS: dict[str, str] = {
     "socrata.app-token": "CURIO_DEFAULT_SOCRATA_APP_TOKEN",
+    "huggingface.token": "CURIO_DEFAULT_HUGGINGFACE_TOKEN",
 }
 
 #: What a client is told about each slot, keyed the same way. Booleans only.
@@ -100,4 +105,4 @@ def credential_header(user, manifest: LakeSourceManifest) -> str | None:
     token = token_for_slot(user, auth.secret_id)
     if not token:
         return None
-    return f"{auth.header_name}:{token}"
+    return f"{auth.header_name}:{auth.value_prefix or ''}{token}"

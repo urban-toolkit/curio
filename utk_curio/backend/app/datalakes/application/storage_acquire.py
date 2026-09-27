@@ -1,0 +1,244 @@
+"""Add a storage resource to the Data Catalog.
+
+The storage half of :mod:`application.acquire`. The manifest names the
+resource; a fresh scan of that one resource finds its files as they are now;
+and what is added depends on the kind:
+
+- a **table** is copied, as every lake copies data. One file lands as itself
+  (a shapefile, a GeoPackage and a PBF are converted on the way in, as an
+  upload of one is); several files combine into one Parquet table;
+- every other kind is a **collection**: an index with one row per file,
+  referenced where the files are.
+
+Nothing here writes to the source.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import shutil
+import tempfile
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from utk_curio.backend.app.common.safe_paths import validate_component
+from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
+from utk_curio.backend.app.datalakes.application import scan as scanning
+from utk_curio.backend.app.datalakes.domain.errors import (
+    CapabilityUnsupported,
+    DownloadTooLarge,
+    ResourceNotFound,
+)
+from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
+from utk_curio.backend.app.datalakes.infrastructure.transport import MAX_LAKE_DOWNLOAD_BYTES
+from utk_curio.backend.app.datalakes.providers.storage_base import SHAPEFILE_PARTS
+
+#: A file read from a folder on this machine costs no network, so its bound is
+#: the disk's rather than the lake's download ceiling.
+MAX_LOCAL_FILE_BYTES = 4 * 1024 * 1024 * 1024
+
+#: GeoPackage and PBF conversion reads the whole file.
+MAX_CONVERTED_FILE_BYTES = 512 * 1024 * 1024
+
+CHUNK_BYTES = 1024 * 1024
+
+#: Table formats installed as they are, without conversion.
+DIRECT_FORMATS = ("csv", "json", "geojson", "parquet")
+
+
+class Cancelled(Exception):
+    """The user asked for this to stop."""
+
+
+def _iso_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+class StorageAcquire:
+    """Turns one storage resource row into Data Catalog datasets."""
+
+    def __init__(
+        self,
+        *,
+        user_key: str,
+        storage_for: Callable[[LakeSourceManifest], Any],
+        install_path: Callable[..., dict[str, Any]],
+        import_layers: Callable[..., dict[str, Any]],
+        find_held: Callable[[str, str, str | None], dict[str, Any] | None],
+    ) -> None:
+        self.user_key = user_key
+        self._storage_for = storage_for
+        self._install_path = install_path
+        self._import_layers = import_layers
+        self._find_held = find_held
+
+    def acquire(
+        self,
+        manifest: LakeSourceManifest,
+        resource_id: str,
+        *,
+        title: str | None = None,
+        refresh: bool = False,
+        progress: Callable[[int, int | None], None] | None = None,
+        items: Callable[[int, int | None], None] | None = None,
+        stage: Callable[[str], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Add the row *resource_id*. Returns ``{dataset, alreadyPresent, unchanged}``."""
+        selection = scanning.parse_resource_id(manifest, resource_id)
+        spec = selection.spec
+        held = self._find_held(manifest.dir_name, resource_id, None)
+        if held is not None and not refresh:
+            return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+
+        provider = self._storage_for(manifest)
+        if stage:
+            stage("Finding the files…")
+        result = scanning.scan(manifest, provider, selection=selection, cancelled=cancelled)
+        if cancelled is not None and cancelled():
+            raise Cancelled()
+        files = [f for group in result.groups for f in group.files]
+        if not files:
+            raise ResourceNotFound(f"no files of {manifest.name} match {resource_id}")
+        name = scanning.group_name(result.groups[0]) if result.groups else spec.name
+
+        if spec.is_collection:
+            raise CapabilityUnsupported(f"{spec.name} is a collection")
+        if len(files) > 1:
+            raise CapabilityUnsupported(
+                f"{name} is {len(files)} files; combining them into one table is not available"
+            )
+
+        only = files[0]
+        lake_source = {
+            "lakeId": manifest.dir_name,
+            "lakeName": manifest.name,
+            "resourceId": resource_id,
+            "sourcePath": only.relpath,
+            "fileCount": 1,
+            "fetchedAt": _iso_now(),
+        }
+        dataset = self._add_file(
+            manifest,
+            provider,
+            spec.format,
+            only,
+            title=title or name,
+            lake_source=lake_source,
+            held=held,
+            progress=progress,
+            cancelled=cancelled,
+        )
+        if dataset.get("alreadyPresent"):
+            return dataset
+        return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+
+    # ── one table file ─────────────────────────────────────────────────────
+
+    def _bound(self, manifest: LakeSourceManifest) -> int:
+        if manifest.provider.type == "folder":
+            return MAX_LOCAL_FILE_BYTES
+        return min(manifest.capabilities.max_download_bytes, MAX_LAKE_DOWNLOAD_BYTES)
+
+    def _add_file(
+        self,
+        manifest,
+        provider,
+        fmt: str,
+        found,
+        *,
+        title: str,
+        lake_source: dict[str, Any],
+        held,
+        progress,
+        cancelled,
+    ) -> dict[str, Any]:
+        bound = self._bound(manifest)
+        if fmt in ("gpkg", "pbf"):
+            bound = min(bound, MAX_CONVERTED_FILE_BYTES)
+        if found.size > bound:
+            raise DownloadTooLarge(
+                f"{found.relpath} is {found.size:,} bytes; the limit here is {bound:,}"
+            )
+        filename = _filename(found.relpath)
+        with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
+            staged = Path(tmp) / filename
+            sha = self._copy(provider, found.relpath, staged, bound, found.size, progress, cancelled)
+            if held is not None and (held.get("lakeSource") or {}).get("contentSha256") == sha:
+                return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+            lake_source = {**lake_source, "contentSha256": sha}
+            if fmt in DIRECT_FORMATS:
+                return self._install_path(staged, filename, fmt, title=title, lake_source=lake_source)
+            if fmt == "shp":
+                for suffix in SHAPEFILE_PARTS:
+                    sibling = _sibling(found.relpath, suffix)
+                    try:
+                        self._copy(provider, sibling, Path(tmp) / _filename(sibling), bound, None, None, cancelled)
+                    except ResourceNotFound:
+                        if suffix in (".dbf", ".shx"):
+                            raise ResourceNotFound(
+                                f"{found.relpath} needs its {suffix} beside it"
+                            ) from None
+                parquet = staged.with_suffix(".parquet")
+                _shapefile_to_parquet(staged, parquet)
+                return self._install_path(
+                    parquet, parquet.name, "parquet", title=title, lake_source=lake_source
+                )
+            if fmt in ("gpkg", "pbf"):
+                return self._import_layers(
+                    fmt, staged.read_bytes(), filename, title=title, lake_source=lake_source
+                )
+        raise CapabilityUnsupported(f"{fmt} cannot be added from {manifest.name}")
+
+    def _copy(self, provider, relpath, dest: Path, bound, total, progress, cancelled) -> str:
+        """Stream one file of the source into *dest*, capped and hashed."""
+        digest = hashlib.sha256()
+        written = 0
+        with provider.open(relpath) as source, dest.open("wb") as out:
+            while True:
+                if cancelled is not None and cancelled():
+                    raise Cancelled()
+                chunk = source.read(CHUNK_BYTES)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > bound:
+                    raise DownloadTooLarge(f"{relpath} is larger than the {bound:,}-byte limit")
+                digest.update(chunk)
+                out.write(chunk)
+                if progress is not None:
+                    progress(written, total)
+        return digest.hexdigest()
+
+    def _tmp_dir(self) -> Path:
+        path = users_base() / user_key_segment(self.user_key) / "datalakes" / "tmp"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+
+def _filename(relpath: str) -> str:
+    """A store-safe filename for *relpath*'s last part."""
+    from werkzeug.utils import secure_filename
+
+    name = secure_filename(relpath.rsplit("/", 1)[-1]) or "data"
+    return validate_component(name[:120], field="file name")
+
+
+def _sibling(relpath: str, suffix: str) -> str:
+    stem = relpath[: -len(".shp")] if relpath.lower().endswith(".shp") else relpath
+    return stem + suffix
+
+
+def _shapefile_to_parquet(shp: Path, dest: Path) -> None:
+    """Convert a shapefile with its siblings to GeoParquet in EPSG:4326."""
+    import geopandas as gpd
+
+    frame = gpd.read_file(shp)
+    if frame.crs is not None and frame.crs.to_epsg() != 4326:
+        frame = frame.to_crs(4326)
+    frame.to_parquet(dest)
+
+
+def clear_tmp(path: Path) -> None:
+    shutil.rmtree(path, ignore_errors=True)

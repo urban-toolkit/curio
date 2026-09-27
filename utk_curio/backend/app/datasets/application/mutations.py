@@ -250,6 +250,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
+        lake_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import an OSM PBF as one GeoParquet dataset per non-empty layer."""
         import uuid
@@ -288,6 +289,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
+                    lake_source=lake_source,
                 )
             )
 
@@ -305,6 +307,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
+        lake_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import a GeoPackage as one parquet dataset per layer."""
         import uuid
@@ -339,6 +342,7 @@ class CatalogMutations:
                 title=prefix,
                 feature_count_override=only.feature_count,
                 source_updated_at=source_updated_at,
+                lake_source=lake_source,
             )
 
         # One unique group id per *import*, never derived from content, so the
@@ -357,6 +361,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
+                    lake_source=lake_source,
                 )
             )
 

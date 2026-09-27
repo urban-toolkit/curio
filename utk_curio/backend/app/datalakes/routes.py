@@ -182,13 +182,20 @@ def search_datalakes():
 @_map_lake_errors
 def search_datalake_source(source_dir: str):
     """Search one portal. **Live.** The only paginated search - a fan-out has
-    no coherent cursor across five independently paginating portals."""
+    no coherent cursor across five independently paginating portals.
+
+    For a storage source this lists its declared resources, from a scan of its
+    files that is shared by every user and refreshed after 15 minutes or on
+    ``rescan=1``. While a scan runs, the one leg in ``sources`` says
+    ``scanning`` and the page asks again.
+    """
     payload = _service().search_source(
         source_dir,
         q=(request.args.get("q") or "").strip(),
         fmt=request.args.get("format"),
         limit=_int_arg("limit"),
         cursor=request.args.get("cursor"),
+        rescan=request.args.get("rescan") in ("1", "true"),
     )
     return jsonify(payload), 200
 

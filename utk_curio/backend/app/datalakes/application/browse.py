@@ -35,7 +35,9 @@ MAX_FANOUT_WORKERS = 4
 
 #: What one leg of a fan-out may report. `unsupported` is not a failure: a
 #: direct-link source has nothing to search and saying so is the right answer.
-LEG_STATUSES = ("ok", "failed", "refused", "rate-limited", "unsupported", "needs-token")
+LEG_STATUSES = (
+    "ok", "failed", "refused", "rate-limited", "unsupported", "needs-token", "scanning",
+)
 
 
 class LakeBrowse:

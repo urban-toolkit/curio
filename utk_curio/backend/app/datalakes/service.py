@@ -13,12 +13,17 @@ from flask import current_app
 
 from utk_curio.backend.app.datalakes.application.acquire import LakeAcquire, _Cancelled
 from utk_curio.backend.app.datalakes.application.browse import LakeBrowse
+from utk_curio.backend.app.datalakes.application import scan as scanning
+from utk_curio.backend.app.datalakes.application.storage_acquire import (
+    Cancelled as StorageCancelled,
+    StorageAcquire,
+)
 from utk_curio.backend.app.datalakes.application import jobs as job_store
 from utk_curio.backend.app.datalakes.application.catalog import LakeCatalog
 from utk_curio.backend.app.agents import egress
 from utk_curio.backend.app.datalakes.domain.errors import DataLakeError, SourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
-from utk_curio.backend.app.datalakes.domain.resource import SearchQuery
+from utk_curio.backend.app.datalakes.domain.resource import LakeField, LakeResourceDetail, SearchQuery
 from utk_curio.backend.app.datalakes.infrastructure import credentials, ratelimit
 from utk_curio.backend.app.datalakes.infrastructure import transport as transport_mod
 from utk_curio.backend.app.datalakes.schemas.payloads import (
@@ -76,6 +81,13 @@ class DataLakeService:
             install_path=self._install_path,
             find_held=self._find_held,
         )
+        self._storage_acquire = StorageAcquire(
+            user_key=self.user_key,
+            storage_for=self._storage_for,
+            install_path=self._install_path,
+            import_layers=self._import_layers,
+            find_held=self._find_held,
+        )
 
     # ── collaborators ──────────────────────────────────────────────────────
 
@@ -87,6 +99,11 @@ class DataLakeService:
         # Bound here rather than passed down, so providers never handle a
         # token and cannot put one in a URL they build or a message they log.
         return transport_mod.CredentialedTransport(inner, credential)
+
+    def _storage_for(self, manifest: LakeSourceManifest):
+        from utk_curio.backend.app.datalakes.providers import build_storage
+
+        return build_storage(manifest, self._transport_for(manifest))
 
     def _credential_for(self, manifest: LakeSourceManifest) -> str | None:
         return credentials.credential_header(self.user, manifest)
@@ -109,9 +126,11 @@ class DataLakeService:
 
     def search_source(
         self, dir_name: str, *, q: str = "", fmt: str | None = None,
-        limit: int | None = None, cursor: str | None = None,
+        limit: int | None = None, cursor: str | None = None, rescan: bool = False,
     ) -> dict[str, Any]:
         manifest = self._catalog.get_manifest(dir_name)
+        if manifest.is_storage:
+            return self._storage_listing(manifest, q=q, rescan=rescan)
         page = self._browse.search(manifest, _query(q, fmt, limit, cursor))
         held = self._held_index()
         return search_payload(
@@ -137,7 +156,30 @@ class DataLakeService:
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
         names = {m.id: m.name for m in manifests}
-        rows, legs = self._browse.search_all(manifests, _query(q, fmt, limit, None))
+        portals = [m for m in manifests if not m.is_storage]
+        query = _query(q, fmt, limit, None)
+        rows, legs = self._browse.search_all(portals, query)
+        for manifest in (m for m in manifests if m.is_storage):
+            # A storage source searches what it declares, from the listing's
+            # summary. It never waits here: a source still being scanned is a
+            # leg that says so, like a portal that did not answer.
+            state = scanning.listings.get(
+                manifest, lambda m=manifest: self._storage_for(m), wait=0
+            )
+            if state.status == "ready":
+                found = [r for r in state.resources if _storage_matches(r, query.text)]
+                if query.fmt:
+                    found = [r for r in found if query.fmt in r.formats]
+                rows.extend(found)
+                legs.append({"sourceId": manifest.id, "status": "ok", "count": len(found)})
+            else:
+                legs.append({
+                    "sourceId": manifest.id,
+                    "status": state.status if state.status in ("scanning", "failed") else "scanning",
+                    **({"detail": state.error} if state.error else {}),
+                })
+        rows = rows[: query.limit]
+        legs.sort(key=lambda leg: leg["sourceId"])
         held = self._held_index()
         dirs = {m.id: m.dir_name for m in manifests}
         return search_payload(
@@ -160,8 +202,64 @@ class DataLakeService:
 
     def describe_resource(self, dir_name: str, resource_id: str) -> dict[str, Any]:
         manifest = self._catalog.get_manifest(dir_name)
-        detail = self._browse.describe(manifest, resource_id)
-        return resource_detail_row(detail, source_name=manifest.name)
+        if manifest.is_storage:
+            detail = self._storage_detail(manifest, resource_id)
+        else:
+            detail = self._browse.describe(manifest, resource_id)
+        held = self._held_index().get((manifest.dir_name, resource_id))
+        return resource_detail_row(
+            detail, source_name=manifest.name, already_held_dataset_id=held
+        )
+
+    # ── storage ────────────────────────────────────────────────────────────
+
+    def _storage_listing(self, manifest: LakeSourceManifest, *, q: str, rescan: bool) -> dict[str, Any]:
+        """A storage source's rows, from its declared resources and a scan."""
+        state = scanning.listings.get(
+            manifest, lambda: self._storage_for(manifest), rescan=rescan
+        )
+        held = self._held_index()
+        rows = [
+            resource_row(
+                r,
+                source_name=manifest.name,
+                already_held_dataset_id=held.get((manifest.dir_name, r.resource_id)),
+            )
+            for r in state.resources
+            if _storage_matches(r, q)
+        ]
+        leg = {"sourceId": manifest.id, "status": state.status, "count": len(rows)}
+        if state.error:
+            leg["detail"] = state.error
+        payload = search_payload(rows, sources=[leg], truncated=state.truncated)
+        payload["unmatched"] = state.unmatched
+        payload["scannedAt"] = _iso(state.scanned_at)
+        return payload
+
+    def _storage_detail(self, manifest: LakeSourceManifest, resource_id: str) -> LakeResourceDetail:
+        state = scanning.listings.get(manifest, lambda: self._storage_for(manifest))
+        for resource in state.resources:
+            if resource.resource_id == resource_id:
+                spec = scanning.parse_resource_id(manifest, resource_id).spec
+                return LakeResourceDetail(
+                    resource=resource,
+                    fields=tuple(
+                        LakeField(name=c.name, type=c.type) for c in spec.template.captures
+                    ),
+                    license=manifest.license,
+                    extra={"path": spec.path, "datasets": spec.datasets, "kind": spec.kind},
+                )
+        if state.status != "ready":
+            raise SourceNotFound(f"{manifest.name} is still being scanned; try again shortly")
+        raise SourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
+
+    def _import_layers(self, fmt, blob, filename, **kwargs):
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        mutations = DatasetCatalogService(self.user)._mutations
+        if fmt == "gpkg":
+            return mutations._import_gpkg_layers(blob, filename, **kwargs)
+        return mutations._import_osm_pbf_layers(blob, filename, **kwargs)
 
 
 
@@ -206,6 +304,10 @@ class DataLakeService:
         are present, and the route turns that into a 200 or a 202.
         """
         manifest = self._catalog.get_manifest(dir_name)
+        if manifest.is_storage:
+            # Refuses an id the manifest does not declare before a job exists.
+            scanning.parse_resource_id(manifest, resource_id)
+            fmt = None
         held = self._acquire.already_held(manifest, resource_id, fmt)
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
@@ -246,25 +348,45 @@ class DataLakeService:
                     transport=transport,
                     budget=budget,
                 )
-                acquire = worker._acquire
                 try:
                     job.status = "running"
-                    job.stage_message = "Contacting the portal…"
+                    job.stage_message = (
+                        "Reading the files…" if manifest.is_storage else "Contacting the portal…"
+                    )
 
                     def _progress(written: int, total: int | None) -> None:
                         job.bytes_read = written
                         job.total_bytes = total
-                        job.stage_message = "Downloading…"
+                        job.stage_message = "Copying…" if manifest.is_storage else "Downloading…"
 
-                    result = acquire.acquire(
-                        manifest,
-                        resource_id,
-                        fmt=fmt,
-                        title=title,
-                        refresh=refresh,
-                        progress=_progress,
-                        cancelled=lambda: job.cancelled,
-                    )
+                    def _items(done: int, total: int | None) -> None:
+                        job.items_done = done
+                        job.items_total = total
+
+                    def _stage(message: str) -> None:
+                        job.stage_message = message
+
+                    if manifest.is_storage:
+                        result = worker._storage_acquire.acquire(
+                            manifest,
+                            resource_id,
+                            title=title,
+                            refresh=refresh,
+                            progress=_progress,
+                            items=_items,
+                            stage=_stage,
+                            cancelled=lambda: job.cancelled,
+                        )
+                    else:
+                        result = worker._acquire.acquire(
+                            manifest,
+                            resource_id,
+                            fmt=fmt,
+                            title=title,
+                            refresh=refresh,
+                            progress=_progress,
+                            cancelled=lambda: job.cancelled,
+                        )
                     dataset = result["dataset"]
                     job_store.jobs.finish(
                         job,
@@ -275,7 +397,7 @@ class DataLakeService:
                         unchanged=result["unchanged"],
                         stage_message="Added to your Data Catalog",
                     )
-                except _Cancelled:
+                except (_Cancelled, StorageCancelled):
                     job_store.jobs.finish(job, "cancelled", stage_message="Cancelled")
                 except DataLakeError as exc:
                     # A typed failure is the user's answer, verbatim: "that file is
@@ -313,6 +435,26 @@ class DataLakeService:
         if not job_store.jobs.cancel(self.user_key, job_id):
             raise JobNotFound(f"no download job {job_id!r} to cancel")
 
+
+
+def _storage_matches(resource, text: str) -> bool:
+    """A declared resource matches a search by its name, description or files."""
+    needle = (text or "").strip().lower()
+    if not needle:
+        return True
+    haystack = " ".join(
+        [resource.name, resource.description]
+        + [str(v) for row in resource.fields for v in row.get("values", [])]
+    ).lower()
+    return all(word in haystack for word in needle.split())
+
+
+def _iso(ts: float | None) -> str | None:
+    if ts is None:
+        return None
+    import time as _time
+
+    return _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(ts))
 
 
 def _user_by_id(user_id: int | None):

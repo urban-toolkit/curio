@@ -154,3 +154,72 @@ TINY_PNG = bytes.fromhex(
     "01f15c4890000000a49444154789c6300010000050001"
     "0d0a2db40000000049454e44ae426082"
 )
+
+
+def a_storage_manifest(root, resources, **overrides) -> dict:
+    """A minimal valid folder manifest over *root*."""
+    base = {
+        "id": "lake.example.folder",
+        "name": "Example Folder",
+        "version": "1.0.0",
+        "compatibility": {"major": 1},
+        "description": "A folder.",
+        "publisher": "Example",
+        "provider": {"type": "folder", "root": str(root)},
+        "auth": {"mode": "public"},
+        "resources": resources,
+    }
+    base.update(overrides)
+    return base
+
+
+def write_files(root: Path, files: dict[str, bytes | str]) -> Path:
+    """Write ``{relpath: content}`` under *root*. Returns *root*."""
+    for relpath, content in files.items():
+        path = root / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            path.write_text(content, encoding="utf-8")
+        else:
+            path.write_bytes(content)
+    return root
+
+
+@pytest.fixture()
+def storage_folder(tmp_path):
+    """A folder of sensor CSVs by subfolder, plus a stations table and litter."""
+    root = tmp_path / "sensing"
+    header = "timestamp,pm25\n"
+    files = {
+        "stations.csv": "sensor,name\nA,Clark\nB,State\n",
+        ".DS_Store": b"\x00",
+        "notes.txt": "not declared",
+    }
+    for sensor in ("A", "B"):
+        for day in ("2024-01-01", "2024-01-02"):
+            files[f"aq/sensor_{sensor}/{day}.csv"] = header + f"{day}T00:00,{len(sensor)}\n"
+    return write_files(root, files)
+
+
+STORAGE_RESOURCES = [
+    {"id": "readings", "name": "Readings", "kind": "table", "format": "csv",
+     "path": "aq/{sensor}/{day:date}.csv"},
+    {"id": "by-sensor", "name": "Readings", "kind": "table", "format": "csv",
+     "path": "aq/{sensor}/{day:date}.csv", "datasets": "per:sensor"},
+    {"id": "each", "name": "Each file", "kind": "table", "format": "csv",
+     "path": "aq/{sensor}/{day:date}.csv", "datasets": "per-file"},
+    {"id": "stations", "name": "Stations", "kind": "table", "format": "csv",
+     "path": "stations.csv"},
+]
+
+
+@pytest.fixture()
+def storage_source(lake_root, storage_folder):
+    """``lake.example.folder@1`` over :func:`storage_folder`."""
+    from utk_curio.backend.app.datalakes.application import scan
+
+    scan.listings.reset()
+    write_source(lake_root, "lake.example.folder@1",
+                 a_storage_manifest(storage_folder, STORAGE_RESOURCES))
+    yield "lake.example.folder@1"
+    scan.listings.reset()
