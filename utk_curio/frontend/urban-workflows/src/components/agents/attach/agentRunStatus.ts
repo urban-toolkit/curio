@@ -96,6 +96,8 @@ export type RunStatusDisplay =
       /** A review proposal awaits the user (derived from the attachment's
        * proposal mirrors — self-clearing on apply/dismiss). */
       pendingReview?: boolean;
+      /** "<label> (<model>)": the configuration that answered, from the pins. */
+      answeredBy?: string;
     }
   | { kind: "error"; durationMs?: number };
 
@@ -118,5 +120,14 @@ export function turnStatusDisplay(
     durationMs: turn.execution.durationMs,
     usage: turn.execution.usage ?? null,
     pendingReview: opts?.pendingReview,
+    answeredBy: answeredBy(turn.execution),
   };
+}
+
+/** "<label> (<model>)" from a run's pins, or undefined when they name none. */
+export function answeredBy(execution: AgentSessionTurn["execution"]): string | undefined {
+  const model = execution?.pins?.model;
+  const label = execution?.pins?.llm?.label;
+  if (label && model) return `${label} (${model})`;
+  return label || model || undefined;
 }

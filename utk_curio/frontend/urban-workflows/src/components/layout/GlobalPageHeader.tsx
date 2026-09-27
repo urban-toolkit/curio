@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import logo from "assets/curio-2.png";
 import { useUserContext } from "../../providers/UserProvider";
 import AiSettingsModal from "../AiSettingsModal";
+import { ConnectionKeysModalHost } from "../connectionKeys/ConnectionKeysModalHost";
 
 export function GlobalPageHeader() {
   const { user, signout, enableUserAuth } = useUserContext();
@@ -53,6 +54,9 @@ export function GlobalPageHeader() {
         </div>
       </div>
       <AiSettingsModal isOpen={aiSettingsOpen} onClose={() => setAiSettingsOpen(false)} />
+      {/* Opens AI Settings on the section a card asks for, such as an agent's
+          model from its details. The canvas mounts its own. */}
+      <ConnectionKeysModalHost />
     </header>
   );
 }

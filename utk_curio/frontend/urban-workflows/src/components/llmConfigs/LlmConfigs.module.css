@@ -227,3 +227,8 @@
   font-size: var(--curio-font-size-sm);
   color: var(--curio-text-secondary);
 }
+
+/* The Agent models row a card asked AI Settings to open on. */
+.focusedRow td {
+  background: var(--curio-page-bg);
+}

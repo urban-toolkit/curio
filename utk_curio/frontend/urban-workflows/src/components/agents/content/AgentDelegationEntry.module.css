@@ -94,3 +94,9 @@ button.badge:focus-visible {
 .tint_data     { color: var(--curio-category-agent-data-fg); }
 .tint_evaluate { color: var(--curio-category-agent-evaluate-fg); }
 .tint_package  { color: var(--curio-category-agent-package-fg); }
+
+/* What the delegated agent ran on: quiet, beside its name. */
+.model {
+  color: var(--curio-text-muted);
+  font-size: var(--curio-font-size-sm);
+}

@@ -3,9 +3,9 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 
 /**
  * AI Settings → LLM configurations: the account's endpoints and models, the
- * default that answers every agent, and the Deployment default this Curio
- * offers. Keys are write-only: the section says whether one is saved and
- * never what it is.
+ * default an attached agent with no choice answers with, and the Deployment
+ * default this Curio offers. Keys are write-only: the section says whether one
+ * is saved and never what it is.
  */
 
 const listingOf = (overrides: Record<string, unknown> = {}) => ({

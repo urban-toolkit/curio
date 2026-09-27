@@ -231,6 +231,8 @@ export interface AgentExecution {
     intentEdited?: boolean;
     provider?: string;
     model?: string;
+    /** The LLM configuration that answered: never its key. */
+    llm?: { configId: string | null; label: string; baseUrlHost: string; source: string };
     policy?: Record<string, number | null>;
   };
   usage: AgentUsage | null;
@@ -326,6 +328,9 @@ export interface AgentDelegationPart {
   attachmentId: string | null;
   status: "ok" | "failed" | string;
   summary: string;
+  /** What the delegated agent ran on, which may not be the parent's. */
+  model?: string;
+  llmLabel?: string;
 }
 
 /** dev/114: one grounded source reference on a proposal. */
@@ -352,7 +357,9 @@ export interface AgentSourceRef {
  *  dev/126 adds `dataset-selection`: the node's source is with the user —
  *  its Dataset Finder holds candidates awaiting a selection. */
 export interface AgentRemedy {
-  kind: "connection-key" | "use-connection-key" | "dataset-selection" | string;
+  kind: "connection-key" | "use-connection-key" | "dataset-selection" | "llm-config" | string;
+  /** llm-config: the agent no LLM configuration answers. */
+  agentId?: string | null;
   host?: string;
   /** connection-key: a name the settings form can suggest. */
   suggestedName?: string;
@@ -824,6 +831,8 @@ export interface AgentSessionTurn {
   ts?: string;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
+  /** A client-side error turn's remedy (the refusal's own), never persisted. */
+  remedy?: AgentRemedy;
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */

@@ -39,6 +39,7 @@ import { usePackageInstallReview } from "./usePackageInstallReview";
 import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
 import ConfirmDialog from "../../ConfirmDialog";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
+import { LlmConfigAction } from "../../llmConfigs/LlmConfigAction";
 import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
 import {
   sessionTokenTotals,
@@ -771,6 +772,7 @@ export const AgentChatPanel: React.FC<{
                       text. Cards are informational plain data (docs/08);
                       proposals render the review card (dev/41). */}
                   {t.error ? t.text : <SafeAgentContent text={t.text} />}
+                  {t.error ? <LlmConfigAction remedy={t.remedy} /> : null}
                   {(t.content ?? [])
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (

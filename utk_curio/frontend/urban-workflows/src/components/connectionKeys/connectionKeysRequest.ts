@@ -4,24 +4,46 @@ import type { AgentRemedy } from "../../api/agentsApi";
  * dev/116: "Add key for <host>" is offered from three cards (the Solve strip,
  * the per-node Solve row, the review card's attempt trail) and the settings
  * modal is mounted elsewhere. A window event decouples them: a card REQUESTS
- * the Connection keys section with a host prefilled; whichever host component
- * is mounted (`ConnectionKeysModalHost`) opens the modal on it.
+ * an AI Settings section; whichever host component is mounted
+ * (`ConnectionKeysModalHost`) opens the modal on it.
  */
-export interface ConnectionKeysFocus {
+export interface KeyFocus {
   section: "connection-keys";
   host?: string;
   suggestedName?: string;
 }
 
+/** The Agent models section, scrolled to one agent's row. */
+export interface AgentModelsFocus {
+  section: "agent-models";
+  agentId?: string;
+}
+
+/** The LLM configurations section, with one configuration's editor open. */
+export interface LlmConfigsFocus {
+  section: "llm-configs";
+  configId?: string;
+}
+
+/** The AI Settings section a card asks for. */
+export type ConnectionKeysFocus = KeyFocus | AgentModelsFocus | LlmConfigsFocus;
+
+const SECTIONS = new Set(["connection-keys", "agent-models", "llm-configs"]);
+
 export const CONNECTION_KEYS_EVENT = "curio:connection-keys";
 
-export function requestConnectionKeys(focus: Omit<ConnectionKeysFocus, "section">): void {
+function dispatch(focus: ConnectionKeysFocus): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<ConnectionKeysFocus>(CONNECTION_KEYS_EVENT, {
-      detail: { section: "connection-keys", ...focus },
-    }),
-  );
+  window.dispatchEvent(new CustomEvent<ConnectionKeysFocus>(CONNECTION_KEYS_EVENT, { detail: focus }));
+}
+
+export function requestConnectionKeys(focus: Omit<KeyFocus, "section">): void {
+  dispatch({ section: "connection-keys", ...focus });
+}
+
+/** Open AI Settings on the Agent models row of *agentId*. */
+export function requestAgentModel(agentId?: string): void {
+  dispatch({ section: "agent-models", agentId });
 }
 
 export function subscribeConnectionKeysRequests(
@@ -30,7 +52,7 @@ export function subscribeConnectionKeysRequests(
   if (typeof window === "undefined") return () => undefined;
   const listener = (event: Event) => {
     const detail = (event as CustomEvent<ConnectionKeysFocus>).detail;
-    if (detail && detail.section === "connection-keys") handler(detail);
+    if (detail && SECTIONS.has(detail.section)) handler(detail);
   };
   window.addEventListener(CONNECTION_KEYS_EVENT, listener);
   return () => window.removeEventListener(CONNECTION_KEYS_EVENT, listener);
@@ -54,7 +76,7 @@ export function suggestName(hostOrUrl: string): string {
 }
 
 /** The focus a remedy asks for, or null when the remedy needs no form. */
-export function remedyFocus(remedy: AgentRemedy | null | undefined): Omit<ConnectionKeysFocus, "section"> | null {
+export function remedyFocus(remedy: AgentRemedy | null | undefined): Omit<KeyFocus, "section"> | null {
   if (!remedy || remedy.kind !== "connection-key" || !remedy.host) return null;
   return { host: remedy.host, suggestedName: remedy.suggestedName };
 }
