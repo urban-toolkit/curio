@@ -1035,3 +1035,94 @@ class TestTheRealSDKs:
             run_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], tools=_TOOLS)
         with pytest.raises(NativeToolsRefused, match="bad schema"):
             list(stream_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], tools=_TOOLS))
+
+
+# --- Reply schemas -----------------------------------------------------------
+
+
+class TestReplySchemas:
+    """A reply held to a schema: OpenAI's strict ``response_format``,
+    Anthropic's ``output_config.format``, and a 400 read as a refusal of it."""
+
+    @staticmethod
+    def _schema(flavor):
+        from utk_curio.backend.app.agents import reply_schemas
+
+        return reply_schemas.autk_reply_schema(flavor).request()
+
+    def test_openai_gets_a_strict_response_format(self, monkeypatch):
+        from utk_curio.backend.app.agents import reply_schemas
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(content='{"map": null}', tool_calls=None))
+        schema = self._schema(reply_schemas.FLAVOR_STRICT)
+        turn = run_chat_turn(_cfg(), [{"role": "user", "content": "go"}], reply_schema=schema)
+        assert seen["response_format"] == {"type": "json_schema", "json_schema": {
+            "name": "autk_grammar_document", "schema": schema["schema"], "strict": True}}
+        assert turn.text == '{"map": null}'
+        plain = _fake_openai(monkeypatch, message=types.SimpleNamespace(content="x", tool_calls=None))
+        run_chat_turn(_cfg(), [{"role": "user", "content": "go"}])
+        assert "response_format" not in plain
+
+    def test_anthropic_gets_output_config_format(self, monkeypatch):
+        from utk_curio.backend.app.agents import reply_schemas
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        seen = {}
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.messages = types.SimpleNamespace(create=self._create)
+
+            def _create(self, **kwargs):
+                seen.update(kwargs)
+                return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text="{}")],
+                                             usage=None, stop_reason="end_turn")
+
+        monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=FakeClient, NOT_GIVEN="NG"))
+        schema = self._schema(reply_schemas.FLAVOR_CLOSED)
+        run_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], reply_schema=schema)
+        assert seen["output_config"] == {"format": {"type": "json_schema", "schema": schema["schema"]}}
+        assert "tools" not in seen
+
+    @pytest.mark.parametrize("status", [400, 422])
+    def test_a_refusal_of_the_schema_is_typed(self, monkeypatch, status):
+        from utk_curio.backend.app.agents import reply_schemas
+        from utk_curio.backend.app.agents.providers import ReplySchemaRefused, run_chat_turn
+
+        _fake_openai(monkeypatch, error=_Refusal("json_schema is not supported", status))
+        with pytest.raises(ReplySchemaRefused, match="not supported"):
+            run_chat_turn(_cfg(), [{"role": "user", "content": "go"}],
+                          reply_schema=self._schema(reply_schemas.FLAVOR_STRICT))
+        _fake_openai(monkeypatch, error=_Refusal("server error", 500))
+        with pytest.raises(_Refusal):
+            run_chat_turn(_cfg(), [{"role": "user", "content": "go"}],
+                          reply_schema=self._schema(reply_schemas.FLAVOR_STRICT))
+
+    def test_the_real_sdks_send_it(self, monkeypatch):
+        """The OpenAI and Anthropic SDKs serialize the projected schema into
+        the request as their APIs define it."""
+        from utk_curio.backend.app.agents import reply_schemas
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        sdks = TestTheRealSDKs()
+        http = sdks._http("openai")
+        sent = sdks._openai(monkeypatch, lambda request: http.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": '{"map": null}'}}]}))
+        strict = self._schema(reply_schemas.FLAVOR_STRICT)
+        run_chat_turn(_cfg(base_url="http://endpoint.test/v1"), [{"role": "user", "content": "go"}],
+                      reply_schema=strict)
+        assert sent[0]["response_format"]["json_schema"]["schema"] == strict["schema"]
+        assert sent[0]["response_format"]["json_schema"]["strict"] is True
+
+        http = sdks._http("anthropic")
+        sent = sdks._anthropic(monkeypatch, lambda request: http.Response(200, json={
+            "id": "msg", "type": "message", "role": "assistant", "model": "c",
+            "stop_reason": "end_turn", "stop_sequence": None,
+            "content": [{"type": "text", "text": "{}"}], "usage": {"input_tokens": 1, "output_tokens": 1}}))
+        closed = self._schema(reply_schemas.FLAVOR_CLOSED)
+        turn = run_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], reply_schema=closed)
+        assert sent[0]["output_config"] == {"format": {"type": "json_schema", "schema": closed["schema"]}}
+        assert turn.text == "{}"

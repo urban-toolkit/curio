@@ -166,8 +166,8 @@ class TestRead:
         testing_provider.run_scripted_turn([], tools=[{"name": "node__read"}], tool_choice="none")
         testing_provider.run_scripted_completion([])
         assert client.get(SCRIPT_URL).get_json()["offered"] == [
-            {"tools": ["node__read"], "toolChoice": "none"},
-            {"tools": [], "toolChoice": None},
+            {"tools": ["node__read"], "toolChoice": "none", "replySchema": None},
+            {"tools": [], "toolChoice": None, "replySchema": None},
         ]
 
     def test_nothing_captured_reads_as_empty(self, client):

@@ -40,6 +40,13 @@ offering tools with a 400 or 422 raises :class:`NativeToolsRefused`, and the
 run carries on with the fenced protocol. Without ``tools`` a request is exactly
 what it was before tools existed.
 
+**A reply schema.** ``reply_schema`` (``{name, schema}``, from
+``reply_schemas``) holds the reply to a JSON schema: OpenAI's strict
+``json_schema`` ``response_format``, Anthropic's ``output_config.format``. The
+schema arrives already in the provider's flavor. An endpoint that answers such a
+request with a 400 or 422 raises :class:`ReplySchemaRefused`, and the caller asks
+again without one.
+
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
@@ -55,6 +62,11 @@ from dataclasses import dataclass, field
 
 class NativeToolsRefused(RuntimeError):
     """The endpoint refused a request that offered native tools (a 400 or a
+    422). The message is the endpoint's reason, with the key taken out."""
+
+
+class ReplySchemaRefused(RuntimeError):
+    """The endpoint refused a request that carried a reply schema (a 400 or a
     422). The message is the endpoint's reason, with the key taken out."""
 
 
@@ -523,6 +535,7 @@ def run_chat_turn(
     *,
     tools: list | None = None,
     tool_choice: str = "auto",
+    reply_schema: dict | None = None,
 ) -> ChatTurn:
     """One model turn from the configured provider.
 
@@ -530,19 +543,27 @@ def run_chat_turn(
     system message may carry ``slots`` (see the module docstring).
     ``max_output_tokens`` is the effective resource policy (memo dev/24); when
     unset the anthropic backend keeps its former 4096 and the others use
-    provider defaults. ``tools`` and ``tool_choice`` offer native tools (see
-    the module docstring); an endpoint that refuses them raises
-    :class:`NativeToolsRefused`.
+    provider defaults. ``tools`` and ``tool_choice`` offer native tools, and
+    ``reply_schema`` holds the reply to a schema (see the module docstring); an
+    endpoint that refuses either raises :class:`NativeToolsRefused` or
+    :class:`ReplySchemaRefused`.
     """
     try:
-        return _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice)
+        return _run_chat_turn(
+            config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema
+        )
     except Exception as exc:
-        if tools and _status_code_of(exc) in (400, 422):
-            raise NativeToolsRefused(_redacted(exc, config)) from exc
+        if _status_code_of(exc) in (400, 422):
+            if tools:
+                raise NativeToolsRefused(_redacted(exc, config)) from exc
+            if reply_schema:
+                raise ReplySchemaRefused(_redacted(exc, config)) from exc
         raise
 
 
-def _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice) -> ChatTurn:
+def _run_chat_turn(
+    config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema=None
+) -> ChatTurn:
     api_type = config.api_type
     if api_type == "testing":
         # Scripted, deterministic, no network. Guarded on CURIO_TESTING inside
@@ -551,7 +572,8 @@ def _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_c
         from utk_curio.backend.app.agents.testing_provider import run_scripted_turn
 
         return run_scripted_turn(
-            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice
+            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice,
+            reply_schema=reply_schema,
         )
     if api_type == "anthropic":
         import anthropic
@@ -559,6 +581,10 @@ def _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_c
         create_kwargs = {}
         if tools:
             create_kwargs = {"tools": _anthropic_tools(tools), "tool_choice": {"type": tool_choice}}
+        if reply_schema:
+            create_kwargs["output_config"] = {
+                "format": {"type": "json_schema", "schema": reply_schema["schema"]}
+            }
         resp = client.messages.create(
             model=config.model,
             system=_anthropic_system(messages, anthropic.NOT_GIVEN),
@@ -602,6 +628,10 @@ def _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_c
         if tools:
             create_kwargs["tools"] = _openai_tools(tools)
             create_kwargs["tool_choice"] = tool_choice
+        if reply_schema:
+            create_kwargs["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": reply_schema["name"], "schema": reply_schema["schema"], "strict": True,
+            }}
         completion = client.chat.completions.create(**create_kwargs)
         _openai_usage(usage_out, getattr(completion, "usage", None))
         choice = completion.choices[0]

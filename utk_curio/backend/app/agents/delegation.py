@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.manifest import AgentManifest
-from utk_curio.backend.app.agents.providers import ChatTurn
+from utk_curio.backend.app.agents.providers import ChatTurn, ReplySchemaRefused
 
 # A child's reply is untrusted context fed back to the parent loop — bounded.
 DELEGATE_RESULT_MAX_CHARS = 24_000
@@ -196,7 +196,7 @@ def run_delegate(
     record's ``delegations``. Never raises: a child failure is data.
     """
     from utk_curio.backend.app.agents import (
-        catalog_settings, contracts, ledger, provider_config, services,
+        catalog_settings, contracts, ledger, provider_config, reply_schemas, services,
     )
     from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -233,13 +233,25 @@ def run_delegate(
             catalog_settings.configuration_for(user_key, manifest.config_keys(capability))
             if manifest is not None else None
         )
-        # Depth-1 structurally: the delegate's own prompts and configuration,
-        # NO tool protocol and no runtime blocks.
-        system = contracts.system_message(contracts.compose_system(
-            preamble=services._resolve_prompt_text(user_key, coord, "system"),
-            instruction=instruction,
-            configuration=configuration,
-        ))
+        preamble = services._resolve_prompt_text(user_key, coord, "system")
+
+        def _system(text: str) -> dict:
+            # Depth-1 structurally: the delegate's own prompts and
+            # configuration, NO tool protocol and no runtime blocks.
+            return contracts.system_message(contracts.compose_system(
+                preamble=preamble, instruction=text, configuration=configuration,
+            ))
+
+        # A document with a schema, on a provider that takes one: the reply is
+        # held to it, under the instruction written for that.
+        reply = _reply_schema(user_key, project_id, manifest, capability, inputs, config)
+        constrained = (
+            services._resolve_prompt_text(user_key, coord, reply_schemas.AUTK_PROMPT_KEY)
+            if reply is not None else None
+        )
+        if not constrained:
+            reply = None
+        system = _system(constrained or instruction)
         spec = projects_storage.read_spec(user_key, project_id)
         run_policy = services._run_policy(user_key, project_id, coord, spec or {})
         admit = dict(run_policy["admit"])
@@ -256,6 +268,10 @@ def run_delegate(
             "policy": run_policy["policy_pins"],
             **services._configuration_pin(configuration),
         }
+        if reply is not None:
+            asset = manifest.prompts.get(reply_schemas.AUTK_PROMPT_KEY)
+            pins["promptSha256"] = asset.sha256 if asset is not None else None
+            pins["replySchema"] = reply.name
         reservation = ledger.reserve(
             user_key, reservation_id=child_id, llm_config_id=config.config_id, **admit
         )
@@ -263,18 +279,31 @@ def run_delegate(
         return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
 
     usage_sink: dict = {}
-    try:
+    task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
+
+    def _ask(system_message: dict, schema) -> ChatTurn:
         # Through the services-bound provider symbol so the whole run shares
-        # one port (and one test seam).
-        turn = ChatTurn.of(services.run_chat_turn(
-            config,
-            [
-                system,
-                {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)},
-            ],
+        # one port (and one test seam). No reply schema, no keyword: the call
+        # is then exactly what it was before reply schemas.
+        extra = {"reply_schema": schema.request()} if schema is not None else {}
+        return ChatTurn.of(services.run_chat_turn(
+            config, [system_message, task],
             max_output_tokens=run_policy["max_output_tokens"],
-            usage_out=usage_sink,
+            usage_out=usage_sink, **extra,
         ))
+
+    try:
+        try:
+            turn = _ask(system, reply)
+        except ReplySchemaRefused:
+            # The endpoint takes no reply schema for this model: the same
+            # call again, free, under the delegate's own instruction.
+            reply_schemas.note_refused(config)
+            reply = None
+            pins["promptSha256"] = services._prompt_digest(manifest, capability=capability)
+            pins.pop("replySchema", None)
+            pins["replySchemaRefused"] = True
+            turn = _ask(_system(instruction), None)
     except Exception as exc:
         settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="error")
         return (
@@ -283,12 +312,43 @@ def run_delegate(
             _record("error", usage_sink, pins),
         )
     settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
-    text = turn.text
+    text = reply.decode(turn.text) if reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
         text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
     return ("ok", text, _record("ok", usage_sink, pins))
+
+
+def _reply_schema(user_key: str, project_id: str, manifest, capability: str, inputs: dict, config):
+    """The reply schema a delegated run sends, or None: only a content
+    generation run for a node whose document has one, by a definition that
+    declares the instruction for writing it, on a provider that takes it
+    (``reply_schemas.for_run``)."""
+    from utk_curio.backend.app.agents import reply_schemas
+
+    if capability != "node.content.generate" or manifest is None:
+        return None
+    if reply_schemas.AUTK_PROMPT_KEY not in manifest.prompts:
+        return None
+    return reply_schemas.for_run(config, user_key, _document_grammar(user_key, project_id, inputs))
+
+
+def _document_grammar(user_key: str, project_id: str, inputs: dict) -> str | None:
+    """The grammar of the node a content generation run writes for: the
+    template roster's ``grammarId``, else the offline table, else None."""
+    from utk_curio.backend.app.agents import document_validation
+    from utk_curio.backend.app.execution import workflow_spec
+    from utk_curio.backend.app.packages import services as packages_services
+
+    node_type = (inputs or {}).get("nodeType") or ((inputs or {}).get("nodeContext") or {}).get("nodeType")
+    if not isinstance(node_type, str) or not node_type:
+        return None
+    try:
+        templates = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
+    except Exception:  # noqa: BLE001 - an unreadable roster falls to the offline table
+        templates = None
+    return document_validation.grammar_of(node_type, workflow_spec.grammar_id_of(node_type, templates))
 
 
 # ── dev/106: the hard-dependency closure ─────────────────────────────────────

@@ -208,6 +208,7 @@ class TestTheSystemTurn:
         assert [s["kind"] for s in system["slots"]][:2] == ["preamble", "instruction"]
         assert _offered()[0] == {
             "tools": ["dataflow__read", "node__read", "node__runtime__read"], "toolChoice": "auto",
+            "replySchema": None,
         }
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]
         assert pins["toolProtocol"] == "native"
@@ -220,7 +221,7 @@ class TestTheSystemTurn:
         att = _attach(client, headers, project, CHAT)
         testing_provider.push_reply("Hello.")
         assert _run(client, headers, project, att)["reply"] == "Hello."
-        assert _offered()[0] == {"tools": [], "toolChoice": None}
+        assert _offered()[0] == {"tools": [], "toolChoice": None, "replySchema": None}
 
     def test_a_fenced_run_is_unchanged(self, client, headers, project):
         testing_provider.script_chat_capabilities(tools=False)
@@ -230,7 +231,7 @@ class TestTheSystemTurn:
         (system, *_), = _run_calls()
         assert '"toolRequest"' in system["content"]
         assert content.NATIVE_TOOLS_INSTRUCTION not in system["content"]
-        assert _offered()[0] == {"tools": [], "toolChoice": None}
+        assert _offered()[0] == {"tools": [], "toolChoice": None, "replySchema": None}
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]
         assert pins["toolProtocol"] == "fenced"
 
@@ -404,7 +405,7 @@ class TestTheFallback:
         body = _run(client, headers, project, att)
         assert body["reply"] == "A fenced answer."
         offered = _offered()
-        assert offered[0]["tools"] and offered[1] == {"tools": [], "toolChoice": None}
+        assert offered[0]["tools"] and offered[1] == {"tools": [], "toolChoice": None, "replySchema": None}
         retry_system = _run_calls()[1][0]["content"]
         assert '"toolRequest"' in retry_system and content.NATIVE_TOOLS_INSTRUCTION not in retry_system
         pins = _last_turn(client, headers, project, att)["execution"]["pins"]

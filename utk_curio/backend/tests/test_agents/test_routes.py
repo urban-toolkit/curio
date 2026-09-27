@@ -1846,7 +1846,8 @@ class TestMaterializationHeal:
             json={"coord": coord}, headers=_auth(token),
         )
         healed = storage.load_installed_agent_definition(ukey, coord)
-        assert set(healed.prompts) == {"system", "instruction"}
+        # Every prompt the roster declares, the preamble included.
+        assert set(healed.prompts) == set(spec.prompt_files()) >= {"system", "instruction"}
         base = storage.agent_definition_dir(ukey, coord)
         for asset in healed.prompts.values():
             assert (base / asset.path).is_file()

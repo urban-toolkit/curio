@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from utk_curio.backend.app.agents.manifest import AgentManifest, parse_agent_manifest
+from utk_curio.backend.app.agents.reply_schemas import AUTK_PROMPT_KEY
 
 log = logging.getLogger(__name__)
 
@@ -122,6 +123,10 @@ class BuiltinAgentSpec:
     # A merged agent's modes, one per capability. Empty for an agent with one
     # instruction for everything it does.
     modes: tuple[BuiltinMode, ...] = field(default_factory=tuple)
+    # Instructions a run selects in place of the agent's own in one situation,
+    # as (prompts key, file): the Autark document under its reply schema
+    # (``reply_schemas.AUTK_PROMPT_KEY``).
+    variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -133,6 +138,7 @@ class BuiltinAgentSpec:
         """Every prompt key this agent declares and the file behind it."""
         files = {"system": PREAMBLE_FILE, "instruction": self.prompt_file}
         files.update({mode.capability: mode.prompt_file for mode in self.modes})
+        files.update(dict(self.variant_prompts))
         return files
 
 
@@ -171,7 +177,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
                      reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
                      tools=("dataflow.read", "node.read", "node.content.write",
-                            "node.runtime.read")),
+                            "node.runtime.read"),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.txt"),)),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
