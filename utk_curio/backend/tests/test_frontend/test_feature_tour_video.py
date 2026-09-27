@@ -215,6 +215,14 @@ EXAMPLE_INTERACTION = os.path.join(
 EXAMPLE_AUTARK = os.path.join(
     REPO_ROOT, "docs", "examples", "11-autark-pbf-loading.json",
 )
+# What the heat scene runs: Milan's heat exposure, from a thermal raster, a
+# weather feed and census tracts to a map and two linked charts.
+EXAMPLE_HEAT = os.path.join(
+    REPO_ROOT, "docs", "examples", "09-heterogeneous-data-linked-views.json",
+)
+# The heat scene's still is larger than the video frame, so the views stay
+# legible when the guide shows it at half a page wide.
+STILL_SIZE = {"width": 1920, "height": 1200}
 
 
 def _log(message: str) -> None:
@@ -352,7 +360,10 @@ def _new_dataflow_from_menu(ctx: Ctx) -> None:
     page.wait_for_timeout(1200)
 
 
-def _play_all(ctx: Ctx, *, timeout_ms: int = 240000) -> None:
+def _play_all(
+    ctx: Ctx, *, timeout_ms: int = 240000,
+    settle: list[tuple[str, str]] | None = None,
+) -> None:
     """Press the rail's Run-all button and wait for every node to settle.
 
     The button sits at the foot of the left rail, under three catalog dropdowns,
@@ -375,6 +386,13 @@ def _play_all(ctx: Ctx, *, timeout_ms: int = 240000) -> None:
             "The left rail is taller than the frame."
         )
         tour.click(button, dispatch=True, hold=400)
+    if settle:
+        # Only these (node id, node type) pairs: Merge Flow nodes never report a
+        # run status, so a dataflow that has them never satisfies the check below.
+        for node_id, node_type in settle:
+            wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
+        page.wait_for_timeout(1500)
+        return
     page.wait_for_function(
         """() => {
             const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -1647,6 +1665,120 @@ def scene_autark(ctx: Ctx) -> None:
         tour.beat(5000)
 
 
+def _fit_nodes(page, node_ids: list[str], padding: float = 0.06) -> None:
+    """Frame only these nodes."""
+    page.evaluate(
+        """({ ids, padding }) => {
+            const rf = window.__curio_reactFlow;
+            if (!rf) return;
+            rf.fitView({ nodes: ids.map((id) => ({ id })), padding, duration: 600 });
+        }""",
+        {"ids": node_ids, "padding": padding},
+    )
+    page.wait_for_timeout(1200)
+
+
+def _node_positions(page) -> dict[str, tuple[float, float]]:
+    """Every node's canvas position."""
+    return {
+        n["id"]: (n["x"], n["y"])
+        for n in page.evaluate(
+            """() => window.__curio_reactFlow.getNodes().map((n) => ({
+                id: n.id, x: n.position.x, y: n.position.y,
+            }))"""
+        )
+    }
+
+
+def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
+    """Drag a node by its header, *dx* and *dy* in canvas units, with the mouse.
+
+    Not ``setNodes``: see utils, a store write is pushed back on the next render.
+    The pointer goes across, then up or down, so it can be routed around a map:
+    a map that the pressed pointer passes over pans with it.
+    """
+    zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
+    box = node_locator(page, node_id).bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + 12 * zoom
+    page.mouse.move(x, y)
+    page.mouse.down()
+    steps = 10
+    for i in range(1, steps + 1):
+        page.mouse.move(x + dx * zoom * i / steps, y)
+        page.wait_for_timeout(30)
+    for i in range(1, steps + 1):
+        page.mouse.move(x + dx * zoom, y + dy * zoom * i / steps)
+        page.wait_for_timeout(30)
+    page.mouse.up()
+    page.wait_for_timeout(600)
+
+
+def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> None:
+    """Pan and zoom so these nodes fill *box* (left, top, right, bottom, in page pixels)."""
+    page.evaluate(
+        """({ ids, box }) => {
+            const rf = window.__curio_reactFlow;
+            const nodes = rf.getNodes().filter((n) => ids.includes(n.id));
+            const x0 = Math.min(...nodes.map((n) => n.position.x));
+            const y0 = Math.min(...nodes.map((n) => n.position.y));
+            const x1 = Math.max(...nodes.map((n) => n.position.x + (n.width || 525)));
+            const y1 = Math.max(...nodes.map((n) => n.position.y + (n.height || 350)));
+            const [left, top, right, bottom] = box;
+            const zoom = Math.min((right - left) / (x1 - x0), (bottom - top) / (y1 - y0));
+            const pane = document.querySelector('.react-flow').getBoundingClientRect();
+            rf.setViewport({
+                x: left - pane.left + ((right - left) - (x1 - x0) * zoom) / 2 - x0 * zoom,
+                y: top - pane.top + ((bottom - top) - (y1 - y0) * zoom) / 2 - y0 * zoom,
+                zoom,
+            }, { duration: 600 });
+        }""",
+        {"ids": node_ids, "box": list(box)},
+    )
+    page.wait_for_timeout(1200)
+
+
+def scene_heat(ctx: Ctx) -> None:
+    """The Milan heat example, run end to end, for the guide's home page."""
+    page, tour = ctx.page, ctx.tour
+    tour.chapter(
+        "15", "Heat exposure in Milan",
+        "A thermal raster, a weather feed and census tracts, in linked views.",
+    )
+    _new_dataflow_from_menu(ctx)
+    _load_example(ctx, EXAMPLE_HEAT, expected_nodes=_example_node_count(EXAMPLE_HEAT))
+    tour.hush()
+    maps = _node_ids_by_type(page, "autk-grammar")
+    charts = _node_ids_by_type(page, "vis-vega")
+    _play_all(
+        ctx, timeout_ms=420000,
+        settle=[(i, "autk-grammar") for i in maps] + [(i, "vis-vega") for i in charts],
+    )
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+    # The dataflow ends in a column of views. Moving the scatter plot beside the
+    # map makes a block that fills a wide frame: the gt_65 projection and its
+    # box plot above, the map and the scatter plot below.
+    at = _node_positions(page)
+    scatter, boxplot = sorted(charts, key=lambda i: at[i][0])
+    projection = next(
+        i for i in _node_ids_by_type(page, "data-transformation")
+        if abs(at[i][0] - at[maps[0]][0]) < 1
+    )
+    block = [projection, boxplot] + maps + [scatter]
+    _fit_nodes(page, block)
+    _drag_node_by(
+        page, scatter,
+        at[boxplot][0] - at[scatter][0], at[maps[0]][1] - at[scatter][1],
+    )
+    # Clear of the left rail, the dataflow's title and the version line, which
+    # the guide crops away.
+    _frame_nodes(page, block, (230, 140, 1870, 1160))
+    tour.beat(2500)
+    tour.still("heat-views")
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
 def scene_catalog_pages(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.chapter(
@@ -2065,6 +2197,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("provenance", scene_provenance),
     ("interaction", scene_interaction),
     ("autark", scene_autark),
+    ("heat", scene_heat),
     # Late, because it opens a dataflow of its own and the scenes before it
     # build on the one they share.
     ("quickstart", scene_quickstart),
@@ -2084,7 +2217,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
 CANVAS_SCENES = {
     "datacatalog", "build", "saveload", "lineage", "nodecatalog", "libraries",
     "agentcatalog", "agentattach", "agentrun",
-    "linkedviews", "dashboard", "provenance", "interaction", "autark", "quickstart",
+    "linkedviews", "dashboard", "provenance", "interaction", "autark", "heat", "quickstart",
     "collaboration",
 }
 
