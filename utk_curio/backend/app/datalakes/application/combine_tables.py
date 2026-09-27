@@ -154,11 +154,15 @@ def _combine_with_duckdb(spec: ResourceSpec, staged, *, tmp: Path, dest: Path) -
             placeholders = ", ".join("?" for _ in rows[0])
             con.executemany(f"INSERT INTO _files VALUES ({placeholders})", rows)
         captured = "".join(f", f.{_ident(columns[c.name])}" for c in spec.template.captures)
+        # The scan keeps each file's rows in order, and the sort does not: it
+        # is only by file. So the rows are numbered as they are read, and
+        # sorted by file and then by that number.
         # COPY takes its target as a literal; it is our own temp path.
         con.execute(
-            f"COPY (SELECT t.* EXCLUDE (filename){captured}, f.source_file "
-            f"FROM {source} t JOIN _files f ON t.filename = f._path "
-            f"ORDER BY f.source_file) TO {_sql_literal(str(dest))} (FORMAT parquet)",
+            f"COPY (SELECT t.* EXCLUDE (filename, _curio_row){captured}, f.source_file "
+            f"FROM (SELECT *, row_number() OVER () AS _curio_row FROM {source}) t "
+            f"JOIN _files f ON t.filename = f._path "
+            f"ORDER BY f.source_file, t._curio_row) TO {_sql_literal(str(dest))} (FORMAT parquet)",
             [paths],
         )
         count = con.execute("SELECT count(*) FROM read_parquet(?)", [str(dest)]).fetchone()[0]

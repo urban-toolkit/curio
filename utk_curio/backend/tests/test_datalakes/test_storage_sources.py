@@ -287,6 +287,23 @@ class TestCombiningATable:
         assert dataset["lakeSource"]["fileCount"] == 4
         assert dataset["lakeSource"]["fields"] == "sensor,day"
 
+    def test_each_files_rows_keep_their_order(self, client, auth, app, lake_root, tmp_path):
+        import pandas as pd
+
+        parts = [f"p{i:02d}" for i in range(12)]
+        root = write_files(tmp_path / "f", {
+            f"log/{name}.csv": "n\n" + "".join(f"{i}\n" for i in range(4)) for name in parts
+        })
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "log", "name": "Log", "kind": "table", "format": "csv", "path": "log/{part}.csv"},
+        ]))
+        for _ in range(8):
+            job = wait_for(client, auth, add(client, auth, "log", refresh=True).get_json()["jobId"])
+            frame = pd.read_parquet(job["dataset"]["path"])
+            assert list(frame["part"].drop_duplicates()) == parts
+            for _part, rows in frame.groupby("part", sort=False):
+                assert list(rows["n"]) == [0, 1, 2, 3]
+
     def test_a_split_row_combines_only_its_files(self, client, auth, app, storage_source):
         import pandas as pd
 
