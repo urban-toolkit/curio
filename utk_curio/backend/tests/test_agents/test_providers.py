@@ -856,7 +856,16 @@ class TestNativeToolsOnGemini:
 class TestTheRealSDKs:
     """The OpenAI and Anthropic SDKs themselves, over a mock HTTP transport:
     they serialize the request this module builds and parse the endpoint's
-    answer into their own types, streamed tool calls included."""
+    answer into their own types, streamed tool calls included. The transport
+    comes from the HTTP library the installed SDK is built on (``httpx``, or
+    ``httpx2`` in the newer releases), read off its client class."""
+
+    @staticmethod
+    def _http(sdk_name: str):
+        import importlib
+
+        sdk = pytest.importorskip(sdk_name)
+        return importlib.import_module(sdk.DefaultHttpxClient.__mro__[1].__module__.split(".")[0])
 
     @staticmethod
     def _sse(events) -> bytes:
@@ -865,8 +874,9 @@ class TestTheRealSDKs:
     def _openai(self, monkeypatch, respond):
         import json as _json
 
-        import httpx
         import openai
+
+        httpx = self._http("openai")
 
         seen: list = []
 
@@ -883,7 +893,8 @@ class TestTheRealSDKs:
         import json as _json
 
         import anthropic
-        import httpx
+
+        httpx = self._http("anthropic")
 
         seen: list = []
 
@@ -897,7 +908,7 @@ class TestTheRealSDKs:
         return seen
 
     def test_openai_a_call_and_a_native_round(self, monkeypatch):
-        import httpx
+        httpx = self._http("openai")
 
         from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
 
@@ -922,7 +933,7 @@ class TestTheRealSDKs:
     def test_openai_a_streamed_call(self, monkeypatch):
         import json as _json
 
-        import httpx
+        httpx = self._http("openai")
 
         from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
 
@@ -947,7 +958,7 @@ class TestTheRealSDKs:
         assert seen[0]["stream"] is True and seen[0]["tool_choice"] == "none"
 
     def test_openai_a_refusal_of_the_tools(self, monkeypatch):
-        import httpx
+        httpx = self._http("openai")
 
         from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
 
@@ -958,7 +969,7 @@ class TestTheRealSDKs:
                           tools=_TOOLS)
 
     def test_anthropic_a_call_and_a_native_round(self, monkeypatch):
-        import httpx
+        httpx = self._http("anthropic")
 
         from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
 
@@ -980,7 +991,7 @@ class TestTheRealSDKs:
     def test_anthropic_a_streamed_call(self, monkeypatch):
         import json as _json
 
-        import httpx
+        httpx = self._http("anthropic")
 
         from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
 
@@ -1014,7 +1025,7 @@ class TestTheRealSDKs:
         assert sink["outputTokens"] == 12
 
     def test_anthropic_a_refusal_of_the_tools(self, monkeypatch):
-        import httpx
+        httpx = self._http("anthropic")
 
         from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn, stream_chat_turn
 
