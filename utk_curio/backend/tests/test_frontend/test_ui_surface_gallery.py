@@ -356,9 +356,9 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # AI Settings, which now carries the agent spend limits on its second tab.
-    # Captured from the projects page because that is where its header button
-    # lives; the canvas reaches the same modal through the drawer's cog.
+    # AI Settings, captured from the projects page because that is where its
+    # header button lives; the canvas reaches the same modal through the
+    # drawer's cog.
     try:
         page.goto(app_frontend.base_url + "/projects")
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
@@ -368,9 +368,6 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         expect(
             page.get_by_role("heading", name="AI Settings", level=2)
         ).to_be_visible(timeout=15000)
-        # One panel, no tabs: AI Settings sets the provider and nothing else.
-        # It briefly carried an "Agent limits" tab, captured here as a second
-        # surface, until the run and spend caps came out.
         gallery.shot("modal-ai-settings")
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-ai-settings", str(exc))

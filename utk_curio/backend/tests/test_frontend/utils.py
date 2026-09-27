@@ -3121,30 +3121,33 @@ class FrontendPage(Page):
 # the live backend with no key and no network. Contract:
 # ``app/agents/testing_provider.py``.
 
-#: What ``use_scripted_llm`` writes as the user's model name. Never dispatched
-#: anywhere; it exists because ``resolve_provider_config`` treats an empty
-#: ``llm_model`` as "unconfigured" and falls back to the deployment default.
+#: The model name of the scripted configuration ``use_scripted_llm`` makes.
+#: Never dispatched anywhere; a configuration needs a model.
 SCRIPTED_MODEL = "scripted"
+#: Its label, so a second call in one test finds it instead of adding another.
+SCRIPTED_LABEL = "Scripted"
 
 
 def use_scripted_llm(backend_url: str, token: str) -> dict:
-    """Point this user's LLM provider at the scripted one.
+    """Make a scripted LLM configuration this user's default, and return it.
 
-    Goes through the real settings route (``PATCH /api/auth/me``) rather than a
-    test-only shortcut, so the resolution path under test is the production one:
-    ``resolve_provider_config`` reads these exact columns.
+    Goes through the real AI Settings routes (``/api/agents/llm``) rather than a
+    test-only shortcut, so the resolution path under test is the production one.
     """
-    return api_json(
-        f"{backend_url}/api/auth/me",
-        token,
-        method="PATCH",
-        payload={
-            "llm_api_type": "testing",
-            "llm_base_url": "",
-            "llm_api_key": "",
-            "llm_model": SCRIPTED_MODEL,
-        },
+    listing = api_json(f"{backend_url}/api/agents/llm", token)
+    config = next(
+        (c for c in listing["configs"] if c["label"] == SCRIPTED_LABEL), None
+    ) or api_json(
+        f"{backend_url}/api/agents/llm/configs", token, method="POST",
+        payload={"label": SCRIPTED_LABEL, "apiType": "testing", "model": SCRIPTED_MODEL},
+    )["config"]
+    assert config["apiType"] == "testing" and config["model"] == SCRIPTED_MODEL, config
+    chosen = api_json(
+        f"{backend_url}/api/agents/llm/default", token, method="PUT",
+        payload={"configId": config["id"]},
     )
+    assert chosen["default"] == config["id"], chosen
+    return config
 
 
 def script_agent_replies(
@@ -3179,6 +3182,12 @@ def captured_agent_prompts(backend_url: str) -> list:
     agent's own preamble and instruction bytes.
     """
     return _get_json(f"{backend_url}/api/testing/agent-script")["captured"]
+
+
+def captured_agent_calls(backend_url: str) -> list:
+    """``{configId, model}`` of every scripted call since the last reset, oldest
+    first: which LLM configuration answered each one, never its key."""
+    return _get_json(f"{backend_url}/api/testing/agent-script")["calls"]
 
 
 def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:

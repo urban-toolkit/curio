@@ -1498,7 +1498,7 @@ class TestSessionExtending:
             _sign_up(s, name="Marcus Oyelaran", username="marcus_oyelaran")
             wait_for_projects_page(page, timeout=30000)
 
-        with s.step("Configure the AI provider in AI Settings",
+        with s.step("Add an LLM configuration in AI Settings",
                     "Curio ships no endpoint; nothing AI works until this is set."):
             if not LLM_API_KEY:
                 s.record(
