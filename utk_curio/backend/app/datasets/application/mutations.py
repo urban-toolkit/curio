@@ -164,6 +164,8 @@ class CatalogMutations:
         source_updated_at: str | None = None,
         lake_source: dict[str, Any] | None = None,
         description: str | None = None,
+        row_count: int | None = None,
+        feature_count: int | None = None,
     ) -> dict[str, Any]:
         """Install a file already on disk, without reading it into memory.
 
@@ -208,10 +210,17 @@ class CatalogMutations:
             raise DatasetCatalogError(str(exc)) from exc
         finally:
             staged.unlink(missing_ok=True)
-        return self._finish_imported(result, fmt)
+        return self._finish_imported(
+            result, fmt, feature_count_override=feature_count, row_count_override=row_count
+        )
 
     def _finish_imported(
-        self, result, fmt: str, *, feature_count_override: int | None = None
+        self,
+        result,
+        fmt: str,
+        *,
+        feature_count_override: int | None = None,
+        row_count_override: int | None = None,
     ) -> dict[str, Any]:
         """Counts, sidecar and catalog item for a freshly installed import."""
         from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
@@ -219,6 +228,8 @@ class CatalogMutations:
         # Compute row/feature counts and patch the manifest if they were missing.
         data_path = result.dest / result.manifest.data_file
         row_count, feature_count = count_file(data_path, fmt)
+        if row_count is None and row_count_override is not None:
+            row_count = row_count_override
         # count_file doesn't parse parquet; use a caller-supplied count if given.
         if feature_count is None and feature_count_override is not None:
             feature_count = feature_count_override

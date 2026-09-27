@@ -16,7 +16,6 @@ Nothing here writes to the source.
 from __future__ import annotations
 
 import hashlib
-import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -24,6 +23,7 @@ from typing import Any, Callable
 
 from utk_curio.backend.app.common.safe_paths import validate_component
 from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
+from utk_curio.backend.app.datalakes.application import combine_tables
 from utk_curio.backend.app.datalakes.application import scan as scanning
 from utk_curio.backend.app.datalakes.domain.errors import (
     CapabilityUnsupported,
@@ -106,9 +106,11 @@ class StorageAcquire:
         if spec.is_collection:
             raise CapabilityUnsupported(f"{spec.name} is a collection")
         if len(files) > 1:
-            raise CapabilityUnsupported(
-                f"{name} is {len(files)} files; combining them into one table is not available"
+            dataset = self._add_combined(
+                manifest, provider, spec, files, resource_id=resource_id,
+                title=title or name, items=items, stage=stage, cancelled=cancelled,
             )
+            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
 
         only = files[0]
         lake_source = {
@@ -133,6 +135,80 @@ class StorageAcquire:
         if dataset.get("alreadyPresent"):
             return dataset
         return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+
+    # ── many table files ───────────────────────────────────────────────────
+
+    def _add_combined(
+        self, manifest, provider, spec, files, *, resource_id, title, items, stage, cancelled
+    ) -> dict[str, Any]:
+        local = manifest.provider.type == "folder"
+        combine_tables.check_bounds(files, local=local)
+        if stage:
+            stage(f"Combining {len(files):,} files…")
+        with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
+            tmp_dir = Path(tmp)
+            dest = tmp_dir / f"{spec.id}.parquet"
+            combined = combine_tables.combine(
+                spec,
+                files,
+                stage=lambda found, into, index: self._stage_for_combine(
+                    manifest, provider, spec, found, into, index, cancelled
+                ),
+                tmp=tmp_dir,
+                dest=dest,
+                items=items,
+                cancelled=cancelled,
+            )
+            lake_source = {
+                "lakeId": manifest.dir_name,
+                "lakeName": manifest.name,
+                "resourceId": resource_id,
+                "fileCount": len(files),
+                "fields": ",".join(spec.template.names),
+                "fetchedAt": _iso_now(),
+            }
+            return self._install_path(
+                combined.path,
+                dest.name,
+                "parquet",
+                title=title,
+                lake_source=lake_source,
+                row_count=combined.rows,
+                description=(
+                    f"Combined from {len(files):,} {spec.format} files of {manifest.name}."
+                ),
+            )
+
+    def _stage_for_combine(
+        self, manifest, provider, spec, found, into: Path, index: int, cancelled
+    ) -> Path:
+        """A local path to read *found* from, UTF-8 when it is text."""
+        from utk_curio.backend.app.datasets.infrastructure.text_encoding import (
+            TextDecodeError,
+            _first_invalid_utf8,
+            transcode_file_to_utf8,
+        )
+
+        local = provider.local_path(found.relpath)
+        if local is None:
+            copied = into / f"part-{index:06d}{Path(found.relpath).suffix.lower()}"
+            self._copy(provider, found.relpath, copied, self._bound(manifest), found.size, None, cancelled)
+            if spec.format == "shp":
+                for sibling in combine_tables.shapefile_parts(found.relpath):
+                    target = copied.with_suffix(Path(sibling).suffix.lower())
+                    try:
+                        self._copy(provider, sibling, target, self._bound(manifest), None, None, cancelled)
+                    except ResourceNotFound:
+                        pass
+            local = copied
+        if spec.format in ("csv", "json", "geojson") and _first_invalid_utf8(local) is not None:
+            target = into / f"part-{index:06d}-utf8{Path(found.relpath).suffix.lower()}"
+            try:
+                transcode_file_to_utf8(local, target, what=found.relpath)
+            except TextDecodeError as exc:
+                raise combine_tables.CombineError(str(exc)) from exc
+            return target
+        return Path(local)
 
     # ── one table file ─────────────────────────────────────────────────────
 
@@ -239,6 +315,3 @@ def _shapefile_to_parquet(shp: Path, dest: Path) -> None:
         frame = frame.to_crs(4326)
     frame.to_parquet(dest)
 
-
-def clear_tmp(path: Path) -> None:
-    shutil.rmtree(path, ignore_errors=True)

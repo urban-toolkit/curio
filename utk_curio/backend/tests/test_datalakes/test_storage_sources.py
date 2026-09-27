@@ -160,7 +160,7 @@ class TestAddingATable:
         res = add(client, auth, "stations")
         assert res.status_code == 202, res.get_data(as_text=True)
         job = wait_for(client, auth, res.get_json()["jobId"])
-        assert job["status"] == "completed", job
+        assert job["status"] == "completed", job.get("error")
         dataset = job["dataset"]
         assert dataset["format"] == "csv"
         assert dataset["rowCount"] == 2
@@ -171,7 +171,7 @@ class TestAddingATable:
 
     def test_one_file_of_a_per_file_resource(self, client, auth, app, storage_source):
         job = wait_for(client, auth, add(client, auth, "each/aq/sensor_A/2024-01-01.csv").get_json()["jobId"])
-        assert job["status"] == "completed", job
+        assert job["status"] == "completed", job.get("error")
         assert job["dataset"]["rowCount"] == 1
 
     def test_adding_it_again_is_the_same_dataset(self, client, auth, app, storage_source):
@@ -213,7 +213,7 @@ class TestTheShippedExample:
 
     def test_a_shapefile_arrives_as_geoparquet(self, client, auth, app, shipped_root):
         job = wait_for(client, auth, add(client, auth, "roads", source="lake.curio.example-storage@1").get_json()["jobId"])
-        assert job["status"] == "completed", job
+        assert job["status"] == "completed", job.get("error")
         dataset = job["dataset"]
         assert dataset["format"] == "parquet"
         import geopandas as gpd
@@ -263,3 +263,98 @@ def test_a_sandboxed_node_cannot_reach_the_instance_manifests():
     from utk_curio.sandbox.isolation import hardening
 
     assert ".curio/datalakes" in {relative for relative, _ in hardening.SENSITIVE_PATHS}
+
+
+class TestCombiningATable:
+    def _dataset(self, client, auth, resource_id, source=SOURCE):
+        job = wait_for(client, auth, add(client, auth, resource_id, source=source).get_json()["jobId"])
+        assert job["status"] == "completed", job.get("error")
+        return job
+
+    def test_many_files_become_one_parquet_table(self, client, auth, app, storage_source):
+        import pandas as pd
+
+        job = self._dataset(client, auth, "readings")
+        dataset = job["dataset"]
+        assert dataset["format"] == "parquet"
+        assert dataset["rowCount"] == 4
+        assert job["itemsDone"] == 4 and job["itemsTotal"] == 4
+        frame = pd.read_parquet(dataset["path"])
+        assert set(frame.columns) >= {"timestamp", "pm25", "sensor", "day", "source_file"}
+        assert sorted(frame["sensor"].unique()) == ["sensor_A", "sensor_B"]
+        assert str(frame["day"].iloc[0]) == "2024-01-01"
+        assert frame["source_file"].iloc[0] == "aq/sensor_A/2024-01-01.csv"
+        assert dataset["lakeSource"]["fileCount"] == 4
+        assert dataset["lakeSource"]["fields"] == "sensor,day"
+
+    def test_a_split_row_combines_only_its_files(self, client, auth, app, storage_source):
+        import pandas as pd
+
+        dataset = self._dataset(client, auth, "by-sensor@sensor=sensor_B")["dataset"]
+        frame = pd.read_parquet(dataset["path"])
+        assert list(frame["sensor"].unique()) == ["sensor_B"]
+        assert len(frame) == 2
+
+    def test_a_column_one_file_lacks_is_null_there(self, client, auth, app, shipped_root):
+        import pandas as pd
+
+        dataset = self._dataset(client, auth, "air-quality", source="lake.curio.example-storage@1")["dataset"]
+        frame = pd.read_parquet(dataset["path"])
+        assert "humidity" in frame.columns
+        assert frame.loc[frame["day"].astype(str) == "2024-01-01", "humidity"].isna().all()
+        assert frame.loc[frame["day"].astype(str) == "2024-01-03", "humidity"].notna().all()
+
+    def test_a_file_in_another_encoding_is_read_as_utf8(self, client, auth, app, lake_root, tmp_path):
+        import pandas as pd
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+        # The sample the encoding tests use: short Western text a detector
+        # still reads as cp1252 (#280).
+        root = write_files(tmp_path / "enc", {
+            "a/one.csv": "city,note\nChicago,loop\n".encode("utf-8"),
+            "a/two.csv": "city,note\nCafé,naïve\nZürich,Öl\n".encode("cp1252"),
+        })
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "cities", "name": "Cities", "kind": "table", "format": "csv", "path": "a/{part}.csv"}
+        ]))
+        dataset = self._dataset(client, auth, "cities")["dataset"]
+        assert sorted(pd.read_parquet(dataset["path"])["city"]) == ["Café", "Chicago", "Zürich"]
+
+    def test_a_capture_named_like_a_column_keeps_both(self, client, auth, app, lake_root, tmp_path):
+        import pandas as pd
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+        root = write_files(tmp_path / "clash", {
+            "s1/x.csv": "sensor,value\ninner,1\n", "s2/x.csv": "sensor,value\ninner,2\n",
+        })
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "v", "name": "V", "kind": "table", "format": "csv", "path": "{sensor}/x.csv"}
+        ]))
+        frame = pd.read_parquet(self._dataset(client, auth, "v")["dataset"]["path"])
+        assert list(frame["sensor"]) == ["inner", "inner"]
+        assert sorted(frame["sensor_from_path"]) == ["s1", "s2"]
+
+    def test_geojson_files_combine_into_geoparquet(self, client, auth, app, lake_root, tmp_path):
+        import geopandas as gpd
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+
+        def feature(x):
+            return json.dumps({"type": "FeatureCollection", "features": [{
+                "type": "Feature", "properties": {"n": x},
+                "geometry": {"type": "Point", "coordinates": [x, 1.0]},
+            }]})
+
+        root = write_files(tmp_path / "geo", {"2023/p.geojson": feature(1), "2024/p.geojson": feature(2)})
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "p", "name": "P", "kind": "table", "format": "geojson", "path": "{year:int}/p.geojson"}
+        ]))
+        frame = gpd.read_parquet(self._dataset(client, auth, "p")["dataset"]["path"])
+        assert sorted(frame["year"]) == [2023, 2024]
+        assert frame.crs.to_epsg() == 4326
