@@ -301,11 +301,11 @@ One Autark-specific note: an Autark node's spec references incoming data by name
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.
-- See the packages added to this dataflow, grouped by fork family, in the **In project** tab.
+- See the packages added to this dataflow in the **In project** tab.
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node Catalog** dropdown.
 
-For the full guide, covering the storage layers, the action matrix, **Save as package node**, the metadata editor, exporting and importing, publishing, and versions and forks, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+For the full guide, covering the storage layers, the action matrix, **Save as package node**, the metadata editor, exporting and importing, publishing, and versions, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Vega-Lite node
 
@@ -488,8 +488,8 @@ and edit the initial intent the agent starts from. Agents that propose changes
 lands on your canvas until you apply it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-strip adds planning phases, per-node progress, **Solve** (fill in the planned
-nodes in one batch) and **Simulation Mode** (walk the plan without executing).
+strip adds planning phases, per-node progress, and **Solve** (fill in the planned
+nodes in one batch).
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Task Planner most of all, are written around knowing what the dataflow
@@ -499,9 +499,7 @@ is for. It is saved with the project.
 
 Agents run under a default-deny egress policy. Web fetches are restricted to
 http and https, refused when a host resolves to a non-public address, capped in
-body size and redirect count, and bounded per run. A refusal surfaces in the
-chat as "refused by the egress policy", which means the address was internal or
-otherwise disallowed, not that the site was down.
+body size and redirect count, and bounded per run.
 
 The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
 Operators who would rather not send queries to a third party can point

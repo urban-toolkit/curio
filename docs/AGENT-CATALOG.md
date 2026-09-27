@@ -6,7 +6,7 @@ Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you
 
 This guide is in six parts, plus operator notes:
 
-- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, what ships, origins, and the storage layers.
+- [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, what ships, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, and walkthroughs.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. The provider](#4-the-provider): which model answers, and where it is set.
@@ -20,7 +20,7 @@ This guide is in six parts, plus operator notes:
 
 ### Concept
 
-An **agent** in Curio is a small self-contained folder, shaped like a node package, identified by a reverse-domain id and a version:
+An **agent** in Curio is a small self-contained folder, shaped like a node package, identified by an id and a version:
 
 ```
 <agentId>@<version>     e.g.   agent.node-explainer@1.0.0
@@ -32,14 +32,15 @@ The folder holds a `manifest.json` (the contract) and the prompt files the manif
 ```
 agent.node-explainer@1.0.0/
   manifest.json
+  prompts/default_preamble.txt
   prompts/single_box_explanation_prompt.txt
 ```
 
-Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids (`data.urbanlab.chicago-boundary`). The version is a full semver string, and a definition never changes once written: a change is a new version.
+Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids (`data.urbanlab.chicago-boundary`). The version is a full semver string.
 
 ### What ships with Curio
 
-**Twenty-one agents ship with Curio**, added to each user's store on first use. Every agent declares one **category**, which the browse page's rail counts:
+**Twenty-one agents ship with Curio.** Every agent declares one **category**, which the browse page's rail counts:
 
 | Category | What the agent acts on |
 |---|---|
@@ -51,16 +52,6 @@ Agent ids always begin with **`agent.`**, which keeps them apart from node packa
 
 Each category has its own colour and glyph in the interface, so a card is identifiable at a glance.
 
-### Origins
-
-Alongside its category, every agent has an **origin**, which says where it came from rather than what it does:
-
-| Origin | Meaning |
-|---|---|
-| `builtin` | Shipped with Curio. |
-| `published` | Published into the shared catalog and browsable by every user on this install. |
-| `imported` | A definition you wrote and imported into your own account. |
-
 ### Storage layers
 
 Agent state lives in files under `.curio/` and inside each project's spec. Knowing which layer an action writes is the key to predicting what happens after **Add to project**, **Add to all projects**, **Remove from project**, or attaching an agent:
@@ -68,17 +59,17 @@ Agent state lives in files under `.curio/` and inside each project's spec. Knowi
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<version>/` | **Publish** adds one; **Unpublish** removes it. |
-| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | Seeded from the built-ins; **Import agent** adds one. |
+| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
-| **Attachments**, private instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one; **Detach** deletes it and its transcript. |
+| **Attachments**, private instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
 
 > [!NOTE]
 > **Adding is not attaching.** Adding an agent to a dataflow makes it available
 > in that dataflow's palette. Attaching it creates a private instance bound to
-> one node, one connection, or the canvas, with its own chat transcript and its
-> own settings. One added agent can carry many attachments. See
+> one node, one connection, or the canvas, with its own chat transcript. One
+> added agent can carry many attachments. See
 > [part 3](#3-using-an-agent-in-a-dataflow).
 
 ---
@@ -96,12 +87,12 @@ There are three places you work with agents, and as with the Data Catalog they a
 | Action | Where | What it changes | What you see |
 |---|---|---|---|
 | **Add to project** | Drawer | This dataflow's lockfile, plus any agent it requires | The agent appears in this dataflow's **Agent Catalog** palette, ready to drag. |
-| **Remove from project** | Drawer | This dataflow's lockfile | It leaves this dataflow's palette; the definition is **kept**. Refused while another added agent requires it. |
+| **Remove from project** | Drawer | This dataflow's lockfile and that agent's attachments | It leaves this dataflow's palette, and its attachments and their transcripts are deleted; the definition is **kept**. Refused while another added agent requires it. |
 | **Add to all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list and every project's lockfile | The agent is added to every dataflow you have, and new projects start with it. |
-| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list and every project's lockfile | The agent leaves every dataflow. The definition stays on disk. |
+| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent and its attachments leave every dataflow. The definition stays on disk. |
 | **Import agent** | Drawer footer | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
-| **Unpublish** | `/catalog/agents` drawer | Shared catalog | The listing goes away. Dataflows that already added the agent are untouched. |
+| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it can no longer use it. |
 | **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
 
@@ -109,7 +100,7 @@ Nothing in this table deletes an agent definition from disk.
 
 ### Workflows
 
-**I want to use an agent in my dataflow.** Open the dataflow, then **Data ⏷ → Agent Catalog**. Find the agent and click **Add to project**. It now appears in the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node, a connection, or empty canvas to attach it, which opens its chat panel.
+**I want to use an agent in my dataflow.** Open the dataflow, then **Data ⏷ → Agent Catalog**. Find the agent and click **Add to project**. It now appears in the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node, a connection, or empty canvas to attach it, then click its badge (or its avatar in the dock) to open its chat panel.
 
 **I want an agent in all my projects, present and future.** On `/catalog/agents`, click the agent's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it.
 
@@ -128,14 +119,14 @@ Nothing in this table deletes an agent definition from disk.
 | Target kind | Bound to | Reached by | Shown as |
 |---|---|---|---|
 | `node` | One node on the canvas | Dragging a palette row onto that node. | A badge under the node. |
-| `connection` | One edge between two nodes | Dragging a palette row onto that edge. | A badge at the connection's midpoint, **and** a row in the dock. |
-| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. | A row in the dock. |
+| `connection` | One edge between two nodes | Dragging a palette row onto that edge. | A badge at the connection's midpoint, **and** an avatar in the dock. |
+| `canvas` | The whole dataflow | Dragging a palette row onto empty canvas. | An avatar in the dock. |
 
 While you drag a palette row across the canvas, the connection that would receive the drop is highlighted. A node under the pointer wins over any edge routed beneath it.
 
-A connection agent is listed in **both** places. The badge says *which* connection the agent is about; the dock is the roster, always reachable, and sets the order the chat panel's arrows cycle through. Detaching works from either.
+A connection agent is listed in **both** places. The badge says *which* connection the agent is about; the dock is the roster, always reachable. Detaching works from either.
 
-Not every agent accepts every target: an agent declares which kinds it works with, and its category implies a default. A `canvas` agent dropped on a node is refused.
+Not every agent accepts every target: an agent declares which kinds it works with. A `canvas` agent dropped on a node is refused.
 
 Each attachment has its own chat transcript and its own **intent**, the editable first instruction, which starts as the definition's own prompt. An agent must be added to the dataflow before you can attach it.
 
@@ -161,7 +152,7 @@ Every agent, on every dataflow, is answered by one model. Which one is an accoun
 |---|---|
 | Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
 | Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | **One per account**, held against the provider you saved it under. The saved-key markers and **Remove saved key** appear only on that provider's tab; on any other tab the field is empty and required, and saving there replaces the stored key rather than adding a second one. Leave it blank to keep the saved key while you are on its own tab. |
+| API key | **One per account**, held against the provider you saved it under. The saved-key markers and **Remove saved key** appear only on that provider's tab; on any other tab the field is empty, and saving there replaces the stored key rather than adding a second one. Leave it blank to keep the saved key while you are on its own tab. |
 | Model | Which model answers. **Fetch models** asks the endpoint what it serves and turns this field into a dropdown. Leave it blank to use the deployment's model. |
 | HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. Public models need none. |
 | Socrata app token | Not for agents: the Data Lake Catalog sends it to Socrata portals. See [DATA-LAKE-CATALOG.md part 5](DATA-LAKE-CATALOG.md#5-api-tokens). |
@@ -177,9 +168,9 @@ It is a convenience, not a gate. A model you saved earlier stays selected, marke
 | *From this endpoint* | What the endpoint reported just now. For Gemini, only models that support `generateContent` are offered. |
 | *Last reported by this endpoint (on <date>)* | What it reported the last time it could be asked, shown when it cannot be asked now: no key pasted yet, offline, or a key without permission to list models. |
 
-A model you type by hand is always accepted. A brand-new account with no key has nothing to suggest, and the panel says so; the deployment's model still shows as the placeholder.
+A model you type by hand is always accepted.
 
-Whoever runs the install can set a default for provider, base URL and model with `curio.py start` flags (see [Operator notes](#operator-notes)). AI Settings shows the deployment's choice as the inherited value, and you override it only by typing something else. Leave a field blank and you stay on the deployment's default, including when the operator later changes it.
+Whoever runs the install can set a default for provider, base URL and model with `curio.py start` flags (see [Operator notes](#operator-notes)).
 
 **Curio does not meter, cap, or bill agent runs.** There is no quota screen and no spend limit: the tokens are billed to whoever's key is in use. Curio keeps a local, per-day record of what ran (see [Storage layers](#storage-layers)), and calls no usage or billing API.
 
@@ -189,13 +180,13 @@ Whoever runs the install can set a default for provider, base URL and model with
 
 **Import agent**, in the drawer's footer, takes a `manifest.json` and its `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
-**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes the listing, and only the publisher can do it. Neither touches a dataflow that already added the agent.
+**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it. Other users who added the agent can no longer use it.
 
 ---
 
 ## 6. The manifest
 
-An agent package is a folder named `<agentId>@<version>` holding a `manifest.json` and a `prompts/` directory. The manifest uses **camelCase** field names and is validated against [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON Schema Draft 2020-12), which is the full reference.
+An agent package is a folder named `<agentId>@<version>` holding a `manifest.json` and a `prompts/` directory. The manifest uses **camelCase** field names; [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON Schema Draft 2020-12) is the full reference.
 
 A minimal, complete manifest:
 
@@ -214,9 +205,9 @@ A minimal, complete manifest:
   ],
   "prompts": {
     "system": { "path": "prompts/default_preamble.txt", "sha256": "<sha256>", "variables": [] },
-    "instruction": { "path": "prompts/single_box_explanation.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
+    "instruction": { "path": "prompts/single_box_explanation_prompt.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
   },
-  "compatibleTargets": [{ "kind": "node", "requires": ["code-or-output"] }],
+  "compatibleTargets": [{ "kind": "node" }],
   "inputs": { "reads": ["nodeContext"], "requiredConfig": [] },
   "outputs": ["explanation"],
   "runtime": { "execution": "foreground", "reviewPolicy": "report-only" },
@@ -236,14 +227,12 @@ A minimal, complete manifest:
 | `delegatesTo` | | Other `agent.` ids this agent may call. A preference only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one cannot work without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt files by package-relative `path`, `sha256`, and declared `variables`. Absolute paths and `..` are rejected. |
-| `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. |
+| `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. For `node`, `requires` lists the node kinds it accepts, such as `data-loading`; empty means any node. |
 | `inputs`, `outputs` | | The context the agent reads, the config it requires, and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
 | `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
-
-The folder name must match the manifest's `id` and `version`, or the agent is rejected, as with node packages.
 
 ### Capabilities
 
@@ -262,15 +251,15 @@ Once written, import the package with the drawer's **Import agent** button ([par
 
 ## Operator notes
 
-Curio ships with **no default LLM endpoint**. Until an operator configures a provider, or each user configures their own in **AI Settings**, agents stop with a "no provider configured" error, and every blocked surface links to **AI Settings**. Guests can use AI only if the deployment ships a guest key, and AI Settings says so.
+Curio ships with **no default LLM endpoint**. Until an operator configures a provider, or each user configures their own in **AI Settings**, agents stop with the error *"No AI provider is configured."*
 
 | Variable | Flag | Effect |
 |---|---|---|
 | `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | The default provider kind. |
 | `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | The default endpoint. |
-| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The default model. Empty means no provider, which turns off every AI surface. |
-| `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | none | The default API key. Set it in the environment. |
-| `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key guests use. Without it, guests have no AI. |
+| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The default model. |
+| `CURIO_DEFAULT_LLM_API_KEY` | none | The default API key. Set it in the environment. |
+| `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key guests use. Unset, guests use the default API key. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | none | A separate provider for guests. Unset, guests use the default provider. |
 | `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | `--huggingface-token` | A fallback HuggingFace token for the Street Vision node's gated models. A user's own token wins. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |

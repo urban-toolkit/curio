@@ -934,10 +934,10 @@ File ingestion is **not** here - it lives in the datasets blueprint as `POST /ap
 
 ### The dataset index
 
-Catalog listings used to scan a user's account store and parse every
-`manifest.json` on each request. `backend/app/datasets/repositories/index.py`
-turns that into keyed lookups against `DatasetIndexEntry`
-(`backend/app/datasets/models.py`, alembic revision `d4e5f6a7b8c9`).
+`backend/app/datasets/repositories/index.py` serves catalog listings from keyed
+lookups against `DatasetIndexEntry` (`backend/app/datasets/models.py`, alembic
+revision `d4e5f6a7b8c9`), so a listing does not parse every `manifest.json` in
+the user's store.
 
 The index is a **derived cache**, and two invariants keep it from ever becoming a
 source of truth:

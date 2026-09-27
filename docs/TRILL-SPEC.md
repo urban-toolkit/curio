@@ -113,6 +113,9 @@ python scripts/validate_trill.py --all --resolve          # also check types res
 `--resolve` adds the manifest check the schema cannot do: every node type must
 correspond to a template under `packages/`.
 
+Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
+of the same shape, requiring only `nodes` and `edges`.
+
 ## Laying a dataflow out
 
 The schema says nothing about where a node sits, so a spec can be perfectly valid
@@ -131,20 +134,6 @@ material and `.curio/` is your own work.
 
 CI validates the committed examples on every push. It cannot see your own
 projects, since `.curio/` is gitignored, which is what the CLI is for.
-
-### Your saved projects may report failures
-
-Projects saved before the schema existed may be missing `provenance_id`,
-`timestamp`, `name` or `task`. A non-zero exit from `--all` on those is
-information, not a broken build; fix them with the one-time rewrite
-[`docs/NODE-CATALOG.md`](NODE-CATALOG.md) describes.
-
-A missing `name` has a visible symptom: `dataflowProvenance.latest`
-interpolates the name into its version keys, so a spec saved without one carries
-keys that literally read `undefined_1787609706100`.
-
-Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
-of the same shape, requiring only `nodes` and `edges`.
 
 ## Known drift
 
