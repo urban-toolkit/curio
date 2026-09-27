@@ -2998,38 +2998,71 @@ _AUTK_MAP_PIXELS_JS = """async (id) => {
     return canvas.toDataURL('image/png');
 }"""
 
+# How the map canvas sits in the page: its box, the styles that could hide it,
+# and what the page reports on top at its centre.
+_AUTK_MAP_PLACEMENT_JS = """(id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const describe = (el) => el ? `${el.tagName.toLowerCase()}#${el.id}.${String(el.className).slice(0, 60)}` : null;
+    return {
+        box: [box.left, box.top, box.width, box.height],
+        backing: [canvas.width, canvas.height],
+        style: {display: style.display, visibility: style.visibility, opacity: style.opacity,
+                position: style.position, zIndex: style.zIndex},
+        topElement: describe(top),
+        topIsCanvas: top === canvas,
+    };
+}"""
+
 
 def assert_autark_map_drawn(
     page, node_id: str, *, timeout: float = 30000, attach_as: str = ""
 ) -> None:
-    """Assert an Autark map node's canvas holds a drawn map.
+    """Assert an Autark map node's canvas holds a drawn, opaque map.
 
-    Read in the page, never from a screenshot: on the GPU runner a screenshot
-    shows a WebGPU canvas blank although it drew (#427). A drawn map holds more
-    than 8 colours; a cleared or background-only canvas holds one or two. With
-    ``attach_as``, the canvas is attached to the Allure report under that name.
+    Read in the page, not from a screenshot. A drawn map is mostly opaque and
+    holds more than 8 colours; a cleared canvas is transparent, and a
+    background-only one holds one or two. With ``attach_as``, the Allure report
+    gets the canvas pixels, a screenshot of the same element, and how the canvas
+    is placed, so a map that drew but does not show can be told apart from one
+    that did not draw.
     """
     import base64
 
     from PIL import Image
 
     deadline = time.monotonic() + timeout / 1000
-    png, colours = None, 0
+    png, colours, opaque = None, 0, 0.0
     while True:
         url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
         if url:
             png = base64.b64decode(url.split(",", 1)[1])
-            colours = len(set(Image.open(BytesIO(png)).convert("RGBA").getdata()))
-            if colours > 8 or time.monotonic() >= deadline:
+            pixels = list(Image.open(BytesIO(png)).convert("RGBA").getdata())
+            solid = [p[:3] for p in pixels if p[3] >= 250]
+            opaque = len(solid) / max(1, len(pixels))
+            colours = len(set(solid))
+            if (colours > 8 and opaque > 0.5) or time.monotonic() >= deadline:
                 break
         elif time.monotonic() >= deadline:
             break
         page.wait_for_timeout(500)
-    if png and attach_as:
-        allure.attach(png, name=attach_as, attachment_type=allure.attachment_type.PNG)
+    if attach_as:
+        if png:
+            allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+        canvas = page.locator(f"#autk-grammar-map-{node_id}")
+        if canvas.count():
+            allure.attach(canvas.first.screenshot(), name=f"{attach_as}: canvas screenshot",
+                          attachment_type=allure.attachment_type.PNG)
+        placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, node_id)
+        allure.attach(json.dumps({"opaqueShare": opaque, "opaqueColours": colours, "placement": placement}, indent=1),
+                      name=f"{attach_as}: canvas placement", attachment_type=allure.attachment_type.JSON)
     assert png, f"Autark node {node_id} has no map canvas"
-    assert colours > 8, (
-        f"Autark node {node_id}: the map canvas holds {colours} colours, so no map was drawn"
+    assert colours > 8 and opaque > 0.5, (
+        f"Autark node {node_id}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
+        f"colours, so no map was drawn"
     )
 
 
