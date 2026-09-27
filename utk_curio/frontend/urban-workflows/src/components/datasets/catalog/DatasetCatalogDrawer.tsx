@@ -11,7 +11,6 @@ import {
 } from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
-import { DatasetDetailModal } from "./DatasetDetailModal";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
@@ -33,7 +32,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const {
     projectId,
-    projectDirty,
     tab,
     setTab,
     search,
@@ -44,9 +42,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     setPinned,
     busyId,
     publishingId,
-    detailDatasetId,
-    detailFallback,
-    liveOutputs,
     catalog,
     items,
     pendingInstalls,
@@ -62,7 +57,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     handleDatasetDragStart,
     handleDatasetDragEnd,
     openDatasetDetails,
-    closeDatasetDetails,
     confirmAction,
     dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
@@ -274,18 +268,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           />
         </aside>
       </div>
-
-      {detailDatasetId ? (
-        <DatasetDetailModal
-          canvasAvailable
-          unsavedChanges={projectDirty}
-          datasetId={detailDatasetId}
-          dataflowId={projectId}
-          liveOutputs={liveOutputs}
-          fallbackDataset={detailFallback}
-          onClose={closeDatasetDetails}
-        />
-      ) : null}
 
       {confirmAction ? (
         <ConfirmDialog

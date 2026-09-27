@@ -395,6 +395,9 @@ the model sets is stripped before the check.
 This is the same discipline the catalog lane already has, where a row without a
 `datasetId` from `catalog.search` is dropped.
 
+On the card, a catalog row offers **View details**, and an external row the
+runtime vouched for offers **View on the portal ↗**. Neither selects the row.
+
 ### What a fan-out costs
 
 `datalake.search` without a `sourceId` contacts every searchable portal, and

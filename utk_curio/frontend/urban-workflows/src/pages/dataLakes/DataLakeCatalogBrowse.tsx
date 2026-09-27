@@ -7,7 +7,11 @@ import {
   lakeSourceCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
-import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
+import {
+  useDatasetDetails,
+  viewDatasetDetailsToast,
+} from "../../components/datasets/catalog/datasetDetailsContext";
+import { useToastContext } from "../../providers/ToastProvider";
 import {
   acquireKey,
   notifyDatasetCatalogRefresh,
@@ -61,7 +65,10 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const [provider, setProvider] = useState<LakeProviderType | "">("");
   const [auth, setAuth] = useState<LakeAuthMode | "">("");
   const [sort, setSort] = useState<SortMode>("name");
-  const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  // The peers' tri-state: undefined follows the first card, so the drawer is
+  // open on arrival as it is on the other three pages; null is the user having
+  // closed it.
+  const [selectedDir, setSelectedDir] = useState<string | null | undefined>(undefined);
   // Its own state, not `selectedDir`: the card click drives the drawer and
   // "View details" opens the modal. Sharing one setter is the bug (#189) that
   // made the Agent page's "View details" a no-op on an already-selected card.
@@ -74,7 +81,8 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   // A downloaded resource opens in the Data Catalog's details modal, over this
   // page, rather than sending you to the dataset's own route.
-  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  const { openDatasetDetails } = useDatasetDetails();
+  const { showToast } = useToastContext();
 
   // The roster is always loaded: the rail counts and the source names shown
   // beside federated rows both come from it, and it is disk-backed and cheap.
@@ -86,7 +94,18 @@ export const DataLakeCatalogBrowse: React.FC = () => {
   // it. Idle lists the portals; a query fans out across them.
   const searching = search.trim().length > 0;
   const results = useLakeSearch({ q: searching ? search : "", provider });
-  const acquisition = useLakeAcquire(() => notifyDatasetCatalogRefresh());
+  const acquisition = useLakeAcquire((job) => {
+    notifyDatasetCatalogRefresh();
+    // Reported like an import into the Data Catalog, which is what it is.
+    if (job.datasetId) {
+      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      showToast(
+        `Downloaded ${title} to your Data Catalog.`,
+        "success",
+        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
+      );
+    }
+  });
 
   const sources = useMemo(() => {
     const rows = [...data.sources];
@@ -96,10 +115,15 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     return rows;
   }, [data.sources, sort]);
 
-  const selected = useMemo(
-    () => sources.find((s) => s.dirName === selectedDir) ?? null,
-    [sources, selectedDir]
-  );
+  const selected = useMemo(() => {
+    // A federated search replaces the cards, so there is no card for the
+    // drawer to describe until the search box is cleared.
+    if (searching || selectedDir === null) return null;
+    if (selectedDir !== undefined) {
+      return sources.find((s) => s.dirName === selectedDir) ?? sources[0] ?? null;
+    }
+    return sources[0] ?? null;
+  }, [searching, sources, selectedDir]);
   const detailSource = useMemo(
     () => (detailDir ? sources.find((s) => s.dirName === detailDir) ?? null : null),
     [sources, detailDir]
@@ -292,7 +316,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
                     )
                   ]
                 }
-                onViewDataset={setDetailDatasetId}
+                onViewDataset={(id) => openDatasetDetails(id)}
                 onDownload={(r, fmt) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
@@ -337,7 +361,7 @@ export const DataLakeCatalogBrowse: React.FC = () => {
               <DataLakeSourceCard
                 key={source.dirName}
                 source={source}
-                selected={selectedDir === source.dirName}
+                selected={selected?.dirName === source.dirName}
                 onSelect={() => setSelectedDir(source.dirName)}
                 onBrowse={() => openSource(source)}
                 onViewDetails={() => setDetailDir(source.dirName)}
@@ -383,12 +407,6 @@ export const DataLakeCatalogBrowse: React.FC = () => {
         />
       ) : null}
 
-      {detailDatasetId ? (
-        <DatasetDetailModal
-          datasetId={detailDatasetId}
-          onClose={() => setDetailDatasetId(null)}
-        />
-      ) : null}
     </div>
   );
 };

@@ -21,8 +21,6 @@ const EXEMPT: Record<string, string> = {
   "components/AuthForm/AuthFormWrapper.tsx": "branding",
   // A menu row, with its own icon, not an inline link.
   "components/menus/top/ShareMenu.tsx": "menu row",
-  // Links an agent wrote, rendered as it wrote them.
-  "components/agents/content/SafeAgentContent.tsx": "agent content",
 };
 
 function sourceFiles(dir: string): string[] {

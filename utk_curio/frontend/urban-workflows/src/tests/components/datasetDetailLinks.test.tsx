@@ -49,6 +49,7 @@ jest.mock("../../services/datasetCatalog", () => {
     datasetCatalogApi: {
       ...actual.datasetCatalogApi,
       getDataset: jest.fn(() => new Promise(() => {})),
+      listDatasetDefaults: jest.fn(() => Promise.resolve({ datasets: ["imported.xabc"] })),
       datasetUsage: jest.fn(() =>
         Promise.resolve([
           { dataflowId: "flow-other", dataflowName: "Other flow", nodeCount: 1, nodes: [] },
@@ -88,7 +89,10 @@ const LocationProbe: React.FC = () => {
   return null;
 };
 
-function renderModal(entry: string, props: { unsavedChanges?: boolean } = {}) {
+function renderModal(
+  entry: string,
+  props: { unsavedChanges?: boolean; fallbackDataset?: DatasetCatalogItem | null } = {},
+) {
   const onClose = jest.fn();
   render(
     <MemoryRouter initialEntries={[entry]}>
@@ -188,10 +192,31 @@ describe("leaving a dataflow with unsaved changes from its details", () => {
   });
 });
 
-describe("the canvas drawer tells the modal", () => {
+describe("the modal's account status", () => {
+  test("reads the all-projects list when the caller does not pass it", async () => {
+    renderModal("/catalog/data");
+    const term = await within(details()).findByText("In all projects", { selector: "dt" });
+    expect(term.nextElementSibling).toHaveTextContent("Yes");
+  });
+});
+
+describe("a link to a dataset that does not exist", () => {
+  test("says the dataset was not found, not the server's 404", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { datasetCatalogApi } = require("../../services/datasetCatalog");
+    datasetCatalogApi.getDataset.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error("HTTP 404"), { status: 404 })),
+    );
+    renderModal("/catalog/data/data.nope", { fallbackDataset: null });
+    expect(await within(details()).findByText("Dataset not found.")).toBeInTheDocument();
+    expect(within(details()).queryByText("HTTP 404")).toBeNull();
+  });
+});
+
+describe("the canvas tells the modal", () => {
   test("whether the dataflow has unsaved changes", () => {
     const src = fs.readFileSync(
-      path.resolve(__dirname, "../../components/datasets/catalog/DatasetCatalogDrawer.tsx"),
+      path.resolve(__dirname, "../../components/datasets/catalog/CanvasDatasetDetailsProvider.tsx"),
       "utf8"
     );
     expect(src).toContain("unsavedChanges={projectDirty}");

@@ -4,12 +4,23 @@ import { Toast } from "react-bootstrap";
 
 export type ToastVariant = "error" | "warning" | "info" | "success";
 
+/** A way into what the toast is about, e.g. "View details" on a dataset. */
+export interface ToastAction {
+    label: string;
+    onClick: () => void;
+}
+
+export interface ToastOptions {
+    action?: ToastAction;
+}
+
 interface ToastItem {
     id: number;
     /** The slot this message holds in the stack, shared by every occurrence. */
     seq: number;
     message: string;
     variant: ToastVariant;
+    action?: ToastAction;
 }
 
 /** Every outstanding occurrence of one message, rendered as a single toast. */
@@ -18,10 +29,12 @@ interface ToastGroup {
     ids: number[];
     message: string;
     variant: ToastVariant;
+    /** The latest occurrence's, so it acts on what was reported last. */
+    action?: ToastAction;
 }
 
 interface ToastContextValue {
-    showToast: (message: string, variant?: ToastVariant) => void;
+    showToast: (message: string, variant?: ToastVariant, options?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -57,7 +70,11 @@ const AUTO_DISMISS_MS: Partial<Record<ToastVariant, number>> = {
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-    const showToast = useCallback((message: string, variant: ToastVariant = "error") => {
+    const showToast = useCallback((
+        message: string,
+        variant: ToastVariant = "error",
+        options: ToastOptions = {},
+    ) => {
         const id = _nextId++;
         setToasts((prev) => {
             // A repeat joins the slot its message already holds. Derive the
@@ -71,7 +88,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
             const seq = sibling
                 ? sibling.seq
                 : prev.reduce((highest, t) => Math.max(highest, t.seq), -1) + 1;
-            return [...prev, { id, seq, message, variant }];
+            return [...prev, { id, seq, message, variant, action: options.action }];
         });
         const after = AUTO_DISMISS_MS[variant];
         if (after !== undefined) {
@@ -104,10 +121,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         const bySlot = new Map<number, ToastGroup>();
         for (const toast of toasts) {
             const seen = bySlot.get(toast.seq);
-            if (seen) seen.ids.push(toast.id);
-            else bySlot.set(toast.seq, {
+            if (seen) {
+                seen.ids.push(toast.id);
+                if (toast.action) seen.action = toast.action;
+            } else bySlot.set(toast.seq, {
                 seq: toast.seq, ids: [toast.id],
-                message: toast.message, variant: toast.variant,
+                message: toast.message, variant: toast.variant, action: toast.action,
             });
         }
         // By slot, not by whichever occurrence happens to still be outstanding.
@@ -192,6 +211,33 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                         </Toast.Header>
                         <Toast.Body style={{ fontSize: "13px", padding: "8px 12px" }}>
                             {toast.message}
+                            {toast.action ? (
+                                // The same "View details" a card or a row offers,
+                                // for the thing the toast just reported. Using it
+                                // settles the toast.
+                                <button
+                                    type="button"
+                                    data-testid="toast-action"
+                                    onClick={() => {
+                                        toast.action?.onClick();
+                                        dismiss(toast.ids);
+                                    }}
+                                    style={{
+                                        display: "block",
+                                        marginTop: "6px",
+                                        padding: 0,
+                                        border: 0,
+                                        background: "none",
+                                        color: "white",
+                                        font: "inherit",
+                                        fontWeight: 600,
+                                        textDecoration: "underline",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    {toast.action.label}
+                                </button>
+                            ) : null}
                         </Toast.Body>
                     </Toast>
                 ))}

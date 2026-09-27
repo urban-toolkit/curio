@@ -1,4 +1,4 @@
-import { consumeLabel, metaLeft } from "../../pages/dataHub/dataHubBrowseFormat";
+import { consumeLabel, metaLeft } from "../../pages/dataCatalog/dataCatalogBrowseFormat";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
 function makeDataset(overrides: Partial<DatasetCatalogItem>): DatasetCatalogItem {

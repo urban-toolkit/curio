@@ -257,38 +257,36 @@ export interface DatasetDetailPanelProps {
   dataset: DatasetCatalogItem | null;
   loading?: boolean;
   error?: string | null;
-  variant?: "page" | "modal";
   /**
    * True only where a live ReactFlow canvas is mounted behind this panel —
    * i.e. the in-canvas Data Catalog drawer. Drives whether lineage is read
-   * from the canvas or from the backend's saved specs. Not the same thing
-   * as `variant`: the browse page opens this panel as a modal too, and has
-   * no canvas.
+   * from the canvas or from the backend's saved specs. The browse pages open
+   * this panel too, and have no canvas.
    */
   canvasAvailable?: boolean;
   dataflowId?: string | null;
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
   initialTab?: (typeof TABS)[number];
-  onBack?: () => void;
   /** Called after publish/unpublish so the parent can refetch the dataset. */
   onMutated?: () => void;
-  /** How an in-app link in these details is followed; see `DetailLink`. The
-   *  modal passes one, the full-page view does not. */
+  /** How an in-app link in these details is followed; see `DetailLink`. */
   onFollowLink?: (to: string) => void;
+  /** In the account's "all projects" list. Left out until it is known, so the
+   *  row never guesses. */
+  inAllProjects?: boolean;
 }
 
 export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   dataset,
   loading = false,
   error = null,
-  variant = "modal",
   canvasAvailable = false,
   dataflowId = null,
   liveOutputs,
   initialTab = "Overview",
-  onBack,
   onMutated,
   onFollowLink,
+  inAllProjects,
 }) => {
   const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
@@ -320,7 +318,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
       : resolvedSchema.fetching
         ? "…"
         : "Unknown";
-  const rootClass = variant === "page" ? styles.pageRoot : styles.modalRoot;
+  const rootClass = styles.modalRoot;
 
   if (loading && !dataset) {
     return <p className={styles.loading}>Loading dataset...</p>;
@@ -383,9 +381,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             a panel opened from the Data Catalog - three tellings of one fact,
             and the trail led nowhere because none of it was a link. The peers
             (Agent, Node) never had one. */}
-        {variant === "page" && onBack ? (
-          <button className={styles.backButton} type="button" onClick={onBack}>Back</button>
-        ) : null}
 
         {/* The shared header, the same one the Agent and Node details views
             render. There used to be two stylesheets and three results - two
@@ -524,6 +519,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
               <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In project" : "Available"}</span></dd></div>
+              {/* The two account-level facts the Node and Agent details show,
+                  under the same names. */}
+              {inAllProjects !== undefined ? (
+                <div><dt>In all projects</dt><dd>{inAllProjects ? "Yes" : "No"}</dd></div>
+              ) : null}
+              <div><dt>In the catalog</dt><dd>{published ? "Published" : "Not published"}</dd></div>
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
