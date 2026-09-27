@@ -10,7 +10,9 @@ Covers the panel's lasting promises:
   whether it holds a key and never the key; the editor says "saved" only on the
   configuration's own endpoint, and moving the configuration elsewhere never
   carries the key along.
-- The default chosen here is the configuration that answers the next run.
+- The default chosen here is the configuration that answers the next run, and
+  an agent given a configuration of its own in Agent models runs on it, even
+  when another agent delegates to it.
 
 Nothing here reaches a provider. The #241 cases use the no-key short circuit
 (the backend refuses without opening a socket) and stubbed responses for the
@@ -434,3 +436,93 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
     calls = captured_agent_calls(session.backend)
     assert calls, "the run never reached the scripted provider"
     assert calls[0] == {"configId": made["Scripted B"]["id"], "model": "scripted-b"}, calls
+
+
+# ---------------------------------------------------------------------------
+# Agent models: a configuration per agent
+# ---------------------------------------------------------------------------
+
+
+def _delegate_tail(capability: str, inputs: dict) -> str:
+    return (
+        "```curio.v1\n"
+        + json.dumps({"delegateRequest": {"capability": capability, "inputs": inputs}})
+        + "\n```"
+    )
+
+
+def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
+    """The Dataflow Builder on one scripted configuration, Node Content Builder
+    on another, both chosen in the panel. A Builder run that delegates the
+    content shows each model in the scripted provider's call log, and the
+    choices survive a reload with no key on the page."""
+    session = signed_in
+    made = {}
+    for label, model, key in (
+        ("Scripted A", "scripted-a", "sk-scripted-a-" + "0" * 16),
+        ("Scripted B", "scripted-b", "sk-scripted-b-" + "0" * 16),
+    ):
+        made[label] = api_json(
+            f"{session.backend}/api/agents/llm/configs", session.token, method="POST",
+            payload={"label": label, "apiType": "testing", "model": model, "apiKey": key},
+        )["config"]
+
+    page = session.page
+    _open_ai_settings(page)
+    models = page.get_by_test_id("agent-models-section")
+    for agent, label in (("Dataflow Builder", "Scripted A"), ("Node Content Builder", "Scripted B")):
+        with page.expect_response(
+            lambda r: r.url.endswith("/api/agents/llm/assignments") and r.request.method == "PUT",
+            timeout=30000,
+        ) as chosen:
+            models.get_by_label(agent, exact=True).select_option(made[label]["id"])
+        assert chosen.value.ok, chosen.value.text()
+        expect(models.get_by_label(agent, exact=True)).to_be_enabled(timeout=15000)
+
+    page.reload()
+    wait_for_projects_page(page, timeout=15000)
+    _open_ai_settings(page)
+    models = page.get_by_test_id("agent-models-section")
+    expect(models.get_by_label("Dataflow Builder", exact=True)).to_have_value(made["Scripted A"]["id"])
+    expect(models.get_by_label("Node Content Builder", exact=True)).to_have_value(made["Scripted B"]["id"])
+    expect(models).to_contain_text("Runs on Scripted B · scripted-b")
+    for key in ("sk-scripted-a-", "sk-scripted-b-"):
+        assert key not in page.content()
+
+    project = api_json(
+        f"{session.backend}/api/projects", session.token, method="POST",
+        payload={"name": "Two models",
+                 "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+                 "outputs": []},
+    )["id"]
+    coord = f"agent.dataflow-builder@{builtin.BUILTIN_VERSION}"
+    base = f"{session.backend}/api/agents/projects/{project}"
+    api_json(f"{base}/install", session.token, method="POST", payload={"coord": coord})
+    attachment = api_json(
+        f"{base}/attachments", session.token, method="POST",
+        payload={"coord": coord, "target": {"kind": "canvas"}},
+    )["attachmentId"]
+    script_agent_replies(
+        session.backend,
+        _delegate_tail("node.content.generate", {"intent": "sum a column"}),
+        "result = df.sum(axis=0)",
+        "The content is ready.",
+    )
+    reply = api_json(
+        f"{base}/attachments/{attachment}/run", session.token, method="POST",
+        payload={"message": "write the content"}, timeout=60.0,
+    )
+
+    calls = captured_agent_calls(session.backend)
+    builder = {"configId": made["Scripted A"]["id"], "model": "scripted-a"}
+    content = {"configId": made["Scripted B"]["id"], "model": "scripted-b"}
+    assert [c for c in calls if c != builder] == [content], calls
+    assert builder in calls
+    turns = api_json(f"{base}/attachments/{attachment}/session", session.token)["turns"]
+    part = next(
+        p for t in turns for p in (t.get("content") or []) if p.get("type") == "delegation"
+    )
+    assert (part["model"], part["llmLabel"]) == ("scripted-b", "Scripted B")
+    for key in ("sk-scripted-a-", "sk-scripted-b-"):
+        assert key not in json.dumps(reply) and key not in json.dumps(turns)
+
