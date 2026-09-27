@@ -716,6 +716,12 @@ class CatalogListing:
                 "Multi-part (bundle) datasets cannot be exported as a single file.",
                 400,
             )
+        if item.get("format") == "collection":
+            raise DatasetCatalogError(
+                "A collection cannot be exported as a single file: its files stay in "
+                "its Data Lake source.",
+                400,
+            )
         resolved = self._paths._resolve_item_path(item)
         if not resolved or not Path(resolved).is_file():
             raise DatasetCatalogError("Dataset file is not available for export.", 404)
