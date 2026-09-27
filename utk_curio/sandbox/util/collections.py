@@ -39,12 +39,18 @@ def derived_relpath(kind_folder, dataset_id, file_id, t_ms, ext):
     return os.path.join(kind_folder, dataset_id, file_id, f"{int(t_ms)}.{ext}")
 
 
-def make_collection_helpers(resolve_index, collections, media_dir):
-    """``{"curio_collection": ..., "curio_derived_file": ...}`` for one execution.
+_OUTPUT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None):
+    """The helpers for one execution: ``curio_collection``,
+    ``curio_derived_file`` and ``curio_output_file``.
 
     *resolve_index(dataset_id)* returns the local path of a collection's index,
     the same resolver ``curio_dataset_path`` uses. *collections* maps each id
-    the backend resolved to ``{root|objects, kind}``.
+    the backend resolved to ``{root|objects, kind}``. *output_dir* is where a
+    node writes a file it returns (a raster, say): the scratch directory when
+    isolated, whose files the parent keeps, and the media directory otherwise.
     """
     known = dict(collections or {})
 
@@ -116,4 +122,19 @@ def make_collection_helpers(resolve_index, collections, media_dir):
             row["image_url"] = media_url(dataset_id, derived_id, "original")
         return row
 
-    return {"curio_collection": curio_collection, "curio_derived_file": curio_derived_file}
+    def curio_output_file(name):
+        """A path to write a file this node returns, such as a mosaic's VRT."""
+        name = str(name)
+        if not _OUTPUT_NAME_RE.match(name):
+            raise ValueError("an output file name is one plain name, like mosaic.vrt")
+        folder = output_dir or (os.path.join(media_dir, "outputs") if media_dir else None)
+        if not folder:
+            raise RuntimeError("This node has nowhere to write an output file.")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, name)
+
+    return {
+        "curio_collection": curio_collection,
+        "curio_derived_file": curio_derived_file,
+        "curio_output_file": curio_output_file,
+    }

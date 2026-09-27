@@ -358,13 +358,20 @@ def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, st
     """
     from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code
 
-    ids = collection_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
-    if not ids or not user_key:
+    if not user_key:
         return {}, None
     try:
         from utk_curio.backend.app.datalakes.application import cache_collection
         from utk_curio.backend.app.datalakes.infrastructure import media_dirs, storage
         from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        # Every node gets the directory, not only one that loads a collection:
+        # a node downstream of a Data Loading node writes the frames or the
+        # mosaic, and never names the collection itself.
+        media_dir = str(media_dirs.media_work_root(user_key))
+        ids = collection_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
+        if not ids:
+            return {}, media_dir
 
         service = DataLakeService(user_key, user=getattr(g, "user", None))
         out = {}
@@ -379,7 +386,6 @@ def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, st
             else:
                 entry["objects"] = str(cache_collection.objects_dir(user_key, dataset_id))
             out[dataset_id] = entry
-        media_dir = str(media_dirs.media_work_dir(user_key)) if out else None
         return out, media_dir
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] collection resolution failed: {e}", flush=True)

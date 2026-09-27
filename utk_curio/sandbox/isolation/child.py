@@ -547,6 +547,9 @@ def run_node(request, namespace_factory):
                 namespace["curio_dataset_path"],
                 request.get("collections") or {},
                 request.get("media_dir"),
+                # A file a node returns must sit in scratch, flat-named: the
+                # parent moves it into the artifact store from there.
+                output_dir=scratch_dir,
             ))
 
             # Replay this session's earlier imports so an upstream node's

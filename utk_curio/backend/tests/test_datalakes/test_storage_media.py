@@ -253,7 +253,7 @@ class TestExecutionResolution:
             paths = _resolve_exec_dataset_paths(code, None)
         root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
         assert collections == {dataset["id"]: {"kind": "audio", "root": str(root)}}
-        assert media_dir and os.path.isdir(media_dir)
+        assert media_dir and media_dir.endswith(os.path.join(str(user.id), "media"))
         assert paths[dataset["id"]] == dataset["path"]
 
     def test_a_collection_call_counts_as_using_the_dataset(self):
