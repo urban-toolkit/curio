@@ -25,6 +25,21 @@ provider (Anthropic reports cache reads and writes apart from its input
 count). ``cacheReadTokens`` and ``cacheWriteTokens`` are added when the
 provider reports them.
 
+**Native tools.** ``tools`` offers the model tools, each ``{name, description,
+parameters}`` (``tools.native_tools``), and ``tool_choice`` is ``"auto"`` or
+``"none"``. The turn then carries the calls the model made
+(:class:`ToolCall`). The conversation stays one list with two more message
+shapes: an assistant message may carry ``tool_calls`` (``[{id, name,
+arguments}]``), and a ``{"role": "tool", "tool_call_id", "name", "content",
+"is_error"}`` message answers one call. Each provider receives them its own way:
+OpenAI's ``tool_calls`` and ``tool`` messages, Anthropic's ``tool_use`` and
+``tool_result`` blocks, Gemini's function calls and responses. Gemini's schema
+has no open objects, so an object whose keys a tool does not fix is offered as
+a JSON string and read back as an object. An endpoint that answers a request
+offering tools with a 400 or 422 raises :class:`NativeToolsRefused`, and the
+run carries on with the fenced protocol. Without ``tools`` a request is exactly
+what it was before tools existed.
+
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
 
@@ -33,9 +48,14 @@ User-facing overview: ``docs/AGENT-CATALOG.md``.
 
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass, field
 
 
+class NativeToolsRefused(RuntimeError):
+    """The endpoint refused a request that offered native tools (a 400 or a
+    422). The message is the endpoint's reason, with the key taken out."""
 
 
 @dataclass(frozen=True)
@@ -81,6 +101,26 @@ class ToolCall:
     id: str
     name: str
     arguments: dict = field(default_factory=dict)
+    #: Why the arguments could not be read (not JSON, not an object), or "".
+    error: str = ""
+
+
+def _call_from_json(call_id: str, name: str, raw: str) -> ToolCall:
+    """A call whose arguments arrived as JSON text (OpenAI's form)."""
+    if not (raw or "").strip():
+        return ToolCall(call_id, name, {})
+    try:
+        arguments = json.loads(raw)
+    except ValueError as exc:
+        return ToolCall(call_id, name, {}, error=f"the arguments are not valid JSON: {exc}")
+    if not isinstance(arguments, dict):
+        return ToolCall(call_id, name, {}, error="the arguments must be a JSON object")
+    return ToolCall(call_id, name, arguments)
+
+
+def _call_id() -> str:
+    """An id for a call whose provider names none (Gemini)."""
+    return f"call-{uuid.uuid4().hex[:12]}"
 
 
 @dataclass(frozen=True)
@@ -211,15 +251,199 @@ def _without_slots(message: dict) -> dict:
     return {k: v for k, v in message.items() if k != "slots"}
 
 
+def _openai_message(m: dict) -> dict:
+    if m.get("role") == "tool":
+        # No error flag in OpenAI's shape: the content says the status.
+        return {"role": "tool", "tool_call_id": m.get("tool_call_id") or "", "content": m.get("content") or ""}
+    if m.get("role") == "assistant" and m.get("tool_calls"):
+        return {
+            "role": "assistant",
+            # Empty rather than null: some local chat templates concatenate it.
+            "content": m.get("content") or "",
+            "tool_calls": [
+                {
+                    "id": call["id"],
+                    "type": "function",
+                    "function": {"name": call["name"], "arguments": json.dumps(call.get("arguments") or {})},
+                }
+                for call in m["tool_calls"]
+            ],
+        }
+    return _without_slots(m)
+
+
 def _openai_messages(messages: list) -> list:
     """The list as an OpenAI-compatible server takes it: one system message,
     its slots left behind (its content is their joined text)."""
-    return [_without_slots(m) for m in messages]
+    return [_openai_message(m) for m in messages]
 
 
 def _chat_messages(messages: list) -> list:
     """The conversation without the system turn, for Anthropic and Gemini."""
     return [_without_slots(m) for m in messages if m.get("role") != "system"]
+
+
+def _anthropic_messages(messages: list) -> list:
+    """The conversation as Anthropic takes it: a call is a ``tool_use`` block
+    of its assistant turn, and the results of one turn's calls are the
+    ``tool_result`` blocks of the user turn that follows."""
+    out: list = []
+    for m in _chat_messages(messages):
+        if m.get("role") == "tool":
+            block = {"type": "tool_result", "tool_use_id": m.get("tool_call_id") or "",
+                     "content": m.get("content") or ""}
+            if m.get("is_error"):
+                block["is_error"] = True
+            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                out[-1]["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+        elif m.get("role") == "assistant" and m.get("tool_calls"):
+            blocks = [{"type": "text", "text": m["content"]}] if m.get("content") else []
+            blocks.extend(
+                {"type": "tool_use", "id": call["id"], "name": call["name"],
+                 "input": call.get("arguments") or {}}
+                for call in m["tool_calls"]
+            )
+            out.append({"role": "assistant", "content": blocks})
+        else:
+            out.append(m)
+    return out
+
+
+def _anthropic_tools(tools: list) -> list:
+    return [
+        {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
+        for t in tools
+    ]
+
+
+def _openai_tools(tools: list) -> list:
+    return [
+        {"type": "function", "function": {
+            "name": t["name"], "description": t["description"], "parameters": t["parameters"],
+        }}
+        for t in tools
+    ]
+
+
+def _open_object(schema: dict) -> bool:
+    """An object whose keys the schema does not fix."""
+    return schema.get("type") == "object" and not schema.get("properties")
+
+
+def _gemini_schema(schema: dict) -> dict:
+    """*schema* in the subset a Gemini function declaration takes: types,
+    descriptions, string enums, items, properties and required keys. Gemini's
+    schema has no open objects, so one is offered as a JSON string
+    (:func:`_gemini_arguments` reads it back)."""
+    if _open_object(schema):
+        description = schema.get("description") or ""
+        return {"type": "string", "description": (
+            f"{description} Write it as a JSON object in a string.".strip()
+        )}
+    kind = schema.get("type") or "string"
+    out: dict = {"type": kind}
+    if schema.get("description"):
+        out["description"] = schema["description"]
+    if kind == "string" and schema.get("enum"):
+        out["enum"] = [str(v) for v in schema["enum"]]
+        out["format"] = "enum"
+    if kind == "array":
+        out["items"] = _gemini_schema(schema.get("items") or {"type": "string"})
+    if kind == "object":
+        out["properties"] = {k: _gemini_schema(v) for k, v in schema["properties"].items()}
+        required = [k for k in schema.get("required") or () if k in out["properties"]]
+        if required:
+            out["required"] = required
+    return out
+
+
+def _gemini_tools(tools: list) -> list:
+    declarations = []
+    for t in tools:
+        declaration = {"name": t["name"], "description": t["description"]}
+        if (t.get("parameters") or {}).get("properties"):
+            declaration["parameters"] = _gemini_schema(t["parameters"])
+        declarations.append(declaration)
+    return [{"function_declarations": declarations}]
+
+
+def _gemini_arguments(value, schema):
+    """A Gemini call's arguments as the tool's own schema reads them: a JSON
+    string sent for an open object is parsed back into it."""
+    if not isinstance(schema, dict):
+        return value
+    if _open_object(schema):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return value  # left for the reader to refuse, with the reason
+        return value
+    if schema.get("type") == "object" and isinstance(value, dict):
+        properties = schema.get("properties") or {}
+        return {k: _gemini_arguments(v, properties.get(k)) for k, v in value.items()}
+    if schema.get("type") == "array" and isinstance(value, list):
+        return [_gemini_arguments(v, schema.get("items")) for v in value]
+    return value
+
+
+def _plain(value):
+    """A protobuf map or list (Gemini's call arguments) as plain Python. A
+    number arrives as a float, so a whole one is read back as an int."""
+    if isinstance(value, (str, bytes, bool)) or value is None:
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else value
+    if hasattr(value, "items"):
+        return {str(k): _plain(v) for k, v in value.items()}
+    try:
+        return [_plain(v) for v in value]
+    except TypeError:
+        return value
+
+
+def _gemini_contents(messages: list) -> list:
+    """The conversation as Gemini contents: a call is a ``function_call`` part
+    of its model turn, and one turn's results are the ``function_response``
+    parts of the user turn that follows. Text turns are what they always were."""
+    contents: list = []
+    for m in _chat_messages(messages):
+        if m.get("role") == "tool":
+            key = "error" if m.get("is_error") else "result"
+            part = {"function_response": {"name": m.get("name") or "",
+                                          "response": {key: m.get("content") or ""}}}
+            last = contents[-1] if contents else None
+            if last is not None and last["role"] == "user" and all(
+                isinstance(p, dict) and "function_response" in p for p in last["parts"]
+            ):
+                last["parts"].append(part)
+            else:
+                contents.append({"role": "user", "parts": [part]})
+        elif m.get("role") == "assistant" and m.get("tool_calls"):
+            parts: list = [m["content"]] if m.get("content") else []
+            parts.extend(
+                {"function_call": {"name": call["name"], "args": call.get("arguments") or {}}}
+                for call in m["tool_calls"]
+            )
+            contents.append({"role": "model", "parts": parts})
+        else:
+            role = "user" if m["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [m["content"]]})
+    return contents
+
+
+def _gemini_turn(messages: list):
+    """``(history, message)`` for a Gemini chat: every content but the last,
+    and the last as ``send_message`` takes it (its text, for a text turn)."""
+    contents = _gemini_contents(messages)
+    if not contents:
+        return [], ""
+    *history, last = contents
+    if len(last["parts"]) == 1 and isinstance(last["parts"][0], str):
+        return history, last["parts"][0]
+    return history, last
 
 
 def _anthropic_text(resp) -> str:
@@ -230,15 +454,65 @@ def _anthropic_text(resp) -> str:
     )
 
 
+def _anthropic_calls(resp) -> tuple:
+    calls = []
+    for block in getattr(resp, "content", None) or []:
+        if getattr(block, "type", "") != "tool_use":
+            continue
+        arguments = getattr(block, "input", None)
+        calls.append(ToolCall(
+            str(getattr(block, "id", "") or _call_id()), str(getattr(block, "name", "") or ""),
+            dict(arguments) if isinstance(arguments, dict) else {},
+            error="" if isinstance(arguments, dict) else "the arguments must be an object",
+        ))
+    return tuple(calls)
+
+
+def _openai_calls(message) -> tuple:
+    calls = []
+    for call in getattr(message, "tool_calls", None) or []:
+        function = getattr(call, "function", None)
+        calls.append(_call_from_json(
+            str(getattr(call, "id", "") or _call_id()),
+            str(getattr(function, "name", "") or ""),
+            str(getattr(function, "arguments", "") or ""),
+        ))
+    return tuple(calls)
+
+
+def _gemini_parts(response) -> list:
+    candidates = getattr(response, "candidates", None) or []
+    content = getattr(candidates[0], "content", None) if candidates else None
+    return list(getattr(content, "parts", None) or [])
+
+
 def _gemini_text(response) -> str:
     """The text parts of a Gemini reply. ``response.text`` raises when a part
     is a function call, so the parts are read one by one when they are there."""
-    candidates = getattr(response, "candidates", None) or []
-    content = getattr(candidates[0], "content", None) if candidates else None
-    parts = list(getattr(content, "parts", None) or [])
+    parts = _gemini_parts(response)
     if parts:
         return "".join(getattr(part, "text", "") or "" for part in parts)
     return getattr(response, "text", "") or ""
+
+
+def _gemini_calls(response, tools: list | None) -> tuple:
+    schemas = {t["name"]: t.get("parameters") for t in tools or ()}
+    calls = []
+    for part in _gemini_parts(response):
+        function_call = getattr(part, "function_call", None)
+        name = str(getattr(function_call, "name", "") or "") if function_call is not None else ""
+        if not name:
+            continue
+        arguments = _plain(getattr(function_call, "args", None) or {})
+        if not isinstance(arguments, dict):
+            calls.append(ToolCall(_call_id(), name, {}, error="the arguments must be an object"))
+            continue
+        calls.append(ToolCall(_call_id(), name, _gemini_arguments(arguments, schemas.get(name))))
+    return tuple(calls)
+
+
+def _gemini_tool_config(tool_choice: str) -> dict:
+    return {"function_calling_config": {"mode": "NONE" if tool_choice == "none" else "AUTO"}}
 
 
 def run_chat_turn(
@@ -246,6 +520,9 @@ def run_chat_turn(
     messages: list,
     max_output_tokens: int | None = None,
     usage_out: dict | None = None,
+    *,
+    tools: list | None = None,
+    tool_choice: str = "auto",
 ) -> ChatTurn:
     """One model turn from the configured provider.
 
@@ -253,46 +530,66 @@ def run_chat_turn(
     system message may carry ``slots`` (see the module docstring).
     ``max_output_tokens`` is the effective resource policy (memo dev/24); when
     unset the anthropic backend keeps its former 4096 and the others use
-    provider defaults.
+    provider defaults. ``tools`` and ``tool_choice`` offer native tools (see
+    the module docstring); an endpoint that refuses them raises
+    :class:`NativeToolsRefused`.
     """
+    try:
+        return _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice)
+    except Exception as exc:
+        if tools and _status_code_of(exc) in (400, 422):
+            raise NativeToolsRefused(_redacted(exc, config)) from exc
+        raise
+
+
+def _run_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice) -> ChatTurn:
     api_type = config.api_type
     if api_type == "testing":
         # Scripted, deterministic, no network. Guarded on CURIO_TESTING inside
-        # run_scripted_completion, so this branch cannot be reached on a real
+        # run_scripted_turn, so this branch cannot be reached on a real
         # deployment even if a config names it. See agents/testing_provider.py.
-        from utk_curio.backend.app.agents.testing_provider import (
-            run_scripted_completion,
-        )
+        from utk_curio.backend.app.agents.testing_provider import run_scripted_turn
 
-        return ChatTurn.of(run_scripted_completion(messages, usage_out=usage_out, config=config))
+        return run_scripted_turn(
+            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice
+        )
     if api_type == "anthropic":
         import anthropic
         client = anthropic.Anthropic(api_key=config.api_key)
+        create_kwargs = {}
+        if tools:
+            create_kwargs = {"tools": _anthropic_tools(tools), "tool_choice": {"type": tool_choice}}
         resp = client.messages.create(
             model=config.model,
             system=_anthropic_system(messages, anthropic.NOT_GIVEN),
-            messages=_chat_messages(messages),
+            messages=_anthropic_messages(messages),
             max_tokens=max_output_tokens or 4096,
+            **create_kwargs,
         )
         _anthropic_usage(usage_out, getattr(resp, "usage", None))
-        return ChatTurn(text=_anthropic_text(resp), stop_reason=str(getattr(resp, "stop_reason", "") or ""))
+        return ChatTurn(
+            text=_anthropic_text(resp),
+            tool_calls=_anthropic_calls(resp) if tools else (),
+            stop_reason=str(getattr(resp, "stop_reason", "") or ""),
+        )
     elif api_type == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=config.api_key)
-        chat_messages = _chat_messages(messages)
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
+        history, last = _gemini_turn(messages)
         gen_model = genai.GenerativeModel(config.model, system_instruction=_gemini_system(messages))
         chat = gen_model.start_chat(history=history)
         send_kwargs = {}
         if max_output_tokens:
             send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
-        response = chat.send_message(last_user_msg, **send_kwargs)
+        if tools:
+            send_kwargs["tools"] = _gemini_tools(tools)
+            send_kwargs["tool_config"] = _gemini_tool_config(tool_choice)
+        response = chat.send_message(last, **send_kwargs)
         _gemini_usage(usage_out, getattr(response, "usage_metadata", None))
-        return ChatTurn(text=_gemini_text(response))
+        return ChatTurn(
+            text=_gemini_text(response),
+            tool_calls=_gemini_calls(response, tools) if tools else (),
+        )
     else:  # openai_compatible (default)
         from openai import OpenAI
         kwargs = {"api_key": config.api_key or "no-key"}
@@ -302,12 +599,16 @@ def run_chat_turn(
         create_kwargs = {"model": config.model, "messages": _openai_messages(messages)}
         if max_output_tokens:
             create_kwargs["max_tokens"] = max_output_tokens
+        if tools:
+            create_kwargs["tools"] = _openai_tools(tools)
+            create_kwargs["tool_choice"] = tool_choice
         completion = client.chat.completions.create(**create_kwargs)
         _openai_usage(usage_out, getattr(completion, "usage", None))
         choice = completion.choices[0]
         # A reply that only calls tools has no content.
         return ChatTurn(
             text=getattr(choice.message, "content", None) or "",
+            tool_calls=_openai_calls(choice.message) if tools else (),
             stop_reason=str(getattr(choice, "finish_reason", "") or ""),
         )
 
@@ -328,61 +629,94 @@ def stream_chat_turn(
     messages: list,
     max_output_tokens: int | None = None,
     usage_out: dict | None = None,
+    *,
+    tools: list | None = None,
+    tool_choice: str = "auto",
 ):
     """Streaming twin of :func:`run_chat_turn`: yields the turn's events as they
-    arrive. A text delta is a bare string; the one event type for now.
+    arrive. A text delta is a bare string; a native tool call is a
+    :class:`ToolCall`, yielded once the call is complete.
 
     Same provider dispatch and message handling. Callers that stop iterating
-    close the underlying provider stream.
+    close the underlying provider stream. A refusal of the offered tools raises
+    :class:`NativeToolsRefused`, which an endpoint gives before any event.
     """
+    events = _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice)
+    started = False
+    try:
+        for event in events:
+            started = True
+            yield event
+    except Exception as exc:
+        if tools and not started and _status_code_of(exc) in (400, 422):
+            raise NativeToolsRefused(_redacted(exc, config)) from exc
+        raise
+    finally:
+        events.close()
+
+
+def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice):
     api_type = config.api_type
     if api_type == "testing":
         # The scripted reply, delivered as a single chunk. Splitting it would
         # only test the splitter: what the SSE runtime needs from a provider
         # is a deterministic sequence of deltas, and one is a sequence.
-        from utk_curio.backend.app.agents.testing_provider import (
-            run_scripted_completion,
-        )
+        from utk_curio.backend.app.agents.testing_provider import run_scripted_turn
 
-        yield run_scripted_completion(messages, usage_out=usage_out, config=config)
+        turn = run_scripted_turn(
+            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice
+        )
+        if turn.text or not turn.tool_calls:
+            yield turn.text
+        yield from turn.tool_calls
         return
     if api_type == "anthropic":
         import anthropic
         client = anthropic.Anthropic(api_key=config.api_key)
+        create_kwargs = {}
+        if tools:
+            create_kwargs = {"tools": _anthropic_tools(tools), "tool_choice": {"type": tool_choice}}
         with client.messages.stream(
             model=config.model,
             system=_anthropic_system(messages, anthropic.NOT_GIVEN),
-            messages=_chat_messages(messages),
+            messages=_anthropic_messages(messages),
             max_tokens=max_output_tokens or 4096,
+            **create_kwargs,
         ) as stream:
             for text in stream.text_stream:
                 if text:
                     yield text
             try:
-                _anthropic_usage(usage_out, getattr(stream.get_final_message(), "usage", None))
+                final = stream.get_final_message()
             except Exception:
-                pass  # usage is best-effort; the reply already streamed
+                final = None  # usage is best-effort; the reply already streamed
+            if final is not None:
+                _anthropic_usage(usage_out, getattr(final, "usage", None))
+                if tools:
+                    yield from _anthropic_calls(final)
     elif api_type == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=config.api_key)
-        chat_messages = _chat_messages(messages)
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
+        history, last = _gemini_turn(messages)
         gen_model = genai.GenerativeModel(config.model, system_instruction=_gemini_system(messages))
         chat = gen_model.start_chat(history=history)
         send_kwargs = {}
         if max_output_tokens:
             send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
+        if tools:
+            send_kwargs["tools"] = _gemini_tools(tools)
+            send_kwargs["tool_config"] = _gemini_tool_config(tool_choice)
         last_chunk = None
-        for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):
+        calls: list = []
+        for chunk in chat.send_message(last, stream=True, **send_kwargs):
             last_chunk = chunk
             text = _gemini_text(chunk)
             if text:
                 yield text
+            if tools:
+                calls.extend(_gemini_calls(chunk, tools))
         _gemini_usage(usage_out, getattr(last_chunk, "usage_metadata", None))
+        yield from calls
     else:  # openai_compatible (default)
         from openai import OpenAI
         kwargs = {"api_key": config.api_key or "no-key"}
@@ -397,7 +731,13 @@ def stream_chat_turn(
         }
         if max_output_tokens:
             create_kwargs["max_tokens"] = max_output_tokens
+        if tools:
+            create_kwargs["tools"] = _openai_tools(tools)
+            create_kwargs["tool_choice"] = tool_choice
         stream = client.chat.completions.create(**create_kwargs)
+        # A call arrives in pieces, by index: its id and name first, then its
+        # arguments as fragments of one JSON text.
+        pending: dict = {}
         for chunk in stream:
             _openai_usage(usage_out, getattr(chunk, "usage", None))
             choices = getattr(chunk, "choices", None) or []
@@ -405,6 +745,20 @@ def stream_chat_turn(
             text = getattr(delta, "content", None) if delta is not None else None
             if text:
                 yield text
+            for piece in (getattr(delta, "tool_calls", None) or []) if tools else ():
+                slot = pending.setdefault(getattr(piece, "index", None) or 0,
+                                          {"id": "", "name": "", "arguments": ""})
+                if getattr(piece, "id", None):
+                    slot["id"] = piece.id
+                function = getattr(piece, "function", None)
+                if function is not None:
+                    if getattr(function, "name", None) and not slot["name"]:
+                        slot["name"] = function.name
+                    if getattr(function, "arguments", None):
+                        slot["arguments"] += function.arguments
+        for index in sorted(pending):
+            slot = pending[index]
+            yield _call_from_json(slot["id"] or _call_id(), slot["name"], slot["arguments"])
 
 
 def stream_chat_completion(
@@ -443,7 +797,9 @@ def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) ->
     """
     from openai import OpenAI
 
-    kwargs: dict = {"api_key": config.api_key or "no-key", "timeout": 30.0}
+    # No retries: the trial runs before the run's own first call, and an
+    # endpoint that cannot answer now is asked again on the next run.
+    kwargs: dict = {"api_key": config.api_key or "no-key", "timeout": 30.0, "max_retries": 0}
     if config.base_url:
         kwargs["base_url"] = config.base_url
     try:
@@ -451,6 +807,8 @@ def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) ->
             model=config.model,
             messages=[{"role": "user", "content": "Call the ping tool."}],
             tools=[_TRIAL_TOOL],
+            # As a run asks: some servers take tools but refuse a stated choice.
+            tool_choice="auto",
             max_tokens=32,
         )
     except Exception as exc:  # noqa: BLE001 - every SDK failure is an answer here
@@ -647,7 +1005,8 @@ def _openai_client(config: ProviderConfig, *, timeout: float = 30.0):
 
 
 def _status_code_of(exc: Exception) -> int | None:
-    for attribute in ("status_code", "status", "http_status"):
+    # ``code`` is where Gemini's errors keep it (google.api_core).
+    for attribute in ("status_code", "status", "http_status", "code"):
         value = getattr(exc, attribute, None)
         if isinstance(value, int):
             return value

@@ -853,26 +853,35 @@ def extract_tool_request_attempt(reply: str) -> tuple[str, object]:
     return reply, None
 
 
-def _parse_delegate_request(raw: object) -> dict | None:
+def parse_delegate_request_verbose(raw: object) -> tuple[dict | None, list[str]]:
+    """Validate one ``delegateRequest`` payload, naming what is wrong: the
+    sibling :func:`parse_tool_request_verbose` has for tools. A native
+    ``delegate`` call reads the errors back; a fenced block fails open."""
     if not isinstance(raw, dict):
-        return None
+        return None, ["the delegate request must be an object"]
     capability = raw.get("capability")
     if not (isinstance(capability, str) and _TOOL_ID_RE.match(capability)):
-        return None
+        return None, ["capability must be a capability id like node.content.generate"]
     inputs = raw.get("inputs", {})
     if not isinstance(inputs, dict):
-        return None
+        return None, ["inputs must be an object"]
     budget = (
         PLAN_TAIL_MAX_BYTES  # dev/90 A6: authoring inputs = a look spec + findings
         if capability in PACKAGE_AUTHORING_CAPABILITIES
         else _DELEGATE_INPUTS_MAX_BYTES
     )
     try:
-        if len(json.dumps(inputs).encode("utf-8")) > budget:
-            return None
-    except (TypeError, ValueError):
-        return None
-    return {"type": "delegateRequest", "capability": capability, "inputs": inputs}
+        size = len(json.dumps(inputs).encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        return None, [f"inputs is not JSON-serializable: {exc}"]
+    if size > budget:
+        return None, [f"inputs is {size} bytes (max {budget})"]
+    return {"type": "delegateRequest", "capability": capability, "inputs": inputs}, []
+
+
+def _parse_delegate_request(raw: object) -> dict | None:
+    request, errors = parse_delegate_request_verbose(raw)
+    return request if not errors else None
 
 
 def parse_parts(body: str) -> list[dict] | None:
@@ -1118,7 +1127,19 @@ CANDIDATES_INSTRUCTION = (
 )
 
 
-def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
+#: What a run on native tools is told in place of the tool list and the
+#: ``toolRequest`` syntax, which the native tools themselves carry.
+NATIVE_TOOLS_INSTRUCTION = (
+    "Your tools are offered to you as native tools. Call at most one per "
+    "reply; you will receive its result and can then continue. A tool's name "
+    "is its id with each dot written as two underscores: dataflow.read is "
+    "called dataflow__read."
+)
+
+
+def tail_instruction(
+    grants: list[tuple[str, str]] | None = None, *, native_tools: bool = False
+) -> str:
     """The system-turn tail instruction for one run (memo dev/41).
 
     Grant-less runs get :data:`TAIL_INSTRUCTION` byte-identical (regression-
@@ -1127,25 +1148,32 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     ``toolRequest`` syntax. The list is server-resolved grants — never the
     manifest's raw declarations.
 
+    A run offered its tools natively (*native_tools*) gets
+    :data:`NATIVE_TOOLS_INSTRUCTION` instead of that paragraph: only the tool
+    list and the call syntax differ.
+
     A run that can search the catalog also gets the ``datasetCandidates`` schema
     (#269): those agents are asked for that block by name, so they have to be
     told what it looks like.
     """
-    if not grants:
+    if native_tools:
+        instruction = f"{TAIL_INSTRUCTION}\n\n{NATIVE_TOOLS_INSTRUCTION}"
+    elif not grants:
         return TAIL_INSTRUCTION
-    lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
-    instruction = (
-        f"{TAIL_INSTRUCTION}\n\n"
-        "You may also use these tools, granted for this conversation:\n"
-        f"{lines}\n"
-        "To use one, end your reply with exactly one fenced block of this form "
-        "instead (one tool per reply; you will receive the result and can then "
-        "answer):\n"
-        "```curio.v1\n"
-        '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
-        "```"
-    )
-    granted_ids = {tool_id for tool_id, _ in grants}
+    else:
+        lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
+        instruction = (
+            f"{TAIL_INSTRUCTION}\n\n"
+            "You may also use these tools, granted for this conversation:\n"
+            f"{lines}\n"
+            "To use one, end your reply with exactly one fenced block of this form "
+            "instead (one tool per reply; you will receive the result and can then "
+            "answer):\n"
+            "```curio.v1\n"
+            '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
+            "```"
+        )
+    granted_ids = {tool_id for tool_id, _ in grants or ()}
     if granted_ids & set(_CANDIDATES_TOOLS):
         instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
         # Only described to a run that can actually produce them. A run without
@@ -1157,18 +1185,28 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
     return instruction
 
 
-def delegation_instruction(entries: list[tuple[str, str]]) -> str:
+def delegation_instruction(entries: list[tuple[str, str]], *, native_tools: bool = False) -> str:
     """The delegation paragraph for one run's system tail (memo dev/48).
 
     Composed only when the agent's manifest names delegates that resolve to
     visible definitions — the entries are ``(capability_id, delegate name)``
     pairs the runtime resolved server-side, never the manifest's raw list.
+    With *native_tools* the run delegates through the ``delegate`` tool, so the
+    paragraph names it instead of the ``delegateRequest`` syntax.
     """
     lines = "\n".join(f"- {cap} — handled by {name}" for cap, name in entries)
-    return (
+    lead = (
         "You may also delegate these specialized capabilities, granted for "
         "this conversation:\n"
         f"{lines}\n"
+    )
+    if native_tools:
+        return lead + (
+            "To delegate, call the delegate tool with the capability and the "
+            "inputs it needs (one request per reply; you will receive the "
+            "delegate's result and can then continue)."
+        )
+    return lead + (
         "To delegate, end your reply with exactly one fenced block of this "
         "form instead (one request per reply; you will receive the delegate's "
         "result and can then continue):\n"

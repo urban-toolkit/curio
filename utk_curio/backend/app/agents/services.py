@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents import (
     agent_jobs,
+    chat_capabilities,
     contracts,
     provider_config,
     document_validation,
@@ -49,7 +50,9 @@ from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
     ChatTurn,
+    NativeToolsRefused,
     ProviderConfig,
+    ToolCall,
     run_chat_turn,
     stream_chat_turn,
 )
@@ -2844,9 +2847,28 @@ def apply_plan_edges(
     }
 
 
-def _plan_correction_message(errors: list[str]) -> dict:
+#: The correction for a plan found outside a terminal curio.v1 block.
+_PLAN_FENCE_GUIDANCE = (
+    "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
+    "your reply (not ```json)"
+)
+
+
+def _plan_correction_message(errors: list[str], *, native: bool = False) -> dict:
     """The corrective round's feedback (dev/54): precise, model-actionable,
-    and explicit that the invalid block never reached the user."""
+    and explicit that the invalid block never reached the user. A run on
+    native tools is asked for the plan as a call instead of a block."""
+    if native:
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _PLAN_FENCE_GUIDANCE][:10])
+        return {
+            "role": "user",
+            "content": (
+                "[plan validation] Your dataflowPlan was invalid and was NOT shown "
+                "to the user. Fix exactly these problems and call "
+                f"{tools.wire_name('dataflow.plan.write')} with the COMPLETE "
+                "corrected plan (all nodes and edges):\n" + listed
+            ),
+        }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
@@ -2881,10 +2903,7 @@ def _handle_plan_reply(
     if "dataflow.plan.write" not in loop_ctx.get("granted", []):
         return "none", parts, None
     visible_override: str | None = None
-    fence_guidance = (
-        "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
-        "your reply (not ```json)"
-    )
+    fence_guidance = _PLAN_FENCE_GUIDANCE
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
     if plan_part is not None:
         status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
@@ -2928,10 +2947,28 @@ def _handle_plan_reply(
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
-def _tool_correction_message(errors: list[str]) -> dict:
+#: The correction for a tool request found outside a terminal curio.v1 block.
+_TOOL_FENCE_GUIDANCE = (
+    "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
+    "thing in your reply (not ```json, and with no text after it)"
+)
+
+
+def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict:
     """The corrective round's feedback for a tool request (#245) — the
     ``_plan_correction_message`` twin: precise, model-actionable, and explicit
-    that the invalid block never reached the user."""
+    that the invalid block never reached the user. A run on native tools is
+    asked for a call instead of a block."""
+    if native:
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _TOOL_FENCE_GUIDANCE][:10])
+        return {
+            "role": "user",
+            "content": (
+                "[tool validation] Your tool request was invalid and was NOT "
+                "shown to the user. Fix exactly these problems and call the "
+                "tool with the COMPLETE corrected arguments:\n" + listed
+            ),
+        }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
@@ -3005,10 +3042,7 @@ def _handle_tool_reply(
         return tool is not None and tool in granted
 
     visible_override: str | None = None
-    fence_guidance = (
-        "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
-        "thing in your reply (not ```json, and with no text after it)"
-    )
+    fence_guidance = _TOOL_FENCE_GUIDANCE
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
@@ -9501,17 +9535,28 @@ def _prepare_run(
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list.
+    entries: list = []
     if manifest is not None and manifest.delegates_to:
         entries = delegation.visible_capability_entries(user_key, manifest)
+    native_tools = _native_tools_for(config, user_key, granted, entries)
+
+    def _system(native: bool) -> dict:
+        # The two protocols differ only in how a tool or a delegate is asked for.
+        blocks = list(runtime_blocks)
         if entries:
-            runtime_blocks.append(content.delegation_instruction(entries))
-    system = contracts.system_message(contracts.compose_system(
-        preamble=preamble,
-        instruction=instruction,
-        configuration=configuration,
-        tool_protocol=content.tail_instruction(tools.grant_descriptions(granted)),
-        runtime=runtime_blocks,
-    ))
+            blocks.append(content.delegation_instruction(entries, native_tools=native))
+        return contracts.system_message(contracts.compose_system(
+            preamble=preamble,
+            instruction=instruction,
+            configuration=configuration,
+            tool_protocol=content.tail_instruction(
+                tools.grant_descriptions(granted), native_tools=native
+            ),
+            runtime=blocks,
+        ))
+
+    fenced_system = _system(False)
+    system = _system(True) if native_tools else fenced_system
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -9549,6 +9594,8 @@ def _prepare_run(
         "tools": granted,
         "policy": run_policy["policy_pins"],
         **_configuration_pin(configuration),
+        # How the run asks for a tool or a delegate, when it can ask at all.
+        **({"toolProtocol": "native" if native_tools else "fenced"} if granted or entries else {}),
     }
     loop_ctx = {
         "granted": granted,
@@ -9559,8 +9606,31 @@ def _prepare_run(
         # delegatesTo resolution inside the loop.
         "coord": coord,
         "manifest": manifest,
+        # The tool protocol (_RunConversation): the native tools offered, and
+        # the fenced system turn a refusal of them falls back to.
+        "native_tools": native_tools,
+        "fenced_system": fenced_system,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+def _native_tools_for(
+    config: ProviderConfig, user_key: str, granted: list, entries: list
+) -> list | None:
+    """The run's tools and delegates as native tools, when its LLM
+    configuration calls tools natively (``chat_capabilities``); None puts the
+    run on the fenced protocol. A run with nothing to call asks nothing."""
+    if not granted and not entries:
+        return None
+    try:
+        protocol = chat_capabilities.chat_capabilities(config, user_key).protocol
+    except Exception as exc:  # the question never fails a run: it runs fenced
+        log.warning("Could not tell whether %s calls tools natively (%s: %s); using the fenced protocol",
+                    config.model, type(exc).__name__, exc)
+        return None
+    if protocol != "native":
+        return None
+    return tools.native_tools(granted, [capability for capability, _ in entries])
 
 
 # Bounds for the run-time template roster (dev/48): plenty for every real
@@ -10748,13 +10818,13 @@ def _execute_tool_request(
     return status, text
 
 
+#: Appended to the result of the last round a run may spend on a tool.
+_FINAL_ROUND_NOTE = "\nNo further tool calls are available this turn — answer with what you have."
+
+
 def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -> dict:
     """The tool result fed back as provider context (untrusted data, framed)."""
-    suffix = (
-        "\nNo further tool calls are available this turn — answer with what you have."
-        if final
-        else ""
-    )
+    suffix = _FINAL_ROUND_NOTE if final else ""
     return {"role": "user", "content": f"[tool result] {tool_id}: {status}\n{text}{suffix}"}
 
 
@@ -10764,12 +10834,187 @@ def _delegate_result_message(
     """The delegate's result fed back as provider context (untrusted data,
     framed — memo dev/48 §3.4)."""
     who = f"{coord} ({capability})" if coord else capability
-    suffix = (
-        "\nNo further tool calls are available this turn — answer with what you have."
-        if final
-        else ""
-    )
+    suffix = _FINAL_ROUND_NOTE if final else ""
     return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
+
+
+# --- Native tool calls -------------------------------------------------------
+#
+# A run on native tools (``_native_tools_for``) is offered its grants and its
+# delegates as tools, and the model calls one instead of writing a fenced
+# block. Its first call becomes the request part a fenced block parses to,
+# through the same parser and budgets, and from there takes the same path:
+# grant check, mint, delegate, round accounting. Only the way a result goes
+# back differs: a tool message answering the call, flagged when it is an error.
+# A fenced block in a native run is still honoured, and answered in kind.
+
+#: The statuses of a result that is not an error.
+_NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+
+#: The answer to every call of a reply after its first, which is the one run.
+_NATIVE_NOT_RUN = (
+    "not run: one tool call per reply, and this reply's first call was the "
+    "one run. Call this one again on its own if you still need it."
+)
+
+
+def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
+    """*call* as the request part its fenced block would parse to, or why it
+    is not one."""
+    if call.error:
+        return None, [call.error]
+    if call.name == tools.DELEGATE_TOOL:
+        return content.parse_delegate_request_verbose(call.arguments)
+    tool_id = tools.tool_id_of(call.name)
+    if tool_id is None:
+        return None, [f"there is no tool named {call.name!r}"]
+    return content.parse_tool_request_verbose({"tool": tool_id, "params": call.arguments})
+
+
+def _native_result_text(status: str, text: str, *, final: bool) -> str:
+    body = text if status in _NATIVE_OK_STATUSES and text else (
+        f"{status}: {text}" if text else status
+    )
+    return body + (_FINAL_ROUND_NOTE if final else "")
+
+
+def _fenced_request_reply(text: str, req: dict) -> str:
+    """A reply whose request was a native call, as the fenced protocol
+    writes it: its text, then the request's block."""
+    import json as _json
+
+    if req.get("type") == "delegateRequest":
+        payload = {"delegateRequest": {"capability": req.get("capability"),
+                                       "inputs": req.get("inputs") or {}}}
+    else:
+        payload = {"toolRequest": {"tool": req.get("tool"), "params": req.get("params") or {}}}
+    block = f"{content.TAIL_FENCE}\n{_json.dumps(payload, ensure_ascii=False)}\n```"
+    return f"{text}\n\n{block}" if text else block
+
+
+def _unreadable_call_reply(text: str, call: ToolCall) -> str:
+    """A reply whose native call could not be read, as the fenced protocol
+    writes it."""
+    if call.name == tools.DELEGATE_TOOL:
+        return _fenced_request_reply(text, {**(call.arguments or {}), "type": "delegateRequest"})
+    return _fenced_request_reply(text, {"type": "toolRequest",
+                                        "tool": tools.tool_id_of(call.name) or call.name,
+                                        "params": call.arguments or {}})
+
+
+def _is_mutate_call(call: ToolCall) -> bool:
+    return tools.tool_id_of(call.name) in MUTATE_PROPOSAL_TOOLS
+
+
+class _RunConversation:
+    """The provider messages of one attached run, in the tool protocol it speaks.
+
+    A run on native tools keeps the fenced form of every round beside the
+    native one, so when its endpoint refuses the tools mid-run
+    (``NativeToolsRefused``) the conversation carries on, fenced, from where it
+    was. The refusal is recorded (``chat_capabilities.record_native_refusal``)
+    once a fenced call has succeeded, which shows it was about the tools.
+    """
+
+    def __init__(self, messages: list, loop_ctx: dict):
+        self.native_tools = loop_ctx.get("native_tools") or None
+        fenced_system = loop_ctx.get("fenced_system")
+        self._native = list(messages) if self.native_tools else None
+        self._fenced = (
+            [fenced_system, *messages[1:]]
+            if self.native_tools and fenced_system is not None
+            else list(messages)
+        )
+        self._refused: str | None = None
+
+    @property
+    def messages(self) -> list:
+        return self._native if self.native_tools else self._fenced
+
+    def offer(self, rounds_used: int) -> dict:
+        """The next call's tool keywords. None on the fenced protocol, so its
+        call is exactly what it was before native tools; on the last round the
+        model may not call one."""
+        if not self.native_tools:
+            return {}
+        return {
+            "tools": self.native_tools,
+            "tool_choice": "none" if rounds_used >= MAX_TOOL_ROUNDS else "auto",
+        }
+
+    def native_calls(self, turn: ChatTurn) -> tuple:
+        """*turn*'s native calls, when this run offered any."""
+        return tuple(turn.tool_calls) if self.native_tools else ()
+
+    def fall_back(self, refusal: Exception, pins: dict) -> None:
+        self.native_tools = None
+        self._native = None
+        self._refused = str(refusal)
+        pins["toolProtocol"] = "fenced"
+        pins["nativeToolsRefused"] = True
+
+    def answered(self, config: ProviderConfig, user_key: str) -> None:
+        if self._refused is not None:
+            chat_capabilities.record_native_refusal(config, user_key, self._refused)
+            self._refused = None
+
+    def _lists(self) -> list:
+        return [m for m in (self._native, self._fenced) if m is not None]
+
+    def add_text_round(self, reply: str, feedback: dict, native_feedback: dict | None = None) -> None:
+        """A reply answered with a user message: a correction, or the result
+        of a request it wrote as a fenced block. *native_feedback* is what the
+        native conversation receives instead, when its wording differs."""
+        for messages in self._lists():
+            messages.append({"role": "assistant", "content": reply})
+            messages.append(
+                native_feedback if native_feedback is not None and messages is self._native
+                else feedback
+            )
+
+    def add_call_round(
+        self, turn: ChatTurn, req: dict, status: str, text: str, *,
+        final: bool, fenced_feedback: dict,
+    ) -> None:
+        """A reply whose first native call ran as *req*."""
+        self._fenced.append({"role": "assistant", "content": _fenced_request_reply(turn.text, req)})
+        self._fenced.append(fenced_feedback)
+        self._answer_calls(
+            turn, _native_result_text(status, text, final=final),
+            is_error=status not in _NATIVE_OK_STATUSES,
+        )
+
+    def add_unreadable_call_round(self, turn: ChatTurn, errors: list[str], *, final: bool) -> None:
+        """A reply whose first native call could not be read: the errors go
+        back as its result, and the fenced form is a correction."""
+        first = turn.tool_calls[0]
+        self._fenced.append({"role": "assistant", "content": _unreadable_call_reply(turn.text, first)})
+        self._fenced.append(_tool_correction_message(errors))
+        listed = "\n".join(f"- {e}" for e in errors[:10])
+        self._answer_calls(
+            turn,
+            "invalid call, not run. Fix exactly these problems and call it again:\n"
+            + listed + (_FINAL_ROUND_NOTE if final else ""),
+            is_error=True,
+        )
+
+    def _answer_calls(self, turn: ChatTurn, first_result: str, *, is_error: bool) -> None:
+        if self._native is None:
+            return
+        self._native.append({
+            "role": "assistant",
+            "content": turn.text,
+            "tool_calls": [
+                {"id": call.id, "name": call.name, "arguments": call.arguments}
+                for call in turn.tool_calls
+            ],
+        })
+        first, *rest = turn.tool_calls
+        self._native.append({"role": "tool", "tool_call_id": first.id, "name": first.name,
+                             "content": first_result, "is_error": is_error})
+        for call in rest:
+            self._native.append({"role": "tool", "tool_call_id": call.id, "name": call.name,
+                                 "content": _NATIVE_NOT_RUN, "is_error": True})
 
 
 def _mint_project_install(
@@ -12144,7 +12389,7 @@ def run_attachment(
     minted: list = []
     folded: list[str] = []
     final_parts: list = []
-    messages_work = list(messages)
+    conversation = _RunConversation(messages, loop_ctx)
     rounds_used = 0
     refusals_used = 0  # dev/105 D2: free parameter corrections taken
     started = time.monotonic()
@@ -12154,12 +12399,21 @@ def run_attachment(
         # most MAX_TOOL_ROUNDS request executions per run (one shared budget).
         while True:
             usage_sink: dict = {}
-            reply = ChatTurn.of(run_chat_turn(
-                config,
-                messages_work,
-                max_output_tokens=run_policy["max_output_tokens"],
-                usage_out=usage_sink,
-            )).text
+            try:
+                turn = ChatTurn.of(run_chat_turn(
+                    config,
+                    conversation.messages,
+                    max_output_tokens=run_policy["max_output_tokens"],
+                    usage_out=usage_sink,
+                    **conversation.offer(rounds_used),
+                ))
+            except NativeToolsRefused as refusal:
+                # The endpoint takes no native tools after all: the same round
+                # again, on the fenced protocol.
+                conversation.fall_back(refusal, pins)
+                continue
+            conversation.answered(config, user_key)
+            reply = turn.text
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
@@ -12169,6 +12423,24 @@ def run_attachment(
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
                 else None
             )
+            native_calls = conversation.native_calls(turn)
+            if native_calls:
+                # A native call is the round's request, whatever the text says.
+                req, call_errors = _native_request(native_calls[0])
+                if req is None:
+                    if rounds_used < MAX_TOOL_ROUNDS:
+                        rounds_used += 1
+                        conversation.add_unreadable_call_round(
+                            turn, call_errors, final=rounds_used >= MAX_TOOL_ROUNDS
+                        )
+                        continue
+                    # Past the cap: the text stays, and a proposal that could
+                    # not be made says why.
+                    if visible:
+                        folded.append(visible)
+                    if _is_mutate_call(native_calls[0]):
+                        final_parts = [_tool_cap_card(call_errors)]
+                    break
             if req is None:
                 # Plan handling (dev/52 mint; dev/54 correction rounds).
                 kind, payload, visible_override = _handle_plan_reply(
@@ -12178,8 +12450,10 @@ def run_attachment(
                     # Corrective prose is not folded: the invalid attempt never
                     # reaches the user; the final round's text is the truth.
                     rounds_used += 1
-                    messages_work.append({"role": "assistant", "content": reply})
-                    messages_work.append(_plan_correction_message(payload))
+                    conversation.add_text_round(
+                        reply, _plan_correction_message(payload),
+                        _plan_correction_message(payload, native=True),
+                    )
                     continue
                 if kind == "none":
                     # #245: only once the plan handler has declined — a
@@ -12191,9 +12465,9 @@ def run_attachment(
                     )
                     if kind == "correct":
                         rounds_used += 1
-                        messages_work.append({"role": "assistant", "content": reply})
-                        messages_work.append(
-                            _tool_correction_message(payload)
+                        conversation.add_text_round(
+                            reply, _tool_correction_message(payload),
+                            _tool_correction_message(payload, native=True),
                         )
                         continue
                 if req is None:
@@ -12330,8 +12604,12 @@ def run_attachment(
                     result_msg = _delegate_result_message(
                         None, req["capability"], status, text, final=final
                     )
-                messages_work.append({"role": "assistant", "content": reply})
-                messages_work.append(result_msg)
+                if native_calls:
+                    conversation.add_call_round(
+                        turn, req, status, text, final=final, fenced_feedback=result_msg
+                    )
+                else:
+                    conversation.add_text_round(reply, result_msg)
                 continue
             status, text = _execute_tool_request(
                 user_key, project_id, loop_ctx, req, tool_calls, minted
@@ -12341,10 +12619,13 @@ def run_attachment(
             else:
                 rounds_used += 1
             final = rounds_used >= MAX_TOOL_ROUNDS
-            messages_work.append({"role": "assistant", "content": reply})
-            messages_work.append(
-                _tool_result_message(req["tool"], status, text, final=final)
-            )
+            result_msg = _tool_result_message(req["tool"], status, text, final=final)
+            if native_calls:
+                conversation.add_call_round(
+                    turn, req, status, text, final=final, fenced_feedback=result_msg
+                )
+            else:
+                conversation.add_text_round(reply, result_msg)
     except Exception as exc:
         _add_usage(usage_total, usage_sink)
         # An error settles too: the hold releases and the truth is recorded.
@@ -12450,7 +12731,7 @@ def stream_attachment(
         return buf, ""
 
     def _stream_round(
-        messages_work: list, usage_sink: dict, result: dict,
+        conversation: "_RunConversation", rounds_used: int, usage_sink: dict, result: dict,
         hold_plan_tail: bool = False, hold_request_tail: bool = False,
     ):
         """Stream one provider round: yields ("delta", text) with the dev/39
@@ -12464,16 +12745,21 @@ def stream_attachment(
         released: the params are a whole source file, and streaming them as
         chat prose IS the bug (see ``_handle_tool_reply``)."""
         chunks: list[str] = []
+        calls: list = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
         for delta in stream_chat_turn(
             config,
-            messages_work,
+            conversation.messages,
             max_output_tokens=run_policy["max_output_tokens"],
             usage_out=usage_sink,
+            **conversation.offer(rounds_used),
         ):
+            if isinstance(delta, ToolCall):
+                calls.append(delta)  # a native call is an event, never text
+                continue
             if not isinstance(delta, str):
-                continue  # a text delta is a bare string, the one event so far
+                continue  # a text delta is a bare string
             chunks.append(delta)
             if withheld is not None:
                 withheld += delta
@@ -12525,6 +12811,7 @@ def stream_attachment(
         result["reply"] = reply
         result["visible"] = visible
         result["parts"] = parts
+        result["turn"] = ChatTurn(text=reply, tool_calls=tuple(calls))
 
     def _events():
         usage_total: dict = {}
@@ -12536,7 +12823,7 @@ def stream_attachment(
         homed_reviews: list = []
         folded: list[str] = []
         final_parts: list = []
-        messages_work = list(messages)
+        conversation = _RunConversation(messages, loop_ctx)
         rounds_used = 0
         refusals_used = 0  # dev/105 D2: free parameter corrections taken
         usage_sink: dict = {}
@@ -12552,15 +12839,23 @@ def stream_attachment(
             while True:
                 usage_sink = {}
                 result: dict = {}
-                yield from _stream_round(
-                    messages_work,
-                    usage_sink,
-                    result,
-                    hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
-                    hold_request_tail=bool(
-                        set(loop_ctx.get("granted") or []) & MUTATE_PROPOSAL_TOOLS
-                    ),
-                )
+                try:
+                    yield from _stream_round(
+                        conversation,
+                        rounds_used,
+                        usage_sink,
+                        result,
+                        hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
+                        hold_request_tail=bool(
+                            set(loop_ctx.get("granted") or []) & MUTATE_PROPOSAL_TOOLS
+                        ),
+                    )
+                except NativeToolsRefused as refusal:
+                    # Refused before anything streamed: the same round again,
+                    # on the fenced protocol.
+                    conversation.fall_back(refusal, pins)
+                    continue
+                conversation.answered(config, user_key)
                 _add_usage(usage_total, usage_sink)
                 if usage_sink:
                     # dev/80: interim Actual sums, once per provider round —
@@ -12573,6 +12868,28 @@ def stream_attachment(
                     if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
                     else None
                 )
+                native_calls = conversation.native_calls(result["turn"])
+                if native_calls:
+                    # A native call is the round's request, whatever the text says.
+                    req, call_errors = _native_request(native_calls[0])
+                    if req is None:
+                        if rounds_used < MAX_TOOL_ROUNDS:
+                            rounds_used += 1
+                            yield (
+                                "tool_revision",
+                                {"attempt": rounds_used, "errors": len(call_errors)},
+                            )
+                            conversation.add_unreadable_call_round(
+                                result["turn"], call_errors,
+                                final=rounds_used >= MAX_TOOL_ROUNDS,
+                            )
+                            continue
+                        # Past the cap: see the non-streaming path.
+                        if result["visible"]:
+                            folded.append(result["visible"])
+                        if _is_mutate_call(native_calls[0]):
+                            final_parts = [_tool_cap_card(call_errors)]
+                        break
                 if req is None:
                     # Plan handling (dev/52 mint; dev/54 correction rounds).
                     kind, payload, visible_override = _handle_plan_reply(
@@ -12584,10 +12901,10 @@ def stream_attachment(
                             "plan_revision",
                             {"attempt": rounds_used, "errors": len(payload)},
                         )
-                        messages_work.append(
-                            {"role": "assistant", "content": result["reply"]}
+                        conversation.add_text_round(
+                            result["reply"], _plan_correction_message(payload),
+                            _plan_correction_message(payload, native=True),
                         )
-                        messages_work.append(_plan_correction_message(payload))
                         continue
                     if kind == "none":
                         # #245: the toolRequest twin, after the plan handler.
@@ -12600,11 +12917,9 @@ def stream_attachment(
                                 "tool_revision",
                                 {"attempt": rounds_used, "errors": len(payload)},
                             )
-                            messages_work.append(
-                                {"role": "assistant", "content": result["reply"]}
-                            )
-                            messages_work.append(
-                                _tool_correction_message(payload)
+                            conversation.add_text_round(
+                                result["reply"], _tool_correction_message(payload),
+                                _tool_correction_message(payload, native=True),
                             )
                             continue
                         # A held request tail is NOT released at the cap: see
@@ -12774,10 +13089,13 @@ def stream_attachment(
                         result_msg = _delegate_result_message(
                             None, req["capability"], status, text, final=final
                         )
-                    messages_work.append(
-                        {"role": "assistant", "content": result["reply"]}
-                    )
-                    messages_work.append(result_msg)
+                    if native_calls:
+                        conversation.add_call_round(
+                            result["turn"], req, status, text,
+                            final=final, fenced_feedback=result_msg,
+                        )
+                    else:
+                        conversation.add_text_round(result["reply"], result_msg)
                     continue
                 yield ("tool_requested", {"tool": req["tool"]})
                 yield ("tool_started", {"tool": req["tool"]})
@@ -12790,10 +13108,14 @@ def stream_attachment(
                 else:
                     rounds_used += 1
                 final = rounds_used >= MAX_TOOL_ROUNDS
-                messages_work.append({"role": "assistant", "content": result["reply"]})
-                messages_work.append(
-                    _tool_result_message(req["tool"], status, text, final=final)
-                )
+                result_msg = _tool_result_message(req["tool"], status, text, final=final)
+                if native_calls:
+                    conversation.add_call_round(
+                        result["turn"], req, status, text,
+                        final=final, fenced_feedback=result_msg,
+                    )
+                else:
+                    conversation.add_text_round(result["reply"], result_msg)
         except Exception as exc:  # provider failure mid-stream
             _add_usage(usage_total, usage_sink)
             settled = ledger.settle(
