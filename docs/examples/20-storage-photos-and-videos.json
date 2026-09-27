@@ -1,0 +1,111 @@
+{
+  "dataflow": {
+    "name": "Storage: photos and videos",
+    "description": "A street survey folder of geotagged photos and a video, indexed in place as one collection: a gallery, a map, and frames sampled from the video.",
+    "task": "Show a street survey's photos and video, map where they were taken, and sample frames from the video.",
+    "timestamp": 0,
+    "provenance_id": "storage-photos-and-videos",
+    "packages": [
+      "curio.media@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-survey",
+        "dirName": "data.curio.storage-survey@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "survey-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "collection = curio_collection(\"data.curio.storage-survey\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the survey collection, photos and video together.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-gallery",
+        "type": "curio.builtin/vis-simple",
+        "x": 645,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show every file as a card; the video plays in its card.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-map",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Where each photo and video was taken.\",\n  \"mark\": {\n    \"type\": \"circle\",\n    \"size\": 80\n  },\n  \"encoding\": {\n    \"longitude\": {\n      \"field\": \"gps_lon\",\n      \"type\": \"quantitative\"\n    },\n    \"latitude\": {\n      \"field\": \"gps_lat\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"kind\",\n      \"type\": \"nominal\",\n      \"title\": \"File\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"taken_at\",\n        \"type\": \"temporal\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map where each file was taken.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-frames",
+        "type": "curio.media/video-frames",
+        "x": 645,
+        "y": 860,
+        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nimport datetime\n\nimport av\nimport geopandas as gpd\nimport pandas as pd\n\nEVERY_SECONDS = 0.25\nMAX_FRAMES_PER_VIDEO = 300\n\n#: A video's own columns that describe the file, not what a frame inherits.\nPER_FILE = {\n    \"file_id\", \"relpath\", \"name\", \"ext\", \"kind\", \"bytes\", \"mtime\", \"duration_s\",\n    \"fps\", \"codec\", \"width\", \"height\", \"path\", \"thumbnail\", \"image_url\",\n    \"audio_url\", \"probe_error\", \"geometry\",\n}\n\nmedia = arg\nvideos = media[media[\"kind\"] == \"video\"]\nrows = []\ngeometries = []\nfor _, video in videos.iterrows():\n    if not isinstance(video[\"path\"], str) or not video[\"path\"]:\n        raise ValueError(\n            f\"{video['relpath']} is not on this machine yet; cache the collection's files first\"\n        )\n    with av.open(video[\"path\"]) as container:\n        stream = container.streams.video[0]\n        if stream.duration is not None:\n            duration = float(stream.duration * stream.time_base)\n        else:\n            duration = (container.duration or 0) / 1_000_000\n        times = []\n        t = 0.0\n        while t <= duration and len(times) < MAX_FRAMES_PER_VIDEO:\n            times.append(round(t, 3))\n            t += EVERY_SECONDS\n        for index, target in enumerate(times):\n            container.seek(int(target / stream.time_base), stream=stream, backward=True)\n            frame = None\n            for candidate in container.decode(stream):\n                frame = candidate\n                if candidate.time is None or candidate.time >= target - 1e-3:\n                    break\n            if frame is None:\n                continue\n            image = frame.to_image()\n            derived = curio_derived_file(video[\"dataset_id\"], video[\"file_id\"], round(target * 1000))\n            image.save(derived[\"path\"], \"JPEG\", quality=85)\n            row = {k: video[k] for k in video.index if k not in PER_FILE}\n            taken = video.get(\"taken_at\")\n            if isinstance(taken, (pd.Timestamp, datetime.datetime)) and not pd.isna(taken):\n                row[\"taken_at\"] = taken + datetime.timedelta(seconds=target)\n            row.update({\n                \"file_id\": derived[\"file_id\"],\n                \"kind\": \"frame\",\n                \"video_file_id\": video[\"file_id\"],\n                \"sequence\": video[\"name\"],\n                \"frame\": index,\n                \"t_s\": target,\n                \"width\": image.width,\n                \"height\": image.height,\n                \"path\": derived[\"path\"],\n                \"thumbnail\": derived[\"thumbnail\"],\n                \"image_url\": derived[\"image_url\"],\n            })\n            rows.append(row)\n            geometries.append(video[\"geometry\"] if \"geometry\" in video.index else None)\n\nframes = pd.DataFrame(rows)\nif isinstance(media, gpd.GeoDataFrame) and rows:\n    frames = gpd.GeoDataFrame(frames, geometry=geometries, crs=media.crs)\nreturn frames\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Sample a frame every quarter second from the video.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "survey-frames-view",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 860,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the sampled frames.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-survey-loaderout-survey-galleryin",
+        "source": "survey-loader",
+        "target": "survey-gallery"
+      },
+      {
+        "id": "reactflow__edge-survey-loaderout-survey-mapin",
+        "source": "survey-loader",
+        "target": "survey-map"
+      },
+      {
+        "id": "reactflow__edge-survey-loaderout-survey-framesin",
+        "source": "survey-loader",
+        "target": "survey-frames"
+      },
+      {
+        "id": "reactflow__edge-survey-framesout-survey-frames-viewin",
+        "source": "survey-frames",
+        "target": "survey-frames-view"
+      }
+    ]
+  }
+}

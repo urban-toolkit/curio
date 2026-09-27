@@ -3,7 +3,7 @@
   "name": "Example roads",
   "version": "1.0.0",
   "format": "parquet",
-  "description": "Three road segments, added from a shapefile.",
+  "description": "Two road segments, added from a shapefile.",
   "publisher": "Curio",
   "license": "CC0-1.0",
   "tags": [

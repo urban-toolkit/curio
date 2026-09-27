@@ -1,0 +1,117 @@
+{
+  "dataflow": {
+    "name": "Storage: a folder of different files",
+    "description": "A shapefile and a GeoJSON file from one folder, each declared as its own resource and added as its own dataset, drawn on one map.",
+    "task": "Put a folder's roads shapefile and parks GeoJSON on one map.",
+    "timestamp": 0,
+    "provenance_id": "storage-folder-of-different-files",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-roads",
+        "dirName": "data.curio.storage-roads@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      },
+      {
+        "datasetId": "data.curio.storage-parks",
+        "dirName": "data.curio.storage-parks@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "roads-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "import pandas as pd\nimport geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.curio.storage-roads\")\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)\n\nreturn df\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the roads, added from a shapefile.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "parks-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 430,
+        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.curio.storage-parks\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the parks, added from a GeoJSON file.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "city-merge",
+        "type": "curio.builtin/merge-flow",
+        "x": 645,
+        "y": 215,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Hand both layers to one node.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "city-layers",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 215,
+        "content": "import geopandas as gpd\nimport pandas as pd\n\nroads, parks = arg[0], arg[1]\nroads = roads.assign(layer=\"road\")\nparks = parks.assign(layer=\"park\")\n\nreturn gpd.GeoDataFrame(pd.concat([parks, roads], ignore_index=True), crs=roads.crs)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Stack the two layers into one GeoDataFrame.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "city-map",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 215,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Parks and roads on one map.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"strokeWidth\": 3,\n    \"fillOpacity\": 0.4\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"title\": \"Layer\"\n    },\n    \"stroke\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw both layers.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-roads-loaderout-city-mergein",
+        "source": "roads-loader",
+        "target": "city-merge"
+      },
+      {
+        "id": "reactflow__edge-parks-loaderout-city-mergein",
+        "source": "parks-loader",
+        "target": "city-merge"
+      },
+      {
+        "id": "reactflow__edge-city-mergeout-city-layersin",
+        "source": "city-merge",
+        "target": "city-layers"
+      },
+      {
+        "id": "reactflow__edge-city-layersout-city-mapin",
+        "source": "city-layers",
+        "target": "city-map"
+      }
+    ]
+  }
+}

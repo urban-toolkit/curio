@@ -1,0 +1,73 @@
+{
+  "dataflow": {
+    "name": "Storage: video frames",
+    "description": "A folder of numbered dashcam frames with a telemetry file, indexed in place as one collection: the frames in order, and each sequence as a track.",
+    "task": "Show a dashcam's frames in order, and map where each sequence drove.",
+    "timestamp": 0,
+    "provenance_id": "storage-video-frames",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-dashcam",
+        "dirName": "data.curio.storage-dashcam@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "dashcam-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "collection = curio_collection(\"data.curio.storage-dashcam\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the frame collection, one row per frame, placed by the telemetry.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "dashcam-frames",
+        "type": "curio.builtin/vis-simple",
+        "x": 645,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the frames in order.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "dashcam-track",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each sequence's frames as a track, in frame order.\",\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"strokeWidth\": 2\n      },\n      \"encoding\": {\n        \"longitude\": {\n          \"field\": \"lon\",\n          \"type\": \"quantitative\"\n        },\n        \"latitude\": {\n          \"field\": \"lat\",\n          \"type\": \"quantitative\"\n        },\n        \"detail\": {\n          \"field\": \"sequence\",\n          \"type\": \"nominal\"\n        },\n        \"order\": {\n          \"field\": \"frame\",\n          \"type\": \"quantitative\"\n        },\n        \"color\": {\n          \"field\": \"sequence\",\n          \"type\": \"nominal\",\n          \"title\": \"Sequence\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"circle\",\n        \"size\": 40\n      },\n      \"encoding\": {\n        \"longitude\": {\n          \"field\": \"lon\",\n          \"type\": \"quantitative\"\n        },\n        \"latitude\": {\n          \"field\": \"lat\",\n          \"type\": \"quantitative\"\n        },\n        \"color\": {\n          \"field\": \"sequence\",\n          \"type\": \"nominal\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"sequence\",\n            \"type\": \"nominal\"\n          },\n          {\n            \"field\": \"frame\",\n            \"type\": \"quantitative\"\n          },\n          {\n            \"field\": \"t_s\",\n            \"type\": \"quantitative\",\n            \"title\": \"seconds\"\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw each sequence as a track.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-dashcam-loaderout-dashcam-framesin",
+        "source": "dashcam-loader",
+        "target": "dashcam-frames"
+      },
+      {
+        "id": "reactflow__edge-dashcam-loaderout-dashcam-trackin",
+        "source": "dashcam-loader",
+        "target": "dashcam-track"
+      }
+    ]
+  }
+}

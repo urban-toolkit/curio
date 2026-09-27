@@ -67,6 +67,24 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 8}, False),
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
+    ("17-storage-orthorectified-imagery.json", 6, 5,
+     {"curio.builtin/data-loading": 1, "curio.media/mosaic-rasters": 1,
+      "curio.builtin/vis-vega": 1, "curio.builtin/vis-simple": 1}, False),
+    ("18-storage-video-frames.json", 3, 2,
+     {"curio.builtin/data-loading": 1, "curio.builtin/vis-simple": 1,
+      "curio.builtin/vis-vega": 1}, False),
+    ("19-storage-folder-of-csv-files.json", 6, 5,
+     {"curio.builtin/data-loading": 2, "curio.builtin/merge-flow": 1,
+      "curio.builtin/vis-vega": 2}, False),
+    ("20-storage-photos-and-videos.json", 5, 4,
+     {"curio.builtin/data-loading": 1, "curio.media/video-frames": 1,
+      "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 1}, False),
+    ("21-storage-audio-recordings.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.media/split-audio": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("22-storage-folder-of-different-files.json", 5, 4,
+     {"curio.builtin/data-loading": 2, "curio.builtin/merge-flow": 1,
+      "curio.builtin/vis-vega": 1}, False),
 ]
 
 
@@ -245,7 +263,8 @@ def test_examples_read_their_data_from_the_catalog(basename):
 
 
 def test_examples_that_load_catalog_data_declare_it_in_the_spec():
-    """A ``curio_dataset_path`` call and a ``dataflow.datasets`` ref go together.
+    """A ``curio_dataset_path`` (or ``curio_collection``) call and a
+    ``dataflow.datasets`` ref go together.
 
     The call alone is enough to *execute* -- ``resolve_execution_paths`` hardcodes
     ``include_hub=True`` -- so an example missing its ref runs fine and simply
@@ -260,7 +279,7 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
         for node in dataflow["nodes"]:
             used.update(
                 re.findall(
-                    r"""curio_dataset_path\(\s*["']([^"']+)["']\s*\)""",
+                    r"""curio_(?:dataset_path|collection)\(\s*["']([^"']+)["']\s*\)""",
                     node.get("content") or "",
                 )
             )

@@ -1,6 +1,6 @@
 {
   "id": "data.curio.storage-survey",
-  "name": "Example field survey",
+  "name": "Example street survey",
   "version": "1.0.0",
   "format": "collection",
   "description": "Geotagged photos and a video from two survey years, indexed where they are.",

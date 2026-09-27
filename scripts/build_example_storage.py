@@ -245,14 +245,14 @@ DATASETS = [
      "Three days of readings from three sensors, combined from one CSV file per sensor and day."),
     ("stations", "data.curio.storage-stations", "Example air quality stations",
      "Where each air quality sensor stands."),
-    ("survey", "data.curio.storage-survey", "Example field survey",
+    ("survey", "data.curio.storage-survey", "Example street survey",
      "Geotagged photos and a video from two survey years, indexed where they are."),
     ("noise", "data.curio.storage-noise", "Example noise recordings",
      "Short recordings from two noise sensors, timed by their file names, indexed where they are."),
     ("roads", "data.curio.storage-roads", "Example roads",
-     "Three road segments, added from a shapefile."),
+     "Two road segments, added from a shapefile."),
     ("parks", "data.curio.storage-parks", "Example parks",
-     "Two park outlines, added from a GeoJSON file."),
+     "A park outline, added from a GeoJSON file."),
 ]
 
 

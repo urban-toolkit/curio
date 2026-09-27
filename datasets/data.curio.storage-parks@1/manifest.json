@@ -3,7 +3,7 @@
   "name": "Example parks",
   "version": "1.0.0",
   "format": "geojson",
-  "description": "Two park outlines, added from a GeoJSON file.",
+  "description": "A park outline, added from a GeoJSON file.",
   "publisher": "Curio",
   "license": "CC0-1.0",
   "tags": [
