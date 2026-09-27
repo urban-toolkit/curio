@@ -402,10 +402,10 @@ def test_catalog_settings_round_trip(
     token = result["token"]
 
     def open_settings():
-        page.goto(f"{app_frontend.base_url}/catalog/agents")
         page.get_by_role("button", name="Settings", exact=True).click()
         return page.get_by_role("dialog", name="Catalog settings")
 
+    page.goto(f"{app_frontend.base_url}/catalog/agents")
     dialog = open_settings()
     # Exact: "Name 1" is also a prefix of "Name 10" and "Name 11".
     first = dialog.get_by_label("Name 1", exact=True)
@@ -419,7 +419,11 @@ def test_catalog_settings_round_trip(
     assert keyword_types["value"][0]["name"] == "Hazard"
     assert keyword_types["isDefault"] is False
 
+    # One navigation only: a second one while the reloaded page is still
+    # booting aborts its session check, and UserProvider signs out on any
+    # failed check.
     page.reload()
+    page.wait_for_load_state("domcontentloaded")
     dialog = open_settings()
     expect(dialog.get_by_label("Name 1", exact=True)).to_have_value("Hazard", timeout=15000)
     dialog.get_by_role("button", name="Restore default", exact=True).click()
