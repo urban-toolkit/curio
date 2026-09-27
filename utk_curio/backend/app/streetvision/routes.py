@@ -11,6 +11,9 @@ Two frontend nodes share this blueprint:
 the inference node puts that path in an ``overlay_url`` column, and the
 built-in Simple View fetches it with the caller's token.
 
+Every route requires a signed-in caller, like the rest of ``/api``: they run
+models, reach third-party services and read per-account caches.
+
 All heavy ML dependencies (``torch``, ``transformers``, ``ultralytics``)
 are part of Curio's base install but lazy-imported deep in the call stack
 so a corrupt install fails per-request with a 503 instead of crashing the
@@ -18,6 +21,8 @@ backend on boot.
 """
 
 from flask import jsonify, request, send_file
+
+from utk_curio.backend.app.users.dependencies import require_auth
 
 from . import bp, jobs
 from .services import cache, streetview
@@ -33,6 +38,7 @@ def _missing_extras_response(err: ImportError):
 # ── Health ──────────────────────────────────────────────────────────
 
 @bp.get("/health")
+@require_auth
 def health():
     """Lightweight liveness check. The Google Maps API key is supplied
     per-request by the Street View Fetcher node, not from the backend
@@ -51,6 +57,7 @@ def health():
 # ── HuggingFace model search ────────────────────────────────────────
 
 @bp.get("/models/search")
+@require_auth
 def models_search():
     """Search HuggingFace Hub for CV models. Used by the Inference node's
     model picker; no heavy ML deps needed."""
@@ -79,6 +86,7 @@ def models_search():
 # ── Street View geocoding + coverage + fetch ────────────────────────
 
 @bp.get("/data/streetview/search_place")
+@require_auth
 def streetview_search_place():
     """Geocode a place name (Nominatim) and return a bbox suitable for
     Street View querying."""
@@ -94,6 +102,7 @@ def streetview_search_place():
 
 
 @bp.post("/data/streetview/coverage")
+@require_auth
 def streetview_coverage():
     """Estimate Street View coverage inside a bbox using the metadata API
     (which does not consume image quota). The Google Maps API key is
@@ -116,6 +125,7 @@ def streetview_coverage():
 
 
 @bp.post("/data/streetview/fetch")
+@require_auth
 def streetview_fetch():
     """Fetch unique Street View panorama metadata inside a bbox.
 
@@ -168,6 +178,7 @@ def streetview_fetch():
 # ── Inference job lifecycle ─────────────────────────────────────────
 
 @bp.post("/inference/run")
+@require_auth
 def inference_run():
     """Start an inference job. Accepts either:
 
@@ -239,7 +250,7 @@ def inference_run():
     except ImportError:
         hf_token, user_key = None, "guest"
 
-    job_id = jobs.create_job(total_images=len(images))
+    job_id = jobs.create_job(total_images=len(images), owner=user_key)
     jobs.start_inference(
         job_id=job_id,
         images=images,
@@ -254,23 +265,26 @@ def inference_run():
 
 
 @bp.get("/inference/results/<job_id>")
+@require_auth
 def inference_results(job_id: str):
     """Poll for inference progress + results. Frontend hits this every ~2s."""
-    job = jobs.get_job(job_id)
+    from .services import huggingface as hf_svc
+
+    job = jobs.get_job(job_id, owner=hf_svc.resolve_user_key())
     if job is None:
         return jsonify({"error": "job not found"}), 404
     return jsonify(job)
 
 
 @bp.get("/inference/overlay/<path:image_id>")
+@require_auth
 def inference_overlay(image_id: str):
     """Serve the segmentation overlay PNG for a single image.
 
     Addressed by ``overlay_url`` in the inference node's output, and fetched by
     whatever renders that column."""
-    # Scoped to the caller: this route has no @require_auth, so before the
-    # cache was per-user anyone who could guess an image id could read another
-    # user's overlay.
+    # Scoped to the caller's own overlay cache; ``overlay_path`` refuses an
+    # id that would resolve outside it.
     from .services import huggingface as hf_svc
 
     path = cache.overlay_path(hf_svc.resolve_user_key(), image_id)
