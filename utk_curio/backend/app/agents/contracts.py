@@ -504,6 +504,17 @@ def join_system(slots: tuple[SystemSlot, ...]) -> str:
     return "\n\n".join(slot.text for slot in slots)
 
 
+def system_message(slots: tuple[SystemSlot, ...]) -> dict:
+    """The system turn as a message: its joined text as ``content``, and the
+    slots themselves, which a provider that takes several system blocks
+    receives one by one (``providers``)."""
+    return {
+        "role": "system",
+        "content": join_system(slots),
+        "slots": [{"kind": slot.kind, "text": slot.text} for slot in slots],
+    }
+
+
 # --- Catalog settings --------------------------------------------------------
 #
 # A catalog setting is a value the user owns: a domain decision that changes

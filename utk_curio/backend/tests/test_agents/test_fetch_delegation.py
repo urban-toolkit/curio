@@ -175,14 +175,14 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
             "agent.dataset-finder": self._config(client, token, "Finder", "finder-model"),
             "agent.node-builder": self._config(client, token, "Builder", "builder-model"),
         }, headers=_auth(token))
-        inner = services_mod.run_chat_completion
+        inner = services_mod.run_chat_turn
         models = []
 
         def _recording(config, messages, **kwargs):
             models.append(config.model)
             return inner(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _recording)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _recording)
         delegated = _select(h, finder_id, self._API_ROW).get_json()["delegated"]
         assert delegated["status"] == "delegating"
         _drain(h, delegated["attachmentId"])
@@ -242,7 +242,7 @@ class TestAfterTheImportSolvingContinues:
             return loader
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _reply
+            "utk_curio.backend.app.agents.services.run_chat_turn", _reply
         )
         body = _select(h, finder_id, [{"lane": "catalog", "key": dataset_id}]).get_json()
         assert body["status"] == dr.STATE_RESOLVED  # its file is here; nothing to install

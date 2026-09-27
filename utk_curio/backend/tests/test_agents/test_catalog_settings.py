@@ -224,7 +224,7 @@ class TestAttachedRunOrder:
             calls.append(messages)
             return "Mapped."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         with caplog.at_level("WARNING"):
             r = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
                             json={"message": "map the floods"}, headers=_auth(token))
@@ -239,6 +239,12 @@ class TestAttachedRunOrder:
             system.index("You may also delegate"),
         ]
         assert order == sorted(order)
+        # The provider receives the same turn as slots, in the same order.
+        slots = calls[0][0]["slots"]
+        kinds = [slot["kind"] for slot in slots]
+        assert kinds[:4] == ["preamble", "instruction", "configuration", "tool-protocol"]
+        assert kinds[4:] and set(kinds[4:]) == {"runtime"}
+        assert "\n\n".join(slot["text"] for slot in slots) == system
         assert "- Hazard: a natural hazard." in system
         # A key no setting defines is skipped with a warning, not an error.
         assert any("notASetting" in rec.getMessage() for rec in caplog.records)

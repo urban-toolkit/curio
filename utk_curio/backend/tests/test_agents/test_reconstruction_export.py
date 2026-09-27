@@ -154,7 +154,7 @@ class TestWriting:
             __import__("pathlib").Path(export_mod.__file__).read_text(encoding="utf-8")
         )
         for forbidden in (
-            "run_chat_completion", "urllib", "requests", "fine_tun", "openai",
+            "run_chat_completion", "run_chat_turn", "urllib", "requests", "fine_tun", "openai",
         ):
             assert forbidden not in source, forbidden
 

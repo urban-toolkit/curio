@@ -105,7 +105,7 @@ def _script_the_model(monkeypatch, fixture=FIXTURE):
         return "# no content for this node\nreturn None"
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+        "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
     )
     monkeypatch.setattr(
         "utk_curio.backend.app.execution.runner._http_exec",
@@ -484,7 +484,7 @@ class TestTheRun:
             )
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
@@ -510,7 +510,7 @@ class TestTheRun:
             return "I cannot build that with the templates available."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _prose
+            "utk_curio.backend.app.agents.services.run_chat_turn", _prose
         )
         record = _run(client, account)
         assert record.phase == "done"
@@ -528,7 +528,7 @@ class TestTheRun:
             raise RuntimeError("the endpoint went away")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _boom
+            "utk_curio.backend.app.agents.services.run_chat_turn", _boom
         )
         record = _run(client, account)
         assert record.phase in ("failed", "done")
@@ -566,7 +566,7 @@ class TestTheRun:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _slow
+            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -775,7 +775,7 @@ class TestTheTranscriptCarriesTheEvaluation:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _slow
+            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -954,3 +954,22 @@ class TestTheRunsGraphSurvivesAClientSave:
         emptied = self._put(client, account, created["id"], [])
         assert emptied.status_code == 200, emptied.get_json()
         assert self._nodes(client, account, created["id"]) == []
+
+
+class TestCachedInputInTheReport:
+    def test_the_cli_report_says_how_much_input_was_cached(self):
+        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheReadTokens": 80}))
+        report.add(AttemptRecord(fixture_id="g", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheWriteTokens": 90}))
+        assert "- Cached input: 80 tokens read, 90 written (counted in the input tokens)" in report.as_markdown()
+
+    def test_a_provider_that_reports_no_cache_adds_no_line(self):
+        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f"))
+        assert "Cached input" not in report.as_markdown()

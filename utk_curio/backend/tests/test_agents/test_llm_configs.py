@@ -493,8 +493,8 @@ class TestARunNamesItsConfiguration:
         def _refuse(config_, messages, **kw):
             raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {KEY}")
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _refuse)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion",
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _refuse)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn",
                             lambda config_, messages, **kw: _refuse(config_, messages))
         coord = "agent.chat-agent@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
@@ -517,7 +517,7 @@ class TestARunNamesItsConfiguration:
         config_id = _create(client, token, label="Scripted", apiType="testing", baseUrl="",
                             apiKey="", model="scripted").get_json()["config"]["id"]
         client.put(f"{BASE}/default", json={"configId": config_id}, headers=_auth(token))
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion",
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn",
                             lambda config_, messages, **kw: "ok")
         coord = "agent.chat-agent@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))

@@ -4,7 +4,7 @@ A transport, not a runtime: it drives the SAME endpoints a browser drives --
 create a project, install and attach the Dataflow Builder, send one turn, apply
 what came back, Solve, read the persisted spec -- through the Flask test client,
 with the provider and the sandbox replaced the way every agent test replaces
-them (``services.run_chat_completion`` and ``runner._http_exec``).
+them (``services.run_chat_turn`` and ``runner._http_exec``).
 
 It lives under ``tests/`` on purpose. The evaluation library itself
 (``app/agents/evaluation``) takes values and returns values; anything that
@@ -298,7 +298,7 @@ class InProcessDriver:
             return responder(messages, len(calls) - 1)
 
         self.monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
 
     def fake_sandbox(self, kind_for: Callable | None = None) -> None:

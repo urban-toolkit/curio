@@ -66,6 +66,10 @@ _captured: deque = deque(maxlen=MAX_CAPTURED)
 _calls: deque = deque(maxlen=MAX_CAPTURED)
 #: Replies keyed by a substring of a delegated call's ``intent``.
 _by_intent: dict = {}
+#: What the scripted endpoint says it can do beyond text
+#: (``chat_capabilities``): nothing, so runs use the fenced protocol.
+_DEFAULT_CHAT_CAPABILITIES = {"tools": False, "structuredOutput": False}
+_chat_capabilities: dict = dict(_DEFAULT_CHAT_CAPABILITIES)
 
 
 class TestingProviderUnavailable(RuntimeError):
@@ -148,7 +152,21 @@ def reset() -> None:
         _captured.clear()
         _calls.clear()
         _by_intent.clear()
+        _chat_capabilities.clear()
+        _chat_capabilities.update(_DEFAULT_CHAT_CAPABILITIES)
     reset_fine_tuning()
+
+
+def script_chat_capabilities(*, tools: bool = False, structured_output: bool = False) -> None:
+    """Script what the endpoint says it can do beyond text, until :func:`reset`."""
+    with _lock:
+        _chat_capabilities.update({"tools": bool(tools), "structuredOutput": bool(structured_output)})
+
+
+def scripted_chat_capabilities() -> dict:
+    """``{tools, structuredOutput}``: the fenced protocol unless scripted otherwise."""
+    with _lock:
+        return dict(_chat_capabilities)
 
 
 def captured() -> list:
@@ -214,6 +232,10 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None, confi
     if usage_out is not None:
         usage_out["inputTokens"] = int(counts.get("in", DEFAULT_USAGE["in"]))
         usage_out["outputTokens"] = int(counts.get("out", DEFAULT_USAGE["out"]))
+        # A script may report cached input too, as a caching provider would.
+        for key, name in (("cacheRead", "cacheReadTokens"), ("cacheWrite", "cacheWriteTokens")):
+            if isinstance(counts.get(key), int):
+                usage_out[name] = counts[key]
     return reply
 
 

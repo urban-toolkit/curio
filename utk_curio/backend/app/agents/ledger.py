@@ -54,6 +54,8 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
 from utk_curio.backend.app.agents import storage
 
 _ZERO_USAGE = {"inputTokens": 0, "outputTokens": 0}
+#: Counted when a provider reports them: inputTokens already includes both.
+_CACHE_KEYS = ("cacheReadTokens", "cacheWriteTokens")
 
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
@@ -137,16 +139,21 @@ def _append(user_key: str, day: str, entry: dict) -> None:
 
 def _usage_counts(raw: object) -> dict:
     usage = raw if isinstance(raw, dict) else {}
-    return {
+    counts = {
         key: usage[key] if isinstance(usage.get(key), int) else 0
         for key in _ZERO_USAGE
     }
+    counts.update({key: usage[key] for key in _CACHE_KEYS if isinstance(usage.get(key), int)})
+    return counts
 
 
 def _add_usage(total: dict, raw: object) -> None:
     counts = _usage_counts(raw)
     total["inputTokens"] += counts["inputTokens"]
     total["outputTokens"] += counts["outputTokens"]
+    for key in _CACHE_KEYS:
+        if key in counts:
+            total[key] = total.get(key, 0) + counts[key]
 
 
 def _aggregate(entries: list[dict]) -> dict:

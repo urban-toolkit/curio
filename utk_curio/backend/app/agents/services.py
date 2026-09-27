@@ -48,9 +48,10 @@ from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
+    ChatTurn,
     ProviderConfig,
-    run_chat_completion,
-    stream_chat_completion,
+    run_chat_turn,
+    stream_chat_turn,
 )
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -9242,6 +9243,13 @@ def sanitize_title(raw: object) -> str | None:
     return text or None
 
 
+def _turn_text(config: ProviderConfig, messages: list, **kwargs) -> str:
+    """The text of one model turn, for a call that needs nothing else (the
+    title). Through the same seam as the run loops (``run_chat_turn``), so one
+    test fake answers both, and a fake's bare string is a text turn."""
+    return ChatTurn.of(run_chat_turn(config, messages, **kwargs)).text
+
+
 def _generate_conversation_title(
     user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
 ) -> None:
@@ -9257,7 +9265,7 @@ def _generate_conversation_title(
         # it writes no execution record and holds no reservation, but its
         # tokens are still spent, so the ledger counts them.
         usage_sink: dict = {}
-        raw = run_chat_completion(
+        raw = _turn_text(
             config,
             [
                 {"role": "system", "content": TITLE_PROMPT},
@@ -9381,8 +9389,9 @@ def _execution_record(
 
 def _add_usage(total: dict, sink: dict) -> None:
     """Sum one provider call's sink into the run's usage total (dev/41 — a
-    tool loop makes several calls; the run settles their sum, dev/40)."""
-    for key in ("inputTokens", "outputTokens"):
+    tool loop makes several calls; the run settles their sum, dev/40). The
+    cache counts are summed when a provider reported them."""
+    for key in ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"):
         if isinstance(sink.get(key), int):
             total[key] = total.get(key, 0) + sink[key]
 
@@ -9496,7 +9505,7 @@ def _prepare_run(
         entries = delegation.visible_capability_entries(user_key, manifest)
         if entries:
             runtime_blocks.append(content.delegation_instruction(entries))
-    system_content = contracts.join_system(contracts.compose_system(
+    system = contracts.system_message(contracts.compose_system(
         preamble=preamble,
         instruction=instruction,
         configuration=configuration,
@@ -9513,7 +9522,7 @@ def _prepare_run(
     # never replayed from history. Absent → byte-identical to before.
     context_block = _bounded_context(run_context)
     messages = [
-        {"role": "system", "content": system_content},
+        system,
         *sessions.context_messages(prior),
         *(
             [{"role": "user", "content": f"{_CONTEXT_FRAME}{context_block}"}]
@@ -12145,12 +12154,12 @@ def run_attachment(
         # most MAX_TOOL_ROUNDS request executions per run (one shared budget).
         while True:
             usage_sink: dict = {}
-            reply = run_chat_completion(
+            reply = ChatTurn.of(run_chat_turn(
                 config,
                 messages_work,
                 max_output_tokens=run_policy["max_output_tokens"],
                 usage_out=usage_sink,
-            )
+            )).text
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
@@ -12457,12 +12466,14 @@ def stream_attachment(
         chunks: list[str] = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
-        for delta in stream_chat_completion(
+        for delta in stream_chat_turn(
             config,
             messages_work,
             max_output_tokens=run_policy["max_output_tokens"],
             usage_out=usage_sink,
         ):
+            if not isinstance(delta, str):
+                continue  # a text delta is a bare string, the one event so far
             chunks.append(delta)
             if withheld is not None:
                 withheld += delta
