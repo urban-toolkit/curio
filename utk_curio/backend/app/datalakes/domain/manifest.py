@@ -42,7 +42,7 @@ from utk_curio.backend.app.datalakes.domain.templates import (
 PORTAL_PROVIDER_TYPES = ("socrata", "ckan", "arcgis", "wfs", "direct")
 
 #: Storage: files listed and read in place, organized by ``resources``.
-STORAGE_PROVIDER_TYPES = ("folder",)
+STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 
 #: Provider implementations that exist. Kept here rather than imported from
 #: ``providers`` so that reading a manifest never drags in a transport.

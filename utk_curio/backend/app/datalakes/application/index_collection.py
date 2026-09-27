@@ -34,6 +34,10 @@ from utk_curio.backend.app.datalakes.domain.templates import compile_template
 
 PROBE_WORKERS = 4
 
+#: Enough of a remote file for Pillow to read an image's size and EXIF, and
+#: for GDAL to read a Cloud-Optimized GeoTIFF's georeferencing.
+PROBE_BYTES = 64 * 1024
+
 #: Names the index uses, in the order its columns appear.
 LEADING_COLUMNS = ("file_id", "relpath", "name", "ext", "kind")
 TRAILING_COLUMNS = ("bytes", "mtime", "probe_error")
@@ -76,9 +80,11 @@ def build_rows(
         if cancelled is not None and cancelled():
             return {}
         local = provider.local_path(found.relpath)
-        if local is None:
+        if local is not None:
+            return probing.probe(kind, Path(local))
+        if kind not in ("image", "frame", "raster"):
             return {"probe_error": "details are read once the file is cached"}
-        return probing.probe(kind, Path(local))
+        return _probe_remote_head(provider, found, kind)
 
     rows: list[dict[str, Any]] = []
     done = 0
@@ -108,6 +114,24 @@ def build_rows(
     if spec.kind == "frames":
         _number_frames(spec, rows)
     return rows
+
+
+def _probe_remote_head(provider, found: MatchedFile, kind: str) -> dict[str, Any]:
+    """Probe a remote file from its first bytes, fetched with one Range read."""
+    import tempfile
+
+    try:
+        head = provider.open(found.relpath, byte_range=(0, PROBE_BYTES)).read()
+    except DataLakeError as exc:
+        return {"probe_error": str(exc)[:200]}
+    suffix = "." + found.relpath.rsplit(".", 1)[-1] if "." in found.relpath else ""
+    with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
+        handle.write(head)
+        handle.flush()
+        details = probing.probe(kind, Path(handle.name))
+    if details.get("probe_error") and len(head) >= PROBE_BYTES:
+        details["probe_error"] = "details are read once the file is cached"
+    return details
 
 
 def _fill_time(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:

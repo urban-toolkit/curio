@@ -228,7 +228,9 @@ class DataLakeService:
             for r in state.resources
             if _storage_matches(r, q)
         ]
-        leg = {"sourceId": manifest.id, "status": state.status, "count": len(rows)}
+        # "ok" like a portal leg; "scanning" and "failed" say why rows are missing.
+        status = "ok" if state.status == "ready" else state.status
+        leg = {"sourceId": manifest.id, "status": status, "count": len(rows)}
         if state.error:
             leg["detail"] = state.error
         payload = search_payload(rows, sources=[leg], truncated=state.truncated)
@@ -417,6 +419,83 @@ class DataLakeService:
                         job,
                         "failed",
                         error=f"{type(exc).__name__}: {exc}"[:300],
+                        stage_message="Failed",
+                    )
+                finally:
+                    ratelimit.download_slots.release(user_key)
+
+        job_store.run_in_background(_run)
+        return job.to_row()
+
+    # ── collections ────────────────────────────────────────────────────────
+
+    def collection(self, dataset_id: str) -> tuple[dict[str, Any], LakeSourceManifest]:
+        """This account's collection dataset and the lake source its files are in."""
+        from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
+        from utk_curio.backend.app.datalakes.domain.errors import ResourceNotFound
+
+        try:
+            item = DatasetCatalogService(self.user).get_dataset(dataset_id)
+        except DatasetCatalogError as exc:
+            raise ResourceNotFound(f"no dataset {dataset_id!r}") from exc
+        block = item.get("collection") or {}
+        if item.get("format") != "collection" or not block.get("sourceId"):
+            raise ResourceNotFound(f"{dataset_id!r} is not a collection")
+        return item, self._catalog.get_manifest(block["sourceId"])
+
+    def start_cache(self, dataset_id: str) -> dict[str, Any]:
+        """Fetch a bucket collection's files to this machine, as a job."""
+        from utk_curio.backend.app.datalakes.application import cache_collection
+        from utk_curio.backend.app.datalakes.domain.errors import CapabilityUnsupported
+
+        item, manifest = self.collection(dataset_id)
+        if manifest.provider.type == "folder":
+            raise CapabilityUnsupported(f"{item['title']} is already on this machine")
+        ratelimit.download_slots.acquire(self.user_key)
+        job = job_store.jobs.create(self.user_key, manifest.dir_name, f"cache:{dataset_id}")
+        app = current_app._get_current_object()
+        user_id = getattr(self.user, "id", None)
+        user_key, transport, budget = self.user_key, self._transport, self._budget
+
+        def _run() -> None:
+            with app.app_context():
+                worker = DataLakeService(
+                    user_key, user=_user_by_id(user_id), transport=transport, budget=budget
+                )
+                try:
+                    job.status = "running"
+                    job.stage_message = "Caching files…"
+
+                    def _items(done: int, total: int | None) -> None:
+                        job.items_done, job.items_total = done, total
+
+                    def _progress(written: int, total: int | None) -> None:
+                        job.bytes_read, job.total_bytes = written, total
+
+                    result = cache_collection.cache(
+                        user_key,
+                        item,
+                        worker._storage_for(manifest),
+                        items=_items,
+                        progress=_progress,
+                        cancelled=lambda: job.cancelled,
+                    )
+                    job_store.jobs.finish(
+                        job, "completed", dataset=item, dataset_id=dataset_id,
+                        stage_message=f"{result['total']:,} files on this machine",
+                    )
+                except (_Cancelled, StorageCancelled):
+                    job_store.jobs.finish(job, "cancelled", stage_message="Cancelled")
+                except DataLakeError as exc:
+                    job_store.jobs.finish(job, "failed", error=str(exc), stage_message="Failed")
+                except egress.EgressRefused as exc:
+                    job_store.jobs.finish(
+                        job, "refused", error=f"refused by the egress policy: {exc}",
+                        stage_message="Refused",
+                    )
+                except Exception as exc:  # noqa: BLE001 - a job must always end
+                    job_store.jobs.finish(
+                        job, "failed", error=f"{type(exc).__name__}: {exc}"[:300],
                         stage_message="Failed",
                     )
                 finally:

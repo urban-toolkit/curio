@@ -77,6 +77,8 @@
             "ckan",
             "direct",
             "folder",
+            "huggingface",
+            "s3",
             "socrata",
             "wfs"
           ]
@@ -407,7 +409,9 @@
             "properties": {
               "type": {
                 "enum": [
-                  "folder"
+                  "folder",
+                  "huggingface",
+                  "s3"
                 ]
               }
             },

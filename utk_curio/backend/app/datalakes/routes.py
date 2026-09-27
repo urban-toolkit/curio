@@ -237,6 +237,17 @@ def acquire_datalake_resource(source_dir: str, resource_id: str):
     return jsonify(payload), (200 if payload.get("alreadyPresent") else 202)
 
 
+@datalakes_bp.route("/collections/<dataset_id>/cache", methods=["POST"])
+@require_auth
+@_map_lake_errors
+def cache_datalake_collection(dataset_id: str):
+    """Fetch a bucket collection's files to this machine, so nodes can read them.
+
+    ``202`` with a job, polled like a download.
+    """
+    return jsonify(_service().start_cache(dataset_id)), 202
+
+
 @datalakes_bp.route("/jobs/<job_id>", methods=["GET"])
 @require_auth
 @_map_lake_errors

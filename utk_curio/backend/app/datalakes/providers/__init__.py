@@ -23,6 +23,8 @@ from utk_curio.backend.app.datalakes.infrastructure.transport import LakeTranspo
 from utk_curio.backend.app.datalakes.providers import arcgis, ckan, direct, socrata, wfs
 from utk_curio.backend.app.datalakes.providers.base import BaseProvider, LakeProvider
 from utk_curio.backend.app.datalakes.providers.folder import FolderStorage
+from utk_curio.backend.app.datalakes.providers.huggingface import HuggingFaceStorage
+from utk_curio.backend.app.datalakes.providers.s3 import S3Storage
 from utk_curio.backend.app.datalakes.providers.storage_base import StorageProvider
 
 PROVIDERS: dict[str, type[BaseProvider]] = {
@@ -37,6 +39,8 @@ PROVIDERS: dict[str, type[BaseProvider]] = {
 #: organized by the manifest's resources rather than searched.
 STORAGE_PROVIDERS: dict[str, type] = {
     FolderStorage.type: FolderStorage,
+    S3Storage.type: S3Storage,
+    HuggingFaceStorage.type: HuggingFaceStorage,
 }
 
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.

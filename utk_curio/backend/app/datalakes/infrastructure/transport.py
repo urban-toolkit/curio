@@ -56,13 +56,25 @@ class FixtureMissing(LakeTransportError):
     """No recorded response for this URL. Names it, and how to record one."""
 
 
+#: The ceiling for caching one file of a storage collection to disk. Nothing
+#: passes through memory on that path, so it is a disk bound rather than the
+#: download ceiling above, which exists because an import used to read the
+#: file whole.
+MAX_COLLECTION_OBJECT_BYTES = 4 * 1024 * 1024 * 1024
+
+
 class LakeTransport(Protocol):
     def json_get(self, url: str, *, credential: str | None = None,
                  headers: dict[str, str] | None = None) -> Any: ...
 
+    def get_page(self, url: str, *, credential: str | None = None,
+                 headers: dict[str, str] | None = None) -> tuple[str, dict]:
+        """The body and the response headers, for a paginated listing."""
+        ...
+
     def download(self, url: str, sink: Callable[[bytes], None], *, max_bytes: int,
                  credential: str | None = None, headers: dict[str, str] | None = None,
-                 progress=None) -> "egress.DownloadResult": ...
+                 progress=None, ceiling: int | None = None) -> "egress.DownloadResult": ...
 
 
 class HttpLakeTransport:
@@ -78,6 +90,9 @@ class HttpLakeTransport:
         self.budget = budget
 
     def json_get(self, url, *, credential=None, headers=None):
+        return self.get_page(url, credential=credential, headers=headers)[0]
+
+    def get_page(self, url, *, credential=None, headers=None):
         try:
             result = egress.fetch(
                 url,
@@ -95,10 +110,11 @@ class HttpLakeTransport:
             raise LakeTransportError(
                 f"{_host(url)} returned more than {MAX_METADATA_BYTES} bytes of metadata"
             )
-        return result.body
+        return result.body, dict(result.headers or {})
 
-    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None):
-        bound = min(int(max_bytes), MAX_LAKE_DOWNLOAD_BYTES)
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
+        bound = min(int(max_bytes), int(ceiling or MAX_LAKE_DOWNLOAD_BYTES))
         try:
             return egress.download(
                 url,
@@ -160,21 +176,29 @@ class FixtureLakeTransport:
         return entry
 
     def json_get(self, url, *, credential=None, headers=None):
+        return self.get_page(url, credential=credential, headers=headers)[0]
+
+    def get_page(self, url, *, credential=None, headers=None):
         entry = self._entry(url)
         status = int(entry.get("status", 200))
         if not (200 <= status < 300):
             raise LakeTransportError(f"{_host(url)} answered {status}")
-        return (self.root / entry["file"]).read_text(encoding="utf-8")
+        body = (self.root / entry["file"]).read_text(encoding="utf-8")
+        return body, dict(entry.get("headers") or {})
 
-    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None):
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
         import hashlib
 
-        entry = self._entry(url)
+        # A Range request is recorded under its own key, so a probe of a file's
+        # header and a download of the whole file are separate entries.
+        byte_range = (headers or {}).get("Range")
+        entry = self._entry(f"{url} {byte_range}" if byte_range else url)
         status = int(entry.get("status", 200))
         if not (200 <= status < 300):
             raise LakeTransportError(f"{_host(url)} answered {status}")
         blob = (self.root / entry["file"]).read_bytes()
-        bound = min(int(max_bytes), MAX_LAKE_DOWNLOAD_BYTES)
+        bound = min(int(max_bytes), int(ceiling or MAX_LAKE_DOWNLOAD_BYTES))
         recorded = dict(entry.get("headers") or {})
         declared = recorded.get("Content-Length")
         # The real transport refuses on Content-Length BEFORE reading a body,
@@ -225,7 +249,13 @@ class CredentialedTransport:
             url, credential=credential or self._credential, headers=headers
         )
 
-    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None):
+    def get_page(self, url, *, credential=None, headers=None):
+        return self._inner.get_page(
+            url, credential=credential or self._credential, headers=headers
+        )
+
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
         return self._inner.download(
             url,
             sink,
@@ -233,6 +263,7 @@ class CredentialedTransport:
             credential=credential or self._credential,
             headers=headers,
             progress=progress,
+            ceiling=ceiling,
         )
 
 

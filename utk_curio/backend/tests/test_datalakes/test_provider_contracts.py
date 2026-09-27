@@ -141,3 +141,35 @@ def test_the_contract_suite_is_marked_so_the_socket_guard_allows_it():
     from utk_curio.backend.tests import netguard
 
     assert netguard._allowed is True
+
+
+def test_an_s3_listing_still_carries_keys_and_sizes():
+    import xml.etree.ElementTree as ET
+
+    url = (
+        "https://sentinel-cogs.s3.us-west-2.amazonaws.com/?list-type=2&max-keys=5"
+        "&prefix=sentinel-s2-l2a-cogs%2F16%2FT%2FDM%2F2024%2F7%2F"
+    )
+    result = probe(url)
+    try:
+        root = ET.fromstring(result.body)
+    except ET.ParseError:
+        pytest.skip("the bucket did not answer XML")
+    ns = "{http://s3.amazonaws.com/doc/2006-03-01/}"
+    contents = list(root.iter(f"{ns}Contents"))
+    if not contents:
+        pytest.skip("the prefix listed nothing today")
+    assert contents[0].findtext(f"{ns}Key")
+    assert contents[0].findtext(f"{ns}Size")
+
+
+def test_a_hugging_face_tree_still_lists_files_with_paths_and_sizes():
+    url = (
+        "https://huggingface.co/api/datasets/huggingface/documentation-images/tree/main/"
+        "transformers/tasks?recursive=true&expand=false"
+    )
+    payload = probe_json(url)
+    files = [entry for entry in payload if isinstance(entry, dict) and entry.get("type") == "file"]
+    if not files:
+        pytest.skip("the folder listed no files today")
+    assert "path" in files[0] and "size" in files[0]

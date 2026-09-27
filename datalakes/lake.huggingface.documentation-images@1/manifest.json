@@ -1,0 +1,34 @@
+{
+  "id": "lake.huggingface.documentation-images",
+  "name": "Hugging Face documentation images",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Example images from the Hugging Face documentation-images dataset repo: the pictures the Transformers task guides use.",
+  "publisher": "Hugging Face",
+  "homepage": "https://huggingface.co/datasets/huggingface/documentation-images",
+  "license": "See the repo's own terms",
+  "tags": ["images", "huggingface", "examples"],
+  "provider": {
+    "type": "huggingface",
+    "baseUrl": "https://huggingface.co",
+    "options": { "repo": "huggingface/documentation-images", "revision": "main" }
+  },
+  "auth": {
+    "mode": "optional-token",
+    "secretId": "huggingface.token",
+    "headerName": "Authorization",
+    "valuePrefix": "Bearer ",
+    "helpUrl": "https://huggingface.co/settings/tokens"
+  },
+  "resources": [
+    {
+      "id": "task-images",
+      "name": "Transformers task images",
+      "kind": "images",
+      "path": "transformers/tasks/*"
+    }
+  ],
+  "limits": { "requestsPerMinute": 300 },
+  "createdAt": "2026-09-27T00:00:00Z",
+  "updatedAt": "2026-09-27T00:00:00Z"
+}
