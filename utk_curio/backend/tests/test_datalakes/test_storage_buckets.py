@@ -16,6 +16,7 @@ import pytest
 
 from utk_curio.backend.tests.test_datalakes.conftest import FIXTURES, write_source
 
+REPO = Path(__file__).resolve().parents[4]
 SENTINEL = "lake.aws.sentinel-2-chicago@1"
 HF = "lake.huggingface.documentation-images@1"
 
@@ -135,10 +136,12 @@ def bucket_corpus(tmp_path, monkeypatch, lake_root):
         index[url] = {"file": f"bucket/{name}", "status": status, "headers": headers or {}}
 
     head = (FIXTURES / "download" / "storage" / "head.jpg").read_bytes()
+    tile = (REPO / "docs" / "examples" / "data" / "storage" / "orthos" / "2024" / "tile_0001.tif").read_bytes()
     first = f"{BUCKET}/?list-type=2&max-keys=1000&prefix=data%2F"
     entry(first, "page1.xml", _xml([("data/a/1.csv", 8), ("data/pics/x.jpg", len(head))], token="T/2"))
     entry(first + "&continuation-token=T%2F2", "page2.xml",
-          _xml([("data/b/1.csv", 8), ("data/pics/y.jpg", len(head))]))
+          _xml([("data/b/1.csv", 8), ("data/pics/y.jpg", len(head)), ("data/tiles/t.tif", len(tile))]))
+    entry(f"{BUCKET}/data/tiles/t.tif", "t.tif", tile)
     # Adding one resource lists only under its own folder.
     entry(f"{BUCKET}/?list-type=2&max-keys=1000&prefix=data%2Fpics%2F", "pics.xml",
           _xml([("data/pics/x.jpg", len(head)), ("data/pics/y.jpg", len(head))]))
@@ -158,6 +161,7 @@ def bucket_corpus(tmp_path, monkeypatch, lake_root):
         "resources": [
             {"id": "numbers", "name": "Numbers", "kind": "table", "format": "csv", "path": "{part}/1.csv"},
             {"id": "pics", "name": "Pictures", "kind": "images", "path": "pics/*"},
+            {"id": "tiles", "name": "Tiles", "kind": "rasters", "path": "tiles/{tile}.tif"},
         ],
     })
     return root
@@ -167,6 +171,12 @@ class TestABucket:
     def test_listing_follows_the_continuation_token(self, client, auth, app, bucket_corpus):
         rows = {r["resourceId"]: r for r in listing(client, auth, "lake.example.bucket@1")["resources"]}
         assert rows["numbers"]["fileCount"] == 2 and rows["pics"]["fileCount"] == 2
+
+    def test_a_rasters_thumbnail_is_drawn_before_it_is_cached(self, client, auth, app, bucket_corpus):
+        listing(client, auth, "lake.example.bucket@1")
+        res = client.get("/api/datalakes/sources/lake.example.bucket@1/thumbnails/0/tiles", headers=auth)
+        assert res.status_code == 200, res.get_data(as_text=True)
+        assert res.mimetype == "image/jpeg"
 
     def test_its_tables_combine_like_a_folders(self, client, auth, app, bucket_corpus):
         import pandas as pd

@@ -236,7 +236,7 @@ def _source_path(found: Located) -> tuple[Path, bool]:
     """A local copy to draw from: the file, or a temporary fetch of it."""
     if found.local is not None:
         return found.local, False
-    if found.row.kind not in ("image", "frame") or found.row.bytes > MAX_REMOTE_THUMB_SOURCE_BYTES:
+    if found.row.kind not in ("image", "frame", "raster") or found.row.bytes > MAX_REMOTE_THUMB_SOURCE_BYTES:
         raise MediaUnavailable(
             f"{found.row.relpath} is in a bucket; cache the collection's files to preview it"
         )

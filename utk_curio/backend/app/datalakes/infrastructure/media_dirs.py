@@ -49,6 +49,24 @@ def media_cache_dir(user_key: str, dataset_id: str) -> Path:
     return path
 
 
+def forget_media(user_key: str, dataset_id: str) -> None:
+    """Remove what Curio made from one dataset's files: its thumbnails, its
+    cached bucket files, and the frames and clips nodes derived from it.
+
+    Never the files themselves, which are the source's.
+    """
+    import shutil
+
+    from utk_curio.sandbox.util.collections import DERIVED
+
+    segment = _dataset_segment(dataset_id)
+    key = user_key_segment(user_key)
+    folders = [users_base() / key / "media-cache" / segment, media_work_root(user_key) / "objects" / segment]
+    folders += [media_work_root(user_key) / folder / segment for folder, _ext, _kind in DERIVED.values()]
+    for folder in folders:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def media_work_root(user_key: str) -> Path:
     """The user's shared media directory, without creating it."""
     key = user_key_segment(user_key)

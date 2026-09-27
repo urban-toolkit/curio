@@ -448,6 +448,37 @@ class TestAddingACollection:
         mine = next(i for i in items if i["id"] == dataset["id"])
         assert mine["collection"]["kind"] == "audio"
 
+    def test_a_collection_cannot_be_published(self, client, auth, app, shipped_root):
+        dataset = self._collection(client, auth, "noise")
+        res = client.post("/api/datasets/publish", headers=auth, json={"datasetId": dataset["id"]})
+        assert res.status_code == 400, res.get_data(as_text=True)
+        assert "cannot be published" in res.get_json()["error"]
+
+    def test_deleting_it_removes_what_curio_made_and_keeps_the_files(
+        self, client, auth, app, shipped_root, user_and_token
+    ):
+        import pandas as pd
+
+        from utk_curio.backend.app.datalakes.infrastructure import media_dirs
+
+        user, _token = user_and_token
+        user_key = str(user.id)
+        dataset = self._collection(client, auth, "survey")
+        index = pd.read_parquet(dataset["path"])
+        thumb = client.get(
+            f"/api/datasets/{dataset['id']}/media/{index['file_id'].iloc[0]}?variant=thumb", headers=auth
+        )
+        assert thumb.status_code == 200
+        cache = media_dirs.media_cache_dir(user_key, dataset["id"])
+        derived = media_dirs.media_work_dir(user_key, "frames", dataset["id"])
+        (derived / "0.jpg").write_bytes(b"x")
+        assert any(cache.iterdir())
+
+        assert client.delete(f"/api/datasets/{dataset['id']}", headers=auth).status_code == 200
+        assert not cache.exists() and not derived.exists()
+        root = SHIPPED_ROOT.parent / "docs" / "examples" / "data" / "storage"
+        assert all((root / relpath).is_file() for relpath in index["relpath"])
+
     def test_a_split_collection_holds_only_its_value(self, client, auth, app, lake_root, tmp_path):
         import geopandas as gpd
 

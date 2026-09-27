@@ -390,6 +390,12 @@ class CatalogMutations:
         self._assert_can_manage_shared_catalog("publish")
 
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
+        if item.get("format") == "collection":
+            raise DatasetCatalogError(
+                "A collection cannot be published: its files are in its Data Lake source, "
+                "not in the Data Catalog.",
+                400,
+            )
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
@@ -1267,6 +1273,16 @@ class CatalogMutations:
                     )
 
                     index_repo.safe_forget(user_key, dataset_root.name)
+
+        if deleted_any:
+            # A collection's thumbnails, cached bucket files and derived
+            # frames; never the files in its source.
+            from utk_curio.backend.app.datalakes.infrastructure.media_dirs import forget_media
+
+            try:
+                forget_media(user_key, dataset_id)
+            except Exception:  # noqa: BLE001 - the dataset itself is gone
+                logger.warning("Could not remove media made from %s", dataset_id, exc_info=True)
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(

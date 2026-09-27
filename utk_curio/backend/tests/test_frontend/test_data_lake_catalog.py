@@ -347,3 +347,94 @@ def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     expect(row).to_be_visible(timeout=30000)
     expect(row.get_by_text("In your Data Catalog")).to_be_visible(timeout=15000)
     expect(row.get_by_role("button", name="Download")).to_have_count(0)
+
+
+# ── Storage sources ────────────────────────────────────────────────────────
+
+EXAMPLE_STORAGE = "lake.curio.example-storage@1"
+
+#: Every resource the example storage source declares, by the name its row shows.
+EXAMPLE_STORAGE_ROWS = {
+    "air-quality": "Air quality readings",
+    "stations": "Sensor stations",
+    "roads": "Roads",
+    "parks": "Parks",
+    "orthos": "Drone orthoimagery",
+    "dashcam": "Dashcam frames",
+    "survey": "Street survey",
+    "noise": "Noise recordings",
+}
+
+
+def test_a_storage_source_lists_what_its_manifest_declares(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """A folder is scanned on first use and lists one row per declared
+    resource, never one per file."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="lakestore", project="Lake Store")
+    _goto_lakes(page, app_frontend, f"/catalog/lakes/{EXAMPLE_STORAGE}")
+
+    for resource_id, name in EXAMPLE_STORAGE_ROWS.items():
+        row = page.locator(f'[data-lake-resource="{resource_id}"]')
+        expect(row).to_be_visible(timeout=30000)
+        expect(row.get_by_role("heading", name=name, exact=True)).to_be_visible()
+    expect(page.locator("[data-lake-resource]")).to_have_count(len(EXAMPLE_STORAGE_ROWS))
+    expect(page.get_by_role("button", name="Rescan")).to_be_enabled()
+
+    # A collection row draws its first files; the thumbnails are fetched with
+    # the token, so they only appear if the authed route answered.
+    orthos = page.locator('[data-lake-resource="orthos"]')
+    expect(orthos.get_by_text("Rasters", exact=True)).to_be_visible()
+    expect(orthos.locator('img[src^="blob:"]').first).to_be_visible(timeout=30000)
+
+
+def test_adding_a_collection_narrowed_by_year(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Add opens the dialog, a year is left out, and the collection that lands
+    says what it holds and where its files are."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="lakecoll", project="Lake Collection")
+    _goto_lakes(page, app_frontend, f"/catalog/lakes/{EXAMPLE_STORAGE}")
+
+    row = page.locator('[data-lake-resource="orthos"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Add to Data Catalog").click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_text("year", exact=True)).to_be_visible()
+    dialog.get_by_label("2023", exact=True).uncheck()
+    dialog.get_by_role("button", name="Add to Data Catalog").click()
+
+    # A narrowed add is a new dataset beside the row, so the row keeps
+    # offering the whole resource; the toast is the way to the dataset.
+    expect(page.get_by_text("Added Drone orthoimagery to your Data Catalog.")).to_be_visible(
+        timeout=60000
+    )
+    page.get_by_role("button", name="View details").first.click()
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    expect(details.get_by_text("Collection", exact=True).first).to_be_visible()
+    expect(details.get_by_text("2 rasters")).to_be_visible()
+    expect(details.get_by_text("year 2024")).to_be_visible()
+    expect(details.get_by_role("link", name="Example storage")).to_be_visible()
+    expect(details.locator('img[src^="blob:"]').first).to_be_visible(timeout=30000)
+
+
+def test_the_files_list_adds_only_the_picked_files(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="lakefiles", project="Lake Files")
+    _goto_lakes(page, app_frontend, f"/catalog/lakes/{EXAMPLE_STORAGE}")
+
+    row = page.locator('[data-lake-resource="survey"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Files").click()
+    expect(row.get_by_text("1 to 4 of 4")).to_be_visible(timeout=30000)
+    row.get_by_label("Pick survey/2024/IMG_0001.jpg").check()
+    row.get_by_role("button", name="Add 1 picked file").click()
+    expect(page.get_by_text("to your Data Catalog.")).to_be_visible(timeout=60000)

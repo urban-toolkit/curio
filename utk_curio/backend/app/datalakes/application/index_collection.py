@@ -83,7 +83,7 @@ def build_rows(
         if local is not None:
             return probing.probe(kind, Path(local))
         if kind not in ("image", "frame", "raster"):
-            return {"probe_error": "details are read once the file is cached"}
+            return {"probe_error": "a video or recording in a bucket is indexed without being read"}
         return _probe_remote_head(provider, found, kind)
 
     rows: list[dict[str, Any]] = []
@@ -130,7 +130,7 @@ def _probe_remote_head(provider, found: MatchedFile, kind: str) -> dict[str, Any
         handle.flush()
         details = probing.probe(kind, Path(handle.name))
     if details.get("probe_error") and len(head) >= PROBE_BYTES:
-        details["probe_error"] = "details are read once the file is cached"
+        details["probe_error"] = f"its details are past the first {PROBE_BYTES // 1024} KiB read from the source"
     return details
 
 
