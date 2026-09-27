@@ -358,3 +358,107 @@ class TestCombiningATable:
         frame = gpd.read_parquet(self._dataset(client, auth, "p")["dataset"]["path"])
         assert sorted(frame["year"]) == [2023, 2024]
         assert frame.crs.to_epsg() == 4326
+
+
+EXAMPLE = "lake.curio.example-storage@1"
+
+
+class TestAddingACollection:
+    def _collection(self, client, auth, resource_id, source=EXAMPLE):
+        res = add(client, auth, resource_id, source=source)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        job = wait_for(client, auth, res.get_json()["jobId"])
+        assert job["status"] == "completed", job.get("error")
+        return job["dataset"]
+
+    def test_orthorectified_tiles_become_one_index_of_footprints(self, client, auth, app, shipped_root):
+        import geopandas as gpd
+
+        dataset = self._collection(client, auth, "orthos")
+        assert dataset["format"] == "collection"
+        assert dataset["rowCount"] == 4
+        block = dataset["collection"]
+        assert block["kind"] == "rasters" and block["fileCount"] == 4
+        assert block["counts"] == {"raster": 4} and block["hasGps"] is True
+        assert block["sourceId"] == EXAMPLE and block["resourceId"] == "orthos"
+        index = gpd.read_parquet(dataset["path"])
+        assert sorted(index["year"].unique()) == [2023, 2024]
+        assert set(index["crs"]) == {"EPSG:32616"}
+        assert index.crs.to_epsg() == 4326
+        assert index.geometry.geom_type.unique().tolist() == ["Polygon"]
+        assert dataset["loaderSnippet"]["code"] == f'collection = curio_collection("{dataset["id"]}")'
+
+    def test_frames_are_numbered_timed_and_placed_by_their_telemetry(self, client, auth, app, shipped_root):
+        import geopandas as gpd
+
+        dataset = self._collection(client, auth, "dashcam")
+        index = gpd.read_parquet(dataset["path"])
+        assert dataset["collection"]["sequences"] == 2
+        trip = index[index["sequence"] == "trip01"].sort_values("frame")
+        assert list(trip["frame"]) == [1, 2, 3, 4, 5, 6]
+        assert list(trip["t_s"]) == [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+        assert index["gps_lat"].notna().all() and index.geometry.notna().all()
+
+    def test_photos_and_a_video_share_one_collection(self, client, auth, app, shipped_root):
+        import geopandas as gpd
+
+        dataset = self._collection(client, auth, "survey")
+        assert dataset["collection"]["counts"] == {"image": 3, "video": 1}
+        index = gpd.read_parquet(dataset["path"]).set_index("name")
+        assert index.loc["IMG_0001.jpg", "gps_lat"] == pytest.approx(41.8826)
+        assert str(index.loc["IMG_0001.jpg", "taken_at"]) == "2024-07-04 09:30:00"
+        assert index.loc["clip_01.mp4", "duration_s"] == pytest.approx(1.0)
+        assert index.loc["clip_01.mp4", "codec"] == "h264"
+
+    def test_recordings_take_their_time_from_the_file_name(self, client, auth, app, shipped_root):
+        import pandas as pd
+
+        dataset = self._collection(client, auth, "noise")
+        index = pd.read_parquet(dataset["path"])
+        assert set(index["sensor"]) == {"sensor_01", "sensor_02"}
+        assert str(sorted(index["recorded_at"])[0]) == "2024-05-01 06:00:00"
+        assert set(index["sample_rate"]) == {8000}
+        assert dataset["collection"]["totalSeconds"] == pytest.approx(1.5)
+
+    def test_the_index_is_previewable_and_listed_as_held(self, client, auth, app, shipped_root):
+        dataset = self._collection(client, auth, "noise")
+        preview = client.get(f"/api/datasets/{dataset['id']}/preview?rowLimit=2", headers=auth).get_json()
+        assert preview["totalRows"] == 3 and len(preview["rows"]) == 2
+        row = next(r for r in listing(client, auth, source=EXAMPLE)["resources"] if r["resourceId"] == "noise")
+        assert row["alreadyHeldDatasetId"] == dataset["id"]
+        listed = client.get("/api/datasets/catalog", headers=auth).get_json()
+        items = listed.get("items") or listed.get("datasets") or []
+        mine = next(i for i in items if i["id"] == dataset["id"])
+        assert mine["collection"]["kind"] == "audio"
+
+    def test_a_split_collection_holds_only_its_value(self, client, auth, app, lake_root, tmp_path):
+        import geopandas as gpd
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+        source = SHIPPED_ROOT.parent / "docs" / "examples" / "data" / "storage"
+        write_source(lake_root, SOURCE, a_storage_manifest(source, [
+            {"id": "orthos", "name": "Orthos", "kind": "rasters",
+             "path": "orthos/{year:int}/{tile}.tif", "datasets": "per:year"}
+        ]))
+        rows = {r["resourceId"] for r in listing(client, auth)["resources"]}
+        assert rows == {"orthos@year=2023", "orthos@year=2024"}
+        dataset = self._collection(client, auth, "orthos@year=2024", source=SOURCE)
+        assert set(gpd.read_parquet(dataset["path"])["year"]) == {2024}
+        assert dataset["collection"]["split"] == {"year": "2024"}
+
+    def test_a_file_that_cannot_be_read_keeps_its_row(self, client, auth, app, lake_root, tmp_path):
+        import pandas as pd
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+        root = write_files(tmp_path / "bad", {"a.jpg": b"not a jpeg", "b.tif": b"II*\x00junk"})
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "pics", "name": "Pics", "kind": "images", "path": "*"}
+        ]))
+        dataset = self._collection(client, auth, "pics", source=SOURCE)
+        index = pd.read_parquet(dataset["path"])
+        assert len(index) == 2 and index["probe_error"].notna().all()
+        assert dataset["collection"]["probeErrors"] == 2

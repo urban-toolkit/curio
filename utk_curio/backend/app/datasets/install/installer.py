@@ -472,6 +472,7 @@ def install_imported_path(
     source_encoding: str | None = None,
     lake_source: dict | None = None,
     description: str | None = None,
+    collection: dict | None = None,
 ) -> InstallResult:
     """Move a file already on disk into a fresh dataset folder.
 
@@ -505,6 +506,7 @@ def install_imported_path(
         source_encoding=source_encoding,
         lake_source=lake_source,
         description=description,
+        collection=collection,
     )
 
 
@@ -521,6 +523,7 @@ def _install_imported(
     source_encoding: str | None = None,
     lake_source: dict | None = None,
     description: str | None = None,
+    collection: dict | None = None,
 ) -> InstallResult:
     """Mint ``imported.x<uuid>@1``, let *place_data* put the file, write the manifest."""
     # A per-import unique token — never the file content — guarantees each import
@@ -569,6 +572,7 @@ def _install_imported(
         layer_name=layer_name,
         source_encoding=source_encoding,
         lake_source=lake_source,
+        collection=collection,
     )
     write_manifest(manifest_obj, dest)
 

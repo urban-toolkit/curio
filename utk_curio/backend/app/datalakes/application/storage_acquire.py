@@ -24,6 +24,7 @@ from typing import Any, Callable
 from utk_curio.backend.app.common.safe_paths import validate_component
 from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
 from utk_curio.backend.app.datalakes.application import combine_tables
+from utk_curio.backend.app.datalakes.application import index_collection
 from utk_curio.backend.app.datalakes.application import scan as scanning
 from utk_curio.backend.app.datalakes.domain.errors import (
     CapabilityUnsupported,
@@ -104,7 +105,11 @@ class StorageAcquire:
         name = scanning.group_name(result.groups[0]) if result.groups else spec.name
 
         if spec.is_collection:
-            raise CapabilityUnsupported(f"{spec.name} is a collection")
+            dataset = self._add_collection(
+                manifest, provider, spec, selection, files, resource_id=resource_id,
+                title=title or name, items=items, stage=stage, cancelled=cancelled,
+            )
+            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
         if len(files) > 1:
             dataset = self._add_combined(
                 manifest, provider, spec, files, resource_id=resource_id,
@@ -135,6 +140,50 @@ class StorageAcquire:
         if dataset.get("alreadyPresent"):
             return dataset
         return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+
+    # ── a collection ───────────────────────────────────────────────────────
+
+    def _add_collection(
+        self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage, cancelled
+    ) -> dict[str, Any]:
+        if stage:
+            stage(f"Indexing {len(files):,} files…")
+        rows = index_collection.build_rows(
+            manifest, provider, spec, files, items=items, cancelled=cancelled
+        )
+        frame, columns = index_collection.to_frame(spec, rows)
+        frame = index_collection.join_metadata(manifest, provider, spec, frame)
+        if spec.metadata:
+            columns = columns[:-3] + [
+                c for c in frame.columns if c not in columns and c != "geometry"
+            ] + columns[-3:]
+        with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
+            dest = Path(tmp) / "index.parquet"
+            has_gps = index_collection.write_index(spec, frame, columns, dest)
+            block = index_collection.collection_block(
+                manifest, spec, resource_id, selection, files, frame, has_gps=has_gps
+            )
+            lake_source = {
+                "lakeId": manifest.dir_name,
+                "lakeName": manifest.name,
+                "resourceId": resource_id,
+                "fileCount": len(files),
+                "fields": ",".join(spec.template.names),
+                "fetchedAt": _iso_now(),
+            }
+            label = scanning.KIND_LABEL.get(spec.kind, "Files").lower()
+            return self._install_path(
+                dest,
+                "index.parquet",
+                "collection",
+                title=title,
+                lake_source=lake_source,
+                row_count=len(rows),
+                collection=block,
+                description=(
+                    f"{len(files):,} {label} from {manifest.name}, indexed where they are."
+                ),
+            )
 
     # ── many table files ───────────────────────────────────────────────────
 

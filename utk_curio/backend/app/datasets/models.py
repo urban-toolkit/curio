@@ -82,6 +82,10 @@ class DatasetIndexEntry(db.Model):
     # including the "do I already hold this resource?" check that stops the
     # same file being downloaded twice.
     lake_source_json = db.Column(db.Text, nullable=True)
+    # A collection dataset's block (source, resource, kind, counts). Mirrored
+    # for the same reason as ``lake_source_json``: listings rebuild manifests
+    # from this row.
+    collection_json = db.Column(db.Text, nullable=True)
 
     # ── Freshness ─────────────────────────────────────────────────────────────
     # stat() pair of the mirrored manifest.json. reconcile() re-parses a dir only

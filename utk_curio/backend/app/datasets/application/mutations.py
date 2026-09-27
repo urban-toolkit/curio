@@ -166,6 +166,7 @@ class CatalogMutations:
         description: str | None = None,
         row_count: int | None = None,
         feature_count: int | None = None,
+        collection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Install a file already on disk, without reading it into memory.
 
@@ -205,6 +206,7 @@ class CatalogMutations:
                 source_encoding=source_encoding,
                 lake_source=lake_source,
                 description=description,
+                collection=collection,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
