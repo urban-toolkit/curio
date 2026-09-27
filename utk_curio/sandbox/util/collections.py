@@ -41,6 +41,12 @@ def derived_relpath(kind_folder, dataset_id, file_id, t_ms, ext):
 
 _OUTPUT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
+#: The columns that say where a file is rather than what it is, last.
+LOCATOR_COLUMNS = (
+    "file_id", "relpath", "ext", "bytes", "mtime", "dataset_id", "path",
+    "thumbnail", "image_url", "audio_url",
+)
+
 
 def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None):
     """The helpers for one execution: ``curio_collection``,
@@ -95,7 +101,11 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
             media_url(dataset_id, fid, "original") if kind == "audio" else None
             for fid, kind in zip(frame["file_id"], kinds)
         ]
-        return frame
+        # What a reader looks for first (the name, the path fields, what was
+        # read from the file) ahead of the columns that locate the file, which
+        # is also the order a Simple View card captions a row in.
+        last = [c for c in LOCATOR_COLUMNS if c in frame.columns]
+        return frame[[c for c in frame.columns if c not in last] + last]
 
     def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video"):
         """Where to write the frame (or clip) at *t_ms* of one file, and its row.
