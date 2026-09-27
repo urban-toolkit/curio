@@ -76,7 +76,6 @@ from .utils import (
     accept_confirm_dialog,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
-    activate_header_icon,
     canvas_nodes,
     edge_client_point,
     close_tools_palette,
@@ -1501,21 +1500,14 @@ def scene_dashboard(ctx: Ctx) -> None:
         hold=2600,
     )
     for node_id in (ctx.state.get("vega_ids") or _node_ids_by_type(page, "vis-vega"))[:2]:
-        # The header icons are FontAwesome svgs with role="button" and no
-        # accessible name (the `title` prop does not survive into the DOM here),
-        # so the icon class is the only stable handle: faCircle when unpinned,
-        # faCircleDot once pinned. They activate on pointerdown/up so that
-        # press-and-drag still moves the node, which is what
-        # activate_header_icon sends.
-        pin = node_locator(page, node_id).locator(
-            'svg[role="button"].fa-circle, svg[role="button"].fa-circle-dot'
-        ).first
+        # Found by its accessible name, as the walkthroughs find it
+        # (walkthroughs.py, dashboard-page-renders-pinned-charts). The icon
+        # classes this used to match changed, and the scene then pinned nothing.
+        pin = node_locator(page, node_id).get_by_role("button", name="Pin to dashboard").first
         if not pin.count():
             _log(f"[tour] no dashboard pin control on {node_id}")
             continue
-        tour.focus(pin, hold=450)
-        activate_header_icon(pin)
-        tour.beat(700)
+        tour.click(pin, hold=700)
     tour.hush()
 
     # Pins live in the saved spec, and the dashboard renders what is on disk.
@@ -1608,7 +1600,10 @@ def scene_interaction(ctx: Ctx) -> None:
     # view is one canvas, so every mark shares its bounding box and hovering
     # "each mark" would hover the same pixel five times. Walking x across the
     # plotting area is what actually fires pointerover on successive bars.
-    plot = node_locator(page, vega_ids[0]).locator("canvas, svg").first
+    # The chart itself, inside its Vega mount (``"vega" + nodeId``, as the
+    # dashboard walkthrough finds it). A bare "canvas, svg" in the node matches
+    # the first icon in its title bar instead.
+    plot = page.locator(f"#vega{vega_ids[0]}").locator("canvas, svg.marks").first
     box = plot.bounding_box()
     if box:
         y = box["y"] + box["height"] * 0.7
