@@ -66,7 +66,10 @@ window's `recorded_at` is its recording's time plus its offset.
     "x": {
       "field": "recorded_at",
       "type": "temporal",
-      "title": "Time"
+      "title": "Time",
+      "scale": {
+        "type": "utc"
+      }
     },
     "y": {
       "field": "level_dbfs",

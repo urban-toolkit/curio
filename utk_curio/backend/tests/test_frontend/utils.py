@@ -610,14 +610,17 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     return _catalog_resolution(code)["paths"]
 
 
-def _catalog_resolution(code: str) -> dict:
+def _catalog_resolution(code: str, username: str | None = None) -> dict:
     """``{"paths", "collections", "mediaDir"}`` for *code*, as the backend
-    resolves them for ``/processPythonCode``; see ``_catalog_dataset_paths``."""
-    if "curio_dataset_path" not in code and "curio_collection" not in code:
-        return {"paths": {}, "collections": {}, "mediaDir": None}
+    resolves them for ``/processPythonCode``, as *username* when given; see
+    ``_catalog_dataset_paths``.
 
+    Asked for every node, not only one that names a dataset: ``mediaDir`` is
+    where a node downstream of a collection writes the files it derives.
+    """
     url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
-    payload = json.dumps({"code": code}).encode("utf-8")
+    body = {"code": code, **({"username": username} if username else {})}
+    payload = json.dumps(body).encode("utf-8")
     req = Request(
         url, data=payload,
         headers={"Content-Type": "application/json"}, method="POST",
@@ -654,8 +657,13 @@ def _catalog_resolution(code: str) -> dict:
     }
 
 
-def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
+def execute_workflow_programmatically(
+    spec, seed: int = 42, username: str | None = None
+) -> dict[str, str]:
     """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
+
+    *username* is the account the browser run signs in as, so datasets and the
+    files nodes derive from them resolve the same way in both runs.
 
     Routes all execution through the sandbox's /exec endpoint so the sandbox's
     persistent DuckDB connection remains the sole writer throughout the test.
@@ -699,7 +707,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         resolved = resolve_widget_placeholders(node.content)
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
-        resolution = _catalog_resolution(indented_code)
+        resolution = _catalog_resolution(indented_code, username)
 
         resp = _req.post(
             f'{sandbox_url}/exec',

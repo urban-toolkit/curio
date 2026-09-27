@@ -63,7 +63,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 1290,
         "y": 430,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each window's level, per sensor, over the recording time.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"recorded_at\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\"\n    },\n    \"y\": {\n      \"field\": \"level_dbfs\",\n      \"type\": \"quantitative\",\n      \"title\": \"Level (dBFS)\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each window's level, per sensor, over the recording time.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"recorded_at\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\",\n      \"scale\": {\n        \"type\": \"utc\"\n      }\n    },\n    \"y\": {\n      \"field\": \"level_dbfs\",\n      \"type\": \"quantitative\",\n      \"title\": \"Level (dBFS)\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Chart each window's level per sensor.",

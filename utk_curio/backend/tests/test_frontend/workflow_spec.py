@@ -62,9 +62,44 @@ NAMESPACED_TO_LEGACY: dict[str, str] = {
 }
 
 
+_PACKAGES_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "packages"
+)
+_package_code_types: dict[str, str] | None = None
+
+
+def package_code_types() -> dict[str, str]:
+    """Shipped package templates that are Python code nodes, by namespaced id.
+
+    A template with ``behavior: "code"``, ``engine: "python"`` and a code
+    editor renders and runs like a Computation Analysis node, so the suite
+    plays it, reads its editor, and executes it for the ground truth like one.
+    Without this, a package's code node read as passive and its output was
+    never computed, so every node downstream compared against its input.
+    """
+    global _package_code_types
+    if _package_code_types is None:
+        found: dict[str, str] = {}
+        for entry in sorted(os.listdir(_PACKAGES_DIR)) if os.path.isdir(_PACKAGES_DIR) else []:
+            path = os.path.join(_PACKAGES_DIR, entry, "manifest.json")
+            if entry.startswith("curio.builtin@") or not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            for template in manifest.get("templates") or []:
+                if (template.get("behavior"), template.get("engine"), template.get("editor")) == (
+                    "code", "python", "code",
+                ):
+                    found[f"{manifest['id']}/{template['id']}"] = "COMPUTATION_ANALYSIS"
+        _package_code_types = found
+    return _package_code_types
+
+
 def normalize_type(node_type: str) -> str:
     """Return the legacy uppercase id for *node_type*, or pass-through."""
-    return NAMESPACED_TO_LEGACY.get(node_type, node_type)
+    if node_type in NAMESPACED_TO_LEGACY:
+        return NAMESPACED_TO_LEGACY[node_type]
+    return package_code_types().get(node_type, node_type)
 
 
 def classify_node(node_type: str) -> str:

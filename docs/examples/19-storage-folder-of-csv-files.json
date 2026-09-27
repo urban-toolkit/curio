@@ -43,7 +43,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 645,
         "y": 0,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"PM2.5 over time, one line per sensor.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"timestamp\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\"\n    },\n    \"y\": {\n      \"field\": \"pm25\",\n      \"type\": \"quantitative\",\n      \"title\": \"PM2.5\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"PM2.5 over time, one line per sensor.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"timestamp\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\",\n      \"scale\": {\n        \"type\": \"utc\"\n      }\n    },\n    \"y\": {\n      \"field\": \"pm25\",\n      \"type\": \"quantitative\",\n      \"title\": \"PM2.5\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Chart PM2.5 over time per sensor.",

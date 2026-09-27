@@ -648,7 +648,9 @@ class TestWorkflowCanvas:
         ``load_artifact_as_dict``; VIS_VEGA nodes are verified via SVG
         structural comparison.
         """
-        expected_map = execute_workflow_programmatically(self.spec, seed=42)
+        expected_map = execute_workflow_programmatically(
+            self.spec, seed=42, username=getattr(self, "username", None)
+        )
 
         self._execute_all_playable_nodes()
 

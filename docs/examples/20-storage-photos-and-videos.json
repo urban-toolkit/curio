@@ -50,7 +50,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 645,
         "y": 430,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Where each photo and video was taken.\",\n  \"mark\": {\n    \"type\": \"circle\",\n    \"size\": 80\n  },\n  \"encoding\": {\n    \"longitude\": {\n      \"field\": \"gps_lon\",\n      \"type\": \"quantitative\"\n    },\n    \"latitude\": {\n      \"field\": \"gps_lat\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"kind\",\n      \"type\": \"nominal\",\n      \"title\": \"File\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"taken_at\",\n        \"type\": \"temporal\"\n      }\n    ]\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Where each photo and video was taken.\",\n  \"mark\": {\n    \"type\": \"circle\",\n    \"size\": 80\n  },\n  \"encoding\": {\n    \"longitude\": {\n      \"field\": \"gps_lon\",\n      \"type\": \"quantitative\"\n    },\n    \"latitude\": {\n      \"field\": \"gps_lat\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"kind\",\n      \"type\": \"nominal\",\n      \"title\": \"File\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"taken_at\",\n        \"type\": \"temporal\",\n        \"timeUnit\": \"utcyearmonthdatehoursminutes\",\n        \"title\": \"taken\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Map where each file was taken.",

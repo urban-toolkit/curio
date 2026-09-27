@@ -63,7 +63,10 @@ return df
     "x": {
       "field": "timestamp",
       "type": "temporal",
-      "title": "Time"
+      "title": "Time",
+      "scale": {
+        "type": "utc"
+      }
     },
     "y": {
       "field": "pm25",

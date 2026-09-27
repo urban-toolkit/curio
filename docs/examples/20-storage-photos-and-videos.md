@@ -79,7 +79,9 @@ card.
       },
       {
         "field": "taken_at",
-        "type": "temporal"
+        "type": "temporal",
+        "timeUnit": "utcyearmonthdatehoursminutes",
+        "title": "taken"
       }
     ]
   }
