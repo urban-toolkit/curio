@@ -825,6 +825,9 @@ A run selects its instruction and never appends to one. An edited intent replace
 An account's LLM configurations live in one owner-only file,
 `.curio/users/<u>/llm-configs.json` (`{version, configs, default, agents}`),
 kept by [`llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py).
+`agents` maps an agent id (the coordinate before `@`, so one choice covers
+every version and project) to a configuration id or `"deployment"`. Nothing
+about the choice goes into a project, attachment or manifest.
 `LlmConfigStore.record` is the only method that returns a key: every response
 carries `hasApiKey` and `baseUrlHost` instead. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
@@ -844,27 +847,51 @@ is the one resolver, and the only reader of `config.DEFAULT_LLM_*` and
 works in job threads:
 
 1. A hosted guest (a guest on a `--deploy` instance) runs on the guest
-   configuration, `GUEST_LLM_*`, and never opens the file.
-2. A delegated child runs on its caller's configuration.
-3. Otherwise the account's default configuration answers, else the Deployment
-   default (the deployment's endpoint with `CURIO_DEFAULT_LLM_MODEL`), else the
-   run is refused.
+   configuration, `GUEST_LLM_*`, and never opens the file; so does every
+   delegate of a guest's run.
+2. An internal agent (`builtin.internal_agent_ids()`, from `in_catalog`) runs
+   on its caller's configuration, always.
+3. Any other agent runs on the configuration chosen for it (`source:
+   "assigned"`).
+4. With no choice, a delegated agent runs on its caller's (`source: "caller"`),
+   and an attached one on the account's default configuration, else the
+   Deployment default (the deployment's endpoint with
+   `CURIO_DEFAULT_LLM_MODEL`), else the run is refused.
 
-A reference that does not resolve (a default naming no configuration, a This
-Curio install configuration whose deployment withdrew its endpoint, an
-unreadable file) is refused, never replaced with another configuration. A
+A reference that does not resolve (a choice or a default naming no
+configuration, a withdrawn Deployment default or This Curio install endpoint,
+an unreadable file) is refused, never replaced with another configuration. A
 refusal is a `ProviderConfigError`, answered as a 400 with
 `remedy: {kind: "llm-config", agentId}`. The local shared guest (a launch
 without `--deploy`) owns a file like any account, and its Deployment default
 reads `GUEST_LLM_*`.
+
+Where it is called:
+
+- An attached run resolves once per request, from the attachment's agent
+  (`routes._llm_for_attachment`), and detached jobs keep that configuration.
+- `delegation.run_delegate` resolves the child when it starts, with the parent's
+  configuration as `caller`. Every fan-out passes through it, so a choice
+  changed during a Solve reaches the delegates started after it; a refusal is
+  the child's "could not start", never the parent's error.
+- The Solve batch, the per-node Solve, validation and simulation resolve the
+  delegates they always call (`node.content.generate`, and `dataset.discover`
+  when a data-loading node is involved) before writing any in-flight state
+  (`services._check_delegate_llms`), so a broken choice refuses once.
+- A confirmed dataset selection starts the node's builder on the builder's
+  configuration, resolved when it is picked (`_delegate_confirmed_fetch`),
+  never the Dataset Finder's.
+- `choosable_agents` lists who may have a choice: the catalog cards, published
+  definitions and the account's imports, one row per agent id.
 
 The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
 `trained`, and its `api_key` is left out of its `repr`. Run pins record
 `llm: {configId, label, baseUrlHost, source}`, ledger entries record
 `llmConfigId`, and provider error text is redacted with the call's own key
 before it is streamed, persisted, logged or returned. Training runs only on a
-configuration that holds the user's own key, and activating a trained model
-adds a configuration with `origin: "trained"` and makes it the default.
+configuration that holds the user's own key (by default, the Dataflow Builder's),
+and activating a trained model adds a configuration with `origin: "trained"`
+and chooses it for the Dataflow Builder.
 
 ---
 
@@ -1036,11 +1063,12 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
-| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, and what answers a run now. A hosted guest gets the guest configuration and `editable: false` |
+| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
-| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default. **409** while a training job runs on it and the change touches its endpoint or key |
+| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`). **409** while a training job runs on it and the change touches its endpoint or key |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
 | `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
+| `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
 | `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
@@ -1147,7 +1175,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
 | `src/components/AiSettingsModal.tsx` | AI Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
-| `src/components/llmConfigs/` | The LLM configurations table and its editor, over `src/api/llmConfigsApi.ts` |
+| `src/components/llmConfigs/` | The LLM configurations table, its editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend

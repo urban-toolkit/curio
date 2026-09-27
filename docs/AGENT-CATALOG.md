@@ -714,9 +714,9 @@ that has already added the agent.
 
 ## 5. LLM configurations
 
-Every agent, on every dataflow, answers with your default **LLM configuration**.
-Configurations belong to your account and are edited in **AI Settings** from
-the header. A configuration is:
+Every agent, on every dataflow, answers with an **LLM configuration**: the one
+chosen for it in **AI Settings**, else your default. Configurations belong to
+your account and are edited in AI Settings from the header. A configuration is:
 
 | Field | What it is |
 |---|---|
@@ -734,6 +734,40 @@ default goes back to it.
 
 The HuggingFace token below the configurations is not for agents: it unlocks
 *gated* models in the Street Vision node. Public models need none.
+
+### Agent models
+
+**Agent models**, below the configurations, lists the ten catalog cards plus
+your imported and published agents, each with a select: **Default** (your
+default configuration), any of your configurations, or the Deployment default.
+A change is saved at once. Which configuration answers a run:
+
+| Run | Configuration |
+|---|---|
+| An agent you attach (chat, Solve, Simulation, the per-node Solve, Evaluation mode) | Its choice, else your default, else the Deployment default |
+| An agent another agent calls | Its choice, else its caller's |
+| An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
+| A guest on a `--deploy` instance | The guest configuration, for every agent |
+
+A choice that names nothing, such as a removed configuration or a Deployment
+default the operator withdrew, refuses the run with **Open AI Settings** on that
+agent's row; it never falls back to another configuration. Removing a
+configuration sends the agents chosen for it back to the default, and its
+confirmation names them.
+
+A Solve of the Dataflow Builder runs on the Builder's configuration, and writes
+each node's content through Node Content Builder and each source through
+Dataset Finder, each on its own choice. It checks both before it starts, so a
+broken choice refuses the Solve once rather than failing every node. A choice
+changed while a Solve runs reaches the delegates it starts afterwards. After a
+dataset selection, the node is built on its builder's configuration, not the
+Dataset Finder's.
+
+The choice is per account, for every version of the agent and every project. A
+shared project carries none, so it runs on the configurations of whoever runs
+it. An agent's details show what it runs on, with **Change in AI Settings**; a
+reply's status line says, on hover, which configuration and model answered it;
+and a delegated task in the chat names what the delegate ran on.
 
 ### Choosing the model
 
@@ -832,7 +866,7 @@ A minimal, complete manifest:
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. |
 | `inputs`, `outputs` | | Context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
-| `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
+| `providerRequirements` | | Provider *capability* requirements such as `structured-output`, a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 
@@ -938,7 +972,7 @@ configurations. Pick an example, read the prompt that will be sent, and run it.
 What happens is the ordinary product, not a test harness: the run creates a
 **project of its own** (yours is untouched), installs and attaches the Dataflow
 Builder through the normal install flow with the agents it requires, sends the
-prompt through the normal runtime with **your** default LLM configuration, applies the
+prompt through the normal runtime on the configuration **your** Dataflow Builder runs on, applies the
 plan through the same endpoint the Apply button uses, and solves. Then the
 dataflow it built is compared with the saved example — server-side, so the
 reference never reaches the model. The panel names each step while it happens
@@ -967,9 +1001,11 @@ a save that would delete a node, a connection or a node's code that the browser
 never saw is refused, and says what would be lost and to reload (memo
 `dev/124`). Editing is otherwise yours to do.
 
-The panel names the model and the configuration that will answer. With no
-default of your own, that is the Deployment default, and the panel says so.
-With nothing configured anywhere it says so and offers no Run.
+The panel names the model and the configuration that will answer: the Builder's
+choice, else your default, else the Deployment default, and it says which. When
+the agents the Builder requires run on other configurations, it lists each one
+with its agents, and so does the report. With nothing configured anywhere it
+says so and offers no Run.
 
 **Approving a prompt happens here too.** Each prompt was drafted by a model and
 needs a person's approval before it can be exported; the panel that shows you
@@ -1020,8 +1056,9 @@ cannot be asked at all, the last answer it gave is replayed with the date it
 was true.
 
 **Training runs only on a configuration that holds your own API key.** **Train
-on** lists those; a This Curio install configuration is never offered, and a
-guest on a `--deploy` instance cannot train.
+on** lists those, starting with the one the Dataflow Builder runs on; a This
+Curio install configuration is never offered, and a guest on a `--deploy`
+instance cannot train.
 
 **What gets sent, and what does not.** Only fixtures that are on the `train`
 split *and* approved by a person. Each row is one training example: the system
@@ -1059,9 +1096,9 @@ fixture digests still match the corpus. Four refusals, each naming what to fix.
 The scores come from the same deterministic comparator as everything else in
 part 7, so no model and no agent is anywhere in the approval path, and a
 candidate never judges itself. Switching over adds an LLM configuration with
-the trained model, marked **Trained**, and makes it your default. Your previous
-default is recorded, so going back is one click, until you change your default
-by hand.
+the trained model, marked **Trained**, and chooses it for the Dataflow Builder,
+whose prompts built the training set. The Builder's previous choice is
+recorded, so going back is one click, until you change that choice by hand.
 
 ```bash
 export CURIO_EVAL_LIVE=1
@@ -1069,8 +1106,9 @@ python -m utk_curio.tools.agent_eval run \
     --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
 ```
 
-`--model` runs on a temporary copy of your default configuration with that
-model, and puts your default back afterwards.
+`--model` runs on a temporary copy of the Dataflow Builder's configuration with
+that model, chosen for the Builder for the run, and puts its choice back
+afterwards.
 
 Two honest limits. The training data is Curio's own examples, so this teaches
 the *shape* of a Curio dataflow, not your domain — training on your own
