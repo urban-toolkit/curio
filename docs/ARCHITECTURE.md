@@ -616,9 +616,9 @@ default.
 > runner user. So that job drops the workflow comparison and asserts over the
 > API instead (see `docker-compose.ci-exec-user.yml`).
 >
-> `--deploy` now turns isolation on wherever the host can provide it, so the
-> deployed instances need no flag for it. A local `curio start` still changes
-> nothing: isolation separates users from each other, and locally there is one.
+> `--deploy` turns isolation on wherever the host can provide it, so deployed
+> instances need no flag for it. A local `curio start` without `--deploy` leaves
+> it off: isolation separates users from each other, and locally there is one.
 
 **Where an install lands.** There is no switch for whether `pip install` may
 run; there is only the question of *whose* environment it changes, and that is
@@ -1109,7 +1109,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject behavior bundles, build descriptors |
 | `src/registry/index.ts` | Exposes `window.curio.registerBehavior` + `window.curio.backendUrl` for package bundles |
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
-| `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
+| `src/constants.ts` | `SupportedType` and `EdgeType` enums (node types live in package manifests) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |

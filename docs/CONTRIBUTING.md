@@ -222,7 +222,7 @@ python curio.py test e2e --parallel 4
 
 See `python curio.py test --help` for all options, or read the sections below for
 more detail. The command is a front end for `./scripts/test.sh`, which CI calls
-directly and which still accepts its own flags (`--unit-only`, `--e2e-only`, ...)
+directly and which accepts its own flags (`--unit-only`, `--e2e-only`, ...)
 if you prefer to run it yourself.
 
 ### One-Time Setup

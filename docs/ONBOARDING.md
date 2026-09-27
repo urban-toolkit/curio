@@ -22,7 +22,7 @@ This document is meant for **undergraduate students** involved in the Curio proj
     - [Why are there two different instances of `curio` when I use pip versus cloning?](#why-are-there-two-different-instances-of-curio-when-i-use-pip-versus-cloning)
     - [Why do I get `bash: conda: command not found`?](#why-do-i-get-bash-conda-command-not-found)
     - [How do I know if my issue is with Curio, Conda, or Pip?](#how-do-i-know-if-my-issue-is-with-curio-conda-or-pip)
-    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
+    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-or-python-curiopy-start-take-so-long-to-run-the-first-time)
     - [I am getting a "No such file or directory" error when loading a file](#i-am-getting-a-no-such-file-or-directory-error-when-loading-a-file)
 
 ## 1. Overview: Curio
@@ -334,7 +334,7 @@ or
 python curio.py start
 ```
 
-is taking a long time, this is normal. From a git clone, the first run has no built frontend, so Curio installs the Node.js dependencies and runs a production webpack build of the whole UI. Expect a few minutes. Later runs reuse the result and start in seconds, until you pass `--force-rebuild`.
+is taking a long time, this is normal. From a git clone, the first run has no built frontend, so Curio installs the Node.js dependencies and runs a production webpack build of the whole UI. Expect a few minutes. Later runs reuse the build and start in seconds, unless you pass `--force-rebuild` or a different `--backend-port`.
 
 A pip install and the Docker image skip this entirely: both ship a frontend that is already built.
 

@@ -60,9 +60,9 @@ curio setup                  # install deps and exit
 
 Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
 
-A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout built in development mode, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
+`curio.py start` builds the frontend when there is no build to serve, when the existing build is a development build, or when it was made for a different `--backend-port`. The first build on a fresh clone takes a few minutes. Source edits do not trigger a build, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
-Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_modules/` carries the Node major that installed it and is reinstalled when that changes; the bundle beside it is kept unless its own stamp calls for a rebuild.
+Curio needs Node.js 26 and refuses to start on an earlier version, naming the one to install. Switching to another Node major reinstalls `node_modules/` on the next start; the frontend build is kept unless one of the rules above calls for a new one.
 
 **Catalogs**
 
