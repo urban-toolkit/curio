@@ -1,0 +1,54 @@
+{
+  "id": "data.curio.storage-survey",
+  "name": "Example field survey",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "Geotagged photos and a video from two survey years, indexed where they are.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "media"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 4,
+  "featureCount": null,
+  "schema": null,
+  "lakeSource": {
+    "lakeId": "lake.curio.example-storage@1",
+    "lakeName": "Example storage",
+    "resourceId": "survey",
+    "fileCount": 4,
+    "fields": "year",
+    "fetchedAt": "2024-05-01T00:00:00Z"
+  },
+  "collection": {
+    "kind": "media",
+    "sourceId": "lake.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "provider": "folder",
+    "resourceId": "survey",
+    "resource": "survey",
+    "path": "survey/{year:int}/**/*",
+    "fields": [
+      "year"
+    ],
+    "counts": {
+      "image": 3,
+      "video": 1
+    },
+    "fileCount": 4,
+    "totalBytes": 5666,
+    "hasGps": true,
+    "probeErrors": 0,
+    "indexedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "e0f6c12062100727877489de2dc3437bd543f765ffcce2a2f8c55f08791703e7"
+  }
+}

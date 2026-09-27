@@ -280,3 +280,42 @@ class TestSampleThumbnails:
         assert res.status_code == 200 and res.mimetype == "image/jpeg"
         assert client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/99/orthos", headers=auth).status_code == 404
         assert client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/0/orthos").status_code == 401
+
+
+class TestTheCommittedExampleCollections:
+    """The storage examples read collections committed to ``datasets/``, and
+    those behave like one a user added from the lake."""
+
+    ORTHOS = "data.curio.storage-orthos"
+
+    def test_it_is_listed_with_its_collection_block(self, client, auth, app, shipped_root):
+        item = client.get(f"/api/datasets/{self.ORTHOS}", headers=auth).get_json()
+        assert item["format"] == "collection"
+        assert item["collection"]["sourceId"] == EXAMPLE
+        assert item["loaderSnippet"]["code"] == f'collection = curio_collection("{self.ORTHOS}")'
+
+    def test_its_files_are_served_by_id(self, client, auth, app, shipped_root):
+        import pandas as pd
+
+        item = client.get(f"/api/datasets/{self.ORTHOS}", headers=auth).get_json()
+        file_id = pd.read_parquet(item["path"])["file_id"].iloc[0]
+        res = client.get(f"/api/datasets/{self.ORTHOS}/media/{file_id}?variant=thumb", headers=auth)
+        assert res.status_code == 200 and res.mimetype == "image/jpeg"
+
+    def test_node_code_resolves_it_to_the_source_folder(self, app, shipped_root, user_and_token):
+        from flask import g
+
+        from utk_curio.backend.app.api.routes import _resolve_exec_collections
+        from utk_curio.backend.app.datalakes.infrastructure.storage import storage_root
+        from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.datalakes.infrastructure.storage import source_dir
+
+        user, _token = user_and_token
+        with app.test_request_context():
+            g.user = user
+            collections, media_dir = _resolve_exec_collections(
+                f'media = curio_collection("{self.ORTHOS}")', str(user.id)
+            )
+        root = storage_root(load_source_manifest(source_dir(EXAMPLE)))
+        assert collections[self.ORTHOS] == {"kind": "rasters", "root": str(root)}
+        assert media_dir

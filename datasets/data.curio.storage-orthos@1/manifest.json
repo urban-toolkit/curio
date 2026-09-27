@@ -1,0 +1,54 @@
+{
+  "id": "data.curio.storage-orthos",
+  "name": "Example drone orthoimagery",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "Four orthorectified tiles over the Loop from two flights, indexed where they are.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "rasters"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 4,
+  "featureCount": null,
+  "schema": null,
+  "lakeSource": {
+    "lakeId": "lake.curio.example-storage@1",
+    "lakeName": "Example storage",
+    "resourceId": "orthos",
+    "fileCount": 4,
+    "fields": "year,tile",
+    "fetchedAt": "2024-05-01T00:00:00Z"
+  },
+  "collection": {
+    "kind": "rasters",
+    "sourceId": "lake.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "provider": "folder",
+    "resourceId": "orthos",
+    "resource": "orthos",
+    "path": "orthos/{year:int}/{tile}.tif",
+    "fields": [
+      "year",
+      "tile"
+    ],
+    "counts": {
+      "raster": 4
+    },
+    "fileCount": 4,
+    "totalBytes": 13720,
+    "hasGps": true,
+    "probeErrors": 0,
+    "indexedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "8c137cd69c43c7fdb051212604df7964f11d2a25467a8229b08b5843318e25ab"
+  }
+}

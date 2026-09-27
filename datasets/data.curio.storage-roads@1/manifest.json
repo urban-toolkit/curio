@@ -1,0 +1,33 @@
+{
+  "id": "data.curio.storage-roads",
+  "name": "Example roads",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Three road segments, added from a shapefile.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "parquet"
+  ],
+  "dataFile": "data/roads.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": null,
+  "featureCount": 2,
+  "schema": null,
+  "lakeSource": {
+    "lakeId": "lake.curio.example-storage@1",
+    "lakeName": "Example storage",
+    "resourceId": "roads",
+    "sourcePath": "city/roads.shp",
+    "fileCount": 1,
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "contentSha256": "d7afa3888bdbd3a53a9d39b412b1342f8d638d562c353e15e334bb142d0412b5"
+  }
+}

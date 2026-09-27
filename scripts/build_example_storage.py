@@ -16,10 +16,16 @@ generated here so the bytes are reproducible and carry no one's data.
     survey/<year>/clip_<n>.mp4         a one-second H.264 video
     noise/<sensor>/<YYYYmmdd_HHMMSS>.wav  audio recordings
 
+It then adds the resources the storage examples read to the committed Data
+Catalog, as ``datasets/data.curio.storage-*@1``, through the Data Lake
+Catalog's own add path, so each example can name its data by a stable id the
+way every other example does. File times are pinned first, so the indexes come
+out the same on every run.
+
 Needs Pillow, rasterio, geopandas and PyAV, all of which ``curio.builtin@1``
 installs. Run from the repository root:
 
-    python scripts/build_example_storage.py
+    PYTHONPATH=$PWD python scripts/build_example_storage.py
 """
 
 from __future__ import annotations
@@ -27,12 +33,22 @@ from __future__ import annotations
 import csv
 import json
 import math
+import os
 import shutil
 import struct
+import tempfile
 import wave
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "docs" / "examples" / "data" / "storage"
+REPO = Path(__file__).resolve().parents[1]
+ROOT = REPO / "docs" / "examples" / "data" / "storage"
+SOURCE = REPO / "datalakes" / "lake.curio.example-storage@1"
+CATALOG = REPO / "datasets"
+
+#: Every generated file's modification time, and every date the committed
+#: datasets record: 2024-05-01T00:00:00Z.
+PINNED_EPOCH = 1714521600
+PINNED_ISO = "2024-05-01T00:00:00Z"
 
 # The Chicago Loop, where the other examples also live.
 LAT, LON = 41.8819, -87.6278
@@ -218,6 +234,128 @@ def write_noise(root: Path) -> None:
     _tone(folder / "sensor_02" / "20240501_060000.wav", seconds=0.5, freq=440, level=0.4)
 
 
+#: The committed datasets: the lake resource each is added from, its id, its
+#: name and what it holds.
+DATASETS = [
+    ("orthos", "data.curio.storage-orthos", "Example drone orthoimagery",
+     "Four orthorectified tiles over the Loop from two flights, indexed where they are."),
+    ("dashcam", "data.curio.storage-dashcam", "Example dashcam frames",
+     "Two dashcam sequences with a position per frame, indexed where they are."),
+    ("air-quality", "data.curio.storage-air-quality", "Example air quality readings",
+     "Three days of readings from three sensors, combined from one CSV file per sensor and day."),
+    ("stations", "data.curio.storage-stations", "Example air quality stations",
+     "Where each air quality sensor stands."),
+    ("survey", "data.curio.storage-survey", "Example field survey",
+     "Geotagged photos and a video from two survey years, indexed where they are."),
+    ("noise", "data.curio.storage-noise", "Example noise recordings",
+     "Short recordings from two noise sensors, timed by their file names, indexed where they are."),
+    ("roads", "data.curio.storage-roads", "Example roads",
+     "Three road segments, added from a shapefile."),
+    ("parks", "data.curio.storage-parks", "Example parks",
+     "Two park outlines, added from a GeoJSON file."),
+]
+
+
+def pin_times(root: Path) -> None:
+    for path in root.rglob("*"):
+        os.utime(path, (PINNED_EPOCH, PINNED_EPOCH))
+
+
+def _counts(path: Path, fmt: str) -> tuple[int | None, int | None]:
+    """``(rowCount, featureCount)`` as the Data Catalog lists them."""
+    import geopandas as gpd
+    import pandas as pd
+
+    if fmt == "geojson":
+        return None, len(gpd.read_file(path))
+    if fmt == "csv":
+        return len(pd.read_csv(path)), None
+    try:
+        return None, len(gpd.read_parquet(path))
+    except Exception:  # noqa: BLE001 - a table without geometry
+        return len(pd.read_parquet(path)), None
+
+
+def build_datasets() -> list[str]:
+    """Add each of ``DATASETS`` from the example source and commit the result."""
+    state = tempfile.mkdtemp(prefix="curio-example-storage-")
+    os.environ["CURIO_STATE_DIR"] = state
+    try:
+        from utk_curio.backend.app.datalakes.application.storage_acquire import StorageAcquire
+        from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.datalakes.providers import build_storage
+        from utk_curio.backend.app.datasets.install.installer import install_imported_path
+
+        manifest = load_source_manifest(SOURCE)
+        provider = build_storage(manifest, None)
+        placed: list[Path] = []
+
+        def install_path(path, filename, fmt, **kwargs):
+            result = install_imported_path(
+                "1", path, filename, fmt,
+                title=kwargs.get("title"),
+                lake_source=kwargs.get("lake_source"),
+                description=kwargs.get("description"),
+                collection=kwargs.get("collection"),
+            )
+            placed.append(result.dest)
+            return {"id": result.manifest.id}
+
+        acquire = StorageAcquire(
+            user_key="1",
+            storage_for=lambda _m: provider,
+            install_path=install_path,
+            import_layers=None,
+            find_held=lambda *_a: None,
+        )
+        written = []
+        for resource_id, dataset_id, title, description in DATASETS:
+            acquire.acquire(manifest, resource_id, title=title)
+            written.append(_commit(placed.pop(), dataset_id, title, description))
+        return written
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+
+def _commit(built: Path, dataset_id: str, title: str, description: str) -> str:
+    """Move one added dataset into ``datasets/`` under its committed id."""
+    raw = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
+    fmt = raw["format"]
+    rows, features = _counts(built / raw["dataFile"], fmt)
+    lake = dict(raw.get("lakeSource") or {}, fetchedAt=PINNED_ISO)
+    collection = raw.get("collection")
+    if collection:
+        collection = dict(collection, indexedAt=PINNED_ISO)
+    kind = (collection or {}).get("kind")
+    out = {
+        "id": dataset_id,
+        "name": title,
+        "version": "1.0.0",
+        "format": fmt,
+        "description": description,
+        "publisher": "Curio",
+        "license": "CC0-1.0",
+        "tags": ["example", "storage", kind or fmt],
+        "dataFile": raw["dataFile"],
+        "compatibility": {"major": 1},
+        "sourceLabel": "Example storage",
+        "createdAt": PINNED_ISO,
+        "updatedAt": PINNED_ISO,
+        "rowCount": rows if collection is None else len(__import__("pandas").read_parquet(built / raw["dataFile"])),
+        "featureCount": None if collection else features,
+        "schema": None,
+        "lakeSource": lake,
+    }
+    if collection:
+        out["collection"] = collection
+    target = CATALOG / f"{dataset_id}@1"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(built / "data", target / "data")
+    (target / "manifest.json").write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+    return target.name
+
+
 def main() -> None:
     if ROOT.exists():
         shutil.rmtree(ROOT)
@@ -228,9 +366,11 @@ def main() -> None:
     write_dashcam(ROOT)
     write_survey(ROOT)
     write_noise(ROOT)
+    pin_times(ROOT)
     files = sorted(p for p in ROOT.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in files)
-    print(json.dumps({"files": len(files), "bytes": total}))
+    datasets = build_datasets()
+    print(json.dumps({"files": len(files), "bytes": total, "datasets": datasets}))
 
 
 if __name__ == "__main__":

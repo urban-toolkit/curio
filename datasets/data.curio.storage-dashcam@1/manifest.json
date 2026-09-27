@@ -1,0 +1,57 @@
+{
+  "id": "data.curio.storage-dashcam",
+  "name": "Example dashcam frames",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "Two dashcam sequences with a position per frame, indexed where they are.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "frames"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 10,
+  "featureCount": null,
+  "schema": null,
+  "lakeSource": {
+    "lakeId": "lake.curio.example-storage@1",
+    "lakeName": "Example storage",
+    "resourceId": "dashcam",
+    "fileCount": 10,
+    "fields": "date,sequence,frame",
+    "fetchedAt": "2024-05-01T00:00:00Z"
+  },
+  "collection": {
+    "kind": "frames",
+    "sourceId": "lake.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "provider": "folder",
+    "resourceId": "dashcam",
+    "resource": "dashcam",
+    "path": "dashcam/{date:date}/{sequence}_{frame:int}.jpg",
+    "fields": [
+      "date",
+      "sequence",
+      "frame"
+    ],
+    "counts": {
+      "frame": 10
+    },
+    "fileCount": 10,
+    "totalBytes": 7342,
+    "hasGps": true,
+    "probeErrors": 0,
+    "indexedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "f4f2ca441339b19cf61187af819fd7ac9048b4a8abb971aeaf3e5883dae89a45",
+    "fps": 10.0,
+    "sequences": 2
+  }
+}
