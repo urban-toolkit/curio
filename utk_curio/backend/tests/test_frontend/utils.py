@@ -1086,13 +1086,19 @@ def _assert_mintable(image, expected_path: str, page) -> None:
         )
 
 
+#: The most any screenshot comparison may let differ. A map is often under a
+#: fifth of its frame, so with a looser budget a frame whose map is missing can
+#: still pass. A comparison may ask for less, never more.
+MAX_DIFF_RATIO = 0.20
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
     *,
     test_name: str,
     pixel_threshold: int = 30,
-    max_diff_ratio: float = 0.20,
+    max_diff_ratio: float = MAX_DIFF_RATIO,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
@@ -1103,8 +1109,9 @@ def save_workflow_test_screenshot(
     compared pixel-by-pixel against it.  Both images are resized to the
     same dimensions before comparison so layout-only size changes don't
     cause false positives.  The assertion fails when more than
-    *max_diff_ratio* (default 15 %) of pixels differ by more than
-    *pixel_threshold* (per-channel, 0-255).
+    *max_diff_ratio* of pixels differ by more than *pixel_threshold*
+    (per-channel, 0-255). It defaults to ``MAX_DIFF_RATIO``, which is also the
+    most it may be.
 
     On failure the expected, actual, and diff images are attached to the
     Allure report so that reviewers can inspect the regression directly
@@ -1150,6 +1157,11 @@ def save_workflow_test_screenshot(
 
     Returns the path to the expected screenshot file.
     """
+    if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
+        raise ValueError(
+            f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
+            "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
+        )
     from PIL import Image, ImageChops, ImageEnhance
     import numpy as np
 
@@ -1202,6 +1214,13 @@ def save_workflow_test_screenshot(
     total = int(arr.shape[0] * arr.shape[1])
     mismatched = int((arr > pixel_threshold).any(axis=2).sum())
     ratio = mismatched / total if total else 0.0
+    # Passing comparisons report too, so a budget can be set from what CI
+    # measures rather than guessed.
+    allure.attach(
+        f"{mismatched}/{total} pixels differ ({ratio:.2%}), allowed {max_diff_ratio:.2%}",
+        name=f"{filename}: pixels that differ",
+        attachment_type=allure.attachment_type.TEXT,
+    )
 
     if ratio > max_diff_ratio:
         actual_path = os.path.join(
