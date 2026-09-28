@@ -86,7 +86,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 
 There are three places you work with datasets, and they are **not** interchangeable:
 
-- **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
+- **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
 - **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
 - **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
@@ -98,7 +98,7 @@ There are three places you work with datasets, and they are **not** interchangea
 | **Add to all projects** | `/catalog/data`, in the right-hand drawer or the right-click menu | Your defaults and every project's refs, plus your store if needed | The dataset is in every dataflow's palette, and new projects start with it. |
 | **Remove from all projects** | `/catalog/data`, in the right-hand drawer or the right-click menu | Your defaults and every project's refs | It leaves every dataflow. The dataset stays in your account. |
 | **Remove from project** | Drawer | This dataflow's refs; your own upload is deleted too when no other dataflow uses it | It leaves this dataflow's palette. The confirmation says when an upload will be deleted, and its button then reads **Remove and delete**. |
-| **Import dataset** | Drawer footer | Your store | The file is registered in your catalog. It is **not** added to the open dataflow; add it afterwards. |
+| **Import dataset** | Drawer footer, or the `/catalog/data` header | Your store | The file is registered in your catalog. It is **not** added to the open dataflow; add it afterwards. |
 | **Publish** | `/catalog/data`, in the right-hand drawer | The shared catalog | Every user on this install can browse the dataset. |
 | **Unpublish** | `/catalog/data`, in the right-hand drawer | The shared catalog | The listing goes away. Copies already added to dataflows are untouched. |
 | **Delete** | Drawer, on computed datasets and your own imports | Your store, and refs in every project | The dataset is **permanently** removed from your account, and every dataflow's reference to it is stripped. |
@@ -288,7 +288,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
-| `lakeSource` | | Where a Data Lake download came from: the portal (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
+| `lakeSource` | | Where a Data Lake download came from: the portal (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. |

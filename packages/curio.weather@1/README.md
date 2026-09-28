@@ -18,7 +18,7 @@ dependencies.
 | `curio.weather/census-load` | data | Milan Census Polygons | Load `data.urbanlab.milan-census-gt65` from the Data Catalog as a GeoDataFrame. |
 | `curio.weather/utci-compute` | computation | UTCI from raster + weather | Per-pixel Universal Thermal Climate Index via `pythermalcomfort`. |
 | `curio.weather/utci-zonal` | computation | UTCI Zonal Mean | `rasterstats.zonal_stats` of the UTCI grid into census polygons. |
-| `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to the projection `AUTK_MAP` expects; tag as `census`. |
+| `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to EPSG:3395; tag as `census`. |
 | `curio.weather/gt65-projection` | computation | Project gt_65 column | Project down to `gt_65` for an independent boxplot view. |
 
 ## Demo wiring

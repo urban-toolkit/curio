@@ -1,7 +1,8 @@
 import React from "react";
+import { subscribeConnectionKeysRequests } from "../../components/connectionKeys/connectionKeysRequest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-import { AgentReviewCard } from "../../components/agents/content/AgentReviewCard";
+import { AgentReviewCard, nodeKindExecutable } from "../../components/agents/content/AgentReviewCard";
 import type { AgentProposalPart } from "../../api/agentsApi";
 
 const part = (status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
@@ -204,7 +205,7 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
 
   it("names every victim with a content flag and the cascade", () => {
     render(<AgentReviewCard part={revision} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    const section = screen.getByRole("group", { name: "Nodes this plan removes" });
+    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
     expect(section).toHaveTextContent("Removes 2 nodes (and 1 connected edge)");
     expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis — contains 10 chars of content");
     expect(section).toHaveTextContent("Scratch — empty");
@@ -213,10 +214,31 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
     ).toBeInTheDocument();
   });
 
+  it("names removed CONNECTIONS too, with the interaction kind (dev/112)", () => {
+    const edgeOnly: AgentProposalPart = {
+      ...revision,
+      summary: "Apply plan · 0 nodes, 1 edges, removes 1 connection",
+      plan: {
+        goal: "convert the feedback edge",
+        nodes: [],
+        edgeCount: 1,
+        edges: [{ from: "vis", to: "pool", kind: "interaction", fromLabel: "Metric Distribution", toLabel: "Time Data Pool" }],
+        removedEdges: [{ id: "e5", fromLabel: "Metric Distribution", toLabel: "Pool Input Merge" }],
+      },
+    };
+    render(<AgentReviewCard part={edgeOnly} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
+    expect(section).toHaveTextContent("Removes 1 connection");
+    expect(section).toHaveTextContent("Metric Distribution → Pool Input Merge");
+    expect(
+      screen.getByText("Applying adds 1 connection and removes 1 — nodes and their content are untouched."),
+    ).toBeInTheDocument();
+  });
+
   it("additive plans render no Removes section (regression)", () => {
     const additive = { ...revision, plan: { ...revision.plan!, removals: undefined, cascadeCount: undefined } };
     render(<AgentReviewCard part={additive} onApply={jest.fn()} />);
-    expect(screen.queryByRole("group", { name: "Nodes this plan removes" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Nodes and connections this plan removes" })).toBeNull();
     expect(screen.getByText(/existing work is untouched/)).toBeInTheDocument();
   });
 });
@@ -764,5 +786,302 @@ describe("dependency home line (memo dev/97)", () => {
   it("host routing adds no line (status quo)", () => {
     render(<AgentReviewCard part={withDeps("host")} onApply={jest.fn()} />);
     expect(screen.queryByText(/isolated overlay/)).toBeNull();
+  });
+});
+
+
+describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
+  const withSource = (source: AgentProposalPart["source"], tool = "node.create"): AgentProposalPart => ({
+    ...part(),
+    tool,
+    summary: "Create a new Data Loading node",
+    pins: { nodeType: "curio.builtin/data-loading" },
+    source,
+  });
+
+  it("names a Data Catalog source by title, format and id", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "catalog",
+          label: "Data Catalog · Census ACS 5-year (parquet)",
+          refs: [{ kind: "catalog", value: 'curio_dataset_path("imported.acs@1")',
+                   datasetId: "imported.acs@1", title: "Census ACS 5-year", format: "parquet" }],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · Data Catalog");
+    expect(block).toHaveTextContent("Census ACS 5-year (parquet) · imported.acs@1");
+  });
+
+  it("shows an external URL with the runtime's verification chip", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "external",
+          label: "External · https://api.noaa.gov/climate · verified",
+          refs: [{ kind: "external", value: "https://api.noaa.gov/climate",
+                   verification: { status: "verified", httpStatus: 200 } }],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · External source");
+    expect(block).toHaveTextContent("https://api.noaa.gov/climate");
+    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
+  });
+
+  it("says a credential-gated endpoint is gated and a user path is unchecked", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({
+          kind: "mixed",
+          label: "…",
+          refs: [
+            { kind: "external", value: "https://api.x.gov/v1", requirement: "credential-gated",
+              verification: { status: "unreachable", httpStatus: 401 } },
+            { kind: "user-path", value: "data/tracts.geojson" },
+          ],
+        })}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Source · Several sources");
+    expect(block).toHaveTextContent("https://api.x.gov/v1 · credential-gated");
+    expect(block).toHaveTextContent("data/tracts.geojson — not checked by Curio");
+  });
+
+  it("labels synthetic data as generated in the node", () => {
+    render(
+      <AgentReviewCard
+        part={withSource({ kind: "synthetic", label: "Synthetic · generated in the node, no external source",
+                           refs: [{ kind: "synthetic" }] })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(
+      "Source · Synthetic data",
+    );
+    expect(screen.getByText(/generated in the node — no external source/)).toBeInTheDocument();
+  });
+
+  it("renders no Source block when the proposal carries none (older/other cards unchanged)", () => {
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
+    expect(screen.queryByRole("group", { name: "Data source" })).toBeNull();
+  });
+
+  it("source text is model-derived data and renders inert", () => {
+    const { container } = render(
+      <AgentReviewCard
+        part={withSource({ kind: "user-path", label: "x",
+                           refs: [{ kind: "user-path", value: "<img src=x onerror=\"window.__srcPwned=1\">" }] })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("<img src=x");
+  });
+});
+
+describe("AgentReviewCard — dev/115 the verification attempt trail", () => {
+  const executed: AgentProposalPart = {
+    ...part(),
+    tool: "node.content.write",
+    summary: "Replace the content of node 'n1'",
+    validation: {
+      verdict: "pass",
+      rounds: 2,
+      evidence: { kind: "executed", outputDataType: "dataframe", durationMs: 4120 },
+      attempts: [
+        { round: 1, verdict: "fail", kind: "execution-error", source: "current content",
+          detail: "node 'n1' failed", stderrTail: "requests.exceptions.HTTPError: 400 Client Error" },
+        { round: 2, verdict: "pass", kind: "executed", source: "generated", outputDataType: "dataframe", durationMs: 4120 },
+      ],
+    },
+  };
+
+  it("lists every round under a collapsed disclosure, errors nested", () => {
+    render(<AgentReviewCard part={executed} onApply={jest.fn()} />);
+    const summary = screen.getByText("Verification · 2 attempts");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent("Round 1 · fail · execution-error · the node's current code");
+    expect(list).toHaveTextContent("Round 2 · pass ✓");
+    expect(list).toHaveTextContent("output: dataframe · 4.1 s");
+    expect(list).toHaveTextContent("400 Client Error");
+    // PASS still enables Apply: the code on the card is the code that ran.
+    expect(screen.getByRole("button", { name: "Apply" })).not.toBeDisabled();
+  });
+
+  it("a failed round names what the endpoint actually answered (dev/115 field fix)", () => {
+    const withEndpoint = {
+      ...executed,
+      validation: {
+        ...executed.validation,
+        verdict: "pass",
+        rounds: 2,
+        attempts: [
+          { ...executed.validation!.attempts![0],
+            endpointEvidence: 'https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"' },
+          executed.validation!.attempts![1],
+        ],
+      },
+    };
+    render(<AgentReviewCard part={withEndpoint} onApply={jest.fn()} />);
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent('Endpoint: https://api.census.gov/data/2022/acs/acs5?get=NAME → verified 200: answered an HTML page titled "Missing Key"');
+    // A passing round never carries one.
+    expect(list.textContent!.match(/Endpoint:/g)).toHaveLength(1);
+  });
+
+  it("a data-loading node.create says what Solve will do after Apply", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading", executable: true },
+          source: { kind: "catalog", label: "Data Catalog · Heat", refs: [{ kind: "catalog", datasetId: "d1", title: "Heat" }] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(/Applying adds this node to the canvas\./)).toHaveTextContent(
+      /Solve runs it in the sandbox and fixes errors before its code is trusted/,
+    );
+  });
+
+  it("no trail renders without attempts (older validation blocks unchanged)", () => {
+    render(<AgentReviewCard part={{ ...executed, validation: { verdict: "pass", rounds: 1 } }} onApply={jest.fn()} />);
+    expect(screen.queryByText(/Verification · /)).toBeNull();
+  });
+});
+
+
+describe("AgentReviewCard — dev/116 connection keys", () => {
+  it("a secret ref reads as a connection key by name — never a value", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/data-loading" },
+          source: { kind: "mixed", label: "External · … · Connection key · census", refs: [
+            { kind: "external", value: "https://api.census.gov/data", verification: { status: "verified", httpStatus: 200 } },
+            { kind: "secret", value: 'curio_secret("census")', name: "census", host: "api.census.gov", delivery: "query:key" },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    const block = screen.getByRole("group", { name: "Data source" });
+    expect(block).toHaveTextContent("Connection key · census · api.census.gov");
+    expect(block).not.toHaveTextContent("query:key");
+  });
+
+  it("a credential-gated external ref shows the saved-key hint", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.create",
+          source: { kind: "external", label: "x", refs: [
+            { kind: "external", value: "https://api.census.gov/data", requirement: "credential-gated",
+              hint: "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")",
+              verification: { status: "unreachable", httpStatus: 401 } },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated — a connection key 'census' is saved/);
+  });
+
+  it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form", () => {
+    const seen: unknown[] = [];
+    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const failed: AgentProposalPart = {
+      ...part(), tool: "node.content.write",
+      validation: { verdict: "fail", rounds: 2, evidence: { kind: "source-missing", detail: "the content builder declined: needs a key" },
+        attempts: [
+          { round: 1, verdict: "fail", kind: "execution-error", detail: "node failed", stderrTail: "JSONDecodeError" },
+          { round: 2, verdict: "fail", kind: "source-missing", detail: "the content builder declined: The Census API requires an API key",
+            remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" } },
+        ] },
+    };
+    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add key for api.census.gov" }));
+    expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
+    off();
+  });
+
+  it("a use-connection-key remedy is a sentence, not a button", () => {
+    const failed: AgentProposalPart = {
+      ...part(), tool: "node.content.write",
+      validation: { verdict: "fail", rounds: 2, attempts: [
+        { round: 2, verdict: "fail", kind: "source-missing", detail: "declined",
+          remedy: { kind: "use-connection-key", host: "api.census.gov", name: "census" } },
+      ] },
+    };
+    render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
+    expect(screen.queryByRole("button", { name: /Add key/ })).toBeNull();
+    expect(screen.getByText(/A connection key "census" is saved for api.census.gov — Solve again/)).toBeInTheDocument();
+  });
+});
+
+
+describe("AgentReviewCard — dev/118 every executable kind", () => {
+  const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
+
+  it("the node.create effect line reads the roster's executable flag (dev/119)", () => {
+    // The ROSTER decides, not the name: a python kind the legacy list never
+    // held is executable when its template says so, and a builtin kind whose
+    // template has no code is not.
+    const { unmount } = render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "some.pkg/custom-python@1", executable: true }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.getByText(/Solve runs it in the sandbox and fixes errors/)).toBeInTheDocument();
+    unmount();
+    const second = render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/spatial-join@1", executable: false }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.getByText(/has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified/)).toBeInTheDocument();
+    second.unmount();
+    // A part minted before the flag, on a kind the registry has never seen:
+    // the card says nothing rather than guessing.
+    render(
+      <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "ghost.pkg/unknown@1" }, source }} onApply={jest.fn()} />,
+    );
+    expect(screen.queryByText(/Solve runs it in the sandbox/)).toBeNull();
+    expect(screen.queryByText(/has no code to run/)).toBeNull();
+  });
+
+  it("nodeKindExecutable falls back to the registry descriptor for parts minted before the flag", () => {
+    expect(nodeKindExecutable({ nodeType: "x", executable: true })).toBe(true);
+    expect(nodeKindExecutable({ nodeType: "x", executable: false })).toBe(false);
+    expect(nodeKindExecutable({ nodeType: "ghost.pkg/unknown@1" })).toBeNull();
+    expect(nodeKindExecutable(undefined)).toBeNull();
+  });
+
+  it("a not-executable attempt and a reused upstream are said in words", () => {
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.content.write",
+          validation: { verdict: "pass", rounds: 2, attempts: [
+            { round: 1, verdict: "fail", kind: "execution-error", detail: "boom", reusedNodes: ["load"] },
+            { round: 2, verdict: "pass", kind: "executed", outputDataType: "dataframe", reusedNodes: ["load"], reuseRetried: true },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    const list = screen.getByRole("list", { name: "Verification attempts" });
+    expect(list).toHaveTextContent("Round 1 · fail · execution-error");
+    expect(list.textContent!.match(/reused 1 upstream result/g)).toHaveLength(2);
+    expect(list).toHaveTextContent("(re-run whole once)");
+    render(
+      <AgentReviewCard
+        part={{ ...part(), tool: "node.content.write",
+          validation: { verdict: "not-executable", rounds: 1, attempts: [
+            { round: 1, verdict: "not-executable", kind: "not-executable", detail: "vis-vega has no code the sandbox could run" },
+          ] } }}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getAllByRole("list", { name: "Verification attempts" })[1]).toHaveTextContent(
+      "Round 1 · not executable — no code to run, nothing ran",
+    );
   });
 });

@@ -1,0 +1,114 @@
+/* dev/127: the attempt trail in the transcript. Shaped like the other runtime
+   cards (AgentDatasetCandidatesCard) so a failure reads as part of the same
+   conversation, not as a debugger. */
+.card {
+  border: 1px solid var(--curio-border);
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.accentDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--curio-warning-text);
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kind {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--curio-text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary {
+  cursor: pointer;
+  font-size: 0.74rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.round {
+  font-weight: 600;
+}
+
+.errorHead {
+  color: var(--curio-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.error {
+  margin: 4px 0;
+  font-size: 0.73rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--curio-warning-text);
+}
+
+.codeLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-secondary);
+  margin: 4px 0 2px;
+}
+
+.prose {
+  margin: 2px 0 6px;
+  font-size: 0.74rem;
+  white-space: pre-wrap;
+  color: var(--curio-text-primary);
+}
+
+.note,
+.actions {
+  padding: 4px 10px 8px;
+  font-size: 0.72rem;
+  color: var(--curio-text-secondary);
+}
+
+.open {
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border: 1px solid var(--curio-border-strong);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.open:hover {
+  border-color: var(--curio-text-secondary);
+}

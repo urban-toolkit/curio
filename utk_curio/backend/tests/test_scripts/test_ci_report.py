@@ -1,0 +1,280 @@
+"""The CI report page: one HTML file that has to stand on its own.
+
+``scripts/ci_report.py`` is what test-gpu uploads as ``curio-ci-report.html``.
+Every input is optional because a step that never ran leaves no file, and the
+page is the first thing read when a run goes red, so a page that fails to build
+on odd input is worse than no page. These build it from synthetic inputs.
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import sys
+from pathlib import Path
+
+from PIL import Image
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _load(name: str):
+    path = REPO_ROOT / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"_scripts_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    # dataclasses look their own module up while building a class.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ci_report = _load("ci_report")
+
+FAILED_ID = ("tests/test_frontend/test_workflows.py::TestWorkflowCanvas::"
+             "test_node_execution[Vega.json-chromium]@wf-Vega.json")
+
+JUNIT = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" errors="2" failures="1" skipped="2" tests="6" time="12.5">
+<testcase classname="tests.test_frontend.test_workflows.TestWorkflowCanvas"
+  name="test_node_execution[Vega.json-chromium]@wf-Vega.json" time="3.25">
+  <failure message="AssertionError: &lt;script&gt;alert(1)&lt;/script&gt; #x1B[31mred#x1B[0m">trace line</failure>
+</testcase>
+<testcase classname="tests.test_frontend.test_workflows.TestWorkflowCanvas"
+  name="test_node_execution[Vega.json-chromium]@wf-Vega.json" time="0.5">
+  <error message="failed on teardown with &quot;boom&quot;">teardown trace</error>
+</testcase>
+<testcase classname="tests.test_frontend.test_a" name="test_passes" time="1.0"/>
+<testcase classname="tests.test_frontend.test_a" name="test_skipped" time="0">
+  <skipped type="pytest.skip" message="needs an owner">skip detail</skipped>
+</testcase>
+<testcase classname="tests.test_frontend.test_a" name="test_xfail" time="0">
+  <skipped type="pytest.xfail" message="known"/>
+</testcase>
+<testcase classname="tests.test_frontend.test_b" name="test_crash" time="0">
+  <error message="failed on setup with &quot;worker 'gw1' crashed while running 'x'&quot;"/>
+</testcase>
+</testsuite></testsuites>
+"""
+
+JEST = {
+    "success": False,
+    "startTime": 1000,
+    "testResults": [
+        {"name": "/src/utk_curio/frontend/urban-workflows/src/a.test.ts", "status": "failed",
+         "endTime": 4000, "message": "", "assertionResults": [
+             {"ancestorTitles": ["A"], "title": "works", "status": "passed", "duration": 5,
+              "failureMessages": []},
+             {"ancestorTitles": ["A"], "title": "breaks", "status": "failed", "duration": 7,
+              "failureMessages": ["\u001b[31mExpected 1\u001b[39m\n    at Object.<anonymous>"]},
+             {"ancestorTitles": [], "title": "later", "status": "todo", "duration": None,
+              "failureMessages": []},
+         ]},
+        {"name": "/src/utk_curio/frontend/urban-workflows/src/b.test.ts", "status": "failed",
+         "endTime": 5000, "assertionResults": [],
+         "message": "\u001b[1m● Test suite failed to run\u001b[22m\n\nCannot find module './x'"},
+    ],
+}
+
+TSC = """
+> urban-workflows@0.0.0 typecheck
+> tsc --noEmit --pretty false
+
+src/a.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+  The expected type comes from property 'x'.
+error TS5023: Unknown compiler option 'foo'.
+"""
+
+JOBS = {"jobs": [{
+    "name": "test-gpu", "status": "in_progress",
+    "html_url": "https://github.com/o/r/actions/runs/1/job/2",
+    "steps": [
+        {"name": "Set up job", "status": "completed", "conclusion": "success", "number": 1,
+         "started_at": "2026-09-28T02:00:00Z", "completed_at": "2026-09-28T02:00:05Z"},
+        {"name": "Run backend unit tests", "status": "completed", "conclusion": "failure",
+         "number": 11, "started_at": "2026-09-28T02:01:00Z", "completed_at": "2026-09-28T02:04:10Z"},
+        {"name": "Build the CI report page", "status": "in_progress", "conclusion": None,
+         "number": 30},
+    ],
+}]}
+
+
+def _png(path, color=(255, 255, 255), size=(8, 6)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color).save(path)
+
+
+def _comparison(root, folder, *, status, ratio, budget=0.2, nodeid="tests/x.py::test_y",
+                images=("expected", "created", "diff"), baseline=None):
+    out = root / folder
+    out.mkdir(parents=True)
+    for kind in images:
+        _png(out / f"{kind}.png")
+    record = {
+        "nodeid": nodeid, "baseline": baseline or f"screenshot_{folder}.png", "status": status,
+        "pixel_threshold": 30, "max_diff_ratio": budget, "ratio": ratio,
+        "mismatched": None if ratio is None else int(ratio * 48), "total": 48,
+        "max_delta": 200, "expected_size": [8, 6], "created_size": [8, 6], "compared_size": [8, 6],
+        "capture": "full page", "error": None,
+        "images": {kind: f"{kind}.png" for kind in images},
+    }
+    (out / "record.json").write_text(json.dumps(record), encoding="utf-8")
+
+
+def _inputs(tmp_path):
+    (tmp_path / "e2e.xml").write_text(JUNIT, encoding="utf-8")
+    (tmp_path / "jest.json").write_text(json.dumps(JEST), encoding="utf-8")
+    (tmp_path / "tsc.txt").write_text(TSC, encoding="utf-8")
+    (tmp_path / "jobs.json").write_text(json.dumps(JOBS), encoding="utf-8")
+    compare = tmp_path / "compare"
+    _comparison(compare, "a_pass", status="passed", ratio=0.01)
+    _comparison(compare, "b_near", status="passed", ratio=0.18)
+    _comparison(compare, "c_over", status="failed", ratio=0.3, nodeid=FAILED_ID)
+    _comparison(compare, "d_missing", status="missing", ratio=None, images=("created",))
+    (compare / "e_half_written").mkdir()  # a run killed before record.json
+    failures = tmp_path / "failures"
+    _png(failures / ci_report.failure_folder(FAILED_ID) / "screenshot.png", color=(200, 0, 0))
+    return compare, failures
+
+
+def _build(tmp_path, *extra):
+    compare, failures = _inputs(tmp_path)
+    out = tmp_path / "report.html"
+    summary = tmp_path / "summary.md"
+    argv = [
+        "--junit", f"End-to-end tests={tmp_path / 'e2e.xml'}",
+        "--jest", f"Frontend unit tests={tmp_path / 'jest.json'}",
+        "--tsc", f"TypeScript typecheck={tmp_path / 'tsc.txt'}",
+        "--comparisons", str(compare), "--failures", str(failures),
+        "--jobs", str(tmp_path / "jobs.json"), "--job-name", "test-gpu",
+        "--out", str(out), "--summary", str(summary), *extra,
+    ]
+    assert ci_report.main(argv) == 0
+    return out.read_text(encoding="utf-8"), summary.read_text(encoding="utf-8")
+
+
+def test_junit_counts_merge_the_teardown_duplicate(tmp_path):
+    (tmp_path / "e2e.xml").write_text(JUNIT, encoding="utf-8")
+    suite = ci_report.read_junit("e2e", str(tmp_path / "e2e.xml"))
+    assert len(suite.cases) == 5
+    assert (suite.count("passed"), suite.count("failed"), suite.count("error"),
+            suite.count("skipped", "xfailed")) == (1, 1, 1, 2)
+    failed = next(c for c in suite.cases if c.status == "failed")
+    assert "boom" in failed.message and "trace line" in failed.details
+    assert "#x1B" not in failed.message
+    crash = next(c for c in suite.cases if c.status == "error")
+    assert crash.kind == "crash"
+    assert suite.seconds == 12.5
+
+
+def test_jest_counts_and_a_suite_that_failed_to_run(tmp_path):
+    (tmp_path / "jest.json").write_text(json.dumps(JEST), encoding="utf-8")
+    suite = ci_report.read_jest("jest", str(tmp_path / "jest.json"))
+    assert (suite.count("passed"), suite.count("failed"), suite.count("error"),
+            suite.count("skipped")) == (1, 1, 1, 1)
+    assert suite.seconds == 4.0
+    names = [c.name for c in suite.cases]
+    assert "src/a.test.ts > A > breaks" in names and "src/b.test.ts" in names
+    assert all("\u001b" not in c.message + c.details for c in suite.cases)
+
+
+def test_tsc_errors_and_a_clean_run(tmp_path):
+    (tmp_path / "tsc.txt").write_text(TSC, encoding="utf-8")
+    suite = ci_report.read_tsc("tsc", str(tmp_path / "tsc.txt"))
+    assert [(e["file"], e["line"], e["code"]) for e in suite.tsc_errors] == [
+        ("src/a.ts", "12", "TS2322"), (None, None, "TS5023")]
+    assert "comes from property 'x'" in suite.tsc_errors[0]["message"]
+    assert suite.status == "failed"
+
+    clean = ("\n> x typecheck\n> tsc --noEmit\n\n"
+             "npm notice New minor version of npm available! 11.1.0 -> 11.2.0\n")
+    (tmp_path / "clean.txt").write_text(clean, encoding="utf-8")
+    assert ci_report.read_tsc("tsc", str(tmp_path / "clean.txt")).status == "passed"
+
+    (tmp_path / "odd.txt").write_text("> x typecheck\nnpm error Missing script\n", encoding="utf-8")
+    odd = ci_report.read_tsc("tsc", str(tmp_path / "odd.txt"))
+    assert odd.status == "unclear" and "Missing script" in odd.raw_tail
+
+
+def test_the_page_is_self_contained(tmp_path):
+    page, _ = _build(tmp_path)
+    assert page.startswith("<!doctype html>")
+    assert "<link" not in page and "<script src" not in page
+    assert not re.search(r'(?:src|href)="(?!data:|#|https://github\.com/)', page)
+    assert page.count('src="data:image/') == 3 * 3 + 1 + 1  # three full trios, one created, one screenshot
+
+
+def test_failure_text_is_escaped(tmp_path):
+    page, _ = _build(tmp_path)
+    assert "<script>alert(1)" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+
+
+def test_comparisons_are_ordered_over_missing_then_near_misses(tmp_path):
+    page, _ = _build(tmp_path)
+    order = [page.index(f"screenshot_{name}.png") for name in ("c_over", "d_missing", "b_near", "a_pass")]
+    assert order == sorted(order)
+    assert "e_half_written" not in page
+    assert "30.00%</strong> of pixels differ by more than 30 per channel" in page
+    assert "budget <strong>20.00%</strong>" in page
+
+
+def test_a_failed_test_gets_its_screenshot_and_its_comparison_says_so(tmp_path):
+    page, _ = _build(tmp_path)
+    assert "Screenshot at the moment of failure" in page
+    assert "without a matching test" not in page
+    card = page[page.index('id="cmp-1"'):]
+    assert "screenshot_c_over.png" in card[:card.index("</article>")]
+    assert "test failed" in card[:card.index("</article>")]
+    # ...and the failed test links back to that card.
+    assert '<a href="#cmp-1">screenshot_c_over.png</a> (over budget)' in page
+
+
+def test_the_steps_come_from_the_jobs_api(tmp_path):
+    page, _ = _build(tmp_path)
+    assert "https://github.com/o/r/actions/runs/1/job/2#step:11:1" in page
+    assert "1 of 2 completed steps failed" in page
+    assert "Build the CI report page" not in page  # still running when the page was built
+
+
+def test_the_summary_table(tmp_path):
+    _, summary = _build(tmp_path)
+    assert "| End-to-end tests | failed | 1 | 1 | 1 | 2 |" in summary
+    assert "| TypeScript typecheck | failed | | 2 errors | | |" in summary
+    assert "Screenshot comparisons: 4 recorded, 1 over budget, 1 without a baseline" in summary
+
+
+def test_the_image_budget_leaves_images_out_instead_of_growing_the_page(tmp_path):
+    page, _ = _build(tmp_path, "--max-image-mb", "0")
+    assert 'src="data:image/' not in page
+    assert "image budget" in page
+
+
+def test_missing_inputs_still_make_a_page(tmp_path):
+    out = tmp_path / "report.html"
+    assert ci_report.main([
+        "--junit", f"Backend unit tests={tmp_path / 'nope.xml'}",
+        "--jest", f"Frontend unit tests={tmp_path / 'nope.json'}",
+        "--comparisons", str(tmp_path / "nope"), "--failures", str(tmp_path / "nope"),
+        "--jobs", str(tmp_path / "nope.json"), "--out", str(out),
+    ]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert page.count("did not run") >= 2
+    assert "No comparisons were recorded" in page
+
+
+def test_an_unreadable_input_is_shown_not_fatal(tmp_path):
+    (tmp_path / "broken.xml").write_text("<testsuites><testcase", encoding="utf-8")
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--junit", f"Backend unit tests={tmp_path / 'broken.xml'}",
+                           "--out", str(out)]) == 0
+    assert "unreadable" in out.read_text(encoding="utf-8")
+
+
+def test_a_failure_folder_is_found_from_its_junit_name():
+    classname, name = ci_report.junit_key(FAILED_ID)
+    assert (classname, name) == ("tests.test_frontend.test_workflows.TestWorkflowCanvas",
+                                 "test_node_execution[Vega.json-chromium]@wf-Vega.json")
+    folders = [ci_report.failure_folder(n) for n in ci_report.candidate_nodeids(classname, name)]
+    # diagnostics.failure_dir names the folder from the real node id.
+    assert ci_report.failure_folder(FAILED_ID) in folders

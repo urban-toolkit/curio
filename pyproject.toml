@@ -31,7 +31,8 @@ dependencies = [
   "flask-socketio>=5.6.0",
   "python-socketio>=5.16.2",
   "python-engineio>=4.13.2",
-  # Validates manifests and dataflow specs against docs/schemas/*.json.
+  # Validates manifests and dataflow specs against docs/schemas/*.json, and
+  # Autark documents against the vendored autk-grammar schema.
   # See requirements.txt for why this is a floor and not an exact pin.
   "jsonschema>=4.18",
   # Detects the encoding of text dataset imports so they can be stored as

@@ -103,8 +103,8 @@ Downloading does not add the dataset to a dataflow. Add it from the Data Catalog
 While a download runs, its row shows a progress bar and **Cancel**. The bar fills when the portal says how large the file is, and shows what the download is doing when it does not.
 
 - **Two at a time.** Each account runs at most two downloads at once.
-- **A restart loses it.** A download still running when the server restarts is lost, and its row says so. Start it again.
-- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded in that format. Its button is **View dataset**, and nothing is fetched again. The same resource in another format is a separate download and a separate dataset.
+- **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
+- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded. Its button is **View dataset**, and nothing is fetched again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers.
 - **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
@@ -117,9 +117,9 @@ When a download fails, the row says why in the server's own words, for example t
 
 Some portals take an API token. The City of Chicago portal answers without one, and a token raises your rate limit.
 
-A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, optional, or inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, optional, or inherited from whoever runs this Curio. Your own token overrides the inherited one.
 
-Guest accounts cannot save a token.
+A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
 A source that takes a token shows its state on the card:
 
@@ -135,9 +135,11 @@ Curio never shows a token's value, only whether one is set.
 
 ## 6. The Dataset Finder
 
-The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download from one of these portals is marked **Downloadable**.
+The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download is marked **Downloadable**: a row from one of these portals that offers downloads, or a plain https link to a file in a format Curio downloads, which goes through Direct URL.
 
 Selecting rows writes a confirmation into the chat for you to send. A download the agent proposes appears as a review card, and nothing is downloaded until you apply it. The card shows the portal's own name, format and size for the resource, and an applied download lands in your Data Catalog like any other.
+
+A **Downloadable** row has a **Download** button. It is this catalog's own download: the same job, which keeps going after you close the chat, and the resource shows one download on the card and on this catalog's page. The dataset it lands becomes the node's source. Confirming a Downloadable row downloads it the same way, and so does an applied download proposal.
 
 An external source Curio has no connector for goes to **Node Builder**, which writes code to fetch it.
 

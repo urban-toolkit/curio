@@ -5,8 +5,11 @@ import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
-import { hasIncomingEdge, incomingSourceIds } from '../../utils/nodeEmptyState';
+import { hasIncomingEdge, incomingSourceIds, NODE_EMPTY_COPY, resolveNodeEmptyReason } from '../../utils/nodeEmptyState';
+import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
+import { isSelectionEcho } from '../../utils/selectionEcho';
+import { columnRows, featureRows, matchSelections } from '../../utils/selectionMatch';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Which empty state to show turns on whether anything is wired in, which
@@ -16,7 +19,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // A failed upstream node propagates nothing, so "no input" is ambiguous
   // between never-run and ran-and-failed. The exec status is the only place
   // that difference is recorded (#347).
-  const { nodeExecStatus } = useFlowContext();
+  const { projectId: flowProjectId, nodeExecStatus } = useFlowContext();
   const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
@@ -42,6 +45,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // True once any feature has been marked interacted="1" so that a subsequent
   // "clear brush" (UNDETERMINED signal) still resets features to "0".
   const anyInteractedRef = useRef(false);
+  // The input and propagation toggle the last run saw. A run that another
+  // pool's propagation started (the toggle flipped, the input did not change)
+  // re-emits the same rows, and so does one fed by an upstream pool's echo.
+  const lastRunRef = useRef<{ input: unknown; propagation: unknown } | null>(null);
 
   useEffect(() => {
     const hasInput = (() => {
@@ -59,8 +66,14 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       return;
     }
 
+    const last = lastRunRef.current;
+    const selectionEcho = isSelectionEcho(data.input) || (
+      last != null && last.input === data.input && last.propagation !== data.newPropagation
+    );
+    lastRunRef.current = { input: data.input, propagation: data.newPropagation };
+
     let cancelled = false;
-    const p = processDataAsync();
+    const p = processDataAsync({ selectionEcho });
     inflightRef.current = p;
     (async () => {
       try {
@@ -178,8 +191,6 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
       if (interactionsForLayer.length === 0) continue;
 
-      let interactedIndices: any = []; // between visualizations
-
       let columns: string[] = [];
       let dfIndices: string[] = [];
 
@@ -187,176 +198,19 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
           columns = Object.keys(parsedInput.data);
           dfIndices = Object.keys(parsedInput.data[columns[0]]);
       }
-      // console.log(data.interactions);
-      for (const interaction of interactionsForLayer) {
-          let localInteractedIndices: any = [];
 
-          let details = interaction.details;
-
-          let selects = Object.keys(details);
-
-          for (const select of selects) {
-              if (details[select].type == VisInteractionType.POINT) {
-                  // solve point interaction
-                  localInteractedIndices.push({
-                      priority: details[select].priority,
-                      indices: details[select].data.map(
-                          (index: number) => {
-                              return index;
-                          }
-                      ),
-                  });
-              } else if (details[select].type == VisInteractionType.INTERVAL) {
-                  // solve interval (brushing) interaction
-                  let brushedColumns = Object.keys(details[select].data);
-
-                  let interactedObj: {
-                      priority: number;
-                      indices: number[];
-                  } = {
-                      priority: details[select].priority,
-                      indices: [],
-                  };
-
-                  let objectsCounter = 0;
-
-                  if (parsedInput.dataType == "dataframe")
-                      objectsCounter = dfIndices.length;
-                  else if (parsedInput.dataType == "geodataframe")
-                      objectsCounter = parsedInput.data.features.length;
-
-                  for (let i = 0; i < objectsCounter; i++) {
-                      let interacted = true;
-
-                      for (const brushedColumn of brushedColumns) {
-                          let brushBoundaries = details[select].data[brushedColumn];
-
-                          if (brushBoundaries.length > 0 && typeof brushBoundaries[0] == "string") {
-                              // categorial or ordinal variable
-
-                              if (parsedInput.dataType == "dataframe") {
-                                  if (!brushBoundaries.includes(parsedInput.data[brushedColumn][dfIndices[i]])) {
-                                      interacted = false;
-                                      break;
-                                  }
-                              } else if (parsedInput.dataType == "geodataframe") {
-                                  if (!brushBoundaries.includes(parsedInput.data.features[i].properties[brushedColumn])) {
-                                      interacted = false;
-                                      break;
-                                  }
-                              }
-                          } else if (brushBoundaries.length == 2) {
-                              // numerical interval
-
-                              let value = -1;
-
-                              if (parsedInput.dataType == "dataframe") {
-                                  value = parsedInput.data[brushedColumn][dfIndices[i]];
-                              } else if (
-                                  parsedInput.dataType == "geodataframe"
-                              ) {
-                                  value = parsedInput.data.features[i].properties[brushedColumn];
-                              }
-
-                              if (
-                                  value < brushBoundaries[0] ||
-                                  value > brushBoundaries[1]
-                              ) {
-                                  interacted = false;
-                                  break;
-                              }
-                          }
-                      }
-
-                      if (brushedColumns.length == 0) {
-                          interacted = false;
-                      }
-
-                      if (interacted) {
-                          interactedObj.indices.push(i);
-                      }
-                  }
-
-                  localInteractedIndices.push(interactedObj);
-              } else if (
-                  details[select].type == VisInteractionType.UNDETERMINED
-              ) {
-                  localInteractedIndices.push({
-                      priority: details[select].priority,
-                      indices: [],
-                  });
-              }
-          }
-
-          let interactedList: number[] = [];
-
-          if (plotResolutionMode == ResolutionType.OVERWRITE) {
-              for (const elem of localInteractedIndices) {
-                  // using the interactions of the plot with higher priority
-                  if (elem.priority == 1) {
-                      interactedList = [...elem.indices];
-                  }
-              }
-          } else if (plotResolutionMode == ResolutionType.MERGE_AND) {
-              let allArrays = localInteractedIndices.map((elem: any) => {
-                  return [...elem.indices];
-              });
-
-              if (allArrays.length > 0)
-                  interactedList = allArrays.reduce(
-                      (a: number[], b: number[]) =>
-                          a.filter((c) => b.includes(c))
-                  ); // index is only include if it was interacted in all plots
-          } else if (plotResolutionMode == ResolutionType.MERGE_OR) {
-              let auxSet = new Set();
-
-              for (const elem of localInteractedIndices) {
-                  // using the interactions of the plot with higher priority
-                  for (const value of elem.indices) {
-                      auxSet.add(value);
-                  }
-              }
-
-              interactedList = Array.from(auxSet) as number[];
-          }
-
-          interactedIndices.push({
-              priority: interaction.priority,
-              indices: [...interactedList],
-          });
-      }
-
-      let interactedList: number[] = [];
-
-      if (resolutionMode == ResolutionType.OVERWRITE) {
-          for (const elem of interactedIndices) {
-              // using the interactions of the plot with higher priority
-              if (elem.priority == 1) {
-                  interactedList = [...elem.indices];
-              }
-          }
-      } else if (resolutionMode == ResolutionType.MERGE_AND) {
-          let allArrays = interactedIndices.map((elem: any) => {
-              return [...elem.indices];
-          });
-
-          if (allArrays.length > 0)
-              interactedList = allArrays.reduce(
-                  (a: number[], b: number[]) =>
-                      a.filter((c) => b.includes(c))
-              ); // index is only include if it was interacted in all plots
-      } else if (resolutionMode == ResolutionType.MERGE_OR) {
-          let auxSet = new Set();
-
-          for (const elem of interactedIndices) {
-              // using the interactions of the plot with higher priority
-              for (const value of elem.indices) {
-                  auxSet.add(value);
-              }
-          }
-
-          interactedList = Array.from(auxSet) as number[];
-      }
+      // Which rows the selections pick out, resolved within each chart and
+      // across charts: the matcher a chart joined by a direct interaction edge
+      // uses too (utils/selectionMatch).
+      const rows = parsedInput.dataType == "geodataframe"
+          ? featureRows(parsedInput.data)
+          : parsedInput.dataType == "dataframe"
+              ? columnRows(parsedInput.data)
+              : { count: 0, value: () => undefined };
+      const interactedList: number[] = matchSelections(interactionsForLayer, rows, {
+          plot: plotResolutionMode,
+          between: resolutionMode,
+      });
 
       // O(1) lookup replaces O(n) Array.includes inside the marking loop below.
       const interactedSet = new Set<number>(interactedList);
@@ -475,7 +329,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
         : cloneLayer(rawContent);
       setOutput({ code: "success", content: clonedOutput });
       if (typeof data.outputCallback === 'function') {
-        data.outputCallback(data.nodeId, clonedOutput);
+        // The same rows with new flags: linked charts swap them in and
+        // highlight, they do not redraw (utils/selectionEcho).
+        data.outputCallback(data.nodeId, clonedOutput, { selectionEcho: true });
       }
 
       // call callback propagation
@@ -531,6 +387,52 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (displayTable) return createTableData(displayTable as ICodeDataContent);
     return [];
   }, [output, tabData, activeTab, createTableData]);
+
+  // dev/138 (closes dev/137 F1): the pool is the node that DETECTS a bad
+  // input — "this input is not tabular data" is its own sentence — and it
+  // reported nothing to the journal, because its outcome lives in this
+  // behavior's local state rather than in `nodeState.output`, so dev/135's
+  // reporter never fired for it. In the owner's `edd71e67` the pool was the
+  // only node that knew the upstream had produced something unusable.
+  //
+  // Only the two REAL failures are reported. A pool that is not wired yet owes
+  // nothing, and one whose upstream has not run is waiting rather than broken
+  // — its upstream reports its own outcome.
+  useEffect(() => {
+    const hasInput = data.input != null && data.input !== "";
+    const reason = resolveNodeEmptyReason({
+      connected,
+      upstreamErrored,
+      hasInput,
+      tabular: tabData.length > 0,
+      rowCount: tableData.length,
+    });
+    // An upstream failure is the upstream's to report, like a node that has
+    // not run yet (#347).
+    if (
+      reason === "disconnected" ||
+      reason === "upstream-not-run" ||
+      reason === "upstream-errored"
+    )
+      return;
+    const projectId = (data as { projectId?: string }).projectId ?? flowProjectId;
+    if (!projectId) return;
+    if (reason === null) {
+      void reportNodeRuntime({
+        dataflowId: projectId, nodeId: data.nodeId, status: "ok",
+        outputType: (data.input as { dataType?: string } | null)?.dataType ?? "",
+      });
+      return;
+    }
+    const copy = NODE_EMPTY_COPY[reason];
+    void reportNodeRuntime({
+      dataflowId: projectId,
+      nodeId: data.nodeId,
+      status: "error",
+      message: `${copy.title} — ${copy.hint}`,
+      kind: `bad-input:${reason}`,
+    });
+  }, [connected, upstreamErrored, data, tabData.length, tableData.length, flowProjectId]);
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes

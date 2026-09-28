@@ -51,3 +51,16 @@ describe("AgentDelegationEntry (memo dev/72)", () => {
     expect(screen.getByText("research.verify")).toBeInTheDocument();
   });
 });
+
+describe("AgentDelegationEntry: what the delegate ran on", () => {
+  it("shows the delegate's configuration and model, which may not be the parent's", () => {
+    render(<AgentDelegationEntry part={part({ model: "llama3", llmLabel: "Local" })} />);
+    expect(screen.getByText("Local (llama3)")).toBeInTheDocument();
+  });
+
+  it("shows nothing extra when the entry names no model", () => {
+    const { container } = render(<AgentDelegationEntry part={part()} />);
+    expect(container.textContent).not.toContain("(");
+  });
+});
+

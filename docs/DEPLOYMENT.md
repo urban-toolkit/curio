@@ -12,6 +12,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 ## Contents
 
 - [1. Configure the stack](#1-configure-the-stack)
+  - [LLM configurations](#llm-configurations)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
 - [Updating](#updating)
@@ -49,20 +50,18 @@ PUBLIC_PATH=/curio/
 BACKEND_URL=https://lab-name.your-uni.edu/curio/api
 ```
 
-The three directories you created are bind-mounted into the container and persist across recreates:
+The three directories you created, `instance/`, `datasets/` and `.curio/`, are bind-mounted into the container and persist across recreates:
 
 | Directory | Holds | Back up? |
 |---|---|---|
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
 | `datalakes/` | The Data Lake Catalog: one manifest per data portal. Ships with the image | No |
-| `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
+| `.curio/` | Per-user stores, logs, sandbox artifacts, and each account's agent imports, catalog settings and LLM configurations | Yes, if users' imported datasets, computed outputs and settings matter |
 
-`packages/` is **not** mounted. The node catalog is baked into the image so it
-always matches the deployed commit. Neither is `datalakes/`, for the same
-reason: a data lake source declares a host the server makes outbound requests
-to, so which sources exist should match the deployed commit rather than be
-editable in a mounted volume. Set `CURIO_DATALAKE_ROOT` if you need it
+`packages/` is **not** mounted: the node catalog is baked into the image, so it
+always matches the deployed commit. Neither is `datalakes/`, whose sources
+likewise match the deployed commit. Set `CURIO_DATALAKE_ROOT` if you need it
 elsewhere.
 
 ### Outbound requests
@@ -72,7 +71,9 @@ user's behalf, so it is worth knowing what bounds them. Every URL - search,
 describe, download, and each redirect hop - passes the same default-deny
 address policy the agent tools use: https/http only, private, loopback,
 link-local and reserved addresses refused *after* DNS resolution, and the
-connected peer re-checked before any response body is read.
+connected peer re-checked before any response body is read. A download started
+from the Dataset Finder's card, or from an agent's approved proposal, is the
+same download under the same policy.
 
 Two things a deployment should know:
 
@@ -88,6 +89,34 @@ Rate limiting is per user, per source, and **in-process**. Under several
 workers the effective rate is the configured rate times the worker count. It is
 a politeness mechanism toward portals you do not own and a brake on accidental
 loops, not a guarantee you can make to a third party.
+
+### LLM configurations
+
+Curio ships no LLM endpoint. Users add their own LLM configurations in AI
+Settings; the deployment can offer its own on top, through environment
+variables the backend reads at start:
+
+| Variable | What it sets |
+|---|---|
+| `CURIO_DEFAULT_LLM_API_TYPE` | The provider kind of the deployment's endpoint: `openai_compatible` (the default), `anthropic` or `gemini`. |
+| `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. |
+| `CURIO_DEFAULT_LLM_API_KEY` | Its key. |
+| `CURIO_DEFAULT_LLM_MODEL` | The model of the **Deployment default**. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
+
+With a model and an endpoint or a key set, the Deployment default is a
+read-only row in every user's AI Settings, and it answers for any user who has not chosen a default of their
+own. With an endpoint or a key set, users are also offered **This Curio
+install**: a configuration of their own that runs on the deployment's endpoint
+with its key and a model they choose. The key never reaches a browser.
+
+Put the variables in `utk_curio/backend/.env`, which is copied into the image
+(rebuild after changing it), or in the container's `environment:` through a
+Compose override. `/srv/curio/.env` above is read by Docker Compose only.
+
+Each user's configurations, keys included, are kept in
+`.curio/users/<user>/llm-configs.json`, a 0600 file in a 0700 directory. The
+keys are not encrypted at rest, and the file is backed up with `.curio/`.
 
 > [!TIP]
 > `datasets/` lives inside the git checkout, so publishing a dataset dirties your
@@ -241,7 +270,7 @@ Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github
 | Actions → Bump version → Run workflow, `bump: minor` | minor | `vX.Y.0` | dev **and** stable |
 | Actions → Bump version → Run workflow, `bump: major` | major | `vX.0.0` | dev **and** stable |
 
-So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stable release is a deliberate act: dispatch the workflow with `minor` or `major`, and it bumps the version, tags the bump commit, and dispatches `deploy.yml` with `target: both` to put that exact tag on both stacks.
+So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stable release is a manual step: dispatch the workflow with `minor` or `major`, and it bumps the version, tags the bump commit, and dispatches `deploy.yml` with `target: both` to put that exact tag on both stacks.
 
 > [!NOTE]
 > Pushes made with `GITHUB_TOKEN` never trigger workflows, which is why the bump job dispatches `deploy.yml` over the API rather than relying on its own commit to set things off. `workflow_dispatch` events are exempt from that recursion guard, so no PAT is needed.
@@ -258,11 +287,11 @@ It shows:
 
 - **Deployment** - version, the requested and active isolation mode, and which
   optional features are configured. Settings that have a value somebody chose
-  (the execution account, the LLM base URL, model and key) are reported only as
-  "configured" or "none", never as their value.
+  (the execution account, and whether there is a Deployment default LLM) are
+  reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
   per core), and the resident memory of the backend and sandbox processes. The
-  hostname is deliberately not reported.
+  hostname is not reported.
 - **Execution** - node runs since launch, failures, a duration histogram, how
   many isolated slots are busy, and a tally of how child processes died
   (timeout, OOM, CPU limit, refused confinement).
@@ -284,13 +313,11 @@ uptime is on the page, and a restart resets them.
 **`/monitor` and its four routes are public and unauthenticated**, like
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
-The statistics are aggregates by design: no route reports a username, an email
-address, an IP address, or a per-user row. That is enforced by a test
-(`test_monitor_payload_is_anonymous.py`) rather than by convention.
+The statistics are aggregates: no route reports a username, an email address,
+an IP address, or a per-user row.
 
-**The error log is the exception, and it is deliberate.** `GET
-/api/monitor/errors` returns raw, unredacted failures so that whoever hits a
-problem can share the whole picture without an operator in the loop. Those
+**The error log is the exception.** `GET /api/monitor/errors` returns raw,
+unredacted failures. Those
 entries will contain absolute server paths including the home directory of the
 account Curio runs as, fragments of other users' node code, and any values
 their tracebacks interpolated.
@@ -333,7 +360,7 @@ flooding it cannot push real errors out of the log.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
-- **Isolated node execution is on by default.** `--deploy` turns it on wherever the host can provide it: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes it **fail-closed**: if the sandbox cannot confine, it refuses to start. Without that variable a `--deploy` on a host that cannot isolate still boots, unisolated and saying so. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
+- **Isolated node execution is on.** `--deploy` turns it on: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network and `ptrace` denied by seccomp, and no read access to `instance/` or `.curio/data`. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes the sandbox **fail-closed** too: if it cannot confine, it refuses to start. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
 
   ```bash
   docker compose -p curio exec -T curio curl -sf http://127.0.0.1:2000/version
@@ -341,7 +368,7 @@ flooding it cannot push real errors out of the log.
 
   The `isolation` field must read `fork`. The version badge in the UI shows the same answer.
 - **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`, and `./.env` to `0600`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account.
-- **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one deliberate exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.
+- **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.
 - **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
 - **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket, but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.

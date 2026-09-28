@@ -26,7 +26,7 @@ flowchart LR
   SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
 ```
 
-Six nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
+Six nodes do the work plus two `Vega-Lite` views consume the output. Each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 

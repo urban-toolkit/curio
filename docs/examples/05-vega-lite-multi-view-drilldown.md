@@ -213,7 +213,6 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
           "type": "nominal",
           "legend": {
             "orient": "right",
-            "anchor": "middle",
             "direction": "vertical"
           }
         },
@@ -258,7 +257,6 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
           "type": "nominal",
           "legend": {
             "orient": "right",
-            "anchor": "middle",
             "direction": "vertical"
           }
         },
@@ -269,10 +267,7 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
         ]
       }
     }
-  ],
-  "config": {
-    "concat": { "align": "center" }
-  }
+  ]
 }
 ```
 

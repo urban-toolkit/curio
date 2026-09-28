@@ -21,9 +21,12 @@ This guide is for students getting their first taste of open-source work and for
   * [TL;DR](#tldr)
   * [One-Time Setup](#one-time-setup)
   * [Backend and Sandbox Tests](#backend-and-sandbox-tests)
+  * [Agent Reconstruction Tests](#agent-reconstruction-tests)
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
+  * [Generated Files](#generated-files)
+  * [Vendored Autark Schema](#vendored-autark-schema)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
   * [Pull Request Template](#pull-request-template)
@@ -59,21 +62,25 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 curio/
 ├── utk_curio/
 │   ├── backend/                     # Manages database access and user authentication
+│   │   ├── app/agents/contracts.py  # The single source of every generated contract (see Generated Files)
+│   │   ├── app/agents/schemas/      # The vendored Autark grammar schema (see Vendored Autark Schema)
 │   │   ├── migrations/              # Alembic migrations
 │   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
+│   ├── llm-prompts/                 # Built-in agent prompts; default_preamble.txt is generated
 │   ├── sandbox/                     # Executes user Python code in a secure environment
 │   │   └── tests/                   # unittest files for sandbox
 │   └── frontend/                    # All frontend logic
 │       └── urban-workflows/         # Main Curio interface for dataflow editing
 │           └── src/
 │               ├── components/      # React components and CSS
+│               ├── generated/       # Written by scripts/generate_contracts.py; never edited by hand
 │               └── tests/           # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
 ├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
-├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
@@ -268,6 +275,79 @@ third party in the critical path of every PR, which is the problem the guard
 exists to solve. Skip generously; a contract test that skips has cost nothing,
 and its skip reason is printed under `pytest -v`.
 
+### Agent Reconstruction Tests
+
+Separate from the suites above, these ask whether a *model* can rebuild one of
+the shipped example dataflows from a plain-language prompt. Every example has a
+reviewed prompt fixture under `docs/examples/prompts/`; the deterministic tiers
+run offline in seconds and need no stack:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_canonical.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_scoring.py \
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+
+python -m utk_curio.tools.agent_eval list      # the fixtures and their splits
+```
+
+A fixture pins its example's digest, so editing an example fails these tests
+until someone re-reads the prompt and the expected graph and moves the pin. The
+browser tier is opt-in with the other example-dependent tests
+(`--with-examples`). A live-model evaluation needs two opt-ins, and it writes a
+report; it neither passes nor fails:
+
+```bash
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
+```
+
+See [AGENT-CATALOG.md](AGENT-CATALOG.md#5-measuring-the-agents-against-the-shipped-examples)
+for what the score means, and [ARCHITECTURE.md](ARCHITECTURE.md#evaluation-and-training)
+for how an evaluation runs.
+
+The same fixtures drive **Model training** (AI Settings → Model training). Its
+whole lane (the capability probe, the training set, consent, the job, the
+evaluation gate, activation and rollback) runs offline against the scripted
+provider, so none of these tests costs money or waits on a fine-tune:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
+       utk_curio/backend/tests/test_agents/test_training_dataset.py \
+       utk_curio/backend/tests/test_agents/test_training_routes.py \
+       utk_curio/backend/tests/test_agents/test_training_gate.py
+```
+
+A real fine-tune is run by hand: it costs money, takes hours, and needs an
+endpoint that offers fine-tuning.
+
+**Saving a project** goes through a guard: every write of a spec bumps a
+counter at the one chokepoint that writes it, a client sends the revision it
+last synced with as `baseRevision`, and a save whose basis is stale **and**
+which would delete a node, an edge or a node's code that exists on disk is
+refused with 409. A caller that sends no basis is not checked. If you add a path
+that writes a project spec, you get the counter for free; if you add a client
+that saves one, send the basis.
+
+```bash
+pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
+       utk_curio/backend/tests/test_projects/test_routes.py
+```
+
+**Evaluation mode** (AI Settings → Evaluation mode) runs an example through the
+real lifecycle on the configuration the user's Dataflow Builder runs on. Its
+whole orchestration (the isolated project, the required-closure install, the
+narrow automated approval, the phases, the record) is covered offline against
+the scripted provider:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_evaluation_service.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_policy.py
+```
+
+Real-provider evaluations are user-triggered from the panel and never part of
+default CI.
+
 ### Frontend Unit Tests
 
 The frontend uses Jest and React Testing Library for component and TypeScript unit tests.
@@ -349,6 +429,53 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 # apply any pending migrations
 FLASK_APP=server.py flask db upgrade
 ```
+
+### Generated Files
+
+Some files are generated from a single source and committed: everything under
+`utk_curio/frontend/urban-workflows/src/generated/`, and
+`utk_curio/llm-prompts/default_preamble.txt`, all rendered from
+`utk_curio/backend/app/agents/contracts.py`. Each generated code file starts
+with a header naming its generator and source. The preamble has no header,
+because the model reads it verbatim; its hand-written text lives in
+`default_preamble.template.txt` beside it, and the `{{...}}` fields in the
+template are the generated parts. The preamble also reads
+`docs/schemas/trill.v1.json` and `packages/curio.builtin@1/manifest.json`, so a
+change to either needs a regeneration too. Do not edit an output by hand:
+change the source, then regenerate and commit both.
+
+```bash
+# rewrite every generated file
+python scripts/generate_contracts.py
+
+# write nothing; exit non-zero and list the stale files
+python scripts/generate_contracts.py --check
+```
+
+The backend suite runs the same check
+(`utk_curio/backend/tests/test_agents/test_generated_contracts.py`), so a stale
+or hand-edited output fails CI. See
+[ARCHITECTURE.md, Generated Contracts](ARCHITECTURE.md#generated-contracts).
+
+### Vendored Autark Schema
+
+Autark documents are validated against the JSON Schema that autk-grammar
+publishes. `utk_curio/backend/app/agents/schemas/autk-grammar.v1.json` is a
+byte-for-byte copy of the released file, and `autk-grammar.v1.source.json`
+records its version and digest. To move to a new release:
+
+```bash
+# vendor the schema from the release on npm
+python scripts/sync_autk_schema.py --version <version>
+
+# re-render the preamble and the TypeScript that read it
+python scripts/generate_contracts.py
+```
+
+`--from PATH` vendors a local build of that version instead.
+`test_autk_schema_vendored.py` checks the copy against its record in the
+backend suite, and the weekly `autk-schema` workflow runs
+`python scripts/sync_autk_schema.py --check` against npm.
 
 ## Organizing Contributions
 

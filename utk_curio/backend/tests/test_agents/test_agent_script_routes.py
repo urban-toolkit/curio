@@ -79,10 +79,47 @@ class TestPush:
         testing_provider.push_reply("stale")
         assert client.post(SCRIPT_URL, json={}).get_json()["pending"] == 0
 
-    def test_non_string_replies_are_refused(self, client):
+    def test_a_reply_that_is_neither_text_nor_an_entry_is_refused(self, client):
         resp = client.post(SCRIPT_URL, json={"replies": ["ok", 7]})
         assert resp.status_code == 400
-        assert "list of strings" in resp.get_json()["error"]
+        assert "string or an object" in resp.get_json()["error"]
+
+    @pytest.mark.parametrize("entry", [
+        {"text": "x", "extra": 1},
+        {"toolCalls": [{"arguments": {}}]},
+        {"toolCalls": [{"name": "node.read", "arguments": []}]},
+        {"toolCalls": "node.read"},
+        {"text": 7},
+        {"error": 400},
+        {"error": "bad", "status": "400"},
+        {"error": "bad", "text": "x"},
+    ])
+    def test_a_malformed_entry_is_refused(self, client, entry):
+        assert client.post(SCRIPT_URL, json={"replies": [entry]}).status_code == 400
+
+    def test_a_native_call_entry_is_queued(self, client):
+        entry = {"text": "Reading.", "toolCalls": [{"name": "node.read", "arguments": {"nodeId": "n1"}}]}
+        assert client.post(SCRIPT_URL, json={"replies": [entry]}).status_code == 200
+        turn = testing_provider.run_scripted_turn([], tools=[{"name": "node__read"}])
+        assert turn.text == "Reading."
+        (call,) = turn.tool_calls
+        assert (call.name, call.arguments) == ("node__read", {"nodeId": "n1"})
+
+    def test_an_error_entry_is_queued(self, client):
+        client.post(SCRIPT_URL, json={"replies": [{"error": "tools are not supported", "status": 400}]})
+        with pytest.raises(testing_provider.ScriptedEndpointError) as raised:
+            testing_provider.run_scripted_turn([], tools=[{"name": "node__read"}])
+        assert raised.value.status_code == 400
+
+    def test_capabilities_are_scripted_until_the_next_reset(self, client):
+        client.post(SCRIPT_URL, json={"chatCapabilities": {"tools": True}})
+        assert testing_provider.scripted_chat_capabilities() == {"tools": True, "structuredOutput": False}
+        client.post(SCRIPT_URL, json={})
+        assert testing_provider.scripted_chat_capabilities()["tools"] is False
+
+    @pytest.mark.parametrize("capabilities", [{"tools": "yes"}, {"native": True}, ["tools"]])
+    def test_malformed_capabilities_are_refused(self, client, capabilities):
+        assert client.post(SCRIPT_URL, json={"chatCapabilities": capabilities}).status_code == 400
 
     def test_a_non_list_is_refused(self, client):
         assert client.post(SCRIPT_URL, json={"replies": "oops"}).status_code == 400
@@ -92,6 +129,18 @@ class TestPush:
         client.post(SCRIPT_URL, json={"replies": [None]})
         assert testing_provider.pending() == 1
         assert testing_provider.run_scripted_completion([]) == "keep me"
+
+    def test_by_intent_routes_a_delegated_call(self, client):
+        resp = client.post(SCRIPT_URL, json={"replies": ["plan"], "byIntent": {"load_labels": "LOAD"}})
+        assert resp.status_code == 200
+        delegated = [{"role": "user", "content": '[delegated task]\n{"intent": "write load_labels"}'}]
+        assert testing_provider.run_scripted_completion(delegated) == "LOAD"
+        assert testing_provider.run_scripted_completion([]) == "plan"
+
+    def test_a_malformed_by_intent_is_refused(self, client):
+        resp = client.post(SCRIPT_URL, json={"replies": [], "byIntent": {"k": 7}})
+        assert resp.status_code == 400
+        assert "byIntent" in resp.get_json()["error"]
 
 
 class TestRead:
@@ -113,8 +162,18 @@ class TestRead:
         captured = client.get(SCRIPT_URL).get_json()["captured"]
         assert [c[0]["content"] for c in captured] == ["a", "b"]
 
+    def test_what_each_call_offered_comes_back(self, client):
+        testing_provider.run_scripted_turn([], tools=[{"name": "node__read"}], tool_choice="none")
+        testing_provider.run_scripted_completion([])
+        assert client.get(SCRIPT_URL).get_json()["offered"] == [
+            {"tools": ["node__read"], "toolChoice": "none", "replySchema": None},
+            {"tools": [], "toolChoice": None, "replySchema": None},
+        ]
+
     def test_nothing_captured_reads_as_empty(self, client):
-        assert client.get(SCRIPT_URL).get_json() == {"pending": 0, "captured": []}
+        assert client.get(SCRIPT_URL).get_json() == {
+            "pending": 0, "captured": [], "calls": [], "offered": [],
+        }
 
 
 class TestReset:
@@ -123,4 +182,4 @@ class TestReset:
         testing_provider.run_scripted_completion([{"role": "user", "content": "x"}])
         assert client.delete(SCRIPT_URL).get_json() == {"pending": 0}
         body = client.get(SCRIPT_URL).get_json()
-        assert body == {"pending": 0, "captured": []}
+        assert body == {"pending": 0, "captured": [], "calls": [], "offered": []}

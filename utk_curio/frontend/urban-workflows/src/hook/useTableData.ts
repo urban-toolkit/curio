@@ -102,7 +102,9 @@ const useTableData = ({ data }: { data: INodeData }) => {
     div.appendChild(selectIntra);
   };
 
-  const processDataAsync = async () => {
+  // `selectionEcho`: this run re-emits the same rows because of a selection
+  // (another pool's propagation), so linked charts highlight rather than redraw.
+  const processDataAsync = async (options?: { selectionEcho?: boolean }) => {
     try {
       // Normalize input wrappers: handle merge outputs
       let wrappers: any[] = [];
@@ -288,7 +290,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
       // Build the downstream output exactly as the original DataPoolBox did:
       // send the fetched data object directly (no path attached) so downstream
-      // boxes like AUTK_MAP use the in-memory data rather than re-fetching from
+      // boxes like the Autark node use the in-memory data rather than re-fetching from
       // the server and losing the initialised 'interacted' field.
       let callbackOutput: any;
       let contentOutput: any;
@@ -305,7 +307,8 @@ const useTableData = ({ data }: { data: INodeData }) => {
       }
 
       if (callbackOutput !== null && data.outputCallback) {
-        data.outputCallback(data.nodeId, callbackOutput);
+        data.outputCallback(data.nodeId, callbackOutput,
+          options?.selectionEcho ? { selectionEcho: true } : undefined);
       }
 
       setTabData(tabd);

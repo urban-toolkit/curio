@@ -27,7 +27,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
-- `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it
+- `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. A template with `hasCode`, an `engine` and no `backendHandler` is one an agent's Solve runs in the sandbox to verify what it writes
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.
 
@@ -63,7 +63,7 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example; see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
 
-- **Per-account credentials that outlive a session** (a HuggingFace token, an LLM provider key) -> store them on the user row and edit them in **AI Settings**, with a deployment-wide fallback from a `curio.py start` flag. The HuggingFace token is the worked example: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token, else the deployment default* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
+- **Per-account credentials that outlive a session** -> edit them in **AI Settings**. One token per account (a HuggingFace token) is a column on the user row. Several named secrets per account (connection keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py) do. The HuggingFace token is the worked example of the first: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
 
 - **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
 
@@ -71,8 +71,8 @@ Two rules the per-account pattern has to follow:
 
 **Resolve in the request, use it downstream.** Street Vision runs inference on a
 detached worker thread, where `g` is gone. The route resolves the token and
-passes it into the job; resolving it inside the worker would silently fall back
-to the deployment value.
+passes it into the job; resolving it inside the worker would silently find no
+token.
 
 **Put the credential in any cache key it affects.** The model cache is keyed on
 `(model_id, token fingerprint)`, hashed rather than raw so the token is not
@@ -160,7 +160,7 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory would let anyone who could guess an image id fetch somebody else's imagery.
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. Serve the cache from a route with `@require_auth` that resolves the caller's own directory, as Street Vision's overlay route does.
 
 ### 3.7 The error contract back to the frontend
 
@@ -260,6 +260,8 @@ A generic Spatial Join that takes points + polygons and tags each point with a c
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
+The agents' shared preamble describes every `curio.builtin@1` template from this manifest: its label, description, control, port types, how many connections its inputs accept, and interaction support. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated `utk_curio/llm-prompts/default_preamble.txt` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
+
 ### 4.3 Three behavior hooks
 
 The two Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
@@ -305,7 +307,7 @@ Spatial Join is simpler: a single handler at the end of [`api/routes.py`](../utk
 
 ### 4.5 Shipping the package
 
-The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/seed.py`](../utk_curio/backend/app/packages/seed.py)), and Street Vision is in neither set. Users opt in by clicking **Add to dataflow** in the catalog. Generally:
+The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/seed.py`](../utk_curio/backend/app/packages/seed.py)), and Street Vision is in neither set. Users opt in by clicking **Add to project** in the catalog. Generally:
 
 - **Bundled-and-auto-installed** → only for `curio.builtin@1`. Anything every user must have.
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
@@ -473,7 +475,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```
    Then `npm run build:packages` compiles `sources/index.tsx` into `<package-dir>/scripts/behaviors.js` as UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks). That target takes a couple of seconds and is all you need for a package-only change; `npm run build` chains it after the much slower full app build.
 
-   Rebuilding the bundle is only half of it: the frontend loads `behaviorScript` from your **installed** copy in the user store, so after every rebuild click **Reload** on the package in the catalog drawer's **In dataflow** tab. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the whole loop.
+   Rebuilding the bundle is only half of it: the frontend loads `behaviorScript` from your **installed** copy in the user store, so after every rebuild click **Reload** on the package in the catalog drawer's **In project** tab. See [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md) for the whole loop.
 
    **Packages built outside this repo** ship their own pre-built `scripts/behaviors.js` and need no row in this file, since Curio loads any `behaviorScript` it finds in an installed package regardless of who built it. There is no separate toolchain for that case: the practical route is to author inside a Curio checkout (where `registry/types` resolves and this build config exists), then distribute the resulting `.curio.zip`.
 

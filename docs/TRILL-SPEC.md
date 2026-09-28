@@ -61,16 +61,16 @@ which cannot recover a named port such as `in_points`.
 
 ### Ownership
 
-Three sections are **backend-owned on update** — the server overwrites whatever a
-client sends, so a stale browser tab cannot clobber them: `packages`, `datasets`,
-and the agent sections. Two are additionally **stripped on share**: `agents` and
+Three sections are **backend-owned on update**, so the server overwrites whatever
+a client sends and a stale browser tab cannot clobber them: `packages`,
+`datasets`, and the agent sections. Two are additionally **stripped on share**: `agents` and
 `agentAttachments` are removed from the copy served behind a share link, so a
 shared dataflow never carries them and they can never be required.
 
 ## What lives in the manifest, not here
 
-**Nodes are defined by package manifests.** A node's `type` is a coordinate —
-`<packageId>/<templateId>` or `…@<major>` — into a manifest's `templates[].id`,
+**Nodes are defined by package manifests.** A node's `type` is a coordinate
+(`<packageId>/<templateId>` or `…@<major>`) into a manifest's `templates[].id`,
 and `dataflow.packages` is the lockfile naming which manifests must be installed
 for those coordinates to resolve. The trill schema validates the *shape* of that
 coordinate and stops there.
@@ -127,19 +127,8 @@ python scripts/tidy_example_layout.py --all --write    # apply
 
 It rewrites nothing but `x` and `y` on `dataflow.nodes[]`, and it refuses a file
 it cannot reproduce byte-for-byte rather than reformatting it. Scope is the
-curated gallery examples only — `docs/examples/dataflows/` is hand-tuned fixture
-material and `.curio/` is your own work.
+curated gallery examples only: `docs/examples/dataflows/` is hand-tuned fixture
+material, and `.curio/` is your own work.
 
 CI validates the committed examples on every push. It cannot see your own
 projects, since `.curio/` is gitignored, which is what the CLI is for.
-
-## Known drift
-
-- **`llm-prompts/default_preamble.txt` embeds a stale Draft-07 schema** and sends
-  it to the model on every AI call. It declares `timestamp` as a string, node
-  types as a dead uppercase enum (`DATA_LOADING`), and three fields nothing reads
-  (`node.output`, `metadata.annotations`, edge type `"Data"`), while omitting
-  everything added since: `title`, the `dashboard*` family, `saveOutputDataset`,
-  `metadata.appearance`, the handles, and all of `packages`, `datasets`, `agents`
-  and `agentAttachments`. Until it is rewritten, LLM-generated specs will not
-  validate against this schema.

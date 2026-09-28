@@ -100,9 +100,14 @@ class DownloadResult:
     audit: dict = field(default_factory=dict)
 
 
-def _default_request(method: str, url: str, *, trusted_host=None, max_bytes=MAX_BODY_BYTES):
+def _default_request(
+    method: str, url: str, *, trusted_host=None, headers=None, max_bytes=MAX_BODY_BYTES
+):
     """One non-redirecting HTTP request; returns (status, headers, body_bytes,
     location). Import stays local so tests never need requests installed.
+
+    ``headers`` (dev/116): a keyed probe's ``Authorization``/API-key header —
+    sent, never logged.
 
     ``max_bytes`` is the caller's bound, not this module's. Reading a fixed
     256 KiB here while :func:`fetch` was asked for more made ``max_bytes`` a
@@ -115,7 +120,8 @@ def _default_request(method: str, url: str, *, trusted_host=None, max_bytes=MAX_
     import requests
 
     resp = requests.request(
-        method, url, timeout=TIMEOUT_S, allow_redirects=False, stream=True
+        method, url, timeout=TIMEOUT_S, allow_redirects=False, stream=True,
+        headers=dict(headers) if headers else None,
     )
     try:
         confirm_peer(resp, url, trusted_host)
@@ -135,6 +141,16 @@ def _default_request(method: str, url: str, *, trusted_host=None, max_bytes=MAX_
         # ``stream=True`` leaves the connection open until the body is drained;
         # breaking out of the loop above skipped that and leaked it.
         resp.close()
+
+
+def with_params(url: str, params: dict | None) -> str:
+    """*url* with *params* appended to its query string (``urlencode``, the
+    encoding ``requests`` uses) — the request a keyed probe actually makes."""
+    if not params:
+        return url
+    from urllib.parse import urlencode
+
+    return url + ("&" if "?" in url else "?") + urlencode(params)
 
 
 def _default_stream_request(
@@ -245,6 +261,8 @@ def fetch(
     audit: list | None = None,
     trusted_host: tuple[str, int | None] | None = None,
     budget: "CallBudget | None" = None,
+    headers: dict | None = None,
+    params: dict | None = None,
     max_bytes: int = MAX_BODY_BYTES,
 ) -> EgressResult:
     """Fetch one URL under the full policy. Raises :class:`EgressRefused` on
@@ -262,19 +280,27 @@ def fetch(
     """
     request_fn = request_fn or _default_request
     started = time.monotonic()
+    # dev/116: a keyed probe's query parameters join the URL BEFORE the policy
+    # check, so every hop is judged on the request actually made.
+    url = with_params(url, params)
     current = url
     redirects = 0
     while True:
         _policy_hop(current, resolver=resolver, trusted_host=trusted_host, budget=budget)
         # ``trusted_host`` so the peer check knows which host the operator
         # exempted; ``max_bytes`` so the transport stops reading at the bound
-        # the CALLER set rather than this module's default. Only the kwargs a
-        # given request_fn declares are passed, so every two-argument test
-        # double keeps working unchanged.
-        extra = _accepted_kwargs(
-            request_fn, {"trusted_host": trusted_host, "max_bytes": max_bytes}
-        )
-        status, headers, body, location = request_fn(method, current, **extra)
+        # the CALLER set rather than this module's default; ``headers`` so a
+        # keyed probe sends its credential (dev/116). Only the kwargs a given
+        # request_fn declares are passed, so every two-argument test double
+        # keeps working unchanged.
+        candidates = {"trusted_host": trusted_host, "max_bytes": max_bytes}
+        if headers:
+            candidates["headers"] = dict(headers)
+        extra = _accepted_kwargs(request_fn, candidates)
+        # Unpacked as ``resp_headers``: ``headers`` is this call's REQUEST
+        # headers, and rebinding it here would send the previous response's
+        # headers on the next hop of a redirect chain.
+        status, resp_headers, body, location = request_fn(method, current, **extra)
         following = _next_redirect(status, location, current, redirects)
         if following is not None:
             redirects += 1
@@ -288,7 +314,7 @@ def fetch(
             url=url,
             final_url=current,
             status=int(status),
-            content_type=_content_type(headers),
+            content_type=_content_type(resp_headers),
             body=text,
             truncated=truncated,
             redirects=redirects,

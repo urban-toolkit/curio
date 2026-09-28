@@ -28,16 +28,8 @@ See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-str
    unlock by accepting a licence on your own HuggingFace account. Public
    models need none.
 
-   Set your own in **AI Settings** in the Curio header. That is per account,
-   which matches how gated access works: the licence is accepted by your
-   HuggingFace account, not by the deployment.
-
-   An operator can supply a fallback for everyone who has not set one:
-
-   ```bash
-   python curio.py start --huggingface-token hf_...
-   # or set CURIO_DEFAULT_HUGGINGFACE_TOKEN in the environment
-   ```
+   Set your own in **AI Settings** in the Curio header. Each account sets its
+   own.
 
 A GPU is *not* required, but with one you'll see roughly 10× faster inference.
 

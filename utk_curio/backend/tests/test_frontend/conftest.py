@@ -4,7 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
-from . import diagnostics
+from . import comparisons, diagnostics
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
 
@@ -126,6 +126,7 @@ WORKFLOW_FILES = [
     "docs/examples/14-vega-lite-crs-and-geometry-types.json",
     "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
     "docs/examples/16-simple-view-tables-and-images.json",
+    "docs/examples/17-autark-geodataframe-maps.json",
 ]
 
 
@@ -240,9 +241,15 @@ def pytest_itemcollected(item):
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item):
-    """Start the test's trace chunk, once its page exists (see diagnostics.py)."""
+    """Start the test's trace chunk, once its page exists (see diagnostics.py).
+
+    Also names the test its screenshot comparisons are recorded under
+    (comparisons.py), since the capture helper is not handed its item.
+    """
     diagnostics.start_trace_chunk(item)
+    comparisons.current_nodeid = item.nodeid
     yield
+    comparisons.current_nodeid = None
 
 
 @pytest.hookimpl(hookwrapper=True)

@@ -14,6 +14,7 @@ import mmap
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
+from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
 
@@ -554,6 +555,11 @@ def exec():
         for key, value in list(dataset_paths.items())[:32]
         if value
     }
+    # dev/116: {name: value} for the code's curio_secret("<name>") calls,
+    # resolved by the backend from the user's connection keys. Injected as a
+    # callable in both execution modes; never an env var, never staged, never
+    # logged.
+    secrets = shape_secrets(request.json.get('secrets'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -568,12 +574,13 @@ def exec():
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
+            secrets=secrets,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths,
+            dataset_paths=dataset_paths, secrets=secrets,
         )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)

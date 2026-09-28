@@ -15,10 +15,8 @@ class User(db.Model):
     provider = db.Column(db.String(50), nullable=True)
     provider_uid = db.Column(db.String(200), nullable=True)
     is_guest = db.Column(db.Boolean, default=False, nullable=False)
-    llm_api_type = db.Column(db.String(50), nullable=True)
-    llm_base_url = db.Column(db.String(500), nullable=True)
-    llm_api_key = db.Column(db.String(255), nullable=True)
-    llm_model = db.Column(db.String(100), nullable=True)
+    # The account's LLM configurations live in an owner-only file beside its
+    # other per-user stores (agents/llm_configs.py), not on this row.
     # Gated-model access on HuggingFace is a per-person entitlement (you
     # accept a model's licence with your own account), so this is an
     # account setting rather than one shared deployment secret.

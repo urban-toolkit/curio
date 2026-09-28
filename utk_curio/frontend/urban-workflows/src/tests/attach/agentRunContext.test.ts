@@ -84,7 +84,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("generic reads compose labeled fragments in declared order", () => {
     const att = attachment({
-      coord: "agent.workflow-suggester@1.0.0",
+      coord: "agent.dataflow-reader@1.0.0",
       reads: ["dataflowContext", "workflowGoal"],
     });
     const context = composeAgentRunContext(att, canvas)!;
@@ -101,13 +101,16 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     const context = composeAgentRunContext(att, canvas)!;
     const payload = JSON.parse(context);
     expect(payload.id).toBe("n1");
+    // dev/129 (porting dev/111): these were asserted only to EXIST, because
+    // they were always "". They now carry the runtime summary.
     expect(payload).toHaveProperty("current_input");
     expect(payload).toHaveProperty("current_output");
+    expect(payload.current_output).toContain("never-executed");
   });
 
   it("node-scoped reads are omitted for canvas attachments", () => {
     const att = attachment({
-      coord: "agent.execution-subtask-planner@1.0.0",
+      coord: "agent.dataflow-planner@1.0.0",
       target: { kind: "canvas" },
       reads: ["nodeContent", "nodeType", "currentTask"],
     });
@@ -115,9 +118,23 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     expect(composeAgentRunContext(att, canvas)).toBeNull();
   });
 
-  it("agents with no composable reads yield null (chat agent)", () => {
+  it("agents with no composable reads yield null", () => {
     const att = attachment({ reads: ["userMessage"] });
     expect(composeAgentRunContext(att, canvas)).toBeNull();
+  });
+
+  it("the chat agent sees the dataflow on screen, and its node when attached to one", () => {
+    // It explains and debugs, so it reads what the removed explainer and
+    // debugger read: the live canvas, unsaved nodes included.
+    const reads = ["userMessage", "nodeContext", "dataflowContext"];
+    const onCanvas = composeAgentRunContext(attachment({ reads }), canvas);
+    expect(onCanvas).toContain("n2-unsaved");
+    const onNode = composeAgentRunContext(
+      attachment({ reads, target: { kind: "node", targetId: "n1" } }),
+      canvas,
+    );
+    expect(onNode).toContain("print('old')");
+    expect(onNode).toContain("n2-unsaved");
   });
 });
 
@@ -175,6 +192,56 @@ describe("composite producers (dev/67-2 — the composites stop running blind)",
     expect(context).toContain("Node intent: load the data");
     expect(context).toContain("Target node:");
     expect(context).toContain("print('old')");
+  });
+
+  it("targetContext carries the node's live runtime state (dev/135)", () => {
+    // The owner's `a29d1ad8`: the Node Builder attached to a node that was
+    // visibly RED answered "since the node has never been executed…", because
+    // targetContext sent {id, type, goal, content} and nothing else.
+    const failing = {
+      nodes: [
+        {
+          id: "n1",
+          type: "VIS_VEGA",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "n1",
+            nodeType: "VIS_VEGA",
+            goal: "rank neighborhoods",
+            input: { dataType: "outputs", data: [] },
+            output: {
+              code: "error",
+              content: "outputs is not a valid input type for the 2D Plot (Vega-Lite)",
+            },
+          },
+        },
+      ],
+      edges: [],
+      workflowName: "wf",
+      workflowGoal: "analyze heat risk",
+    };
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "node", targetId: "n1" },
+      reads: ["targetContext"],
+    });
+    const context = composeAgentRunContext(att, failing);
+    expect(context).toContain("Target node:");
+    expect(context).toContain("current_output");
+    expect(context).toContain("not a valid input type for the 2D Plot");
+    // And what it received, which is the other half of the diagnosis.
+    expect(context).toContain("current_input");
+    expect(context).toContain("outputs");
+  });
+
+  it("a never-executed node still says so through targetContext", () => {
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "node", targetId: "n1" },
+      reads: ["targetContext"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).toContain("never-executed");   // never fabricated
   });
 
   it("Dataset Finder gets at least the mission on a canvas target", () => {

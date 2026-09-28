@@ -51,6 +51,8 @@ export type AgentCanvasMutation =
         /** dev/67-3: explicit handles from the apply (merge slots in_N). */
         sourceHandle?: string;
         targetHandle?: string;
+        /** dev/112: `"Interaction"` for a Trill feedback edge (in/out both ends). */
+        type?: string;
       }>;
       removedNodeIds?: string[];
       removedEdgeIds?: string[];
@@ -66,6 +68,8 @@ export type AgentCanvasMutation =
         target: string;
         sourceHandle?: string;
         targetHandle?: string;
+        /** dev/112: `"Interaction"` for a Trill feedback edge (in/out both ends). */
+        type?: string;
       }>;
     }
   | {

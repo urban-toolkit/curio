@@ -337,6 +337,7 @@ def build_exec_request(
     session_imports=None,
     limits=None,
     wall_timeout=None,
+    secrets=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -376,6 +377,10 @@ def build_exec_request(
         "session_imports": list(session_imports or []),
         "limits": dict(limits or {}),
         "wall_timeout": wall_timeout,
+        # dev/116: connection-key values for the code's curio_secret() calls.
+        # They cross the private parent->child pipe and nothing else; the child
+        # pops them out of the request the moment it builds the callable.
+        "secrets": dict(secrets or {}),
     }
 
 

@@ -863,10 +863,14 @@ def center_on(page, node_id: str, *, zoom: float = 0.9) -> None:
     page.wait_for_timeout(800)
 
 
+#: AI Settings inputs, by the id their label points at. The configuration
+#: fields are the "Add configuration" editor's, the only editor open while a
+#: new configuration is typed in.
 AI_FIELDS = {
-    "Base URL": "#ai-settings-base-url",
-    "API Key": "#ai-settings-api-key",
-    "Model": "#ai-settings-model",
+    "Label": "#llm-config-new-label",
+    "Base URL": "#llm-config-new-base-url",
+    "API Key": "#llm-config-new-api-key",
+    "Model": "#llm-config-new-model",
     "HuggingFace token": "#ai-settings-hf-token",
 }
 

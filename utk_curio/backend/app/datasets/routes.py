@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 
 from flask import Blueprint, g, jsonify, request, send_file
 
@@ -165,8 +166,21 @@ def import_dataset():
         dataflow_id=request.form.get("dataflowId") or request.form.get("projectId"),
         title=request.form.get("title") or None,
         source_updated_at=_parse_source_updated_at(request.form.get("sourceUpdatedAt")),
+        lake_source=_parse_lake_source(request.form.get("lakeSource")),
     )
-    return jsonify(payload), 201
+    return jsonify(payload), 200 if payload.get("alreadyPresent") else 201
+
+
+def _parse_lake_source(raw: str | None) -> dict | None:
+    """Where a file the person downloaded themselves came from, as JSON. An
+    unreadable value is no provenance, never a failed import."""
+    if not raw or not raw.strip():
+        return None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _parse_source_updated_at(raw: str | None) -> str | None:

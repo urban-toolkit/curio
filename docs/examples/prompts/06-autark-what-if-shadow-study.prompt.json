@@ -1,0 +1,141 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "06-autark-what-if-shadow-study",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/06-autark-what-if-shadow-study.json",
+    "sha256": "dc30078854e4f39019cd3876c1e48fdc64d076a54e90df182aa97feeb78d9e9b",
+    "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
+  },
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, comparing today's buildings against a scenario where they are three times taller. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load the buildings from it in the browser with Autark, and build two parallel branches that each accumulate shadow on the ground with a GPU shader over a solstice day: one using the real building heights and one using the raised heights, with the footprint-area criterion deciding which buildings get raised. Render each branch as its own 3D map so I can compare them side by side, and route both through a shared fan-out.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/back_bay.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "visualization4",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization5",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization5",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/back_bay.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "browser-only-execution",
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark GPU compute stages need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Grammar-only: nothing here runs in the sandbox. GPU shader work, so execution is opt-in."
+}
