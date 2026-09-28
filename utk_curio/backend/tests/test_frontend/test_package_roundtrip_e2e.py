@@ -130,7 +130,7 @@ def _open_package_drawer(page, project_id: str):
     ``GET /api/packages/projects/<id>`` fires exactly when it learns the project,
     which makes that response the precondition to wait for.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     with page.expect_response(
         lambda r: f"/api/packages/projects/{project_id}" in r.url
         and r.request.method == "GET",
@@ -201,7 +201,11 @@ def _expand_package(anchor) -> None:
     details = anchor.locator("details").first
     details.wait_for(state="attached", timeout=15000)
     if not details.evaluate("(el) => el.open"):
-        anchor.locator("summary").first.click(force=True)
+        # The title, not the summary's centre: the centre is where the row's
+        # action buttons sit (View details, Export, ...), and a forced click
+        # there opens one of them instead of the accordion. Unforced, so
+        # Playwright checks the title is what receives it.
+        anchor.locator("summary").first.locator("span[title]").first.click()
     expect(details).to_have_attribute("open", "", timeout=10000)
 
 

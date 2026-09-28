@@ -12,7 +12,8 @@
  * The rule, in order:
  *
  *   1. If any RECOGNIZED_COLUMNS name is present and holds image-like values,
- *      those are the image columns and nothing else is considered.
+ *      those are the image columns and nothing else is considered. A
+ *      `thumbnail` column stands in for `image_url` when both are present.
  *   2. Otherwise sniff every column's values.
  *
  * Bare base64 is only honoured in step 1. A column of long hex ids passes any
@@ -150,6 +151,12 @@ export function resolveImageColumns(rows: readonly FrameRow[]): string[] {
       columns.includes(name) &&
       columnHoldsImages(rows, name, { allowBase64: true, requireExtension: false }),
   );
+  // A `thumbnail` is the small view of the row's `image_url`, as a
+  // collection's rows carry both: drawing the two would show every file twice
+  // and fetch each one at full size.
+  if (recognized.includes('thumbnail')) {
+    return recognized.filter((name) => name !== 'image_url');
+  }
   if (recognized.length > 0) return recognized;
 
   return columns.filter((name) =>

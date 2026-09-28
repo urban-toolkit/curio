@@ -379,6 +379,35 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
         }
 
 
+# A collection's index is the dataset; its files stay in the lake source that
+# indexed them. ``curio_collection`` adds a readable ``path`` for each row, so
+# counting the rows whose file opens proves the files were reached, not only
+# the index.
+_COLLECTION_TRANSFORM = '''import os
+
+media = arg
+print("CURIO_E2E_ROWS=%d;" % len(media))
+print("CURIO_E2E_KINDS=%s;" % ",".join(sorted(set(media["kind"]))))
+print("CURIO_E2E_READABLE=%d;" % sum(1 for p in media["path"] if p and os.path.isfile(p)))
+return media
+'''
+
+
+def _collection_expectations(data_file: Path) -> dict[str, str]:
+    """Rows and kinds off the index. Every committed collection is a folder's,
+    so every one of its files is readable where it is."""
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(data_file, columns=["kind"])
+    kinds = sorted(set(table.column("kind").to_pylist()))
+    assert table.num_rows > 0, f"{data_file} indexes no files"
+    return {
+        "CURIO_E2E_ROWS": str(table.num_rows),
+        "CURIO_E2E_KINDS": ",".join(kinds),
+        "CURIO_E2E_READABLE": str(table.num_rows),
+    }
+
+
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
         loader_marker="pd.read_csv",
@@ -407,6 +436,12 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         transform_code=_GEOTIFF_TRANSFORM,
         vega_spec=_GEOTIFF_VEGA_SPEC,
         expectations=_geotiff_expectations,
+    ),
+    "collection": FormatPlan(
+        loader_marker="curio_collection(",
+        transform_code=_COLLECTION_TRANSFORM,
+        vega_spec=None,
+        expectations=_collection_expectations,
     ),
 }
 

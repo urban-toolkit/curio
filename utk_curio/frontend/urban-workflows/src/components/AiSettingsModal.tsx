@@ -163,6 +163,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 Only needed for <strong>gated</strong> models in the Street
                 Vision node, which you unlock by accepting each model's licence
                 on your own HuggingFace account. Public models need no token.
+                Hugging Face sources in the Data Lake Catalog send it too.
               </span>
               <a
                 href="https://huggingface.co/settings/tokens"
@@ -170,7 +171,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 rel="noreferrer"
                 className={styles.keyLink}
               >
-                Get your HuggingFace token →
+                Get your HuggingFace token ↗
               </a>
               {user?.has_huggingface_token && (
                 <button
@@ -225,7 +226,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 rel="noreferrer"
                 className={styles.keyLink}
               >
-                Get a Socrata app token →
+                Get a Socrata app token ↗
               </a>
               {user?.has_socrata_app_token && (
                 <button

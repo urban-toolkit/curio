@@ -132,4 +132,11 @@ describe('resolveImageColumns', () => {
     expect(resolveImageColumns(rows)).toEqual(['image_url']);
     expect(resolveImageColumns([])).toEqual([]);
   });
+
+  it('draws a collection row once, from its thumbnail', () => {
+    const rows = [
+      { file_id: 'a', thumbnail: '/api/datasets/c/media/a?variant=thumb', image_url: '/api/datasets/c/media/a?variant=original' },
+    ];
+    expect(resolveImageColumns(rows)).toEqual(['thumbnail']);
+  });
 });

@@ -55,7 +55,7 @@ EDGE_PATH = ".react-flow__edges path.react-flow__edge-path"
 
 
 def _open_provenance(page):
-    page.get_by_role("button", name="Provenance ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Provenance menu", exact=True).click(force=True)
     page.get_by_role("button", name="Provenance", exact=True).click()
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)

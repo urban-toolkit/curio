@@ -126,6 +126,24 @@ describe("renderOutcome", () => {
     expect(outcome.message).toContain("0 rows arrived");
   });
 
+  it("says why nothing arrived, when the node knows, and still blames the upstream", () => {
+    const outcome = renderOutcome({
+      rowsIn: 0,
+      inputProblem: "upstream has no geometry column, so there is nothing to draw. Return a GeoDataFrame.",
+    });
+    expect(outcome.cause).toBe("no-input-rows");
+    expect(outcome.message).toBe(
+      "rendered nothing: upstream has no geometry column, so there is nothing to draw. "
+      + "Return a GeoDataFrame. The upstream node that feeds it is what must change; "
+      + "this document is not at fault.",
+    );
+  });
+
+  it("an input problem does not make rows that arrived into an empty render", () => {
+    expect(renderOutcome({ rowsIn: 4, drawn: 4, inputProblem: "Left out: raster at position 2." }).empty)
+      .toBe(false);
+  });
+
   it("says one row in the singular", () => {
     expect(renderOutcome({ rowsIn: 1, drawn: 0 }).message).toContain("1 row arrived");
   });
@@ -217,6 +235,18 @@ describe("partialRenderNote", () => {
     expect(note).toContain("drew 1 of 3 layers");
     expect(note).toContain("b has no rows");
     expect(note).toContain("the others name data the dataflow does not produce");
+  });
+
+  it("adds why the input could not provide a table", () => {
+    const note = partialRenderNote({
+      layersRequested: 2, layersDrawn: 1,
+      requestedRefs: ["roads", "stats"], availableRefs: ["roads", "stats"],
+      emptyRefs: ["stats"],
+      inputProblem: "stats has no geometry column, so there is nothing to draw.",
+    });
+    expect(note).toBe(
+      "drew 1 of 2 layers: stats has no rows. stats has no geometry column, so there is nothing to draw.",
+    );
   });
 
   it("says nothing when nothing was dropped, or when nothing was drawn", () => {

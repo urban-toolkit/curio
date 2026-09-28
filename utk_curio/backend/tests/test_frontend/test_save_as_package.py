@@ -231,7 +231,7 @@ def test_save_node_as_package_export_then_load_back(
 
     # 8. Load it back through the Node Catalog drawer footer.
     uninstall_packages(token, dir_name, project_id)
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name="Node Catalog", exact=True)

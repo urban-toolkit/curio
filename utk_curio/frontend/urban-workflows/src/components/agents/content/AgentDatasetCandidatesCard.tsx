@@ -5,8 +5,31 @@ import type {
   AgentDatasetPick,
   AgentDatasetSelection,
 } from "../../../api/agentsApi";
+import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
+import { sanitizeAgentUrl } from "./sanitizeAgentContent";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
+import {
+  acquireKey,
+  startLakeAcquire,
+  useLakeAcquire,
+} from "../../../services/dataLakeCatalog/dataLakeCatalogHooks";
+import type { LakeAcquireJob } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
+import { isTerminal, jobProgress } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
+import { notifyDatasetCatalogRefresh } from "../../../services/datasetCatalog/datasetCatalogApi";
+import type { DatasetLakeSourceInput } from "../../../services/datasetCatalog/datasetCatalogTypes";
+
+/** Where a file downloaded by hand from this row came from: its Data Lake
+ * coordinate when it has one, and its link. Exported for tests. */
+export function rowProvenance(row: AgentDatasetCandidateRow): DatasetLakeSourceInput | undefined {
+  const source: DatasetLakeSourceInput = {};
+  if (row.sourceId && row.resourceId) {
+    source.lakeId = row.sourceId;
+    source.resourceId = row.resourceId;
+  }
+  if (row.url) source.resourceUrl = row.url;
+  return Object.keys(source).length ? source : undefined;
+}
 
 const LANE_LABEL: Record<"external" | "catalog", string> = {
   external: "External sources",
@@ -37,9 +60,10 @@ export function composeConfirmationPrompt(
           .join(", ")}`,
       );
     }
-    if (externalRows.length) {
+    const fetched = externalRows.filter((r) => !r.acquirable);
+    if (fetched.length) {
       bits.push(
-        `fetch from: ${externalRows
+        `fetch from: ${fetched
           .map((r) => (r.url ? `${r.name} (${r.url})` : r.name))
           .join(", ")}`,
       );
@@ -53,18 +77,10 @@ export function composeConfirmationPrompt(
         .join(", ")}`,
     );
   }
-  // The external lane splits in two. A row Curio can download says so; one it
-  // cannot still goes to Node Builder, which is the right answer for a source
-  // no provider covers - it just stops being the ONLY answer.
-  const downloadable = externalRows.filter((r) => r.acquirable && r.sourceId && r.resourceId);
-  const handoff = externalRows.filter((r) => !downloadable.includes(r));
-  if (downloadable.length) {
-    bits.push(
-      `download into my Data Catalog: ${downloadable
-        .map((r) => `${r.name} (${r.sourceId}/${r.resourceId})`)
-        .join(", ")}`,
-    );
-  }
+  // A row Curio can download is downloaded by its own button on the card, not
+  // asked for in the chat. The rest go to Node Builder, which is the right
+  // answer for a source no provider covers.
+  const handoff = externalRows.filter((r) => !r.acquirable);
   if (handoff.length) {
     bits.push(
       `hand off to Node Builder: ${handoff.map((r) => r.name).join(", ")}`,
@@ -73,14 +89,39 @@ export function composeConfirmationPrompt(
   return bits.length ? `Confirm my selection — ${bits.join("; ")}.` : "";
 }
 
+/** How a pick addresses a row, matching the server's `row_key`. Exported for tests. */
+export function pickKey(
+  lane: "external" | "catalog",
+  row: AgentDatasetCandidateRow,
+): string | undefined {
+  if (lane === "catalog") return row.datasetId;
+  if (row.url) return row.url;
+  if (row.sourceId && row.resourceId) return `${row.sourceId}/${row.resourceId}`;
+  return undefined;
+}
+
+/** The portal page an external row may link to: only a URL the runtime
+ *  vouched for (a source it can download from, or one its probe verified),
+ *  and only over http(s). Anything else stays plain text (REQ-SEC-002). */
+export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null {
+  if (!row.url) return null;
+  if (!row.acquirable && row.verification?.status !== "verified") return null;
+  const safe = sanitizeAgentUrl(row.url);
+  return safe && /^https?:\/\//i.test(safe) ? safe : null;
+}
+
 /**
  * The dev/50 two-lane suggestions surface (docs/06): one grouped card, two
  * labeled lanes, keyboard-operable multi-select rows carrying safe metadata
- * only. Rows have NO bespoke action buttons — toggling a selection composes
- * the editable confirmation prompt into the chat input (the suggested-prompt
- * vehicle); Apply/Dismiss stay exclusively on review cards. Every text field
- * arrives bounded + scheme-allowlisted from the server and renders as plain
- * text here (REQ-SEC-002).
+ * only. Toggling a selection composes the editable confirmation prompt into
+ * the chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
+ * on review cards. The one row action is Download, on a row Curio can
+ * download: the same download the Data Lake Catalog page runs. A row may also
+ * open what it names, read-only, the way the same dataset or portal row does
+ * everywhere else: a catalog row's "View details", and a verified external
+ * row's "View on the portal". Every text field arrives bounded +
+ * scheme-allowlisted from the server and renders as plain text here
+ * (REQ-SEC-002).
  */
 export const AgentDatasetCandidatesCard: React.FC<{
   part: AgentDatasetCandidatesPart;
@@ -97,7 +138,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * be downloaded from a portal can be brought in from the card that taught
    * the download. Resolves to the imported dataset's id, or null when the
    * import failed (the hook has already shown its own toast). */
-  onImportDataset?: (file: File) => Promise<string | null>;
+  onImportDataset?: (file: File, lakeSource?: DatasetLakeSourceInput) => Promise<string | null>;
 }> = ({
   part,
   tintClassName,
@@ -107,21 +148,25 @@ export const AgentDatasetCandidatesCard: React.FC<{
   onImportDataset,
 }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { openDatasetDetails } = useDatasetDetails();
   const [recording, setRecording] = useState(false);
   const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [downloaded, setDownloaded] = useState<string | null>(null);
+  const { jobs } = useLakeAcquire();
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
 
   /** The server addresses rows by identifier: a catalog row's datasetId, an
-   * external row's url. A row with neither cannot be confirmed. */
+   * external row's url, or its Data Lake coordinate when it has no url. A row
+   * with none of these cannot be confirmed. */
   const picksFor = (keys: Set<string>): AgentDatasetPick[] => {
     const out: AgentDatasetPick[] = [];
     (["catalog", "external"] as const).forEach((lane) => {
       (part.lanes[lane] ?? []).forEach((row, i) => {
         if (!keys.has(rowKey(lane, i))) return;
-        const key = lane === "catalog" ? row.datasetId : row.url;
+        const key = pickKey(lane, row);
         if (key) out.push({ lane, key });
       });
     });
@@ -147,12 +192,12 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * the portal is imported through the SAME catalog pathway as everywhere
    * else, and its id is then confirmed as this node's source, so solving
    * continues from it without the user explaining anything further. */
-  const importAndConfirm = async (file: File) => {
+  const importAndConfirm = async (file: File, row: AgentDatasetCandidateRow) => {
     if (!onImportDataset || importing) return;
     setImporting(true);
     setRecordError(null);
     try {
-      const datasetId = await onImportDataset(file);
+      const datasetId = await onImportDataset(file, rowProvenance(row));
       if (!datasetId) return; // the import hook reported its own failure
       if (onRecordSelection) {
         setRecorded(await onRecordSelection([{ lane: "catalog", key: datasetId }]));
@@ -164,6 +209,68 @@ export const AgentDatasetCandidatesCard: React.FC<{
     } finally {
       setImporting(false);
     }
+  };
+
+  /** The Data Lake page's own download: the same endpoint and the same job,
+   * followed after this card unmounts. The dataset it lands is this node's
+   * source, confirmed by id like an import. */
+  const download = async (row: AgentDatasetCandidateRow) => {
+    if (!row.sourceId || !row.resourceId) return;
+    setRecordError(null);
+    try {
+      await startLakeAcquire(row.sourceId, row.resourceId, {}, (job) => {
+        void landed(row, job);
+      });
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "the download could not start");
+    }
+  };
+
+  const landed = async (row: AgentDatasetCandidateRow, job: LakeAcquireJob) => {
+    if (job.status !== "completed" || !job.datasetId) {
+      setRecordError(job.error || `The download of ${row.name} was ${job.status}.`);
+      return;
+    }
+    notifyDatasetCatalogRefresh();
+    if (!onRecordSelection) {
+      setDownloaded(`${row.name} is in your Data Catalog.`);
+      return;
+    }
+    try {
+      setRecorded(await onRecordSelection([{ lane: "catalog", key: job.datasetId }]));
+    } catch (e) {
+      setRecordError(
+        e instanceof Error ? e.message : "the downloaded dataset could not be recorded",
+      );
+    }
+  };
+
+  const downloadControl = (row: AgentDatasetCandidateRow) => {
+    const job = row.sourceId && row.resourceId
+      ? jobs[acquireKey(row.sourceId, row.resourceId)]
+      : undefined;
+    const running = !!job && !isTerminal(job.status);
+    const progress = job && running ? jobProgress(job) : null;
+    const label = running
+      ? `Downloading…${progress !== null ? ` ${Math.round(progress * 100)}%` : ""}`
+      : job?.status === "completed"
+        ? "Downloaded"
+        : job
+          ? "Retry download"
+          : "Download";
+    return (
+      <button
+        type="button"
+        className={styles.importButton}
+        disabled={running || job?.status === "completed"}
+        onClick={(e) => {
+          e.preventDefault();
+          void download(row);
+        }}
+      >
+        {label}
+      </button>
+    );
   };
 
   const recordedNote = (selection: AgentDatasetSelection): string => {
@@ -202,6 +309,8 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const renderRow = (lane: "external" | "catalog", row: AgentDatasetCandidateRow, i: number) => {
     const key = rowKey(lane, i);
     const meta = [row.provider, row.format, row.coverage].filter(Boolean).join(" · ");
+    const portalUrl = lane === "external" ? verifiedPortalUrl(row) : null;
+    const datasetId = lane === "catalog" ? row.datasetId : undefined;
     return (
       <li key={key} className={styles.row}>
         <label className={styles.rowLabel}>
@@ -228,6 +337,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                   Downloadable
                 </span>
               ) : null}
+              {lane === "external" && row.acquirable ? downloadControl(row) : null}
               {lane === "external" && row.verification ? (
                 // dev/67-4 (DEC-053): the runtime's verdict, never the
                 // model's claim — verified ✓ or a loud warning (the ONE
@@ -236,7 +346,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
               ) : null}
             </span>
             {meta ? <span className={styles.meta}>{meta}</span> : null}
-            {row.url ? <span className={styles.url}>{row.url}</span> : null}
+            {row.url && !portalUrl ? <span className={styles.url}>{row.url}</span> : null}
             {row.fit ? (
               <span className={styles.fit}>
                 Fit {row.fit.score}/100 — {row.fit.rationale}
@@ -245,7 +355,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
             {row.requirement ? (
               <span className={styles.requirement}>{row.requirement}</span>
             ) : null}
-            {row.access === "manual-download" ? (
+            {row.access === "manual-download" && !row.acquirable ? (
               // dev/132: this source is a portal download, and the card is
               // where the user learns how — the steps are the portal's own
               // (or what the probe observed), never invented here.
@@ -270,7 +380,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         e.target.value = "";
-                        if (file) void importAndConfirm(file);
+                        if (file) void importAndConfirm(file, row);
                       }}
                     />
                     <span
@@ -285,6 +395,31 @@ export const AgentDatasetCandidatesCard: React.FC<{
             ) : null}
           </span>
         </label>
+        {datasetId || portalUrl ? (
+          // Outside the label, so opening what the row names never toggles
+          // the selection.
+          <div className={styles.rowActions}>
+            {datasetId ? (
+              <button
+                type="button"
+                className={styles.rowLink}
+                onClick={() => openDatasetDetails(datasetId)}
+              >
+                View details
+              </button>
+            ) : null}
+            {portalUrl ? (
+              <a
+                className={styles.rowLink}
+                href={portalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View on the portal ↗
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </li>
     );
   };
@@ -321,6 +456,18 @@ export const AgentDatasetCandidatesCard: React.FC<{
           </button>
           {recorded ? (
             <span className={styles.recorded} role="status">{recordedNote(recorded)}</span>
+          ) : null}
+          {recordError ? (
+            <span className={styles.recordError} role="alert">{recordError}</span>
+          ) : null}
+        </div>
+      ) : null}
+      {!onRecordSelection && (downloaded || recordError) ? (
+        // A chat with no node to confirm for: the download still lands in the
+        // Data Catalog, and the card says so, or says why it did not.
+        <div className={styles.confirmRow}>
+          {downloaded ? (
+            <span className={styles.recorded} role="status">{downloaded}</span>
           ) : null}
           {recordError ? (
             <span className={styles.recordError} role="alert">{recordError}</span>

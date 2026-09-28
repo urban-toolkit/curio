@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # npm install in main.py::_ensure_root_node_modules at container
 # start then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
+# The root package.json installs autk-db from the vendored tarball; see
+# utk_curio/frontend/urban-workflows/vendor/autark/README.md.
+COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
 COPY requirements.txt curio.py ./

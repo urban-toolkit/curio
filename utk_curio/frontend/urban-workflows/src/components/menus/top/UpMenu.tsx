@@ -50,7 +50,7 @@ import {
     NOT_JSON_FILE_MESSAGE,
     UNREADABLE_FILE_MESSAGE,
 } from "../../../utils/dataflowImport";
-import ConfirmDialog from "../../ConfirmDialog";
+import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import ShareMenu from "./ShareMenu";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 
@@ -61,21 +61,6 @@ export default function UpMenu() {
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    /** The "you have unsaved changes" guard, as one dialog instead of three
-     *  `window.confirm` calls (#197).
-     *
-     *  Three call sites asked the same question in two wordings, and all three
-     *  asked it through the browser: unstyled, unthemed, outside the app's modal
-     *  stack, and carrying the origin line. They are the last native dialogs in
-     *  the product now that the catalogs have been converted.
-     *
-     *  Holding the pending action rather than a boolean is what lets one dialog
-     *  serve all three: each site hands over what to run if the user confirms. */
-    const [pendingLeave, setPendingLeave] = useState<{
-        body: string;
-        run: () => void;
-    } | null>(null);
-
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -99,14 +84,10 @@ export default function UpMenu() {
         edges,
     } = useFlowContext();
 
-    /** Run *action* now, or ask first when there is unsaved work to lose. */
-    const leaveWithGuard = (body: string, action: () => void) => {
-        if (!projectDirty) {
-            action();
-            return;
-        }
-        setPendingLeave({ body, run: action });
-    };
+    /** Run *action* now, or ask first when there is unsaved work to lose.
+     *  The same guard every other way out of a dataflow uses (#197). */
+    const { leave: guardLeave, dialog: leaveDialog } = useLeaveGuard(projectDirty, LEAVE_DATAFLOW);
+    const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
     const collab = useCollab();
     // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
@@ -407,7 +388,7 @@ export default function UpMenu() {
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots - all in the browser.",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON) or draw the data connected to it, run GPU compute, and render maps or plots.",
                 },
                 {
                     element: "#step-vega",
@@ -465,14 +446,15 @@ export default function UpMenu() {
                 {/* File */}
                 <div className={styles.dropdownWrapper}>
                     <button
-                        className={styles.button}
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="File menu"
                         data-testid="file-menu-btn"
                         onClick={(e) => {
                             e.stopPropagation();
                             toggleMenu("file");
                         }}
                     >
-                        File ⏷
+                        File
                     </button>
                     {activeMenu === "file" && (
                         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>
@@ -534,8 +516,12 @@ export default function UpMenu() {
 
                 {/* View */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("view")}>
-                        View ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="View menu"
+                        onClick={() => toggleMenu("view")}
+                    >
+                        View
                     </button>
                     {activeMenu === "view" && (
                         <div className={styles.dropDownMenu}>
@@ -558,8 +544,12 @@ export default function UpMenu() {
 
                 {/* Data */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("data")}>
-                        Data ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Data menu"
+                        onClick={() => toggleMenu("data")}
+                    >
+                        Data
                     </button>
                     {activeMenu === "data" && (
                         <div className={styles.dropDownMenu}>
@@ -619,10 +609,11 @@ export default function UpMenu() {
                 {/* Provenance */}
                 <div className={styles.dropdownWrapper}>
                     <button
-                        className={styles.button}
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Provenance menu"
                         onClick={() => toggleMenu("provenance")}
                     >
-                        Provenance ⏷
+                        Provenance
                     </button>
                     {activeMenu === "provenance" && (
                         <div className={styles.dropDownMenu}>
@@ -636,8 +627,12 @@ export default function UpMenu() {
 
                 {/* Help */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("help")}>
-                        Help ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Help menu"
+                        onClick={() => toggleMenu("help")}
+                    >
+                        Help
                     </button>
                     {activeMenu === "help" && (
                         <div className={styles.dropDownMenu}>
@@ -787,21 +782,7 @@ export default function UpMenu() {
                 open={librariesOpen}
                 closeModal={() => setLibrariesOpen(false)}
             />
-            {pendingLeave ? (
-                <ConfirmDialog
-                    title="Discard unsaved changes?"
-                    body={pendingLeave.body}
-                    confirmLabel="Discard and continue"
-                    cancelLabel="Stay here"
-                    destructive
-                    onConfirm={() => {
-                        const run = pendingLeave.run;
-                        setPendingLeave(null);
-                        run();
-                    }}
-                    onCancel={() => setPendingLeave(null)}
-                />
-            ) : null}
+            {leaveDialog}
         </>
     );
 }

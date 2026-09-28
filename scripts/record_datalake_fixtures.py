@@ -48,7 +48,7 @@ from utk_curio.backend.app.datalakes.domain.resource import SearchQuery  # noqa:
 from utk_curio.backend.app.datalakes.infrastructure.transport import (  # noqa: E402
     HttpLakeTransport,
 )
-from utk_curio.backend.app.datalakes.providers import build_provider  # noqa: E402
+from utk_curio.backend.app.datalakes.providers import build_provider, build_storage  # noqa: E402
 from utk_curio.backend.app.datalakes.service import DEFAULT_SEARCH_LIMIT  # noqa: E402
 
 FIXTURES = REPO / "utk_curio" / "backend" / "tests" / "test_datalakes" / "fixtures"
@@ -61,6 +61,30 @@ PLAN = {
     "lake.esri.hub-opendata@1": {"slug": "arcgis", "q": "bike lanes"},
     "lake.saopaulo.geosampa@1": {"slug": "wfs", "q": "ciclo"},
 }
+
+
+#: Storage sources: every listing page is recorded as it arrives. The files
+#: themselves are not: a probe's Range read of a real object is indexed to a
+#: small synthetic file of the same format under ``download/storage/``, so the
+#: corpus carries a bucket's shape and none of its imagery.
+STORAGE_PLAN = {
+    "lake.aws.sentinel-2-chicago@1": {"slug": "s3"},
+    "lake.huggingface.documentation-images@1": {"slug": "huggingface"},
+}
+
+#: Synthetic stand-ins for a probed file's first bytes, by extension.
+SYNTHETIC_HEADS = {
+    "tif": "download/storage/head.tif",
+    "tiff": "download/storage/head.tif",
+    "jpg": "download/storage/head.jpg",
+    "jpeg": "download/storage/head.jpg",
+    "png": "download/storage/head.png",
+    "gif": "download/storage/head.png",
+    "webp": "download/storage/head.png",
+}
+
+#: What the index probes with, restated here only to spell the fixture key.
+PROBE_RANGE = "bytes=0-65535"
 
 
 class RecordingTransport:
@@ -88,8 +112,56 @@ class RecordingTransport:
         print(f"    {len(body):>8}B  {name}  <- {url[:96]}")
         return body
 
+    def get_page(self, url, *, credential=None, headers=None):
+        body, response_headers = self.inner.get_page(url, credential=credential, headers=headers)
+        self.seq += 1
+        suffix = "xml" if body.lstrip().startswith("<") else "json"
+        name = f"{self.slug}/{self.seq:02d}.{suffix}"
+        path = FIXTURES / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        kept = {"Content-Type": "application/xml" if suffix == "xml" else "application/json"}
+        for key, value in response_headers.items():
+            if key.lower() == "link":
+                kept["Link"] = value
+        self.index[url] = {"file": name, "status": 200, "headers": kept}
+        print(f"    {len(body):>8}B  {name}  <- {url[:96]}")
+        return body, kept
+
     def download(self, *a, **k):  # pragma: no cover - recording metadata only
         raise NotImplementedError("downloads are recorded by hand; see the index")
+
+
+def record_storage(slug_filter: str | None, index: dict) -> None:
+    """List each storage source, and index a synthetic head for every file the
+    listing's resources would probe."""
+    from utk_curio.backend.app.datalakes.application import scan
+
+    for dir_name, plan in STORAGE_PLAN.items():
+        if slug_filter and plan["slug"] != slug_filter:
+            continue
+        manifest = load_source_manifest(REPO / "datalakes" / dir_name)
+        print(f"\n==  {manifest.name}  ({plan['slug']})")
+        transport = RecordingTransport(plan["slug"], index)
+        provider = build_storage(manifest, transport)
+        result = scan.scan(manifest, provider)
+        print(f"    -> {result.matched} files in {len(result.groups)} rows")
+        # Adding a resource lists only under its own folder, which is a
+        # different URL whenever the resources do not share one.
+        for spec in manifest.resources:
+            scan.scan(manifest, provider, specs=[spec])
+        url_for = getattr(provider, "object_url", None) or provider.file_url
+        for group in result.groups:
+            for found in group.files:
+                ext = found.relpath.rsplit(".", 1)[-1].lower()
+                head = SYNTHETIC_HEADS.get(ext)
+                if head is None:
+                    continue
+                index[f"{url_for(found.relpath)} {PROBE_RANGE}"] = {
+                    "file": head,
+                    "status": 206,
+                    "headers": {"Content-Type": "application/octet-stream"},
+                }
 
 
 def record(slug_filter: str | None) -> None:
@@ -126,6 +198,8 @@ def record(slug_filter: str | None) -> None:
             except Exception as exc:  # noqa: BLE001
                 print(f"    describe failed: {type(exc).__name__}: {exc}")
 
+    record_storage(slug_filter, index)
+
     FIXTURES.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"\nwrote {index_path} ({len(index)} entries)")
@@ -133,5 +207,7 @@ def record(slug_filter: str | None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", help="record one provider slug (socrata, ckan, arcgis, wfs)")
+    parser.add_argument(
+        "--only", help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface)"
+    )
     record(parser.parse_args().only)

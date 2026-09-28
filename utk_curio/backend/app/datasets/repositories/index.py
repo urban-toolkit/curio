@@ -112,6 +112,7 @@ def manifest_from_row(row: DatasetIndexEntry) -> DatasetManifest:
         producer_dataflow_name=row.producer_dataflow_name,
         upstream_inputs=_loads(row.upstream_inputs_json, None),
         lake_source=_loads(row.lake_source_json, None),
+        collection=_loads(row.collection_json, None),
     )
 
 
@@ -156,6 +157,9 @@ def _apply_manifest(
     )
     row.lake_source_json = _dumps(
         dict(manifest.lake_source) if manifest.lake_source else None
+    )
+    row.collection_json = _dumps(
+        dict(manifest.collection) if manifest.collection else None
     )
     row.manifest_mtime_ns = mtime_ns
     row.manifest_size = size

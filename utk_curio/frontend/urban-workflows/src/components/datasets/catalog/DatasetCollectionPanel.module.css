@@ -1,0 +1,63 @@
+/*
+ * A collection's file strip and its Cache files row. Colours, type and
+ * geometry come from ../../../styles/curioTokens.css.
+ */
+
+.strip {
+  display: flex;
+  gap: 6px;
+  padding: 12px 20px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-page-bg);
+}
+
+.thumb {
+  flex: 0 0 auto;
+  display: block;
+  width: 96px;
+  height: 72px;
+  border-radius: var(--curio-radius-md);
+  object-fit: cover;
+  background: var(--curio-surface-muted);
+}
+
+.thumbFailed {
+  opacity: 0.5;
+}
+
+.cacheRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Dark filled = an action, matching every other catalog surface. */
+.cacheButton {
+  flex-shrink: 0;
+  height: 30px;
+  border: 0;
+  border-radius: var(--curio-radius-lg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cacheButton:hover:not(:disabled) {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.cacheButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cacheNote {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+}

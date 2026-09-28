@@ -26,11 +26,9 @@ spec
 │   ├── datasets[]              Data Catalog references    (backend-owned on update)
 │   ├── description
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
-│   ├── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-│   └── agentDefaults           deprecated
+│   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node execution history (browser-side only)
-├── dataflowProvenance          version history of the whole dataflow
-└── name                        deprecated top-level alias
+└── dataflowProvenance          version history of the whole dataflow
 ```
 
 ### A node
@@ -63,16 +61,16 @@ which cannot recover a named port such as `in_points`.
 
 ### Ownership
 
-Three sections are **backend-owned on update** — the server overwrites whatever a
-client sends, so a stale browser tab cannot clobber them: `packages`, `datasets`,
-and the agent sections. Two are additionally **stripped on share**: `agents` and
+Three sections are **backend-owned on update**, so the server overwrites whatever
+a client sends and a stale browser tab cannot clobber them: `packages`,
+`datasets`, and the agent sections. Two are additionally **stripped on share**: `agents` and
 `agentAttachments` are removed from the copy served behind a share link, so a
 shared dataflow never carries them and they can never be required.
 
 ## What lives in the manifest, not here
 
-**Nodes are defined by package manifests.** A node's `type` is a coordinate —
-`<packageId>/<templateId>` or `…@<major>` — into a manifest's `templates[].id`,
+**Nodes are defined by package manifests.** A node's `type` is a coordinate
+(`<packageId>/<templateId>` or `…@<major>`) into a manifest's `templates[].id`,
 and `dataflow.packages` is the lockfile naming which manifests must be installed
 for those coordinates to resolve. The trill schema validates the *shape* of that
 coordinate and stops there.
@@ -113,6 +111,9 @@ python scripts/validate_trill.py --all --resolve          # also check types res
 `--resolve` adds the manifest check the schema cannot do: every node type must
 correspond to a template under `packages/`.
 
+Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
+of the same shape, requiring only `nodes` and `edges`.
+
 ## Laying a dataflow out
 
 The schema says nothing about where a node sits, so a spec can be perfectly valid
@@ -126,29 +127,8 @@ python scripts/tidy_example_layout.py --all --write    # apply
 
 It rewrites nothing but `x` and `y` on `dataflow.nodes[]`, and it refuses a file
 it cannot reproduce byte-for-byte rather than reformatting it. Scope is the
-curated gallery examples only — `docs/examples/dataflows/` is hand-tuned fixture
-material and `.curio/` is your own work.
+curated gallery examples only: `docs/examples/dataflows/` is hand-tuned fixture
+material, and `.curio/` is your own work.
 
 CI validates the committed examples on every push. It cannot see your own
 projects, since `.curio/` is gitignored, which is what the CLI is for.
-
-### Your saved projects may report failures
-
-Projects saved before the schema existed may be missing `provenance_id`,
-`timestamp`, `name` or `task`. A non-zero exit from `--all` on those is
-information, not a broken build; fix them with the one-time rewrite
-[`docs/NODE-CATALOG.md`](NODE-CATALOG.md) describes.
-
-A missing `name` has a visible symptom: `dataflowProvenance.latest`
-interpolates the name into its version keys, so a spec saved without one carries
-keys that literally read `undefined_1787609706100`.
-
-Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
-of the same shape, requiring only `nodes` and `edges`.
-
-## Known drift
-
-- **Two name conventions coexist.** `dataflow.name` is authoritative, but
-  `execution/workflow_spec.py` still reads a top-level `name`. Both are valid; a
-  top-level one *without* a `dataflow.name` is the footgun documented in
-  `backend/tests/test_frontend/README.md`.

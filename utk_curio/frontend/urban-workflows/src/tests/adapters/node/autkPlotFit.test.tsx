@@ -12,10 +12,26 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
 
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+}));
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-jest.mock('../../../services/api', () => ({ fetchData: jest.fn() }));
+// One upstream row, so the plot's `upstream` table resolves and the node gets
+// as far as running the grammar.
+jest.mock('../../../services/api', () => ({
+  fetchData: jest.fn().mockResolvedValue({
+    dataType: 'geodataframe',
+    data: {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { sunlight: 1 } }],
+    },
+  }),
+  fetchPreviewData: jest.fn(),
+}));
 jest.mock('../../../JavaScriptInterpreter', () => ({
   JavaScriptInterpreter: class { },
 }));
@@ -49,7 +65,7 @@ function mountNode(): (spec: object) => Promise<void> {
   let apply: (spec: string) => Promise<void> = async () => { };
   const Probe: React.FC = () => {
     const behavior = useAutkGrammarBehavior(
-      { nodeId: 'plot-1', input: '', defaultCode: '{}' } as any,
+      { nodeId: 'plot-1', input: { path: 'art-1', dataType: 'geodataframe' }, defaultCode: '{}' } as any,
       {
         output: { code: '', content: '' },
         setOutput: jest.fn(),

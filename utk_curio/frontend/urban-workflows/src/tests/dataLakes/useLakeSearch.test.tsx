@@ -123,4 +123,30 @@ describe('useLakeSearch', () => {
     // Let the rejection land inside the test rather than after it.
     await act(async () => {});
   });
+
+  test('a federated search asks again while a storage source is being scanned', async () => {
+    const scanning = { ...EMPTY, sources: [{ sourceId: 'lake.curio.example-storage', status: 'scanning' }] };
+    const done = {
+      ...EMPTY,
+      resources: [{ sourceId: 'lake.curio.example-storage', resourceId: 'noise', name: 'Noise recordings' }],
+      sources: [{ sourceId: 'lake.curio.example-storage', status: 'ok', count: 1 }],
+    };
+    apiFetch.mockResolvedValueOnce(scanning).mockResolvedValueOnce(done);
+    render(<Probe q="noise" />);
+    await settle();
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('count').textContent).toBe('0');
+    // The first answer's rows are not held back while it waits.
+    expect(screen.getByTestId('loading').textContent).toBe('false');
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    // Once every source has answered, it stops asking.
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
 });

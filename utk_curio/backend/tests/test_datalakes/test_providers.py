@@ -317,9 +317,12 @@ class TestDirect:
 
 class TestTheRegistry:
     def test_every_manifest_provider_type_can_be_built(self):
+        from utk_curio.backend.app.datalakes.providers import build_storage
+
         for dir_name in sorted(p.name for p in SHIPPED_ROOT.iterdir() if p.is_dir()):
             manifest = load_source_manifest(SHIPPED_ROOT / dir_name)
-            provider = build_provider(manifest, FixtureLakeTransport(FIXTURES))
+            build = build_storage if manifest.is_storage else build_provider
+            provider = build(manifest, FixtureLakeTransport(FIXTURES))
             assert provider.type == manifest.provider.type
 
     def test_a_transport_is_required_not_defaulted(self):

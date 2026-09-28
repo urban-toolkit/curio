@@ -21,7 +21,7 @@ return df
 
 Hit **Run**. The Python `return` outputs `df` for the next node.
 
-To work from a CSV or GeoJSON file instead, import it through **Data ⏷ →
+To work from a CSV or GeoJSON file instead, import it through **Data →
 Data Catalog** and drag the dataset onto the canvas, which creates a
 `Data Loading` node already wired to it. See
 [DATA-CATALOG.md](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow). If you want

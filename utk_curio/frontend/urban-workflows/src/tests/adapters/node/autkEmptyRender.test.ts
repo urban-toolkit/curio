@@ -1,3 +1,9 @@
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+}));
+
 import { countedItem, describeAutkRun } from "../../../adapters/node/autkGrammarBehavior";
 import { partialRenderNote, renderOutcome } from "../../../utils/renderOutcome";
 

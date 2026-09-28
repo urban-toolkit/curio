@@ -1,4 +1,5 @@
 import React from "react";
+import clsx from "clsx";
 import { useHref } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLink, faTableColumns } from "@fortawesome/free-solid-svg-icons";
@@ -65,8 +66,13 @@ export function ShareMenu({
 
   return (
     <div className={styles.dropdownWrapper}>
-      <button className={styles.button} onClick={onToggle} data-testid="share-menu-btn">
-        Share ⏷
+      <button
+        className={clsx(styles.button, styles.menuCaret)}
+        aria-label="Share menu"
+        onClick={onToggle}
+        data-testid="share-menu-btn"
+      >
+        Share
       </button>
       {open && (
         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>

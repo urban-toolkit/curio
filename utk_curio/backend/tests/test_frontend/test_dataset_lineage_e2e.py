@@ -190,7 +190,7 @@ def _open_lineage_tab(page):
     scoped to one of them - an unscoped ``get_by_text`` on the Lineage tab is
     strict-mode-ambiguous.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     drawer = _drawer(page)
 

@@ -26,13 +26,13 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 const GRIDS = [
   "pages/projects/ProjectsList.tsx",
   "pages/catalog/NodeCatalogBrowse.tsx",
-  "pages/dataHub/DataCatalogBrowse.tsx",
+  "pages/dataCatalog/DataCatalogBrowse.tsx",
   "pages/agents/AgentCatalogBrowse.tsx",
 ];
 
 const CARDS = [
   "pages/catalog/PackageBrowseCard.tsx",
-  "pages/dataHub/DataCatalogBrowseCard.tsx",
+  "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
 ];
 

@@ -9,11 +9,10 @@ import { applyContainerSizing } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
+import { matchSelections, objectRows } from "../utils/selectionMatch";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
-import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
-// The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
-// like a blank Data Pool or Simple View rather than merely similar.
-import emptyStyles from "../components/nodes/NodeEmptyState.module.css";
+import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
+import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -28,12 +27,15 @@ export const useVega = ({
   data,
   code,
   connected = true,
+  upstreamErrored = false,
   hasSpec = true,
 }: {
   data: any;
   code: string;
   /** Is anything wired into this node's input? */
   connected?: boolean;
+  /** Did the node feeding this one run and fail? */
+  upstreamErrored?: boolean;
   /** Does the editor hold a spec to compile? */
   hasSpec?: boolean;
 }) => {
@@ -59,6 +61,35 @@ export const useVega = ({
   // same way `compileGrammar` did -- hot reload never goes through the latter.
   const lastSpecRef = React.useRef<any>(null);
 
+  // The rows the view holds, which a direct selection is matched against.
+  const lastValuesRef = React.useRef<any[]>([]);
+  const incomingSelectionRef = React.useRef<any>(data.interactions);
+  incomingSelectionRef.current = data.interactions;
+
+  /**
+   * A selection from a chart joined to this one by a direct interaction edge,
+   * with no Data Pool between them. The rows it picks out are flagged
+   * `interacted` in the view as it is, so the spec's `datum.interacted`
+   * condition highlights them exactly as it does behind a pool. The chart is
+   * never rebuilt for it. Also re-applied after new rows arrive, so a selection
+   * that is still active survives an upstream run.
+   */
+  const applyDirectSelection = (view: any) => {
+    const incoming = incomingSelectionRef.current;
+    if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
+    const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
+    view
+      .change(
+        "data",
+        vega.changeset().modify(
+          () => true,
+          "interacted",
+          (t: any) => (picked.has(t.__row_index__) ? "1" : "0"),
+        ),
+      )
+      .runAsync();
+  };
+
   // Why the node body is blank, when it is. Persistent, unlike a toast.
   const [emptyReason, setEmptyReason] = useState<NodeEmptyReason | null>(null);
   const [emptyDetail, setEmptyDetail] = useState<string | null>(null);
@@ -70,42 +101,9 @@ export const useVega = ({
     renderEmptyState(prepared.emptyReason ?? null, prepared.detail ?? null);
   };
 
-  /**
-   * Write the empty state into the same div vega renders into.
-   *
-   * That div is addressed by DOM id and filled imperatively by vega, so there
-   * is no React subtree to put a component in -- NodeEditor renders either the
-   * output container or a `contentComponent`, never both. Writing the copy here
-   * keeps it in the node body where it persists, which is the whole point: the
-   * predecessor of this was a toast that vanished after a few seconds and left
-   * an unexplained blank node behind (#224).
-   *
-   * The copy itself still comes from NODE_EMPTY_COPY, so it cannot drift from
-   * what Data Pool and Simple View say for the shared states.
-   */
+  /** Write the empty state into the div vega renders into (utils/writeEmptyState). */
   const renderEmptyState = (reason: NodeEmptyReason | null, detail: string | null) => {
-    const host = document.getElementById("vega" + data.nodeId);
-    if (!host) return;
-    if (reason == null) return;
-
-    const copy = NODE_EMPTY_COPY[reason];
-    host.replaceChildren();
-    host.setAttribute("data-curio-node-empty", reason);
-
-    const wrapper = document.createElement("div");
-    wrapper.className = emptyStyles.root;
-
-    const title = document.createElement("span");
-    title.className = emptyStyles.title;
-    title.textContent = copy.title;
-    wrapper.appendChild(title);
-
-    const hint = document.createElement("span");
-    hint.className = emptyStyles.hint;
-    hint.textContent = detail ?? copy.hint;
-    wrapper.appendChild(hint);
-
-    host.appendChild(wrapper);
+    writeEmptyState(document.getElementById("vega" + data.nodeId), reason, { hint: detail });
   };
 
   // Build a tupleid → original-index map by traversing the scene graph.
@@ -176,6 +174,7 @@ export const useVega = ({
     const prepared = await prepareVegaInput(data.input, lastSpecRef.current);
     setEmptyState(prepared);
     const values = prepared.values;
+    lastValuesRef.current = values;
 
     let changeset = vega
       .changeset()
@@ -187,6 +186,7 @@ export const useVega = ({
       prevView.change("data", changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
+        applyDirectSelection(prevView);
       });
     }
 
@@ -202,6 +202,10 @@ export const useVega = ({
     });
   }, [data.input]);
 
+  useEffect(() => {
+    applyDirectSelection(currentViewRef.current);
+  }, [data.interactions]);
+
 
   // The states that exist *before* anything compiles: nothing connected, an
   // upstream that has not run, an empty editor. Nothing else would report these
@@ -212,13 +216,14 @@ export const useVega = ({
     if (currentViewRef.current != null) return;
     const reason = resolveGrammarEmptyReason({
       connected,
+      upstreamErrored,
       hasInput: data.input != null && data.input !== "",
       hasSpec,
       hasRun: hasRunRef.current,
       inputProblem: emptyReason,
     });
     if (reason != null) renderEmptyState(reason, emptyDetail);
-  }, [connected, hasSpec, data.input, emptyReason, emptyDetail]);
+  }, [connected, upstreamErrored, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => {
@@ -277,6 +282,7 @@ export const useVega = ({
     const prepared = await prepareVegaInput(data.input, specObj);
     setEmptyState(prepared);
     const values = prepared.values;
+    lastValuesRef.current = values;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
     const { usableRows, usableFields } = usableCounts(values, specObj);
@@ -289,8 +295,13 @@ export const useVega = ({
       //
       // dev/136: still counts, and `drawn: 0` is the truth -- the badge must
       // not read green over the explanation this just put on the node, and
-      // the verdict carries that same explanation.
-      return { rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail };
+      // the verdict carries that same explanation. A refused input type is
+      // the upstream's to fix, and its sentence says which type it was, as the
+      // Autark node's refusal does.
+      return {
+        rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail,
+        ...(prepared.emptyReason === "input-type-rejected" ? { inputProblem: prepared.detail } : {}),
+      };
     }
 
     specObj["data"] = { values: values, name: "data" };
@@ -303,8 +314,7 @@ export const useVega = ({
 
     // vega replaces the container's contents, but the marker attribute is ours
     // and would otherwise outlive the message it described.
-    const host = document.getElementById("vega" + data.nodeId);
-    host?.removeAttribute("data-curio-node-empty");
+    clearEmptyState(document.getElementById("vega" + data.nodeId));
     hasRunRef.current = true;
 
     let view = new vega.View(vega.parse(vegaspec))
@@ -378,6 +388,7 @@ export const useVega = ({
     }).then(() => {
       const map = buildVgsidMap(view);
       if (map.size > 0) vgsidToIndexRef.current = map;
+      applyDirectSelection(view);
       return countDrawnMarks(view);
     }).catch(() => undefined);   // could not count: no claim (dev/136)
 

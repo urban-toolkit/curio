@@ -210,7 +210,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Target constraints (e.g. 'data-loading', 'code-or-output')."
+            "description": "For a node target, the node kinds the agent accepts (e.g. 'data-loading'). Empty means any node."
           }
         }
       }

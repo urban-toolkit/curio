@@ -16,10 +16,12 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import content, tools
+from utk_curio.backend.app.agents import content, tools, verify
 from utk_curio.backend.app.agents.services import (
     _egress_cost,
-    _mark_acquirable_candidates,
+    _LazyRoster,
+    _mint_row_acquirable,
+    _verify_candidate_parts,
 )
 
 
@@ -144,48 +146,102 @@ class TestTheCandidateLane:
 
 
 class TestOnlyTheRuntimeSaysActionable:
-    """The model may NAME a source; it may not claim the run can act on it.
+    """The model may NAME a source; it may not claim Curio can download it.
 
     This is the catalog lane's mandatory-``datasetId`` discipline applied one
-    lane over.
+    lane over. One function answers it, from the roster and the probe.
     """
 
-    def _parts(self, **row):
-        base = {"name": "Bike Routes", "sourceType": "lake"}
-        base.update(row)
-        return [{"type": "datasetCandidates", "lanes": {"external": [base]}}]
+    CHICAGO = {"sourceId": "lake.cityofchicago.data-portal@1", "resourceId": "ijzp-q8t2"}
+    DIRECT = "lake.curio.direct-url@1"
+    URL = "https://data.example.org/areas.geojson"
+    GEOJSON = {"status": "verified", "httpStatus": 200, "contentType": "application/geo+json"}
 
-    def _row(self, parts):
-        return parts[0]["lanes"]["external"][0]
+    def _row(self, **fields):
+        row = {"name": "Bike Routes", "sourceType": "lake", **fields}
+        if "verification" in row:
+            row["access"] = verify.classify_access(row["verification"], row.get("url"))["access"]
+        _mint_row_acquirable(row, _LazyRoster())
+        return row
 
     def test_a_model_claim_is_stripped(self, app, shipped_root):
-        parts = self._parts(acquirable=True)
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(acquirable=True).get("acquirable") is None
 
-    def test_a_real_source_with_the_grant_is_marked(self, app, shipped_root):
-        parts = self._parts(
-            sourceId="lake.cityofchicago.data-portal@1", resourceId="ijzp-q8t2"
-        )
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts)["acquirable"] is True
+    def test_a_real_connector_source_is_marked(self, app, shipped_root):
+        assert self._row(**self.CHICAGO)["acquirable"] is True
 
-    def test_without_the_grant_nothing_is_marked(self, app, shipped_root):
-        parts = self._parts(
-            sourceId="lake.cityofchicago.data-portal@1", resourceId="ijzp-q8t2"
-        )
-        _mark_acquirable_candidates(parts, {"catalog.search"})
-        assert self._row(parts).get("acquirable") is None
+    def test_the_run_grant_does_not_decide_it(self, app, shipped_root):
+        # A person confirming the row uses the download route, which needs only
+        # their sign-in; there is no grant to consult here at all.
+        row = {"name": "Bike Routes", "sourceType": "lake", **self.CHICAGO}
+        parts = [{"type": "datasetCandidates", "lanes": {"external": [row]}}]
+        _verify_candidate_parts(parts)
+        assert row["acquirable"] is True
+
+    def test_a_connector_row_whose_landing_page_is_a_portal_is_still_downloadable(
+        self, app, shipped_root
+    ):
+        row = self._row(**self.CHICAGO, url="https://data.cityofchicago.org/d/ijzp-q8t2",
+                        verification={"status": "verified", "httpStatus": 200,
+                                      "contentType": "text/html"})
+        assert row["access"] == verify.ACCESS_MANUAL
+        assert row["acquirable"] is True
 
     def test_an_invented_source_is_not_marked(self, app, shipped_root):
-        parts = self._parts(sourceId="lake.made.up@1", resourceId="x")
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(sourceId="lake.made.up@1", resourceId="x").get("acquirable") is None
 
     def test_a_row_with_no_coordinate_is_not_marked(self, app, shipped_root):
-        parts = self._parts(url="https://a.example/x")
-        _mark_acquirable_candidates(parts, {"datalake.acquire"})
-        assert self._row(parts).get("acquirable") is None
+        assert self._row(url="https://a.example/x").get("acquirable") is None
+
+    def test_a_direct_url_row_needs_the_probe(self, app, shipped_root):
+        row = self._row(sourceId=self.DIRECT, resourceId=self.URL, url=self.URL,
+                        verification=self.GEOJSON)
+        assert row["acquirable"] is True
+
+    def test_a_direct_url_row_is_refused_on_any_missing_condition(self, app, shipped_root):
+        http = self.URL.replace("https://", "http://")
+        cases = {
+            "not https": dict(resourceId=http, url=http, verification=self.GEOJSON),
+            "resourceId is not the probed url": dict(
+                resourceId="https://elsewhere.example/x.geojson", url=self.URL,
+                verification=self.GEOJSON),
+            "the probe saw a page": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200, "contentType": "text/html"}),
+            "a type the source cannot store": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200,
+                "contentType": "application/octet-stream"}),
+            "an archive": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200, "contentType": "application/zip"}),
+        }
+        for why, fields in cases.items():
+            assert self._row(sourceId=self.DIRECT, **fields).get("acquirable") is None, why
+
+    def test_a_plain_link_to_a_storable_file_becomes_a_direct_url_download(
+        self, app, shipped_root
+    ):
+        row = self._row(url=self.URL, verification=self.GEOJSON)
+        assert row["acquirable"] is True
+        assert (row["sourceId"], row["resourceId"]) == (self.DIRECT, self.URL)
+
+    def test_a_plain_link_that_does_not_qualify_keeps_no_coordinate(self, app, shipped_root):
+        page = {"status": "verified", "httpStatus": 200, "contentType": "text/html"}
+        row = self._row(url=self.URL, verification=page)
+        assert row.get("acquirable") is None
+        assert "sourceId" not in row and "resourceId" not in row
+        http = self._row(url=self.URL.replace("https://", "http://"), verification=self.GEOJSON)
+        assert "sourceId" not in http
+
+    def test_a_downloadable_row_carries_no_portal_steps(self, app, shipped_root):
+        row = {"name": "Bike Routes", "sourceType": "lake", **self.CHICAGO,
+               "access": verify.ACCESS_MANUAL, "downloadSteps": ["Open the portal page"]}
+        _mint_row_acquirable(row, _LazyRoster())
+        assert row["acquirable"] is True and "downloadSteps" not in row
+
+    def test_a_charset_parameter_does_not_hide_the_type(self, app, shipped_root):
+        row = self._row(sourceId=self.DIRECT, resourceId=self.URL, url=self.URL,
+                        verification={**self.GEOJSON,
+                                      "contentType": "application/geo+json; charset=utf-8"})
+        assert row["acquirable"] is True
 
 
 class TestTheInstructionIsGrantShaped:
@@ -227,3 +283,52 @@ class TestTheRosterExecutor:
                 "sourceId", "name", "provider", "publisher", "description",
                 "formats", "searchable", "credentialReady",
             }
+
+
+class TestStorageSourcesAreNotOffered:
+    """A storage row is added from the Data Lake page, where it can be
+    narrowed, so no agent tool lists, searches, or proposes one."""
+
+    EXAMPLE = "lake.curio.example-storage@1"
+
+    def test_the_roster_leaves_them_out(self, app, shipped_root):
+        status, text = tools.execute_read_tool(
+            "datalake.sources", user_key="1", project_id="p", target=None, params={}
+        )
+        assert status == "ok"
+        assert self.EXAMPLE not in text
+        assert "lake.cityofchicago.data-portal@1" in text
+
+    def test_a_search_of_one_says_it_is_unsupported(self, app, shipped_root):
+        rows, legs = tools._datalake_search_rows({"sourceId": self.EXAMPLE, "q": "noise"})
+        assert rows == [] and legs == [{"sourceId": self.EXAMPLE, "status": "unsupported"}]
+
+    def test_a_fan_out_neither_contacts_nor_charges_for_them(self, app, shipped_root, monkeypatch):
+        from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        seen = {}
+
+        def search_all(self, **kwargs):
+            seen.update(kwargs)
+            return {"resources": [], "sources": []}
+
+        monkeypatch.setattr(DataLakeService, "search_all", search_all)
+        tools._datalake_search_rows({"q": "noise"})
+        assert seen["include_storage"] is False
+        listing = tools._datalake_service().list_catalog()["sources"]
+        portals = [s for s in listing if s["kind"] != "storage" and s["capabilities"]["search"]]
+        assert _egress_cost("datalake.search", {}) == len(portals)
+
+    def test_a_row_from_one_is_not_marked_acquirable(self, app, shipped_root):
+        row = {"name": "Noise", "sourceType": "lake", "sourceId": self.EXAMPLE, "resourceId": "noise"}
+        _mint_row_acquirable(row, _LazyRoster())
+        assert row.get("acquirable") is None
+
+    def test_a_proposal_for_one_is_refused(self, app, shipped_root, monkeypatch):
+        from utk_curio.backend.app.agents import services
+
+        status, text, card = services._mint_datalake_acquire(
+            "1", "p", {}, {"params": {"sourceId": self.EXAMPLE, "resourceId": "noise"}}
+        )
+        assert status == "refused" and card is None
+        assert "storage source" in text

@@ -247,6 +247,8 @@ def run_through_node(
     dataset_paths: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
+    collections: dict | None = None,
+    media_dir: str | None = None,
     prior_outputs: dict | None = None,
     strict_upstream: bool = False,
     templates: dict | None = None,
@@ -390,6 +392,13 @@ def run_through_node(
             # dev/116: the connection keys the candidate names, resolved by the
             # caller in the request thread; the sandbox injects curio_secret().
             payload["secrets"] = dict(secrets)
+        if collections:
+            # Where each curio_collection("<id>") the slice reads keeps its
+            # files, and where a node writes what it derives: the same
+            # resolution /processPythonCode sends (datalakes.application.exec_collections).
+            payload["collections"] = dict(collections)
+        if media_dir:
+            payload["media_dir"] = media_dir
         endpoint = "/exec" if is_py else "/execJs"
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t0 = time.monotonic()

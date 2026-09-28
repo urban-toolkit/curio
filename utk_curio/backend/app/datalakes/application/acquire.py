@@ -18,7 +18,8 @@ The shape of the work:
                                   resolve the format from what actually arrived
                                         │
                                         v
-                                  _install_imported_bytes  (the existing seam)
+                                  _install_imported_path  (moves the file into
+                                                           the Data Catalog)
 """
 
 from __future__ import annotations
@@ -60,17 +61,19 @@ class LakeAcquire:
         user_key: str,
         transport_for: Callable[[LakeSourceManifest], Any],
         download_target: Callable[[LakeSourceManifest, str, str | None], Any],
-        install_bytes: Callable[..., dict[str, Any]],
+        install_path: Callable[..., dict[str, Any]],
         find_held: Callable[[str, str, str | None], dict[str, Any] | None],
         describe: Callable[[LakeSourceManifest, str], Any] | None = None,
+        find_by_content: Callable[[str], dict[str, Any] | None] | None = None,
     ) -> None:
         self.user = user
         self.user_key = user_key
         self._transport_for = transport_for
         self._download_target = download_target
-        self._install_bytes = install_bytes
+        self._install_path = install_path
         self._find_held = find_held
         self._describe = describe
+        self._find_by_content = find_by_content
 
     # ── the check that avoids the network entirely ─────────────────────────
 
@@ -159,28 +162,34 @@ class LakeAcquire:
                 # A refresh that found nothing new. The bytes were paid for; a
                 # second identical row would not be.
                 return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+            # The same bytes may already be here from another path: a file the
+            # person downloaded by hand and imported with its origin.
+            same = self._find_by_content(result.sha256) if self._find_by_content else None
+            if same is not None:
+                return {"dataset": same, "alreadyPresent": True, "unchanged": True}
 
-            blob = tmp_path.read_bytes()
+            # The file moves into the Data Catalog as it is, never through
+            # memory: the install consumes the temp file.
+            dataset = self._install_path(
+                tmp_path,
+                filename,
+                fmt_detected,
+                title=title or (target.filename_hint or filename),
+                lake_source={
+                    "lakeId": manifest.dir_name,
+                    "lakeName": manifest.name,
+                    "resourceId": resource_id,
+                    "resourceUrl": target.url,
+                    "finalUrl": getattr(result, "final_url", target.url),
+                    "fetchedAt": _iso_now(),
+                    "contentSha256": result.sha256,
+                },
+            )
         except _Cancelled:
             raise
         finally:
             tmp_path.unlink(missing_ok=True)
 
-        dataset = self._install_bytes(
-            blob,
-            filename,
-            fmt_detected,
-            title=title or (target.filename_hint or filename),
-            lake_source={
-                "lakeId": manifest.dir_name,
-                "lakeName": manifest.name,
-                "resourceId": resource_id,
-                "resourceUrl": target.url,
-                "finalUrl": getattr(result, "final_url", target.url),
-                "fetchedAt": _iso_now(),
-                "contentSha256": result.sha256,
-            },
-        )
         # A changed resource mints a NEW dataset rather than overwriting the
         # held one: a saved dataflow loads that dataset by id, and rewriting its
         # bytes would change that dataflow's results with nothing on screen to
