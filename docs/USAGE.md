@@ -7,9 +7,14 @@
   - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
 - [LLM configurations](#llm-configurations)
   - [Your configurations](#your-configurations)
+  - [Connection keys](#connection-keys)
   - [Guest users](#guest-users)
 - [Node Catalog](#node-catalog)
+- [Vega-Lite node](#vega-lite-node)
+- [Autark node](#autark-node)
+- [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
+- [Data Lake Catalog](#data-lake-catalog)
 - [Agent Catalog](#agent-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
@@ -35,7 +40,7 @@ If installed from Git:
 python curio.py --help
 ```
 
-There are two commands. `start` launches the servers (running `setup` first automatically); `setup` installs the framework and every installed package's Python dependencies for the current interpreter, then exits without starting anything, which is useful for warming a container image or a CI job.
+There are three commands. `start` launches the servers (running `setup` first automatically); `setup` installs the framework and every installed package's Python dependencies for the current interpreter, then exits without starting anything, which is useful for warming a container image or a CI job; `test` runs the test suite (`test --help` lists the suites).
 
 ```bash
 curio start                  # all three servers
@@ -49,7 +54,7 @@ curio setup                  # install deps and exit
 |---|---|
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
-| `--deploy` | Auth **and** projects on, and isolated node execution where the host supports it. The only way to turn auth on, so use it locally too when you need the login page |
+| `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
 | `--collab` | Real-time collaborative editing. Experimental, LAN-only |
 
 **Frontend**
@@ -60,9 +65,9 @@ curio setup                  # install deps and exit
 
 Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
 
-A build is run when there is nothing to serve or what is there cannot be reused. The launcher stamps each build with the webpack mode it used and the `BACKEND_URL` baked into it, and rebuilds when either no longer matches: a fresh clone (a few minutes, once), a checkout built in development mode, or a different `--backend-port`. Source edits are not detected, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
+`curio.py start` builds the frontend when there is no build to serve, when the existing build is a development build, or when it was made for a different `--backend-port`. The first build on a fresh clone takes a few minutes. Source edits do not trigger a build, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
-Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_modules/` carries the Node major that installed it and is reinstalled when that changes; the bundle beside it is kept unless its own stamp calls for a rebuild.
+Curio needs Node.js 26 and refuses to start on an earlier version, naming the one to install. Switching to another Node major reinstalls `node_modules/` on the next start; the frontend build is kept unless one of the rules above calls for a new one.
 
 **Catalogs**
 
@@ -73,9 +78,9 @@ Curio refuses to start on a Node.js older than 26 and names the upgrade. `node_m
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the example projects from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / 2 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
-Node-execution isolation has no flag of its own: `--deploy` turns it on wherever the host can provide it (Linux, plus an unprivileged execution account, which the Docker image creates as `curio-exec`). Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed, so a host that cannot provide isolation refuses to start rather than run without it. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
+`--deploy` turns on node-execution isolation, and refuses to start on a host that cannot provide it: isolation needs Linux and an unprivileged execution account, which the Docker image creates as `curio-exec`. Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed: a host that cannot provide isolation refuses to start. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 
 **Hosts, ports, and diagnostics**
 
@@ -170,11 +175,6 @@ After cloning the repository (see above), run the full Curio stack with:
 docker compose up
 ```
 
-For older Docker versions, the following command may be required instead:
-```bash
-docker-compose up
-```
-
 This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.
 
 ⚠️ **Note:** Initial builds can take time. Use `--build` to rebuild if needed.
@@ -218,7 +218,7 @@ To force the re-initialization of the backend database:
 python curio.py start --force-db-init
 ```
 
-This will recreate the provenance database and apply all migrations.
+This will re-initialize the backend database and apply all migrations.
 
 If you want to manually perform `npm install`, you should then:
 
@@ -237,25 +237,9 @@ Curio ships no endpoint of its own. Until you add a configuration, or the operat
 
 ### Your configurations
 
-**AI Settings** is reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header. Its **LLM configurations** table lists yours. Each configuration is a label, an endpoint and a model:
+**AI Settings** is reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header. Its **LLM configurations** table lists yours, each a label, an endpoint and a model, and **Add configuration** opens the editor. **Agent models**, below the table, chooses the configuration each agent runs on. Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
 
-- **Add configuration** opens the editor: a label, a provider tab, the base URL (Custom only), the API key, and the model. **Fetch models** asks the endpoint what it serves and offers the answer as suggestions; the Model box stays free text. **Make this my default** is ticked for your first configuration.
-- **Edit**, **Duplicate**, **Make default** and **Remove** act on one row. Duplicate copies the saved key on the server.
-- The **Default** badge marks the configuration an agent with no choice of its own answers with, and the line above the table names it.
-- **Chosen for** lists the agents chosen to run on each configuration (see Agent models, below).
-- **Deployment default** is a read-only row, shown when the operator configured one. It answers while you have no default of your own, and its **Make default** goes back to it. Removing your default does the same, or leaves nothing answering when there is no Deployment default.
-- **This Curio install** is a provider tab, offered when the operator configured an endpoint: the configuration runs on that endpoint with its key, and you choose the model.
-- **Trained** marks a configuration made by activating a model trained in Curio, which chooses it for the Dataflow Builder (see [Model training](AGENT-CATALOG.md#training-a-model-on-these-examples)).
-
-**Agent models**, below the table, chooses the configuration each agent runs on: **Default** (your default configuration), any of your configurations, or the Deployment default. It is saved as you change it. The rules:
-
-- An agent you attach runs on its choice, else your default.
-- An agent that another agent calls runs on its choice, else on its caller's. A Solve of the Dataflow Builder, for example, writes each node's content with Node Content Builder's choice.
-- Curio's internal helpers, which no catalog lists, always run on their caller's.
-
-A choice belongs to your account: it covers every version of the agent and every project, and a shared project carries none, so it runs on the configurations of whoever runs it. Removing a configuration sends the agents chosen for it back to the default. An agent's details in the Agent Catalog name what it runs on, with a link here, and a run refused because nothing answers an agent offers **Open AI Settings** on its row.
-
-Keys are write-only: once saved, a key is never shown again, and the table says only whether one is saved. A key belongs to its configuration's endpoint, so changing the provider, or the base URL's scheme, host or port, needs the key again. Keys are kept per account in a file readable by the server only; they are not encrypted at rest. Configurations belong to your account and apply to all of your projects.
+Keys are write-only: once saved, a key is never shown again, and the table says only whether one is saved. Keys are kept per account in a file readable by the server only; they are not encrypted at rest.
 
 The following providers are supported:
 
@@ -263,46 +247,45 @@ The following providers are supported:
 |---|---|
 | **OpenAI** | Uses the standard OpenAI API. Requires an OpenAI API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
 | **Anthropic** | Uses the Anthropic API. Requires an API key from [console.anthropic.com/keys](https://console.anthropic.com/keys). |
-| **Google Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
+| **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-Below the configurations, **Save tokens** stores a HuggingFace token (used only for gated models in the Street Vision node) and a Socrata app token for the Data Lake Catalog.
+Below the configurations, **Save tokens** stores a HuggingFace token (for gated models in the Street Vision node, and for Hugging Face sources in the Data Lake Catalog) and a Socrata app token for the Data Lake Catalog.
 
 ### Connection keys
 
-The same panel holds **Connection keys**: API keys a data-loading node reaches
-by name. Save a key once — name, host, how the API expects it (in the code, as
-a query parameter, or as a header) and the key itself in a masked field that is
-never read back — then write, in the node's code:
+**Connection keys**, in the same panel, are API keys a node's code reaches by
+name. Save a key once: a name, the host it is for, how the API expects it (in
+the code, as a query parameter, or as a header), and the key itself, in a masked
+field that is never read back. Then write, in the node's code:
 
 ```python
 api_key = curio_secret("census")
 ```
 
-Curio resolves the name when the node runs (on Play and when an agent's Solve
-runs it) and hands the value to the sandbox for that run only. The key never
-appears in your saved dataflow, in proposals, in the chat or in the run log; a
-key the code prints is redacted. Running a node that names a key you have not
-saved fails with one sentence naming the key. When an agent's Solve hits an
+Curio resolves the name when the node runs, on Play and when an agent's Solve
+runs it, and hands the value to the sandbox for that run only. The key never
+appears in your saved dataflow, in proposals, in the chat or in the run log, and
+a key the code prints is redacted. A node that names a key you have not saved
+fails with one sentence naming the key. When an agent's Solve reaches an
 endpoint that wants a key you have not saved, the failure offers **Add key for
 <host>**, which opens this section with the host filled in.
 
-Keys are stored per account in your own directory as a plain file readable by
-the server only; they are not encrypted at rest. A dataflow you publish carries
-the key *names* — whoever installs it saves their own key under the same name.
-When authentication is off, every guest shares one key store.
+Keys are stored per account in a file readable by the server only; they are not
+encrypted at rest. A dataflow you publish carries the key names, and whoever
+installs it saves their own key under the same name. When authentication is
+off, every guest shares one key store.
 
-The node editor helps you keep it that way. If the code you type or paste
-contains something shaped like an API key — a long token assigned to a name
-like `api_key`, `token` or `Authorization` — a quiet bar above the editor says
-which line looks like a key, and offers **Save as connection key**, which opens
-this section with the host from the code filled in. It is a hint, not a block:
-Play and save work as before, the code is never changed for you, and the
-detected text never leaves your browser. Dismiss it if the value is not a key.
+If the code you type or paste holds something shaped like an API key (a long
+token assigned to a name like `api_key`, `token` or `Authorization`), a bar
+above the editor names the line and offers **Save as connection key**, which
+opens this section with the host from the code filled in. It is a hint: Play
+and save work, the code is never changed for you, and the detected text never
+leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest shares one account, and all of them answer with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
 The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
@@ -313,7 +296,7 @@ GUEST_LLM_API_TYPE=openai_compatible   # openai_compatible | anthropic | gemini
 GUEST_LLM_BASE_URL=                    # blank: the provider's own endpoint
 ```
 
-Each one falls back to the matching `CURIO_DEFAULT_LLM_*` value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
+Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
 
 **Examples:**
 
@@ -342,16 +325,16 @@ GUEST_LLM_MODEL=claude-haiku-4-5
 
 Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
-One Autark-specific note: an Autark node's spec references incoming data by name. A single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+One Autark-specific note: an Autark node's document references incoming data by name. A single upstream frame is the table `upstream`, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Autark node](#autark-node).
 
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.
-- See the packages added to this dataflow, grouped by fork family, in the **In dataflow** tab.
+- See the packages added to this dataflow in the **In project** tab.
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as package node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Node Catalog** dropdown.
 
-For the full walkthrough, covering concepts, the Save-As flow, the per-package metadata editor, exporting and importing, versioning, and fork lineage, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
+For the full guide, covering the storage layers, the action matrix, **Save as package node**, the metadata editor, exporting and importing, publishing, and versions, see [docs/NODE-CATALOG.md](NODE-CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Vega-Lite node
 
@@ -415,7 +398,8 @@ Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodatafr
 A newly dropped `Vega-Lite` node opens **empty**. When an input arrives, and
 only while the spec buffer is still empty, the editor fills with a complete
 starter spec chosen from the input's column types. It never overwrites anything
-you have typed, and it never runs the node: you still press play.
+you have typed or anything written into the node for you (by an agent, or by
+dropping a dataset on it), and it never runs the node: you still press play.
 
 Connecting an edge is not enough on its own. An edge carries no column types
 until the upstream node has actually produced output, so a connected-but-unrun
@@ -426,11 +410,11 @@ Columns are classified by pandas dtype:
 
 | pandas dtype | role |
 |---|---|
-| `geometry`, or the frame's active geometry column | geometry |
+| `geometry`, the frame's active geometry column, or the one `DataFrame` column that holds geometries | geometry |
 | `datetime64[*]`, `period[*]`, `timedelta64[*]` | temporal |
 | `int*`, `uint*`, `float*` | quantitative |
 | `bool`, `object`, `str`, `string`, `category` | nominal |
-| `__row_index__`, and nominal columns with one distinct value per row (identifiers) | ignored |
+| `__row_index__`, `interacted`, and nominal columns with one distinct value per row (identifiers) | ignored |
 
 The first matching rule wins:
 
@@ -442,9 +426,82 @@ The first matching rule wins:
 | nominal + quantitative | `bar`, **explicitly aggregated** with `mean` |
 | two or more quantitative | `point` scatter of the first two |
 | one quantitative | `bar` histogram: binned x, `count` y |
-| one nominal | `bar` of counts |
+| a nominal column | `bar` of counts |
 | nothing usable | the editor stays empty |
 
+### Linking charts
+
+A selection in one chart highlights the matching rows in the charts linked to it. Link them with an interaction edge, either through a Data Pool or directly:
+
+- **Through a Data Pool.** Draw an interaction edge between the chart and the pool, and feed the charts from the pool. The pool marks each row in a column named `interacted`, `"1"` when selected and `"0"` otherwise, and every chart it feeds receives the marked rows.
+- **Directly.** Draw an interaction edge between two charts. The receiving chart marks its own rows the same way.
+
+The receiving chart styles the marked rows through its spec, for example `"color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}`. A selection only restyles the rows; the chart is not redrawn, and its own selection stays where it is.
+
+A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
+
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+
+
+## Autark node
+
+The `Autark` node draws an Autark document: map layers, plots and GPU compute
+over tables. A table comes from the document's own `data` section (an OSM
+extract, a GeoJSON or CSV file) or from the node's input. The document writes
+no `data` entry for its input; it names the tables the input provides.
+
+### Its input
+
+- A single frame is the table `upstream`: a `GeoDataFrame`, a GeoJSON
+  FeatureCollection, or a `DataFrame` with a geometry column. A frame that
+  arrives under its own name (a Data Pool tab, a compute step's layer) keeps
+  that name, and `upstream` also names it.
+- Several layers keep their own names: a Python tuple, a Data Pool with tabs,
+  the tables of an upstream Autark node, or a Merge of GeoDataFrames. A layer
+  without a name is `upstream_0`, `upstream_1`, and so on.
+- A map draws only tables with geometry. A `DataFrame` is read through the one
+  column that holds geometries; with none, or with several, the node draws
+  nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- Coordinates are read in the CRS the frame declares. A frame with no CRS is
+  read as EPSG:4326 when its coordinates look like longitude and latitude, and
+  as EPSG:3395 otherwise, so declare a projected CRS to place it correctly.
+- A row without a geometry stays in the table and draws nothing; a selection
+  still lands on the row it names.
+- A `data` section runs in the sandbox, where the input is not available: its
+  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
+  or name it from a map, plot or compute block.
+
+Before it runs, a node that reads its input says what a `Vega-Lite` node says:
+connect a node, run the node feeding this one, the node feeding this one
+failed, or what this input lacks. A node whose document loads everything it
+draws only says it has not run yet. A run that ends on an input the node
+cannot draw names the reason in the node body and in its error.
+
+A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
+chart does: when a project opens with its input restored, and when the node
+feeding it runs again. It does not redraw while it is being wired up or while
+a run is going, and a selection only highlights it (see
+[Linking charts](#linking-charts)). A data or compute step runs only when you
+press play or run the dataflow. Without WebGPU nothing is drawn on its own;
+pressing play says why.
+
+### The starter document
+
+A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and
+fills itself the same way: when an input arrives, and only while the editor is
+still empty, it fills with a complete starter document. It never overwrites
+anything you have typed or anything written into the node for you, and it
+never runs the node. Columns are classified as for the Vega-Lite starter.
+
+The first matching rule wins:
+
+| the input has | you get |
+|---|---|
+| two or more layers with geometry | a map with one layer per table |
+| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis` |
+| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
+| one layer with geometry only | a plain map |
+| no geometry | the editor stays empty |
 
 ## Dashboards
 
@@ -468,33 +525,33 @@ console output is not restored: no saved dataset carries it.
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`; they are the inputs to the curated example dataflows.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twenty datasets in the committed catalog at `<repo_root>/datasets/`.
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Install datasets into the open dataflow, import files from your machine, publish, or delete.
-- The **Data Catalog** dropdown in the Tools panel, listing your installed datasets. Drag one onto the canvas to create (or extend) a node with generated loader code.
-- The **`/catalog/data`** page, a read-only library view reached from `/projects` → **Catalog** → the **Data** tab.
+- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
+- The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow. Drag one onto the canvas to create (or extend) a node with generated loader code.
+- The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
 A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
 
-Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs and Docker deployments should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
+Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is always `<install_root>/packages/`, with no env override.
+> package* catalog is `<install_root>/packages/`, relocated with `CURIO_PACKAGES_ROOT`.
 > On a pip install that path is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
-For the full walkthrough, covering storage layers, the action matrix, computed datasets and lineage, OSM PBF imports, publishing, and previews, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
+For the full guide, covering the storage layers, the action matrix, computed datasets and lineage, previews, OSM PBF and GeoPackage imports, and publishing, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
 ## Data Lake Catalog
 
-The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach - Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback - so you can browse one and download into your Data Catalog rather than hand-writing fetch code.
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are.
 
-Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They are operator-authored: there is no import route, because a source declares a host the server makes outbound requests to on your behalf.
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/datalakes/` for your own. Users cannot import one from the app.
 
-See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
+For the full guide, covering searching, downloading, storage sources, collections, API tokens, and the Dataset Finder, see [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 
@@ -507,11 +564,12 @@ your default.
 
 There are two scopes:
 
-- **`/catalog/agents`**, the third tab beside the node and data catalogs, is
-  your **account**. Adding an agent here makes it available to every dataflow.
+- **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
+  **Add to all projects** there adds an agent to every dataflow you have, and
+  to every new one.
 - **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
-  Catalog** or the agents tab in the left rail, adds an agent to **this
-  dataflow**.
+  Catalog** or the **Agent Catalog** dropdown in the left Tools panel, adds an
+  agent to **this dataflow**.
 
 ### Catalog settings
 
@@ -543,38 +601,12 @@ and edit the initial intent the agent starts from. Agents that propose changes
 lands on your canvas until you apply it.
 
 The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
-strip adds planning phases, per-node progress, **Solve** (fill in the planned
-nodes in one batch) and **Simulation Mode** (walk the plan without executing).
-
-Solve does not just write code, it runs it: every node kind the sandbox can
-execute is generated, run, fixed when it fails and written only when it passed,
-in topological waves — the loaders first, then what depends on them, against
-the code that actually landed. The strip reads *solving wave 2 of 3* while it
-works. Kinds with no code to run (charts, maps, merges, data pools, the
-spatial join) are written and labeled *no code to run; renders in the browser
-or its own service*; nothing claims they were verified. A batch stops after 45 minutes by default and leaves what it did
-not reach *pending* with the reason; **Retry** continues from there.
-
-Applying a plan also gives every created node its own agents: a **Node
-Builder** on each, and a **Dataset Finder** on each data-loading node. Solving a
-data-loading node whose source is not already settled asks that Dataset Finder
-for candidates instead of letting the code guess a filename: the two-lane card
-appears in the node's Dataset Finder chat, the node stays **pending — awaiting
-your dataset selection** with an **Open Dataset Finder** button, and nothing is
-generated or written until you pick one. **Confirm source for this node**
-records your choice against the node, and the next Solve builds the loader from
-exactly that source. So the Dataflow Builder plans first — it does not need to
-know the datasets to draw the dataflow.
-
-A node fed by a **Merge** receives a list — `arg[0]`, `arg[1]`, … in the order
-of the merge's input handles — and the agent is told which dataset sits in each
-slot, with its columns. Code that forgets to index it is refused before it runs.
-
-When Solve cannot fix a node, the chat says so completely: every attempt
-appears as its own row — the exception, where it was raised, and the code that
-attempt ran — with the last one expanded, and the message names what stopped
-the loop (this node's 15-minute repair budget, which is normally what stops it,
-or a builder that kept returning the same code). Nothing is written when nothing passed.
+strip adds planning phases, per-node progress, and **Solve**, which fills in the
+planned nodes in one batch: it runs each node's code in the sandbox, corrects
+it when the run fails, and writes only code that ran. Applying a plan also
+gives every created node a **Node Builder**, and every data-loading node a
+**Dataset Finder**, which Solve asks for candidates when the node's source is
+not settled. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Builder most of all, are written around knowing what the dataflow is
@@ -584,16 +616,14 @@ for. It is saved with the project.
 
 Agents run under a default-deny egress policy. Web fetches are restricted to
 http and https, refused when a host resolves to a non-public address, capped in
-body size and redirect count, and bounded per run. A refusal surfaces in the
-chat as "refused by the egress policy", which means the address was internal or
-otherwise disallowed, not that the site was down.
+body size and redirect count, and bounded per run.
 
 The agents' web-search tool defaults to DuckDuckGo's keyless Instant Answer API.
 Operators who would rather not send queries to a third party can point
 `--agent-search-url` at their own provider, or elsewhere entirely.
 
-For the full guide, covering the roster, agent packages, delegation, publishing,
-and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
+For the full guide, covering the roster, the storage layers, attaching, the
+provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
 
 ## Real-time collaboration
 

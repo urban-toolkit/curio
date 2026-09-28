@@ -144,6 +144,13 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
 
+    # actions: read lets the CI report page (the last steps below) list this
+    # job's steps and how each ended, through the jobs API. contents: read is
+    # restated because a job-level block replaces the workflow's.
+    permissions:
+      contents: read
+      actions: read
+
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
       # image's default CMD carries no auth flag, which means CURIO_NO_AUTH=1 --
@@ -167,6 +174,10 @@ jobs:
       # snapshots and the action log; per-action screenshots ("full") cost far
       # more and the failure screenshot above already covers that.
       CURIO_E2E_TRACE: "1"
+      # Every screenshot comparison, passing or not, with its expected, created
+      # and difference images (tests/test_frontend/comparisons.py), for the CI
+      # report page built at the end of this job.
+      CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + remapped host ports so the CI stack never
       # collides with prod `curio` (2000/5002/8080) or `curio-dev`
@@ -219,6 +230,13 @@ jobs:
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+
+      # Where the CI report page's inputs collect. Created here, as the runner
+      # user: the Jest step mounts it into a root container, and a directory
+      # Docker creates for a mount is root-owned, so every later write into it
+      # would fail.
+      - name: 📁 Create the CI report folder
+        run: mkdir -p ci-report
 
       # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
       # .node-version, two package.json "engines", the Dockerfile). The test
@@ -381,14 +399,18 @@ jobs:
             | grep -qF "${BACKEND_URL}"
           echo "OK: the served bundle calls ${BACKEND_URL}."
 
+      # Both write JUnit for the CI report page onto the .curio bind mount,
+      # where the host reads it at the end of the job.
       - name: 🧪 Run backend unit tests
         run: |
-          docker compose -p curio-ci exec -T curio \
+          docker compose -p curio-ci exec -T \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/backend.xml curio \
             bash scripts/test.sh --backend-only --use-existing
 
       - name: 🧪 Run sandbox unit tests
         run: |
-          docker compose -p curio-ci exec -T curio \
+          docker compose -p curio-ci exec -T \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/sandbox.xml curio \
             bash scripts/test.sh --sandbox-only --use-existing
 
       - name: 🐍 Set up Python (for e2e)
@@ -481,6 +503,10 @@ jobs:
           done
 
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
+        env:
+          # JUnit for the CI report page. Absolute, since test.sh changes
+          # directory before it runs pytest.
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
         run: |
           bash scripts/test.sh --e2e-only --use-existing \
             --parallel "$CURIO_E2E_PARALLEL" \
@@ -524,7 +550,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           docker build --target frontend_builder -t curio-frontend-test .
-          docker run --rm curio-frontend-test npm test
+          # --json feeds the CI report page; the console output is unchanged.
+          docker run --rm -v "$GITHUB_WORKSPACE/ci-report:/ci-report" curio-frontend-test \
+            npm test -- --json --outputFile=/ci-report/jest.json
 
       - name: TypeScript typecheck
         # Jest transpiles through babel, which strips types without checking
@@ -537,9 +565,14 @@ jobs:
         # bare docker run would fail with "image not found" instead of a type
         # error. It is a layer-cache hit.
         if: ${{ !cancelled() }}
+        # bash, for pipefail: the tee below must not hide tsc's exit status.
+        shell: bash
         run: |
           docker build --target frontend_builder -t curio-frontend-test .
-          docker run --rm curio-frontend-test npm run typecheck
+          # --pretty false pins the "file(line,col): error TSnnnn" lines the CI
+          # report page reads; the copy in ci-report/ is for that page.
+          docker run --rm curio-frontend-test npm run typecheck -- --pretty false 2>&1 \
+            | tee ci-report/typecheck.txt
 
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
@@ -559,6 +592,67 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
             'for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
+
+      # One self-contained page for this job (scripts/ci_report.py): its steps,
+      # each suite's results with the failures, and every screenshot comparison
+      # with its expected, created and difference images and the threshold.
+      # Uploaded unzipped, so its entry in the run's artifact list opens in the
+      # browser. continue-on-error: the page reports on the job, it must never
+      # be the reason the job is red. The PR fields come in through env, never
+      # inline in the script, since a PR title is anyone's text.
+      - name: 📊 Build the CI report page
+        id: ci_report
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            -o ci-report/jobs.json || echo '{}' > ci-report/jobs.json
+          # A re-run gets its own name, so an earlier attempt's page and link
+          # stay valid.
+          file=curio-ci-report.html
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || file="curio-ci-report-attempt-$GITHUB_RUN_ATTEMPT.html"
+          python3 scripts/ci_report.py \
+            --junit "Backend unit tests=.curio/ci-report/backend.xml" \
+            --junit "Sandbox unit tests=.curio/ci-report/sandbox.xml" \
+            --junit "End-to-end tests=ci-report/e2e.xml" \
+            --jest "Jest frontend unit tests=ci-report/jest.json" \
+            --tsc "TypeScript typecheck=ci-report/typecheck.txt" \
+            --comparisons "$CURIO_E2E_COMPARE_DIR" \
+            --failures "$CURIO_E2E_FAILURE_DIR" \
+            --jobs ci-report/jobs.json \
+            --out "$file" --summary ci-report/summary.md
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload the CI report page
+        id: ci_report_upload
+        if: always() && steps.ci_report.outputs.file != ''
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.ci_report.outputs.file }}
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 🔗 Link the CI report page from the run summary
+        if: always() && steps.ci_report_upload.outputs.artifact-url != ''
+        env:
+          REPORT_FILE: ${{ steps.ci_report.outputs.file }}
+          REPORT_URL: ${{ steps.ci_report_upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "## CI report"
+            echo
+            echo "[Open $REPORT_FILE]($REPORT_URL): this job's steps, test suites and every screenshot comparison, on one page."
+            echo
+            cat ci-report/summary.md 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload sandbox logs
         if: always()
@@ -630,8 +724,11 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2030"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
-      # Python nodes only; see the note above the job.
-      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json
+      # Python nodes only; see the note above the job. Not example 18: under
+      # isolation a node's raster output is stored under its artifact id, so
+      # the browser's run and the harness's name different files and cannot
+      # be compared, although the mosaic itself runs.
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
       CURIO_E2E_TRACE: "1"
 
@@ -908,7 +1005,7 @@ jobs:
       - name: 🌱 Seed the paths the boundary is asserted against
         run: |
           set -euo pipefail
-          mkdir -p .curio/data .curio/users/some-other-user instance datasets
+          mkdir -p .curio/data .curio/users/some-other-user .curio/datalakes instance datasets
           echo "another user's private dataset"             > .curio/users/some-other-user/canary.txt
 
       - name: ▶️ Start containers

@@ -28,11 +28,18 @@ _jobs: Dict[str, dict] = {}
 _lock = threading.Lock()
 
 
-def create_job(total_images: int) -> str:
+#: A generic image URL is fetched through the egress policy under this cap.
+MAX_IMAGE_BYTES = 32 * 1024 * 1024
+
+
+def create_job(total_images: int, owner: str = "guest") -> str:
     job_id = str(uuid.uuid4())
     with _lock:
         _jobs[job_id] = {
             "job_id": job_id,
+            # Whose job this is. ``get_job`` answers only its owner, so a job
+            # id seen in one account's traffic reads nothing from another.
+            "owner": owner,
             "status": "queued",
             "total_images": total_images,
             "processed": 0,
@@ -47,11 +54,20 @@ def create_job(total_images: int) -> str:
     return job_id
 
 
-def get_job(job_id: str) -> Optional[dict]:
+def get_job(job_id: str, owner: Optional[str] = None) -> Optional[dict]:
+    """The job, or None when it does not exist or belongs to someone else.
+
+    ``owner`` is left out only by in-process callers that already know whose
+    job it is; every route passes the caller's key.
+    """
     with _lock:
         job = _jobs.get(job_id)
+        if job is None or (owner is not None and job.get("owner") != owner):
+            return None
         # Return a shallow copy so callers don't observe mid-update mutations.
-        return dict(job) if job is not None else None
+        out = dict(job)
+    out.pop("owner", None)
+    return out
 
 
 def _update(job_id: str, **fields) -> None:
@@ -103,15 +119,17 @@ def start_inference(
         _update(job_id, status="running", stage_message="Downloading source images…")
 
         # First pass: materialize every image to a local path. For Street View
-        # URLs we need to download; for already-local paths we trust the caller.
+        # URLs we need to download. A local path is accepted only inside this
+        # user's own image cache: the request body names it, so anything else
+        # would let a caller point the model at any file the server can read.
         prepared: List[dict] = []
         download_dir = cache_svc.images_dir(user_key)
         for img in images:
             url_or_path = img.get("image_url") or ""
             local_path: Optional[str] = img.get("local_path")
             try:
-                if local_path and os.path.exists(local_path):
-                    pass  # caller pre-staged it
+                if local_path and _cached_image(local_path, download_dir):
+                    pass  # an image this user's earlier runs cached
                 elif (
                     url_or_path.startswith(("http://", "https://"))
                     and "googleapis.com" in url_or_path
@@ -132,18 +150,16 @@ def start_inference(
                         lon=img.get("longitude"),
                     )
                 elif url_or_path.startswith(("http://", "https://")):
-                    # Generic HTTP URL - fetch via requests so this node works
-                    # for any image source, not just Street View.
+                    # Generic HTTP URL, so this node works for any image
+                    # source, not just Street View. It goes through the egress
+                    # policy: the URL comes from the request body, and a plain
+                    # GET would reach private and link-local addresses.
                     import hashlib
-                    import requests as _rq
                     h = hashlib.md5(url_or_path.encode()).hexdigest()[:12]
                     local_path = os.path.join(download_dir, f"img_{h}.jpg")
                     if not os.path.exists(local_path):
-                        r = _rq.get(url_or_path, timeout=30)
-                        r.raise_for_status()
-                        with open(local_path, "wb") as f:
-                            f.write(r.content)
-                elif os.path.exists(url_or_path):
+                        _download_image(url_or_path, local_path)
+                elif url_or_path and _cached_image(url_or_path, download_dir):
                     local_path = url_or_path
                 else:
                     raise ValueError(f"unreadable image_url: {url_or_path}")
@@ -185,6 +201,32 @@ def start_inference(
 
     t = threading.Thread(target=_worker, name=f"streetvision-{job_id[:8]}", daemon=True)
     t.start()
+
+
+def _cached_image(path: str, cache_dir: str) -> bool:
+    """True when *path* is an existing file inside *cache_dir*."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    candidate = Path(path)
+    return candidate.is_file() and is_within(candidate, Path(cache_dir))
+
+
+def _download_image(url: str, dest: str) -> None:
+    """Fetch *url* into *dest* under the egress policy and a size cap."""
+    from utk_curio.backend.app.agents import egress
+
+    part = f"{dest}.part"
+    try:
+        with open(part, "wb") as handle:
+            result = egress.download(url, sink=handle.write, max_bytes=MAX_IMAGE_BYTES)
+        if not 200 <= result.status < 300:
+            raise ValueError(f"image download answered HTTP {result.status}")
+        os.replace(part, dest)
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
 
 
 def _update_results_append(job_id: str, result: dict) -> None:

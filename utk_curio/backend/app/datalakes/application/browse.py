@@ -35,7 +35,9 @@ MAX_FANOUT_WORKERS = 4
 
 #: What one leg of a fan-out may report. `unsupported` is not a failure: a
 #: direct-link source has nothing to search and saying so is the right answer.
-LEG_STATUSES = ("ok", "failed", "refused", "rate-limited", "unsupported", "needs-token")
+LEG_STATUSES = (
+    "ok", "failed", "refused", "rate-limited", "unsupported", "needs-token", "scanning",
+)
 
 
 class LakeBrowse:
@@ -88,9 +90,16 @@ class LakeBrowse:
     # ── every source ───────────────────────────────────────────────────────
 
     def search_all(
-        self, manifests: list[LakeSourceManifest], query: SearchQuery
+        self,
+        manifests: list[LakeSourceManifest],
+        query: SearchQuery,
+        *,
+        extra_pages: list[SearchPage] | None = None,
     ) -> tuple[list, list[dict]]:
         """Fan out. Returns ``(interleaved rows, per-source statuses)``.
+
+        *extra_pages* are rows answered without a request, a storage source's
+        from its listing, interleaved with the portals' on the same terms.
 
         Never raises for a portal's sake. The only thing that can fail the
         whole call is something wrong with the request itself, and by this
@@ -123,7 +132,7 @@ class LakeBrowse:
                         pages[manifest.id] = page
 
         order = [m.id for m in searchable if m.id in pages]
-        rows = _interleave([pages[sid] for sid in order], query.limit)
+        rows = _interleave([pages[sid] for sid in order] + list(extra_pages or []), query.limit)
         legs.sort(key=lambda leg: leg["sourceId"])
         return rows, legs
 

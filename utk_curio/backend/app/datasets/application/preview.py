@@ -153,7 +153,8 @@ class DatasetPreviewService:
             return self._preview_json(path, row_limit, offset, item, part_index=part_index)
         if fmt == "geojson":
             return self._preview_geojson(path, row_limit, offset, item)
-        if fmt == "parquet":
+        if fmt in ("parquet", "collection"):
+            # A collection's data file is its Parquet index.
             return self._preview_parquet(path, row_limit, offset, item)
         if fmt == "geotiff":
             return {

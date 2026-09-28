@@ -10,7 +10,7 @@ from typing import Any
 from utk_curio.backend.app.datasets.infrastructure.storage import DatasetId
 
 
-SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle"}
+SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "collection"}
 
 
 class ManifestError(ValueError):
@@ -70,6 +70,12 @@ class DatasetManifest:
     # ``resourceId`` there is no answering "do I already hold this?", which is
     # what stops the same file being downloaded twice.
     lake_source: dict[str, Any] | None = None
+    # A ``collection`` dataset: files referenced where they are, indexed by the
+    # data file (one row per file). Says which lake source and resource the
+    # files belong to, what kind they are, and how many there were when the
+    # index was written. The files are found through the source, so a folder
+    # moved and re-declared in its manifest keeps its collections working.
+    collection: dict[str, Any] | None = None
 
     @property
     def dir_name(self) -> str:
@@ -122,6 +128,14 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
             if v is not None
         }
 
+    collection = raw.get("collection")
+    if collection is not None:
+        if not isinstance(collection, dict):
+            raise ManifestError(f"{where}.collection must be an object when present")
+        collection = _bounded(collection, depth=0)
+    if fmt == "collection" and not collection:
+        raise ManifestError(f"{where}.collection is required for a collection dataset")
+
     feature_count = raw.get("featureCount")
     row_count = raw.get("rowCount")
     if feature_count is not None:
@@ -160,7 +174,25 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
             else None
         ),
         lake_source=lake_source,
+        collection=collection,
     )
+
+
+def _bounded(value: Any, *, depth: int) -> Any:
+    """A JSON value cut to a size a listing can afford to read every time."""
+    if isinstance(value, dict):
+        if depth > 3:
+            return None
+        return {
+            str(k)[:64]: _bounded(v, depth=depth + 1)
+            for k, v in list(value.items())[:32]
+            if v is not None
+        }
+    if isinstance(value, list):
+        return [_bounded(v, depth=depth + 1) for v in value[:64]]
+    if isinstance(value, (int, float, bool)):
+        return value
+    return str(value)[:512]
 
 
 def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
@@ -202,6 +234,7 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
             else None
         ),
         "lakeSource": dict(manifest.lake_source) if manifest.lake_source else None,
+        "collection": dict(manifest.collection) if manifest.collection else None,
     }
 
 

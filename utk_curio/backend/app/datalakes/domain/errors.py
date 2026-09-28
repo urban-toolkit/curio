@@ -59,3 +59,13 @@ class UnsupportedFormatError(DataLakeError):
 
 class DownloadTooLarge(DataLakeError):
     status = 400
+
+
+class StorageUnavailable(DataLakeError):
+    """A storage source's folder or bucket cannot be read right now.
+
+    503: the manifest is fine, but the files it names are not reachable, for
+    example a folder that is not mounted.
+    """
+
+    status = 503

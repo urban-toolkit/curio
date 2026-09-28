@@ -48,6 +48,10 @@ class DownloadJob:
     #: portal's claim, not a bound, and the cap is enforced against bytes
     #: actually written.
     total_bytes: int | None = None
+    #: Files handled so far, for work over many files (a combined table, a
+    #: collection's index): "Indexed 3,400 of 12,034 files".
+    items_done: int = 0
+    items_total: int | None = None
     stage_message: str = "Queued"
     error: str | None = None
     dataset_id: str | None = None
@@ -68,6 +72,8 @@ class DownloadJob:
             "status": self.status,
             "bytesRead": self.bytes_read,
             "totalBytes": self.total_bytes,
+            "itemsDone": self.items_done,
+            "itemsTotal": self.items_total,
             "stageMessage": self.stage_message,
             "error": self.error,
             "datasetId": self.dataset_id,

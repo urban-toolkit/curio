@@ -222,6 +222,16 @@ class TestFailuresAreTheUsersAnswer:
         assert job["status"] == "failed"
         assert "declares" in job["error"]
 
+    def test_a_tif_that_is_not_a_tiff_is_refused(self, client, auth, failing):
+        """Its URL and its content type both say TIFF, and its bytes are CSV text."""
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, "lake.test.fail@1", "https://portal.test/not-a-tiff.tif")
+            .get_json()["jobId"],
+        )
+        assert job["status"] == "failed"
+        assert "is not a TIFF file" in job["error"]
+
     def test_an_unreachable_portal_fails_the_job_not_the_request(self, client, auth, failing):
         res = acquire(client, auth, "lake.test.fail@1", "https://portal.test/timeout.csv")
         assert res.status_code == 202, "starting the job must still succeed"
@@ -286,3 +296,100 @@ class TestASearchRowKnowsWhatYouAlreadyHold:
             headers={"Authorization": f"Bearer {token}"},
         ).get_json()["resources"]
         assert all(r["alreadyHeldDatasetId"] is None for r in rows)
+
+
+CRIMES_CSV = (
+    __import__("pathlib").Path(__file__).resolve().parent / "fixtures" / "download" / "crimes.csv"
+)
+CRIMES_URL = "https://data.cityofchicago.org/resource/ijzp-q8t2.csv"
+
+
+def import_by_hand(client, auth, body: bytes, lake_source: dict | None):
+    """The card's Import: a file the person downloaded, and where it came from."""
+    import io
+
+    data = {"file": (io.BytesIO(body), "crimes.csv")}
+    if lake_source is not None:
+        data["lakeSource"] = json.dumps(lake_source)
+    return client.post("/api/datasets/import", headers=auth, data=data,
+                       content_type="multipart/form-data")
+
+
+class TestOneDatasetWhicheverPathCameFirst:
+    """A file downloaded by hand and the same file the Data Lake fetched are
+    one dataset, matched by the resource or by the bytes, in either order."""
+
+    def test_a_hand_import_is_found_by_a_later_download(self, client, auth, live):
+        manual = import_by_hand(client, auth, CRIMES_CSV.read_bytes(), {"resourceUrl": CRIMES_URL})
+        assert manual.status_code == 201
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        assert job["status"] == "completed" and job["alreadyPresent"] is True
+        assert job["dataset"]["id"] == manual.get_json()["id"]
+
+    def test_a_download_is_found_by_a_later_hand_import(self, client, auth, live):
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        again = import_by_hand(client, auth, CRIMES_CSV.read_bytes(), {"resourceUrl": CRIMES_URL})
+        assert again.status_code == 200
+        assert again.get_json()["alreadyPresent"] is True
+        assert again.get_json()["id"] == job["dataset"]["id"]
+
+    def test_a_held_resource_is_found_by_its_coordinate(self, client, auth, live):
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        other = import_by_hand(client, auth, b"a,b\n1,2\n",
+                               {"lakeId": CHICAGO, "resourceId": "ijzp-q8t2"})
+        assert other.status_code == 200
+        assert other.get_json()["id"] == job["dataset"]["id"]
+
+    def test_every_remote_path_records_the_same_origin(self, client, auth, live):
+        """The seam: both ways a remote file enters the Data Catalog run the one
+        importer and leave the same origin fields, so either can be found by
+        the other. Only the socket is fake here; nothing is injected."""
+        import hashlib
+
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        other = b"x,y\n1,2\n"
+        manual = import_by_hand(client, auth, other, {"resourceUrl": "https://a.example/xy.csv"})
+        fetched = job["dataset"]["lakeSource"]
+        by_hand = manual.get_json()["lakeSource"]
+        for origin in (fetched, by_hand):
+            assert {"resourceUrl", "fetchedAt", "contentSha256"} <= set(origin)
+        assert fetched["contentSha256"] == hashlib.sha256(CRIMES_CSV.read_bytes()).hexdigest()
+        assert by_hand["contentSha256"] == hashlib.sha256(other).hexdigest()
+        assert by_hand["manual"] is True and "manual" not in fetched
+
+
+class TestTheDownloadNeverPassesThroughMemory:
+    def test_the_temp_file_is_moved_not_read(self, client, auth, live, monkeypatch):
+        """The staged download is handed to the Data Catalog as a file.
+
+        Reading it back into memory is what capped a download at the size of a
+        comfortable allocation.
+        """
+        from pathlib import Path
+
+        original = Path.read_bytes
+
+        def guarded(self):
+            if self.name.endswith(".part"):
+                raise AssertionError(f"{self} was read into memory")
+            return original(self)
+
+        monkeypatch.setattr(Path, "read_bytes", guarded)
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        assert job["status"] == "completed", job
+        assert job["dataset"]["rowCount"] == 2

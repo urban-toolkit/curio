@@ -8,6 +8,7 @@ import {
   writeLakeCatalogCache,
 } from "./dataLakeCatalogCache";
 import type {
+  LakeAcquireBody,
   LakeAcquireJob,
   LakeAcquireStart,
   LakeCatalogQuery,
@@ -146,9 +147,10 @@ export function useLakeSearch(
 
     const controller = new AbortController();
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
 
-    const timer = setTimeout(() => {
+    const run = (polls: number) => {
       const request = sourceDir
         ? dataLakeCatalogApi.searchSource(
             sourceDir,
@@ -165,18 +167,26 @@ export function useLakeSearch(
           setData(res);
           setError(null);
           setSearched(true);
+          setLoading(false);
+          // A storage source on its first scan answers "scanning": asked
+          // again, quietly, until its rows are in, so they join the results
+          // without a new query.
+          const scanning = !sourceDir && res.sources.some((leg) => leg.status === "scanning");
+          if (scanning && polls < MAX_SEARCH_SCAN_POLLS) {
+            timer = setTimeout(() => run(polls + 1), SCAN_POLL_MS);
+          }
         })
         .catch((err: Error) => {
+          if (cancelled) return;
+          setLoading(false);
           // An abort is the expected outcome of the next keystroke, not a
           // failure to report.
-          if (cancelled || err.name === "AbortError") return;
+          if (err.name === "AbortError") return;
           setError(err.message || "That search could not be run.");
           setSearched(true);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
         });
-    }, SEARCH_DEBOUNCE_MS);
+    };
+    timer = setTimeout(() => run(0), SEARCH_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
@@ -186,6 +196,80 @@ export function useLakeSearch(
   }, [sourceDir, q, format, provider, limit]);
 
   return { data, loading, error, searched };
+}
+
+
+// ── Storage listings ───────────────────────────────────────────────────────
+
+/** How often a listing is asked again while its source is being scanned. */
+const SCAN_POLL_MS = 1000;
+/** How many times a federated search asks again for a source being scanned. */
+const MAX_SEARCH_SCAN_POLLS = 30;
+/** A storage search is answered from memory, so it only waits out typing. */
+const STORAGE_DEBOUNCE_MS = 150;
+
+export interface UseStorageListingResult extends UseLakeSearchResult {
+  /** True while the source is being scanned, first or on Rescan. */
+  scanning: boolean;
+  /** Walk the source again, for files added since its last scan. */
+  rescan: () => void;
+}
+
+/**
+ * A storage source's rows: its declared resources as its last scan found them.
+ *
+ * A scan runs in the background on first use, so the first answer can be a
+ * leg that says `scanning`; the listing then asks again until the scan ends.
+ */
+export function useStorageListing(sourceDir: string | undefined, q: string): UseStorageListingResult {
+  const [data, setData] = useState<LakeSearchResponse>(EMPTY_SEARCH);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [rescanNonce, setRescanNonce] = useState(0);
+  const lastRescan = useRef(0);
+
+  useEffect(() => {
+    if (!sourceDir) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const rescan = rescanNonce !== lastRescan.current;
+    lastRescan.current = rescanNonce;
+    setLoading(true);
+
+    const ask = (withRescan: boolean) => {
+      dataLakeCatalogApi
+        .searchSource(sourceDir, { q: q.trim(), rescan: withRescan }, controller.signal)
+        .then((res) => {
+          if (cancelled) return;
+          const still = res.sources.some((leg) => leg.status === "scanning");
+          setScanning(still);
+          setData(res);
+          setError(null);
+          setSearched(true);
+          if (still) timer = setTimeout(() => ask(false), SCAN_POLL_MS);
+          else setLoading(false);
+        })
+        .catch((err: Error) => {
+          if (cancelled || err.name === "AbortError") return;
+          setError(err.message || "That source could not be listed.");
+          setSearched(true);
+          setScanning(false);
+          setLoading(false);
+        });
+    };
+    timer = setTimeout(() => ask(rescan), rescan ? 0 : STORAGE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sourceDir, q, rescanNonce]);
+
+  const rescan = useCallback(() => setRescanNonce((n) => n + 1), []);
+  return { data, loading, error, searched, scanning, rescan };
 }
 
 
@@ -199,11 +283,7 @@ const POLL_MAX_MS = 3000;
 export interface UseLakeAcquireResult {
   /** Jobs in flight or recently finished, keyed `<sourceId>:<resourceId>`. */
   jobs: Record<string, LakeAcquireJob>;
-  start: (
-    dirName: string,
-    resourceId: string,
-    opts?: { format?: string; title?: string; refresh?: boolean }
-  ) => Promise<LakeAcquireStart>;
+  start: (dirName: string, resourceId: string, opts?: LakeAcquireBody) => Promise<LakeAcquireStart>;
   cancel: (dirName: string, resourceId: string) => void;
   dismiss: (dirName: string, resourceId: string) => void;
 }
@@ -213,92 +293,189 @@ export function acquireKey(sourceId: string, resourceId: string): string {
 }
 
 /**
- * Start downloads and follow them.
+ * Every download started in this page session, keyed `<sourceId>:<resourceId>`.
  *
+ * Held in the module rather than in a component, so a download keeps being
+ * followed, and whoever started it still hears how it ended, after the card
+ * or page that started it unmounts. The Data Lake page and the Dataset
+ * Finder's card share it, so the same resource shows one download in both.
+ */
+const acquisitions = {
+  jobs: {} as Record<string, LakeAcquireJob>,
+  timers: {} as Record<string, ReturnType<typeof setTimeout>>,
+  settled: {} as Record<string, Array<(job: LakeAcquireJob) => void>>,
+  listeners: new Set<() => void>(),
+};
+
+function publish(key: string, job: LakeAcquireJob): void {
+  acquisitions.jobs = { ...acquisitions.jobs, [key]: job };
+  acquisitions.listeners.forEach((listener) => listener());
+}
+
+function settle(key: string, job: LakeAcquireJob): void {
+  const waiting = acquisitions.settled[key] ?? [];
+  delete acquisitions.settled[key];
+  waiting.forEach((callback) => callback(job));
+}
+
+/**
  * Polling rather than a socket: a download is minutes at worst, the backend
  * already exposes the job, and a socket for this would be a second transport
  * to keep alive. It backs off, and stops the moment a job reaches a terminal
  * state - a poll loop that keeps running after the answer arrived is how a
  * backgrounded tab quietly generates traffic forever.
  */
+function follow(key: string, jobId: string, delay: number): void {
+  acquisitions.timers[key] = setTimeout(() => {
+    dataLakeCatalogApi
+      .getJob(jobId)
+      .then((job) => {
+        publish(key, job);
+        if (isTerminal(job.status)) {
+          delete acquisitions.timers[key];
+          settle(key, job);
+          return;
+        }
+        follow(key, jobId, Math.min(delay * 1.5, POLL_MAX_MS));
+      })
+      .catch((err: Error) => {
+        // The job is gone, or the backend is. Either way, stop: retrying a
+        // job we can no longer read is a loop with no exit.
+        delete acquisitions.timers[key];
+        const failed = {
+          ...(acquisitions.jobs[key] as LakeAcquireJob),
+          status: "failed",
+          error: err.message || "Lost track of that download.",
+        } as LakeAcquireJob;
+        publish(key, failed);
+        settle(key, failed);
+      });
+  }, delay);
+}
+
+/**
+ * Start a download, or learn at once that the account already holds it, and
+ * call `onSettled` with the job's terminal state either way: `completed`
+ * (with the dataset, also when it was already held), `failed`, `refused` or
+ * `cancelled`. A request refused before any job exists settles as a `failed`
+ * job on the row.
+ */
+export async function startLakeAcquire(
+  dirName: string,
+  resourceId: string,
+  opts: LakeAcquireBody = {},
+  onSettled?: (job: LakeAcquireJob) => void,
+): Promise<LakeAcquireStart> {
+  const key = acquireKey(dirName, resourceId);
+  if (onSettled) (acquisitions.settled[key] ??= []).push(onSettled);
+  // One job per row: its progress, its result and its Cancel are keyed by the
+  // row, so a second start while one runs is the one already running.
+  const current = acquisitions.jobs[key];
+  if (current && !isTerminal(current.status)) return current;
+  let started: LakeAcquireStart;
+  try {
+    started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
+  } catch (err) {
+    // Refused before any job existed (too many downloads running, a
+    // narrowing the source cannot satisfy): said on the row, as a job that
+    // failed is.
+    const refused: LakeAcquireJob = {
+      jobId: "",
+      status: "failed",
+      bytesRead: 0,
+      totalBytes: null,
+      stageMessage: "Failed",
+      error: (err as Error)?.message || "That could not be started.",
+      datasetId: null,
+      dataset: null,
+      alreadyPresent: false,
+      unchanged: false,
+      sourceId: dirName,
+      resourceId,
+    };
+    publish(key, refused);
+    settle(key, refused);
+    return refused;
+  }
+  if (started.jobId) {
+    publish(key, started as LakeAcquireJob);
+    if (!acquisitions.timers[key]) follow(key, started.jobId, POLL_START_MS);
+  } else if (started.alreadyPresent) {
+    const dataset = started.dataset ?? null;
+    const held = {
+      jobId: "",
+      bytesRead: 0,
+      totalBytes: null,
+      stageMessage: "",
+      error: null,
+      unchanged: true,
+      ...started,
+      status: "completed",
+      dataset,
+      datasetId: (dataset?.id as string | undefined) ?? started.datasetId ?? null,
+      alreadyPresent: true,
+      sourceId: dirName,
+      resourceId,
+    } as LakeAcquireJob;
+    publish(key, held);
+    settle(key, held);
+  }
+  return started;
+}
+
+/** Forget every download: for tests, which share the module between cases. */
+export function resetLakeAcquisitions(): void {
+  Object.values(acquisitions.timers).forEach(clearTimeout);
+  acquisitions.jobs = {};
+  acquisitions.timers = {};
+  acquisitions.settled = {};
+  acquisitions.listeners.forEach((listener) => listener());
+}
+
+/**
+ * Start downloads and follow them, from the shared store above. `onCompleted`
+ * hears every download this component starts that completes, a resource the
+ * account already held included.
+ */
 export function useLakeAcquire(
   onCompleted?: (job: LakeAcquireJob) => void
 ): UseLakeAcquireResult {
-  const [jobs, setJobs] = useState<Record<string, LakeAcquireJob>>({});
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  // Lets `cancel` read the current jobs without being re-created on every
-  // progress tick, which would re-render every row that holds it.
-  const jobsRef = useRef(jobs);
-  jobsRef.current = jobs;
+  const [jobs, setJobs] = useState<Record<string, LakeAcquireJob>>(acquisitions.jobs);
   const done = useRef(onCompleted);
   done.current = onCompleted;
 
-  useEffect(
-    () => () => {
-      Object.values(timers.current).forEach(clearTimeout);
-      timers.current = {};
-    },
-    []
-  );
-
-  const poll = useCallback((key: string, jobId: string, delay: number) => {
-    timers.current[key] = setTimeout(() => {
-      dataLakeCatalogApi
-        .getJob(jobId)
-        .then((job) => {
-          setJobs((prev) => ({ ...prev, [key]: job }));
-          if (isTerminal(job.status)) {
-            delete timers.current[key];
-            if (job.status === "completed") done.current?.(job);
-            return;
-          }
-          poll(key, jobId, Math.min(delay * 1.5, POLL_MAX_MS));
-        })
-        .catch((err: Error) => {
-          // The job is gone, or the backend is. Either way, stop: retrying a
-          // job we can no longer read is a loop with no exit.
-          delete timers.current[key];
-          setJobs((prev) => ({
-            ...prev,
-            [key]: {
-              ...(prev[key] as LakeAcquireJob),
-              status: "failed",
-              error: err.message || "Lost track of that download.",
-            },
-          }));
-        });
-    }, delay);
+  useEffect(() => {
+    const listener = () => setJobs(acquisitions.jobs);
+    acquisitions.listeners.add(listener);
+    listener();
+    return () => {
+      acquisitions.listeners.delete(listener);
+    };
   }, []);
 
   const start = useCallback(
-    async (dirName: string, resourceId: string, opts = {}) => {
-      const key = acquireKey(dirName, resourceId);
-      const started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
-      if (started.jobId) {
-        setJobs((prev) => ({ ...prev, [key]: started as LakeAcquireJob }));
-        poll(key, started.jobId, POLL_START_MS);
-      }
-      return started;
-    },
-    [poll]
+    (dirName: string, resourceId: string, opts: LakeAcquireBody = {}) =>
+      startLakeAcquire(dirName, resourceId, opts, (job) => {
+        if (job.status === "completed") done.current?.(job);
+      }),
+    []
   );
 
   const cancel = useCallback((dirName: string, resourceId: string) => {
-    const key = acquireKey(dirName, resourceId);
-    const job = jobsRef.current[key];
+    const job = acquisitions.jobs[acquireKey(dirName, resourceId)];
     if (!job?.jobId) return;
     void dataLakeCatalogApi.cancelJob(job.jobId).catch(() => undefined);
   }, []);
 
   const dismiss = useCallback((dirName: string, resourceId: string) => {
     const key = acquireKey(dirName, resourceId);
-    clearTimeout(timers.current[key]);
-    delete timers.current[key];
-    setJobs((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+    clearTimeout(acquisitions.timers[key]);
+    delete acquisitions.timers[key];
+    delete acquisitions.settled[key];
+    const next = { ...acquisitions.jobs };
+    delete next[key];
+    acquisitions.jobs = next;
+    acquisitions.listeners.forEach((listener) => listener());
   }, []);
 
   return { jobs, start, cancel, dismiss };

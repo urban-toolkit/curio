@@ -4,6 +4,12 @@
  * It decides two things now: what a data/compute node reports in its body, and
  * whether a node is a pass-through (a render spec) or a source of layers.
  */
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+}));
+
 import { classifyAutkSpec, classifyAutkSpecString } from "../../utils/autkSpecKind";
 import {
   classifyAutkSpec as reExportedSpec,

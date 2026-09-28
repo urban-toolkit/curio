@@ -6,6 +6,7 @@ import {
   DatasetCatalogResponse,
   DatasetDataflowUsageRef,
   DatasetFormat,
+  DatasetLakeSourceInput,
   DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
@@ -174,13 +175,17 @@ export const datasetCatalogApi = {
 
   async importDataset(
     file: File,
-    opts: { dataflowId?: string | null; title?: string } = {},
+    opts: { dataflowId?: string | null; title?: string; lakeSource?: DatasetLakeSourceInput } = {},
   ): Promise<DatasetCatalogItem> {
     const token = getToken();
     const form = new FormData();
     form.append("file", file);
     if (opts.dataflowId) form.append("dataflowId", opts.dataflowId);
     if (opts.title) form.append("title", opts.title);
+    // Where a file the person downloaded themselves came from. The server
+    // records it, and answers with the dataset it already holds when the
+    // resource or the bytes are the same.
+    if (opts.lakeSource) form.append("lakeSource", JSON.stringify(opts.lakeSource));
     // The original file's last-modified date (epoch ms), so the catalog can show
     // the *source file's* date distinctly from the Curio import/record date.
     if (typeof file.lastModified === "number" && file.lastModified > 0) {

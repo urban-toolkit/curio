@@ -13,10 +13,19 @@ half-copied into the agent verifier.
 from __future__ import annotations
 
 from utk_curio.backend.app.datalakes.domain.errors import CapabilityUnsupported
-from utk_curio.backend.app.datalakes.domain.manifest import PROVIDER_TYPES, LakeSourceManifest
+from utk_curio.backend.app.datalakes.domain.manifest import (
+    PORTAL_PROVIDER_TYPES,
+    PROVIDER_TYPES,
+    STORAGE_PROVIDER_TYPES,
+    LakeSourceManifest,
+)
 from utk_curio.backend.app.datalakes.infrastructure.transport import LakeTransport
 from utk_curio.backend.app.datalakes.providers import arcgis, ckan, direct, socrata, wfs
 from utk_curio.backend.app.datalakes.providers.base import BaseProvider, LakeProvider
+from utk_curio.backend.app.datalakes.providers.folder import FolderStorage
+from utk_curio.backend.app.datalakes.providers.huggingface import HuggingFaceStorage
+from utk_curio.backend.app.datalakes.providers.s3 import S3Storage
+from utk_curio.backend.app.datalakes.providers.storage_base import StorageProvider
 
 PROVIDERS: dict[str, type[BaseProvider]] = {
     socrata.SocrataProvider.type: socrata.SocrataProvider,
@@ -24,6 +33,14 @@ PROVIDERS: dict[str, type[BaseProvider]] = {
     arcgis.ArcgisProvider.type: arcgis.ArcgisProvider,
     wfs.WfsProvider.type: wfs.WfsProvider,
     direct.DirectProvider.type: direct.DirectProvider,
+}
+
+#: Storage providers: a folder, a bucket, a repo. Listed and read in place,
+#: organized by the manifest's resources rather than searched.
+STORAGE_PROVIDERS: dict[str, type] = {
+    FolderStorage.type: FolderStorage,
+    S3Storage.type: S3Storage,
+    HuggingFaceStorage.type: HuggingFaceStorage,
 }
 
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.
@@ -36,10 +53,15 @@ RECOGNISERS = (socrata, arcgis, ckan, wfs)
 # a provider that cannot be built (or a provider could exist that no manifest
 # may name). Asserted at import so the mismatch surfaces on boot rather than on
 # the first search of whichever source is affected.
-assert set(PROVIDERS) == set(PROVIDER_TYPES), (
-    f"provider registry and PROVIDER_TYPES disagree: "
-    f"{sorted(set(PROVIDERS) ^ set(PROVIDER_TYPES))}"
+assert set(PROVIDERS) == set(PORTAL_PROVIDER_TYPES), (
+    f"provider registry and PORTAL_PROVIDER_TYPES disagree: "
+    f"{sorted(set(PROVIDERS) ^ set(PORTAL_PROVIDER_TYPES))}"
 )
+assert set(STORAGE_PROVIDERS) == set(STORAGE_PROVIDER_TYPES), (
+    f"storage registry and STORAGE_PROVIDER_TYPES disagree: "
+    f"{sorted(set(STORAGE_PROVIDERS) ^ set(STORAGE_PROVIDER_TYPES))}"
+)
+assert set(PROVIDERS) | set(STORAGE_PROVIDERS) == set(PROVIDER_TYPES)
 
 
 def build_provider(manifest: LakeSourceManifest, transport: LakeTransport) -> LakeProvider:
@@ -56,4 +78,17 @@ def build_provider(manifest: LakeSourceManifest, transport: LakeTransport) -> La
     return cls(manifest, transport)
 
 
-__all__ = ["PROVIDERS", "RECOGNISERS", "build_provider", "LakeProvider", "BaseProvider"]
+def build_storage(manifest: LakeSourceManifest, transport: LakeTransport) -> StorageProvider:
+    """Construct the storage provider a manifest names."""
+    cls = STORAGE_PROVIDERS.get(manifest.provider.type)
+    if cls is None:
+        raise CapabilityUnsupported(
+            f"{manifest.name} is not a storage source"
+        )
+    return cls(manifest, transport)
+
+
+__all__ = [
+    "PROVIDERS", "STORAGE_PROVIDERS", "RECOGNISERS", "build_provider", "build_storage",
+    "LakeProvider", "BaseProvider", "StorageProvider",
+]

@@ -7,7 +7,8 @@ export function formatBytes(value?: number | null): string | null {
   if (value == null) return null;
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export function relativeTime(iso?: string | null): string {
@@ -44,7 +45,7 @@ export function datasetCount(dataset?: DatasetCatalogItem | null): string | null
 }
 
 /** Compact ``datasetCount`` (``"feat."`` abbreviation) for tight UIs — dataset
- * cards, the dataset palette, and the data-hub browse rows. */
+ * cards, the dataset palette, and the Data Catalog browse rows. */
 export function datasetCountCompact(dataset?: DatasetCatalogItem | null): string | null {
   if (!dataset) return null;
   if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;

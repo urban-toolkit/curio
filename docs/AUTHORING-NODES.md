@@ -65,11 +65,9 @@ Full installation notes, including Docker, are in [USAGE.md](USAGE.md).
 
 A Python node reuses Curio's built-in `code` behavior: Curio renders its
 standard editor, and your Python runs in the sandbox. You never write any
-JavaScript, and you can do the whole thing from the canvas. Because the
-template declares a code editor and a Python engine (and no backend handler),
-an agent's **Solve** treats your kind like the built-in ones: it runs the
-node's code in the sandbox and verifies it. There is nothing extra to declare
-(memo dev/119, DEC-076).
+JavaScript, and you can do the whole thing from the canvas. An agent's
+**Solve** runs your node's code in the sandbox to verify it, as it does for the
+built-in nodes, with nothing extra to declare.
 
 ### From the canvas
 
@@ -108,7 +106,7 @@ python scripts/new_package.py me.roughness
 
 That writes a valid `packages/me.roughness@1/` with a manifest, a Python
 starter, a README, a LICENSE and an `integrity.json`. Install it from the canvas
-via **Node Catalog → Browse Node Catalog + → Browse → Add to dataflow**.
+via **Node Catalog → Browse Node Catalog + → Browse all → Add to project**.
 
 ---
 
@@ -138,15 +136,15 @@ cd utk_curio/frontend/urban-workflows
 npm run build:packages          # seconds, not the full app build
 
 # then, in the browser
-#   first time:  Node Catalog -> Browse Node Catalog + -> Browse -> Add to dataflow
-#   after that:  Node Catalog -> Browse Node Catalog + -> In dataflow -> Reload
+#   first time:  Node Catalog -> Browse Node Catalog + -> Browse all -> Add to project
+#   after that:  Node Catalog -> Browse Node Catalog + -> In project -> Reload
 ```
 
 **That last step is the one people miss.** Curio serves your node's bundle from
 your *installed copy* in the user store, not from `packages/`. Adding a package
 that is already installed does nothing, so without **Reload** your rebuilt code
 never runs and it looks as though your edit had no effect. The Reload button
-(circular arrows, on each row of the **In dataflow** tab) re-copies the package
+(circular arrows, on each row of the **In project** tab) re-copies the package
 from `packages/` over the installed copy and reloads the page.
 
 ### What the scaffold gives you
@@ -310,11 +308,12 @@ not an empty `geodataframe`.
 A grammar node can offer a starter spec once it knows what the data looks like.
 The hook is `defaultValueOverride` in your behavior, which
 [`UniversalNode`](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx)
-gives top priority in the `defaultValue` chain. Gate it on an **empty buffer**
-and fill at most once: `useMonacoExternalValue` no-ops when the value is
-unchanged, so re-asserting is safe for the cursor and undo stack, but that is
-not licence to overwrite what someone has typed. `vegaBehavior.ts` is the
-worked example.
+gives top priority in the `defaultValue` chain.
+[`useStarterSpec`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts)
+does the gating for you: it fills only an empty editor, at most
+once, only after an input has arrived, and never over `data.defaultCode`. Give
+it a reader and a ladder; `vegaBehavior.ts` and `autkGrammarBehavior.tsx` are
+the worked examples.
 
 ## Things that will trip you up
 
@@ -367,19 +366,13 @@ Tier 2 submission carries its compiled bundle and the recipient needs no build
 step.
 
 Before you submit, check that the archive works from a clean state: uninstall
-your package (**In dataflow → remove**), then re-import the archive
+your package (**Remove from project** on its **In project** card), then re-import the archive
 (**Import package** in the drawer footer) and confirm the node still behaves.
 That catches the most common packaging mistake: a node that only works because
 of a file that never made it into the manifest.
 
-If you built a package under `packages/` and never installed it, there is no
-export button for it. Zip it by hand: `manifest.json`, `sources/`, `scripts/`,
-`README.md` and `LICENSE` at the **root of the zip**, no wrapper directory, and
-leave `integrity.json` out.
-
 To open someone else's submission: **Import package** in the drawer footer. An
-id collision is rejected rather than merged, so remove the previous package of
-the same id first.
+archive whose `<packageId>@<major>` you already have is refused.
 
 ---
 

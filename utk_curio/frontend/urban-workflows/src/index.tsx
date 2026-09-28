@@ -73,18 +73,17 @@ import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import { RequireAuth } from "./components/RequireAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { DatasetDetailsProvider } from "./components/datasets/catalog/DatasetDetailsProvider";
 
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
 import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
-import DataCatalogBrowse from "./pages/dataHub/DataCatalogBrowse";
-import DataCatalogDetail from "./pages/dataHub/DataCatalogDetail";
+import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
 import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
-import DataHubPage from "./pages/dataHub/DataHubPage";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
@@ -148,6 +147,9 @@ const App: React.FC = () => {
                         from page chrome rather than from a node still has to
                         land somewhere other than a blank document. */}
                     <ErrorBoundary label="route">
+                    {/* The catalog pages' one dataset details modal; the canvas
+                        mounts its own, with the dataflow behind it. */}
+                    <DatasetDetailsProvider closeOnNavigate>
                     <Routes>
                     <Route path="/auth/signin" element={<SignIn />} />
                     <Route path="/auth/signup" element={<SignUp />} />
@@ -185,8 +187,9 @@ const App: React.FC = () => {
                     >
                       <Route index element={<Navigate to="nodes" replace />} />
                       <Route path="nodes" element={<NodeCatalogBrowse />} />
-                      <Route path="data" element={<DataCatalogBrowse />} />
-                      <Route path="data/:datasetId" element={<DataCatalogDetail />} />
+                      {/* One page for both: a dataset's link opens that
+                          dataset's details over the Data Catalog. */}
+                      <Route path="data/:datasetId?" element={<DataCatalogBrowse />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
                       <Route path="lakes" element={<DataLakeCatalogBrowse />} />
                       <Route
@@ -194,14 +197,6 @@ const App: React.FC = () => {
                         element={<DataLakeSourceDetail />}
                       />
                     </Route>
-                    <Route
-                      path="/data-hub/:datasetId?"
-                      element={
-                        <RequireAuth>
-                          <DataHubPage />
-                        </RequireAuth>
-                      }
-                    />
                     {/* Deliberately outside RequireAuth: the monitor is
                         public, so whoever is hitting a problem can read it and
                         share it without an account. */}
@@ -219,6 +214,7 @@ const App: React.FC = () => {
                       }
                     />
                     </Routes>
+                    </DatasetDetailsProvider>
                     </ErrorBoundary>
                   </UserProvider>
                 </ProvenanceProvider>

@@ -1,0 +1,77 @@
+{
+  "id": "data.curio.storage-noise",
+  "name": "Example noise recordings",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "Short recordings from two noise sensors, timed by their file names, indexed where they are.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "audio"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 3,
+  "featureCount": null,
+  "schema": null,
+  "lakeSource": {
+    "lakeId": "lake.curio.example-storage@1",
+    "lakeName": "Example storage",
+    "resourceId": "noise",
+    "fileCount": 3,
+    "fields": "sensor,recorded",
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "20e2187cd868bfba659589e85e8563457746351c62a635f78ee03987e6fa993c"
+  },
+  "collection": {
+    "kind": "audio",
+    "sourceId": "lake.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "provider": "folder",
+    "resourceId": "noise",
+    "resource": "noise",
+    "resourceName": "Noise recordings",
+    "path": "noise/{sensor}/{recorded:%Y%m%d_%H%M%S}.wav",
+    "fields": [
+      "sensor",
+      "recorded"
+    ],
+    "fieldValues": [
+      {
+        "name": "sensor",
+        "type": "str",
+        "distinct": 2,
+        "values": [
+          "sensor_01",
+          "sensor_02"
+        ]
+      },
+      {
+        "name": "recorded",
+        "type": "datetime",
+        "distinct": 2,
+        "values": [
+          "2024-05-01T06:00:00",
+          "2024-05-01T07:00:00"
+        ]
+      }
+    ],
+    "counts": {
+      "audio": 3
+    },
+    "fileCount": 3,
+    "totalBytes": 24132,
+    "hasGps": false,
+    "probeErrors": 0,
+    "indexedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "20e2187cd868bfba659589e85e8563457746351c62a635f78ee03987e6fa993c",
+    "totalSeconds": 1.5
+  }
+}

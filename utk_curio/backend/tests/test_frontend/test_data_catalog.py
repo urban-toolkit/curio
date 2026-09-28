@@ -27,6 +27,7 @@ Run::
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -34,6 +35,7 @@ import re
 from playwright.sync_api import expect
 
 from .utils import (
+    REPO_ROOT,
     accept_confirm_dialog,
     api_json,
     open_tools_palette,
@@ -57,11 +59,25 @@ SEARCH_PLACEHOLDER = "Search datasets, publishers, tags…"
 # title as the real card, so every card locator has to exclude it.
 CARD = 'article:not([role="status"])'
 
-#: The formats the Data Catalog's rail offers, in its own order. Mirrors
-#: ``FORMAT_FILTERS`` in pages/dataHub/dataHubBrowseConstants.ts - the chip row
+def _rail_formats() -> tuple[str, ...]:
+    """``FORMAT_FILTERS`` from pages/dataCatalog/dataCatalogBrowseConstants.ts.
+
+    Read from the source rather than copied: a hand copy here had already
+    fallen three formats behind it.
+    """
+    source = (
+        Path(REPO_ROOT) / "utk_curio" / "frontend" / "urban-workflows" / "src"
+        / "pages" / "dataCatalog" / "dataCatalogBrowseConstants.ts"
+    ).read_text(encoding="utf-8")
+    body = re.search(r"export const FORMAT_FILTERS[^=]*=\s*\[(.*?)\];", source, re.S)
+    assert body, "FORMAT_FILTERS not found in dataCatalogBrowseConstants.ts"
+    return tuple(re.findall(r'"([a-z]+)"', body.group(1)))
+
+
+#: The formats the Data Catalog's rail offers, in its own order. The chip row
 #: is derived from these, so the expected chip set is derivable from the facet
 #: counts alone (#232).
-RAIL_FORMATS = ("geojson", "csv", "json", "parquet", "geotiff", "shp")
+RAIL_FORMATS = _rail_formats()
 
 
 def _one_node_spec() -> dict:

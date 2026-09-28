@@ -1,7 +1,6 @@
 """Catalog grouping keys and collision detection.
 
 ``family_key_for_manifest`` aligns with manifest ``lineage.root``.
-See ``docs/NODE-CATALOG.md`` (Sharing > Fork lineage).
 """
 
 from __future__ import annotations

@@ -81,13 +81,37 @@ class UserDatasetRepository:
         """
         if self.user is None or not lake_id or not resource_id:
             return None
+        found = None
         for item in self.list_items():
             lake = item.get("lakeSource") or {}
             if lake.get("lakeId") != lake_id or lake.get("resourceId") != resource_id:
                 continue
+            # Part of a storage row, picked when it was added: not the row.
+            if lake.get("narrowed"):
+                continue
             if fmt and item.get("format") != fmt:
                 continue
-            return item
+            # Added again after the source changed: the latest one is held.
+            if found is None or _added_at(item) > _added_at(found):
+                found = item
+        return found
+
+    def find_by_content(self, content_sha256: str) -> dict[str, Any] | None:
+        """A dataset from a remote origin whose bytes are exactly these.
+
+        The other half of "do I already hold this?": a file a person downloaded
+        by hand and one the Data Lake fetched are the same dataset when their
+        bytes are, whichever arrived first.
+        """
+        if self.user is None or not content_sha256:
+            return None
+        for item in self.list_items():
+            lake = item.get("lakeSource") or {}
+            # Part of a storage row, picked when it was added: not the row.
+            if lake.get("narrowed"):
+                continue
+            if lake.get("contentSha256") == content_sha256:
+                return item
         return None
 
     def lake_resource_index(self) -> dict[tuple[str, str], str]:
@@ -105,16 +129,18 @@ class UserDatasetRepository:
         distinction matters - the same resource as CSV and as GeoJSON is two
         datasets, and holding one is not holding the other.
         """
-        index: dict[tuple[str, str], str] = {}
+        latest: dict[tuple[str, str], dict[str, Any]] = {}
         if self.user is None:
-            return index
+            return {}
         for item in self.list_items():
             lake = item.get("lakeSource") or {}
             lake_id, resource_id = lake.get("lakeId"), lake.get("resourceId")
-            if not lake_id or not resource_id:
+            if not lake_id or not resource_id or lake.get("narrowed"):
                 continue
-            index.setdefault((lake_id, resource_id), item["id"])
-        return index
+            held = latest.get((lake_id, resource_id))
+            if held is None or _added_at(item) > _added_at(held):
+                latest[(lake_id, resource_id)] = item
+        return {key: item["id"] for key, item in latest.items()}
 
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
@@ -184,3 +210,8 @@ class UserDatasetRepository:
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin="computed"))
         return items
+
+
+def _added_at(item: dict[str, Any]) -> str:
+    """When a lake dataset was added, as its ISO time, which sorts as text."""
+    return str((item.get("lakeSource") or {}).get("fetchedAt") or "")

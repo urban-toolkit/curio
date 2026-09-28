@@ -103,6 +103,16 @@ def _service() -> DataLakeService:
     )
 
 
+def _resource_id(service: DataLakeService, source_dir: str, raw: str) -> str:
+    """The resource id as the client sent it.
+
+    The server has already decoded the path once. A portal id is decoded once
+    more, as it always has been; a storage id is taken as it is, since a file
+    name may itself hold a ``%``.
+    """
+    return raw if service.get_manifest(source_dir).is_storage else unquote(raw)
+
+
 @datalakes_bp.route("/catalog", methods=["GET"])
 @require_auth
 @_map_lake_errors
@@ -182,13 +192,20 @@ def search_datalakes():
 @_map_lake_errors
 def search_datalake_source(source_dir: str):
     """Search one portal. **Live.** The only paginated search - a fan-out has
-    no coherent cursor across five independently paginating portals."""
+    no coherent cursor across five independently paginating portals.
+
+    For a storage source this lists its declared resources, from a scan of its
+    files that is shared by every user and refreshed after 15 minutes or on
+    ``rescan=1``. While a scan runs, the one leg in ``sources`` says
+    ``scanning`` and the page asks again.
+    """
     payload = _service().search_source(
         source_dir,
         q=(request.args.get("q") or "").strip(),
         fmt=request.args.get("format"),
         limit=_int_arg("limit"),
         cursor=request.args.get("cursor"),
+        rescan=request.args.get("rescan") in ("1", "true"),
     )
     return jsonify(payload), 200
 
@@ -203,7 +220,8 @@ def describe_datalake_resource(source_dir: str, resource_id: str):
     unquoted here and validated against the provider's own ``resource_id_re``
     before any URL is built from it.
     """
-    payload = _service().describe_resource(source_dir, unquote(resource_id))
+    service = _service()
+    payload = service.describe_resource(source_dir, _resource_id(service, source_dir, resource_id))
     return jsonify(payload), 200
 
 
@@ -220,14 +238,57 @@ def acquire_datalake_resource(source_dir: str, resource_id: str):
     portal at all.
     """
     body = request.get_json(silent=True) or {}
-    payload = _service().start_acquire(
+    service = _service()
+    payload = service.start_acquire(
         source_dir,
-        unquote(resource_id),
+        _resource_id(service, source_dir, resource_id),
         fmt=(body.get("format") or None),
         title=(body.get("title") or None),
         refresh=bool(body.get("refresh")),
+        # A storage row only: keep some field values, or some of its files.
+        filters=body.get("filters") or None,
+        files=body.get("files"),
     )
     return jsonify(payload), (200 if payload.get("alreadyPresent") else 202)
+
+
+@datalakes_bp.route("/sources/<source_dir>/files/<path:resource_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def list_datalake_resource_files(source_dir: str, resource_id: str):
+    """One page of a storage row's files, from the source's last listing.
+
+    ``?offset=&limit=``. Each file's ``index`` is its position in the row,
+    which is what ``/thumbnails/<index>/<resource_id>`` draws.
+    """
+    try:
+        offset = int(request.args.get("offset", 0))
+        limit = int(request.args.get("limit", 100))
+    except ValueError:
+        return jsonify({"error": "offset and limit are numbers"}), 400
+    # Storage only, so the id is taken as the client sent it.
+    payload = _service().storage_files(source_dir, resource_id, offset=offset, limit=limit)
+    return jsonify(payload), 200
+
+
+@datalakes_bp.route("/collections/<dataset_id>", methods=["GET"])
+@require_auth
+@_map_lake_errors
+def get_datalake_collection(dataset_id: str):
+    """Where a collection's files are (all local, or how many are cached) and a
+    few of them, by id, for a thumbnail strip."""
+    return jsonify(_service().collection_status(dataset_id)), 200
+
+
+@datalakes_bp.route("/collections/<dataset_id>/cache", methods=["POST"])
+@require_auth
+@_map_lake_errors
+def cache_datalake_collection(dataset_id: str):
+    """Fetch a bucket collection's files to this machine, so nodes can read them.
+
+    ``202`` with a job, polled like a download.
+    """
+    return jsonify(_service().start_cache(dataset_id)), 202
 
 
 @datalakes_bp.route("/jobs/<job_id>", methods=["GET"])

@@ -14,6 +14,11 @@ the user changed anything, the next render ran
 ``executeEdits(fullModelRange, starterSpec, {forceMoveMarkers: true})`` -
 replacing the document and parking the cursor at the end.
 
+A fresh Autark node now opens empty, like a Vega chart, and the starter comes
+from the input that reaches it (``hook/useStarterSpec``), through the same
+``defaultValueOverride``. So this wires a GeoDataFrame loader into an empty
+Autark node, runs the loader, and edits the starter the node was given.
+
 This drives Monaco through ``executeEdits`` on a MIDDLE line rather than through
 ``set_node_code``. That distinction is the whole test: ``set_node_code`` calls
 ``setValue``, which replaces the buffer wholesale and would paper over exactly
@@ -28,12 +33,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .utils import (
-    canvas_node_type,
     dismiss_toasts,
-    drag_to_canvas,
     node_locator,
     require_project_page,
     require_user_auth,
+    run_node_and_wait,
     save_workflow_test_screenshot,
     require_owner_view,
     stub_login_and_enter_workflow,
@@ -42,9 +46,19 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-AUTK_TILE = "#step-utk"
-AUTK_TYPE = "curio.builtin/autk-grammar"
-POS_NODE = (150, 120)
+LOADER_ID = "autk-edit-loader"
+AUTK_ID = "autk-edit-map"
+
+LOADER_CODE = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import Point\n"
+    "\n"
+    "return gpd.GeoDataFrame(\n"
+    "    {\"pop\": [1, 2, 3]},\n"
+    "    geometry=[Point(0, 0), Point(1, 1), Point(2, 2)],\n"
+    "    crs=\"EPSG:4326\",\n"
+    ")\n"
+)
 
 # Typed into a line in the middle of the starter spec. A marker string is easier
 # to assert on than a structural edit, and being mid-document is what matters:
@@ -73,6 +87,31 @@ def _grammar_value(page, node_id: str) -> str:
     )
 
 
+def _spec() -> dict:
+    node = lambda node_id, node_type, x, content: {  # noqa: E731
+        "id": node_id, "type": node_type, "x": x, "y": 0, "content": content,
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+    }
+    return {
+        "dataflow": {
+            "name": "Autark Grammar Editing",
+            "task": "",
+            "timestamp": 1789193389280,
+            "provenance_id": "Autark Grammar Editing",
+            "nodes": [
+                node(LOADER_ID, "curio.builtin/data-loading", 0, LOADER_CODE),
+                # Empty on purpose: the starter only ever fills an empty editor.
+                node(AUTK_ID, "curio.builtin/autk-grammar", 645, ""),
+            ],
+            "edges": [{
+                "id": f"reactflow__edge-{LOADER_ID}out-{AUTK_ID}in",
+                "source": LOADER_ID,
+                "target": AUTK_ID,
+            }],
+        }
+    }
+
+
 def test_editing_a_middle_line_of_the_autark_grammar_sticks(
     app_frontend: "FrontendPage",
     current_server: str,
@@ -89,13 +128,13 @@ def test_editing_a_middle_line_of_the_autark_grammar_sticks(
         name="Autark Editor",
         username="autark_editor",
         project_name="Autark Grammar Editing",
+        project_spec=_spec(),
     )
     require_owner_view(page)
 
-    node_id = drag_to_canvas(page, page.locator(AUTK_TILE), at=POS_NODE)
-    assert canvas_node_type(page, node_id).split("@", 1)[0] == AUTK_TYPE
-
+    node_id = AUTK_ID
     node_el = node_locator(page, node_id)
+    node_el.wait_for(state="visible", timeout=45000)
     # The Grammar tab. autk-grammar declares hasCode:false, so this is the node's
     # first editor tab - part of #157 was that NodeEditor still opened on "code",
     # leaving no pane active at all.
@@ -103,15 +142,22 @@ def test_editing_a_middle_line_of_the_autark_grammar_sticks(
     grammar_tab.wait_for(state="visible", timeout=20000)
     grammar_tab.dispatch_event("click")
 
+    # An edge alone carries no schema, so nothing has been written yet.
+    before = _grammar_value(page, node_id)
+    assert before is None or before.strip() in ("", "{}"), (
+        f"the Autark node was filled before its input had run: {before!r}"
+    )
+
+    run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
     page.wait_for_function(
         "(args) => { const ed = (" + _GRAMMAR_EDITOR_JS + ")(args.nodeId);"
-        " return !!ed && ed.getValue().length > 0; }",
+        " return !!ed && ed.getValue().includes('layerRefs'); }",
         arg={"nodeId": node_id},
-        timeout=20000,
+        timeout=60000,
     )
     starter = _grammar_value(page, node_id)
-    assert starter and starter.strip() not in ("", "{}"), (
-        f"the grammar editor opened with no starter spec to edit: {starter!r}"
+    assert '"getFnv": "pop"' in starter, (
+        f"the starter should colour the layer by its number column: {starter!r}"
     )
     line_count = len(starter.split("\n"))
     assert line_count >= 3, (

@@ -56,7 +56,7 @@ class TestEveryShippedSource:
         assert set(row) == {
             "sourceId", "dirName", "name", "version", "description", "publisher",
             "homepage", "license", "tags", "iconUrl", "provider", "baseUrl",
-            "auth", "capabilities", "createdAt", "updatedAt",
+            "auth", "capabilities", "kind", "resources", "createdAt", "updatedAt",
         }
         assert set(row["auth"]) == {
             "mode", "required", "usesToken", "secretId", "present", "helpUrl",
@@ -86,14 +86,23 @@ class TestEveryShippedSource:
         assert M.load_source_manifest(path).provider.type in M.PROVIDER_TYPES
 
     def test_it_declares_only_acquirable_formats(self, path: Path):
-        formats = M.load_source_manifest(path).capabilities.formats
+        manifest = M.load_source_manifest(path)
+        formats = manifest.capabilities.formats
         assert formats, "a source that can deliver nothing is not useful"
-        assert set(formats) <= set(M.LAKE_ACQUIRABLE_FORMATS)
+        allowed = M.STORAGE_FORMATS if manifest.is_storage else M.LAKE_ACQUIRABLE_FORMATS
+        assert set(formats) <= set(allowed)
 
     def test_a_searchable_source_has_a_base_to_search(self, path: Path):
+        """A portal searches its site. A storage source searches the resources
+        it declares, which needs no base."""
         manifest = M.load_source_manifest(path)
-        if manifest.capabilities.search:
+        if manifest.capabilities.search and not manifest.is_storage:
             assert manifest.provider.base_url.startswith("https://")
+
+    def test_a_storage_source_declares_its_resources(self, path: Path):
+        manifest = M.load_source_manifest(path)
+        if manifest.is_storage:
+            assert manifest.resources, "a storage source says how its files are organized"
 
     def test_a_token_source_names_its_slot_and_header(self, path: Path):
         auth = M.load_source_manifest(path).auth

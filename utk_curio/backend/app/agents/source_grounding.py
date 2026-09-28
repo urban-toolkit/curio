@@ -74,6 +74,12 @@ _URL_SCHEMES = ("http://", "https://")
 DATASET_PATH_CALL_RE = re.compile(
     r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
 )
+# ``curio_collection("<id>")`` names a Data Catalog dataset the same way: a
+# collection's rows, resolved by the sandbox at run time.
+from utk_curio.backend.app.datasets.domain.code_refs import COLLECTION_CALL_RE  # noqa: E402
+
+#: The calls whose one string argument is a Data Catalog dataset id.
+CATALOG_REF_CALLS = ("curio_dataset_path", "curio_collection")
 # dev/116 (DEC-074): connection keys. The call shape is owned by
 # users/connection_keys (ONE regex); a credential-shaped literal is what the
 # gate refuses so a pasted key never executes, never reaches the journal and
@@ -116,6 +122,7 @@ class SourceRef:
     literal: str
     line: int
     partial: bool = False  # the constant prefix of an f-string
+    call: str = "curio_dataset_path"  # for a "catalog-id": which call named it
 
 
 @dataclass(frozen=True)
@@ -297,7 +304,8 @@ def _scan_python(code: str) -> list[SourceRef] | None:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                 call_ids.add(id(arg))
                 refs.append(SourceRef(
-                    "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset)
+                    "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset),
+                    call=_call_name(node),
                 ))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
@@ -330,18 +338,24 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     return refs
 
 
-def _is_dataset_path_call(node: ast.Call) -> bool:
+def _call_name(node: ast.Call) -> str | None:
     func = node.func
-    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
-    return name == "curio_dataset_path"
+    return func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+
+
+def _is_dataset_path_call(node: ast.Call) -> bool:
+    return _call_name(node) in CATALOG_REF_CALLS
 
 
 def _scan_regex(code: str) -> list[SourceRef]:
     refs: list[SourceRef] = []
     call_spans: list[tuple[int, int]] = []
-    for match in DATASET_PATH_CALL_RE.finditer(code):
-        call_spans.append(match.span())
-        refs.append(SourceRef("catalog-id", match.group(2), code.count("\n", 0, match.start()) + 1))
+    for pattern, call in ((DATASET_PATH_CALL_RE, "curio_dataset_path"), (COLLECTION_CALL_RE, "curio_collection")):
+        for match in pattern.finditer(code):
+            call_spans.append(match.span())
+            refs.append(SourceRef(
+                "catalog-id", match.group(2), code.count("\n", 0, match.start()) + 1, call=call,
+            ))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
             continue
@@ -732,13 +746,13 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             catalog = ctx.catalog_ids.get(ref.literal)
             if catalog is None:
                 violations.append(
-                    f"curio_dataset_path({ref.literal!r}) (line {ref.line}): not a dataset in "
+                    f"{ref.call}({ref.literal!r}) (line {ref.line}): not a dataset in "
                     "this project's Data Catalog — use the id of a catalog.search row"
                 )
             else:
                 source_refs.append({
                     "kind": "catalog",
-                    "value": f'curio_dataset_path("{ref.literal}")',
+                    "value": f'{ref.call}("{ref.literal}")',
                     "datasetId": catalog.dataset_id,
                     "title": catalog.title[:_TITLE_MAX_CHARS],
                     "format": catalog.format,

@@ -186,6 +186,26 @@ def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) ->
             "code": f"dataset_path = {expr}\nsrc = rasterio.open(dataset_path)",
             "returnVariable": "src",
         }
+    if fmt == "collection":
+        # A collection's data file is its index: one row per file. The sandbox
+        # resolves ``curio_collection`` to that index plus a readable path for
+        # every file, wherever this execution runs.
+        safe_id = _safe_dataset_id(dataset_id)
+        if safe_id:
+            return {
+                "language": "python",
+                "imports": [],
+                "pathVariable": None,
+                "code": f"collection = curio_collection({json.dumps(safe_id)})",
+                "returnVariable": "collection",
+            }
+        return {
+            "language": "python",
+            "imports": ["import pandas as pd"],
+            "pathVariable": "dataset_path",
+            "code": f"dataset_path = {expr}\ncollection = pd.read_parquet(dataset_path)",
+            "returnVariable": "collection",
+        }
     if fmt == "bundle":
         # A bundle is a multi-output (tuple / ``outputs``) node result, stored as
         # ``data/bundle.json`` + ``data/parts/*`` under the dataset dir. Rebuild
@@ -276,6 +296,9 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # through the labels, facets, filters and dedup for a distinction this
         # block already carries losslessly.
         "lakeSource": None,
+        # A ``collection`` dataset's block: which lake source and resource its
+        # files belong to, their kind and counts. Null for every other format.
+        "collection": None,
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
@@ -363,4 +386,5 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         producerDataflowName=manifest.producer_dataflow_name,
         upstreamInputs=list(manifest.upstream_inputs) if manifest.upstream_inputs else [],
         lakeSource=dict(manifest.lake_source) if manifest.lake_source else None,
+        collection=dict(manifest.collection) if manifest.collection else None,
     )
