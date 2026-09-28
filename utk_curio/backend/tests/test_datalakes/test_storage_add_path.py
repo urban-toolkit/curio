@@ -571,3 +571,30 @@ class TestTextInCombinedTables:
         frame = pd.read_parquet(added(client, auth, "aq")["path"])
         assert list(frame["city"]) == ["Chicago"] + list(expected["city"]) == ["Chicago", "Café", "Zürich"]
         assert list(frame["note"])[1:] == list(expected["note"])
+
+    def test_utf8_text_with_a_byte_that_is_not_is_refused(self, client, auth, app, lake_root, tmp_path):
+        good = "name,v\n" + "São Paulo,1\n" * 3000
+        root = write_files(tmp_path / "f", {
+            "aq/s1/2024-01-01.csv": good,
+            "aq/s2/2024-01-01.csv": good.encode("utf-8") + b"Rio\xff,2\n",
+        })
+        a_source(lake_root, root, [
+            {"id": "aq", "name": "Readings", "kind": "table", "format": "csv", "path": "aq/{sensor}/{day:date}.csv"}
+        ])
+        job = finish(client, auth, start(client, auth, "aq"))
+        assert job["status"] == "failed"
+        assert "is UTF-8 up to byte" in job["error"]
+
+    def test_a_short_cp1252_file_is_read_in_it(self, client, auth, app, lake_root, tmp_path):
+        import pandas as pd
+
+        root = write_files(tmp_path / "f", {
+            "aq/s1/2024-01-01.csv": "name,v\nCuritiba,1\n",
+            "aq/s2/2024-01-01.csv": "name,v\nSão Paulo,2\n".encode("cp1252"),
+        })
+        a_source(lake_root, root, [
+            {"id": "aq", "name": "Readings", "kind": "table", "format": "csv", "path": "aq/{sensor}/{day:date}.csv"}
+        ])
+        frame = pd.read_parquet(added(client, auth, "aq")["path"])
+        assert list(frame["name"]) == ["Curitiba", "São Paulo"]
+

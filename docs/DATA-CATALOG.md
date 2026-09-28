@@ -264,7 +264,13 @@ Anything else is rejected with *"Unsupported dataset format"*.
 
 ### Text imports are stored as UTF-8
 
-`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails.
+`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails:
+
+- A file that is UTF-8 up to a byte that is not is refused, and the message names that byte. Re-save it as UTF-8.
+- A file whose accented letters each stand alone between plain ones, like `São Paulo`, is read one byte per character: as Windows-1252, unless its words point to another encoding.
+- A byte order mark at the start of a file read in another encoding is dropped.
+
+Downloads and files added from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) are stored the same way.
 
 ### Multi-layer imports: OSM PBF and GeoPackage
 

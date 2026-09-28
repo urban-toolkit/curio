@@ -19,8 +19,16 @@ imported must be declared, or it quietly disappears the day the transitive does.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 
 logger = logging.getLogger(__name__)
+
+UTF8_BOM = b"\xef\xbb\xbf"
+
+#: A byte past ASCII, and two of them side by side.
+_HIGH_BYTE = re.compile(rb"[\x80-\xff]")
+_ADJACENT_HIGH_BYTES = re.compile(rb"[\x80-\xff]{2}")
 
 #: Bytes read to decide the encoding. Detection quality plateaus quickly and the
 #: cost is linear, so this bounds a 2 GB upload's sniff to a fixed cost. The
@@ -61,8 +69,85 @@ def detect_encoding(data: bytes) -> str | None:
     # an upload that used to import now 400s (#368). The window stays the same
     # size, so the bounded cost this constant exists for is unchanged.
     start = max(0, first_bad - SNIFF_BYTES // 2)
-    matches = from_bytes(data[start:start + SNIFF_BYTES])
+    window = data[start:start + SNIFF_BYTES]
+    matches = [m for m in from_bytes(window) if m.encoding]
+    if matches and _ADJACENT_HIGH_BYTES.search(window) is None:
+        return _one_byte_per_character(window, matches)
     return _pick(matches)
+
+
+def _one_byte_per_character(window: bytes, matches) -> str:
+    """The encoding for a sample whose bytes past ASCII each stand alone.
+
+    That is how a single-byte codec writes an accented letter inside a word:
+    ``S\xe3o Paulo``. A two-byte codec would pair each such byte with the ASCII
+    one beside it, and on a short sample the detector can prefer that reading,
+    or offer nothing else: for ``name,v\nS\xe3o Paulo,2\n`` it offered only
+    Big5, GB18030, CP932 and Johab, and Big5 read ``S緌 Paulo``. So only the
+    readings that keep one character per byte are candidates, and among them
+    the ones that make a Latin letter of each such byte inside a word of ASCII
+    letters: ``Caf\xe9`` is ``Café`` in cp1252 and ``Cafй`` in cp1251, and a
+    word is not half Latin and half Cyrillic.
+
+    When the detector recognised a language in one of them, it chooses, as it
+    does for any sample. When it did not, which is the case for a short one,
+    its ranking is noise (for ``city\nCaf\xe9\n`` it offered cp775 and
+    mac_latin2 and not cp1252 at all), so the first of ``_PREFERRED`` that
+    reads the sample so is the answer.
+    """
+    single = [m for m in matches if _decodes_one_char_per_byte(window, str(m.encoding))]
+    latin = [m for m in single if _reads_latin_in_words(window, str(m.encoding))]
+    pool = latin or single
+    if any(m.coherence > 0 for m in pool):
+        return _pick(pool) or str(pool[0].encoding)
+    decodable = [name for name in _PREFERRED if _decodes_strictly(window, name)]
+    fitting = [name for name in decodable if _reads_latin_in_words(window, name)]
+    if fitting:
+        return fitting[0]
+    if pool:
+        return _pick(pool) or str(pool[0].encoding)
+    if decodable:
+        return decodable[0]
+    return _pick(matches) or str(matches[0].encoding)
+
+
+def _decodes_strictly(window: bytes, encoding: str) -> bool:
+    try:
+        window.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return False
+    return True
+
+
+_ASCII_LETTERS = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+
+def _reads_latin_in_words(window: bytes, encoding: str) -> bool:
+    """Whether each byte past ASCII beside an ASCII letter reads as a Latin one."""
+    seen: dict[int, bool] = {}
+    for found in _HIGH_BYTE.finditer(window):
+        at = found.start()
+        before = window[at - 1] if at > 0 else None
+        after = window[at + 1] if at + 1 < len(window) else None
+        if before not in _ASCII_LETTERS and after not in _ASCII_LETTERS:
+            continue
+        value = window[at]
+        if value not in seen:
+            try:
+                char = bytes([value]).decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                char = ""
+            seen[value] = len(char) == 1 and unicodedata.name(char, "").startswith("LATIN")
+        if not seen[value]:
+            return False
+    return True
+
+
+def _decodes_one_char_per_byte(window: bytes, encoding: str) -> bool:
+    try:
+        return len(window.decode(encoding, errors="replace")) == len(window)
+    except LookupError:
+        return False
 
 
 #: Single-byte codecs that decode the same bytes to different letters cannot be
@@ -124,39 +209,59 @@ def _pick(matches) -> str | None:
     return str(min(coherent, key=preference).encoding)
 
 
-def to_utf8(data: bytes, *, what: str = "file") -> tuple[bytes, str]:
-    """Return (*utf-8 bytes*, *source encoding*) for *data*.
+def _mixed_utf8(what: str, first_bad: int) -> TextDecodeError:
+    return TextDecodeError(
+        f"Could not read {what} as text: it is UTF-8 up to byte {first_bad}, and "
+        "that byte is not. Re-save it as UTF-8 and import it again."
+    )
 
-    Already-UTF-8 input is returned unchanged and reported as ``utf-8``, so the
-    common path copies nothing and the BOM, if any, is preserved exactly as
-    uploaded. Raises :class:`TextDecodeError` when nothing decodes it, which is
-    a refusal the caller can turn into a 400 rather than a dataset that breaks
-    later.
-    """
-    encoding = detect_encoding(data)
+
+def _detected(encoding: str | None, what: str, first_bad: int) -> str:
+    """*encoding*, or the refusal for a file it cannot be."""
     if encoding is None:
         raise TextDecodeError(
             f"Could not read {what} as text: its character encoding is not "
             "recognisable. Re-save it as UTF-8 and import it again."
         )
     if encoding.lower().replace("_", "-") in ("utf-8", "utf8"):
-        # detect_encoding answers utf-8 two ways: definitively, when a strict
-        # whole-buffer decode succeeded, or on the detector's word. A BOM makes
-        # the detector answer utf_8 whatever follows it, so passing the bytes
-        # through unverified stored a BOM'd file whose non-ASCII bytes sat past
-        # the sniff window as invalid UTF-8, under a 201 (#368). Verifying costs
-        # a decode only on the path that already failed one.
-        try:
-            data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise TextDecodeError(
-                f"Could not read {what} as text: it looked like UTF-8 (a byte "
-                f"order mark says so), but decoding it failed ({exc}). Re-save "
-                "it as UTF-8 and import it again."
-            ) from exc
-        return data, "utf-8"
+        raise TextDecodeError(
+            f"Could not read {what} as text: it looked like UTF-8, but byte "
+            f"{first_bad} is not valid UTF-8. Re-save it as UTF-8 and import it again."
+        )
+    return encoding
+
+
+def to_utf8(data: bytes, *, what: str = "file") -> tuple[bytes, str]:
+    """Return (*utf-8 bytes*, *source encoding*) for *data*.
+
+    Already-UTF-8 input is returned unchanged and reported as ``utf-8``, so the
+    common path copies nothing and the BOM, if any, is preserved exactly as
+    uploaded. Anything else is read in the encoding detected where its first
+    byte that is not UTF-8 sits, with a leading BOM dropped: in any other
+    encoding those three bytes are not text, and kept they head the first
+    column's name as ``ï»¿``.
+
+    Raises :class:`TextDecodeError`, a refusal the caller can turn into a 400
+    rather than a dataset that breaks later, when nothing decodes it, and when
+    it is UTF-8 text up to a byte that is not. Reading all of it in some other
+    codec to fit that one byte would turn every character before it into
+    mojibake, ``São`` into ``SĂŁo``, with nothing downstream able to tell.
+    """
     try:
-        text = data.decode(encoding)
+        data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        first_bad = exc.start
+    else:
+        return data, "utf-8"
+    skip = len(UTF8_BOM) if data.startswith(UTF8_BOM) else 0
+    # Everything before first_bad is valid UTF-8, so a byte past ASCII there
+    # is part of a character UTF-8 wrote.
+    if _HIGH_BYTE.search(data, skip, first_bad) is not None:
+        raise _mixed_utf8(what, first_bad)
+    body = data[skip:] if skip else data
+    encoding = _detected(detect_encoding(body), what, first_bad)
+    try:
+        text = body.decode(encoding)
     except (UnicodeDecodeError, LookupError) as exc:
         raise TextDecodeError(
             f"Could not read {what} as text: it looked like {encoding}, but "
@@ -191,15 +296,31 @@ def _first_invalid_utf8(path) -> int | None:
             offset += len(chunk)
 
 
+def _high_byte_between(path, start: int, end: int) -> bool:
+    """Whether *path* holds a byte past ASCII from *start* up to *end*."""
+    with open(path, "rb") as handle:
+        handle.seek(start)
+        remaining = end - start
+        while remaining > 0:
+            chunk = handle.read(min(STREAM_CHUNK_BYTES, remaining))
+            if not chunk:
+                return False
+            if _HIGH_BYTE.search(chunk) is not None:
+                return True
+            remaining -= len(chunk)
+    return False
+
+
 def transcode_file_to_utf8(src, dest, *, what: str = "file") -> str:
     """Write *src* to *dest* as UTF-8 and return the encoding it was read as.
 
     The file-sized sibling of :func:`to_utf8`, with the same answers: UTF-8
     input is copied byte for byte (a BOM included), anything else is decoded
-    with the detected encoding and re-encoded, and :class:`TextDecodeError` is
-    raised when nothing decodes it. Detection reads a window anchored on the
-    first byte that is not UTF-8, exactly as :func:`detect_encoding` anchors
-    it, so the whole file never has to be in memory.
+    with the detected encoding (a leading BOM dropped) and re-encoded, and
+    :class:`TextDecodeError` is raised when nothing decodes it or it is UTF-8
+    text up to a byte that is not. Detection reads the window
+    :func:`to_utf8`'s would, anchored on the first byte that is not UTF-8, so
+    the whole file never has to be in memory.
     """
     import codecs
     import shutil
@@ -210,28 +331,23 @@ def transcode_file_to_utf8(src, dest, *, what: str = "file") -> str:
     if first_bad is None:
         shutil.copyfile(src, dest)
         return "utf-8"
+    with open(src, "rb") as handle:
+        skip = len(UTF8_BOM) if handle.read(len(UTF8_BOM)) == UTF8_BOM else 0
+    if _high_byte_between(src, skip, first_bad):
+        raise _mixed_utf8(what, first_bad)
 
-    start = max(0, first_bad - SNIFF_BYTES // 2)
+    start = skip + max(0, first_bad - skip - SNIFF_BYTES // 2)
     with open(src, "rb") as handle:
         handle.seek(start)
         window = handle.read(SNIFF_BYTES)
-    encoding = detect_encoding(window)
-    if encoding is None:
-        raise TextDecodeError(
-            f"Could not read {what} as text: its character encoding is not "
-            "recognisable. Re-save it as UTF-8 and import it again."
-        )
-    if encoding.lower().replace("_", "-") in ("utf-8", "utf8"):
-        raise TextDecodeError(
-            f"Could not read {what} as text: it looked like UTF-8, but byte "
-            f"{first_bad} is not valid UTF-8. Re-save it as UTF-8 and import it again."
-        )
+    encoding = _detected(detect_encoding(window), what, first_bad)
     try:
         decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
     except LookupError as exc:
         raise TextDecodeError(f"Could not read {what} as text: unknown encoding {encoding}") from exc
     try:
         with open(src, "rb") as reader, open(dest, "wb") as writer:
+            reader.seek(skip)
             while True:
                 chunk = reader.read(STREAM_CHUNK_BYTES)
                 writer.write(decoder.decode(chunk, final=not chunk).encode("utf-8"))
