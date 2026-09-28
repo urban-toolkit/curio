@@ -1,0 +1,143 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Interaction_Vega",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Interaction_Vega.json",
+    "sha256": "38b929fe874ebf86d76108b1a59aa0bc83d1eb631edba9e999066c182203008a",
+    "walkthrough": null
+  },
+  "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keeping coverage, the average attribute count, the neighborhood name and the geometry. Clean and flatten that attribute count into columns, then compute a weighted accessibility score per neighborhood in a Python step, projecting to a metric CRS first. Fan the scored neighborhoods out and plot accessibility by neighborhood in Vega-Lite, linked to the map view so a selection in the chart highlights the neighborhood.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/access_score.geojson"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "visualization1",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/access_score.geojson"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "coverage",
+        "accessibility"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "score",
+        "weight"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T2",
+    "needs": [
+      "interaction-edge"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "A linked Vega chart: one interaction edge back through the fan-out."
+}

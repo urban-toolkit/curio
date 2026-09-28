@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.manifest import AgentManifest
+from utk_curio.backend.app.agents.providers import ChatTurn, ReplySchemaRefused
 
 # A child's reply is untrusted context fed back to the parent loop — bounded.
 DELEGATE_RESULT_MAX_CHARS = 24_000
@@ -64,6 +65,9 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     installed matches but a ``delegatesTo`` entry is visible in the catalog,
     the outcome is ``not-installed`` (the missing-specialist proposal path);
     a capability nobody declares is ``unresolvable``.
+
+    An internal built-in is never installed: it resolves from the roster, so
+    it is ``ok`` wherever the walk reaches it, and never an install proposal.
     """
     from utk_curio.backend.app.agents import project_agents, services
     from utk_curio.backend.app.projects import storage as projects_storage
@@ -73,16 +77,21 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     missing: Resolution | None = None
     preferred_ids = list(parent.delegates_to)
     for agent_id in preferred_ids:
+        if not parent.delegates(agent_id, capability):
+            continue  # this entry delegates other capabilities of that agent
         for coord in _candidate_coords(agent_id, installed):
             m = services._resolve_definition(user_key, coord)
             if m is not None and capability in m.capability_ids:
                 return Resolution("ok", coord, m)
+        internal = _internal_resolution(user_key, agent_id, capability)
+        if internal is not None:
+            return internal
         if missing is None:
             visible_coord, visible_m = find_visible(user_key, agent_id)
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
     # Capability-first fallback: any other installed template declaring it.
-    preferred = set(preferred_ids)
+    preferred = {a for a in preferred_ids if parent.delegates(a, capability)}
     for coord in sorted(installed):
         if coord.split("@", 1)[0] in preferred:
             continue  # already walked above
@@ -96,10 +105,26 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
         from utk_curio.backend.app.agents import builtin
 
         for m in builtin.list_builtin_manifests():
-            if capability in m.capability_ids:
+            # An internal agent is reached only through a parent that
+            # delegates it that capability, which the walk above covers.
+            if capability in m.capability_ids and not builtin.is_internal(m.dir_name):
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
     return missing or Resolution("unresolvable")
+
+
+def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resolution | None:
+    """The roster's own definition of an internal built-in, when it declares
+    *capability*."""
+    from utk_curio.backend.app.agents import builtin, services
+
+    if not builtin.is_internal(agent_id):
+        return None
+    coord = f"{agent_id}@{builtin.BUILTIN_VERSION}"
+    m = services._resolve_definition(user_key, coord)
+    if m is not None and capability in m.capability_ids:
+        return Resolution("ok", coord, m)
+    return None
 
 
 def find_visible(user_key: str, agent_id: str) -> tuple[str | None, AgentManifest | None]:
@@ -126,7 +151,7 @@ def visible_capability_entries(user_key: str, parent: AgentManifest) -> list[tup
         if m is None:
             continue
         for cap in m.capability_ids:
-            if cap not in seen:
+            if cap not in seen and parent.delegates(agent_id, cap):
                 seen.add(cap)
                 entries.append((cap, m.name))
     return entries
@@ -159,6 +184,10 @@ def run_delegate(
 ) -> tuple[str, str, dict]:
     """One synchronous, depth-1 child run (DEC-046 — direct provider-port code).
 
+    *config* is the caller's configuration. The child runs on its own, resolved
+    here when it starts (``provider_config.resolve_llm``), so a choice changed
+    in AI Settings reaches the delegates a running Solve starts after it.
+
     Returns ``(status, result_text, child_record)``: ``status`` is
     ``"ok"``/``"error"``, ``result_text`` is the bounded child reply (or the
     failure reason), and ``child_record`` is the child's execution record —
@@ -166,7 +195,9 @@ def run_delegate(
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
     """
-    from utk_curio.backend.app.agents import ledger, services
+    from utk_curio.backend.app.agents import (
+        catalog_settings, contracts, ledger, provider_config, reply_schemas, services,
+    )
     from utk_curio.backend.app.projects import storage as projects_storage
 
     child_id = uuid.uuid4().hex
@@ -179,19 +210,48 @@ def run_delegate(
         record["capability"] = capability
         return record
 
-    pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model}
+    try:
+        # The child's own choice in AI Settings, else its caller's
+        # configuration; an internal agent always runs on its caller's.
+        config = provider_config.resolve_llm(user_key, coord.split("@", 1)[0], caller=config)
+    except provider_config.ProviderConfigError as exc:
+        return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, {"coord": coord}))
+    pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model,
+                  "llm": provider_config.llm_pin(config)}
     try:
         manifest = services._resolve_definition(user_key, coord)
-        instruction = services._resolve_instruction_text(user_key, coord)
+        # The capability is the mode: a merged agent runs that capability's
+        # own instruction.
+        instruction = services._resolve_instruction_text(user_key, coord, capability=capability)
         if instruction is None:
             return (
                 "error",
                 f"delegate {coord} has no instruction prompt available",
                 _record("error", {}, pins),
             )
+        configuration = (
+            catalog_settings.configuration_for(user_key, manifest.config_keys(capability))
+            if manifest is not None else None
+        )
         preamble = services._resolve_prompt_text(user_key, coord, "system")
-        # Depth-1 structurally: the delegate's own prompts, NO tail instruction.
-        system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
+
+        def _system(text: str) -> dict:
+            # Depth-1 structurally: the delegate's own prompts and
+            # configuration, NO tool protocol and no runtime blocks.
+            return contracts.system_message(contracts.compose_system(
+                preamble=preamble, instruction=text, configuration=configuration,
+            ))
+
+        # A document with a schema, on a provider that takes one: the reply is
+        # held to it, under the instruction written for that.
+        reply = _reply_schema(user_key, project_id, manifest, capability, inputs, config)
+        constrained = (
+            services._resolve_prompt_text(user_key, coord, reply_schemas.AUTK_PROMPT_KEY)
+            if reply is not None else None
+        )
+        if not constrained:
+            reply = None
+        system = _system(constrained or instruction)
         spec = projects_storage.read_spec(user_key, project_id)
         run_policy = services._run_policy(user_key, project_id, coord, spec or {})
         admit = dict(run_policy["admit"])
@@ -199,44 +259,96 @@ def run_delegate(
         admit["attachment_key"] = attachment_id
         pins = {
             "coord": coord,
-            "promptSha256": services._prompt_digest(manifest),
+            "promptSha256": services._prompt_digest(manifest, capability=capability),
             "intentEdited": False,
             "provider": config.api_type,
             "model": config.model,
+            "llm": provider_config.llm_pin(config),
             "tools": [],  # structurally tool-less (DEC-046)
             "policy": run_policy["policy_pins"],
+            **services._configuration_pin(configuration),
         }
-        reservation = ledger.reserve(user_key, reservation_id=child_id, **admit)
+        if reply is not None:
+            asset = manifest.prompts.get(reply_schemas.AUTK_PROMPT_KEY)
+            pins["promptSha256"] = asset.sha256 if asset is not None else None
+            pins["replySchema"] = reply.name
+        reservation = ledger.reserve(
+            user_key, reservation_id=child_id, llm_config_id=config.config_id, **admit
+        )
     except Exception as exc:  # resolution/policy failure - data, not an error
         return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
 
     usage_sink: dict = {}
-    try:
+    task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
+
+    def _ask(system_message: dict, schema) -> ChatTurn:
         # Through the services-bound provider symbol so the whole run shares
-        # one port (and one test seam).
-        reply = services.run_chat_completion(
-            config,
-            [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)},
-            ],
+        # one port (and one test seam). No reply schema, no keyword: the call
+        # is then exactly what it was before reply schemas.
+        extra = {"reply_schema": schema.request()} if schema is not None else {}
+        return ChatTurn.of(services.run_chat_turn(
+            config, [system_message, task],
             max_output_tokens=run_policy["max_output_tokens"],
-            usage_out=usage_sink,
-        )
+            usage_out=usage_sink, **extra,
+        ))
+
+    try:
+        try:
+            turn = _ask(system, reply)
+        except ReplySchemaRefused:
+            # The endpoint takes no reply schema for this model: the same
+            # call again, free, under the delegate's own instruction.
+            reply_schemas.note_refused(config)
+            reply = None
+            pins["promptSha256"] = services._prompt_digest(manifest, capability=capability)
+            pins.pop("replySchema", None)
+            pins["replySchemaRefused"] = True
+            turn = _ask(_system(instruction), None)
     except Exception as exc:
         settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="error")
         return (
             "error",
-            f"delegate {coord} failed: {exc}",
+            f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
             _record("error", usage_sink, pins),
         )
     settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
-    text = reply if isinstance(reply, str) else str(reply)
+    text = reply.decode(turn.text) if reply is not None else turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
         text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
     # The child's reply is returned verbatim as data — NEVER parsed for
     # toolRequest/delegateRequest (depth-1 by construction).
     return ("ok", text, _record("ok", usage_sink, pins))
+
+
+def _reply_schema(user_key: str, project_id: str, manifest, capability: str, inputs: dict, config):
+    """The reply schema a delegated run sends, or None: only a content
+    generation run for a node whose document has one, by a definition that
+    declares the instruction for writing it, on a provider that takes it
+    (``reply_schemas.for_run``)."""
+    from utk_curio.backend.app.agents import reply_schemas
+
+    if capability != "node.content.generate" or manifest is None:
+        return None
+    if reply_schemas.AUTK_PROMPT_KEY not in manifest.prompts:
+        return None
+    return reply_schemas.for_run(config, user_key, _document_grammar(user_key, project_id, inputs))
+
+
+def _document_grammar(user_key: str, project_id: str, inputs: dict) -> str | None:
+    """The grammar of the node a content generation run writes for: the
+    template roster's ``grammarId``, else the offline table, else None."""
+    from utk_curio.backend.app.agents import document_validation
+    from utk_curio.backend.app.execution import workflow_spec
+    from utk_curio.backend.app.packages import services as packages_services
+
+    node_type = (inputs or {}).get("nodeType") or ((inputs or {}).get("nodeContext") or {}).get("nodeType")
+    if not isinstance(node_type, str) or not node_type:
+        return None
+    try:
+        templates = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
+    except Exception:  # noqa: BLE001 - an unreadable roster falls to the offline table
+        templates = None
+    return document_validation.grammar_of(node_type, workflow_spec.grammar_id_of(node_type, templates))
 
 
 # ── dev/106: the hard-dependency closure ─────────────────────────────────────

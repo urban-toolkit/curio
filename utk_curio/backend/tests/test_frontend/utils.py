@@ -24,6 +24,7 @@ from playwright.sync_api import (
 # them. Re-exported here because call sites across the suite import them
 # from utils.
 from .workflow_spec import resolve_widget_placeholders, seed_node_code  # noqa: F401
+from . import comparisons
 
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
@@ -495,7 +496,6 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         parseOutput,
         save_memory_mapped_file,
         load_memory_mapped_file,
-        checkIOType,
     )
 
     outputs: dict[str, dict] = {}   # node_id → {"path": ..., "dataType": ...}
@@ -566,7 +566,8 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 
             # --- serialise exactly like the sandbox ---
             parsed = parseOutput(result)
-            checkIOType(parsed, node.type, False)
+            # dev/120: no name-keyed I/O check — the product never ran one on
+            # this output either; a baseline is minted for what the node returns.
             rel_path = save_memory_mapped_file(parsed)
 
             outputs[node.id] = {"path": rel_path, "dataType": parsed["dataType"]}
@@ -714,10 +715,9 @@ def execute_workflow_programmatically(
             json={
                 "code": indented_code,
                 "file_path": file_path,
-                # Send the on-the-wire namespaced id (`curio.builtin/...`)
-                # so the sandbox's checkIOType matches what the browser
-                # frontend posts; otherwise the programmatic runner would
-                # enable IO validation that the browser path silently skips.
+                # The on-the-wire namespaced id (`curio.builtin/...`), as the
+                # browser posts it: the sandbox tags the artifact and its log
+                # lines with it (no type dispatch happens on it — dev/120).
                 "nodeType": node.raw_type,
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner
@@ -1106,13 +1106,19 @@ def _assert_mintable(image, expected_path: str, page) -> None:
         )
 
 
+#: The most any screenshot comparison may let differ. A map is often under a
+#: fifth of its frame, so with a looser budget a frame whose map is missing can
+#: still pass. A comparison may ask for less, never more.
+MAX_DIFF_RATIO = 0.20
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
     *,
     test_name: str,
     pixel_threshold: int = 30,
-    max_diff_ratio: float = 0.20,
+    max_diff_ratio: float = MAX_DIFF_RATIO,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
@@ -1123,12 +1129,14 @@ def save_workflow_test_screenshot(
     compared pixel-by-pixel against it.  Both images are resized to the
     same dimensions before comparison so layout-only size changes don't
     cause false positives.  The assertion fails when more than
-    *max_diff_ratio* (default 15 %) of pixels differ by more than
+    *max_diff_ratio* (default 20%) of pixels differ by more than
     *pixel_threshold* (per-channel, 0-255).
 
     On failure the expected, actual, and diff images are attached to the
     Allure report so that reviewers can inspect the regression directly
-    from the GitHub Actions artifact.
+    from the GitHub Actions artifact. With ``CURIO_E2E_COMPARE_DIR`` set,
+    every comparison, passing or not, is also recorded there for the CI
+    report page (see comparisons.py).
 
     If the file does **not** exist the run FAILS. Creating a baseline is a
     deliberate act, ``pytest --mint-baselines``, because whatever the app renders
@@ -1170,6 +1178,11 @@ def save_workflow_test_screenshot(
 
     Returns the path to the expected screenshot file.
     """
+    if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
+        raise ValueError(
+            f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
+            "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
+        )
     from PIL import Image, ImageChops, ImageEnhance
     import numpy as np
 
@@ -1196,21 +1209,39 @@ def save_workflow_test_screenshot(
             return _capture_element(page, clip_selector)
         return _capture_full_page(page)
 
+    record_args = dict(
+        baseline=expected_path,
+        pixel_threshold=pixel_threshold,
+        max_diff_ratio=max_diff_ratio,
+        capture=f"element {clip_selector}" if clip_selector is not None else "full page",
+    )
+
+    minted_now = False
     if not os.path.isfile(expected_path):
         if not MINT_BASELINES:
-            raise AssertionError(
+            message = (
                 f"no baseline at {expected_path}. Run with --mint-baselines to "
                 "create it, on a build you trust and a machine whose rendering "
                 "matches CI's, then look at the PNG before committing it. A "
                 "baseline is the definition of correct for every later run, so "
                 "it is not something a test run should produce as a side effect."
             )
+            comparisons.record_missing(_capture, **record_args)
+            raise AssertionError(message)
         minted = _capture()
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
+        minted_now = True
 
     expected_img = Image.open(expected_path).convert("RGB")
-    actual_img = _capture()
+    try:
+        actual_img = _capture()
+    except Exception as exc:
+        comparisons.record(
+            "capture-error", expected=expected_img,
+            error=f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
 
     target_w = max(actual_img.width, expected_img.width)
     target_h = max(actual_img.height, expected_img.height)
@@ -1220,10 +1251,19 @@ def save_workflow_test_screenshot(
     diff = ImageChops.difference(actual_cmp, expected_cmp)
     arr = np.asarray(diff)
     total = int(arr.shape[0] * arr.shape[1])
-    mismatched = int((arr > pixel_threshold).any(axis=2).sum())
+    counted = (arr > pixel_threshold).any(axis=2)
+    mismatched = int(counted.sum())
     ratio = mismatched / total if total else 0.0
+    failed = ratio > max_diff_ratio
 
-    if ratio > max_diff_ratio:
+    comparisons.record(
+        "failed" if failed else "minted" if minted_now else "passed",
+        expected=expected_img, created=actual_img, expected_cmp=expected_cmp,
+        arr=arr, counted=counted, mismatched=mismatched, total=total,
+        ratio=ratio, **record_args,
+    )
+
+    if failed:
         actual_path = os.path.join(
             WORKFLOW_SCREENSHOT_EXPECTED_DIR,
             f"screenshot_{stem}_{test_name}_actual.png",
@@ -3010,6 +3050,90 @@ def assert_vega_canvas_rendered(
         )
 
 
+# An Autark map's canvas as it last drew, read after two animation frames. The
+# id is autkGrammarBehavior's ``'autk-grammar-map-' + nodeId``.
+_AUTK_MAP_PIXELS_JS = """async (id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return canvas.toDataURL('image/png');
+}"""
+
+# How the map canvas sits in the page: its box, the styles that could hide it,
+# and what the page reports on top at its centre.
+_AUTK_MAP_PLACEMENT_JS = """(id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const describe = (el) => el ? `${el.tagName.toLowerCase()}#${el.id}.${String(el.className).slice(0, 60)}` : null;
+    return {
+        box: [box.left, box.top, box.width, box.height],
+        backing: [canvas.width, canvas.height],
+        style: {display: style.display, visibility: style.visibility, opacity: style.opacity,
+                position: style.position, zIndex: style.zIndex},
+        topElement: describe(top),
+        topIsCanvas: top === canvas,
+    };
+}"""
+
+
+def assert_autark_map_drawn(
+    page, node_id: str, *, timeout: float = 30000, attach_as: str = ""
+) -> None:
+    """Assert an Autark map node's canvas holds a drawn, opaque map.
+
+    Read in the page, not from a screenshot. A drawn map is mostly opaque and
+    holds more than 8 colours; a cleared canvas is transparent, and a
+    background-only one holds one or two. With ``attach_as``, the Allure report
+    gets the canvas pixels, the canvas as an element, viewport and full-page
+    screenshot, and how the canvas is placed, so a map that drew but does not
+    show can be told apart from one that did not draw.
+    """
+    import base64
+
+    from PIL import Image
+
+    deadline = time.monotonic() + timeout / 1000
+    png, colours, opaque = None, 0, 0.0
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        if url:
+            png = base64.b64decode(url.split(",", 1)[1])
+            pixels = list(Image.open(BytesIO(png)).convert("RGBA").getdata())
+            solid = [p[:3] for p in pixels if p[3] >= 250]
+            opaque = len(solid) / max(1, len(pixels))
+            colours = len(set(solid))
+            if (colours > 8 and opaque > 0.5) or time.monotonic() >= deadline:
+                break
+        elif time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if attach_as:
+        if png:
+            allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+        canvas = page.locator(f"#autk-grammar-map-{node_id}")
+        if canvas.count():
+            allure.attach(canvas.first.screenshot(), name=f"{attach_as}: canvas screenshot",
+                          attachment_type=allure.attachment_type.PNG)
+        # The same moment as a viewport capture and as the full-page capture the
+        # baselines use, which re-renders the page into a larger surface.
+        page.evaluate("window.scrollTo(0, 0)")
+        allure.attach(page.screenshot(), name=f"{attach_as}: viewport screenshot",
+                      attachment_type=allure.attachment_type.PNG)
+        allure.attach(page.screenshot(full_page=True), name=f"{attach_as}: full-page screenshot",
+                      attachment_type=allure.attachment_type.PNG)
+        placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, node_id)
+        allure.attach(json.dumps({"opaqueShare": opaque, "opaqueColours": colours, "placement": placement}, indent=1),
+                      name=f"{attach_as}: canvas placement", attachment_type=allure.attachment_type.JSON)
+    assert png, f"Autark node {node_id} has no map canvas"
+    assert colours > 8 and opaque > 0.5, (
+        f"Autark node {node_id}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
+        f"colours, so no map was drawn"
+    )
+
+
 def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: float = 30000) -> None:
     """Assert a VIS_VEGA node explains why it has nothing to draw.
 
@@ -3142,46 +3266,64 @@ class FrontendPage(Page):
 # the live backend with no key and no network. Contract:
 # ``app/agents/testing_provider.py``.
 
-#: What ``use_scripted_llm`` writes as the user's model name. Never dispatched
-#: anywhere; it exists because ``resolve_provider_config`` treats an empty
-#: ``llm_model`` as "unconfigured" and falls back to the deployment default.
+#: The model name of the scripted configuration ``use_scripted_llm`` makes.
+#: Never dispatched anywhere; a configuration needs a model.
 SCRIPTED_MODEL = "scripted"
+#: Its label, so a second call in one test finds it instead of adding another.
+SCRIPTED_LABEL = "Scripted"
 
 
 def use_scripted_llm(backend_url: str, token: str) -> dict:
-    """Point this user's LLM provider at the scripted one.
+    """Make a scripted LLM configuration this user's default, and return it.
 
-    Goes through the real settings route (``PATCH /api/auth/me``) rather than a
-    test-only shortcut, so the resolution path under test is the production one:
-    ``resolve_provider_config`` reads these exact columns.
+    Goes through the real AI Settings routes (``/api/agents/llm``) rather than a
+    test-only shortcut, so the resolution path under test is the production one.
     """
-    return api_json(
-        f"{backend_url}/api/auth/me",
-        token,
-        method="PATCH",
-        payload={
-            "llm_api_type": "testing",
-            "llm_base_url": "",
-            "llm_api_key": "",
-            "llm_model": SCRIPTED_MODEL,
-        },
+    listing = api_json(f"{backend_url}/api/agents/llm", token)
+    config = next(
+        (c for c in listing["configs"] if c["label"] == SCRIPTED_LABEL), None
+    ) or api_json(
+        f"{backend_url}/api/agents/llm/configs", token, method="POST",
+        payload={"label": SCRIPTED_LABEL, "apiType": "testing", "model": SCRIPTED_MODEL},
+    )["config"]
+    assert config["apiType"] == "testing" and config["model"] == SCRIPTED_MODEL, config
+    chosen = api_json(
+        f"{backend_url}/api/agents/llm/default", token, method="PUT",
+        payload={"configId": config["id"]},
     )
+    assert chosen["default"] == config["id"], chosen
+    return config
 
 
-def script_agent_replies(backend_url: str, *replies: str, reset: bool = True) -> int:
+def script_agent_replies(
+    backend_url: str, *replies: str | dict, reset: bool = True,
+    by_intent: dict | None = None, native_tools: bool = False,
+    structured_output: bool = False,
+) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
     A multi-round run needs one entry per round: a reply carrying a
     ``toolRequest`` tail is answered by the runtime and the model is prompted
     again, so script the follow-up too. Returns how many are pending.
 
+    A reply is its text, ``{"text", "toolCalls"}`` for native tool calls, or
+    ``{"error", "status"}`` for an endpoint error. *native_tools* makes the
+    scripted endpoint call tools natively, so runs are offered their tools
+    instead of the fenced syntax (a reset puts it back on the fenced protocol).
+    *structured_output* makes it take a reply schema, so a content generation
+    run for an Autark node is held to the Autark document's schema: its reply
+    is then scripted as the constrained JSON (``reply_schemas``).
+
+    *by_intent* maps a substring of a delegated call's ``intent`` to its reply,
+    for calls whose order the test cannot know (Solve's per-node content).
+
     Resets by default. A reply left over from a previous test would be consumed
     by this one, and the failure would point anywhere but at the cause.
     """
-    body = _post_json(
-        f"{backend_url}/api/testing/agent-script",
-        {"replies": list(replies), "reset": reset},
-    )
+    payload = {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})}
+    if native_tools or structured_output:
+        payload["chatCapabilities"] = {"tools": native_tools, "structuredOutput": structured_output}
+    body = _post_json(f"{backend_url}/api/testing/agent-script", payload)
     return body["pending"]
 
 
@@ -3194,6 +3336,19 @@ def captured_agent_prompts(backend_url: str) -> list:
     agent's own preamble and instruction bytes.
     """
     return _get_json(f"{backend_url}/api/testing/agent-script")["captured"]
+
+
+def captured_agent_calls(backend_url: str) -> list:
+    """``{configId, model}`` of every scripted call since the last reset, oldest
+    first: which LLM configuration answered each one, never its key."""
+    return _get_json(f"{backend_url}/api/testing/agent-script")["calls"]
+
+
+def captured_agent_offers(backend_url: str) -> list:
+    """``{tools, toolChoice}`` of every scripted call since the last reset,
+    oldest first: the native tools each call offered, none on the fenced
+    protocol."""
+    return _get_json(f"{backend_url}/api/testing/agent-script")["offered"]
 
 
 def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:

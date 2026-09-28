@@ -40,6 +40,6 @@ that meets an uncached file says so.
 
 ## Examples
 
-- [Storage: orthorectified imagery](../../docs/examples/17-storage-orthorectified-imagery.md) runs Mosaic Rasters on one year's tiles.
-- [Storage: photos and videos](../../docs/examples/20-storage-photos-and-videos.md) runs Sample Video Frames on a survey's video.
-- [Storage: audio recordings](../../docs/examples/21-storage-audio-recordings.md) runs Split Audio and charts the levels.
+- [Storage: orthorectified imagery](../../docs/examples/18-storage-orthorectified-imagery.md) runs Mosaic Rasters on one year's tiles.
+- [Storage: photos and videos](../../docs/examples/21-storage-photos-and-videos.md) runs Sample Video Frames on a survey's video.
+- [Storage: audio recordings](../../docs/examples/22-storage-audio-recordings.md) runs Split Audio and charts the levels.

@@ -4,6 +4,7 @@ import {
   formatTokenCount,
   sessionTokenTotals,
   turnStatusDisplay,
+  answeredBy,
 } from "../../components/agents/attach/agentRunStatus";
 import type { AgentSessionTurn } from "../../api/agentsApi";
 
@@ -152,3 +153,16 @@ describe("turnStatusDisplay (per-reply, dev/80 amendment)", () => {
     expect(turnStatusDisplay({ role: "user", text: "q" })).toBeNull();
   });
 });
+
+describe("answeredBy", () => {
+  it("reads the configuration's label and the model from the pins", () => {
+    const execution = {
+      executionId: "e", usage: null, status: "ok" as const,
+      pins: { model: "gpt-4o-mini", llm: { configId: "llm-1", label: "Work", baseUrlHost: "api.openai.com", source: "default" } },
+    };
+    expect(answeredBy(execution)).toBe("Work (gpt-4o-mini)");
+    expect(answeredBy({ ...execution, pins: { model: "gpt-4o-mini" } })).toBe("gpt-4o-mini");
+    expect(answeredBy(undefined)).toBeUndefined();
+  });
+});
+

@@ -87,6 +87,8 @@ There are two places you manage packages:
 
 Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
 
+A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **AI Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_dataset_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+
 ---
 
 ## 4. Creating a package from a canvas node
@@ -149,6 +151,8 @@ Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` folder
 1. Open the catalog drawer (Tools panel → **Node Catalog** → **Browse Node Catalog +**).
 2. Click **Import package** in the footer.
 3. Pick the archive.
+
+The `/catalog/nodes` page has the same **Import package** button in its header.
 
 The manifest is validated before the package is installed, and an archive whose `<packageId>@<major>` you already have is refused.
 

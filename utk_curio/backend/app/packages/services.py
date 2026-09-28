@@ -633,6 +633,14 @@ def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
 _RENDERED_INPUT_CAPACITY: dict[str, int] = {"curio.builtin/merge-flow": 5}
 
 
+def input_capacity(canonical: str, port_count: int) -> int:
+    """How many incoming edges a node of this template accepts: one per
+    rendered input handle, or the rendered slot count where the canvas renders
+    more (DEC-051). The one rule ``maxIncomingEdges`` and the agents' preamble
+    both read."""
+    return _RENDERED_INPUT_CAPACITY.get(canonical, port_count)
+
+
 def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     """Per-port ``{types, min, max}`` rows + the template's incoming-edge
     capacity.
@@ -652,8 +660,7 @@ def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
     for port in template.input_ports:
         lo, hi = parse_cardinality(port.cardinality)
         inputs.append({"types": list(port.types), "min": lo, "max": hi})
-    max_incoming = _RENDERED_INPUT_CAPACITY.get(canonical, len(inputs))
-    return inputs, max_incoming
+    return inputs, input_capacity(canonical, len(inputs))
 
 
 # One value, three legal spellings (memo dev/93 D3; the dev/90 A14 family).
@@ -861,6 +868,11 @@ def _template_entry(package_id: str, template) -> dict:
         "id": canonical,
         "label": template.label,
         "description": template.description,
+        "category": template.category,
+        # Whether a node of this template can carry an interaction edge: its
+        # third, "in/out" handle. plan_topology reads the interaction rule
+        # from this and the category.
+        "bidirectional": bool(template.bidirectional),
         # dev/90 A14: a PRESENTATION template (editor none + a custom
         # behavior — the dev/89 post-it profile) holds authorable CONTENT
         # (the note text its behavior renders) even though it has no code
@@ -875,9 +887,94 @@ def _template_entry(package_id: str, template) -> dict:
         # agent when none of the available templates is one, so it never
         # reaches for a code template (or a canvas node's type) to hold a note.
         "presentation": bool(template.behavior and template.editor == "none"),
+        # dev/119 (DEC-076): the schema-required facts the runner's
+        # executability is derived from — a hand-kept list of legacy names is
+        # the drift DEC-062 exists to prevent. ``executable`` is THE derivation:
+        # an editable code surface, an engine the sandbox runs, and no package
+        # backend handler (dev/91's separate execution path).
+        "engine": template.engine,
+        "editor": template.editor,
+        "hasCode": bool(template.has_code),
+        "backendHandler": bool(template.backend_handler),
+        "executable": template_is_executable(template),
+        # dev/134: what KIND of content this template carries, derived from the
+        # same declared facts (never a name list — DEC-076's rule). The write
+        # gate reads it: code runs in the sandbox, a grammar is validated as a
+        # document, and a wired node has nothing to author at all.
+        "hasGrammar": bool(template.has_grammar),
+        **({"grammar": template.grammar_id} if template.grammar_id else {}),
+        "contentKind": template_content_kind(template),
         "inputs": inputs,
         "maxIncomingEdges": max_incoming,
     }
+
+
+#: dev/134: the four kinds of content a node template can carry.
+CONTENT_KIND_CODE = "code"
+CONTENT_KIND_GRAMMAR = "grammar"
+CONTENT_KIND_NOTE = "note"
+CONTENT_KIND_NONE = "none"
+
+
+def template_content_kind(template) -> str:
+    """What kind of content a node of this template carries (memo dev/134).
+
+    The write gate needs three different things of three different kinds, and
+    the manifest already declares which is which — so this is a DERIVATION, in
+    one place, rather than a list of node names somewhere in the agents layer
+    (``DEC-076``'s rule, the same one ``template_is_executable`` follows):
+
+    - ``code``    — an editable code surface the sandbox runs (``hasCode``);
+    - ``grammar`` — an authored DOCUMENT, validated but never executed
+      (``hasGrammar``; ``grammarId`` says which grammar);
+    - ``none``    — nothing is authored: the node renders or forwards its INPUT
+      and everything it does comes from the wiring (``editor: "none"`` with an
+      input port, or an explicit ``containerStyle.noContent``). Asking a model
+      for this node's content can only produce something wrong;
+    - ``note``    — authored presentation content with no validator: dev/90
+      A14's post-it profile (``editor: "none"`` and NO input port).
+    """
+    if bool(template.has_code):
+        return CONTENT_KIND_CODE
+    if bool(template.has_grammar):
+        return CONTENT_KIND_GRAMMAR
+    if (template.container_style or {}).get("noContent"):
+        return CONTENT_KIND_NONE
+    if str(template.editor or "") == "none":
+        # A presentation template with an input renders THAT (a pool, a merge, a
+        # simple view); one without renders what its author wrote (a note).
+        return CONTENT_KIND_NONE if (template.input_ports or []) else CONTENT_KIND_NOTE
+    return CONTENT_KIND_NONE
+
+
+def template_is_executable(template) -> bool:
+    """dev/119 (DEC-076): whether the sandbox can RUN a node of this template.
+    Derived from the manifest's required fields, never from its name."""
+    return bool(
+        getattr(template, "has_code", False)
+        and getattr(template, "engine", None) in ("python", "javascript")
+        and not getattr(template, "backend_handler", None)
+    )
+
+
+def roster_templates(user_key: str, project_id: str) -> dict | None:
+    """dev/119: ``{canonical_id: {"executable", "engine"}}`` for every template
+    the project can use — the snapshot the runner, the loop and the batch
+    classify against. ``None`` when the roster is unreachable (callers fall
+    back to the legacy tables)."""
+    try:
+        return {
+            t["id"]: {
+                "executable": bool(t.get("executable")),
+                "engine": t.get("engine") or "python",
+                # dev/134: the write gate's routing rides the same snapshot.
+                "contentKind": t.get("contentKind") or "none",
+                **({"grammar": t["grammar"]} if t.get("grammar") else {}),
+            }
+            for t in available_templates(user_key, project_id)
+        }
+    except Exception:
+        return None
 
 
 def installed_templates_not_in_project(user_key: str, project_id: str) -> list[dict]:

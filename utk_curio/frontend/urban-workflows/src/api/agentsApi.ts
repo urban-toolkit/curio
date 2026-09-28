@@ -16,17 +16,9 @@ const BACKEND_URL = backendUrl();
  * Import (account) and Install (project) are separate commands; neither chains.
  */
 
-/** The deployment-wide provider default, with no secret in it. */
-export interface ProviderDefault {
-  apiType: string | null;
-  baseUrl: string | null;
-  model: string | null;
-  hasApiKey: boolean;
-}
-
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
-  id: string; // e.g. "agent.node-explainer"
+  id: string; // e.g. "agent.my-helper"
   version: string;
   dirName: string; // "<id>@<version>"
   name: string;
@@ -46,6 +38,39 @@ export interface AgentCard {
   /** dev/106: server-resolved hard dependencies (``requiresAgents``) — what an
    * Install adds alongside this agent. ``[]`` for every leaf agent. */
   requiresAgents: AgentRequirement[];
+  /** Whether the agent is a catalog card. Every listing shows cards only; an
+   * internal built-in runs as a delegate and is never listed or attached. */
+  inCatalog?: boolean;
+}
+
+/** An agent, and optionally one of its capabilities, that reads a catalog
+ * setting. A null capability means every run of the agent. */
+export interface CatalogSettingReader {
+  agentId: string;
+  agentName: string;
+  capability: string | null;
+  /** An internal agent: it runs only as a delegate, never as a card. */
+  internal: boolean;
+}
+
+/** One catalog setting: a value the user owns, such as the keyword types. */
+export interface CatalogSetting {
+  key: string;
+  label: string;
+  description: string;
+  /** JSON Schema of the value. */
+  schema: Record<string, unknown>;
+  default: unknown;
+  value: unknown;
+  isDefault: boolean;
+  readBy: CatalogSettingReader[];
+}
+
+export interface CatalogSettingsResponse {
+  settings: CatalogSetting[];
+  /** False for an account that may not change them, with the reason. */
+  editable: boolean;
+  reason: string | null;
 }
 
 /** One direct hard dependency of an agent (dev/106). */
@@ -124,6 +149,22 @@ export interface AgentAttachment {
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
   builderSession?: AgentBuilderSession | null;
+  /** dev/115 (DEC-073): the background job this server process holds for the
+   * attachment — a Solve batch or a per-node Solve that outlives the request.
+   * Null when none runs; the dock's running indicator and the chat panel's
+   * re-attach derive from it. */
+  liveJob?: AgentLiveJob | null;
+}
+
+/** dev/115: the liveness projection of a detached agent job — no event bodies. */
+export interface AgentLiveJob {
+  executionId: string;
+  kind: "solve-batch" | "solve-node" | string;
+  status: "running" | "done" | "error" | string;
+  startedAt: number;
+  heartbeatAt?: number;
+  finishedAt?: number | null;
+  events?: number;
 }
 
 /** The activeProposal mirror row (dev/41; dev/67-5/8/9 extensions). */
@@ -144,7 +185,13 @@ export interface AgentProposalSummary {
 /** dev/52 DR-2: the persisted Plan → Solve state riding the attachment.
  * dev/67-5 adds the per-node Simulation Mode ledger. */
 export interface AgentBuilderSession {
-  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready";
+  /** dev/115: `interrupted` — the server stopped while solving (DEC-021);
+   * Retry starts a new execution linked to it, nothing is replayed. */
+  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready" | "interrupted";
+  /** dev/115: when the session was reconciled to `interrupted`, and the
+   * execution that expired with the process. */
+  interruptedAt?: number;
+  interruptedExecutionId?: string;
   planProposalId?: string;
   appliedPlanId?: string;
   /** Plan-created node id → its solve status. */
@@ -162,10 +209,7 @@ export interface AgentBuilderSession {
   /** dev/67-9: ref → its validated content proposal. dev/72 homes the
    * proposal on the node's own agent — the object shape carries where it
    * lives; legacy string values mean builder-homed. */
-  nodeProposals?: Record<
-    string,
-    string | { proposalId: string; attachmentId?: string | null }
-  >;
+  nodeProposals?: Record<string, string | { proposalId: string; attachmentId?: string | null }>;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -187,6 +231,8 @@ export interface AgentExecution {
     intentEdited?: boolean;
     provider?: string;
     model?: string;
+    /** The LLM configuration that answered: never its key. */
+    llm?: { configId: string | null; label: string; baseUrlHost: string; source: string };
     policy?: Record<string, number | null>;
   };
   usage: AgentUsage | null;
@@ -219,14 +265,7 @@ export interface AgentCardPart {
  * bounded and scheme-allowlisted server-side, sanitized again at render. */
 export interface AgentDatasetCandidateRow {
   name: string;
-  sourceType:
-    | "api"
-    | "endpoint"
-    | "portal"
-    | "catalog"
-    | "document"
-    | "database"
-    | "lake";
+  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database" | "lake";
   url?: string;
   provider?: string;
   format?: string;
@@ -236,14 +275,33 @@ export interface AgentDatasetCandidateRow {
   /** Catalog lane only: the id dataset.install proposals reference. */
   datasetId?: string;
   installed?: boolean;
+  /** dev/132: what can be DONE with this row, read from the probe's own
+   * observation (never the model's prose) — code can fetch it, a person must
+   * download it from the portal, or the runtime could not tell. */
+  access?: "fetchable" | "manual-download" | "unknown" | string;
+  /** The one-line reason for `access` — the content type, status or page title
+   * the probe actually saw. */
+  accessWhy?: string;
+  /** Manual rows only: the portal's own download steps, as observed. */
+  downloadSteps?: string[];
+  /** dev/132: a catalog row the user imported themselves after the card was
+   * minted — its file is here, so nothing needs installing first. */
+  imported?: boolean;
   /** External lane only: the portal coordinate a datalake.acquire proposal
    *  references. Both or neither - half a coordinate is dropped server-side. */
   sourceId?: string;
   resourceId?: string;
   /** Whether Curio can actually download this row. **Set by the runtime**
-   *  against the real source roster, never by the model: it may name a source,
-   *  it may not claim the run can act on one. */
+   *  against the real source roster and the probe, never by the model: it may
+   *  name a source, it may not claim the run can act on one. A row Curio
+   *  downloads offers only that, never the portal steps. */
   acquirable?: boolean;
+  /** A confirmed pick Curio downloaded, or is downloading: where it came from. */
+  lakeSource?: { sourceId?: string; resourceId?: string };
+  /** A confirmed pick whose download is still running. */
+  acquiring?: { jobId: string };
+  /** Why a confirmed row's download failed. */
+  acquireError?: string;
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {
@@ -277,14 +335,103 @@ export interface AgentDelegationPart {
   attachmentId: string | null;
   status: "ok" | "failed" | string;
   summary: string;
+  /** What the delegated agent ran on, which may not be the parent's. */
+  model?: string;
+  llmLabel?: string;
 }
 
-export type AgentProposalStatus =
-  | "pending"
-  | "applied"
-  | "dismissed"
-  | "superseded"
-  | "stale";
+/** dev/114: one grounded source reference on a proposal. */
+export interface AgentSourceRef {
+  kind: "catalog" | "external" | "user-path" | "synthetic" | "secret" | string;
+  /** The literal the code uses: a path, a curio_dataset_path("<id>") call, or a URL. */
+  value?: string;
+  datasetId?: string;
+  title?: string;
+  format?: string;
+  /** external only: the DEC-053 probe verdict the runtime recorded. */
+  verification?: AgentDatasetCandidateRow["verification"];
+  /** external only: "credential-gated" when the endpoint answered 401/403. */
+  requirement?: string;
+  /** external only (dev/116): a saved connection key is bound to this host. */
+  hint?: string;
+  /** secret only (dev/116): the connection key the code reaches by name. */
+  name?: string;
+  host?: string;
+  delivery?: string;
+}
+
+/** dev/116: what a `source-missing` failure asks the user for.
+ *  dev/126 adds `dataset-selection`: the node's source is with the user —
+ *  its Dataset Finder holds candidates awaiting a selection. */
+export interface AgentRemedy {
+  kind: "connection-key" | "use-connection-key" | "dataset-selection" | "llm-config" | string;
+  /** llm-config: the agent no LLM configuration answers. */
+  agentId?: string | null;
+  host?: string;
+  /** connection-key: a name the settings form can suggest. */
+  suggestedName?: string;
+  /** use-connection-key: the saved key the builder did not use. */
+  name?: string;
+  /** dataset-selection (dev/126): the chat to open, and the node it resolves. */
+  attachmentId?: string;
+  nodeId?: string;
+}
+
+/** dev/126: one confirmed candidate — identifiers ONLY. The server resolves
+ *  the key against the rows it proposed itself, so a client can never
+ *  introduce a source the runtime did not verify. */
+export interface AgentDatasetPick {
+  lane: "catalog" | "external";
+  key: string;
+}
+
+/** dev/126: the recorded selection for a node. */
+export interface AgentDatasetSelection {
+  attachmentId: string;
+  nodeId?: string;
+  status: "resolved" | "awaiting-install" | "candidates-pending" | string;
+  picks: AgentDatasetCandidateRow[];
+  /** dev/132: what the runtime did with the confirmation — a fetchable source
+   * is handed to the node's own builder automatically (no prompt to compose);
+   * a portal row waits for the download and the Import button. */
+  delegated?: {
+    status:
+      | "delegating"
+      | "session-running"
+      | "manual-download"
+      | "no-builder"
+      | "skipped"
+      | "acquiring"
+      | "acquire-failed"
+      | string;
+    reason?: string;
+    attachmentId?: string;
+    nodeId?: string;
+    executionId?: string;
+    sources?: string[];
+    jobIds?: string[];
+  };
+  /** The Data Lake downloads the confirmation started, one per acquirable row. */
+  acquisitions?: {
+    name?: string;
+    sourceId: string;
+    resourceId: string;
+    status: "acquired" | "acquiring" | "failed" | string;
+    datasetId?: string;
+    jobId?: string;
+    error?: string;
+    alreadyPresent?: boolean;
+  }[];
+}
+
+/** dev/114: the proposal's source block — bounded plain data. */
+export interface AgentProposalSource {
+  kind: "catalog" | "external" | "user-path" | "synthetic" | "mixed" | string;
+  label: string;
+  refs: AgentSourceRef[];
+}
+
+export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superseded" | "stale";
 
 /**
  * A review-before-apply proposal (memo dev/41): runtime-minted when a granted
@@ -299,8 +446,18 @@ export interface AgentProposalPart {
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
   preview: string;
-  /** Tool-specific revision-safety basis (dev/41 digest pins; dev/48 nodeType/coord/slug pins). */
-  pins: Record<string, string>;
+  /**
+   * Tool-specific revision-safety basis (dev/41 digest pins; dev/48
+   * nodeType/coord/slug pins). `executable` (dev/119, DEC-076) is display,
+   * not a pin: the roster's answer to whether the sandbox can run a
+   * node.create's kind — the card never keeps its own list.
+   */
+  pins: {
+    [key: string]: string | boolean | undefined;
+    nodeType?: string;
+    dirName?: string;
+    executable?: boolean;
+  };
   status: AgentProposalStatus;
   /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
   justification?: string;
@@ -317,10 +474,20 @@ export interface AgentProposalPart {
   draft?: {
     mode: string;
     target: string;
-    files: { added: string[]; modified: string[]; addedTotal: number;
-             modifiedTotal: number; preservedTotal: number };
-    templates: { added: string[]; modified: string[]; addedTotal: number;
-                 modifiedTotal: number; preservedTotal: number };
+    files: {
+      added: string[];
+      modified: string[];
+      addedTotal: number;
+      modifiedTotal: number;
+      preservedTotal: number;
+    };
+    templates: {
+      added: string[];
+      modified: string[];
+      addedTotal: number;
+      modifiedTotal: number;
+      preservedTotal: number;
+    };
     dependencies?: {
       /** dev/97: where the python deps will live — "overlay" (isolated,
        * backend handlers only), "both" (plus the shared interpreter for
@@ -345,6 +512,10 @@ export interface AgentProposalPart {
   };
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
+  /** dev/114 (DEC-072): how the proposed content's sources were grounded —
+   * runtime-derived at mint (never model-claimed); display + provenance,
+   * not a pin. Absent when the content opens no file and fetches no URL. */
+  source?: AgentProposalSource;
   /** dev/67-7: the validation verdict riding a validated content proposal. */
   validation?: {
     verdict: "pass" | "fail" | string;
@@ -358,7 +529,11 @@ export interface AgentProposalPart {
       blockerLabel?: string;
       warnings?: string;
       goal?: string;
+      durationMs?: number;
     };
+    /** dev/115: the attempt trail — one row per round the runtime executed
+     * (or refused before executing): what ran, how it failed, what fixed it. */
+    attempts?: AgentValidationAttempt[];
   };
   /** dataflow.plan.write only (dev/52): the plan's display copy for the review card. */
   plan?: {
@@ -378,6 +553,8 @@ export interface AgentProposalPart {
       from: string;
       to: string;
       toHandle?: string;
+      /** dev/112 (DEC-069): present only for interaction (feedback) edges. */
+      kind?: "data" | "interaction";
       fromLabel: string;
       toLabel: string;
     }>;
@@ -386,6 +563,8 @@ export interface AgentProposalPart {
     removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
     removedEdgeCount?: number;
     cascadeCount?: number;
+    /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
+    removedEdges?: Array<{ id: string; fromLabel: string; toLabel: string; kind?: "interaction" }>;
   };
 }
 
@@ -438,10 +617,17 @@ export interface AgentApplyResult {
       /** dev/67-3: explicit handles from the apply (merge slots in_N). */
       sourceHandle?: string;
       targetHandle?: string;
+      /** dev/112: `"Interaction"` for a feedback edge. */
+      type?: string;
     }>;
     removedNodeIds?: string[];
     removedEdgeIds?: string[];
   };
+  /** dev/126: the plan-node agents this apply attached (Node Builder on every
+   * created node, Dataset Finder on every data-loading one) — and anything it
+   * could not, with the reason. */
+  attachedAgents?: AgentAttachedAgentRow[];
+  skippedAgents?: AgentAttachedAgentRow[];
   /** dataflow.plan.write: the builder session after apply. */
   builderSession?: AgentBuilderSession | null;
   /** package.install / package.draft.apply: the installed package. */
@@ -476,13 +662,30 @@ export interface AgentPlanNodeApplyResult {
     target: string;
     sourceHandle?: string;
     targetHandle?: string;
+    type?: string; // dev/112
   }>;
   /** dev/71: the sweep's per-edge outcomes (index-keyed; refusals named). */
-  edgeResults?: Record<string, { status: string; reason?: string; fromLabel?: string; toLabel?: string }>;
+  edgeResults?: Record<
+    string,
+    { status: string; reason?: string; fromLabel?: string; toLabel?: string }
+  >;
   edgeStates?: Record<string, string>;
   /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
   attachedAgentId?: string | null;
+  /** dev/126: every agent this apply gave the created node(s) — and anything
+   * it could not, with the reason. Both apply paths report it. */
+  attachedAgents?: AgentAttachedAgentRow[];
+  skippedAgents?: AgentAttachedAgentRow[];
   builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/126: one plan-node agent attachment an apply made (or could not). */
+export interface AgentAttachedAgentRow {
+  nodeId: string;
+  agentId: string;
+  attachmentId?: string | null;
+  status: "attached" | "existing" | "skipped" | string;
+  reason?: string;
 }
 
 /** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
@@ -498,6 +701,7 @@ export interface AgentPlanEdgesResult {
       toLabel: string;
       edgeId?: string;
       targetHandle?: string;
+      kind?: "interaction"; // dev/112
       reason?: string;
       note?: string;
     }
@@ -509,16 +713,70 @@ export interface AgentPlanEdgesResult {
     target: string;
     sourceHandle?: string;
     targetHandle?: string;
+    type?: string; // dev/112
   }>;
   builderSession?: AgentBuilderSession | null;
 }
 
 /** dev/52 Solve response: per-node outcomes + live-canvas content payloads.
  * dev/63 adds the streamed batch's cancellation facts. */
+/** dev/115: one round of the verified-content loop, as the cards render it. */
+export interface AgentValidationAttempt {
+  round: number;
+  verdict: "pass" | "fail" | "infrastructure" | string;
+  kind?: string;
+  detail?: string;
+  stderrTail?: string;
+  outputDataType?: string;
+  durationMs?: number;
+  contentSha256?: string;
+  /** "current content" (round 0 ran the node as it was) or "generated". */
+  source?: string;
+  /** dev/115 field fix: what the fetched endpoint actually answered when the round failed. */
+  endpointEvidence?: string;
+  /** dev/116: a credential decline's concrete remedy. */
+  remedy?: AgentRemedy;
+  /** dev/127: the candidate this round ran (failed rounds only). */
+  code?: string;
+  codeTruncated?: boolean;
+  codeIsProse?: boolean;
+  /** dev/118: ancestors whose earlier output stood in for a re-run. */
+  reusedNodes?: string[];
+  /** dev/118: a vanished reused artifact made the slice run whole once (not a round). */
+  reuseRetried?: boolean;
+}
+
+/** dev/118 (DEC-075): one topological wave of a Solve batch, from `solve_wave`. */
+export interface AgentSolveWave {
+  wave: number;
+  of: number;
+  nodeIds: string[];
+}
+
+/** One node's outcome on the Solve payload (dev/63; dev/115 adds the verdict). */
+export interface AgentSolveNodeResult {
+  status: "solved" | "failed" | "skipped" | "pending" | "proposed" | string;
+  error?: string;
+  /** dev/115: a sandbox outage leaves the node pending with this reason. */
+  reason?: string;
+  verdict?: "pass" | "fail" | "infrastructure" | string;
+  rounds?: number;
+  attempts?: AgentValidationAttempt[];
+  proposalId?: string;
+  proposalAttachmentId?: string | null;
+  /** dev/116: present when the failure asks for a connection key. */
+  remedy?: AgentRemedy;
+  /** dev/127: which bound ended the repair loop (rounds, budget, repeat, …). */
+  stoppedBy?: string;
+  /** dev/118: a browser-rendered kind was written, not executed. `reason`
+   * above also carries the batch's time budget or a slice bound (pending/skipped). */
+  verification?: { status: "not-executable" | string; reason?: string };
+}
+
 export interface AgentSolveResult {
   attachmentId: string;
   executionId: string;
-  results: Record<string, { status: "solved" | "failed" | "skipped"; error?: string }>;
+  results: Record<string, AgentSolveNodeResult>;
   appliedContents: Array<{ nodeId: string; content: string }>;
   builderSession: AgentBuilderSession;
   /** dev/63: true when the batch was cancelled (endpoint or disconnect). */
@@ -528,6 +786,53 @@ export interface AgentSolveResult {
   /** dev/106: the batch-level failure reason (the missing-specialist case) —
    * the same text every node's `error` carries; the Solve card shows it once. */
   reason?: string;
+  /** dev/131: how the SESSION ended — complete | stopped | budget | blocked. */
+  endedBy?: string;
+  /** dev/131: how many passes the session made. */
+  passes?: number;
+  /** dev/131: what it is still blocked on, per node. */
+  waiting?: Array<{
+    nodeId: string;
+    kind: string;
+    reason?: string;
+    attachmentId?: string | null;
+  }>;
+}
+
+/** dev/127: one attempt a repair loop made — the code it ran beside the error
+ *  it produced. Runtime-minted only; a model can never author one. */
+export interface AgentSolveAttemptRow {
+  round: number;
+  verdict: string;
+  kind: string;
+  /** The error, read for its exception line (which leads and stays whole). */
+  error: string;
+  errorTruncated?: boolean;
+  /** The candidate this round ran. Absent for a round that passed. */
+  code?: string;
+  codeTruncated?: boolean;
+  /** dev/115: the builder's decline is prose — never rendered as runnable code. */
+  codeIsProse?: boolean;
+  durationMs?: number;
+  outputDataType?: string;
+  contentSha256?: string;
+  source?: string;
+}
+
+/** dev/127: every attempt to fix ONE node, in the transcript, durably. */
+export interface AgentSolveAttemptsPart {
+  type: "solveAttempts";
+  nodeId: string;
+  label: string;
+  /** The node's own agent — the chat where the child's replies live. */
+  attachmentId?: string | null;
+  rounds: number;
+  /** Which bound ended the loop: rounds, budget, repeat, decline, … */
+  stoppedBy: string;
+  verdict: string;
+  attempts: AgentSolveAttemptRow[];
+  /** Attempts beyond the part's cap, if any. */
+  elided?: number;
 }
 
 export type AgentContentPart =
@@ -537,6 +842,7 @@ export type AgentContentPart =
   | AgentDatasetCandidatesPart
   | AgentDataflowPlanPart
   | AgentDelegationPart
+  | AgentSolveAttemptsPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */
@@ -546,6 +852,8 @@ export interface AgentSessionTurn {
   ts?: string;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
+  /** A client-side error turn's remedy (the refusal's own), never persisted. */
+  remedy?: AgentRemedy;
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
@@ -575,18 +883,21 @@ async function postSseStream(
   body: unknown,
   onFrame: (event: string, payload: Record<string, unknown>) => void,
   signal?: AbortSignal,
+  /** dev/115: the jobs re-attach stream is a GET (no body). */
+  method: "POST" | "GET" = "POST"
 ): Promise<void> {
   const token = getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {};
+  if (method === "POST") headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    method: "POST",
+    method,
     headers,
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     signal,
   });
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({} as Record<string, unknown>));
+    const errBody = await res.json().catch(() => ({}) as Record<string, unknown>);
     const err = new Error((errBody as { error?: string }).error || `HTTP ${res.status}`);
     (err as Error & { status?: number; body?: unknown }).status = res.status;
     (err as Error & { status?: number; body?: unknown }).body = errBody;
@@ -632,43 +943,17 @@ export const agentsApi = {
     return apiFetch(`/api/agents/catalog${q}`);
   },
 
-  /** What a user inherits when they configure no provider of their own.
-   *
-   * The launcher's --llm-provider / --llm-base-url / --llm-model write exactly
-   * these, so AI Settings can present the deployment's choice as the inherited
-   * value rather than inventing a placeholder. The key is a boolean only. */
-  providerDefault(): Promise<ProviderDefault> {
-    return apiFetch("/api/agents/provider-default");
+  /** Every catalog setting with this account's value and who reads it. */
+  catalogSettings(): Promise<CatalogSettingsResponse> {
+    return apiFetch("/api/agents/settings");
   },
 
-  /** The models an OpenAI-compatible endpoint reports it serves.
-   *
-   * POSTed rather than GET because AI Settings calls it mid-edit: the user has
-   * typed a base URL and a key but not saved them yet, and a GET could only
-   * list models for the previous configuration. Anything omitted falls back to
-   * the account's saved provider server-side, so an already-configured user can
-   * refresh without retyping their key.
-   *
-   * Hybrid since #241, with both halves coming from the API. `source` is
-   * `"live"` when the endpoint answered just now, or `"remembered"` when it
-   * could not and Curio is replaying what it last reported - `rememberedAt`
-   * says when that was, and `warning` why the live call did not happen.
-   * `listable` means the endpoint itself answered; kept for older callers. */
-  providerModels(input?: {
-    apiType?: string;
-    baseUrl?: string;
-    apiKey?: string;
-  }): Promise<{
-    models: string[];
-    listable: boolean;
-    source?: "live" | "remembered";
-    remembered?: string[];
-    rememberedAt?: string | null;
-    warning?: string | null;
-  }> {
-    return apiFetch("/api/agents/provider-models", {
-      method: "POST",
-      body: JSON.stringify(input || {}),
+  /** Change settings by key; null restores a setting's default. Nothing is
+   * saved unless every value is valid. */
+  updateCatalogSettings(changes: Record<string, unknown | null>): Promise<CatalogSettingsResponse> {
+    return apiFetch("/api/agents/settings", {
+      method: "PUT",
+      body: JSON.stringify(changes),
     });
   },
 
@@ -695,7 +980,7 @@ export const agentsApi = {
    */
   uploadImport(
     manifest: Record<string, unknown>,
-    prompts: Record<string, string>,
+    prompts: Record<string, string>
   ): Promise<AgentCard> {
     return apiFetch("/api/agents/imports/upload", {
       method: "POST",
@@ -725,10 +1010,9 @@ export const agentsApi = {
 
   /** Remove a definition from a project's lockfile. */
   uninstallFromProject(projectId: string, coord: string): Promise<{ agents: string[] }> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/${coordParam(coord)}`,
-      { method: "DELETE" },
-    );
+    return apiFetch(`/api/agents/projects/${encodeURIComponent(projectId)}/${coordParam(coord)}`, {
+      method: "DELETE",
+    });
   },
 
   /** Publish an owned, imported definition to the Agent Catalog (imported-only). */
@@ -753,7 +1037,7 @@ export const agentsApi = {
    * Returns the exact shape `uploadImport` consumes, so the two round-trip.
    */
   readDefinition(
-    coord: string,
+    coord: string
   ): Promise<{ manifest: Record<string, unknown>; prompts: Record<string, string> }> {
     return apiFetch(`/api/agents/definitions/${coordParam(coord)}`);
   },
@@ -774,11 +1058,11 @@ export const agentsApi = {
   /** Detach a private instance. */
   detachAttachment(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; detached: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
@@ -786,11 +1070,11 @@ export const agentsApi = {
   updateAttachmentIntent(
     projectId: string,
     attachmentId: string,
-    intent: string | null,
+    intent: string | null
   ): Promise<AgentAttachment> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "PATCH", body: JSON.stringify({ intent }) },
+      { method: "PATCH", body: JSON.stringify({ intent }) }
     );
   },
 
@@ -799,11 +1083,11 @@ export const agentsApi = {
   updateAttachmentTitle(
     projectId: string,
     attachmentId: string,
-    title: string,
+    title: string
   ): Promise<AgentAttachment> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "PATCH", body: JSON.stringify({ title }) },
+      { method: "PATCH", body: JSON.stringify({ title }) }
     );
   },
 
@@ -812,11 +1096,11 @@ export const agentsApi = {
   applyProposal(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
+    proposalId: string
   ): Promise<AgentApplyResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 
@@ -827,11 +1111,25 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     proposalId: string,
-    ref: string,
+    ref: string
   ): Promise<AgentPlanNodeApplyResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
-      { method: "POST", body: JSON.stringify({ ref }) },
+      { method: "POST", body: JSON.stringify({ ref }) }
+    );
+  },
+
+  /** dev/126: record the user's confirmed dataset selection for the node this
+   * Dataset Finder is attached to. The picks carry identifiers only — the
+   * server resolves them against the candidates it proposed. */
+  recordDatasetSelection(
+    projectId: string,
+    attachmentId: string,
+    picks: AgentDatasetPick[]
+  ): Promise<AgentDatasetSelection> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/dataset-selection`,
+      { method: "POST", body: JSON.stringify({ picks }) }
     );
   },
 
@@ -842,11 +1140,11 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     proposalId: string,
-    indices?: number[],
+    indices?: number[]
   ): Promise<AgentPlanEdgesResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-edges`,
-      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) },
+      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) }
     );
   },
 
@@ -857,11 +1155,16 @@ export const agentsApi = {
     attachmentId: string,
     proposalId: string,
     ref: string,
-    goal: string,
-  ): Promise<{ proposalId: string; ref: string; goal: string; editedGoals: Record<string, string> }> {
+    goal: string
+  ): Promise<{
+    proposalId: string;
+    ref: string;
+    goal: string;
+    editedGoals: Record<string, string>;
+  }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/plan-goals`,
-      { method: "PATCH", body: JSON.stringify({ ref, goal }) },
+      { method: "PATCH", body: JSON.stringify({ ref, goal }) }
     );
   },
 
@@ -869,18 +1172,18 @@ export const agentsApi = {
   dismissProposal(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
+    proposalId: string
   ): Promise<{ attachmentId: string; proposalId: string; status: AgentProposalStatus }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
   /** The attachment's persisted chat transcript (its session history). */
   getSession(projectId: string, attachmentId: string): Promise<AgentSession> {
     return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`
     );
   },
 
@@ -888,7 +1191,7 @@ export const agentsApi = {
   clearSession(projectId: string, attachmentId: string): Promise<AgentSession> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
@@ -898,7 +1201,7 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null,
+    context?: string | null
   ): Promise<{
     attachmentId: string;
     coord: string;
@@ -913,7 +1216,7 @@ export const agentsApi = {
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
-      { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) },
+      { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) }
     );
   },
 
@@ -939,7 +1242,7 @@ export const agentsApi = {
      * arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null,
+    context?: string | null
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -991,7 +1294,7 @@ export const agentsApi = {
           durationMs = payload.durationMs;
           content = payload.content ?? content;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
-      },
+      }
     );
     if (reply === null) throw new Error("stream ended without a reply");
     return { reply, executionId, usage, durationMs, content };
@@ -1013,7 +1316,7 @@ export const agentsApi = {
     signal?: AbortSignal,
     /** dev/67-6: "propose" mints reviewed content proposals instead of
      * writing — the Simulation Mode solve stage. Default: classic write. */
-    mode?: "write" | "propose",
+    mode?: "write" | "propose"
   ): Promise<AgentSolveResult> {
     let result: AgentSolveResult | null = null;
     await postSseStream(
@@ -1025,7 +1328,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "solve failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("solve stream ended without a result");
     return result;
@@ -1044,7 +1347,7 @@ export const agentsApi = {
     attachmentId: string,
     mode: "step" | "auto",
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1056,7 +1359,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "simulation failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("simulation ended without a result");
     return result;
@@ -1073,7 +1376,7 @@ export const agentsApi = {
     attachmentId: string,
     target: { ref?: string; nodeId?: string },
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1085,7 +1388,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "the run failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("the run ended without a result");
     return result;
@@ -1094,11 +1397,11 @@ export const agentsApi = {
   /** Cancel a running simulation (dev/67-9): stops at the next boundary. */
   cancelSimulate(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/simulate/cancel`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 
@@ -1115,7 +1418,7 @@ export const agentsApi = {
     attachmentId: string,
     target: { ref?: string; nodeId?: string },
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1127,9 +1430,69 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "validation failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("validation ended without a result");
+    return result;
+  },
+
+  /**
+   * dev/115 (DEC-073, Amendment A2): the per-node Solve — run the node's
+   * CURRENT code in the sandbox, fix what fails, run again; a node with
+   * content lands as an already-executed content review, an empty node is
+   * written on PASS. Streams `solve_node_started` → `generation_round` /
+   * `node_executed` / `round_verdict` → `done`. Detached on the server:
+   * closing the stream does not stop the run (`attachJobStream` re-attaches).
+   */
+  async solveNodeStream(
+    projectId: string,
+    attachmentId: string,
+    nodeId: string,
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal
+  ): Promise<Record<string, unknown>> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve-node`,
+      { nodeId },
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "solve failed");
+        else onEvent(event, payload);
+      },
+      signal
+    );
+    if (result === null) throw new Error("solve-node ended without a result");
+    return result;
+  },
+
+  /**
+   * dev/115 (DEC-021 single-process slice): re-attach to the attachment's
+   * background job — replays every event so far (a leading `job` event
+   * carries the liveness projection), then tails live ones. Resolves with
+   * the `done` payload when the job finishes, or null when the replay ended
+   * without one (an errored job). 404 when there is nothing to attach to.
+   */
+  async attachJobStream(
+    projectId: string,
+    attachmentId: string,
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal
+  ): Promise<Record<string, unknown> | null> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/jobs/stream`,
+      undefined,
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "the background job failed");
+        else onEvent(event, payload);
+      },
+      signal,
+      "GET"
+    );
     return result;
   },
 
@@ -1138,11 +1501,11 @@ export const agentsApi = {
    * undispatched targets revert to pending. 409 when nothing is running. */
   cancelSolve(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/cancel`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 };

@@ -6,8 +6,7 @@ your own HuggingFace account. It used to be a single operator secret in a bare
 entitlement and was invisible to the people it applied to. It is now:
 
 - an account setting, edited in AI Settings (``user.huggingface_token``),
-- with a deployment fallback from ``curio.py start --huggingface-token``
-  (``CURIO_DEFAULT_HUGGINGFACE_TOKEN``),
+  with no deployment-wide fallback,
 - resolved in the request and handed down, because model loading runs on a
   detached worker thread with no request context,
 - and part of the model cache key, so one account's gated download is not
@@ -65,24 +64,21 @@ class TestResolution:
         monkeypatch.setenv("HUGGINGFACE_TOKEN", "hf_legacy")
         assert hf.resolve_hf_token() is None
 
-    def test_deployment_default_is_the_fallback(self, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_HUGGINGFACE_TOKEN", "hf_deployment")
-        assert hf.resolve_hf_token() == "hf_deployment"
-
-    def test_the_users_own_token_wins(self, monkeypatch):
-        monkeypatch.setenv("CURIO_DEFAULT_HUGGINGFACE_TOKEN", "hf_deployment")
+    def test_the_users_own_token_is_the_token(self, monkeypatch):
         _fake_user(monkeypatch, "hf_mine")
         assert hf.resolve_hf_token() == "hf_mine"
 
-    def test_a_user_without_one_falls_back(self, monkeypatch):
+    def test_there_is_no_deployment_fallback(self, monkeypatch):
+        # A deployment-wide variable left over from an older release is not
+        # read: the token is an AI Settings value, per account.
         monkeypatch.setenv("CURIO_DEFAULT_HUGGINGFACE_TOKEN", "hf_deployment")
         _fake_user(monkeypatch, None)
-        assert hf.resolve_hf_token() == "hf_deployment"
+        assert hf.resolve_hf_token() is None
 
-    def test_no_request_context_falls_back_instead_of_raising(self, monkeypatch):
+    def test_no_request_context_is_no_token_instead_of_raising(self, monkeypatch):
         # `/models/search` is reachable without auth. Outside a request the
-        # lookup raises, and a search the deployment token can still answer
-        # must not fail because of it.
+        # lookup raises, and a search of public models must not fail because
+        # of it.
         module = types.ModuleType("utk_curio.backend.app.users.dependencies")
 
         def _boom():
@@ -92,8 +88,7 @@ class TestResolution:
         monkeypatch.setitem(
             sys.modules, "utk_curio.backend.app.users.dependencies", module
         )
-        monkeypatch.setenv("CURIO_DEFAULT_HUGGINGFACE_TOKEN", "hf_deployment")
-        assert hf.resolve_hf_token() == "hf_deployment"
+        assert hf.resolve_hf_token() is None
 
 
 class TestCacheKeying:

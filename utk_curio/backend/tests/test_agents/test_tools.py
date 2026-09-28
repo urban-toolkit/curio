@@ -266,6 +266,36 @@ class TestDataflowReadProjection:
         )
         assert json.loads(text)["edges"][0]["targetHandle"] == "in_0"
 
+    def test_interaction_edges_are_named_as_such_data_edges_stay_bare(self, tmp_curio):
+        """dev/125 §3.6 — the read-back the instruction demands.
+
+        The builder is told to re-read the graph and confirm the topology
+        before claiming a repair. If the projection cannot say which edge is
+        the feedback link, the agent that just asked for an interaction edge
+        cannot tell whether it got one — so it re-diagnoses and loops, which is
+        the failure this whole memo exists to end. `kind` follows the plan
+        grammar's own vocabulary and its byte-absent default: present only when
+        the edge is an interaction edge.
+        """
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "vis", "type": "curio.builtin/vis-vega", "content": ""},
+            {"id": "pool", "type": "curio.builtin/data-pool", "content": ""},
+        ], "edges": [
+            {"id": "e1", "source": "pool", "target": "vis",
+             "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "vis", "target": "pool", "type": "Interaction",
+             "sourceHandle": "in/out", "targetHandle": "in/out"},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        by_id = {e["id"]: e for e in json.loads(text)["edges"]}
+        assert by_id["e2"]["kind"] == "interaction"
+        assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
+
 
 class TestNodeRuntimeRead:
     """dev/67-2 — the journal's read tool: honest never-executed, traceback
@@ -323,6 +353,43 @@ class TestNodeRuntimeRead:
         assert status == "error" and "not found" in text
         status, text = self._read()
         assert status == "error" and "not attached" in text
+
+
+class TestCatalogSearchRows:
+    """dev/114 (DEC-072): installed rows carry the resolved ``path`` and the
+    domain's ONE loader recipe — the only local paths generated node content
+    may open. Rows without a resolved path carry neither."""
+
+    def _listing(self, monkeypatch, items):
+        class _Svc:
+            def __init__(self, user):
+                pass
+
+            def list_catalog(self, **kwargs):
+                return {"items": items}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.datasets.application.catalog_service.DatasetCatalogService", _Svc
+        )
+
+    def test_path_and_loader_ride_resolved_rows_only(self, app, monkeypatch):
+        self._listing(monkeypatch, [
+            {"id": "ds-acs", "title": "Census ACS", "format": "csv", "origin": "hub",
+             "installed": True, "path": "/store/census-acs@1/acs.csv",
+             "loaderSnippet": {"code": 'dataset_path = "/store/census-acs@1/acs.csv"\ndf = pd.read_csv(dataset_path)'}},
+            {"id": "ds-hub", "title": "Hub only", "format": "csv", "origin": "hub",
+             "installed": False, "path": None},
+            {"id": "ds-geo", "title": "Tracts", "format": "geojson", "origin": "local",
+             "installed": True, "path": "/store/tracts@1/tracts.geojson"},  # no snippet → recipe
+        ])
+        with app.test_request_context():
+            rows = tools._catalog_search_rows("42", "p1", {})
+        assert rows[0]["path"] == "/store/census-acs@1/acs.csv"
+        assert "pd.read_csv(dataset_path)" in rows[0]["loader"]
+        assert "path" not in rows[1] and "loader" not in rows[1]
+        assert rows[2]["path"] == "/store/tracts@1/tracts.geojson"
+        assert 'gpd.read_file(dataset_path)' in rows[2]["loader"]
+        assert "path" in tools.REGISTRY["catalog.search"].description
 
 
 class TestWebTools:

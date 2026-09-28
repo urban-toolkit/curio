@@ -161,7 +161,7 @@ export const MonitorPage: React.FC = () => {
             <Chip label="Shared installs" value={m?.deployment.sharedInstallsAllowed ? "allowed" : "off"} />
             <Chip label="Collaboration" value={m?.deployment.collabEnabled ? "on" : "off"} />
             <Chip label="Exec account" value={m?.deployment.execUserConfigured ? "configured" : "none"} />
-            <Chip label="LLM provider" value={m?.deployment.llmProviderConfigured ? "configured" : "none"} />
+            <Chip label="Deployment LLM" value={m?.deployment.llmProviderConfigured ? "configured" : "none"} />
             <Chip label="Environment" value={m?.deployment.env ?? "…"} />
             <Chip label="Platform" value={m?.deployment.platform ?? "…"} />
             <Chip label="Python" value={m?.deployment.pythonVersion ?? "…"} />

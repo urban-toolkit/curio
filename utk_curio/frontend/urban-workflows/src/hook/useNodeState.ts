@@ -4,6 +4,8 @@ import { NodeTemplateId } from '../registry/types';
 import { ICodeDataContent, MissingModuleNotice } from '../types';
 import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
+import { useFlowContext } from '../providers/FlowProvider';
+import { reportFromNodeOutput, reportNodeRuntime } from '../services/nodeRuntimeReport';
 
 export interface NodeOutput {
   code: string;
@@ -24,6 +26,7 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
 
   const { editUserStarter } = useStarterContext();
   const { user } = useUserContext();
+  const { projectId } = useFlowContext();
 
   useEffect(() => { data.code = code; }, [code]);
 
@@ -41,6 +44,20 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   useEffect(() => {
     data.output = output;
     if (output?.code === 'success') data.executedCode = code;
+    // dev/135: the node instance already held its own outcome here — and only
+    // here, in memory, so an agent asked about a node that had just failed in
+    // the BROWSER was told `never-executed` (the owner's `a29d1ad8`). This is
+    // the ONE chokepoint every kind crosses, sandbox and browser alike, so
+    // reporting from it covers Vega, Autark, the pool, the merge, the simple
+    // view, the spatial join, the export and the render boundary at once — and
+    // a kind added later is covered by construction. Fire and forget: nothing
+    // is awaited, a repeat is deduplicated, and a failed report is silent.
+    const report = reportFromNodeOutput(output, {
+      dataflowId: projectId ?? '',
+      nodeId: data?.nodeId ?? '',
+      code,
+    });
+    if (report) void reportNodeRuntime(report);
   }, [output]);
 
   useEffect(() => {

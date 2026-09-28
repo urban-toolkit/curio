@@ -239,16 +239,16 @@ def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
     """The catalog install path turns a fixture dir into an installed package."""
     from pathlib import Path
 
-    fixtures_root = (
-        Path(__file__).resolve().parents[2] / "fixtures" / "packages"
-    )
-    fixture = fixtures_root / "ai.urbanlab.uhvi@1"
-    if not fixture.is_dir():
-        pytest.skip("UHVI fixture missing")
+    # The shipped catalog at the repo root. An assert, not a skip: when the
+    # fixture moves, this should fail rather than quietly stop running.
+    fixture = Path(__file__).resolve().parents[4] / "packages" / "ai.urbanlab.uhvi@1"
+    assert fixture.is_dir(), f"missing catalog package {fixture}"
     result = install_packageage_from_directory("guest", fixture)
     assert result.manifest.package_id == "ai.urbanlab.uhvi"
     target = package_dir("guest", "ai.urbanlab.uhvi@1")
-    assert (target / "starters" / "uhvi-load").is_dir()
+    manifest = json.loads((target / "manifest.json").read_text())
+    loader = next(t for t in manifest["templates"] if t["id"] == "uhvi-load")
+    assert (target / loader["source"]).is_file()
 
 
 # ---------------------------------------------------------------------------

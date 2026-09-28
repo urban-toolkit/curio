@@ -1,0 +1,88 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "DataPool_Dataframe",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/DataPool_Dataframe.json",
+    "sha256": "8257d32897a1080f12d50b2d16ca9f44187fa7af8ff54ee42db6fb7f52115544",
+    "walkthrough": null
+  },
+  "prompt": "Create a small nine-row table of letters and numbers in a loading step and send it through a fan-out node so several views could read the same table.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "pool1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "table",
+        "dataframe"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Structural: does a plain table survive the fan-out."
+}

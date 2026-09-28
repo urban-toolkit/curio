@@ -49,6 +49,12 @@ _SHARED_SESSION_CLASSES = (
     # using it for the other five; a truncation between chapters would
     # invalidate the session token the browser is still holding.
     "TestCurioStressTour",
+    # dev/121: each reconstruction class holds one class-scoped session and
+    # stubs its own project per test; truncating between methods would
+    # invalidate the token the browser is still holding.
+    "TestPaletteShowsWhatWasProvisioned",
+    "TestReviewCardAndApply",
+    "TestSolveProgressAndReconnection",
     # The browser stress tier stubs several accounts up front and drives them
     # all from one test; truncating would log every one of them out.
     "TestBrowserStressTier",
@@ -306,6 +312,11 @@ def curio_servers(session_app, request):
         extra_args.append("--testing")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
+    # Real-time collaboration is off unless the server starts with --collab,
+    # and main.py sets ENABLE_COLLAB from that flag, so an env var alone cannot
+    # turn it on. The tour's collaboration scene records with CURIO_E2E_COLLAB=1.
+    if env.get("CURIO_E2E_COLLAB", "0") in ("1", "true", "yes", "on"):
+        extra_args.append("--collab")
     # Saving a node's output to the Data Catalog is opt-in per node by default
     # (#180). Several tests here are ABOUT that save - test_dataset_palette,
     # test_dataset_lineage_e2e, test_dataset_export all expect a computed dataset

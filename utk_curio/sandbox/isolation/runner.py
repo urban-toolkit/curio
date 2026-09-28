@@ -176,6 +176,7 @@ def execute_isolated(
     dataset_paths=None,
     user_key=None,
     config,
+    secrets=None,
     collections=None,
     media_dir=None,
 ):
@@ -252,6 +253,7 @@ def execute_isolated(
             session_imports=_imports_for(session_id),
             limits=config.limits,
             wall_timeout=config.wall_timeout,
+            secrets=secrets,
         )
 
         client = supervisor.ZygoteClient(config.socket_path)

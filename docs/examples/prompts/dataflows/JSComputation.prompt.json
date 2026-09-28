@@ -1,0 +1,87 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "JSComputation",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/JSComputation.json",
+    "sha256": "b114dee2a63bd5f56674befb9b3ad4b9a3bc073e3d6682371ca438c463fe0225",
+    "walkthrough": null
+  },
+  "prompt": "Double the numbers one, two and three in a JavaScript computation step, log the result, and show the returned array in the simple view.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/js-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "double",
+        "map"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "The JavaScript engine path: executable, but not python."
+}

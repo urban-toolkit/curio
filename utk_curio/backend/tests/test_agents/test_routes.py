@@ -7,12 +7,44 @@ import shutil
 
 import pytest
 
-from utk_curio.backend.app.agents import ledger, publications, storage
+from utk_curio.backend.app.agents import builtin, ledger, publications, storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _block_closure_repair(monkeypatch):
+    """dev/126 (``DEC-080``): stand in for the one state the repair cannot fix
+    — a required agent that is visible nowhere, where ``install_in_project``
+    refuses with 409 and writes nothing. The reviewed ``project.install`` lane
+    still carries the state, which is what these tests are about.
+
+    Returns ``release()``: the user's own Apply of that reviewed install goes
+    through the same function, so a test that walks the migration path lifts
+    the block before clicking Apply."""
+    from utk_curio.backend.app.agents import services as agents_services
+
+    real = agents_services.install_in_project
+    blocked = [True]
+
+    def _refuse(*a, **k):
+        if not blocked[0]:
+            return real(*a, **k)
+        raise agents_services.AgentServiceError(
+            "requires agent.ghost, which is not available in the catalog or your "
+            "imports — nothing was installed", 409,
+        )
+
+    monkeypatch.setattr(
+        "utk_curio.backend.app.agents.services.install_in_project", _refuse
+    )
+
+    def release():
+        blocked[0] = False
+
+    return release
 
 
 def _drop_from_lockfile(user, project_id, coord):
@@ -109,32 +141,30 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the node researcher (dev/67-4) + package recommendation (dev/84)
-        # + the authored evaluator (DEC-055) + the package builder (dev/89)
-        # + the notes researcher (dev/90).
-        assert len(agents) == 21
+        # The ten catalog cards; the internal built-ins run only as delegates.
+        assert len(agents) == 10
         assert all(a["scope"] == "browse" and a["provenance"]["trust"] == "built-in" for a in agents)
+        assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
-        assert "agent.node-explainer" in ids
-        assert "agent.node-builder" in ids
+        assert ids == {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        assert "agent.dataflow-planner" not in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.chat-agent@1.0.0"
         r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
         imports_listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in imports_listed] == [coord]
         # And the catalog now marks it imported.
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
-        ne = next(a for a in cat if a["id"] == "agent.node-explainer")
-        assert ne["imported"] is True
+        chat = next(a for a in cat if a["id"] == "agent.chat-agent")
+        assert chat["imported"] is True
 
     def test_install_a_builtin_into_project(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.dataflow-task-planner@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord},
@@ -145,8 +175,28 @@ class TestGlobalCatalog:
         cat = client.get(
             f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)
         ).get_json()["agents"]
-        planner = next(a for a in cat if a["id"] == "agent.dataflow-task-planner")
-        assert planner["installedInProject"] is True
+        builder = next(a for a in cat if a["id"] == "agent.connection-builder")
+        assert builder["installedInProject"] is True
+
+    def test_an_internal_agent_is_never_imported_or_installed(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        _, token = user_and_token
+        coord = "agent.dataflow-planner@1.0.0"
+        imported = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        assert imported.status_code == 400
+        assert "runs only as a delegate" in imported.get_json()["error"]
+        installed = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        assert installed.status_code == 400
+        # So it cannot be attached either: attaching needs it installed.
+        attached = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}}, headers=_auth(token),
+        )
+        assert attached.status_code == 400
 
 
 class TestProjectInstall:
@@ -192,6 +242,13 @@ class TestProjectInstall:
     # ── dev/106: the requiresAgents closure ─────────────────────────────
     DFB = "agent.dataflow-builder@1.0.0"
     NCB = "agent.node-content-builder@1.0.0"
+    # dev/126: the closure is three deep now — the Dataset Finder (resolution
+    # delegates dataset.discover from a server path) and the Node Builder
+    # (every plan-created node is given one at Apply) joined the content
+    # builder, in the Dataflow Builder's own declaration order.
+    DF = "agent.dataset-finder@1.0.0"
+    NB = "agent.node-builder@1.0.0"
+    CLOSURE = [NCB, DF, NB]
 
     def test_installing_the_builder_installs_its_required_specialist_in_one_write(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -211,9 +268,9 @@ class TestProjectInstall:
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         body = r.get_json()
-        assert body["agents"] == [self.DFB, self.NCB]
-        assert body["installed"] == [self.DFB, self.NCB]
-        assert body["required"] == [self.NCB]
+        assert body["agents"] == sorted([self.DFB, *self.CLOSURE])
+        assert body["installed"] == [self.DFB, *self.CLOSURE]
+        assert body["required"] == self.CLOSURE
         assert len(writes) == 1  # atomic: root + closure in one spec write
         # The dependency's bytes are materialized (AC-5) — no import row added.
         assert storage.load_installed_agent_definition(_user_dir_key(user), self.NCB) is not None
@@ -225,14 +282,16 @@ class TestProjectInstall:
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
         assert r.status_code == 201
         assert r.get_json()["installed"] == []
-        assert r.get_json()["agents"] == [self.DFB, self.NCB]
+        assert r.get_json()["agents"] == sorted([self.DFB, *self.CLOSURE])
 
     def test_dependency_already_installed_adds_only_the_root(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
-        assert r.get_json()["installed"] == [self.DFB]
-        assert sorted(r.get_json()["agents"]) == [self.DFB, self.NCB]
+        # The already-installed member is not re-added; the rest of the
+        # closure is (dev/126).
+        assert r.get_json()["installed"] == [self.DFB, self.DF, self.NB]
+        assert sorted(r.get_json()["agents"]) == sorted([self.DFB, *self.CLOSURE])
 
     def test_unresolvable_dependency_409s_and_writes_nothing(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token
@@ -260,29 +319,43 @@ class TestProjectInstall:
     def test_uninstalling_a_required_dependency_409s_naming_the_dependent(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.DFB}, headers=_auth(token))
-        r = client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token))
-        assert r.status_code == 409
-        assert "Dataflow Builder" in r.get_json()["error"]
-        # Parent first, then the dependency — no cascade either way.
+        for dependency in self.CLOSURE:
+            r = client.delete(f"/api/agents/projects/{alice_project}/{dependency}", headers=_auth(token))
+            assert r.status_code == 409, dependency
+            assert "Dataflow Builder" in r.get_json()["error"]
+        # dev/126: the Dataset Finder is required by the Node Builder too, so
+        # its refusal names both dependents.
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token))
+        assert "Node Builder" in r.get_json()["error"]
+        # Parent first, then the dependencies — no cascade either way.
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.DFB}", headers=_auth(token)).status_code == 200
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
-        assert [a["dirName"] for a in listed["agents"]] == [self.NCB]
+        assert sorted(a["dirName"] for a in listed["agents"]) == sorted(self.CLOSURE)
+        # The Node Builder still requires the Dataset Finder: builder first.
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 409
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.NB}", headers=_auth(token)).status_code == 200
+        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 200
         assert client.delete(f"/api/agents/projects/{alice_project}/{self.NCB}", headers=_auth(token)).status_code == 200
 
     def test_catalog_cards_disclose_requires_agents_per_project(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
-        assert dfb["requiresAgents"] == [{
-            "id": "agent.node-content-builder", "name": "Node Content Builder",
-            "coord": self.NCB, "visible": True, "installedInProject": False,
-        }]
+        assert dfb["requiresAgents"] == [
+            {"id": "agent.node-content-builder", "name": "Node Content Builder",
+             "coord": self.NCB, "visible": True, "installedInProject": False},
+            {"id": "agent.dataset-finder", "name": "Dataset Finder",
+             "coord": self.DF, "visible": True, "installedInProject": False},
+            {"id": "agent.node-builder", "name": "Node Builder",
+             "coord": self.NB, "visible": True, "installedInProject": False},
+        ]
         ncb = next(a for a in cat if a["dirName"] == self.NCB)
         assert ncb["requiresAgents"] == []
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.NCB}, headers=_auth(token))
         cat = client.get(f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)).get_json()["agents"]
         dfb = next(a for a in cat if a["dirName"] == self.DFB)
         assert dfb["requiresAgents"][0]["installedInProject"] is True
+        assert dfb["requiresAgents"][1]["installedInProject"] is False
         installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
         assert installed[0]["requiresAgents"] == []
 
@@ -312,10 +385,10 @@ class TestPublish:
     def test_publish_builtin_rejected(self, client, user_and_token, tmp_curio):
         # A built-in is not an owned store-backed import → cannot be published.
         _, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
         r = client.post(
             "/api/agents/publications",
-            json={"coord": "agent.node-explainer@1.0.0"},
+            json={"coord": "agent.connection-builder@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -328,11 +401,11 @@ class TestPublish:
 
     def test_publishable_flag_owned_vs_builtin(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
-        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post("/api/agents/imports", json={"coord": "agent.connection-builder@1.0.0"}, headers=_auth(token))
         coord = _write_def(user, "agent.my-custom", "1.0.0")
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.node-explainer"]["publishable"] is False  # built-in
+        assert by_id["agent.connection-builder"]["publishable"] is False  # built-in
         assert by_id["agent.my-custom"]["publishable"] is True  # owned store-backed
 
     def test_unpublish(self, client, user_and_token, tmp_curio):
@@ -385,14 +458,14 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.connection-builder@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         )
         assert r.status_code == 400
 
     def test_attach_bad_node_target_rejected(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -408,7 +481,7 @@ class TestAttachments:
         _, token = user_and_token
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0"},
+            json={"coord": "agent.connection-builder@1.0.0"},
             headers=_auth(token),
         )
         assert r.status_code == 400
@@ -420,7 +493,7 @@ class TestMaterialize:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         # Not in the store before install (it's a built-in resolved from the roster).
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
@@ -430,15 +503,15 @@ class TestMaterialize:
         # After install, the definition + its prompt asset are on disk in the store.
         d = storage.agent_definition_dir(_user_dir_key(user), coord)
         assert (d / "manifest.json").is_file()
-        assert (d / "prompts" / "single_box_explanation_prompt.txt").is_file()
+        assert (d / "prompts" / "new_connection_prompt.txt").is_file()
 
     def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
         # Even after its bytes are in the store, a built-in stays non-publishable.
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
-        assert by_id["agent.node-explainer"]["publishable"] is False
+        assert by_id["agent.connection-builder"]["publishable"] is False
         r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
@@ -466,7 +539,7 @@ class TestRun:
             return "hello from the model"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -485,8 +558,12 @@ class TestRun:
         instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
         from utk_curio.backend.app.agents import content as content_mod
 
-        # dev/39: the runtime-owned structured-tail instruction composes last.
-        assert msgs[0]["content"] == f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+        # dev/39: the runtime-owned structured-tail instruction composes last,
+        # followed by the read tools the chat agent is granted.
+        assert msgs[0]["content"].startswith(
+            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+        )
+        assert "- dataflow.read:" in msgs[0]["content"]
         assert msgs[1] == {"role": "user", "content": "explain this node"}
 
     def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -580,8 +657,8 @@ class TestPruneAttachmentsOnDelete:
 
     def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        node_coord = "agent.node-explainer@1.0.0"  # node-only
-        canvas_coord = "agent.dataflow-explainer@1.0.0"  # canvas-only
+        node_coord = "agent.node-content-builder@1.0.0"  # node-only
+        canvas_coord = "agent.dataflow-builder@1.0.0"  # canvas-only
         for c in (node_coord, canvas_coord):
             client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
         # Persist a node so a node-target attachment validates against the spec.
@@ -629,9 +706,9 @@ class TestAttachCompatibility:
         )
 
     def test_canvas_only_agent_rejected_on_a_node(self, client, user_and_token, tmp_curio, alice_project):
-        # dataflow-explainer is a canvas-category (canvas-only) built-in.
+        # dataflow-builder is a canvas-only built-in.
         _, token = user_and_token
-        coord = "agent.dataflow-explainer@1.0.0"
+        coord = "agent.dataflow-builder@1.0.0"
         self._install(client, token, alice_project, coord)
         # Persist a node so the node target would otherwise exist.
         client.put(
@@ -647,7 +724,7 @@ class TestAttachCompatibility:
 
     def test_node_only_agent_rejected_on_canvas(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"  # node-only
+        coord = "agent.node-content-builder@1.0.0"  # node-only
         self._install(client, token, alice_project, coord)
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 400
@@ -665,24 +742,11 @@ class TestAttachCompatibility:
         assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
         assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
 
-    def test_chat_and_debug_declare_both_targets(self, client, user_and_token, tmp_curio):
+    def test_chat_declares_both_targets(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
         by_id = {a["id"]: a for a in cat}
         assert sorted(by_id["agent.chat-agent"]["hooks"]) == ["canvas", "node"]
-        assert sorted(by_id["agent.debug-agent"]["hooks"]) == ["canvas", "node"]
-
-    def test_debug_attaches_to_canvas_and_node(self, client, user_and_token, tmp_curio, alice_project):
-        _, token = user_and_token
-        coord = "agent.debug-agent@1.0.0"
-        self._install(client, token, alice_project, coord)
-        client.put(
-            f"/api/projects/{alice_project}",
-            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
-            headers=_auth(token),
-        )
-        assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
-        assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
 
     def test_stale_materialized_builtin_resolves_fresh_roster_metadata(
         self, client, user_and_token, tmp_curio, alice_project
@@ -795,7 +859,7 @@ class TestIntent:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         att = self._attach_builtin(client, token, alice_project)
         att_id = att["attachmentId"]
@@ -815,10 +879,10 @@ class TestIntent:
         from utk_curio.backend.app.agents import content as content_mod
 
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
-        assert calls[0][0] == {
-            "role": "system",
-            "content": f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}",
-        }
+        assert calls[0][0]["role"] == "system"
+        assert calls[0][0]["content"].startswith(
+            f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}"
+        )
 
 
 class TestSession:
@@ -847,7 +911,7 @@ class TestSession:
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def test_runs_persist_and_get_session_returns_history(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -894,7 +958,7 @@ class TestSession:
                 raise RuntimeError("boom")
             return "recovered"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _flaky)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _flaky)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
         r = client.post(
@@ -968,7 +1032,7 @@ class TestSession:
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.node-content-builder@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         client.put(
             f"/api/projects/{alice_project}",
@@ -1021,12 +1085,12 @@ class TestStreamRun:
             yield "lo"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         # The first stream run fires the post-reply title call (memo dev/25);
         # stub the blocking port so it never reaches a real provider.
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1064,7 +1128,7 @@ class TestStreamRun:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1107,12 +1171,12 @@ class TestStreamRun:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         # Stub the blocking port: the first run's title call must not reach a
         # real provider (memo dev/25).
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1160,7 +1224,7 @@ class TestExecutionRecords:
                 usage_out.update(usage)
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def _turns(self, client, token, project_id, att_id):
@@ -1171,13 +1235,13 @@ class TestExecutionRecords:
 
     def test_run_persists_execution_record_with_pins_and_usage(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents import services as services_mod
-        # Read through the module, not as a from-import: the suite's conftest
-        # stands in for the operator and patches these attributes, so a
-        # module-level snapshot would see the (empty) shipped defaults.
-        from utk_curio.backend.app.agents.provider_config import (
-            DEFAULT_LLM_API_TYPE,
-            DEFAULT_LLM_MODEL,
-        )
+        # Read at call time: the suite's conftest stands in for the operator
+        # and patches the config module, so an import-time snapshot would see
+        # the (empty) shipped defaults.
+        from utk_curio.backend import config as backend_config
+
+        DEFAULT_LLM_API_TYPE = backend_config.DEFAULT_LLM_API_TYPE
+        DEFAULT_LLM_MODEL = backend_config.DEFAULT_LLM_MODEL
 
         self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
         _, token = user_and_token
@@ -1206,8 +1270,10 @@ class TestExecutionRecords:
         # Unconfigured test user → the deployment-default provider (DEC-039).
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
+        assert pins["llm"] == {"configId": None, "label": "Deployment default",
+                               "baseUrlHost": "127.0.0.1:9", "source": "deployment"}
         # dev/39: granted tools are pinned; the registry ships empty.
-        assert pins["tools"] == []
+        assert pins["tools"] == ["dataflow.read", "node.read", "node.runtime.read"]
         # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
             "maxOutputTokens": services_mod.DEPLOYMENT_MAX_OUTPUT_TOKENS,
@@ -1231,7 +1297,7 @@ class TestExecutionRecords:
         def _boom(config, messages, **kwargs):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _boom)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _boom)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
         r = client.post(
@@ -1268,10 +1334,10 @@ class TestExecutionRecords:
                 usage_out.update({"inputTokens": 7, "outputTokens": 9})
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1312,7 +1378,7 @@ class TestExecutionRecords:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1446,7 +1512,7 @@ class TestToolGrants:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "never reached",
         )
         user, token = user_and_token
@@ -1469,7 +1535,7 @@ class TestToolGrants:
 
     def test_optional_ungranted_tool_runs_and_pins_no_grant(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1497,7 +1563,7 @@ class TestToolGrants:
             ToolContract(id="ghost.tool", contract_version="1", effect="read", description="d"),
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1647,7 +1713,7 @@ class TestRunContext:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def test_context_rides_one_message_before_the_user_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1729,10 +1795,10 @@ class TestRunContext:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Title",
         )
         _, token = user_and_token
@@ -1780,7 +1846,8 @@ class TestMaterializationHeal:
             json={"coord": coord}, headers=_auth(token),
         )
         healed = storage.load_installed_agent_definition(ukey, coord)
-        assert set(healed.prompts) == {"system", "instruction"}
+        # Every prompt the roster declares, the preamble included.
+        assert set(healed.prompts) == set(spec.prompt_files()) >= {"system", "instruction"}
         base = storage.agent_definition_dir(ukey, coord)
         for asset in healed.prompts.values():
             assert (base / asset.path).is_file()
@@ -1859,16 +1926,16 @@ class TestToolLoop:
                 yield "It prints 1."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Loop Title",
         )
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "print(1)"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-explainer@1.0.0",
+            client, token, alice_project, "agent.chat-agent@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1917,13 +1984,13 @@ class TestToolLoop:
                 return '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
             return "Done without it."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         # Chat agent declares no tools → nothing granted.
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token))
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            json={"coord": "agent.node-researcher@1.0.0", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         r = client.post(
@@ -1951,11 +2018,11 @@ class TestToolLoop:
             calls.append(messages)
             return f"Round {len(calls)}.\n" + TestToolLoop.TOOL_TAIL  # always wants more
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
-            client, token, alice_project, "agent.node-explainer@1.0.0",
+            client, token, alice_project, "agent.chat-agent@1.0.0",
             {"kind": "node", "targetId": "n1"},
         )
         r = client.post(
@@ -1996,7 +2063,7 @@ class TestToolLoop:
                 )
             return "Proposed."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         user, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
         att_id = self._install_attach(
@@ -2025,23 +2092,32 @@ class TestToolLoop:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
-        _, token = user_and_token
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
-        att_id = client.post(
-            f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
-            headers=_auth(token),
-        ).get_json()["attachmentId"]
-        client.post(
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        user, token = user_and_token
+        # No built-in card is both tool-free and delegate-free, so an owned
+        # definition that declares neither stands in for a grant-less run.
+        coord = "agent.plain-helper@1.0.0"
+        storage.write_definition(_user_dir_key(user), coord, {
+            "id": "agent.plain-helper", "name": "Plain Helper", "category": "node",
+            "version": "1.0.0",
+            "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+            "compatibleTargets": [{"kind": "node", "requires": []}],
+            "provenance": {"publisher": "curio", "trust": "imported"},
+            "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
+        }, {"prompts/instruction.txt": "Answer briefly."})
+        self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "x"})
+        att_id = self._install_attach(
+            client, token, alice_project, coord, {"kind": "node", "targetId": "n1"},
+        )
+        r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q"}, headers=_auth(token),
         )
-        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
-        instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
-        assert calls[0][0]["content"] == (
-            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
-        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        system = calls[0][0]["content"]
+        assert system == f"Answer briefly.\n\n{content_mod.TAIL_INSTRUCTION}"
+        assert "You may also use these tools" not in system
+        assert "delegateRequest" not in system
 
 
 class TestReviewProposals:
@@ -2081,7 +2157,7 @@ class TestReviewProposals:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="write it"):
@@ -2140,7 +2216,7 @@ class TestReviewProposals:
             yield script[min(len(calls) - 1, 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -2324,7 +2400,7 @@ class TestStructuredContent:
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def _mock_stream(self, monkeypatch, deltas):
@@ -2332,10 +2408,10 @@ class TestStructuredContent:
             yield from deltas
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
 
@@ -2514,7 +2590,7 @@ class TestRunsAreRecordedNotRationed:
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
 
     def test_many_runs_all_succeed_and_all_count(
@@ -2604,7 +2680,7 @@ class TestOutputCapReachesTheProvider:
             seen.append(max_output_tokens)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake)
         _, token = user_and_token
         att = self._install_and_attach(client, token, alice_project)
         client.post(
@@ -2623,9 +2699,12 @@ class TestOutputCapReachesTheProvider:
         # unregistered route does answer 404, so a status assertion would work
         # now - but the map is the more direct statement of "this rule is gone",
         # and it cannot be satisfied by a 404 that came from somewhere else.
+        #
+        # ``/api/agents/settings`` was one of them and is taken again, by the
+        # account's catalog settings (test_catalog_settings.py): a different
+        # contract that shares only the path.
         rules = {str(r.rule) for r in app.url_map.iter_rules()}
         for gone in (
-            "/api/agents/settings",
             "/api/agents/projects/<project_id>/defaults/<coord>",
             "/api/agents/projects/<project_id>/attachments/<attachment_id>/settings",
         ):
@@ -2649,14 +2728,14 @@ class TestMaterializePreamble:
         from utk_curio.backend.app.agents import storage as agents_storage
 
         user, token = user_and_token
-        coord = "agent.syntax-analysis-agent@1.0.0"
+        coord = "agent.connection-builder@1.0.0"
         r = client.post(
             f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token)
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         d = agents_storage.agent_definition_dir(_user_dir_key(user), coord)
-        assert (d / "prompts/syntax_analysis_prompt.txt").is_file()
-        assert (d / "prompts/syntax_analysis_preamble.txt").is_file()
+        assert (d / "prompts/new_connection_prompt.txt").is_file()
+        assert (d / "prompts/default_preamble.txt").is_file()
 
 
 class TestNodeCreate:
@@ -2757,7 +2836,7 @@ class TestNodeCreate:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build it"):
@@ -2814,7 +2893,8 @@ class TestNodeCreate:
         r = self._run(client, token, alice_project, att_id)
         proposal = self._proposal_from_run(r)
         assert proposal["status"] == "pending"
-        assert proposal["pins"] == {"nodeType": "curio.builtin/computation-analysis"}
+        # dev/119 (DEC-076): the roster's executability rides the card as display.
+        assert proposal["pins"] == {"nodeType": "curio.builtin/computation-analysis", "executable": True}
         assert "contentSha256" not in proposal["pins"]  # no digest for a creation
         assert len(self._spec_nodes(user, alice_project)) == 1  # nothing mutated yet
 
@@ -3822,7 +3902,7 @@ class TestAttachRequiresGating:
         pid = self._project_with_nodes(client, token)
         r = self._attach(
             client, token, pid, {"kind": "node", "targetId": "comp1"},
-            coord="agent.node-explainer@1.0.0",
+            coord="agent.node-content-builder@1.0.0",
         )
         assert r.status_code == 201, r.get_data(as_text=True)
 
@@ -3872,7 +3952,7 @@ class TestDatasetFinderTools:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="find data"):
@@ -4058,7 +4138,7 @@ class TestDataflowPlanMint:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _ukey(self, user):
@@ -4092,6 +4172,80 @@ class TestDataflowPlanMint:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         assert cards[0]["activeProposal"]["status"] == "pending"
+
+    # ── dev/126 (DEC-080): the closure repaired at the point of use ──────
+
+    def test_a_legacy_lockfile_is_repaired_before_the_run_delegates(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """The regression test for the owner's session 7c300d0d: a Dataflow
+        Builder conversation must never spend a turn on an install proposal for
+        one of its OWN required agents. The delegation is scripted so the run
+        actually asks for dataset.discover in a project whose lockfile lost the
+        Dataset Finder."""
+        user, token = user_and_token
+        # The candidate row below carries a URL, and the Dataset Finder gate
+        # probes one for real; the suite's netguard refuses that. Stubbed as
+        # the verification tests in this file stub it.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
+        )
+        att_id, calls = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                '```curio.v1\n{"delegateRequest": {"capability": "dataset.discover", '
+                '"inputs": {"mission": "chicago population density"}}}\n```',
+                '{"datasetCandidates": {"lanes": {"external": [{"name": "Chicago portal", '
+                '"sourceType": "api", "url": "https://example.org/d.json"}], "catalog": []}}}',
+                "Here are the candidates.",
+            ],
+        )
+        _drop_from_lockfile(user, alice_project, "agent.dataset-finder@1.0.0")
+        body = self._run(client, token, alice_project, att_id).get_json()
+        # No install proposal for a required agent, anywhere in the reply.
+        assert all(
+            p.get("tool") != "project.install" for p in body["content"] if p["type"] == "proposal"
+        )
+        # The Dataset Finder is back in the lockfile, and the repair says so.
+        installed = client.get(
+            f"/api/agents/projects/{alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        assert "agent.dataset-finder@1.0.0" in {a["dirName"] for a in installed}
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        disclosure = next(
+            t for t in turns if (t.get("text") or "").startswith("Added Dataset Finder")
+        )
+        assert "required by Dataflow Builder" in disclosure["text"]
+
+    def test_a_preferred_delegate_keeps_the_reviewed_install_lane(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """`REQ-ORCH-001` is untouched: only requiresAgents members are
+        repaired. A merely PREFERRED delegate still reaches the user as a
+        reviewed install proposal."""
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                '```curio.v1\n{"delegateRequest": {"capability": "connection.propose", '
+                '"inputs": {"subtask": "connect these"}}}\n```',
+                "I asked for an install.",
+            ],
+        )
+        body = self._run(client, token, alice_project, att_id).get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "project.install"
+        assert proposal["pins"]["coord"] == "agent.connection-builder@1.0.0"
+        installed = {
+            a["dirName"] for a in client.get(
+                f"/api/agents/projects/{alice_project}", headers=_auth(token)
+            ).get_json()["agents"]
+        }
+        assert "agent.connection-builder@1.0.0" not in installed
 
     def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -4494,6 +4648,133 @@ class TestDataflowPlanApply:
 
         return projects_storage.read_spec(_user_dir_key(user), project_id)
 
+    # ── dev/126: a whole-plan apply attaches the plan-node agents ────────
+
+    def _data_loading_plan(self):
+        helper = TestDataflowPlanMint()
+        return helper._plan_tail(
+            nodes=[
+                {"ref": "a", "nodeType": "curio.builtin/data-loading",
+                 "title": "Load boundaries", "intent": "load the community areas"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Analyze", "intent": "compute density"},
+            ],
+            edges=[{"from": "a", "to": "b"}],
+        )
+
+    def _add_data_loading_template(self, user):
+        """The fixture package ships no data-loading template; the plan-node
+        agents key on that type, so add one to the installed manifest."""
+        import json as _json
+
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        path = (
+            user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
+        )
+        manifest = _json.loads(path.read_text(encoding="utf-8"))
+        if not any(t["id"] == "data-loading" for t in manifest["templates"]):
+            manifest["templates"].append({
+                "id": "data-loading", "label": "Data Loading",
+                "category": "data", "engine": "python", "editor": "code",
+                "description": "Load a dataset.",
+                "inputPorts": [],
+                "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+            })
+            path.write_text(_json.dumps(manifest), encoding="utf-8")
+
+    def _mint_data_loading_plan(self, client, user, token, project_id, monkeypatch):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, project_id, monkeypatch,
+            replies=["Plan.\n" + self._data_loading_plan()],
+        )
+        self._add_data_loading_template(user)
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def test_whole_plan_apply_attaches_both_agents_per_node_kind(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, proposal = self._mint_data_loading_plan(
+            client, user, token, alice_project, monkeypatch
+        )
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        ids = {n["goal"].split(" —")[0]: n["id"] for n in body["appliedGraph"]["nodes"]}
+        by_node: dict[str, set] = {}
+        for row in body["attachedAgents"]:
+            by_node.setdefault(row["nodeId"], set()).add(row["agentId"])
+        assert by_node[ids["Load boundaries"]] == {
+            "agent.node-builder", "agent.dataset-finder",
+        }
+        assert by_node[ids["Analyze"]] == {"agent.node-builder"}
+        assert body["skippedAgents"] == [] or all(
+            r["agentId"] == "agent.dataset-finder" for r in body["skippedAgents"]
+        )
+        # The spec carries them, targeted at those nodes.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        finder = [
+            c for c in cards if c["coord"].startswith("agent.dataset-finder@")
+        ]
+        assert [c["target"] for c in finder] == [
+            {"kind": "node", "targetId": ids["Load boundaries"]}
+        ]
+        # And the applied card says what it attached.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        card = next(
+            p for t in reversed(turns) for p in (t.get("content") or [])
+            if p.get("title") == "Applied: dataflow plan"
+        )
+        line = next(l for l in card["lines"] if l.startswith("agents attached:"))
+        assert "Node Builder ×2" in line and "Dataset Finder" in line
+
+    def test_both_apply_paths_produce_the_same_attachments(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """dev/126: the per-node apply and the whole-plan apply are two ways to
+        apply ONE plan; the attachment set they produce must be identical."""
+        user, token = user_and_token
+        att_id, proposal = self._mint_data_loading_plan(
+            client, user, token, alice_project, monkeypatch
+        )
+        per_node = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/"
+            f"{proposal['proposalId']}/apply-node",
+            json={"ref": "a"}, headers=_auth(token),
+        ).get_json()
+        assert {r["agentId"] for r in per_node["attachedAgents"]} == {
+            "agent.node-builder", "agent.dataset-finder",
+        }
+        assert per_node["attachedAgentId"] == next(
+            r["attachmentId"] for r in per_node["attachedAgents"]
+            if r["agentId"] == "agent.node-builder"
+        )
+        # Finishing the same proposal as a whole covers the remaining ref only.
+        rest = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert {r["agentId"] for r in rest["attachedAgents"]} == {"agent.node-builder"}
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        node_attachments = sorted(
+            (c["coord"].split("@")[0], c["target"]["targetId"])
+            for c in cards if c["target"]["kind"] == "node"
+        )
+        loader = per_node["createdNode"]["id"]
+        other = rest["appliedGraph"]["nodes"][0]["id"]
+        assert node_attachments == sorted([
+            ("agent.dataset-finder", loader),
+            ("agent.node-builder", loader),
+            ("agent.node-builder", other),
+        ])
+
     def test_apply_inserts_graph_additively_with_server_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
@@ -4597,12 +4878,24 @@ class TestSolve:
     def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_ncb=True):
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
+        # dev/118 (DEC-075): Solve now RUNS every executable node. These
+        # plans are computation nodes; a fake sandbox that passes keeps the
+        # tests about the batch's mechanics, not about the code they generate.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {"stdout": [], "stderr": "",
+                                       "output": {"path": "art-1", "dataType": "dataframe"}},
+        )
         if install_ncb:
             client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.NCB}, headers=_auth(token))
         else:
             # dev/106: installing the Builder now brings the NCB along; the
             # missing-specialist state is a legacy/hand-edited lockfile.
+            # dev/126: and DEC-080 repairs exactly that at the next action, so
+            # a test about the reviewed install lane must also stand in for the
+            # one case the repair cannot fix (see _block_closure_repair).
             _drop_from_lockfile(user, project_id, self.NCB)
+            self._release_repair = _block_closure_repair(monkeypatch)
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         body = client.post(
@@ -4655,6 +4948,100 @@ class TestSolve:
             for d in solve_turn["execution"]["delegations"]
         )
 
+    def _child_config(self, client, token, label="Child", model="child-model"):
+        body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
+                "apiKey": "sk-child-key-0123456789", "model": model}
+        return client.post("/api/agents/llm/configs", json=body, headers=_auth(token)).get_json()["config"]["id"]
+
+    def _record_models(self, monkeypatch, on_call=None):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        inner = services_mod.run_chat_turn
+        seen = []
+
+        def _recording(config, messages, **kwargs):
+            seen.append((config.model, config.source))
+            if on_call is not None:
+                on_call(len(seen))
+            return inner(config, messages, **kwargs)
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _recording)
+        return seen
+
+    def test_each_child_runs_on_and_pins_its_own_configuration(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+        seen = self._record_models(monkeypatch)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        assert seen and all(call == ("child-model", "assigned") for call in seen)
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        # The summary pins the Builder's configuration, each child its own.
+        assert solve_turn["execution"]["pins"]["llm"]["source"] == "deployment"
+        for child in solve_turn["execution"]["delegations"]:
+            assert child["pins"]["llm"]["configId"] == child_config
+            assert child["pins"]["model"] == "child-model"
+
+    def test_a_broken_delegate_choice_refuses_before_anything_is_written(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+        store = llm_configs.default_store()
+        doc = store.read(_user_dir_key(user))
+        del doc["configs"][child_config]  # the choice now names nothing
+        store._write(_user_dir_key(user), doc)
+        seen = self._record_models(monkeypatch)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 400
+        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.node-content-builder"}
+        assert seen == []
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["phase"] != "solving" and not session.get("solveExecutionId")
+
+    def test_a_choice_changed_mid_solve_reaches_the_later_children(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+
+        def _clear_after_first(n):
+            if n == 1:  # the user clears the choice while the first node is generated
+                llm_configs.default_store().set_choice(
+                    _user_dir_key(user), "agent.node-content-builder", None
+                )
+
+        seen = self._record_models(monkeypatch, on_call=_clear_after_first)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        assert seen[0] == ("child-model", "assigned")
+        # A delegate resolves when it starts: the next one inherits the Builder's.
+        assert seen[-1] == ("test-model", "caller")
+
     def test_user_edited_node_is_skipped_never_overwritten(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -4688,16 +5075,20 @@ class TestSolve:
                 raise RuntimeError("child provider down")
             return f"generated-{state['n']}"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = self._solve(client, token, alice_project, att_id).get_json()
         statuses = sorted(r["status"] for r in body["results"].values())
-        assert statuses == ["failed", "solved"]
-        assert body["builderSession"]["phase"] == "applied"  # not ready yet
-        failed_id = next(n for n, r in body["results"].items() if r["status"] == "failed")
-        # Retry the failed subset only.
-        body2 = self._solve(client, token, alice_project, att_id, node_ids=[failed_id]).get_json()
-        assert body2["results"] == {failed_id: {"status": "solved"}} or body2["results"][failed_id]["status"] == "solved"
-        assert body2["builderSession"]["phase"] == "ready"
+        # dev/131: a child failure still isolates — the sibling solved on the
+        # same pass — and the SESSION now retries it instead of handing the
+        # user a failure to click through: the second pass succeeds and the
+        # session reaches ready by itself.
+        assert statuses == ["solved", "solved"]
+        assert body["passes"] > 1
+        assert body["builderSession"]["phase"] == "ready"
+        # Nothing is left to solve, so a re-run of the batch says so rather
+        # than re-burning the same calls.
+        again = self._solve(client, token, alice_project, att_id)
+        assert again.status_code == 409
 
     def test_solve_without_applied_plan_409s(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -4750,6 +5141,10 @@ class TestSolve:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        # The user's Apply installs through the same path the blocked repair
+        # uses — in the real "visible nowhere" state it would refuse too, so
+        # the migration path is tested with the dependency available again.
+        self._release_repair()
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{active['proposalId']}/apply",
             headers=_auth(token),
@@ -4889,7 +5284,7 @@ class TestStreamedSolve:
             gate.wait(timeout=10)  # children hold until the cancel lands
             return "generated"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         gen = self._solve_gen(user, alice_project, att_id)
         events: list = []
         done_evt = threading.Event()
@@ -4935,6 +5330,15 @@ class TestStreamedSolve:
             if kind == "node_result":
                 break
         gen.close()  # the client vanished mid-stream (GeneratorExit)
+        # dev/115 (DEC-021 single-process slice): the client's disconnect only
+        # UNSUBSCRIBES — the batch runs on as a detached job and finishes on
+        # its own; the persisted session is the truth once it has.
+        from utk_curio.backend.app.agents import agent_jobs
+
+        job = agent_jobs.latest_job(_user_dir_key(user), att_id)
+        assert job is not None
+        job.thread.join(timeout=10)
+        assert job.status == "done"
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         record = next(
             a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id
@@ -4963,25 +5367,47 @@ class TestStreamedSolve:
         user, token = user_and_token
         helper = TestSolve()
         att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        import threading
+
+        from utk_curio.backend.app.agents import agent_jobs
+
         key = _user_dir_key(user)
         spec = projects_storage.read_spec(key, alice_project)
         record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
-        record["builderSession"]["phase"] = "solving"  # a solve owned by another worker
-        record["builderSession"]["solvingSince"] = 1.0
-        projects_storage.write_spec(key, alice_project, spec)
-        r = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
-            headers=_auth(token),
+        # dev/115: a "solving" session is live only while THIS process holds
+        # its job (single-process lease); simulate the running batch with a
+        # registered job that blocks until released.
+        gate = threading.Event()
+
+        def _events():
+            gate.wait(timeout=10)
+            yield "done", {}
+
+        job = agent_jobs.start_job(
+            user_key=key, project_id=alice_project, attachment_id=att_id,
+            kind="solve-batch", job_id="live-solve", events=_events(),
         )
-        assert r.status_code == 200 and r.get_json()["cancelRequested"] is True
-        spec = projects_storage.read_spec(key, alice_project)
-        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
-        assert record["builderSession"]["cancelRequested"] is True
-        # Idempotent while "running".
-        assert client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
-            headers=_auth(token),
-        ).status_code == 200
+        record["builderSession"]["phase"] = "solving"
+        record["builderSession"]["solvingSince"] = 1.0
+        record["builderSession"]["solveExecutionId"] = "live-solve"
+        projects_storage.write_spec(key, alice_project, spec)
+        try:
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+                headers=_auth(token),
+            )
+            assert r.status_code == 200 and r.get_json()["cancelRequested"] is True
+            spec = projects_storage.read_spec(key, alice_project)
+            record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+            assert record["builderSession"]["cancelRequested"] is True
+            # Idempotent while "running".
+            assert client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+                headers=_auth(token),
+            ).status_code == 200
+        finally:
+            gate.set()
+            job.thread.join(timeout=5)
 
 
 class TestPlanCorrectionRounds:
@@ -5112,7 +5538,7 @@ class TestPlanCorrectionRounds:
             for i in range(0, len(reply), 9):
                 yield reply[i : i + 9]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -5414,7 +5840,7 @@ class TestToolRequestRecovery:
                 yield reply[i:i + 9]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "build it"}, headers=_auth(token),
@@ -5551,7 +5977,7 @@ class TestFenceAgnosticPlanRecognition:
             for i in range(0, len(reply), 11):
                 yield reply[i : i + 11]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -5587,7 +6013,7 @@ class TestGeneratedContentExtraction:
             state["n"] += 1
             return wrapped
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = solve_helper._solve(client, token, alice_project, att_id).get_json()
         assert {r["status"] for r in body["results"].values()} == {"solved"}
         for item in body["appliedContents"]:
@@ -5672,7 +6098,7 @@ class TestDestructiveReplan:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="replace the loader"):
@@ -5759,10 +6185,10 @@ class TestDestructiveReplan:
             replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
         )
         # A node-target attachment on the victim (dies with it, dev/32) …
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token))
         victim_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
+            json={"coord": "agent.node-content-builder@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
         # … and a stale nodeRuns entry for it in the builder session.
@@ -6119,6 +6545,16 @@ class TestProposeModeSolve:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
             json={"ref": ref}, headers=_auth(token),
         ).get_json()["createdNode"]
+        # dev/118 (DEC-075): propose mode now RUNS the computation node too and
+        # mints an EXECUTED review; a fake sandbox that passes keeps this test
+        # about the propose loop.
+        exec_calls: list = []
+
+        def _exec(endpoint, payload):
+            exec_calls.append(payload)
+            return {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}}
+
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         # Propose-mode solve of exactly that node.
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
@@ -6127,6 +6563,8 @@ class TestProposeModeSolve:
         events = TestStreamedSolve()._sse_events(resp)
         result = next(p for k, p in events if k == "node_result")
         assert result["status"] == "proposed"
+        assert result["verdict"] == "pass" and result["rounds"] == 1  # dev/118: an executed review
+        assert len(exec_calls) == 1 and "generated" in exec_calls[0]["code"]
         content_proposal_id = result["proposalId"]
         done = events[-1][1]
         assert done["mode"] == "propose"
@@ -6145,12 +6583,20 @@ class TestProposeModeSolve:
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
-        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        # dev/126: the Node Builder is a required agent of the Dataflow Builder
+        # now, so the applied plan node HAS its own agent and dev/73's rule
+        # takes effect — the content review is minted at the NODE's agent, not
+        # folded back into the orchestrator's chat. The event says where.
+        mint_att_id = result["proposalAttachmentId"]
+        minted_at = next(c for c in cards if c["attachmentId"] == mint_att_id)
+        assert minted_at["coord"].startswith("agent.node-builder@")
+        assert minted_at["target"] == {"kind": "node", "targetId": created["id"]}
+        active = minted_at["activeProposal"]
         assert active["tool"] == "node.content.write"
         assert active["proposalId"] == content_proposal_id
         # Applying the content proposal writes + resolves the ledger.
         body = client.post(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{content_proposal_id}/apply",
+            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/proposals/{content_proposal_id}/apply",
             headers=_auth(token),
         ).get_json()
         assert body["appliedContent"]["nodeId"] == created["id"]
@@ -6412,9 +6858,33 @@ class TestProgressiveLifecycle:
         again = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
         assert again["status"] == "already-applied"
 
-    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_apply_repairs_the_closure_and_attaches_the_node_builder(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/126 (DEC-080): the Node Builder is a required agent of the
+        # Dataflow Builder, so an apply in a project that lacks it completes
+        # the closure and the created node carries its agent — the dev/71
+        # behavior stops depending on what the user happened to install.
         user, token = user_and_token
         att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        assert body["attachedAgentId"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
+        assert attached["coord"].startswith("agent.node-builder@")
+
+    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The remaining path to an agent-less node: the closure cannot be
+        # completed (a required agent visible nowhere). Creation never fails
+        # over its agent (dev/71), and the apply says so rather than pretending.
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        # The run's own repair already installed the Node Builder, so the
+        # agent-less state has to be re-created the way a legacy lockfile has
+        # it — and then held there by a repair that cannot complete.
+        _drop_from_lockfile(user, alice_project, "agent.node-builder@1.0.0")
+        _block_closure_repair(monkeypatch)
         ref = proposal["plan"]["nodes"][0]["ref"]
         body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
         assert body["attachedAgentId"] is None
@@ -6529,6 +6999,54 @@ class TestVerifiedDiscovery:
         # A row with no probeable URL is LOUDLY unverified — never implied.
         assert unverified["verification"]["status"] == "unverified"
         assert "never checked" in unverified["verification"]["detail"]
+
+    def test_rows_carry_the_access_verdict_and_a_manual_row_its_steps(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """dev/132: the same probe now also answers *what can you do with it* —
+        fetch it (delegate the code) or download it from the portal (steps +
+        Import). Read from the observation, never from the row's prose."""
+        user, token = user_and_token
+        observations = {
+            "https://data.cityofchicago.org/resource/abcd-1234.json": {
+                "status": "verified", "httpStatus": 200,
+                "contentType": "application/json", "sampleKeys": ["a"], "checkedAt": "now",
+            },
+            "https://geosampa.prefeitura.sp.gov.br/downloads": {
+                "status": "verified", "httpStatus": 200, "contentType": "text/html",
+                "pageTitle": "GeoSampa — Downloads", "checkedAt": "now",
+            },
+        }
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: observations.get(url) or {
+                "status": "unverified", "detail": "no probeable URL", "checkedAt": "now",
+            },
+        )
+        rows = [
+            {"name": "Chicago Heat", "sourceType": "api",
+             "url": "https://data.cityofchicago.org/resource/abcd-1234.json"},
+            {"name": "Setores GeoSampa", "sourceType": "portal", "format": "Shapefile (zip)",
+             "url": "https://geosampa.prefeitura.sp.gov.br/downloads"},
+        ]
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.dataset-finder@1.0.0",
+            replies=[self._candidates_reply(rows)],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        api_row, portal_row = part["lanes"]["external"]
+        assert api_row["access"] == "fetchable"
+        assert "application/json" in api_row["accessWhy"]
+        assert "downloadSteps" not in api_row  # nothing to teach: code fetches it
+        assert portal_row["access"] == "manual-download"
+        assert "GeoSampa" in portal_row["accessWhy"]
+        steps = portal_row["downloadSteps"]
+        assert steps[0].endswith("https://geosampa.prefeitura.sp.gov.br/downloads")
+        assert "Shapefile (zip)" in " ".join(steps)
+        assert steps[-1].startswith("Then use Import dataset below")
 
     def test_research_verify_delegates_get_runtime_evidence(self, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents import services as services_mod
@@ -6821,9 +7339,12 @@ class TestValidateNode:
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
         assert node["content"] == ""
-        # The transcript part carries the validation block.
+        # The transcript part carries the validation block — in the session the
+        # mint reports (dev/126: the plan node now has its own Node Builder, so
+        # dev/73's rule homes the review there).
+        mint_att_id = done.get("proposalAttachmentId") or att_id
         turns = client.get(
-            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            f"/api/agents/projects/{alice_project}/attachments/{mint_att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
         part = next(
@@ -6856,7 +7377,9 @@ class TestValidateNode:
         self._fake_exec(monkeypatch, fail_markers=("always_bad",))
         att_id, ref, _, _ = self._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
-            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+            # Three DIFFERENT failing corrections: a comment-only repeat is not
+            # run again (dev/116 live fix).
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()", "always_bad(1)", "always_bad(2)"],
         )
         events = self._validate(client, token, alice_project, att_id, {"ref": ref})
         done = events[-1][1]
@@ -6865,6 +7388,38 @@ class TestValidateNode:
         # Apply-anyway semantics: the failing candidate IS still reviewable.
         assert done["proposalId"]
         assert "Traceback" in done["evidence"]["stderrTail"]
+
+    def test_a_browser_rendered_plan_node_is_proposed_as_not_executable(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/118 (DEC-075): a data-pool (or Vega) plan node used to validate
+        # as PASS with nothing executed. The generation is still proposed —
+        # labeled — and the plan ledger proceeds as for a pass.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        calls = self._fake_exec(monkeypatch)
+        pool_plan = helper._plan_tail(
+            nodes=[{"ref": "p", "nodeType": "curio.builtin/data-pool", "title": "Pool", "intent": "hold the data"}],
+            edges=[],
+        )
+        att_id, ref, _, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + pool_plan, "{}"],
+        )
+        events = self._validate(client, token, alice_project, att_id, {"ref": ref})
+        done = events[-1][1]
+        assert done["verdict"] == "not-executable" and done["rounds"] == 1
+        assert done["evidence"]["kind"] == "not-executable"
+        assert "no code the sandbox could run" in done["evidence"]["detail"]
+        assert calls == []  # nothing reached the sandbox
+        assert done["builderSession"]["nodeStates"][ref] == "validated"  # the plan proceeds
+        assert done["proposalId"]
+        session = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{done['proposalAttachmentId']}/session",
+            headers=_auth(token),
+        ).get_json()
+        part = next(q for t in reversed(session["turns"]) for q in (t.get("content") or [])
+                    if q.get("type") == "proposal" and q.get("proposalId") == done["proposalId"])
+        assert part["validation"]["verdict"] == "not-executable"
+        assert part["validation"]["attempts"][0]["kind"] == "not-executable"
 
     def test_preflight_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -6957,7 +7512,7 @@ class TestBuiltinPromptPropagation:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "clear the canvas"}, headers=_auth(token),
@@ -7025,7 +7580,7 @@ class TestBuiltinPromptPropagation:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "hi"}, headers=_auth(token),
@@ -7205,7 +7760,7 @@ class TestPackageRecommendationTools:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="what packages do I need"):
@@ -7481,7 +8036,7 @@ class TestPackageBuilderTools:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build a notes package"):
@@ -7859,57 +8414,6 @@ class TestRestartHonestyOnApply:
         assert "Restart Curio" not in applied_text
 
 
-class TestProviderDefault:
-    """What AI Settings shows as the inherited provider.
-
-    `curio.py start --llm-provider/--llm-base-url/--llm-model` and the AI
-    Settings panel write the same account-wide setting, so the deployment's
-    choice has to be readable by the panel it applies to.
-    """
-
-    URL = "/api/agents/provider-default"
-
-    def test_reports_what_the_launcher_flags_set(self, client, user_and_token, monkeypatch):
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "anthropic")
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "https://llm.example.test/v1")
-        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "some-model")
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
-        _, token = user_and_token
-        body = client.get(self.URL, headers=_auth(token)).get_json()
-        assert body == {
-            "apiType": "anthropic",
-            "baseUrl": "https://llm.example.test/v1",
-            "model": "some-model",
-            "hasApiKey": True,
-        }
-
-    def test_never_returns_the_key_itself(self, client, user_and_token, monkeypatch):
-        # The reason there is no --llm-api-key is that a key should not travel
-        # where it need not. The same rule applies to this response.
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "sk-secret")
-        _, token = user_and_token
-        raw = client.get(self.URL, headers=_auth(token)).get_data(as_text=True)
-        assert "sk-secret" not in raw
-
-    def test_an_unconfigured_install_reports_nulls(self, client, user_and_token, monkeypatch):
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
-        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
-        _, token = user_and_token
-        body = client.get(self.URL, headers=_auth(token)).get_json()
-        assert body["baseUrl"] is None and body["model"] is None
-        assert body["hasApiKey"] is False
-
-    def test_requires_auth(self, client):
-        assert client.get(self.URL).status_code == 401
-
-
 class TestProviderModels:
     """The model list AI Settings offers instead of a free-text box.
 
@@ -7966,37 +8470,30 @@ class TestProviderModels:
 
     @staticmethod
     def _no_deployment_key(monkeypatch):
-        """Drop the suite's stand-in operator key.
+        """Drop the suite's stand-in operator key (``conftest`` configures one
+        for every agents test)."""
+        from utk_curio.backend import config
 
-        ``conftest`` configures one for every agents test, and the route
-        inherits it for any field the caller left blank - which is exactly the
-        behaviour under test when the question is "what happens with no key".
-        """
-        from utk_curio.backend.app.agents import provider_config
-
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
 
     @staticmethod
     def _no_deployment_base_url(monkeypatch):
         """Resolve to plain OpenAI rather than the suite's custom endpoint."""
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config
 
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
 
     @staticmethod
     def _no_deployment_model(monkeypatch):
         """Ship the real default: an operator key with no model named.
 
         ``conftest`` pins ``DEFAULT_LLM_MODEL`` to a stand-in for every test in
-        this package, which means ``resolve_provider_config`` always finds a
-        model and its "no model" refusal is never reached here. That pin is what
-        hid the bug this helper exists to expose: ``CURIO_DEFAULT_LLM_MODEL``
-        ships empty while an operator may well set the key, and the listing
-        route used to lose the key along with the refused config.
+        this package. ``CURIO_DEFAULT_LLM_MODEL`` ships empty while an operator
+        may well set the key, and the listing must still reach that endpoint.
         """
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config
 
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "")
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
 
     @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
@@ -8288,9 +8785,8 @@ class TestProviderModels:
     def test_an_unconfigured_account_can_still_ask(
         self, client, user_and_token, monkeypatch
     ):
-        # An account with nothing saved asks with only what is on screen. Note
-        # this omits apiType, so it also pins that a missing provider is
-        # inherited from the resolved account.
+        # An account with nothing saved asks with only what is on screen. It
+        # omits apiType, which reads as OpenAI-compatible.
         self._fake_openai(monkeypatch, models=["gemma4"])
         _, token = user_and_token
         res = client.post(
@@ -8306,11 +8802,9 @@ class TestProviderModels:
     ):
         """A model is what this screen is for, so it cannot gate asking (#241).
 
-        ``resolve_provider_config`` refuses when no model resolves, and the
-        route threw the whole config away with the refusal - including the
-        operator's API key. Since ``CURIO_DEFAULT_LLM_MODEL`` ships empty, an
-        operator who deploys a key and leaves the model to their users had
-        every one of them told to add a key the server was already holding.
+        ``CURIO_DEFAULT_LLM_MODEL`` ships empty, and an operator who deploys a
+        key and leaves the model to their users offers This Curio install: the
+        listing asks that endpoint with its own key.
         """
         self._no_deployment_model(monkeypatch)
         seen = self._fake_openai(monkeypatch, models=["gemma4"])
@@ -8319,7 +8813,7 @@ class TestProviderModels:
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "openai_compatible", "baseUrl": "", "apiKey": ""},
+            json={"endpoint": "deployment"},
         )
 
         assert res.status_code == 200, res.get_json()
@@ -8331,25 +8825,25 @@ class TestProviderModels:
     def test_a_key_saved_for_one_provider_is_not_lent_to_another(
         self, client, db, user_and_token, monkeypatch
     ):
-        """One credential per account must not mean one credential everywhere.
+        """A configuration's key is lent only to that configuration's endpoint.
 
-        The account holds a single provider triple, and the route filled every
-        blank field from it regardless of which tab asked. So opening Anthropic
-        with an Ollama credential saved listed the Ollama endpoint and labelled
-        the answer "From this endpoint" - the exact class of unverified claim
-        #241 exists to remove.
+        Asking about Anthropic while naming an Ollama configuration must not
+        list the Ollama endpoint, nor send its key to Anthropic.
         """
         self._no_deployment_key(monkeypatch)
-        user, token = user_and_token
-        user.llm_api_type = "openai_compatible"
-        user.llm_base_url = "http://ollama.local/v1"
-        user.llm_api_key = "sk-ollama-secret"
-        db.session.commit()
+        _, token = user_and_token
+        ollama = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Ollama", "apiType": "openai_compatible",
+                  "baseUrl": "http://ollama.local/v1", "apiKey": "sk-ollama-secret",
+                  "model": "llama3"},
+            headers=_auth(token),
+        ).get_json()["config"]
 
         res = client.post(
             self.URL,
             headers=_auth(token),
-            json={"apiType": "anthropic", "baseUrl": "", "apiKey": ""},
+            json={"configId": ollama["id"], "apiType": "anthropic", "baseUrl": "", "apiKey": ""},
         )
 
         # Refused for want of a key, rather than answered with another
@@ -8361,12 +8855,8 @@ class TestProviderModels:
     def test_a_typed_endpoint_is_not_handed_another_endpoints_key(
         self, client, user_and_token, monkeypatch
     ):
-        """Typing a URL must not post the operator's secret to it.
-
-        The Custom tab sends a base URL the user typed. Inheriting the blank
-        key alongside it sent whatever the account resolved - here the
-        deployment's key - to a host neither the operator nor the user chose.
-        """
+        """Typing a URL must not post the operator's secret to it: a request
+        that names neither a configuration nor this install borrows no key."""
         seen = self._fake_openai(monkeypatch, models=["anything"])
         _, token = user_and_token
 
@@ -8390,13 +8880,9 @@ class TestProviderModels:
     def test_a_recording_is_filed_under_the_endpoint_that_answered(
         self, client, user_and_token, monkeypatch
     ):
-        """Record and replay have to agree on which endpoint spoke.
-
-        The base URL is part of an endpoint's identity, so inheriting the
-        deployment's URL into an Anthropic request filed that listing under
-        ``anthropic@<the openai-compatible url>``. The replay then looked for it
-        under plain ``anthropic`` and missed.
-        """
+        """Record and replay have to agree on which endpoint spoke: an
+        Anthropic listing is filed under ``anthropic``, never under a URL the
+        request did not name."""
         self._fake_anthropic(monkeypatch, models=["claude-haiku-4-5"])
         _, token = user_and_token
         recorded = client.post(
@@ -8407,12 +8893,8 @@ class TestProviderModels:
         assert recorded.status_code == 200
         assert recorded.get_json()["models"] == ["claude-haiku-4-5"]
 
-        # The recording must be filed under "anthropic", not under anthropic
-        # plus whatever unrelated base URL the account happened to resolve to.
-        # Proven by moving that URL: the replay below can only find the entry if
-        # the deployment's endpoint never entered its identity in the first
-        # place. Without the fix the write went to
-        # ``anthropic@http://127.0.0.1:9/v1`` and this lookup misses.
+        # Proven by moving the deployment's URL: the replay can only find the
+        # entry if that URL never entered its identity.
         self._no_deployment_base_url(monkeypatch)
         self._no_deployment_key(monkeypatch)
         replayed = client.post(
@@ -8492,3 +8974,281 @@ class TestReadDefinition:
             headers=_auth(token),
         )
         assert r.status_code in (200, 201), r.get_json()
+class TestPlanTopologyMint:
+    """dev/112 (DEC-070) — the owner's 2026-08-25 session, made unmintable:
+    a plan data edge that closes a cycle is refused with the path named; an
+    interaction edge is kept as such (visualization ↔ data-pool only);
+    edge-only plans mint; removed connections are reviewed by name."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+    TEMPLATES = [
+        {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+         "engine": "python", "editor": "code", "description": "d",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "data-pool", "label": "Data Pool", "category": "data", "engine": "python",
+         "editor": "none", "hasCode": False, "description": "d", "bidirectional": True,
+         "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "merge-flow", "label": "Merge Flow", "category": "data", "engine": "python",
+         "editor": "none", "hasCode": False, "description": "d",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "vis-vega", "label": "Vega", "category": "visualization", "engine": "javascript",
+         "editor": "grammar", "description": "d", "bidirectional": True,
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+    ]
+    # The owner's canvas: Load → Transform → Merge → Pool → Vis.
+    NODES = [
+        {"id": "load", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Fabricate", "x": 0, "y": 0},
+        {"id": "xform", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Transform", "x": 400, "y": 0},
+        {"id": "merge", "type": "curio.builtin/merge-flow", "content": "", "goal": "Pool Input Merge", "x": 800, "y": 0},
+        {"id": "pool", "type": "curio.builtin/data-pool", "content": "", "goal": "Time Data Pool", "x": 1200, "y": 0},
+        {"id": "vis", "type": "curio.builtin/vis-vega", "content": "", "goal": "Metric Distribution", "x": 1600, "y": 0},
+    ]
+    EDGES = [
+        {"id": "e1", "source": "load", "target": "xform", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e2", "source": "xform", "target": "merge", "sourceHandle": "out", "targetHandle": "in_0"},
+        {"id": "e3", "source": "merge", "target": "pool", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e4", "source": "pool", "target": "vis", "sourceHandle": "out", "targetHandle": "in"},
+    ]
+
+    def _tail(self, plan):
+        import json as _json
+        return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies, edges=None):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=self.TEMPLATES)
+        spec = {"dataflow": {"nodes": self.NODES, "edges": edges if edges is not None else self.EDGES, "packages": []}}
+        r = client.put(f"/api/projects/{project_id}", json={"name": "p", "spec": spec, "outputs": []}, headers=_auth(token))
+        assert r.status_code == 200
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}}, headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="fix the cycle"):
+        return client.post(f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+                           json={"message": message}, headers=_auth(token))
+
+    @staticmethod
+    def _proposal(body):
+        return next((p for p in body["content"] if p["type"] == "proposal"), None)
+
+    def test_the_owners_plan_is_refused_with_the_cycle_named(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Round one of the 2026-08-25 session: vis → merge as a data edge.
+        user, token = user_and_token
+        owner_plan = {"goal": "interaction loop", "nodes": [], "edges": [{"from": "vis", "to": "merge"}]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(owner_plan), "I give up."])
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert self._proposal(body) is None
+        feedback = calls[1][-1]["content"]
+        assert "creates a cycle" in feedback
+        assert "Metric Distribution" in feedback and "Pool Input Merge" in feedback
+        assert '"kind": "interaction"' in feedback
+        # The saved graph is untouched — nothing materialized (DEC-051 discipline).
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        assert len(projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["edges"]) == 4
+
+    def test_interaction_edge_to_the_pool_mints_edge_only_and_keeps_its_kind(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch, replies=["Fix.\n" + self._tail(plan)])
+        proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
+        assert proposal is not None, "an edge-only plan must mint (no filler nodes needed)"
+        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edges"
+        assert proposal["plan"]["edges"] == [{
+            "from": "vis", "to": "pool", "kind": "interaction",
+            "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
+        }]
+
+    def test_interaction_edge_into_a_merge_is_refused_naming_the_fix(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "merge", "kind": "interaction"}]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(plan), "ok"])
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert self._proposal(body) is None
+        feedback = calls[1][-1]["content"]
+        assert "invalid interaction edges" in feedback
+        assert "'merge' is merge-flow" in feedback and "target the data-pool" in feedback
+
+    def test_removal_only_plan_that_breaks_a_user_cycle_mints_and_names_the_connection(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "break", "removeEdges": ["e5"]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Fix.\n" + self._tail(plan)], edges=cyclic)
+        proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
+        assert proposal is not None
+        assert proposal["summary"] == "Apply plan · 0 nodes, 0 edges, removes 1 connection"
+        assert proposal["plan"]["removals"] == []
+        assert proposal["plan"]["removedEdges"] == [
+            {"id": "e5", "fromLabel": "Metric Distribution", "toLabel": "Pool Input Merge"},
+        ]
+
+    def test_remove_and_readd_as_data_is_still_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Rounds two to five of the session: removeEdges the loop edge, add it back as data.
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "convert", "nodes": [], "edges": [{"from": "vis", "to": "merge"}], "removeEdges": ["e5"]}
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
+                                    replies=["Fix.\n" + self._tail(plan), "ok"], edges=cyclic)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is None
+        assert "creates a cycle" in calls[1][-1]["content"]
+
+    def test_a_plan_that_leaves_a_user_cycle_alone_is_not_blamed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "note", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                          "title": "Side", "intent": "unrelated"}], "edges": []}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + self._tail(plan)], edges=cyclic)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is not None
+
+    def test_existing_interaction_edges_do_not_count_toward_fan_in_or_cycles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        with_feedback = self.EDGES + [{"id": "e5", "source": "vis", "target": "pool", "type": "Interaction",
+                                       "sourceHandle": "in/out", "targetHandle": "in/out"}]
+        plan = {"goal": "extend", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                            "title": "Post", "intent": "downstream"}],
+                "edges": [{"from": "vis", "to": "n"}]}
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + self._tail(plan)], edges=with_feedback)
+        assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is not None
+
+
+class TestPlanTopologyApply:
+    """dev/112 (DEC-070) — the apply paths: interaction edges materialize as
+    the Trill's Interaction shape, removed connections are counted, the applied
+    turn carries the topology verdict, and drift that would close a cycle is
+    refused (whole-plan → 409 + stale; per-edge → refused row, named)."""
+
+    def _base(self):
+        return TestPlanTopologyMint()
+
+    def _cyclic_edges(self):
+        return TestPlanTopologyMint.EDGES + [
+            {"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"},
+        ]
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _apply_edges(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-edges",
+            json={}, headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def _write_spec(self, user, project_id, spec):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        projects_storage.write_spec(_user_dir_key(user), project_id, spec)
+
+    def _drift_but_keep_digest(self, user, project_id, att_id, new_edge):
+        """The user draws an edge AND the digest is re-pinned (as the per-node
+        applies do), so the topology re-check — not the digest — must catch it."""
+        from utk_curio.backend.app.agents import services as services_mod
+        spec = self._spec(user, project_id)
+        spec["dataflow"]["edges"].append(new_edge)
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        record["activeProposal"]["baseGraphDigest"] = services_mod._graph_shape_digest(spec)
+        self._write_spec(user, project_id, spec)
+
+    def _turn_texts(self, client, token, project_id, att_id):
+        body = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()
+        return [t.get("text") or "" for t in body.get("turns", [])]
+
+    def test_the_repair_applies_as_an_interaction_edge_and_reports_acyclic(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "convert", "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}], "removeEdges": ["e5"]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Fix.\n" + base._tail(plan)], edges=self._cyclic_edges())
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        (created,) = body["appliedGraph"]["edges"]
+        assert created["type"] == "Interaction"
+        assert created["sourceHandle"] == "in/out" and created["targetHandle"] == "in/out"
+        assert body["appliedGraph"]["removedEdgeIds"] == ["e5"]
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert all(e["id"] != "e5" for e in edges)
+        assert any(e.get("type") == "Interaction" and e["source"] == "vis" and e["target"] == "pool" for e in edges)
+        applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
+        assert applied == "Applied: plan added 0 nodes and 1 connections, removed 1 connection. Topology: acyclic."
+
+    def test_applied_turn_reports_a_user_cycle_the_plan_left_alone(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "side", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+                                          "title": "Side", "intent": "unrelated"}], "edges": []}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
+                                replies=["Add.\n" + base._tail(plan)], edges=self._cyclic_edges())
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
+        assert "Topology: cycle through" in applied
+        assert "Metric Distribution" in applied and "Pool Input Merge" in applied
+
+    def test_whole_plan_apply_refuses_drift_that_would_close_a_cycle(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        # Acyclic at mint: load → merge (merge accepts many inputs).
+        plan = {"goal": "wire", "edges": [{"from": "load", "to": "merge"}]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        # The user then draws merge → load; the plan edge load → merge would close it.
+        self._drift_but_keep_digest(user, alice_project, att_id,
+                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+        r = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert r.status_code == 409
+        assert "close a cycle" in r.get_json()["error"]
+        # Nothing mutated: the drawn edge is there, the plan edge is not.
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert any(e["id"] == "u1" for e in edges) and not any(e["source"] == "load" and e["target"] == "merge" for e in edges)
+
+    def test_per_edge_apply_refuses_a_closing_edge_by_name_and_applies_interaction_edges(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        base = self._base()
+        plan = {"goal": "wire", "edges": [
+            {"from": "load", "to": "merge"},
+            {"from": "vis", "to": "pool", "kind": "interaction"},
+        ]}
+        att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
+        proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
+        self._drift_but_keep_digest(user, alice_project, att_id,
+                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+        body = self._apply_edges(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert body["results"]["0"]["status"] == "refused"
+        assert body["results"]["0"]["reason"].startswith("closes a cycle: ")
+        assert body["results"]["1"]["status"] == "applied" and body["results"]["1"]["kind"] == "interaction"
+        (created,) = body["createdEdges"]
+        assert created["type"] == "Interaction" and created["sourceHandle"] == "in/out"

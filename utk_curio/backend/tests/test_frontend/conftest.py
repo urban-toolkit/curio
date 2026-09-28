@@ -4,7 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
-from . import diagnostics
+from . import comparisons, diagnostics
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
 
@@ -126,14 +126,15 @@ WORKFLOW_FILES = [
     "docs/examples/14-vega-lite-crs-and-geometry-types.json",
     "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
     "docs/examples/16-simple-view-tables-and-images.json",
+    "docs/examples/17-autark-geodataframe-maps.json",
     # The storage examples read collections and tables added from the example
     # storage source, committed to datasets/ and resolved like any other.
-    "docs/examples/17-storage-orthorectified-imagery.json",
-    "docs/examples/18-storage-video-frames.json",
-    "docs/examples/19-storage-folder-of-csv-files.json",
-    "docs/examples/20-storage-photos-and-videos.json",
-    "docs/examples/21-storage-audio-recordings.json",
-    "docs/examples/22-storage-folder-of-different-files.json",
+    "docs/examples/18-storage-orthorectified-imagery.json",
+    "docs/examples/19-storage-video-frames.json",
+    "docs/examples/20-storage-folder-of-csv-files.json",
+    "docs/examples/21-storage-photos-and-videos.json",
+    "docs/examples/22-storage-audio-recordings.json",
+    "docs/examples/23-storage-folder-of-different-files.json",
 ]
 
 
@@ -248,9 +249,15 @@ def pytest_itemcollected(item):
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item):
-    """Start the test's trace chunk, once its page exists (see diagnostics.py)."""
+    """Start the test's trace chunk, once its page exists (see diagnostics.py).
+
+    Also names the test its screenshot comparisons are recorded under
+    (comparisons.py), since the capture helper is not handed its item.
+    """
     diagnostics.start_trace_chunk(item)
+    comparisons.current_nodeid = item.nodeid
     yield
+    comparisons.current_nodeid = None
 
 
 @pytest.hookimpl(hookwrapper=True)

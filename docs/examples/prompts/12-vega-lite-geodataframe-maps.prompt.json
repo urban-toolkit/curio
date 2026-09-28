@@ -1,0 +1,125 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "12-vega-lite-geodataframe-maps",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/12-vega-lite-geodataframe-maps.json",
+    "sha256": "828ff36a534482f90f9ace40ca66f2c89b520a678001d6d8abc258f100760d18",
+    "walkthrough": "docs/examples/12-vega-lite-geodataframe-maps.md"
+  },
+  "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog and draw them as a map straight from the frame, without converting anything first. Then take the centroid of each polygon and show a second map with the polygons and their centre points together, and add an ordinary non-spatial chart off the same table so I can see the attributes beside the geometry.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.urbanlab.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.urbanlab.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "The basics of drawing a GeoDataFrame: one loader, one centroid transform, three views."
+}

@@ -258,6 +258,54 @@ class TestSandboxTransportErrors(unittest.TestCase):
             kwargs['headers']['X-Curio-Sandbox-Token'], "backend-side-token"
         )
 
+    # ---- dev/116: connection keys ride the /exec body by name -------------
+
+    def _exec_body(self, mock_session, code):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'stdout': [], 'stderr': '',
+            'output': {'path': 'art_x', 'dataType': 'dataframe'},
+        }
+        mock_session.post.return_value = mock_response
+        self.client.post(
+            '/processPythonCode',
+            json={"code": code, "nodeType": "DATA_LOADING", "input": {}},
+            headers=self._auth_headers(),
+        )
+        _, kwargs = mock_session.post.call_args
+        return json.loads(kwargs['data'])
+
+    @patch("utk_curio.backend.app.users.connection_keys.default_store")
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_secrets_named_in_the_code_ride_the_exec_body(self, mock_session, mock_store):
+        """curio_secret("census") in the code -> the resolved value in the
+        sandbox request and nowhere else; unknown names are simply absent."""
+        store = MagicMock()
+        store.resolve.return_value = {"census": "k3y-v4lue-9876"}
+        mock_store.return_value = store
+        body = self._exec_body(
+            mock_session,
+            '    key = curio_secret("census")\n    other = curio_secret("nope")\n    return 1',
+        )
+        self.assertEqual(body["secrets"], {"census": "k3y-v4lue-9876"})
+        (_user_key, names), _ = store.resolve.call_args
+        self.assertEqual(list(names), ["census", "nope"])
+
+    @patch("utk_curio.backend.app.users.connection_keys.default_store")
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_no_secret_call_means_no_secrets_key_and_no_store_read(self, mock_session, mock_store):
+        body = self._exec_body(mock_session, "    return 1")
+        self.assertNotIn("secrets", body)
+        mock_store.assert_not_called()
+
+    @patch("utk_curio.backend.app.users.connection_keys.default_store")
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_store_failure_fails_open_without_a_secrets_key(self, mock_session, mock_store):
+        mock_store.return_value.resolve.side_effect = RuntimeError("disk")
+        body = self._exec_body(mock_session, '    return curio_secret("census")')
+        self.assertNotIn("secrets", body)  # the sandbox names the missing key
+
     @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
     @patch("utk_curio.backend.app.api.routes._sandbox_session")
     def test_token_does_not_clobber_a_callers_own_headers(self, mock_session):

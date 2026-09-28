@@ -110,17 +110,17 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
-**I have a folder of orthorectified images, by year.** Its manifest declares one `rasters` resource, `orthos/{year:int}/{tile}.tif`. The lake lists one row with the years it covers; **Add to Data Catalog**, keeping only the years you want, gives one collection with each tile's footprint. On the canvas, a Vega-Lite map draws the footprints and **Mosaic Rasters** joins one year's tiles into one raster: see [example 17](examples/17-storage-orthorectified-imagery.md).
+**I have a folder of orthorectified images, by year.** Its manifest declares one `rasters` resource, `orthos/{year:int}/{tile}.tif`. The lake lists one row with the years it covers; **Add to Data Catalog**, keeping only the years you want, gives one collection with each tile's footprint. On the canvas, a Vega-Lite map draws the footprints and **Mosaic Rasters** joins one year's tiles into one raster: see [example 18](examples/18-storage-orthorectified-imagery.md).
 
-**I have a folder of video frames.** Its manifest declares one `frames` resource, such as `dashcam/{date:date}/{sequence}_{frame:int}.jpg`, with the frame rate as `fps`. The collection orders the frames by sequence and number and gives each its time; a telemetry table declared as `metadata` gives each frame a position. **Simple View** shows the frames in order: see [example 18](examples/18-storage-video-frames.md).
+**I have a folder of video frames.** Its manifest declares one `frames` resource, such as `dashcam/{date:date}/{sequence}_{frame:int}.jpg`, with the frame rate as `fps`. The collection orders the frames by sequence and number and gives each its time; a telemetry table declared as `metadata` gives each frame a position. **Simple View** shows the frames in order: see [example 19](examples/19-storage-video-frames.md).
 
-**I have a folder of CSV files, by sensor or by date.** Its manifest declares one `table` resource, such as `air-quality/{sensor}/{day:date}.csv`. Adding it copies every file into one Parquet table with a `sensor` and a `day` column, the rows of every file under the columns of all of them: see [example 19](examples/19-storage-folder-of-csv-files.md). With `"datasets": "per:sensor"` the lake lists one row per sensor instead, and each adds as its own table.
+**I have a folder of CSV files, by sensor or by date.** Its manifest declares one `table` resource, such as `air-quality/{sensor}/{day:date}.csv`. Adding it copies every file into one Parquet table with a `sensor` and a `day` column, the rows of every file under the columns of all of them: see [example 20](examples/20-storage-folder-of-csv-files.md). With `"datasets": "per:sensor"` the lake lists one row per sensor instead, and each adds as its own table.
 
-**I have photos and videos.** A `media` resource takes both. Each photo carries its EXIF time and position, and a video plays in **Simple View**; **Sample Video Frames** turns videos into frames: see [example 20](examples/20-storage-photos-and-videos.md).
+**I have photos and videos.** A `media` resource takes both. Each photo carries its EXIF time and position, and a video plays in **Simple View**; **Sample Video Frames** turns videos into frames: see [example 21](examples/21-storage-photos-and-videos.md).
 
-**I have audio recordings.** An `audio` resource, whose file names can carry the recording time. **Simple View** shows each recording as a spectrogram with **Play**, and **Split Audio** measures the level of each window: see [example 21](examples/21-storage-audio-recordings.md).
+**I have audio recordings.** An `audio` resource, whose file names can carry the recording time. **Simple View** shows each recording as a spectrogram with **Play**, and **Split Audio** measures the level of each window: see [example 22](examples/22-storage-audio-recordings.md).
 
-**I have a folder of unrelated data files.** Declare one resource per file, as a portal lists its datasets, and add each: see [example 22](examples/22-storage-folder-of-different-files.md). A folder of unrelated files of one format, such as `{name}.csv` with `"datasets": "per-file"`, lists one row per file.
+**I have a folder of unrelated data files.** Declare one resource per file, as a portal lists its datasets, and add each: see [example 23](examples/23-storage-folder-of-different-files.md). A folder of unrelated files of one format, such as `{name}.csv` with `"datasets": "per-file"`, lists one row per file.
 
 ---
 
@@ -139,8 +139,8 @@ Downloading or adding does not add the dataset to a dataflow. Add it from the Da
 While a download or an add runs, its row shows a progress bar and **Cancel**. The bar fills when the size is known, counts files when a resource has many, and shows what the work is doing otherwise.
 
 - **Two at a time.** Each account runs at most two downloads, adds and **Cache files** at once.
-- **A restart loses it.** A download still running when the server restarts is lost, and its row says so. Start it again.
-- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded in that format. Its button is **View dataset**, and nothing is fetched again. The same resource in another format is a separate download and a separate dataset.
+- **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
+- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded. Its button is **View dataset**, and nothing is fetched again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
 - **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
@@ -163,9 +163,9 @@ When a download fails, the row says why in the server's own words, for example t
 
 Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
 
-A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source, below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
 
-Guest accounts cannot save a token.
+A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
 A source that takes a token shows its state on the card:
 
@@ -181,11 +181,15 @@ Curio never shows a token's value, only whether one is set.
 
 ## 6. The Dataset Finder
 
-The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download from one of these portals is marked **Downloadable**.
+The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download is marked **Downloadable**: a row from one of these portals that offers downloads, or a plain https link to a file in a format Curio downloads, which goes through Direct URL.
 
 Selecting rows writes a confirmation into the chat for you to send. A download the agent proposes appears as a review card, and nothing is downloaded until you apply it. The card shows the portal's own name, format and size for the resource, and an applied download lands in your Data Catalog like any other.
 
+A **Downloadable** row has a **Download** button. It is this catalog's own download: the same job, which keeps going after you close the chat, and the resource shows one download on the card and on this catalog's page. The dataset it lands becomes the node's source. Confirming a Downloadable row downloads it the same way, and so does an applied download proposal.
+
 An external source Curio has no connector for goes to **Node Builder**, which writes code to fetch it.
+
+The Dataset Finder does not list, search or propose storage sources: you add their rows from this catalog's pages.
 
 To add the Dataset Finder to a dataflow, see the [Agent Catalog](AGENT-CATALOG.md).
 
@@ -309,7 +313,6 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 |---|---|---|
 | `CURIO_DATALAKE_ROOT` | none | Reads the shipped sources from this directory instead of `<repo_root>/datalakes`. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
-| `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | `--huggingface-token` | A Hugging Face token every account inherits until it saves its own. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `datalakes/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).

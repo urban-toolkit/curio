@@ -1,7 +1,7 @@
 """Reproject the merged census table and tag it for downstream views.
 
-The Milan census GeoJSON ships in UTM 32632; AUTK_MAP's tile pipeline
-expects EPSG:3395, so we reset the CRS and reproject. Polygons that
+The Milan census GeoJSON ships in UTM 32632, so we reset the CRS and
+reproject to EPSG:3395. Polygons that
 ended up with a non-positive UTCI mean are dropped (they overlap nodata
 pixels and would otherwise clip the colour scale).
 

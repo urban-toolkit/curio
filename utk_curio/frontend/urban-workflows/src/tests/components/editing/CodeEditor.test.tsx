@@ -9,6 +9,16 @@ jest.mock("@monaco-editor/react", () => {
     // React.useRef<any>() a "type arguments on an untyped call" error.
     const React: typeof import("react") = require("react");
     const editors: any[] = [];
+    // dev/117: the mount's monaco stub grows setModelMarkers so the credential
+    // hint's best-effort markers can be asserted; a test may delete it to
+    // exercise the "no markers here" path.
+    const setModelMarkers = jest.fn();
+    const monacoStub: any = {
+        KeyMod: { CtrlCmd: 2048 },
+        KeyCode: { Enter: 3 },
+        MarkerSeverity: { Warning: 4 },
+        editor: { setModelMarkers },
+    };
     function makeEditor(initial: string) {
         let value = initial;
         let position = { lineNumber: 1, column: 1 };
@@ -54,14 +64,11 @@ jest.mock("@monaco-editor/react", () => {
         }
         ref.current.props = props;
         React.useEffect(() => {
-            props.onMount?.(ref.current, {
-                KeyMod: { CtrlCmd: 2048 },
-                KeyCode: { Enter: 3 },
-            });
+            props.onMount?.(ref.current, monacoStub);
         }, []);
         return React.createElement("div", { "data-testid": "mock-monaco" });
     };
-    return { __esModule: true, default: MockEditor, __editors: editors };
+    return { __esModule: true, default: MockEditor, __editors: editors, __setModelMarkers: setModelMarkers, __monacoStub: monacoStub };
 });
 
 const mockMarkNodeStale = jest.fn();
@@ -103,12 +110,12 @@ jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
 
 import CodeEditor from "../../../components/editing/CodeEditor";
 
-const { __editors } = jest.requireMock("@monaco-editor/react");
+const { __editors, __setModelMarkers, __monacoStub } = jest.requireMock("@monaco-editor/react");
 const lastEditor = () => __editors[__editors.length - 1];
 
 const SAVED_CODE = "import pandas as pd\ndf = pd.DataFrame()";
 
-function renderCodeEditor(defaultValue: string | undefined) {
+function renderCodeEditor(defaultValue: string | undefined, opts: { readOnly?: boolean } = {}) {
     const sendCodeToWidgets = jest.fn();
     const floatCode = jest.fn();
     const props = (dv: string | undefined) => ({
@@ -119,7 +126,7 @@ function renderCodeEditor(defaultValue: string | undefined) {
         replacedCode: "",
         sendCodeToWidgets,
         replacedCodeDirty: false,
-        readOnly: false,
+        readOnly: opts.readOnly ?? false,
         defaultValue: dv,
         floatCode,
     });
@@ -196,6 +203,97 @@ describe("CodeEditor content sync (dev/70)", () => {
         const editor = lastEditor();
         act(() => { editor.__type("x = 1"); });
         expect(mockMarkNodeStale).toHaveBeenCalledWith("n1");
+    });
+});
+
+
+describe("CodeEditor credential hint (dev/117)", () => {
+    const { screen, fireEvent } = require("@testing-library/react");
+    const { CREDENTIAL_SCAN_DEBOUNCE_MS } = require("../../../components/editing/CodeEditor");
+    const { subscribeConnectionKeysRequests } = require("../../../components/connectionKeys/connectionKeysRequest");
+    const VALUE = "AbCdEf0123456789xyzXYZ-_";
+    const KEYED = `import requests\nurl = "https://api.census.gov/data"\napi_key = "${VALUE}"\nreturn 1`;
+    const hint = () => screen.queryByTestId("credential-hint");
+
+    beforeEach(() => {
+        __editors.length = 0;
+        __setModelMarkers.mockClear();
+        jest.useFakeTimers();
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    test("typing a key shows the bar after the debounce, naming the line; removing it hides the bar", () => {
+        renderCodeEditor(SAVED_CODE);
+        const editor = lastEditor();
+        act(() => { editor.__type(KEYED); });
+        expect(hint()).toBeNull(); // not per keystroke
+        act(() => { jest.advanceTimersByTime(CREDENTIAL_SCAN_DEBOUNCE_MS); });
+        expect(hint()).toHaveTextContent("Line 3 looks like an API key.");
+        expect(hint()).toHaveTextContent('curio_secret("<name>")');
+        expect(hint()!.textContent).not.toContain(VALUE);
+        act(() => { editor.__type(KEYED.replace(`api_key = "${VALUE}"`, 'api_key = curio_secret("census")')); });
+        act(() => { jest.advanceTimersByTime(CREDENTIAL_SCAN_DEBOUNCE_MS); });
+        expect(hint()).toBeNull();
+    });
+
+    test("content that arrives whole is scanned at once, and the markers follow the findings", () => {
+        const { setDefaultValue } = renderCodeEditor(SAVED_CODE);
+        expect(hint()).toBeNull();
+        act(() => { setDefaultValue(KEYED); }); // an external apply — no debounce
+        expect(hint()).toHaveTextContent("Line 3 looks like an API key.");
+        const [, owner, markers] = __setModelMarkers.mock.calls[__setModelMarkers.mock.calls.length - 1];
+        expect(owner).toBe("curio-credential");
+        expect(markers).toEqual([expect.objectContaining({ severity: 4, startLineNumber: 3, endLineNumber: 3 })]);
+        expect(JSON.stringify(markers)).not.toContain(VALUE);
+        act(() => { lastEditor().__type("return 1"); jest.advanceTimersByTime(CREDENTIAL_SCAN_DEBOUNCE_MS); });
+        expect(hint()).toBeNull();
+        expect(__setModelMarkers.mock.calls[__setModelMarkers.mock.calls.length - 1][2]).toEqual([]);
+    });
+
+    test("Dismiss hides the bar for that finding; a different literal shows it again", () => {
+        const { setDefaultValue } = renderCodeEditor(KEYED);
+        expect(hint()).not.toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Dismiss this hint" }));
+        expect(hint()).toBeNull();
+        act(() => { setDefaultValue(KEYED + `\ntoken = "${VALUE}"`); });
+        expect(hint()).toHaveTextContent("Lines 3 and 5 look like API keys.");
+    });
+
+    test("Save as connection key asks for the settings form with the code's host and a suggested name", () => {
+        const seen: unknown[] = [];
+        const off = subscribeConnectionKeysRequests((f: unknown) => seen.push(f));
+        renderCodeEditor(KEYED);
+        fireEvent.click(screen.getByRole("button", { name: "Save this key as a connection key" }));
+        expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
+        off();
+    });
+
+    test("a read-only editor shows the text alone", () => {
+        renderCodeEditor(KEYED, { readOnly: true });
+        expect(hint()).toHaveTextContent("Line 3 looks like an API key.");
+        expect(screen.queryByRole("button", { name: "Save this key as a connection key" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Dismiss this hint" })).toBeNull();
+    });
+
+    test("a Monaco without setModelMarkers still gets the bar", () => {
+        const saved = __monacoStub.editor;
+        delete __monacoStub.editor;
+        try {
+            renderCodeEditor(KEYED);
+            expect(hint()).toHaveTextContent("Line 3 looks like an API key.");
+            expect(__setModelMarkers).not.toHaveBeenCalled();
+        } finally {
+            __monacoStub.editor = saved;
+        }
+    });
+
+    test("the bar is a polite status region and never blocks: the model keeps the typed code", () => {
+        renderCodeEditor(KEYED);
+        expect(hint()).toHaveAttribute("role", "status");
+        expect(hint()).toHaveAttribute("aria-live", "polite");
+        expect(lastEditor().getValue()).toBe(KEYED);
     });
 });
 

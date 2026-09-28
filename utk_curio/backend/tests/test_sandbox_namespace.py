@@ -115,6 +115,22 @@ def test_seeded_globals_cover_every_legacy_name():
     )
 
 
+def test_checkIOType_stays_seeded_as_the_documented_no_op():
+    """dev/120: the name-keyed I/O validators are retired, but the NAME keeps
+    resolving in node code (owner decision — the #158 contract stays whole) and
+    calling it, with any arguments, does nothing. A payload the old rule would
+    have refused (a DATA_EXPORT producing output) is the proof."""
+    from utk_curio.sandbox.util import parsers
+
+    seeded = worker._globals_cache["checkIOType"]
+    assert seeded is parsers.checkIOType
+    assert seeded({"dataType": "dataframe", "data": None}, "DATA_EXPORT", False) is None
+    assert seeded({"dataType": "json", "data": None}, "DATA_LOADING", False) is None
+    assert seeded(None, None) is None
+    out = stdout_of(run("print(checkIOType({'dataType': 'str'}, 'DATA_EXPORT', False))\nreturn 1"))
+    assert out.strip() == "None"
+
+
 @pytest.mark.parametrize("expr,expected", [
     ("np.mean([1, 2, 3])", "2.0"),
     ("math.floor(2.7)", "2"),

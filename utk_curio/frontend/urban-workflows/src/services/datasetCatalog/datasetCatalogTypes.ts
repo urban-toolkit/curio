@@ -155,11 +155,14 @@ export interface DatasetLoaderSnippet {
  * it, rather than a fifth origin value.
  */
 export interface DatasetLakeSource {
-  lakeId: string;
-  lakeName: string;
-  resourceId: string;
-  /** A portal resource's page. Absent for a storage source's, which is a
-   *  folder or a bucket rather than a page. */
+  /** The Data Lake source and resource, absent for a file downloaded by hand
+   * from a link no source covers. */
+  lakeId?: string;
+  lakeName?: string;
+  resourceId?: string;
+  /** A portal resource's page, or the link a file was downloaded by hand
+   *  from. Absent for a storage source's, which is a folder or a bucket
+   *  rather than a page. */
   resourceUrl?: string;
   finalUrl?: string;
   fetchedAt?: string;
@@ -171,6 +174,10 @@ export interface DatasetLakeSource {
   fields?: string;
   /** Added from part of a storage row, picked by field value or by file. */
   narrowed?: boolean;
+  /** Storage sources: what the files were when they were added. */
+  fingerprint?: string;
+  /** The person downloaded the file and imported it; Curio did not fetch it. */
+  manual?: boolean;
 }
 
 /** A collection's kind. Mirrors the lake's collection `RESOURCE_KINDS`. */
@@ -223,6 +230,12 @@ export interface DatasetCollectionField {
   min?: string;
   max?: string;
 }
+
+/** Where a file the person downloaded themselves came from, as the import states it. */
+export type DatasetLakeSourceInput = Pick<
+  DatasetLakeSource,
+  "lakeId" | "lakeName" | "resourceId" | "resourceUrl"
+>;
 
 export interface DatasetCatalogItem {
   id: string;

@@ -34,9 +34,11 @@ from playwright.sync_api import expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    MAX_DIFF_RATIO,
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    assert_autark_map_drawn,
     dismiss_toasts,
     assert_vega_canvas_rendered,
     canvas_nodes,
@@ -229,7 +231,7 @@ class Walkthrough:
     #: A tight value only means something on a CLIPPED capture, where the
     #: subject fills the frame. On a full page it is raised to
     #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
-    max_diff_ratio: float = 0.20
+    max_diff_ratio: float = MAX_DIFF_RATIO
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
     #:
@@ -1423,8 +1425,18 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.say("WebGPU is back", "Check again re-probes and re-runs the node.")
     check_again.click()
     expect(fallback.first).to_be_hidden(timeout=45000)
-    wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
+    # The compute pass feeding this map needed WebGPU too and failed without
+    # it, so nothing reached the map: it says so, and names the upstream.
+    expect(autark).to_contain_text("0 rows arrived at this node", timeout=45000)
     ctx.focus(autark, hold=1200)
+    ctx.say("Its input never came", "The compute pass upstream needed WebGPU as well.")
+    run_all_and_wait(page, timeout_ms=180000)
+    wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
+    # The frame below cannot show it (a screenshot on the GPU runner has every
+    # WebGPU canvas blank, #427), so the map's own pixels say it drew.
+    assert_autark_map_drawn(page, node_id, timeout=45000, attach_as="webgpu-recovered map canvas")
+    ctx.focus(autark, hold=1200)
+    ctx.say("Run the dataflow", "With WebGPU back, the whole chain draws.")
     ctx.capture("webgpu-recovered")
     assert not errors, f"an uncaught page error escaped during recovery: {errors}"
 
@@ -1598,7 +1610,8 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     # The body lives in the editor's Output pane; before a run the grammar
     # tab is the active one, so open the pane the way a user would.
     node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
-    before = node.locator('[data-curio-node-empty="upstream-not-run"]')
+    # It loads its own data, so it is "not run" (not waiting on an upstream).
+    before = node.locator('[data-curio-node-empty="not-run"]')
     before.first.wait_for(state="visible", timeout=15000)
     assert "loads data" in (before.first.inner_text() or ""), (
         "the pre-run body should say this step loads data"
@@ -2755,7 +2768,7 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     # Node-only by roster, so the server cannot quietly fall back to a canvas
     # attachment and leave this scene photographing the wrong header.
-    coord = "agent.node-explainer@1.0.0"
+    coord = "agent.node-content-builder@1.0.0"
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
@@ -2792,13 +2805,13 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     expect(node).to_contain_text(AGENT_CHAT_NODE_NAME)
 
     opener = page.get_by_role(
-        "button", name=re.compile("^Open chat with Node Explainer")
+        "button", name=re.compile("^Open chat with Node Content Builder")
     ).first
     ctx.focus(opener, hold=700)
     ctx.say("Open its chat", "One agent, attached to that one node.")
     opener.click()
 
-    panel = page.get_by_role("dialog", name=re.compile("^Chat with Node Explainer"))
+    panel = page.get_by_role("dialog", name=re.compile("^Chat with Node Content Builder"))
     expect(panel).to_be_visible(timeout=20000)
 
     subtitle = panel.get_by_text(re.compile(r"^Attached to "))

@@ -46,7 +46,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 1290,
         "y": 430,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 320,\n  \"height\": 260,\n  \"transform\": [\n    {\n      \"aggregate\": [\n        { \"op\": \"sum\", \"field\": \"total_violations\", \"as\": \"total\" }\n      ],\n      \"groupby\": [\"Year\"]\n    },\n    { \"sort\": { \"field\": \"Year\" } }\n  ],\n  \"mark\": { \"type\": \"line\", \"point\": true },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"quantitative\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"total\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    }\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 320,\n  \"height\": 260,\n  \"transform\": [\n    {\n      \"aggregate\": [\n        { \"op\": \"sum\", \"field\": \"total_violations\", \"as\": \"total\" }\n      ],\n      \"groupby\": [\"Year\"]\n    }\n  ],\n  \"mark\": { \"type\": \"line\", \"point\": true },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"quantitative\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"total\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

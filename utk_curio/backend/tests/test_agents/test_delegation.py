@@ -32,6 +32,7 @@ def _delegate_tail(capability="node.content.generate", inputs='{"intent": "sum c
 
 NB = "agent.node-builder@1.0.0"
 NCB = "agent.node-content-builder@1.0.0"
+DF = "agent.dataset-finder@1.0.0"
 
 
 def _project(client, token):
@@ -72,7 +73,7 @@ def _setup(client, token, project_id, monkeypatch, *, install_delegate=True, rep
         calls.append(messages)
         return script[min(len(calls) - 1, len(script) - 1)]
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
     return att_id, calls
 
 
@@ -88,13 +89,25 @@ class TestRequiredClosure:
 
     DFB = "agent.dataflow-builder@1.0.0"
 
-    def test_dataflow_builder_closure_is_the_content_builder(self, client, user_and_token, tmp_curio):
+    def test_dataflow_builder_closure_is_the_three_server_invoked_agents(
+        self, client, user_and_token, tmp_curio
+    ):
+        # dev/126: the closure is walked in declaration order, root first, and
+        # the Dataset Finder ↔ Node Builder delegation cycle is traversed once
+        # (the Dataset Finder requires nothing, so nothing recurses).
         user, _ = user_and_token
         coords, missing = delegation.required_closure(
             _user_dir_key(user), builtin.get_builtin_manifest(self.DFB)
         )
-        assert coords == [NCB]
+        assert coords == [NCB, DF, NB]
         assert missing == []
+
+    def test_node_builder_closure_is_the_dataset_finder(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        coords, missing = delegation.required_closure(
+            _user_dir_key(user), builtin.get_builtin_manifest(NB)
+        )
+        assert (coords, missing) == ([DF], [])
 
     def test_leaf_has_empty_closure(self, client, user_and_token, tmp_curio):
         user, _ = user_and_token
@@ -125,10 +138,16 @@ class TestRequiredClosure:
         fake_ncb = dataclasses.replace(ncb, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
         nb = builtin.get_builtin_manifest(NB)
         fake_nb = dataclasses.replace(nb, delegates_to=["agent.node-content-builder"], requires_agents=["agent.node-content-builder"])
-        table = {"agent.node-content-builder": (NCB, fake_ncb), "agent.node-builder": (NB, fake_nb)}
+        df = builtin.get_builtin_manifest(DF)
+        table = {
+            "agent.node-content-builder": (NCB, fake_ncb),
+            "agent.node-builder": (NB, fake_nb),
+            "agent.dataset-finder": (DF, df),
+        }
         monkeypatch.setattr(delegation, "find_visible", lambda key, aid: table.get(aid, (None, None)))
         coords, missing = delegation.required_closure(_user_dir_key(user), builtin.get_builtin_manifest(self.DFB))
-        assert coords == [NCB, NB]
+        # Declaration order, each id visited once despite the pretend cycle.
+        assert coords == [NCB, DF, NB]
         assert missing == []
 
     def test_required_by_names_installed_dependents(self, client, user_and_token, tmp_curio):
@@ -195,17 +214,13 @@ class TestResolution:
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
-        # Both node-builder delegates installed; the capability that only the
-        # SECOND declares resolves to it deterministically.
+        # The capability that only the SECOND node-builder delegate declares
+        # resolves to it deterministically. That one is internal, so it
+        # resolves from the roster without an install.
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
-        client.post(
-            f"/api/agents/projects/{pid}/install",
-            json={"coord": "agent.execution-subtask-planner@1.0.0"},
-            headers=_auth(token),
-        )
         r = delegation.resolve(key, pid, self._manifest(key), "execution.followup.plan")
         assert r.outcome == "ok"
-        assert r.coord == "agent.execution-subtask-planner@1.0.0"
+        assert r.coord == "agent.dataflow-planner@1.0.0"
 
 
 class TestDelegateChildRun:
@@ -313,7 +328,7 @@ class TestDelegateChildRun:
                 raise RuntimeError("child provider down")
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200  # the parent run is NOT an error
         assert r.get_json()["reply"] == "I could not delegate, but here is my answer."
@@ -324,6 +339,137 @@ class TestDelegateChildRun:
         (child,) = execution["delegations"]
         assert child["status"] == "error"
         assert execution["status"] == "ok"
+
+
+class TestTheChildRunsOnItsOwnConfiguration:
+    """A delegate runs on the configuration chosen for it in AI Settings, else
+    on its caller's; a broken choice is the child's failure, never the parent's."""
+
+    def _config(self, client, token, label, model):
+        body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
+                "apiKey": "sk-child-key-0123456789", "model": model}
+        response = client.post("/api/agents/llm/configs", json=body, headers=_auth(token))
+        assert response.status_code == 201, response.get_json()
+        return response.get_json()["config"]["id"]
+
+    def _choose(self, client, token, agent_id, config_id):
+        response = client.put("/api/agents/llm/assignments", json={agent_id: config_id},
+                              headers=_auth(token))
+        assert response.status_code == 200, response.get_json()
+
+    def _run_counting_models(self, client, token, pid, att_id, monkeypatch, *, child_fails=False):
+        models = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            models.append(config.model)
+            if len(models) == 1:
+                return _delegate_tail()
+            return "df.sum(axis=0)" if len(models) == 2 and not child_fails else "Here is the plan."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        response = _run(client, token, pid, att_id)
+        assert response.status_code == 200, response.get_json()
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+        execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
+        return models, turns, execution
+
+    def test_an_assigned_child_runs_on_and_pins_its_own(self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        child_config = self._config(client, token, "Child", "child-model")
+        self._choose(client, token, "agent.node-content-builder", child_config)
+        models, turns, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
+        # The parent on the deployment default, the child on its own choice.
+        assert models == ["test-model", "child-model", "test-model"]
+        (child,) = execution["delegations"]
+        assert child["pins"]["model"] == "child-model"
+        assert child["pins"]["llm"]["configId"] == child_config
+        assert child["pins"]["llm"]["source"] == "assigned"
+        assert execution["pins"]["llm"]["source"] == "deployment"
+        # The parent's entry names what the child ran on.
+        part = next(p for t in turns for p in (t.get("content") or []) if p.get("type") == "delegation")
+        assert (part["model"], part["llmLabel"]) == ("child-model", "Child")
+        assert "sk-child-key" not in json.dumps(turns)
+
+    def test_an_unassigned_child_inherits_its_callers(self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        parent_config = self._config(client, token, "Parent", "parent-model")
+        self._choose(client, token, "agent.node-builder", parent_config)
+        models, _, execution = self._run_counting_models(client, token, pid, att_id, monkeypatch)
+        assert models == ["parent-model", "parent-model", "parent-model"]
+        (child,) = execution["delegations"]
+        assert child["pins"]["llm"] == {**execution["pins"]["llm"], "source": "caller"}
+
+    def test_a_broken_choice_does_not_start_the_child_and_the_parent_completes(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        child_config = self._config(client, token, "Child", "child-model")
+        self._choose(client, token, "agent.node-content-builder", child_config)
+        store = llm_configs.default_store()
+        doc = store.read(_user_dir_key(user))
+        del doc["configs"][child_config]  # a hand-edited file: the choice names nothing
+        store._write(_user_dir_key(user), doc)
+        models, _, execution = self._run_counting_models(
+            client, token, pid, att_id, monkeypatch, child_fails=True,
+        )
+        # The child's provider was never called; the parent carried on.
+        assert models == ["test-model", "test-model"]
+        (child,) = execution["delegations"]
+        assert child["status"] == "error"
+        assert execution["status"] == "ok"
+
+
+class TestADelegateFailureNeverCarriesTheKey:
+    def test_the_childs_error_is_redacted_everywhere_it_goes(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend import config
+
+        key = "sk-delegate-secret-0123456789"
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", key)
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        prompts = []
+        state = {"n": 0}
+
+        def _fake_run(config_, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            prompts.append(messages)
+            state["n"] += 1
+            if state["n"] == 2:  # the CHILD provider call
+                raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {key}")
+            return _delegate_tail() if state["n"] == 1 else "Answered without the delegate."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        response = _run(client, token, pid, att_id)
+        assert response.status_code == 200
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+        execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
+        (child,) = execution["delegations"]
+        assert child["status"] == "error"
+        # The failure is still reported, only without the key.
+        assert "401" in json.dumps(prompts[-1])
+        for where in (response.get_data(as_text=True), json.dumps(turns), json.dumps(prompts)):
+            assert key not in where
 
 
 class TestMissingSpecialist:
@@ -415,7 +561,7 @@ class TestDelegationTailAndBudget:
             calls.append(messages)
             return "hi"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _run(client, token, pid, att_id, message="hello")
         assert "delegateRequest" not in calls[0][0]["content"]
 
@@ -469,8 +615,8 @@ class TestDelegateStreamEvents:
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "go"}, headers=_auth(token),
@@ -519,7 +665,7 @@ class TestDec047DatasetFinderHandoff:
             calls.append(messages)
             return script[min(len(calls) - 1, 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = _run(client, token, pid, att_id, message="confirm the NOAA pick")
         assert r.status_code == 200
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -555,7 +701,7 @@ class TestDec047DatasetFinderHandoff:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "dataset.fetch.author — handled by Node Builder" in system
@@ -799,7 +945,7 @@ class TestChatContentReviewMint:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
         # dev/73 roster: the capability is OFFERED in the delegation paragraph.
         assert "node.content.generate — handled by Node Content Builder" in calls[0][0]["content"]
@@ -874,8 +1020,8 @@ class TestChatContentReviewMintStream:
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "update n1"}, headers=_auth(token),
@@ -955,7 +1101,9 @@ class TestEvaluatorDelegation:
             assert r.outcome == "ok", parent
             assert r.coord == self.EV
 
-    def test_missing_evaluator_is_missing_specialist_never_assumed(self, client, user_and_token, tmp_curio):
+    def test_the_internal_evaluator_resolves_without_being_installed(self, client, user_and_token, tmp_curio):
+        # It runs only as a delegate, so it is never installed, and never the
+        # subject of an install proposal.
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
@@ -963,5 +1111,129 @@ class TestEvaluatorDelegation:
             key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
             "content.quality.evaluate",
         )
-        assert r.outcome == "not-installed"
+        assert r.outcome == "ok"
         assert r.coord == self.EV
+
+    def test_a_card_that_is_not_installed_is_still_a_missing_specialist(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(
+            key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
+            "research.verify",
+        )
+        assert r.outcome == "not-installed"
+        assert r.coord == "agent.node-researcher@1.0.0"
+
+
+class TestMergedAgentModes:
+    """A merged internal agent runs the delegated capability's own mode, with
+    the catalog settings that mode reads; a parent delegates only the
+    capabilities its entry names."""
+
+    PLANNER = "agent.dataflow-planner@1.0.0"
+
+    def _config(self):
+        from utk_curio.backend.app.agents.providers import ProviderConfig
+
+        return ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m")
+
+    def _delegate(self, key, pid, monkeypatch, capability):
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            calls.append(messages)
+            return "{}"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        status, _, record = delegation.run_delegate(
+            key, pid, self.PLANNER, capability, {"keywords": {}}, self._config(),
+            parent_execution_id="parent", parent_coord=DF, attachment_id=None,
+        )
+        assert status == "ok"
+        (messages,) = calls
+        self.slots = messages[0]["slots"]
+        return messages[0]["content"], record
+
+    def test_a_scoped_entry_delegates_only_its_capabilities(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        nb = builtin.get_builtin_manifest(NB)
+        assert delegation.resolve(key, pid, nb, "execution.followup.plan").coord == self.PLANNER
+        # The planner's other modes are not the Node Builder's to delegate,
+        # and the capability fallback never reaches an internal agent.
+        assert delegation.resolve(key, pid, nb, "workflow.plan.create").outcome == "unresolvable"
+        offered = {cap for cap, _ in delegation.visible_capability_entries(key, nb)}
+        assert "execution.followup.plan" in offered
+        assert "workflow.plan.create" not in offered
+
+    def test_a_delegated_mode_runs_its_own_instruction(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import contracts
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        system, record = self._delegate(key, _project(client, token), monkeypatch, "workflow.keyword.bind")
+        bind = builtin.read_prompt_text(self.PLANNER, "workflow.keyword.bind")
+        plan = builtin.read_prompt_text(self.PLANNER, "workflow.plan.create")
+        assert bind.strip() in system
+        assert plan.strip() not in system
+        # Pinned by its configuration.
+        assert len(record["pins"]["configurationSha256"]) == 64
+        # Slot order: preamble, instruction, configuration; no tool protocol.
+        preamble = builtin.read_prompt_text(self.PLANNER, "system")
+        configuration = system.index(contracts.CONFIGURATION_FRAME)
+        assert system.index(preamble.strip()[:200]) < system.index(bind.strip()) < configuration
+        assert "curio.v1" not in system
+        # The provider receives the same three slots.
+        assert [slot["kind"] for slot in self.slots] == ["preamble", "instruction", "configuration"]
+
+    def test_the_digest_pins_the_modes_own_prompt(self):
+        # A roster manifest carries no digests, so stamp one per prompt as a
+        # materialized definition would.
+        import hashlib
+
+        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.manifest import parse_agent_manifest
+
+        def sha(text):
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.PLANNER))
+        for key, asset in raw["prompts"].items():
+            asset["sha256"] = sha(key)
+        m = parse_agent_manifest(raw)
+        assert services._prompt_digest(m, capability="workflow.keyword.bind") == sha("workflow.keyword.bind")
+        assert services._prompt_digest(m) == sha("instruction")
+        # A capability with no mode of its own runs, and pins, the instruction.
+        assert services._prompt_digest(m, capability="dataflow.orchestrate") == sha("instruction")
+
+    def test_the_keyword_types_reach_the_keyword_modes_only(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import contracts
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        taxonomy = contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default)
+        for capability in ("workflow.keywords.extract", "workflow.keyword.bind", "workflow.plan.refresh"):
+            system, _ = self._delegate(key, pid, monkeypatch, capability)
+            assert taxonomy in system, capability
+        for capability in ("workflow.plan.create", "workflow.coherence.validate"):
+            system, record = self._delegate(key, pid, monkeypatch, capability)
+            assert contracts.CONFIGURATION_FRAME not in system, capability
+            assert "configurationSha256" not in record["pins"]
+
+    def test_edited_keyword_types_change_the_next_run(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import catalog_settings
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        _, before = self._delegate(key, pid, monkeypatch, "workflow.keyword.bind")
+        catalog_settings.update(key, {"keywordTypes": [
+            {"name": "Hazard", "description": "a natural hazard.", "examples": ["flood", "heat wave"]},
+        ]})
+        system, after = self._delegate(key, pid, monkeypatch, "workflow.keyword.bind")
+        assert '- Hazard: a natural hazard. Examples: "flood", "heat wave".' in system
+        assert "- Action:" not in system
+        assert after["pins"]["configurationSha256"] != before["pins"]["configurationSha256"]

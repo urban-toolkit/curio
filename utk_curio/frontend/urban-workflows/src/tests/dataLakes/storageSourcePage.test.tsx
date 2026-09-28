@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DataLakeSourceDetail } from '../../pages/dataLakes/DataLakeSourceDetail';
+import { resetLakeAcquisitions } from '../../services/dataLakeCatalog/dataLakeCatalogHooks';
 import { DatasetDetailsProvider } from '../../components/datasets/catalog/DatasetDetailsProvider';
 import type { LakeSourceRow } from '../../services/dataLakeCatalog';
 
@@ -108,6 +109,7 @@ async function settlePage() {
   });
 }
 afterEach(() => jest.useRealTimers());
+afterEach(resetLakeAcquisitions);
 
 test('a scan in progress is followed until its rows arrive', async () => {
   const answers = [listing('scanning'), listing('ok')];

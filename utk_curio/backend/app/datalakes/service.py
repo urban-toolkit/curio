@@ -93,6 +93,7 @@ class DataLakeService:
             download_target=self._browse.download_target,
             install_path=self._install_path,
             find_held=self._find_held,
+            find_by_content=self._find_by_content,
         )
         self._storage_acquire = StorageAcquire(
             user_key=self.user_key,
@@ -386,6 +387,13 @@ class DataLakeService:
         return UserDatasetRepository(self.user).find_by_lake_resource(
             lake_id, resource_id, fmt
         )
+
+    def _find_by_content(self, content_sha256):
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        return UserDatasetRepository(self.user).find_by_content(content_sha256)
 
     def start_acquire(
         self, dir_name: str, resource_id: str, *, fmt=None, title=None, refresh=False,

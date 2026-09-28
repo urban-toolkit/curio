@@ -64,6 +64,7 @@ class LakeAcquire:
         install_path: Callable[..., dict[str, Any]],
         find_held: Callable[[str, str, str | None], dict[str, Any] | None],
         describe: Callable[[LakeSourceManifest, str], Any] | None = None,
+        find_by_content: Callable[[str], dict[str, Any] | None] | None = None,
     ) -> None:
         self.user = user
         self.user_key = user_key
@@ -72,6 +73,7 @@ class LakeAcquire:
         self._install_path = install_path
         self._find_held = find_held
         self._describe = describe
+        self._find_by_content = find_by_content
 
     # ── the check that avoids the network entirely ─────────────────────────
 
@@ -160,6 +162,11 @@ class LakeAcquire:
                 # A refresh that found nothing new. The bytes were paid for; a
                 # second identical row would not be.
                 return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+            # The same bytes may already be here from another path: a file the
+            # person downloaded by hand and imported with its origin.
+            same = self._find_by_content(result.sha256) if self._find_by_content else None
+            if same is not None:
+                return {"dataset": same, "alreadyPresent": True, "unchanged": True}
 
             # The file moves into the Data Catalog as it is, never through
             # memory: the install consumes the temp file.

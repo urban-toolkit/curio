@@ -2067,15 +2067,23 @@ def chapter_agents(run: StressRun) -> None:
         ).to_be_visible(timeout=20000)
         run.snap("ai-settings")
 
+    with run.step("Add an LLM configuration"):
+        page.get_by_test_id("llm-configs-section").get_by_role(
+            "button", name="Add configuration", exact=True
+        ).click()
+        expect(page.get_by_test_id("llm-config-editor")).to_be_visible(timeout=15000)
+
+    editor = page.get_by_test_id("llm-config-editor")
     for provider in ("OpenAI", "Anthropic", "Gemini", "Custom"):
         with run.step(f"AI Settings provider tab: {provider}", may_fail=True):
-            tab = page.get_by_role("button", name=provider, exact=True)
+            tab = editor.get_by_role("button", name=provider, exact=True)
             tab.first.click()
             page.wait_for_timeout(900)
 
     with run.step("Configure the live provider"):
-        page.get_by_role("button", name="Custom", exact=True).first.click()
+        editor.get_by_role("button", name="Custom", exact=True).first.click()
         page.wait_for_timeout(700)
+        ai_field(page, "Label").fill("Stress provider")
         tour.type_into(ai_field(page, "Base URL"), LLM_BASE_URL)
         if LLM_API_KEY:
             ai_field(page, "API Key").fill(LLM_API_KEY)
@@ -2086,15 +2094,23 @@ def chapter_agents(run: StressRun) -> None:
         run.snap("ai-settings-filled")
 
     with run.step("Ask the provider for its model list", may_fail=True):
-        fetch = page.get_by_role("button", name=re.compile("(Fetch|Refresh) models", re.I))
+        fetch = editor.get_by_role("button", name=re.compile("(Fetch|Refresh) models", re.I))
         if fetch.count():
             fetch.first.click()
             page.wait_for_timeout(9000)
             run.snap("ai-settings-models")
 
-    with run.step("Save the provider settings"):
-        page.get_by_role("button", name="Save", exact=True).first.click()
-        page.wait_for_timeout(3500)
+    with run.step("Save the configuration as the default"):
+        expect(editor.get_by_label("Make this my default")).to_be_checked()
+        with page.expect_response(
+            lambda r: r.url.endswith("/api/agents/llm/configs")
+            and r.request.method == "POST",
+            timeout=45000,
+        ) as saved:
+            editor.get_by_role("button", name="Add configuration", exact=True).click()
+        assert saved.value.status == 201, saved.value.text()
+        expect(editor).to_have_count(0, timeout=20000)
+        page.wait_for_timeout(1500)
         dismiss_toasts(page)
 
     agents: list[dict] = []
@@ -2166,7 +2182,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach an agent to a node by dragging"):
         dismiss_toasts(page)
         target = run.state["transform"]
-        drag_agent_to(run, _first_coord(installed, "node-explainer"),
+        drag_agent_to(run, _first_coord(installed, "node-content-builder"),
                       lambda: node_client_point(page, target))
         expect_attach_toast(run, "the node")
 
@@ -2199,7 +2215,7 @@ def chapter_agents(run: StressRun) -> None:
         dismiss_toasts(page)
         point = empty_canvas_point(page)
         assert point, "no empty canvas point for a canvas attach"
-        drag_agent_to(run, _first_coord(installed, "dataflow-explainer"),
+        drag_agent_to(run, _first_coord(installed, "dataflow-builder"),
                       lambda: empty_canvas_point(page))
         expect_attach_toast(run, "the canvas")
         close_tools_palette(page, "agents")
@@ -2207,7 +2223,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach every remaining agent, so all of them can be asked"):
         # The three drags above are the gesture worth filming, but the chat
         # panel cycles ATTACHMENTS - so with three attachments only three of the
-        # twenty-one agents would ever be asked anything. The rest are attached
+        # ten agents would ever be asked anything. The rest are attached
         # through the same REST endpoint the drop handler calls, picking the
         # first target kind each agent's manifest accepts (the API refuses an
         # incompatible one with a 400 naming what it does accept).
@@ -2219,9 +2235,9 @@ def chapter_agents(run: StressRun) -> None:
         ) or []
         edge_id = edges[0] if edges else None
         already = {
-            _first_coord(installed, "node-explainer"),
+            _first_coord(installed, "node-content-builder"),
             _first_coord(installed, "connection-builder"),
-            _first_coord(installed, "dataflow-explainer"),
+            _first_coord(installed, "dataflow-builder"),
         }
         attached, refused = list(already), []
         for coord in installed:
@@ -2364,7 +2380,7 @@ def chapter_agents(run: StressRun) -> None:
         if hf.count():
             hf.fill("hf_stress_placeholder")
         run.snap("ai-settings-header")
-        page.get_by_role("button", name="Cancel", exact=True).first.click()
+        page.get_by_role("button", name="Close", exact=True).last.click()
         page.wait_for_timeout(900)
 
 

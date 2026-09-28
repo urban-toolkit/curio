@@ -358,7 +358,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     dataset.format !== "bundle" && dataset.format !== "osm" && dataset.format !== "collection";
   const lake = dataset.lakeSource;
   // A storage source's resource is a folder or a bucket, not a portal page.
-  const fromStorage = Boolean(lake && !lake.resourceUrl);
+  // Which words describe where the bytes came from: a file the person
+  // downloaded by hand, then a storage source's files, then a portal download.
+  const manual = Boolean(lake?.manual);
+  const fromStorage = Boolean(lake && !manual && (lake.fingerprint || lake.fileCount != null));
   const activeDataset = dataset;
 
   const handleExport = async () => {
@@ -569,32 +572,37 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             // section, above.
             <div className={styles.infoSection}>
               <p className={styles.infoSectionLabel}>
-                {fromStorage ? "Added from" : "Downloaded from"}
+                {manual ? "Downloaded by hand from" : fromStorage ? "Added from" : "Downloaded from"}
               </p>
               <dl className={styles.infoRows}>
-                <div>
-                  <dt>{fromStorage ? "Source" : "Portal"}</dt>
-                  <dd>
-                    <DetailLink
-                      to={`/catalog/lakes/${encodeURIComponent(lake.lakeId)}`}
-                      onFollow={onFollowLink}
-                    >
-                      {lake.lakeName}
-                    </DetailLink>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Resource</dt>
-                  <dd>
-                    {lake.resourceUrl ? (
+                {lake.lakeId ? (
+                  <div>
+                    <dt>{fromStorage ? "Source" : "Portal"}</dt>
+                    <dd>
+                      <DetailLink
+                        to={`/catalog/lakes/${encodeURIComponent(lake.lakeId)}`}
+                        onFollow={onFollowLink}
+                      >
+                        {lake.lakeName || lake.lakeId}
+                      </DetailLink>
+                    </dd>
+                  </div>
+                ) : null}
+                {lake.resourceUrl ? (
+                  <div>
+                    <dt>{lake.resourceId ? "Resource" : "Link"}</dt>
+                    <dd>
                       <a href={lake.resourceUrl} target="_blank" rel="noreferrer noopener">
-                        {lake.resourceId} ↗
+                        {lake.resourceId || lake.resourceUrl} ↗
                       </a>
-                    ) : (
-                      lake.resourceId
-                    )}
-                  </dd>
-                </div>
+                    </dd>
+                  </div>
+                ) : lake.resourceId ? (
+                  <div>
+                    <dt>Resource</dt>
+                    <dd>{lake.resourceId}</dd>
+                  </div>
+                ) : null}
                 {lake.fileCount != null && lake.fileCount > 1 ? (
                   <div>
                     <dt>Combined from</dt>
@@ -608,7 +616,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 ) : null}
                 {lake.fetchedAt ? (
                   <div>
-                    <dt>{fromStorage ? "Added" : "Downloaded"}</dt>
+                    <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
                     <dd title={absoluteDate(lake.fetchedAt)}>{relativeTime(lake.fetchedAt)}</dd>
                   </div>
                 ) : null}

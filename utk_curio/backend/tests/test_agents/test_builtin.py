@@ -1,5 +1,5 @@
-"""Tests for the built-in agent roster (the 13 prompt-agent migrations + the
-P5 composites, memo dev/48)."""
+"""Tests for the built-in agent roster: the prompt-agent migrations, two of
+them merged agents with modes, and the P5 composites (memo dev/48)."""
 
 from __future__ import annotations
 
@@ -9,29 +9,143 @@ from utk_curio.backend.app.agents.manifest import AgentManifest
 
 # The dev/06 canonical map: agent id -> its prompt file and capabilities.
 _EXPECTED = {
-    "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine"]),
-    "agent.debug-agent": ("debug_prompt.txt", ["code.debug.diagnose", "code.fix.propose"]),
-    "agent.dataflow-explainer": ("explanation_prompt.txt", ["dataflow.explain"]),
-    "agent.node-explainer": ("single_box_explanation_prompt.txt", ["node.explain", "node.output.interpret"]),
+    # The chat agent absorbed the node explainer and the debugger: it explains
+    # and diagnoses as well as chatting.
+    "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine",
+                                             "node.explain", "code.debug.diagnose"]),
     "agent.node-content-builder": ("new_content_prompt.txt", ["node.content.generate"]),
-    "agent.execution-subtask-planner": ("new_subtask_from_exec_prompt.txt", ["execution.followup.plan"]),
-    "agent.dataflow-task-planner": ("new_subtasks_prompt.txt", ["workflow.plan.create"]),
     "agent.connection-builder": ("new_connection_prompt.txt", ["connection.propose"]),
-    "agent.workflow-suggester": ("workflow_suggestions_prompt.txt", ["workflow.suggest"]),
-    "agent.plan-coherence-validator": ("evaluate_coherence_subtasks_prompt.txt", ["workflow.coherence.validate"]),
-    "agent.syntax-analysis-agent": ("syntax_analysis_prompt.txt", ["code.syntax.analyze"]),
-    "agent.task-refresh-agent": ("task_refresh_prompt.txt", ["workflow.plan.refresh"]),
-    "agent.keyword-binding-agent": ("keywords_binding_prompt.txt", ["workflow.keyword.bind"]),
+}
+
+#: The merged agents: each capability is a mode that runs its own instruction.
+#: The planning and keyword agents became the Dataflow Planner, and the two
+#: dataflow readers the Dataflow Reader.
+_MODES = {
+    "agent.dataflow-planner": {
+        "workflow.plan.create": "new_subtasks_prompt.txt",
+        "execution.followup.plan": "new_subtask_from_exec_prompt.txt",
+        "workflow.plan.refresh": "task_refresh_prompt.txt",
+        "workflow.coherence.validate": "evaluate_coherence_subtasks_prompt.txt",
+        "workflow.keyword.bind": "keywords_binding_prompt.txt",
+        "workflow.keywords.extract": "syntax_analysis_prompt.txt",
+    },
+    "agent.dataflow-reader": {
+        "dataflow.explain": "explanation_prompt.txt",
+        "workflow.suggest": "workflow_suggestions_prompt.txt",
+    },
+}
+
+#: What each parent may delegate. The merge kept every set as it was, save
+#: the syntax analysis Package Recommendation delegated expecting import
+#: extraction, which it never did.
+_DELEGABLE = {
+    "agent.connection-builder": {"package.identify", "package.recommend"},
+    "agent.node-builder": {
+        "content.quality.evaluate", "dataset.discover", "dataset.select",
+        "execution.followup.plan", "node.content.generate", "node.kind.author",
+        "package.build", "package.extend", "package.identify", "package.recommend",
+        "research.summarize", "research.verify",
+    },
+    "agent.dataset-finder": {
+        "dataset.fetch.author", "node.build", "research.summarize", "research.verify",
+        "workflow.keyword.bind", "workflow.suggest",
+    },
+    "agent.dataflow-builder": {
+        "connection.propose", "content.quality.evaluate", "dataflow.explain",
+        "dataset.discover", "dataset.fetch.author", "dataset.select",
+        "execution.followup.plan", "node.build", "node.content.generate",
+        "node.kind.author", "package.build", "package.extend", "package.identify",
+        "package.recommend", "research.notes.compose", "research.summarize",
+        "research.verify", "workflow.coherence.validate", "workflow.plan.create",
+        "workflow.plan.refresh", "workflow.suggest",
+    },
+    "agent.researcher": {
+        "node.kind.author", "package.build", "package.extend", "research.summarize",
+        "research.verify",
+    },
+}
+
+
+def _instructions():
+    """Every instruction a built-in can run, as ``(agent id, prompt key, text)``:
+    the agent's own and each mode's, one entry per file."""
+    out = []
+    for spec in builtin.BUILTIN_AGENTS:
+        coord = f"{spec.agent_id}@1.0.0"
+        seen = set()
+        for key, filename in spec.prompt_files().items():
+            if key == "system" or filename in seen:
+                continue
+            seen.add(filename)
+            out.append((spec.agent_id, key, builtin.read_prompt_text(coord, key)))
+    return out
+
+
+#: The catalog cards, pinned by id rather than recomputed from the rule they
+#: follow, which would only restate it. A card acts on the project (P1), has a
+#: capability whose input or reply the runtime treats as structure (P2), or is
+#: the only agent for a canvas target (P3); the chat agent is the one
+#: conversational surface.
+_CARDS = {
+    "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
+    "agent.node-content-builder", "agent.node-researcher", "agent.package-builder",
+    "agent.package-recommendation", "agent.researcher", "agent.connection-builder",
+    "agent.chat-agent",
 }
 
 
 class TestRoster:
-    def test_sixteen_agents(self):
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the node researcher (dev/67-4) + package recommendation (dev/84)
-        # + the authored evaluator (DEC-055, dev/85/86)
-        # + the package builder (dev/89) + the notes researcher (dev/90).
-        assert len(builtin.BUILTIN_AGENTS) == 21
+    def test_thirteen_agents(self):
+        # 3 migrations and the 2 agents merged from 8 more + the three
+        # composites (dev/48, dev/50, dev/52) + the node researcher (dev/67-4)
+        # + package recommendation (dev/84) + the authored evaluator (DEC-055,
+        # dev/85/86) + the package builder (dev/89) + the notes researcher
+        # (dev/90).
+        assert len(builtin.BUILTIN_AGENTS) == 13
+
+    def test_the_ten_cards_and_the_rest_internal(self):
+        cards = {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        assert cards == _CARDS
+        assert builtin.internal_agent_ids() == {
+            s.agent_id for s in builtin.BUILTIN_AGENTS
+        } - _CARDS
+
+    def test_every_card_meets_the_rule(self):
+        from utk_curio.backend.app.agents import content, services
+
+        mutate = set(services.MUTATE_PROPOSAL_TOOLS)
+        structured = set(content.STRUCTURED_CAPABILITIES)
+        for spec in builtin.BUILTIN_AGENTS:
+            if not spec.in_catalog:
+                continue
+            acts = bool(mutate & set(spec.tools))
+            understood = bool(structured & set(spec.capabilities))
+            others = [s for s in builtin.BUILTIN_AGENTS if s is not spec]
+            owns_target = any(
+                kind not in {k for o in others for k in o.target_kinds()}
+                for kind in spec.target_kinds()
+            )
+            surface = spec.agent_id == "agent.chat-agent"
+            assert acts or understood or owns_target or surface, spec.agent_id
+
+    def test_no_internal_agent_meets_the_rule(self):
+        # Otherwise it would be a card.
+        from utk_curio.backend.app.agents import content, services
+
+        mutate = set(services.MUTATE_PROPOSAL_TOOLS)
+        structured = set(content.STRUCTURED_CAPABILITIES)
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.in_catalog:
+                continue
+            assert not mutate & set(spec.tools), spec.agent_id
+            assert not structured & set(spec.capabilities), spec.agent_id
+
+    def test_internal_agents_are_known_by_coordinate(self):
+        assert builtin.is_internal("agent.dataflow-planner")
+        assert builtin.is_internal("agent.dataflow-planner@1.0.0")
+        # The owner's own definition under the same id is not the built-in.
+        assert not builtin.is_internal("agent.dataflow-planner@2.0.0")
+        assert not builtin.is_internal("agent.chat-agent@1.0.0")
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
@@ -47,8 +161,14 @@ class TestRoster:
             if s.agent_id in _EXPECTED
         }
         assert got == _EXPECTED
+        modes = {
+            s.agent_id: {m.capability: m.prompt_file for m in s.modes}
+            for s in builtin.BUILTIN_AGENTS
+            if s.modes
+        }
+        assert modes == _MODES
         # The composites are the only non-migration entries (dev/48, dev/50).
-        extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
+        extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED) - set(_MODES)
         assert extras == {"agent.node-builder", "agent.dataset-finder",
                           "agent.dataflow-builder", "agent.node-researcher",
                           "agent.package-recommendation",
@@ -58,27 +178,72 @@ class TestRoster:
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
-            assert (builtin.PROMPT_SOURCE_DIR / spec.prompt_file).is_file(), spec.prompt_file
+            for filename in spec.prompt_files().values():
+                assert (builtin.PROMPT_SOURCE_DIR / filename).is_file(), filename
+
+    def test_a_merged_agent_is_internal_and_its_default_is_its_first_mode(self):
+        for agent_id, modes in _MODES.items():
+            spec = builtin.get_builtin_spec(f"{agent_id}@1.0.0")
+            assert not spec.in_catalog, agent_id
+            assert spec.prompt_file == next(iter(modes.values()))
+            assert spec.capabilities == tuple(modes)
+            # Its reads are every mode's.
+            assert set(spec.reads) == {r for m in spec.modes for r in m.reads}
+
+    def test_the_keyword_modes_read_the_keyword_types(self):
+        planner = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
+        reading = {c.id for c in planner.capabilities if "keywordTypes" in c.required_config}
+        assert reading == {
+            "workflow.keywords.extract", "workflow.keyword.bind", "workflow.plan.refresh",
+        }
+        assert planner.capability("workflow.keywords.extract").reads == ("workflowGoal",)
+
+    def test_each_parent_delegates_what_it_did_before_the_merge(self):
+        specs = {s.agent_id: s for s in builtin.BUILTIN_AGENTS}
+        got = {}
+        for spec in builtin.BUILTIN_AGENTS:
+            m = builtin.get_builtin_manifest(f"{spec.agent_id}@1.0.0")
+            caps = {
+                cap
+                for agent_id in m.delegates_to
+                for cap in specs[agent_id].capabilities
+                if m.delegates(agent_id, cap)
+            }
+            if caps:
+                got[spec.agent_id] = caps
+        assert got == _DELEGABLE
 
 
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 21
+        assert len(manifests) == 13
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
         by_id = {m.agent_id: m for m in builtin.list_builtin_manifests()}
-        for agent_id, (_, caps) in _EXPECTED.items():
+        expected = {**{a: caps for a, (_, caps) in _EXPECTED.items()},
+                    **{a: list(modes) for a, modes in _MODES.items()}}
+        for agent_id, caps in expected.items():
             m = by_id[agent_id]
             assert m.dir_name == f"{agent_id}@1.0.0"
             assert m.capability_ids == caps
             assert m.provenance.trust == "built-in"
 
+    def test_a_mode_names_its_own_prompt(self):
+        m = builtin.get_builtin_manifest("agent.dataflow-planner@1.0.0")
+        for capability, filename in _MODES["agent.dataflow-planner"].items():
+            declared = m.capability(capability)
+            assert declared.instruction == capability
+            assert m.prompts[capability].path == f"prompts/{filename}"
+        # A single-instruction agent declares no modes.
+        chat = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
+        assert all(c.instruction is None for c in chat.capabilities)
+
     def test_get_by_coord(self):
-        m = builtin.get_builtin_manifest("agent.node-explainer@1.0.0")
-        assert m is not None and m.agent_id == "agent.node-explainer"
-        assert builtin.get_builtin_manifest("agent.node-explainer@9.9.9") is None
+        m = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
+        assert m is not None and m.agent_id == "agent.chat-agent"
+        assert builtin.get_builtin_manifest("agent.chat-agent@9.9.9") is None
         assert builtin.get_builtin_manifest("curio.builtin@1") is None
 
 
@@ -94,13 +259,33 @@ class TestPreambleAndInputs:
             assert m.prompts["system"].path.startswith("prompts/"), m.agent_id
             assert m.inputs_reads, f"{m.agent_id} has no inputs.reads"
 
-    def test_syntax_agent_uses_its_own_preamble(self):
+    def test_every_builtin_shares_the_one_preamble(self):
         from utk_curio.backend.app.agents import builtin
 
-        m = builtin.get_builtin_manifest("agent.syntax-analysis-agent@1.0.0")
-        assert m.prompts["system"].path == "prompts/syntax_analysis_preamble.txt"
-        others = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
-        assert others.prompts["system"].path == "prompts/default_preamble.txt"
+        for m in builtin.list_builtin_manifests():
+            assert m.prompts["system"].path == "prompts/default_preamble.txt", m.agent_id
+        assert not (builtin.PROMPT_SOURCE_DIR / "syntax_analysis_preamble.txt").exists()
+
+    def test_prompt_text_is_read_by_key(self):
+        coord = "agent.dataflow-planner@1.0.0"
+        bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
+        assert bind == (builtin.PROMPT_SOURCE_DIR / "keywords_binding_prompt.txt").read_text(encoding="utf-8")
+        # An undeclared key reads nothing, not the preamble.
+        assert builtin.read_prompt_text(coord, "workflow.nope") is None
+        assert builtin.read_prompt_text("agent.chat-agent@1.0.0", "dataflow.explain") is None
+
+    def test_preamble_exemplars_never_read_a_bare_filename(self):
+        # dev/114: the shared preamble's worked dataflow was the ONLY data-
+        # loading exemplar every agent saw, and all three of its loaders read
+        # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
+        import re
+
+        text = (builtin.PROMPT_SOURCE_DIR / "default_preamble.txt").read_text(encoding="utf-8")
+        assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
+        assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
+        assert not re.search(r"""rasterio\.open\(f?['"]""", text)
+        assert text.count("curio_dataset_path(") >= 3
+        assert "never a guessed filename" in text
 
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents import builtin
@@ -124,13 +309,10 @@ class TestPreambleAndInputs:
         Two agents legitimately sharing a *preamble* is fine and expected
         (``default_preamble.txt``); it is the instruction that identifies.
         """
-        from utk_curio.backend.app.agents import builtin
-
         by_text: dict[str, list[str]] = {}
-        for spec in builtin.BUILTIN_AGENTS:
-            text = builtin.read_instruction_text(f"{spec.agent_id}@1.0.0")
-            assert text, spec.agent_id
-            by_text.setdefault(text.strip(), []).append(spec.agent_id)
+        for agent_id, key, text in _instructions():
+            assert text, (agent_id, key)
+            by_text.setdefault(text.strip(), []).append(f"{agent_id}:{key}")
 
         collisions = {
             ids[0]: ids for ids in by_text.values() if len(ids) > 1
@@ -147,12 +329,7 @@ class TestPreambleAndInputs:
         instruction were wholly contained in agent B's, a run of B would satisfy
         A's assertion too. Distinctness alone does not rule that out.
         """
-        from utk_curio.backend.app.agents import builtin
-
-        texts = {
-            spec.agent_id: builtin.read_instruction_text(f"{spec.agent_id}@1.0.0").strip()
-            for spec in builtin.BUILTIN_AGENTS
-        }
+        texts = {f"{agent_id}:{key}": text.strip() for agent_id, key, text in _instructions()}
         contained = [
             (inner_id, outer_id)
             for inner_id, inner in texts.items()
@@ -176,11 +353,12 @@ class TestNodeBuilderComposite:
         assert m.capability_ids == ["node.build", "dataset.fetch.author"]
         assert m.delegates_to == [
             "agent.node-content-builder",
-            "agent.execution-subtask-planner",
+            "agent.dataflow-planner",  # its follow-up planning only
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: required-package identify
             "agent.package-builder",  # dev/89: no-template-fits → authoring
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
+            "agent.dataset-finder",  # dev/114 (DEC-072): source resolution for data-loading nodes
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -189,6 +367,7 @@ class TestNodeBuilderComposite:
             "dataflow.read", "node.create", "node.template.create",
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
+            "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
         ]
         assert m.provenance.trust == "built-in"
 
@@ -201,10 +380,12 @@ class TestNodeBuilderComposite:
         nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
-            "agent.node-content-builder", "agent.execution-subtask-planner",
+            "agent.node-content-builder",
+            {"id": "agent.dataflow-planner", "capabilities": ["execution.followup.plan"]},
             "agent.node-researcher", "agent.package-recommendation",
             "agent.package-builder",  # dev/89
             "agent.generated-content-evaluator",
+            "agent.dataset-finder",  # dev/114
         ]
         cb = builtin.build_builtin_manifest(
             builtin.get_builtin_spec("agent.connection-builder@1.0.0")
@@ -232,6 +413,19 @@ class TestNodeBuilderComposite:
         assert text and "Reuse first" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
+    def test_instruction_teaches_the_source_ladder(self):
+        # dev/114 (DEC-072): the ladder the runtime gate enforces — user path,
+        # catalog.search loader line, runtime-verified URL via dataset.discover,
+        # synthetic only when asked — and the two-turn rule.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert "catalog.search" in text
+        assert 'curio_dataset_path("<id>")' in text
+        assert '"dataset.discover"' in text
+        assert "do not propose in that same turn" in text
+        assert '"synthetic": true' in text
+        assert "Never invent a filename" in text
+        assert "ask the user for a path or URL instead of proposing" in text
+
     def test_instruction_sends_code_through_params_not_the_reply(self):
         # #245: the runtime now recovers a misplaced request, but the cheapest
         # fix is the model never misplacing it. Both the direct and the
@@ -253,10 +447,14 @@ class TestDatasetFinderComposite:
         assert m.capability_ids == ["dataset.discover", "dataset.select"]
         assert m.delegates_to == [
             "agent.node-builder",
-            "agent.workflow-suggester",
-            "agent.keyword-binding-agent",
+            "agent.dataflow-reader",
+            "agent.dataflow-planner",
             "agent.node-researcher",
         ]
+        assert m.delegate_scopes == {
+            "agent.dataflow-reader": ("workflow.suggest",),
+            "agent.dataflow-planner": ("workflow.keyword.bind",),
+        }
         by_kind = {t.kind: t for t in m.compatible_targets}
         assert set(by_kind) == {"node", "canvas"}
         # The docs/06 Data-Load gate: requires rides the node target only.
@@ -272,11 +470,38 @@ class TestDatasetFinderComposite:
         ]
         assert m.provenance.trust == "built-in"
 
+    def test_handoff_card_carries_the_verdict(self):
+        # dev/114: the DEC-047 hand-off is a "handoff" card whose lines carry
+        # the runtime's verification verdict; Node Builder re-probes anyway.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert 'kind "handoff"' in text
+        assert "verification verdict" in text
+        assert "never as usable" in text
+
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "two lanes" in text.lower()
         assert "never author" in text.lower() or "never authors" in text.lower()
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestBackgroundExecutionRoster:
+    """dev/115 (DEC-073): the Dataflow Builder alone declares
+    ``runtime.execution: "background"`` — its Solve outlives the request as a
+    detached job; every other built-in stays foreground byte-identically."""
+
+    def test_only_the_dataflow_builder_is_background(self):
+        background = [
+            spec.agent_id for spec in builtin.BUILTIN_AGENTS if spec.execution == "background"
+        ]
+        assert background == ["agent.dataflow-builder"]
+        dfb = builtin.build_builtin_manifest(builtin.get_builtin_spec("agent.dataflow-builder@1.0.0"))
+        assert dfb["runtime"] == {"execution": "background", "reviewPolicy": "review-before-apply"}
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.agent_id != "agent.dataflow-builder":
+                assert builtin.build_builtin_manifest(spec)["runtime"]["execution"] == "foreground"
+        # And the field parses through the manifest contract.
+        assert builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0") is not None
 
 
 class TestRequiresAgentsRoster:
@@ -290,9 +515,15 @@ class TestRequiresAgentsRoster:
                 assert r in m.delegates_to, (m.agent_id, r)
                 assert r in ids, (m.agent_id, r)
 
-    def test_only_the_dataflow_builder_requires(self):
-        requiring = [m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents]
-        assert requiring == ["agent.dataflow-builder"]
+    def test_only_the_two_composites_require(self):
+        # dev/126: the Node Builder joins the Dataflow Builder — a data-loading
+        # node's source resolution delegates dataset.discover from a server
+        # path. Every other built-in keeps an empty requiresAgents, so no
+        # install fans out across the roster.
+        requiring = sorted(
+            m.agent_id for m in builtin.list_builtin_manifests() if m.requires_agents
+        )
+        assert requiring == ["agent.dataflow-builder", "agent.node-builder"]
 
 
 class TestDataflowBuilderComposite:
@@ -308,9 +539,7 @@ class TestDataflowBuilderComposite:
             "agent.dataset-finder", "agent.node-builder",
             "agent.node-content-builder",  # dev/73: chat-path content updates
             "agent.connection-builder",
-            "agent.dataflow-task-planner", "agent.execution-subtask-planner",
-            "agent.task-refresh-agent", "agent.workflow-suggester",
-            "agent.plan-coherence-validator", "agent.dataflow-explainer",
+            "agent.dataflow-planner", "agent.dataflow-reader",
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: Recommend packages step
             "agent.package-builder",  # dev/89: package-scale plan steps
@@ -326,11 +555,16 @@ class TestDataflowBuilderComposite:
         ]
         assert m.provenance.trust == "built-in"
 
-    def test_requires_only_the_solve_specialist(self):
-        # dev/106: Solve/Validate hard-invoke node.content.generate; every
-        # other delegate stays optional (no 15-agent install fan-out).
+    def test_requires_the_three_server_invoked_specialists(self):
+        # dev/106: Solve/Validate hard-invoke node.content.generate.
+        # dev/126: resolution hard-invokes dataset.discover, and every
+        # plan-created node is given a Node Builder at the user's Apply — both
+        # server paths, so both are required. The other nine delegates stay
+        # optional (no 15-agent install fan-out).
         m = builtin.get_builtin_manifest(self.COORD)
-        assert m.requires_agents == ["agent.node-content-builder"]
+        assert m.requires_agents == [
+            "agent.node-content-builder", "agent.dataset-finder", "agent.node-builder",
+        ]
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
@@ -351,8 +585,9 @@ class TestPackageRecommendation:
         m = builtin.get_builtin_manifest(self.COORD)
         assert m is not None
         assert m.capability_ids == ["package.recommend", "package.identify"]
-        # dev/16 §3.3: import extraction is delegated, never guessed.
-        assert m.delegates_to == ["agent.syntax-analysis-agent"]
+        # It delegated keyword extraction expecting import extraction; that
+        # delegate is gone.
+        assert m.delegates_to == []
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
         assert [t.id for t in m.tools] == [
             "packages.catalog", "packages.resolve", "package.install",
@@ -522,7 +757,9 @@ class TestResearcher:
     # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
-        "6000ae6c847e62095e94530a5e26a713f44769472b43ead998eb62a096a89a09"  # dev/95 commit 3: the deliberate Follow-up D prompt edit
+        # The plan is named, not called a block: on native tools it is the
+        # dataflow.plan.write call, on the fenced protocol its block.
+        "a5484d129fd049279d57425a68ea200540e7af584da4d21d62cb83957eb66376"
     )
 
     def test_manifest_surface(self):

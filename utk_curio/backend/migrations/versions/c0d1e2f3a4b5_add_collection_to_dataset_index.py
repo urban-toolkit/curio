@@ -7,14 +7,14 @@ manifest field the index does not carry disappears from every catalog surface;
 this column is what keeps the block visible.
 
 Revision ID: c0d1e2f3a4b5
-Revises: b8c9d0e1f2a3
+Revises: c9d0e1f2a3b4
 Create Date: 2026-09-27 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "c0d1e2f3a4b5"
-down_revision = "b8c9d0e1f2a3"
+down_revision = "c9d0e1f2a3b4"
 branch_labels = None
 depends_on = None
 

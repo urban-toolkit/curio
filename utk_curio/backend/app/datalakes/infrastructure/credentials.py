@@ -38,7 +38,6 @@ SLOT_COLUMNS: dict[str, str] = {
 #: everyone else inherits, exactly as ``DEFAULT_LLM_API_KEY`` works.
 SLOT_DEFAULTS: dict[str, str] = {
     "socrata.app-token": "CURIO_DEFAULT_SOCRATA_APP_TOKEN",
-    "huggingface.token": "CURIO_DEFAULT_HUGGINGFACE_TOKEN",
 }
 
 #: What a client is told about each slot, keyed the same way. Booleans only.
@@ -63,8 +62,7 @@ def token_for_slot(user, secret_id: str | None) -> str | None:
     """The token that will actually be sent: the user's own, else the
     deployment's.
 
-    Per-field inheritance, the same shape as the LLM provider config: a user
-    who sets nothing inherits what the operator configured, and setting their
+    Per-field inheritance: a user who sets nothing inherits what the operator configured, and setting their
     own overrides it. An operator running Curio for a class can raise the rate
     limit for everyone with one environment variable.
     """
