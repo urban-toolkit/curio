@@ -600,8 +600,7 @@ Other things that surprise people here:
   `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
   the template draft and `toApiPayload` emits no such manifest field. Asserting
   it through an archive fails for reasons that have nothing to do with the
-  archive. (The Explanation tab it used to sit beside is gone;
-  `agent.node-explainer` replaced it.)
+  archive.
 - **Node settings port rows have no label, id or test id**, and their class
   names are hashed CSS modules. Locate the section by its heading text and step
   up one level (`get_by_text("Input ports", exact=True).locator("xpath=..")`),
@@ -810,7 +809,7 @@ Curio ships no provider of its own and the tour's account starts with no
 configuration, so this is load-bearing rather than decorative.
 
 The endpoint and model default to the `LLM_*` constants at the top of the
-module. **The key is not a constant** — put it in `.curio/tour-provider.json`
+module. **The key is not a constant**: put it in `.curio/tour-provider.json`
 (`.curio/` is gitignored) or in `CURIO_TOUR_LLM_API_KEY`:
 
 ```json
@@ -925,7 +924,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
 | `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
-| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with** — `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch now fails with that sentence rather than a bare `401`. |
+| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
