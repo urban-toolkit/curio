@@ -54,7 +54,9 @@ export interface ProjectActionState {
  */
 export function projectActions(state: ProjectActionState = {}): ProjectAction[] {
   return [
-    { id: "open", label: "Open" },
+    // The drawer's primary button's words: one action, one name, on both
+    // surfaces that offer it.
+    { id: "open", label: "Open dataflow" },
     { id: "rename", label: "Rename" },
     { id: "duplicate", label: "Duplicate" },
     ...(state.isExample

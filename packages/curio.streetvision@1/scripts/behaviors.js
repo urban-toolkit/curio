@@ -25,14 +25,11 @@ __webpack_require__.r(__webpack_exports__);
 /**
  * Headers that identify the signed-in user to the Street Vision backend.
  *
- * Every route in this package resolves per-account state from the caller:
- * `/models/search` and `/inference/run` resolve the HuggingFace token that
- * unlocks gated models (granted per account, against a licence that account
- * accepted), and `/inference/overlay/<id>`, which whatever displays the
- * results reads, resolves which user's overlay cache to serve. Without this
- * header the backend falls back to the shared guest key, so a signed-in user's
- * own token never takes effect and their overlays are looked up in somebody
- * else's directory.
+ * Every route in this package requires a signed-in caller, and resolves
+ * per-account state from it: `/models/search` and `/inference/run` resolve the
+ * HuggingFace token that unlocks gated models, `/inference/results/<id>`
+ * answers only the account that started the job, and `/inference/overlay/<id>`
+ * reads that account's overlay cache. Every request here sends this header.
  *
  * `getAuthToken` is a getter on `window.curio` rather than a value because this
  * bundle evaluates once at boot, before sign-in.
@@ -663,7 +660,9 @@ var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState
     }()).then(function (d) {
       setJobId(d.job_id);
       pollRef.current = setInterval(function () {
-        fetch("".concat(API_BASE, "/inference/results/").concat(d.job_id)).then(function (r) {
+        fetch("".concat(API_BASE, "/inference/results/").concat(d.job_id), {
+          headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
+        }).then(function (r) {
           return r.json();
         }).then(function (s) {
           var _s$stage_message, _s$results;
@@ -1273,6 +1272,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _apiAuth__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./apiAuth */ "../../../packages/curio.streetvision@1/sources/apiAuth.ts");
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 var _curio;
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
@@ -1290,6 +1290,8 @@ function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) 
 function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
 function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+
+
 
 /**
  * Street View Fetcher behavior.
@@ -1478,7 +1480,9 @@ var useStreetViewFetcherBehavior = function useStreetViewFetcherBehavior(data, n
   // backend doesn't need to advertise its key state anymore.
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
-      fetch("".concat(API_BASE, "/health")).then(function (r) {
+      fetch("".concat(API_BASE, "/health"), {
+        headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
+      }).then(function (r) {
         setBackendUp(r.ok);
       })["catch"](function () {
         return setBackendUp(false);
@@ -1495,7 +1499,9 @@ var useStreetViewFetcherBehavior = function useStreetViewFetcherBehavior(data, n
     setErr(null);
     setCoverage(null);
     setBbox(null);
-    fetch("".concat(API_BASE, "/data/streetview/search_place?query=").concat(encodeURIComponent(query))).then(/*#__PURE__*/function () {
+    fetch("".concat(API_BASE, "/data/streetview/search_place?query=").concat(encodeURIComponent(query)), {
+      headers: (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()
+    }).then(/*#__PURE__*/function () {
       var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
         var _yield$r$json;
         var _t, _t2, _t3, _t4, _t5, _t6;
@@ -1565,9 +1571,9 @@ var useStreetViewFetcherBehavior = function useStreetViewFetcherBehavior(data, n
       setBbox(bb);
       return fetch("".concat(API_BASE, "/data/streetview/coverage"), {
         method: 'POST',
-        headers: {
+        headers: _objectSpread({
           'Content-Type': 'application/json'
-        },
+        }, (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()),
         body: JSON.stringify({
           bbox: bb,
           api_key: apiKey
@@ -1636,9 +1642,9 @@ var useStreetViewFetcherBehavior = function useStreetViewFetcherBehavior(data, n
     setResultCount(null);
     fetch("".concat(API_BASE, "/data/streetview/fetch"), {
       method: 'POST',
-      headers: {
+      headers: _objectSpread({
         'Content-Type': 'application/json'
-      },
+      }, (0,_apiAuth__WEBPACK_IMPORTED_MODULE_1__.authHeaders)()),
       body: JSON.stringify({
         bbox: bbox,
         limit: limit,

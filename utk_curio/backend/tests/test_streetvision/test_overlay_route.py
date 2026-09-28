@@ -1,16 +1,12 @@
 """The overlay route serves the caller's own overlay, and nobody else's.
 
-``/inference/overlay/<image_id>`` carries no ``@require_auth`` (it is read by
-package and built-in nodes alike, which may run in a ``--no-project`` install),
-so it resolves the user from the Bearer token and falls back to the shared
-guest key. That makes the header load-bearing in a way that is easy to miss: a
-plain ``<img src>`` cannot carry one, so every signed-in user's request
-resolved to "guest", missed, and showed nothing over an overlay that existed on
-disk the whole time. Simple View fetches these with the token and renders the
-bytes through an object URL for exactly this reason (#276).
+``/inference/overlay/<image_id>`` requires a signed-in caller and resolves the
+overlay cache from that caller. A plain ``<img src>`` cannot carry the header,
+so Simple View fetches these with the token and renders the bytes through an
+object URL.
 
-These tests pin both halves of the contract: with the token you get your file,
-without it you do not get somebody else's.
+These tests pin the contract: with the token you get your file, without it you
+get nothing, and another account's token does not reach it.
 """
 
 import json
@@ -55,18 +51,26 @@ class TestOverlayIsScopedToTheCaller:
         assert resp.get_data() == b"\x89PNG-overlay-bytes"
 
     def test_without_the_header_a_users_overlay_is_not_served(self, client):
-        """The regression: a header-less request resolves to guest and misses.
-
-        This is exactly what a bare ``<img src>`` produced, and it is also the
-        cross-user read the per-user cache split exists to prevent, so the 404
-        is the correct answer rather than something to relax.
-        """
         user_id, _token = _signup(client)
         _write_overlay(str(user_id), "pano.jpg")
 
         resp = client.get("/api/streetvision/inference/overlay/pano.jpg")
 
+        assert resp.status_code == 401
+
+    def test_an_id_cannot_climb_out_of_the_overlay_directory(self, client, tmp_path):
+        user_id, token = _signup(client)
+        _write_overlay(str(user_id), "pano.jpg")
+        outside = os.path.join(cache.user_root(str(user_id)), "secret_overlay.png")
+        with open(outside, "wb") as handle:
+            handle.write(b"not-an-overlay")
+
+        resp = client.get(
+            "/api/streetvision/inference/overlay/../secret.png",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert resp.status_code == 404
+        assert cache.overlay_path(str(user_id), "../secret.png") is None
 
     def test_one_users_token_does_not_reach_anothers_overlay(self, client):
         owner_id, _owner_token = _signup(client, "alice")

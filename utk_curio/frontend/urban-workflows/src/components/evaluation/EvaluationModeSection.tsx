@@ -353,7 +353,7 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
                 rel="noreferrer"
                 aria-describedby="evaluation-project-note"
               >
-                Open the generated dataflow
+                Open the generated dataflow ↗
               </a>
             ) : null}
             {!run.terminal ? (

@@ -3,6 +3,7 @@ import { NodeTemplateId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 import { backendUrl } from "./utils/backendUrl";
+import { executionInputRef } from "./utils/flowOutputRef";
 
 export class JavaScriptInterpreter {
     public interpretCode(
@@ -39,7 +40,7 @@ export class JavaScriptInterpreter {
             method: "POST",
             body: JSON.stringify({
                 code: userCode,
-                input: input,
+                input: executionInputRef(input),
                 inputTypes: inputTypes,
                 nodeType: nodeType,
                 nodeId: nodeId,

@@ -10,9 +10,9 @@ import path from "path";
  * names and the two containers described one screen — and the arrow on the card
  * promised a navigation that the drawer did not make.
  *
- * Both now open the modal and stay on the browse page. The route survives for
- * deep links (and the screenshot gallery navigates to it directly), it is simply
- * not something the UI walks you into any more.
+ * Both now open the modal and stay on the browse page. A link to
+ * `/catalog/data/:id` is the same page with that dataset's modal open, so there
+ * is no full-page details view left at all.
  *
  * Read from disk rather than rendered: these are assertions about what the page
  * does *not* do, and a component test can only show what a rendered tree does.
@@ -21,12 +21,13 @@ import path from "path";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-const BROWSE = "pages/dataHub/DataCatalogBrowse.tsx";
-const CARD = "pages/dataHub/DataCatalogBrowseCard.tsx";
-const DRAWER = "pages/dataHub/DataCatalogBrowseDrawer.tsx";
+const BROWSE = "pages/dataCatalog/DataCatalogBrowse.tsx";
+const CARD = "pages/dataCatalog/DataCatalogBrowseCard.tsx";
+const DRAWER = "pages/dataCatalog/DataCatalogBrowseDrawer.tsx";
 const PANEL = "components/datasets/catalog/DatasetDetailPanel.tsx";
 const MODAL = "components/datasets/catalog/DatasetDetailModal.tsx";
-const CANVAS_DRAWER = "components/datasets/catalog/DatasetCatalogDrawer.tsx";
+const CANVAS_DETAILS = "components/datasets/catalog/CanvasDatasetDetailsProvider.tsx";
+const PAGE_DETAILS = "components/datasets/catalog/DatasetDetailsProvider.tsx";
 
 describe("dataset detail entry points", () => {
   it("gives the card and the drawer the same callback", () => {
@@ -49,7 +50,19 @@ describe("dataset detail entry points", () => {
   it("does not navigate away from the browse page", () => {
     const browse = read(BROWSE);
     expect(browse).not.toContain("/catalog/data/$");
-    expect(browse).not.toContain("useNavigate");
+    // Its one navigation drops a linked dataset's id when its modal closes.
+    expect(browse.match(/navigate\(/g)).toHaveLength(1);
+    expect(browse).toContain('navigate("/catalog/data", { replace: true })');
+  });
+
+  it("has no full-page details view to link to", () => {
+    expect(fs.existsSync(path.join(SRC, "pages/dataCatalog/DataCatalogDetail.tsx"))).toBe(false);
+    expect(read("index.tsx")).toContain(
+      '<Route path="data/:datasetId?" element={<DataCatalogBrowse />} />',
+    );
+    // The panel renders one way, inside the modal.
+    expect(read(PANEL)).not.toContain('variant?: "page"');
+    expect(read(PANEL)).not.toContain("onBack");
   });
 
   it("opens the same first tab from either entry point", () => {
@@ -70,9 +83,11 @@ describe("canvasAvailable means a canvas, not a modal", () => {
     expect(panel).toContain("canvasAvailable = false");
   });
 
-  it("is set only by the in-canvas drawer", () => {
-    expect(read(CANVAS_DRAWER)).toContain("canvasAvailable");
-    // The browse page renders the same modal with no canvas behind it.
+  it("is set only by the canvas's details provider", () => {
+    // Every canvas surface opens the modal through it, the drawer included.
+    expect(read(CANVAS_DETAILS)).toContain("canvasAvailable");
+    // The catalog pages open the same modal with no canvas behind it.
+    expect(read(PAGE_DETAILS)).not.toContain("canvasAvailable");
     expect(read(BROWSE)).not.toContain("canvasAvailable");
   });
 
