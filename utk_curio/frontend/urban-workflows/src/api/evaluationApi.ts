@@ -26,12 +26,14 @@ export interface EvaluationReadiness {
   configured: boolean;
   /** Populated when it is not configured: what to do about it. */
   reason: string;
-  /** Where the configuration came from: the account's default configuration,
-   * the deployment default (the start command), or the guest configuration. */
-  source: "default" | "deployment" | "guest" | "none";
+  /** Where the Dataflow Builder's configuration came from: its choice in AI
+   * Settings, the account's default configuration, the deployment default
+   * (the start command), or the guest configuration. */
+  source: "assigned" | "default" | "deployment" | "guest" | "none";
   provider: EvaluationProvider;
-  /** Every distinct configuration the run and its delegates use. */
-  configurations: EvaluationProvider[];
+  /** Every distinct configuration the run and the agents it requires use,
+   * with the agents on each. */
+  configurations: (EvaluationProvider & { agents?: string[] })[];
 }
 
 export interface EvaluationFixture {

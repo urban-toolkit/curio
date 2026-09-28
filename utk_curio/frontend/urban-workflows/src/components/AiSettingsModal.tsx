@@ -12,18 +12,25 @@ import { authApi } from "../utils/authApi";
 
 interface Props {
   isOpen: boolean;
-  onClose: () => void;  /** dev/116: open on the Connection keys section, host prefilled. */
+  onClose: () => void;
+  /** Open on one section: Connection keys (dev/116, host prefilled), an agent's
+   * row in Agent models, or one LLM configuration. */
   focus?: ConnectionKeysFocus | null;
 }
 
 /**
- * The account's credentials screen: its LLM configurations (which endpoint and
- * model answer the agents), the per-person HuggingFace and Socrata tokens, the
- * connection keys a node reaches by name, and the evaluation and training
- * panels that run on the default configuration.
+ * The account's credentials screen: its LLM configurations and the one each
+ * agent runs on, the per-person HuggingFace and Socrata tokens, the connection
+ * keys a node reaches by name, and the evaluation and training panels that
+ * run on the Dataflow Builder's configuration.
  */
 const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => {
-  const { user, updateTokens, isSharedGuest } = useUserContext();
+  const { user, updateTokens, isSharedGuest, enableUserAuth } = useUserContext();
+  // A guest under --deploy shares one account with every visitor, so it saves
+  // nothing personal. Without --deploy the shared guest is the one local user.
+  const hostedGuest = Boolean(user?.is_guest) && enableUserAuth;
+  const keyFocus = focus?.section === "connection-keys" ? focus : null;
+  const llmFocus = focus?.section === "agent-models" || focus?.section === "llm-configs" ? focus : null;
 
   // HuggingFace gates some models behind a licence you accept with your own
   // account, so the token is per user rather than one the operator holds.
@@ -109,22 +116,27 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
       <div className={modal.content}>
         <h2 id="ai-settings-title" className={modal.title}>AI Settings</h2>
 
-        <LlmConfigsSection />
+        <LlmConfigsSection focus={llmFocus} />
 
-        {user?.is_guest ? (
+        {hostedGuest ? (
           <>
             <p className={styles.guestNotice}>
               Personal tokens cannot be saved on a shared guest account.
             </p>
             {/* dev/116: the shared guest (auth off) may still save connection
                 keys, into the one store every guest shares; said plainly. */}
-            {isSharedGuest ? <ConnectionKeysSection focus={focus} sharedGuest /> : null}
+            {isSharedGuest ? <ConnectionKeysSection focus={keyFocus} sharedGuest /> : null}
             <div className={modal.buttonRow}>
               <button className={modal.ghostBtn} onClick={onClose}>Close</button>
             </div>
           </>
         ) : (
           <>
+            {isSharedGuest ? (
+              <p className={styles.sharedNote} role="note">
+                Everyone using this Curio shares this account, so tokens saved here are shared too.
+              </p>
+            ) : null}
             <div className={modal.field}>
               <label className={modal.label} htmlFor="ai-settings-hf-token">
                 HuggingFace token{" "}
@@ -239,14 +251,18 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
             </div>
 
             {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
-            <ConnectionKeysSection focus={focus} />
-            {/* dev/123 (DEC-079): run one of Curio's own examples through the
-                real lifecycle on your default configuration, and score what it
-                built. */}
-            <EvaluationModeSection />
-            {/* dev/122 (DEC-078): fine-tune a model on Curio's own approved
-                examples, on a configuration holding your own key. */}
-            <ModelTrainingSection />
+            <ConnectionKeysSection focus={keyFocus} sharedGuest={isSharedGuest} />
+            {user?.is_guest ? null : (
+              <>
+                {/* dev/123 (DEC-079): run one of Curio's own examples through
+                    the real lifecycle on the Dataflow Builder's configuration,
+                    and score what it built. */}
+                <EvaluationModeSection />
+                {/* dev/122 (DEC-078): fine-tune a model on Curio's own
+                    approved examples, on a configuration holding your own key. */}
+                <ModelTrainingSection />
+              </>
+            )}
 
             <div className={modal.buttonRow}>
               <button className={modal.ghostBtn} onClick={onClose}>Close</button>

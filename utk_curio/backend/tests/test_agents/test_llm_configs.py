@@ -9,7 +9,9 @@ Covers ``agents/llm_configs.py`` and the ``/api/agents/llm`` routes:
 - a configuration a running training job uses keeps its endpoint and key;
 - a hosted guest reads the guest configuration and writes nothing, while the
   local guest owns its configurations;
-- the model listing borrows a stored key only for that key's own endpoint.
+- the model listing borrows a stored key only for that key's own endpoint;
+- the configuration chosen per agent: which agents may have one, what the
+  listing says each answers with, and a delete moving agents in one write.
 """
 
 from __future__ import annotations
@@ -310,6 +312,109 @@ class TestGuests:
         listing = client.get(BASE, headers=_auth(token)).get_json()
         assert listing["editable"] is True and listing["shared"] is True
         assert len(listing["configs"]) == 1
+
+
+#: The catalog cards (M4's pinned set in test_builtin), which are exactly the
+#: built-ins whose configuration can be chosen.
+_CARDS = {
+    "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
+    "agent.node-content-builder", "agent.node-researcher", "agent.package-builder",
+    "agent.package-recommendation", "agent.researcher", "agent.connection-builder",
+    "agent.chat-agent",
+}
+
+
+class TestAChoicePerAgent:
+    def _choose(self, client, token, body):
+        return client.put(f"{BASE}/assignments", json=body, headers=_auth(token))
+
+    def test_the_cards_are_the_choosable_built_ins(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents import builtin
+
+        _, token = user_and_token
+        listing = client.get(BASE, headers=_auth(token)).get_json()
+        ids = {row["id"] for row in listing["agents"]}
+        assert ids == _CARDS
+        assert not ids & builtin.internal_agent_ids()
+        builder = next(row for row in listing["agents"] if row["id"] == "agent.dataflow-builder")
+        assert builder["name"] == "Dataflow Builder" and builder["choice"] is None
+        # With no choice and no default, the Deployment default answers it.
+        assert builder["answers"]["source"] == "deployment"
+
+    def test_a_choice_is_saved_listed_and_answers(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        config_id = _create(client, token).get_json()["config"]["id"]
+        chosen = self._choose(client, token, {"agent.node-content-builder": config_id})
+        assert chosen.status_code == 200, chosen.get_json()
+        listing = chosen.get_json()
+        assert listing["assignments"] == {"agent.node-content-builder": config_id}
+        row = next(r for r in listing["agents"] if r["id"] == "agent.node-content-builder")
+        assert row["choice"] == config_id
+        assert (row["answers"]["source"], row["answers"]["configId"]) == ("assigned", config_id)
+        assert KEY not in chosen.get_data(as_text=True)
+        # null clears it, and the agent follows its rules again.
+        cleared = self._choose(client, token, {"agent.node-content-builder": None}).get_json()
+        assert cleared["assignments"] == {}
+
+    def test_the_deployment_default_is_choosable_only_while_there_is_one(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        _, token = user_and_token
+        assert self._choose(client, token, {"agent.chat-agent": "deployment"}).status_code == 200
+        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
+        refused = self._choose(client, token, {"agent.researcher": "deployment"})
+        assert refused.status_code == 400 and "no Deployment default" in refused.get_json()["error"]
+
+    @pytest.mark.parametrize("body, status, fragment", [
+        ({"agent.dataflow-planner": None}, 400, "not an agent whose model you can choose"),
+        ({"agent.no-such-agent": None}, 400, "not an agent whose model you can choose"),
+        ({"agent.chat-agent": "llm-000000000000"}, 404, "no LLM configuration"),
+    ])
+    def test_a_bad_choice_is_refused_and_nothing_is_written(
+        self, client, user_and_token, tmp_curio, body, status, fragment
+    ):
+        user, token = user_and_token
+        config_id = _create(client, token).get_json()["config"]["id"]
+        # A valid entry beside the bad one is not written either.
+        refused = self._choose(client, token, {"agent.researcher": config_id, **body})
+        assert refused.status_code == status and fragment in refused.get_json()["error"]
+        assert llm_configs.default_store().choices(_user_dir_key(user)) == {}
+
+    def test_an_empty_map_is_refused(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        refused = self._choose(client, token, {})
+        assert refused.status_code == 400 and "send" in refused.get_json()["error"]
+
+    def test_an_imported_agent_is_choosable(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import services
+
+        _, token = user_and_token
+        original = services.choosable_agents
+        monkeypatch.setattr(services, "choosable_agents", lambda user_key: [
+            *original(user_key), {"id": "agent.my-own", "name": "My Own", "category": "chat"},
+        ])
+        config_id = _create(client, token).get_json()["config"]["id"]
+        assert self._choose(client, token, {"agent.my-own": config_id}).status_code == 200
+
+    def test_deleting_a_configuration_moves_its_agents_in_the_same_write(
+        self, client, user_and_token, tmp_curio
+    ):
+        user, token = user_and_token
+        keep = _create(client, token, label="Keep").get_json()["config"]["id"]
+        gone = _create(client, token, label="Gone").get_json()["config"]["id"]
+        self._choose(client, token, {
+            "agent.node-content-builder": gone, "agent.chat-agent": gone, "agent.researcher": keep,
+        })
+        deleted = client.delete(f"{BASE}/configs/{gone}", headers=_auth(token)).get_json()
+        assert deleted["moved"] == ["agent.chat-agent", "agent.node-content-builder"]
+        assert llm_configs.default_store().choices(_user_dir_key(user)) == {"agent.researcher": keep}
+
+    def test_a_hosted_guest_chooses_nothing(self, client, db, tmp_curio, monkeypatch):
+        _, token = _shared_guest(db)
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        listing = client.get(BASE, headers=_auth(token)).get_json()
+        assert listing["agents"] == [] and listing["assignments"] == {}
+        assert self._choose(client, token, {"agent.chat-agent": None}).status_code == 403
 
 
 class TestModelListing:

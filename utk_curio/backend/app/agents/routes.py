@@ -228,7 +228,8 @@ def update_llm_config(config_id: str):
 @agents_bp.route("/llm/configs/<config_id>", methods=["DELETE"])
 @require_auth
 def delete_llm_config(config_id: str):
-    """Remove a configuration; the default resets when it was the default."""
+    """Remove a configuration. The agents chosen to run on it go back to their
+    rules (``moved`` lists them) and a removed default resets, in one write."""
     from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
 
     refusal = _llm_refusal()
@@ -280,6 +281,32 @@ def put_llm_default():
         return _error("send {configId}, a configuration id or null")
     try:
         default_store().set_default(_user_dir_key(g.user), body["configId"])
+        return jsonify(llm_listing(g.user)), 200
+    except LlmConfigError as exc:
+        return _llm_error(exc)
+
+
+@agents_bp.route("/llm/assignments", methods=["PUT"])
+@require_auth
+def put_llm_assignments():
+    """Choose the configuration an agent runs on: a partial map of agent id to
+    a configuration id, ``"deployment"`` or ``null`` (which clears the choice).
+    Agent ids are the catalog cards, published definitions and the account's
+    imports; an internal agent always runs on its caller's and is refused."""
+    from utk_curio.backend.app.agents.llm_configs import LlmConfigError, default_store
+    from utk_curio.backend.app.agents.provider_config import deployment_config, llm_listing
+
+    refusal = _llm_refusal()
+    if refusal:
+        return _error(refusal, 403)
+    user_key = _user_dir_key(g.user)
+    guest = bool(getattr(g.user, "is_guest", False))
+    try:
+        default_store().set_choices(
+            user_key, request.get_json(silent=True),
+            choosable=frozenset(row["id"] for row in agents_services.choosable_agents(user_key)),
+            deployment_default=deployment_config(user_key, guest=guest) is not None,
+        )
         return jsonify(llm_listing(g.user)), 200
     except LlmConfigError as exc:
         return _llm_error(exc)
@@ -661,16 +688,11 @@ def record_dataset_selection(project_id: str, attachment_id: str):
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         # dev/132: a confirmed fetchable source is delegated to the node's own
-        # builder right here, so the config is resolved with the selection. A
-        # user with no provider still records the selection (the delegation
-        # says why it did not start).
-        try:
-            config = _llm_for_attachment(project_id, attachment_id)
-        except ProviderConfigError:
-            config = None
+        # builder, on the builder's LLM configuration. A selection is recorded
+        # either way (the delegation says why a build did not start).
         payload = agents_services.record_dataset_selection(
             _user_dir_key(g.user), project_id, attachment_id, body.get("picks"),
-            config=config,
+            guest=bool(getattr(g.user, "is_guest", False)),
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

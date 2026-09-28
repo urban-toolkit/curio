@@ -55,17 +55,8 @@ class EvaluationServiceError(Exception):
 
 # ── readiness: is a model configured, and where did it come from ────────────
 
-def _evaluated_config(user, user_key: str):
-    from utk_curio.backend.app.agents.provider_config import ProviderConfigError, resolve_llm
-
-    try:
-        return resolve_llm(user_key, EVALUATED_AGENT, guest=bool(getattr(user, "is_guest", False)))
-    except ProviderConfigError as exc:
-        raise EvaluationServiceError(str(exc), 400) from exc
-
-
-#: The agent an evaluation attaches. Its configuration is the one a run
-#: resolves; the agents it delegates to inherit it.
+#: The agent an evaluation attaches. It runs on its own configuration, and
+#: each agent it delegates to on that agent's choice, else the Builder's.
 EVALUATED_AGENT = "agent.dataflow-builder"
 
 
@@ -81,41 +72,68 @@ def _provider_payload(config) -> dict:
     }
 
 
-def readiness(user) -> dict:
-    """Whether an evaluation can run at all, and which configuration would answer.
+def _evaluated_configs(user, user_key: str):
+    """The Dataflow Builder's configuration, as an attached run resolves it,
+    and every distinct configuration the run uses: the Builder's and those of
+    the agents it requires, each resolved with the Builder as its caller.
+    Returns ``(config, rows)``; each row is a provider payload plus the
+    ``agents`` that run on it."""
+    from utk_curio.backend.app.agents import builtin
+    from utk_curio.backend.app.agents.provider_config import ProviderConfigError, resolve_llm
 
-    The run attaches the Dataflow Builder, so the configuration is the one an
-    attached Dataflow Builder resolves: the account's default configuration,
-    else the deployment default (``curio.py start --llm-provider/--llm-base-url
-    /--llm-model``). ``source`` says which, because a model configured on the
-    command line is as real as one chosen in AI Settings. ``configurations``
-    lists every distinct configuration the run and its delegates use.
+    guest = bool(getattr(user, "is_guest", False))
+    manifest = builtin.get_builtin_manifest(DFB_COORD)
+    try:
+        config = resolve_llm(user_key, EVALUATED_AGENT, guest=guest)
+        used = [(getattr(manifest, "name", None) or "Dataflow Builder", config)]
+        for agent_id in getattr(manifest, "requires_agents", None) or ():
+            required = builtin.get_builtin_manifest(f"{agent_id}@{builtin.BUILTIN_VERSION}")
+            used.append((
+                getattr(required, "name", None) or agent_id,
+                resolve_llm(user_key, agent_id, caller=config, guest=guest),
+            ))
+    except ProviderConfigError as exc:
+        raise EvaluationServiceError(str(exc), 400) from exc
+    rows: list[dict] = []
+    for name, agent_config in used:
+        payload = _provider_payload(agent_config)
+        row = next((r for r in rows if {k: r[k] for k in payload} == payload), None)
+        if row is None:
+            row = {**payload, "agents": []}
+            rows.append(row)
+        row["agents"].append(name)
+    return config, rows
+
+
+def readiness(user) -> dict:
+    """Whether an evaluation can run at all, and which configurations would answer.
+
+    The run attaches the Dataflow Builder, so its configuration is the one an
+    attached Dataflow Builder resolves: its choice in AI Settings, else the
+    account's default, else the deployment default (``curio.py start
+    --llm-provider/--llm-base-url/--llm-model``). ``source`` says which,
+    because a model configured on the command line is as real as one chosen in
+    AI Settings. ``configurations`` lists every distinct configuration the run
+    and the agents it requires use.
     """
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_llm,
-        storage_key,
-    )
+    from utk_curio.backend.app.agents.provider_config import storage_key
 
     try:
-        config = resolve_llm(
-            storage_key(user), EVALUATED_AGENT, guest=bool(getattr(user, "is_guest", False))
-        )
-    except ProviderConfigError as exc:
+        config, rows = _evaluated_configs(user, storage_key(user))
+    except EvaluationServiceError as exc:
         return {
             "configured": False,
-            "reason": str(exc),
+            "reason": exc.message,
             "source": "none",
             "provider": {"apiType": "", "baseUrlHost": "", "model": "", "configId": None, "label": ""},
             "configurations": [],
         }
-    provider = _provider_payload(config)
     return {
         "configured": True,
         "reason": "",
         "source": config.source,
-        "provider": provider,
-        "configurations": [provider],
+        "provider": _provider_payload(config),
+        "configurations": rows,
     }
 
 
@@ -182,13 +200,14 @@ def start(user, user_key: str, fixture_id: str) -> dict:
             )
 
     fixture = _fixture_or_refuse(fixture_id)
-    config = _evaluated_config(user, user_key)
+    config, configurations = _evaluated_configs(user, user_key)
 
     record = records_mod.EvaluationRecord(
         run_id=records_mod.new_run_id(),
         fixture_id=fixture.fixture_id,
         review_status=fixture.review_status,
         provider=_provider_payload(config),
+        configurations=configurations,
         digests={
             "fixtureSha256": fixture.fixture_sha256(),
             "promptSha256": fixture.prompt_sha256(),

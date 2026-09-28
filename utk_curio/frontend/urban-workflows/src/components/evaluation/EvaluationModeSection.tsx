@@ -173,9 +173,22 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
                 ? "The deployment default, set by this deployment's start command."
                 : readiness.source === "guest"
                   ? "The guest configuration this Curio's operator set."
-                  : "Your default LLM configuration, above."}
+                  : readiness.source === "assigned"
+                    ? "The configuration chosen for the Dataflow Builder, above."
+                    : "Your default LLM configuration, above."}
             </span>
           </p>
+          {readiness.configurations.length > 1 ? (
+            <ul className={styles.configurations} aria-label="Configurations this run uses">
+              {readiness.configurations.map((c) => (
+                <li key={`${c.configId ?? "deployment"}:${c.model}`}>
+                  {(c.agents ?? []).join(", ")}: <strong>{c.model}</strong>
+                  {c.label ? ` (${c.label})` : ""}
+                  {c.baseUrlHost ? ` at ${c.baseUrlHost}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <div className={modal.field}>
             <label className={modal.label} htmlFor="evaluation-fixture">

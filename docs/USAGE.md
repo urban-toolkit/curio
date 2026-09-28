@@ -231,7 +231,7 @@ npm run build
 
 ## LLM configurations
 
-Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) answer with your default **LLM configuration**, chosen in **AI Settings**.
+Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) answer with an **LLM configuration** set up in **AI Settings**: the one chosen for the agent, else your default.
 
 Curio ships no endpoint of its own. Until you add a configuration, or the operator of your Curio sets a Deployment default, the AI surfaces report that no LLM configuration answers.
 
@@ -241,10 +241,19 @@ Curio ships no endpoint of its own. Until you add a configuration, or the operat
 
 - **Add configuration** opens the editor: a label, a provider tab, the base URL (Custom only), the API key, and the model. **Fetch models** asks the endpoint what it serves and offers the answer as suggestions; the Model box stays free text. **Make this my default** is ticked for your first configuration.
 - **Edit**, **Duplicate**, **Make default** and **Remove** act on one row. Duplicate copies the saved key on the server.
-- The **Default** badge marks the configuration every agent answers with, and the line above the table names what is answering now.
+- The **Default** badge marks the configuration an agent with no choice of its own answers with, and the line above the table names it.
+- **Chosen for** lists the agents chosen to run on each configuration (see Agent models, below).
 - **Deployment default** is a read-only row, shown when the operator configured one. It answers while you have no default of your own, and its **Make default** goes back to it. Removing your default does the same, or leaves nothing answering when there is no Deployment default.
 - **This Curio install** is a provider tab, offered when the operator configured an endpoint: the configuration runs on that endpoint with its key, and you choose the model.
-- **Trained** marks a configuration made by activating a model trained in Curio (see [Model training](AGENT-CATALOG.md#training-a-model-on-these-examples)).
+- **Trained** marks a configuration made by activating a model trained in Curio, which chooses it for the Dataflow Builder (see [Model training](AGENT-CATALOG.md#training-a-model-on-these-examples)).
+
+**Agent models**, below the table, chooses the configuration each agent runs on: **Default** (your default configuration), any of your configurations, or the Deployment default. It is saved as you change it. The rules:
+
+- An agent you attach runs on its choice, else your default.
+- An agent that another agent calls runs on its choice, else on its caller's. A Solve of the Dataflow Builder, for example, writes each node's content with Node Content Builder's choice.
+- Curio's internal helpers, which no catalog lists, always run on their caller's.
+
+A choice belongs to your account: it covers every version of the agent and every project, and a shared project carries none, so it runs on the configurations of whoever runs it. Removing a configuration sends the agents chosen for it back to the default. An agent's details in the Agent Catalog name what it runs on, with a link here, and a run refused because nothing answers an agent offers **Open AI Settings** on its row.
 
 Keys are write-only: once saved, a key is never shown again, and the table says only whether one is saved. A key belongs to its configuration's endpoint, so changing the provider, or the base URL's scheme, host or port, needs the key again. Keys are kept per account in a file readable by the server only; they are not encrypted at rest. Configurations belong to your account and apply to all of your projects.
 
@@ -293,7 +302,7 @@ detected text never leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest shares one account, and all of them answer with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest shares one account, and all of them answer with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
 The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
@@ -503,8 +512,9 @@ See [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 Agents are AI assistants you attach to your dataflow. The catalog lists ten:
 **Chat**, which explains a node or the whole dataflow, diagnoses errors and
 helps you define what to build, and nine that build dataflows and nodes, find
-data, connect nodes, research, and recommend or author packages. Every agent
-answers with your default LLM configuration, set in **AI Settings** above.
+data, connect nodes, research, and recommend or author packages. Each agent
+answers with the LLM configuration chosen for it in **AI Settings** above, else
+your default.
 
 There are two scopes:
 

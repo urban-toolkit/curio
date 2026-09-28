@@ -1237,12 +1237,15 @@ def make_delegation_part(
     attachment_id: str | None,
     status: str,
     summary: str,
+    model: str = "",
+    llm_label: str = "",
 ) -> dict:
     """The parent-side delegation entry (memo dev/72) — RUNTIME-emitted, like
     proposal parts (never parseable from a model tail): compact, bounded, and
     linkable — ``attachmentId`` opens the delegated agent's chat, where the
-    full task/result trace lives."""
-    return {
+    full task/result trace lives. ``model`` and ``llmLabel`` name what the
+    child ran on, which may not be the parent's."""
+    part = {
         "type": "delegation",
         "capability": str(capability or "")[:64],
         "coord": str(coord or "")[:120],
@@ -1252,6 +1255,11 @@ def make_delegation_part(
         "status": "ok" if status == "ok" else "failed",
         "summary": str(summary or "")[:_DELEGATION_SUMMARY_MAX_CHARS],
     }
+    if model:
+        part["model"] = str(model)[:200]
+    if llm_label:
+        part["llmLabel"] = str(llm_label)[:80]
+    return part
 
 
 #: dev/127: the attempt trail's bounds, enforced HERE so no caller can decide

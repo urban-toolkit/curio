@@ -7,13 +7,17 @@ request. The fallback order:
 - A **hosted guest** (a guest on an instance launched with ``--deploy``) runs
   on the guest configuration, ``GUEST_LLM_*``, for every agent. Every visitor
   shares that account, so it never opens a configurations file.
-- A **delegated** run (``caller`` given) runs on its caller's configuration.
-- Otherwise the account's **default configuration** answers, else the
-  **deployment default** (``CURIO_DEFAULT_LLM_*``, offered when the operator
-  set a model), else the run is refused.
-- A reference that does not resolve (a default naming no configuration, a
-  This Curio install configuration whose deployment withdrew its endpoint, an
-  unreadable file) is refused. It never falls back to another configuration.
+- An **internal** agent (a built-in that runs only as a delegate) always runs
+  on its caller's configuration.
+- Any other agent runs on the configuration **chosen for it** in AI Settings.
+- With no choice, a **delegated** agent (``caller`` given) runs on its
+  caller's configuration, and an attached one on the account's **default
+  configuration**, else the **Deployment default** (``CURIO_DEFAULT_LLM_*``,
+  offered when the operator set a model), else the run is refused.
+- A reference that does not resolve (a choice or a default naming no
+  configuration, a Deployment default or This Curio install endpoint the
+  deployment withdrew, an unreadable file) is refused. It never falls back to
+  another configuration.
 
 The deployment is offered only **whole**. There is no per-field inheritance: a
 configuration of the user's own never borrows the operator's key or URL, and
@@ -31,6 +35,8 @@ from utk_curio.backend.app.agents import llm_configs
 from utk_curio.backend.app.agents.providers import ProviderConfig
 from utk_curio.backend.app.common.user_storage import GUEST_KEY
 
+SOURCE_ASSIGNED = "assigned"
+SOURCE_CALLER = "caller"
 SOURCE_DEFAULT = "default"
 SOURCE_DEPLOYMENT = "deployment"
 SOURCE_GUEST = "guest"
@@ -125,8 +131,15 @@ def build_config(user_key: str, config_id: str, record: dict, *, source: str,
 def resolve_llm(user_key: str, agent_id: str | None = None, *,
                 caller: ProviderConfig | None = None, guest: bool | None = None) -> ProviderConfig:
     """The configuration a run of *agent_id* answers with (see the module
-    docstring for the order). ``guest`` says whether the caller is a guest when
-    the storage key alone cannot (a guest that is not the shared one)."""
+    docstring for the order). ``caller`` is the delegating run's configuration.
+    ``guest`` says whether the caller is a guest when the storage key alone
+    cannot (a guest that is not the shared one)."""
+    from dataclasses import replace
+
+    from utk_curio.backend.app.agents import builtin
+
+    if caller is not None and caller.source == SOURCE_GUEST:
+        return caller
     if is_hosted_guest(user_key, guest=guest):
         config = deployment_config(user_key, guest=True)
         if config is None:
@@ -134,12 +147,35 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
                 "LLM is not available for guest users at this time.", agent_id=agent_id
             )
         return config
-    if caller is not None:
-        return caller
+    internal = bool(agent_id) and agent_id in builtin.internal_agent_ids()
+    if internal and caller is not None:
+        return replace(caller, source=SOURCE_CALLER)
     try:
         doc = llm_configs.default_store().read(user_key)
     except llm_configs.LlmConfigError as exc:
         raise ProviderConfigError(f"{exc}. Fix it in AI Settings.", agent_id=agent_id) from exc
+    chosen = doc["agents"].get(agent_id) if agent_id and not internal else None
+    if chosen == llm_configs.CHOICE_DEPLOYMENT:
+        config = deployment_config(user_key, guest=guest)
+        if config is None:
+            raise ProviderConfigError(
+                f"{agent_id} is set to the Deployment default, which this Curio no longer "
+                "offers. Choose another configuration for it in AI Settings.",
+                agent_id=agent_id,
+            )
+        return replace(config, source=SOURCE_ASSIGNED)
+    if chosen:
+        record = doc["configs"].get(chosen)
+        if record is None:
+            raise ProviderConfigError(
+                f"The LLM configuration chosen for {agent_id} no longer exists. Choose "
+                "another in AI Settings.",
+                agent_id=agent_id,
+            )
+        return build_config(user_key, chosen, record, source=SOURCE_ASSIGNED,
+                            guest=guest, agent_id=agent_id)
+    if caller is not None:
+        return replace(caller, source=SOURCE_CALLER)
     default_id = doc["default"]
     if default_id:
         record = doc["configs"].get(default_id)
@@ -199,11 +235,21 @@ def _deployment_payload(user_key: str, guest: bool) -> dict:
     }
 
 
+def _answers(config: ProviderConfig) -> dict:
+    return {
+        "source": config.source, "configId": config.config_id,
+        "label": config.label, "model": config.model, "apiType": config.api_type,
+        "baseUrlHost": llm_configs.base_url_host(config.base_url, config.api_type),
+    }
+
+
 def llm_listing(user) -> dict:
     """``GET /api/agents/llm``: the account's configurations without keys, its
-    default, the deployment's offer, what answers a run now, and whether this
-    account may change any of it."""
+    default, the deployment's offer, what answers a run now, the agents whose
+    configuration it may choose (each with its choice and what it answers with
+    when attached), and whether this account may change any of it."""
     from utk_curio.backend import config as settings
+    from utk_curio.backend.app.agents import services
     from utk_curio.backend.app.users.capabilities import llm_config_refusal
 
     user_key = storage_key(user)
@@ -211,17 +257,11 @@ def llm_listing(user) -> dict:
     deployment = _deployment_payload(user_key, guest)
     refusal = llm_config_refusal(user)
     try:
-        active_config = resolve_llm(user_key, guest=guest)
-        active = {
-            "source": active_config.source, "configId": active_config.config_id,
-            "label": active_config.label, "model": active_config.model,
-            "apiType": active_config.api_type,
-            "baseUrlHost": llm_configs.base_url_host(active_config.base_url, active_config.api_type),
-        }
+        active = _answers(resolve_llm(user_key, guest=guest))
     except ProviderConfigError as exc:
         active = {"source": None, "error": str(exc)}
     if is_hosted_guest(user_key, guest=guest):
-        configs, default = [], None
+        configs, default, choices, agents = [], None, {}, []
     else:
         store = llm_configs.default_store()
         configs = store.list(user_key)
@@ -230,9 +270,21 @@ def llm_listing(user) -> dict:
             if entry["endpoint"] == llm_configs.ENDPOINT_DEPLOYMENT:
                 entry["apiType"] = deployment["apiType"] or ""
                 entry["baseUrlHost"] = deployment["baseUrlHost"] or ""
+        stored = store.choices(user_key)
+        agents = []
+        for row in services.choosable_agents(user_key):
+            try:
+                answers = _answers(resolve_llm(user_key, row["id"], guest=guest))
+            except ProviderConfigError as exc:
+                answers = {"source": None, "error": str(exc)}
+            agents.append({**row, "choice": stored.get(row["id"]), "answers": answers})
+        choosable = {row["id"] for row in agents}
+        choices = {agent_id: chosen for agent_id, chosen in stored.items() if agent_id in choosable}
     return {
         "configs": configs,
         "default": default,
+        "assignments": choices,
+        "agents": agents,
         "deployment": deployment,
         "active": active,
         "editable": refusal is None,

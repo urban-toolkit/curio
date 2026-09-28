@@ -322,9 +322,14 @@ export const AgentAttachmentsProvider: React.FC<{
   const appendErrorTurn = useCallback(
     (attachmentId: string, e: unknown) => {
       const msg = e instanceof Error ? e.message : "run failed";
-      const body = (e as { body?: { resetAt?: string } } | null)?.body;
+      const body = (
+        e as { body?: { resetAt?: string; remedy?: import("../../../api/agentsApi").AgentRemedy } } | null
+      )?.body;
       const reset = body?.resetAt ? ` — resets ${new Date(body.resetAt).toLocaleString()}` : "";
-      appendTurns(attachmentId, [{ role: "agent", text: `(error) ${msg}${reset}`, error: true }]);
+      appendTurns(attachmentId, [{
+        role: "agent", text: `(error) ${msg}${reset}`, error: true,
+        ...(body?.remedy ? { remedy: body.remedy } : {}),
+      }]);
     },
     [appendTurns],
   );

@@ -49,8 +49,7 @@ def health():
         has_token = bool(hf_svc.resolve_hf_token())
     except ImportError:
         has_token = False
-    # True when a token resolves for THIS caller: their own account setting, or
-    # the deployment default behind --huggingface-token.
+    # True when THIS caller saved a token in AI Settings.
     return jsonify({"status": "healthy", "has_huggingface_token": has_token})
 
 

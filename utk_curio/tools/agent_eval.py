@@ -109,23 +109,32 @@ def cmd_list(args) -> int:
     return 0
 
 
-def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
-    """Make a temporary configuration naming *model* the evaluation account's
-    default; return ``(previous default, temporary configuration id)``.
+#: The agent an evaluation attaches, and so the one a measured model runs as.
+_BUILDER = "agent.dataflow-builder"
 
-    This is how a model that is not active gets measured at all: a run answers
-    with the account's default configuration, so evaluating a trained model
-    means a configuration naming it is the default for the duration. The copy
-    is made server-side from the configuration that answers now, so this tool
-    never reads a key, and the caller restores the default and removes the copy
-    in a ``finally``.
+
+def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
+    """Choose a temporary configuration naming *model* for the evaluation
+    account's Dataflow Builder; return ``(its previous choice, temporary
+    configuration id)``.
+
+    This is how a model that is not active gets measured at all: the Builder
+    answers with the configuration chosen for it, so evaluating a trained model
+    means choosing one that names it for the duration. The copy is made
+    server-side from the configuration the Builder answers with now, so this
+    tool never reads a key, and the caller restores the choice and removes the
+    copy in a ``finally``.
     """
     listing = client.json("/api/agents/llm")
-    previous = listing.get("default")
+    builder = next(
+        (row for row in listing.get("agents") or [] if row.get("id") == _BUILDER), {}
+    )
+    previous = builder.get("choice")
+    answering = (builder.get("answers") or {}).get("configId")
     label = f"agent_eval {tag}"
-    if previous:
+    if answering:
         created = client.json(
-            f"/api/agents/llm/configs/{previous}/duplicate", method="POST",
+            f"/api/agents/llm/configs/{answering}/duplicate", method="POST",
             payload={"label": label, "model": model},
         )["config"]
     elif (listing.get("deployment") or {}).get("endpointOffered"):
@@ -138,7 +147,7 @@ def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
             "the evaluation account has no LLM configuration to evaluate a model "
             "on; add one in AI Settings first"
         )
-    client.json("/api/agents/llm/default", method="PUT", payload={"configId": created["id"]})
+    client.json("/api/agents/llm/assignments", method="PUT", payload={_BUILDER: created["id"]})
     return previous, created["id"]
 
 
@@ -195,14 +204,15 @@ def cmd_run(args) -> int:
         include_external=args.include_external,
         tiers=tiers,
     )
-    previous_default = None
+    previous_choice = None
     temporary_id = None
     try:
         if args.model:
-            previous_default, temporary_id = _switch_to_model(client, args.model, report.run_id)
+            previous_choice, temporary_id = _switch_to_model(client, args.model, report.run_id)
             report.notes.append(
-                f"evaluated model {args.model!r} through a temporary default "
-                f"configuration (previous default: {previous_default or 'the deployment default'})"
+                f"evaluated model {args.model!r} through a temporary configuration "
+                "chosen for the Dataflow Builder (previous choice: "
+                f"{previous_choice or 'none, it followed the default'})"
             )
         run.run(fixtures, examples=_examples_for(fixtures))
     except live_mod.LiveEvalRefused as refusal:
@@ -212,15 +222,16 @@ def cmd_run(args) -> int:
         if temporary_id is not None:
             try:
                 client.json(
-                    "/api/agents/llm/default", method="PUT",
-                    payload={"configId": previous_default},
+                    "/api/agents/llm/assignments", method="PUT",
+                    payload={_BUILDER: previous_choice},
                 )
                 client.json(f"/api/agents/llm/configs/{temporary_id}", method="DELETE")
             except Exception as exc:  # noqa: BLE001 - say so, do not hide it
                 print(
-                    "WARNING: could not restore the evaluation account's default "
-                    f"configuration ({previous_default or 'the deployment default'}) "
-                    f"and remove {temporary_id}: {exc}. Do both in AI Settings.",
+                    "WARNING: could not restore the Dataflow Builder's configuration "
+                    f"({previous_choice or 'none, it followed the default'}) on the "
+                    f"evaluation account and remove {temporary_id}: {exc}. Do both "
+                    "in AI Settings.",
                     file=sys.stderr,
                 )
 
@@ -259,7 +270,7 @@ def _write_gate(args, fixtures, report, client) -> Path:
         fixture_digests={f.fixture_id: f.fixture_sha256() for f in fixtures},
         scores=scores,
         categories=categories,
-        evaluated_via="agent_eval --model (temporary default configuration)",
+        evaluated_via="agent_eval --model (temporary configuration for the Dataflow Builder)",
         provider=report.provider.as_dict(),
     )
     user_key = _user_key_for(client)
@@ -329,8 +340,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="IN,OUT rate for an operator-supplied cost estimate")
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
     run.add_argument("--model", default="",
-                     help="evaluate this model instead of the account's saved "
-                          "one (a temporary default configuration, always restored)")
+                     help="evaluate this model instead of the one the Dataflow "
+                          "Builder runs on (a temporary configuration chosen for it, "
+                          "always restored)")
     run.add_argument("--gate-for", default="",
                      help="write an activation gate record for this training "
                           "job id; forces the held-out split and needs --model")

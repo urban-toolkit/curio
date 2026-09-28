@@ -54,11 +54,15 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
     try {
       const listing = await llmConfigsApi.listing();
       const own = listing.configs.filter((c) => c.endpoint === "own" && c.hasApiKey);
+      // What the Dataflow Builder runs on (its choice, else the default) is
+      // what its trained model replaces, so it is offered first.
+      const builder = (listing.agents ?? []).find((r) => r.id === "agent.dataflow-builder");
+      const preferred = builder?.choice && builder.choice !== "deployment" ? builder.choice : listing.default;
       setTrainable(own);
       setConfigId((current) =>
         current && own.some((c) => c.id === current)
           ? current
-          : own.find((c) => c.id === listing.default)?.id ?? own[0]?.id ?? null,
+          : own.find((c) => c.id === preferred)?.id ?? own[0]?.id ?? null,
       );
     } catch {
       setTrainable([]);
@@ -396,13 +400,13 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
           {activatable ? (
             <p className={styles.note} id="training-activate-note">
               {job.gate?.satisfied
-                ? "Adds an LLM configuration with the trained model and makes it your default. Your previous default is recorded so you can go back."
+                ? "Adds an LLM configuration with the trained model and chooses it for the Dataflow Builder. Its previous choice is recorded so you can go back."
                 : "Available once this model has been evaluated on the held-out examples."}
             </p>
           ) : null}
           {rollbackable ? (
             <p className={styles.note} id="training-rollback-note">
-              Restores your previous default configuration.
+              Restores the Dataflow Builder&apos;s previous choice.
             </p>
           ) : null}
         </div>

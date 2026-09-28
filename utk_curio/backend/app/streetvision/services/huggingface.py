@@ -63,13 +63,10 @@ def resolve_user_key() -> str:
 
 
 def resolve_hf_token() -> Optional[str]:
-    """The HuggingFace token for the caller: their own, else the deployment's.
+    """The caller's own HuggingFace token, saved in AI Settings, or None.
 
     Gated models are a per-person entitlement - you accept a model's licence
-    with your own HuggingFace account - so one shared operator token could not
-    represent what each user is allowed to download. A user sets theirs in AI
-    Settings; ``curio.py start --huggingface-token`` supplies the fallback for
-    everyone else.
+    with your own HuggingFace account - so there is no deployment-wide token.
 
     Must be called from a request context: the token is captured there and
     handed down, because model loading runs on a detached worker thread where
@@ -80,13 +77,10 @@ def resolve_hf_token() -> Optional[str]:
 
         user = get_current_user()
     except Exception:
-        # No request context, no auth tables, or an expired session: fall back
-        # rather than failing a search the deployment token can still answer.
+        # No request context, no auth tables, or an expired session: no token,
+        # which public models do not need.
         user = None
-    own = getattr(user, "huggingface_token", None) if user is not None else None
-    if own:
-        return own
-    return os.environ.get("CURIO_DEFAULT_HUGGINGFACE_TOKEN") or None
+    return (getattr(user, "huggingface_token", None) if user is not None else None) or None
 
 
 def _model_cache_dir(user_key: str) -> str:

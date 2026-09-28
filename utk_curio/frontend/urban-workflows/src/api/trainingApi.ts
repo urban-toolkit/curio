@@ -92,12 +92,14 @@ export interface TrainingJob {
   usage: { trainedTokens: number | null };
   cost: { operatorSupplied: boolean; estimatedUsd: number } | null;
   evaluation: Record<string, unknown> | null;
-  /** Activation makes a configuration with the trained model the default;
-   * `previousDefault` is what rollback restores (null: the deployment's). */
+  /** Activation chooses a configuration with the trained model for the
+   * Dataflow Builder (`agentId`); `previousChoice` is what rollback restores
+   * (null: it followed the default). */
   activation: {
     activatedAt: string | null;
     configId: string | null;
-    previousDefault: string | null;
+    agentId: string | null;
+    previousChoice: string | null;
     rolledBackAt: string | null;
   };
   /** The configuration the job was submitted on. */

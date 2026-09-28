@@ -74,10 +74,13 @@ export const AgentRunStatusLine: React.FC<{
     display.durationMs != null ? `Finished in ${formatDuration(display.durationMs)}` : "Finished";
   const text = tokens > 0 ? `${finished} · ${formatTokenCount(tokens)} tokens` : finished;
   // This reply's own in/out breakdown on hover (the cumulative counter by
-  // the composer carries the session total).
-  const breakdown = display.usage
-    ? `${display.usage.inputTokens.toLocaleString()} in / ${display.usage.outputTokens.toLocaleString()} out — provider-reported`
-    : undefined;
+  // the composer carries the session total), and what answered it.
+  const breakdown = [
+    display.usage
+      ? `${display.usage.inputTokens.toLocaleString()} in / ${display.usage.outputTokens.toLocaleString()} out, as the provider reported`
+      : null,
+    display.answeredBy ? `answered by ${display.answeredBy}` : null,
+  ].filter(Boolean).join("\n") || undefined;
   return (
     <span className={`${styles.line} ${styles.done}`} role="status" aria-live="polite">
       <span className={styles.srOnly}>Run finished</span>

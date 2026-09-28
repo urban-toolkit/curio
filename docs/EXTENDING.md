@@ -63,7 +63,7 @@ Curio supports two patterns for third-party API keys; pick by who the key belong
 
 - **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example; see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
 
-- **Per-account credentials that outlive a session** -> edit them in **AI Settings**. One token per account (a HuggingFace token) is a column on the user row, with a deployment-wide fallback from a `curio.py start` flag. Several named secrets per account (connection keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py) do. The HuggingFace token is the worked example of the first: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token, else the deployment default* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
+- **Per-account credentials that outlive a session** -> edit them in **AI Settings**. One token per account (a HuggingFace token) is a column on the user row. Several named secrets per account (connection keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py) do. The HuggingFace token is the worked example of the first: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token*, with no deployment-wide fallback, in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
 
 - **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
 
@@ -71,8 +71,8 @@ Two rules the per-account pattern has to follow:
 
 **Resolve in the request, use it downstream.** Street Vision runs inference on a
 detached worker thread, where `g` is gone. The route resolves the token and
-passes it into the job; resolving it inside the worker would silently fall back
-to the deployment value.
+passes it into the job; resolving it inside the worker would silently find no
+token.
 
 **Put the credential in any cache key it affects.** The model cache is keyed on
 `(model_id, token fingerprint)`, hashed rather than raw so the token is not

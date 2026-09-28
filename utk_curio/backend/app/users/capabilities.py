@@ -143,6 +143,26 @@ def llm_config_refusal(user) -> str | None:
     return None
 
 
+def token_refusal(user, noun: str) -> str | None:
+    """Why *user* may not save a personal token (*noun*, such as "a HuggingFace
+    token"), or ``None``.
+
+    A hosted guest may not: every visitor shares the one guest account, so a
+    token saved on it would be everyone's. Without ``--deploy`` the shared
+    guest is the one local user and saves its tokens like any account.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            f"Guests on this Curio cannot save {noun}, because every guest shares "
+            "one account. Sign in with an account to save your own."
+        )
+    return None
+
+
 def library_install_refusal(user) -> str | None:
     """Why *user* may not install or remove a library. See :func:`install_refusal`."""
     return install_refusal(user, noun="libraries")

@@ -4947,6 +4947,100 @@ class TestSolve:
             for d in solve_turn["execution"]["delegations"]
         )
 
+    def _child_config(self, client, token, label="Child", model="child-model"):
+        body = {"label": label, "apiType": "openai_compatible", "baseUrl": "https://llm.example.com/v1",
+                "apiKey": "sk-child-key-0123456789", "model": model}
+        return client.post("/api/agents/llm/configs", json=body, headers=_auth(token)).get_json()["config"]["id"]
+
+    def _record_models(self, monkeypatch, on_call=None):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        inner = services_mod.run_chat_completion
+        seen = []
+
+        def _recording(config, messages, **kwargs):
+            seen.append((config.model, config.source))
+            if on_call is not None:
+                on_call(len(seen))
+            return inner(config, messages, **kwargs)
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _recording)
+        return seen
+
+    def test_each_child_runs_on_and_pins_its_own_configuration(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+        seen = self._record_models(monkeypatch)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        assert seen and all(call == ("child-model", "assigned") for call in seen)
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        # The summary pins the Builder's configuration, each child its own.
+        assert solve_turn["execution"]["pins"]["llm"]["source"] == "deployment"
+        for child in solve_turn["execution"]["delegations"]:
+            assert child["pins"]["llm"]["configId"] == child_config
+            assert child["pins"]["model"] == "child-model"
+
+    def test_a_broken_delegate_choice_refuses_before_anything_is_written(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+        store = llm_configs.default_store()
+        doc = store.read(_user_dir_key(user))
+        del doc["configs"][child_config]  # the choice now names nothing
+        store._write(_user_dir_key(user), doc)
+        seen = self._record_models(monkeypatch)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 400
+        assert resp.get_json()["remedy"] == {"kind": "llm-config", "agentId": "agent.node-content-builder"}
+        assert seen == []
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["phase"] != "solving" and not session.get("solveExecutionId")
+
+    def test_a_choice_changed_mid_solve_reaches_the_later_children(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        child_config = self._child_config(client, token)
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": child_config},
+                   headers=_auth(token))
+
+        def _clear_after_first(n):
+            if n == 1:  # the user clears the choice while the first node is generated
+                llm_configs.default_store().set_choice(
+                    _user_dir_key(user), "agent.node-content-builder", None
+                )
+
+        seen = self._record_models(monkeypatch, on_call=_clear_after_first)
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        assert seen[0] == ("child-model", "assigned")
+        # A delegate resolves when it starts: the next one inherits the Builder's.
+        assert seen[-1] == ("test-model", "caller")
+
     def test_user_edited_node_is_skipped_never_overwritten(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key

@@ -143,8 +143,51 @@ class TestReadiness:
         assert payload["provider"]["baseUrlHost"] == "scripted.example.com"
         assert payload["provider"]["label"] == "Scripted"
         assert payload["source"] == "default"
-        assert payload["configurations"] == [payload["provider"]]
+        # One configuration answers the Builder and every agent it requires.
+        (row,) = payload["configurations"]
+        assert {k: row[k] for k in payload["provider"]} == payload["provider"]
+        assert row["agents"] == [
+            "Dataflow Builder", "Node Content Builder", "Dataset Finder", "Node Builder",
+        ]
         assert API_KEY not in json.dumps(payload)
+
+    def test_it_lists_each_configuration_with_the_agents_on_it(self, client, account):
+        other = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Content", "apiType": "testing", "model": "content-model",
+                  "baseUrl": "http://content.example.com/v1"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": other["id"]},
+                   headers=_auth(account["token"]))
+        payload = client.get(
+            "/api/agents/evaluation/readiness", headers=_auth(account["token"])
+        ).get_json()
+        assert payload["provider"]["model"] == "scripted"
+        by_model = {row["model"]: row["agents"] for row in payload["configurations"]}
+        assert by_model == {
+            "scripted": ["Dataflow Builder", "Dataset Finder", "Node Builder"],
+            "content-model": ["Node Content Builder"],
+        }
+
+    def test_the_report_prints_a_line_per_configuration(self):
+        from utk_curio.backend.app.agents.evaluation import chat, records as records_mod
+
+        record = records_mod.EvaluationRecord(
+            run_id="r", provider={"model": "scripted", "label": "Scripted"},
+            configurations=[
+                {"model": "scripted", "label": "Scripted", "baseUrlHost": "a.example.com",
+                 "agents": ["Dataflow Builder", "Node Builder"]},
+                {"model": "content-model", "label": "Content", "baseUrlHost": "b.example.com",
+                 "agents": ["Node Content Builder"]},
+            ],
+            usage={"inputTokens": 10, "outputTokens": 5},
+        )
+        fixture = type("F", (), {"fixture_id": "f", "prompt": "p"})()
+        lines = chat.report_lines(record, fixture)
+        assert "Dataflow Builder, Node Builder: model scripted (Scripted) at a.example.com." in lines
+        assert "Node Content Builder: model content-model (Content) at b.example.com." in lines
+        assert "The run took 10 in / 5 out tokens." in lines
 
     def test_a_model_from_the_start_command_counts_as_configured(
         self, client, user_and_token, tmp_curio, monkeypatch

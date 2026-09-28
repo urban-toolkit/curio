@@ -101,7 +101,7 @@ class TrainingRecord:
     evaluation: dict | None = None
     activation: dict = field(
         default_factory=lambda: {
-            "activatedAt": None, "configId": None, "previousDefault": None,
+            "activatedAt": None, "configId": None, "agentId": None, "previousChoice": None,
             "rolledBackAt": None,
         }
     )
@@ -174,7 +174,7 @@ class TrainingRecord:
             evaluation=payload.get("evaluation"),
             activation=dict(
                 payload.get("activation")
-                or {"activatedAt": None, "configId": None, "previousDefault": None,
+                or {"activatedAt": None, "configId": None, "agentId": None, "previousChoice": None,
                     "rolledBackAt": None}
             ),
             events=[dict(e) for e in (payload.get("events") or []) if isinstance(e, Mapping)],

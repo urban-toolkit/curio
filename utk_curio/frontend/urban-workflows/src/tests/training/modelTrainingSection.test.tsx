@@ -150,7 +150,7 @@ const succeededJob = (over: Record<string, unknown> = {}) => ({
   usage: { trainedTokens: 4321 },
   cost: null,
   evaluation: null,
-  activation: { activatedAt: null, configId: null, previousDefault: null, rolledBackAt: null },
+  activation: { activatedAt: null, configId: null, agentId: null, previousChoice: null, rolledBackAt: null },
   events: [],
   createdAt: "2026-09-09T12:00:00+00:00",
   error: null,
@@ -196,6 +196,19 @@ describe("the configuration it trains on", () => {
     const select = (await screen.findByLabelText("Train on")) as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => o.value)).toEqual([OWN_CONFIG.id]);
     await waitFor(() => expect(mockCapabilityCall).toHaveBeenCalledWith(true, OWN_CONFIG.id));
+  });
+
+  it("starts on what the Dataflow Builder runs on, not only the default", async () => {
+    const builders = { ...OWN_CONFIG, id: "llm-00000000000d", label: "Builder's" };
+    mockListing = {
+      ...listingWith([OWN_CONFIG, builders], OWN_CONFIG.id),
+      agents: [{ id: "agent.dataflow-builder", name: "Dataflow Builder", category: "dataflow",
+        choice: builders.id, answers: { source: "assigned" } }],
+    };
+    await openSection();
+    const select = (await screen.findByLabelText("Train on")) as HTMLSelectElement;
+    expect(select.value).toBe(builders.id);
+    await waitFor(() => expect(mockCapabilityCall).toHaveBeenCalledWith(true, builders.id));
   });
 
   it("says what to add when no configuration holds a key, and asks no endpoint", async () => {
@@ -360,7 +373,8 @@ describe("a job that exists", () => {
         activation: {
           activatedAt: "2026-09-09T13:00:00+00:00",
           configId: "llm-00000000000b",
-          previousDefault: OWN_CONFIG.id,
+          agentId: "agent.dataflow-builder",
+          previousChoice: null,
           rolledBackAt: null,
         },
       }),
@@ -369,7 +383,7 @@ describe("a job that exists", () => {
     const activate = await screen.findByText("Use this model");
     expect(activate).not.toBeDisabled();
     expect(
-      screen.getByText(/Adds an LLM configuration with the trained model and makes it your default/),
+      screen.getByText(/Adds an LLM configuration with the trained model and chooses it for the Dataflow Builder/),
     ).toBeInTheDocument();
     expect(screen.getByText(/mean score 0\.94/)).toBeInTheDocument();
     expect(screen.getByText(/that is your call/)).toBeInTheDocument();
@@ -380,7 +394,7 @@ describe("a job that exists", () => {
     await waitFor(() =>
       expect(screen.getByText("Go back to the previous model")).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Restores your previous default configuration/)).toBeInTheDocument();
+    expect(screen.getByText(/Restores the Dataflow Builder's previous choice/)).toBeInTheDocument();
   });
 
   it("reports trained tokens as the provider gave them and invents no cost", async () => {

@@ -42,6 +42,7 @@ import { usePackageInstallReview } from "./usePackageInstallReview";
 import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
 import ConfirmDialog from "../../ConfirmDialog";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
+import { LlmConfigAction } from "../../llmConfigs/LlmConfigAction";
 import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
 import {
   sessionTokenTotals,
@@ -789,6 +790,7 @@ export const AgentChatPanel: React.FC<{
                       onInternalLink={(to) => leave(() => navigate(to))}
                     />
                   )}
+                  {t.error ? <LlmConfigAction remedy={t.remedy} /> : null}
                   {(t.content ?? [])
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (

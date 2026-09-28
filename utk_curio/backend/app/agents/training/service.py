@@ -40,9 +40,15 @@ class TrainingServiceError(Exception):
         self.status = status
 
 
+#: The agent whose prompts build the training set (``training/dataset.py``),
+#: and so the one a trained model is chosen for.
+TRAINED_AGENT = "agent.dataflow-builder"
+
+
 def _training_config(user, user_key: str, config_id: str | None):
-    """The configuration a fine-tune runs on: *config_id*, else the account's
-    default. It must hold the user's own key, so training never spends this
+    """The configuration a fine-tune runs on: *config_id*, else the one the
+    Dataflow Builder runs on (its choice in AI Settings, else the account's
+    default). It must hold the user's own key, so training never spends this
     Curio install's key or a guest's."""
     from utk_curio.backend.app.agents import llm_configs
     from utk_curio.backend.app.agents.provider_config import (
@@ -60,14 +66,21 @@ def _training_config(user, user_key: str, config_id: str | None):
         )
     store = llm_configs.default_store()
     try:
-        chosen = config_id or store.default_id(user_key)
+        if config_id:
+            chosen = config_id
+        else:
+            builder = store.choices(user_key).get(TRAINED_AGENT)
+            chosen = (
+                None if builder == llm_configs.CHOICE_DEPLOYMENT
+                else builder or store.default_id(user_key)
+            )
         record = store.record(user_key, chosen) if chosen else None
     except llm_configs.LlmConfigError as exc:
         raise TrainingServiceError(str(exc), exc.status) from exc
     if not chosen:
         raise TrainingServiceError(
             "Choose the LLM configuration to train on. Training runs on a configuration "
-            "holding your own API key, and your default is this deployment's.",
+            "holding your own API key, and the Dataflow Builder runs on this deployment's.",
             409,
         )
     if record is None:
@@ -404,14 +417,14 @@ def cancel(user, user_key: str, job_id: str) -> dict:
 
 
 def activate(user, user_key: str, job_id: str) -> dict:
-    """Give the trained model a configuration of its own and make it the
-    default, once it has been evaluated.
+    """Give the trained model a configuration of its own and choose it for the
+    Dataflow Builder, once it has been evaluated.
 
     The new configuration copies the one the job trained on (the key is copied
-    server-side) with the trained model and ``origin: trained``. The previous
-    default is recorded so :func:`rollback` can restore it. The gate is checked
-    against the corpus as it is *now*, so an evaluation that describes examples
-    which have since moved cannot authorise anything.
+    server-side) with the trained model and ``origin: trained``. The Builder's
+    previous choice is recorded so :func:`rollback` can restore it. The gate is
+    checked against the corpus as it is *now*, so an evaluation that describes
+    examples which have since moved cannot authorise anything.
     """
     from utk_curio.backend.app.agents import llm_configs
 
@@ -441,36 +454,39 @@ def activate(user, user_key: str, job_id: str) -> dict:
         raise TrainingServiceError(str(refusal), 409) from refusal
 
     try:
-        previous = store.default_id(user_key)
+        previous = store.choices(user_key).get(TRAINED_AGENT)
         created = store.duplicate(
             user_key, record.config_id,
             label=store.free_label(user_key, f"{source.get('label') or 'Configuration'} (trained)"),
             model=str(record.trained_model), origin=llm_configs.ORIGIN_TRAINED,
             extra={"jobId": job_id, "sourceId": record.config_id},
         )
-        store.set_default(user_key, created["id"])
+        store.set_choice(user_key, TRAINED_AGENT, created["id"])
     except llm_configs.LlmConfigError as exc:
         raise TrainingServiceError(str(exc), exc.status) from exc
     record.activation = {
         "activatedAt": records_mod._now(),
         "configId": created["id"],
-        "previousDefault": previous,
+        "agentId": TRAINED_AGENT,
+        "previousChoice": previous,
         "rolledBackAt": None,
     }
     record.evaluation = gate_mod.summary(checked)
     record.append(
         "activated", model=record.trained_model, configId=created["id"],
-        previousDefault=previous, runId=checked.run_id,
+        agentId=TRAINED_AGENT, previousChoice=previous, runId=checked.run_id,
     )
     records_mod.write(user_key, record)
     return record.as_dict()
 
 
 def rollback(user, user_key: str, job_id: str) -> dict:
-    """Restore the default this activation replaced. Refused once the default
-    has been changed by hand since, because rolling back would undo that
-    change. The trained configuration stays, to use or remove in AI Settings."""
+    """Restore the Dataflow Builder's choice this activation replaced. Refused
+    once that choice has been changed by hand since, because rolling back would
+    undo the change. The trained configuration stays, to use or remove in AI
+    Settings."""
     from utk_curio.backend.app.agents import llm_configs
+    from utk_curio.backend.app.agents.provider_config import deployment_config
 
     record = _read_or_refuse(user_key, job_id)
     if record is None:
@@ -479,30 +495,38 @@ def rollback(user, user_key: str, job_id: str) -> dict:
         raise TrainingServiceError(
             "this job's model is not active, so there is nothing to roll back", 409
         )
+    agent_id = record.activation.get("agentId") or TRAINED_AGENT
     store = llm_configs.default_store()
+    restored = None
     try:
-        current = store.default_id(user_key)
-        if current != record.activation.get("configId"):
+        if store.choices(user_key).get(agent_id) != record.activation.get("configId"):
             raise TrainingServiceError(
-                "your default LLM configuration has changed since this model was "
-                "activated; choose the default in AI Settings instead",
+                "the Dataflow Builder's LLM configuration has changed since this model "
+                "was activated; choose it in AI Settings instead",
                 409,
             )
-        previous = record.activation.get("previousDefault")
-        restored = store.record(user_key, previous) if previous else None
-        if restored is None:
-            previous = None
-        store.set_default(user_key, previous)
+        previous = record.activation.get("previousChoice")
+        if previous == llm_configs.CHOICE_DEPLOYMENT:
+            guest = bool(getattr(user, "is_guest", False))
+            if deployment_config(user_key, guest=guest) is None:
+                previous = None
+        elif previous:
+            restored = store.record(user_key, previous)
+            if restored is None:
+                previous = None
+        store.set_choice(user_key, agent_id, previous)
     except llm_configs.LlmConfigError as exc:
         raise TrainingServiceError(str(exc), exc.status) from exc
     record.activation = {**record.activation, "rolledBackAt": records_mod._now()}
-    record.append("rolled-back", restoredDefault=previous)
+    record.append("rolled-back", restoredChoice=previous)
     records_mod.write(user_key, record)
     payload = record.as_dict()
-    payload["rollbackNote"] = (
-        f"your default is {restored.get('label')!r} again" if restored
-        else "your default is the deployment's again"
-    )
+    if restored is not None:
+        payload["rollbackNote"] = f"the Dataflow Builder runs on {restored.get('label')!r} again"
+    elif previous == llm_configs.CHOICE_DEPLOYMENT:
+        payload["rollbackNote"] = "the Dataflow Builder runs on the Deployment default again"
+    else:
+        payload["rollbackNote"] = "the Dataflow Builder follows your default again"
     return payload
 
 

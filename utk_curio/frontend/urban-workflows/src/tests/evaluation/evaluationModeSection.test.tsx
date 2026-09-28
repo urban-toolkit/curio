@@ -123,6 +123,25 @@ describe("the closed section", () => {
   });
 });
 
+describe("a run on more than one configuration", () => {
+  it("names each configuration and the agents on it", async () => {
+    mockReadiness = {
+      ...READY,
+      source: "assigned",
+      configurations: [
+        { ...PROVIDER, agents: ["Dataflow Builder", "Dataset Finder", "Node Builder"] },
+        { ...PROVIDER, configId: "llm-00000000000c", label: "Local", model: "llama3",
+          baseUrlHost: "localhost:11434", agents: ["Node Content Builder"] },
+      ],
+    };
+    await openSection();
+    const list = await screen.findByRole("list", { name: "Configurations this run uses" });
+    expect(list).toHaveTextContent("Node Content Builder: llama3 (Local) at localhost:11434");
+    expect(list).toHaveTextContent("Dataflow Builder, Dataset Finder, Node Builder:");
+    expect(screen.getByText(/The configuration chosen for the Dataflow Builder/)).toBeInTheDocument();
+  });
+});
+
 describe("the blocked state", () => {
   it("says there is nothing to evaluate and names the fix", async () => {
     mockReadiness = {

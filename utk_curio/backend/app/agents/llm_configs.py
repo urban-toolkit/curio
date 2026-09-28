@@ -8,13 +8,19 @@ two-layer lock)::
      "configs": {"<id>": {label, endpoint, apiType, baseUrl, apiKey, model,
                           origin, jobId?, sourceId?, createdAt, updatedAt}},
      "default": "<id>" | null,
-     "agents": {}}
+     "agents": {"<agentId>": "<id>" | "deployment"}}
 
 A configuration's ``endpoint`` is ``own`` (the user's type, URL and key) or
 ``deployment`` ("This Curio install": the user owns only the label and the
 model; type, URL and key are read from the deployment when a run resolves it).
 A ``null`` default means the deployment's own default, when the operator set
 one (``provider_config``).
+
+``agents`` is the configuration chosen for an agent, keyed by the id before
+``@`` so one choice covers every version and project; ``"deployment"`` chooses
+the Deployment default. An agent with no entry follows the rules in
+``provider_config.resolve_llm``. Nothing about the choice goes into a project,
+so a shared project never carries one.
 
 Only :meth:`LlmConfigStore.record` returns a key, for ``provider_config`` to
 build a run's config. Every other method returns refs without it.
@@ -47,6 +53,8 @@ MAX_KEY_CHARS = 4096
 
 ENDPOINT_OWN = "own"
 ENDPOINT_DEPLOYMENT = "deployment"
+#: The choice of the Deployment default for an agent.
+CHOICE_DEPLOYMENT = "deployment"
 ORIGIN_USER = "user"
 ORIGIN_TRAINED = "trained"
 
@@ -205,7 +213,10 @@ class LlmConfigStore:
             "version": STORE_VERSION,
             "configs": {k: v for k, v in configs.items() if isinstance(v, dict)},
             "default": default if isinstance(default, str) else None,
-            "agents": agents if isinstance(agents, dict) else {},
+            "agents": {
+                k: v for k, v in (agents if isinstance(agents, dict) else {}).items()
+                if isinstance(k, str) and isinstance(v, str)
+            },
         }
 
     def _write(self, user_key: str, doc: dict) -> None:
@@ -230,6 +241,10 @@ class LlmConfigStore:
         """The stored configuration WITH its key, or None. For resolution only."""
         record = self.read(user_key)["configs"].get(config_id)
         return dict(record) if record is not None else None
+
+    def choices(self, user_key: str) -> dict:
+        """``{agentId: configId | "deployment"}``, as stored."""
+        return dict(self.read(user_key)["agents"])
 
     # -- writes -------------------------------------------------------------------
 
@@ -354,10 +369,10 @@ class LlmConfigStore:
             return public(config_id, record)
 
     def delete(self, user_key: str, config_id: str, *, locked_ids: frozenset = frozenset()) -> dict:
-        """Remove a configuration. When it was the default, the default resets
-        to the deployment's. Returns ``{deleted, moved, default}``; ``moved``
-        lists the agents that were assigned to it (none until agents can be
-        assigned one)."""
+        """Remove a configuration, in one write with what pointed at it: the
+        agents chosen to run on it go back to their rules (``moved``), and a
+        removed default resets to the deployment's. Returns ``{deleted, moved,
+        default}``."""
         with self._locked(user_key):
             doc = self.read(user_key)
             if config_id not in doc["configs"]:
@@ -370,8 +385,11 @@ class LlmConfigStore:
             del doc["configs"][config_id]
             if doc["default"] == config_id:
                 doc["default"] = None
+            moved = sorted(agent_id for agent_id, chosen in doc["agents"].items() if chosen == config_id)
+            for agent_id in moved:
+                del doc["agents"][agent_id]
             self._write(user_key, doc)
-            return {"deleted": config_id, "moved": [], "default": doc["default"]}
+            return {"deleted": config_id, "moved": moved, "default": doc["default"]}
 
     def duplicate(self, user_key: str, config_id: str, *, label: str | None = None,
                   model: str | None = None, origin: str = ORIGIN_USER,
@@ -412,6 +430,45 @@ class LlmConfigStore:
             doc["default"] = config_id
             self._write(user_key, doc)
             return config_id
+
+    def set_choices(self, user_key: str, body: object, *, choosable: frozenset,
+                    deployment_default: bool) -> dict:
+        """Apply a partial map of agent id to a configuration id,
+        ``"deployment"`` or ``null`` (which clears the choice), and return the
+        stored map. Nothing is written unless every entry is valid."""
+        if not isinstance(body, dict) or not body:
+            raise LlmConfigError('send {"<agentId>": "<configId>" | "deployment" | null}')
+        with self._locked(user_key):
+            doc = self.read(user_key)
+            agents = dict(doc["agents"])
+            for agent_id, chosen in body.items():
+                if agent_id not in choosable:
+                    raise LlmConfigError(f"{agent_id!r} is not an agent whose model you can choose")
+                if chosen is None:
+                    agents.pop(agent_id, None)
+                    continue
+                if chosen == CHOICE_DEPLOYMENT:
+                    if not deployment_default:
+                        raise LlmConfigError("this Curio has no Deployment default to choose")
+                elif not isinstance(chosen, str) or chosen not in doc["configs"]:
+                    raise LlmConfigError(f"no LLM configuration {chosen!r}", 404)
+                agents[agent_id] = chosen
+            doc["agents"] = agents
+            self._write(user_key, doc)
+            return dict(agents)
+
+    def set_choice(self, user_key: str, agent_id: str, chosen: str | None) -> None:
+        """Set or clear one agent's choice with no checks on the agent id. For
+        the server's own writes (activating a trained model), never a request."""
+        with self._locked(user_key):
+            doc = self.read(user_key)
+            if chosen is None:
+                doc["agents"].pop(agent_id, None)
+            elif chosen != CHOICE_DEPLOYMENT and chosen not in doc["configs"]:
+                raise LlmConfigError(f"no LLM configuration {chosen!r}", 404)
+            else:
+                doc["agents"][agent_id] = chosen
+            self._write(user_key, doc)
 
     def free_label(self, user_key: str, base: str) -> str:
         """*base*, or *base* with a number after it, whichever no configuration uses."""

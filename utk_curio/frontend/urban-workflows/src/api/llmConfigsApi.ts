@@ -1,9 +1,10 @@
 import { apiFetch } from "../utils/authApi";
 
 /**
- * REST client for the account's LLM configurations (`/api/agents/llm`) and the
- * model listing AI Settings offers while one is edited. Kept apart from
- * `agentsApi` so the settings screen does not pull in the agents bundle.
+ * REST client for the account's LLM configurations (`/api/agents/llm`), the
+ * configuration chosen per agent, and the model listing AI Settings offers
+ * while one is edited. Kept apart from `agentsApi` so the settings screen
+ * does not pull in the agents bundle.
  *
  * No response carries a key: a configuration reports `hasApiKey` only, and a
  * key is sent once, in a create or an update, and never read back.
@@ -41,7 +42,7 @@ export interface LlmDeployment {
 
 /** What answers a run now. */
 export interface LlmActive {
-  source: "default" | "deployment" | "guest" | null;
+  source: "assigned" | "default" | "deployment" | "guest" | "caller" | null;
   configId?: string | null;
   label?: string;
   model?: string;
@@ -50,10 +51,25 @@ export interface LlmActive {
   error?: string;
 }
 
+/** An agent whose configuration the account may choose. */
+export interface LlmAgentRow {
+  id: string;
+  name: string;
+  category: string;
+  /** The configuration chosen for it, `"deployment"`, or null: it follows the rules. */
+  choice: string | null;
+  /** What it answers with when attached, or why nothing does. */
+  answers: LlmActive;
+}
+
 export interface LlmListing {
   configs: LlmConfig[];
   /** The default configuration's id; null means the Deployment default. */
   default: string | null;
+  /** agentId to configuration id or `"deployment"`, for the agents with a choice. */
+  assignments: Record<string, string>;
+  /** The agents whose configuration may be chosen, never an internal one. */
+  agents: LlmAgentRow[];
   deployment: LlmDeployment;
   active: LlmActive;
   /** False for a guest on a hosted Curio, with the reason. */
@@ -103,8 +119,14 @@ export const llmConfigsApi = {
     });
   },
 
+  /** Remove one; `moved` names the agents whose choice it was. */
   remove(id: string): Promise<{ deleted: string; moved: string[]; default: string | null }> {
     return apiFetch(`${BASE}/configs/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+
+  /** Choose agents' configurations: an id, `"deployment"`, or null to clear. */
+  setAssignments(choices: Record<string, string | null>): Promise<LlmListing> {
+    return apiFetch(`${BASE}/assignments`, { method: "PUT", body: JSON.stringify(choices) });
   },
 
   /** Copy a configuration, its key included, server-side. */
