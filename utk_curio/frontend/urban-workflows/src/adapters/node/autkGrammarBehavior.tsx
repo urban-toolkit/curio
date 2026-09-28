@@ -12,6 +12,7 @@ import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
+import { runComputeChecked } from './autkComputeScopes';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
@@ -1519,7 +1520,7 @@ function layersToPoolWrapper(
 //
 // autk-grammar's `runCompute` does the work the grammar defines: `fromFeature`
 // directives, the `all` and `batched` iterations, and the packing of batched
-// features. Curio hands it the dispatch.
+// features. Curio hands it the dispatch, which checks the GPU accepted the pass.
 //
 // A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
 // chained compute nodes can target different layers, and a no-op block is far
@@ -1546,7 +1547,7 @@ async function applyComputeBlocks(
         try {
             const gpgpu = new ComputeGpgpu();
             const tables = new Map(result.map((l) => [l.name, l.geojson]));
-            const augmented = await runCompute(block, tables, (params) => gpgpu.run(params));
+            const augmented = await runCompute(block, tables, (params) => runComputeChecked(gpgpu, params));
             // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
             // to top-level properties so downstream nodes can reference the column by
             // its bare name (e.g. `height_m`) without worrying about whether the nested
