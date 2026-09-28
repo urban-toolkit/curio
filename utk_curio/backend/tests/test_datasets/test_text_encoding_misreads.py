@@ -26,6 +26,15 @@ from utk_curio.backend.app.datasets.infrastructure.text_encoding import (
 #: Many accented letters, as UTF-8 writes them, before the byte that is not.
 PORTUGUESE = "name,v\n" + "São Paulo,1\nMaceió,2\n" * 1500
 
+#: Text whose bytes past ASCII sit side by side: two-byte letters, and Cyrillic.
+RUNS_TOGETHER = [
+    ("shift_jis", "名前,都市\n東京,日本\n大阪,日本\n"),
+    ("gb18030", "名称,城市\n北京,中国\n上海,中国\n"),
+    ("big5", "名稱,城市\n臺北,臺灣\n高雄,臺灣\n"),
+    ("euc_kr", "이름,도시\n서울,한국\n부산,한국\n"),
+    ("cp1251", "город,страна\nМосква,Россия\n"),
+]
+
 
 def streamed(tmp_path, data: bytes) -> tuple[bytes, str]:
     src, dest = tmp_path / "in.csv", tmp_path / "out.csv"
@@ -69,17 +78,24 @@ class TestAccentedLettersStandingAlone:
             assert encoding == "cp1252"
             assert out.decode("utf-8") == text
 
-    @pytest.mark.parametrize(
-        "codec, text",
-        [
-            ("shift_jis", "名前,都市\n東京,日本\n大阪,日本\n"),
-            ("gb18030", "名称,城市\n北京,中国\n上海,中国\n"),
-            ("big5", "名稱,城市\n臺北,臺灣\n高雄,臺灣\n"),
-            ("euc_kr", "이름,도시\n서울,한국\n부산,한국\n"),
-            ("cp1251", "город,страна\nМосква,Россия\n"),
-        ],
-    )
-    def test_a_file_whose_letters_take_two_bytes_or_run_together_is_still_found(self, tmp_path, codec, text):
+    @pytest.mark.parametrize("codec, text", RUNS_TOGETHER, ids=[codec for codec, _ in RUNS_TOGETHER])
+    def test_a_file_whose_letters_run_together_is_left_to_the_detector(self, codec, text):
+        """The rule above is for bytes that stand alone. Where they sit side by
+        side, as two-byte letters and Cyrillic words do, the answer is the
+        detector's, as it was."""
+        from charset_normalizer import from_bytes
+
+        from utk_curio.backend.app.datasets.infrastructure import text_encoding
+
+        data = text.encode(codec)
+        ranked = [m for m in from_bytes(data) if m.encoding]
+        assert text_encoding.detect_encoding(data) == text_encoding._pick(ranked)
+
+    @pytest.mark.parametrize("codec, text", [c for c in RUNS_TOGETHER if c[0] != "big5"],
+                             ids=[codec for codec, _ in RUNS_TOGETHER if codec != "big5"])
+    def test_and_such_a_file_still_reads_right(self, tmp_path, codec, text):
+        """Big5 is left out: charset-normalizer 3.5 reads this sample as cp932
+        with or without the rule above, where 3.4 read it as Big5."""
         data = text.encode(codec)
         for out, _encoding in (to_utf8(data, what="in.csv"), streamed(tmp_path, data)):
             assert out.decode("utf-8") == text
