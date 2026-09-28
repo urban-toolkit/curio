@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass
 
 from utk_curio.backend.app.agents.manifest import AgentManifest
+from utk_curio.backend.app.agents.providers import ChatTurn
 
 # A child's reply is untrusted context fed back to the parent loop — bounded.
 DELEGATE_RESULT_MAX_CHARS = 24_000
@@ -234,7 +235,7 @@ def run_delegate(
         )
         # Depth-1 structurally: the delegate's own prompts and configuration,
         # NO tool protocol and no runtime blocks.
-        system_content = contracts.join_system(contracts.compose_system(
+        system = contracts.system_message(contracts.compose_system(
             preamble=services._resolve_prompt_text(user_key, coord, "system"),
             instruction=instruction,
             configuration=configuration,
@@ -265,15 +266,15 @@ def run_delegate(
     try:
         # Through the services-bound provider symbol so the whole run shares
         # one port (and one test seam).
-        reply = services.run_chat_completion(
+        turn = ChatTurn.of(services.run_chat_turn(
             config,
             [
-                {"role": "system", "content": system_content},
+                system,
                 {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)},
             ],
             max_output_tokens=run_policy["max_output_tokens"],
             usage_out=usage_sink,
-        )
+        ))
     except Exception as exc:
         settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="error")
         return (
@@ -282,7 +283,7 @@ def run_delegate(
             _record("error", usage_sink, pins),
         )
     settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
-    text = reply if isinstance(reply, str) else str(reply)
+    text = turn.text
     if len(text) > DELEGATE_RESULT_MAX_CHARS:
         text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
     # The child's reply is returned verbatim as data — NEVER parsed for

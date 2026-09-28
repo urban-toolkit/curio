@@ -362,6 +362,9 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
         record.usage = {
             "inputTokens": int(usage.get("inputTokens") or 0),
             "outputTokens": int(usage.get("outputTokens") or 0),
+            # Part of inputTokens, when the provider reports them.
+            **{key: int(usage[key]) for key in ("cacheReadTokens", "cacheWriteTokens")
+               if isinstance(usage.get(key), int)},
         }
         proposals = [
             part for part in (turn.get("content") or [])

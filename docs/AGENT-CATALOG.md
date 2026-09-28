@@ -818,8 +818,9 @@ constant, the same for every run.
 
 Curio keeps a local record of what ran, in an append-only per-day file under
 `.curio/users/<key>/agents/ledger/`, written from the token counts each provider
-returns on the completion itself. No usage or billing API is called and no USD
-figure is computed.
+returns on the completion itself. The input count includes cached input, and
+the cached tokens read and written are recorded too when the provider reports
+them. No usage or billing API is called and no USD figure is computed.
 
 ---
 

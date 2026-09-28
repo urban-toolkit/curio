@@ -4,8 +4,26 @@ This is the one place raw LLM-provider SDKs are used, so LLM/provider behavior
 stays out of the route/flow/node modules (the ``agents/`` ownership boundary in
 the plan's module-encapsulation memo). Callers resolve a :class:`ProviderConfig`
 (``provider_config.resolve_llm``: an LLM configuration, the Deployment default
-or the guest configuration) and hand it to :func:`run_chat_completion`; they
-never import ``openai`` / ``anthropic`` / ``google.generativeai`` directly.
+or the guest configuration) and hand it to :func:`run_chat_turn`; they never
+import ``openai`` / ``anthropic`` / ``google.generativeai`` directly.
+
+A turn is typed (:class:`ChatTurn`), and a run loop takes one from
+:func:`run_chat_turn` or :func:`stream_chat_turn`. :func:`run_chat_completion`
+and :func:`stream_chat_completion` are their text-only forms.
+
+**The system turn.** A message list is OpenAI-shaped (``[{"role",
+"content"}]``). A system message built by ``contracts.system_message`` also
+carries its ``slots`` (preamble, instruction, configuration, tool protocol,
+runtime blocks), and each provider receives them its own way: Anthropic as one
+text block per slot with the preamble marked cacheable, Gemini as a list of
+system instructions, and an OpenAI-compatible server as the one joined system
+message (some local chat templates reject several). A system message without
+slots is sent as its text, as it always was.
+
+**Usage.** ``inputTokens`` counts every input token, cached or not, on every
+provider (Anthropic reports cache reads and writes apart from its input
+count). ``cacheReadTokens`` and ``cacheWriteTokens`` are added when the
+provider reports them.
 
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
@@ -54,30 +72,188 @@ def _redacted(exc: BaseException, config: ProviderConfig) -> str:
     return (redact(text, {"llm-api-key": config.api_key}) or text) if config.api_key else text
 
 
-def _capture_usage(usage_out: dict | None, input_tokens, output_tokens) -> None:
+@dataclass(frozen=True)
+class ToolCall:
+    """A tool the model asked for natively: the provider's call id, the tool's
+    name and its arguments. Never persisted: a session keeps role and text, so
+    an agent can move to another LLM mid-conversation."""
+
+    id: str
+    name: str
+    arguments: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ChatTurn:
+    """One model turn: its text, the native tool calls it made (none while no
+    tools are offered), and the provider's stop reason."""
+
+    text: str
+    tool_calls: tuple = ()
+    stop_reason: str = ""
+
+    @classmethod
+    def of(cls, value) -> "ChatTurn":
+        """*value* as a turn. A bare string is a text-only turn: what a
+        fenced-protocol reply is, and what a scripted test fake returns."""
+        if isinstance(value, ChatTurn):
+            return value
+        return cls(text="" if value is None else str(value))
+
+
+def _capture_usage(usage_out: dict | None, input_tokens, output_tokens, *,
+                   cache_read=None, cache_write=None) -> None:
     """Record Actual token usage into the caller's sink (memo dev/37).
 
     Best-effort: only populated when the provider reports both counts; the sink
-    stays empty otherwise. Never estimated (memo dev/11's labeling rule)."""
+    stays empty otherwise. Never estimated (memo dev/11's labeling rule). The
+    cache counts are added when reported."""
     if usage_out is None:
         return
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         usage_out["inputTokens"] = input_tokens
         usage_out["outputTokens"] = output_tokens
+        if isinstance(cache_read, int):
+            usage_out["cacheReadTokens"] = cache_read
+        if isinstance(cache_write, int):
+            usage_out["cacheWriteTokens"] = cache_write
 
 
-def run_chat_completion(
+def _anthropic_usage(usage_out: dict | None, usage) -> None:
+    """Anthropic's ``input_tokens`` leaves out cache reads and writes; the
+    record's ``inputTokens`` is every input token, as for the others."""
+    if usage is None:
+        return
+    base = getattr(usage, "input_tokens", None)
+    read = getattr(usage, "cache_read_input_tokens", None)
+    write = getattr(usage, "cache_creation_input_tokens", None)
+    total = base
+    if isinstance(base, int):
+        total = base + sum(n for n in (read, write) if isinstance(n, int))
+    _capture_usage(usage_out, total, getattr(usage, "output_tokens", None),
+                   cache_read=read, cache_write=write)
+
+
+def _openai_usage(usage_out: dict | None, usage) -> None:
+    """``prompt_tokens`` already counts cached input; the cached part is in
+    ``prompt_tokens_details.cached_tokens`` when the server says."""
+    if usage is None:
+        return
+    details = getattr(usage, "prompt_tokens_details", None)
+    _capture_usage(
+        usage_out, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
+        cache_read=getattr(details, "cached_tokens", None) if details is not None else None,
+    )
+
+
+def _gemini_usage(usage_out: dict | None, meta) -> None:
+    if meta is None:
+        return
+    _capture_usage(
+        usage_out, getattr(meta, "prompt_token_count", None),
+        getattr(meta, "candidates_token_count", None),
+        cache_read=getattr(meta, "cached_content_token_count", None),
+    )
+
+
+def _has_slots(messages: list) -> bool:
+    return any(m.get("role") == "system" and m.get("slots") for m in messages)
+
+
+def _system_parts(messages: list) -> list[tuple[str, str]]:
+    """``(kind, text)`` for the system turn: a system message's slots when it
+    carries them, else its text as one part with no kind."""
+    parts: list[tuple[str, str]] = []
+    for m in messages:
+        if m.get("role") != "system":
+            continue
+        slots = m.get("slots")
+        if slots:
+            parts.extend(
+                (str(slot.get("kind") or ""), str(slot.get("text") or ""))
+                for slot in slots if slot.get("text")
+            )
+        elif m.get("content"):
+            parts.append(("", m["content"]))
+    return parts
+
+
+def _anthropic_system(messages: list, not_given):
+    """Anthropic's ``system``: a text block per slot, the preamble marked
+    cacheable (it is the longest part, and every run of the agent repeats it);
+    without slots, the joined text as before."""
+    parts = _system_parts(messages)
+    if not parts:
+        return not_given
+    if not _has_slots(messages):
+        return "\n".join(text for _, text in parts)
+    blocks = []
+    for kind, text in parts:
+        block = {"type": "text", "text": text}
+        if kind == "preamble":
+            block["cache_control"] = {"type": "ephemeral"}
+        blocks.append(block)
+    return blocks
+
+
+def _gemini_system(messages: list):
+    """Gemini's ``system_instruction``: a list of the slots' texts, or the
+    joined text of a system turn without slots."""
+    parts = _system_parts(messages)
+    if not parts:
+        return None
+    if not _has_slots(messages):
+        return "\n".join(text for _, text in parts)
+    return [text for _, text in parts]
+
+
+def _without_slots(message: dict) -> dict:
+    return {k: v for k, v in message.items() if k != "slots"}
+
+
+def _openai_messages(messages: list) -> list:
+    """The list as an OpenAI-compatible server takes it: one system message,
+    its slots left behind (its content is their joined text)."""
+    return [_without_slots(m) for m in messages]
+
+
+def _chat_messages(messages: list) -> list:
+    """The conversation without the system turn, for Anthropic and Gemini."""
+    return [_without_slots(m) for m in messages if m.get("role") != "system"]
+
+
+def _anthropic_text(resp) -> str:
+    return "".join(
+        getattr(block, "text", "") or ""
+        for block in getattr(resp, "content", None) or []
+        if getattr(block, "type", "text") == "text"
+    )
+
+
+def _gemini_text(response) -> str:
+    """The text parts of a Gemini reply. ``response.text`` raises when a part
+    is a function call, so the parts are read one by one when they are there."""
+    candidates = getattr(response, "candidates", None) or []
+    content = getattr(candidates[0], "content", None) if candidates else None
+    parts = list(getattr(content, "parts", None) or [])
+    if parts:
+        return "".join(getattr(part, "text", "") or "" for part in parts)
+    return getattr(response, "text", "") or ""
+
+
+def run_chat_turn(
     config: ProviderConfig,
     messages: list,
     max_output_tokens: int | None = None,
     usage_out: dict | None = None,
-) -> str:
-    """Dispatch an LLM chat completion to the configured provider.
+) -> ChatTurn:
+    """One model turn from the configured provider.
 
-    ``messages`` is the OpenAI-style ``[{"role", "content"}, ...]`` list. Returns
-    the assistant reply text. ``max_output_tokens`` is the effective resource
-    policy (memo dev/24); when unset the anthropic backend keeps its former
-    4096 and the others use provider defaults.
+    ``messages`` is the OpenAI-style ``[{"role", "content"}, ...]`` list, whose
+    system message may carry ``slots`` (see the module docstring).
+    ``max_output_tokens`` is the effective resource policy (memo dev/24); when
+    unset the anthropic backend keeps its former 4096 and the others use
+    provider defaults.
     """
     api_type = config.api_type
     if api_type == "testing":
@@ -88,75 +264,76 @@ def run_chat_completion(
             run_scripted_completion,
         )
 
-        return run_scripted_completion(messages, usage_out=usage_out, config=config)
+        return ChatTurn.of(run_scripted_completion(messages, usage_out=usage_out, config=config))
     if api_type == "anthropic":
         import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
         client = anthropic.Anthropic(api_key=config.api_key)
         resp = client.messages.create(
             model=config.model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
+            system=_anthropic_system(messages, anthropic.NOT_GIVEN),
+            messages=_chat_messages(messages),
             max_tokens=max_output_tokens or 4096,
         )
-        usage = getattr(resp, "usage", None)
-        _capture_usage(
-            usage_out, getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None)
-        )
-        return resp.content[0].text
+        _anthropic_usage(usage_out, getattr(resp, "usage", None))
+        return ChatTurn(text=_anthropic_text(resp), stop_reason=str(getattr(resp, "stop_reason", "") or ""))
     elif api_type == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=config.api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
+        chat_messages = _chat_messages(messages)
         history = []
         for m in chat_messages[:-1]:
             role = "user" if m["role"] == "user" else "model"
             history.append({"role": role, "parts": [m["content"]]})
         last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(config.model, system_instruction=system_instruction)
+        gen_model = genai.GenerativeModel(config.model, system_instruction=_gemini_system(messages))
         chat = gen_model.start_chat(history=history)
         send_kwargs = {}
         if max_output_tokens:
             send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
         response = chat.send_message(last_user_msg, **send_kwargs)
-        meta = getattr(response, "usage_metadata", None)
-        _capture_usage(
-            usage_out,
-            getattr(meta, "prompt_token_count", None),
-            getattr(meta, "candidates_token_count", None),
-        )
-        return response.text
+        _gemini_usage(usage_out, getattr(response, "usage_metadata", None))
+        return ChatTurn(text=_gemini_text(response))
     else:  # openai_compatible (default)
         from openai import OpenAI
         kwargs = {"api_key": config.api_key or "no-key"}
         if config.base_url:
             kwargs["base_url"] = config.base_url
         client = OpenAI(**kwargs)
-        create_kwargs = {"model": config.model, "messages": messages}
+        create_kwargs = {"model": config.model, "messages": _openai_messages(messages)}
         if max_output_tokens:
             create_kwargs["max_tokens"] = max_output_tokens
         completion = client.chat.completions.create(**create_kwargs)
-        usage = getattr(completion, "usage", None)
-        _capture_usage(
-            usage_out, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None)
+        _openai_usage(usage_out, getattr(completion, "usage", None))
+        choice = completion.choices[0]
+        # A reply that only calls tools has no content.
+        return ChatTurn(
+            text=getattr(choice.message, "content", None) or "",
+            stop_reason=str(getattr(choice, "finish_reason", "") or ""),
         )
-        return completion.choices[0].message.content
 
 
-def stream_chat_completion(
+def run_chat_completion(
+    config: ProviderConfig,
+    messages: list,
+    max_output_tokens: int | None = None,
+    usage_out: dict | None = None,
+) -> str:
+    """The text of one model turn (:func:`run_chat_turn`), for a caller that
+    needs nothing else."""
+    return run_chat_turn(config, messages, max_output_tokens, usage_out).text
+
+
+def stream_chat_turn(
     config: ProviderConfig,
     messages: list,
     max_output_tokens: int | None = None,
     usage_out: dict | None = None,
 ):
-    """Streaming twin of :func:`run_chat_completion`: yields reply-text deltas.
+    """Streaming twin of :func:`run_chat_turn`: yields the turn's events as they
+    arrive. A text delta is a bare string; the one event type for now.
 
-    Same provider dispatch and message handling; each yielded string is an
-    incremental chunk of the assistant reply (memo ``dev/22``, SSE runtime).
-    Callers that stop iterating close the underlying provider stream.
+    Same provider dispatch and message handling. Callers that stop iterating
+    close the underlying provider stream.
     """
     api_type = config.api_type
     if api_type == "testing":
@@ -171,39 +348,30 @@ def stream_chat_completion(
         return
     if api_type == "anthropic":
         import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
         client = anthropic.Anthropic(api_key=config.api_key)
         with client.messages.stream(
             model=config.model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
+            system=_anthropic_system(messages, anthropic.NOT_GIVEN),
+            messages=_chat_messages(messages),
             max_tokens=max_output_tokens or 4096,
         ) as stream:
             for text in stream.text_stream:
                 if text:
                     yield text
             try:
-                usage = getattr(stream.get_final_message(), "usage", None)
-                _capture_usage(
-                    usage_out,
-                    getattr(usage, "input_tokens", None),
-                    getattr(usage, "output_tokens", None),
-                )
+                _anthropic_usage(usage_out, getattr(stream.get_final_message(), "usage", None))
             except Exception:
                 pass  # usage is best-effort; the reply already streamed
     elif api_type == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=config.api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
+        chat_messages = _chat_messages(messages)
         history = []
         for m in chat_messages[:-1]:
             role = "user" if m["role"] == "user" else "model"
             history.append({"role": role, "parts": [m["content"]]})
         last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(config.model, system_instruction=system_instruction)
+        gen_model = genai.GenerativeModel(config.model, system_instruction=_gemini_system(messages))
         chat = gen_model.start_chat(history=history)
         send_kwargs = {}
         if max_output_tokens:
@@ -211,15 +379,10 @@ def stream_chat_completion(
         last_chunk = None
         for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):
             last_chunk = chunk
-            text = getattr(chunk, "text", "")
+            text = _gemini_text(chunk)
             if text:
                 yield text
-        meta = getattr(last_chunk, "usage_metadata", None)
-        _capture_usage(
-            usage_out,
-            getattr(meta, "prompt_token_count", None),
-            getattr(meta, "candidates_token_count", None),
-        )
+        _gemini_usage(usage_out, getattr(last_chunk, "usage_metadata", None))
     else:  # openai_compatible (default)
         from openai import OpenAI
         kwargs = {"api_key": config.api_key or "no-key"}
@@ -228,7 +391,7 @@ def stream_chat_completion(
         client = OpenAI(**kwargs)
         create_kwargs = {
             "model": config.model,
-            "messages": messages,
+            "messages": _openai_messages(messages),
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -236,18 +399,70 @@ def stream_chat_completion(
             create_kwargs["max_tokens"] = max_output_tokens
         stream = client.chat.completions.create(**create_kwargs)
         for chunk in stream:
-            usage = getattr(chunk, "usage", None)
-            if usage is not None:
-                _capture_usage(
-                    usage_out,
-                    getattr(usage, "prompt_tokens", None),
-                    getattr(usage, "completion_tokens", None),
-                )
+            _openai_usage(usage_out, getattr(chunk, "usage", None))
             choices = getattr(chunk, "choices", None) or []
             delta = choices[0].delta if choices else None
             text = getattr(delta, "content", None) if delta is not None else None
             if text:
                 yield text
+
+
+def stream_chat_completion(
+    config: ProviderConfig,
+    messages: list,
+    max_output_tokens: int | None = None,
+    usage_out: dict | None = None,
+):
+    """The text deltas of :func:`stream_chat_turn`, for a caller that needs
+    nothing else."""
+    for event in stream_chat_turn(config, messages, max_output_tokens, usage_out):
+        if isinstance(event, str):
+            yield event
+
+
+#: The one tool a native-tools trial offers. It does nothing: the trial only
+#: learns whether the model calls it.
+_TRIAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "ping",
+        "description": "Answer this check by calling ping.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) -> tuple[bool | None, str]:
+    """Ask an OpenAI-compatible endpoint whether ``config.model`` calls tools
+    natively: one short request offering one tool.
+
+    Returns ``(True, reason)`` when the reply calls it, ``(False, reason)`` on
+    a 400 or 422 (the server takes no tools for this model) or a reply that
+    ignores the tool, and ``(None, reason)`` when the endpoint could not
+    answer at all. The request is charged; its usage lands in *usage_out*.
+    """
+    from openai import OpenAI
+
+    kwargs: dict = {"api_key": config.api_key or "no-key", "timeout": 30.0}
+    if config.base_url:
+        kwargs["base_url"] = config.base_url
+    try:
+        completion = OpenAI(**kwargs).chat.completions.create(
+            model=config.model,
+            messages=[{"role": "user", "content": "Call the ping tool."}],
+            tools=[_TRIAL_TOOL],
+            max_tokens=32,
+        )
+    except Exception as exc:  # noqa: BLE001 - every SDK failure is an answer here
+        if _status_code_of(exc) in (400, 422):
+            return False, f"the endpoint refused a tool: {_redacted(exc, config)}"
+        return None, f"could not ask the endpoint: {_redacted(exc, config)}"
+    _openai_usage(usage_out, getattr(completion, "usage", None))
+    choices = getattr(completion, "choices", None) or []
+    message = getattr(choices[0], "message", None) if choices else None
+    if getattr(message, "tool_calls", None):
+        return True, "the model called the tool it was offered"
+    return False, "the model answered without calling the tool it was offered"
 
 
 class ModelListingUnavailable(RuntimeError):

@@ -539,7 +539,7 @@ class TestRun:
             return "hello from the model"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -859,7 +859,7 @@ class TestIntent:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         att = self._attach_builtin(client, token, alice_project)
         att_id = att["attachmentId"]
@@ -911,7 +911,7 @@ class TestSession:
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def test_runs_persist_and_get_session_returns_history(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -958,7 +958,7 @@ class TestSession:
                 raise RuntimeError("boom")
             return "recovered"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _flaky)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _flaky)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
         r = client.post(
@@ -1085,12 +1085,12 @@ class TestStreamRun:
             yield "lo"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         # The first stream run fires the post-reply title call (memo dev/25);
         # stub the blocking port so it never reaches a real provider.
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1128,7 +1128,7 @@ class TestStreamRun:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1171,12 +1171,12 @@ class TestStreamRun:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         # Stub the blocking port: the first run's title call must not reach a
         # real provider (memo dev/25).
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1224,7 +1224,7 @@ class TestExecutionRecords:
                 usage_out.update(usage)
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def _turns(self, client, token, project_id, att_id):
@@ -1297,7 +1297,7 @@ class TestExecutionRecords:
         def _boom(config, messages, **kwargs):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _boom)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _boom)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
         r = client.post(
@@ -1334,10 +1334,10 @@ class TestExecutionRecords:
                 usage_out.update({"inputTokens": 7, "outputTokens": 9})
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1378,7 +1378,7 @@ class TestExecutionRecords:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1512,7 +1512,7 @@ class TestToolGrants:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "never reached",
         )
         user, token = user_and_token
@@ -1535,7 +1535,7 @@ class TestToolGrants:
 
     def test_optional_ungranted_tool_runs_and_pins_no_grant(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1563,7 +1563,7 @@ class TestToolGrants:
             ToolContract(id="ghost.tool", contract_version="1", effect="read", description="d"),
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1713,7 +1713,7 @@ class TestRunContext:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def test_context_rides_one_message_before_the_user_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1795,10 +1795,10 @@ class TestRunContext:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Title",
         )
         _, token = user_and_token
@@ -1925,10 +1925,10 @@ class TestToolLoop:
                 yield "It prints 1."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Loop Title",
         )
         _, token = user_and_token
@@ -1983,7 +1983,7 @@ class TestToolLoop:
                 return '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
             return "Done without it."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         # Chat agent declares no tools → nothing granted.
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token))
@@ -2017,7 +2017,7 @@ class TestToolLoop:
             calls.append(messages)
             return f"Round {len(calls)}.\n" + TestToolLoop.TOOL_TAIL  # always wants more
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
@@ -2062,7 +2062,7 @@ class TestToolLoop:
                 )
             return "Proposed."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         user, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
         att_id = self._install_attach(
@@ -2091,7 +2091,7 @@ class TestToolLoop:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         user, token = user_and_token
         # No built-in card is both tool-free and delegate-free, so an owned
         # definition that declares neither stands in for a grant-less run.
@@ -2156,7 +2156,7 @@ class TestReviewProposals:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="write it"):
@@ -2215,7 +2215,7 @@ class TestReviewProposals:
             yield script[min(len(calls) - 1, 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -2399,7 +2399,7 @@ class TestStructuredContent:
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return calls
 
     def _mock_stream(self, monkeypatch, deltas):
@@ -2407,10 +2407,10 @@ class TestStructuredContent:
             yield from deltas
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion",
+            "utk_curio.backend.app.agents.services.run_chat_turn",
             lambda c, m, **kw: "Stream Title",
         )
 
@@ -2589,7 +2589,7 @@ class TestRunsAreRecordedNotRationed:
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
 
     def test_many_runs_all_succeed_and_all_count(
@@ -2679,7 +2679,7 @@ class TestOutputCapReachesTheProvider:
             seen.append(max_output_tokens)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake)
         _, token = user_and_token
         att = self._install_and_attach(client, token, alice_project)
         client.post(
@@ -2835,7 +2835,7 @@ class TestNodeCreate:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build it"):
@@ -3951,7 +3951,7 @@ class TestDatasetFinderTools:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="find data"):
@@ -4137,7 +4137,7 @@ class TestDataflowPlanMint:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _ukey(self, user):
@@ -4955,7 +4955,7 @@ class TestSolve:
     def _record_models(self, monkeypatch, on_call=None):
         from utk_curio.backend.app.agents import services as services_mod
 
-        inner = services_mod.run_chat_completion
+        inner = services_mod.run_chat_turn
         seen = []
 
         def _recording(config, messages, **kwargs):
@@ -4964,7 +4964,7 @@ class TestSolve:
                 on_call(len(seen))
             return inner(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _recording)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _recording)
         return seen
 
     def test_each_child_runs_on_and_pins_its_own_configuration(
@@ -5074,7 +5074,7 @@ class TestSolve:
                 raise RuntimeError("child provider down")
             return f"generated-{state['n']}"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = self._solve(client, token, alice_project, att_id).get_json()
         statuses = sorted(r["status"] for r in body["results"].values())
         # dev/131: a child failure still isolates — the sibling solved on the
@@ -5283,7 +5283,7 @@ class TestStreamedSolve:
             gate.wait(timeout=10)  # children hold until the cancel lands
             return "generated"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         gen = self._solve_gen(user, alice_project, att_id)
         events: list = []
         done_evt = threading.Event()
@@ -5537,7 +5537,7 @@ class TestPlanCorrectionRounds:
             for i in range(0, len(reply), 9):
                 yield reply[i : i + 9]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -5839,7 +5839,7 @@ class TestToolRequestRecovery:
                 yield reply[i:i + 9]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "build it"}, headers=_auth(token),
@@ -5976,7 +5976,7 @@ class TestFenceAgnosticPlanRecognition:
             for i in range(0, len(reply), 11):
                 yield reply[i : i + 11]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -6012,7 +6012,7 @@ class TestGeneratedContentExtraction:
             state["n"] += 1
             return wrapped
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = solve_helper._solve(client, token, alice_project, att_id).get_json()
         assert {r["status"] for r in body["results"].values()} == {"solved"}
         for item in body["appliedContents"]:
@@ -6097,7 +6097,7 @@ class TestDestructiveReplan:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="replace the loader"):
@@ -7511,7 +7511,7 @@ class TestBuiltinPromptPropagation:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "clear the canvas"}, headers=_auth(token),
@@ -7579,7 +7579,7 @@ class TestBuiltinPromptPropagation:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "hi"}, headers=_auth(token),
@@ -7759,7 +7759,7 @@ class TestPackageRecommendationTools:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="what packages do I need"):
@@ -8035,7 +8035,7 @@ class TestPackageBuilderTools:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build a notes package"):
@@ -9038,7 +9038,7 @@ class TestPlanTopologyMint:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="fix the cycle"):

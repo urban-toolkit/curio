@@ -73,7 +73,7 @@ def _setup(client, token, project_id, monkeypatch, *, install_delegate=True, rep
         calls.append(messages)
         return script[min(len(calls) - 1, len(script) - 1)]
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
     return att_id, calls
 
 
@@ -328,7 +328,7 @@ class TestDelegateChildRun:
                 raise RuntimeError("child provider down")
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200  # the parent run is NOT an error
         assert r.get_json()["reply"] == "I could not delegate, but here is my answer."
@@ -370,7 +370,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
                 return _delegate_tail()
             return "df.sum(axis=0)" if len(models) == 2 and not child_fails else "Here is the plan."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         response = _run(client, token, pid, att_id)
         assert response.status_code == 200, response.get_json()
         turns = client.get(
@@ -457,7 +457,7 @@ class TestADelegateFailureNeverCarriesTheKey:
                 raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {key}")
             return _delegate_tail() if state["n"] == 1 else "Answered without the delegate."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         response = _run(client, token, pid, att_id)
         assert response.status_code == 200
         turns = client.get(
@@ -561,7 +561,7 @@ class TestDelegationTailAndBudget:
             calls.append(messages)
             return "hi"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _run(client, token, pid, att_id, message="hello")
         assert "delegateRequest" not in calls[0][0]["content"]
 
@@ -615,8 +615,8 @@ class TestDelegateStreamEvents:
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "go"}, headers=_auth(token),
@@ -665,7 +665,7 @@ class TestDec047DatasetFinderHandoff:
             calls.append(messages)
             return script[min(len(calls) - 1, 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = _run(client, token, pid, att_id, message="confirm the NOAA pick")
         assert r.status_code == 200
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -701,7 +701,7 @@ class TestDec047DatasetFinderHandoff:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "dataset.fetch.author — handled by Node Builder" in system
@@ -945,7 +945,7 @@ class TestChatContentReviewMint:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
         # dev/73 roster: the capability is OFFERED in the delegation paragraph.
         assert "node.content.generate — handled by Node Content Builder" in calls[0][0]["content"]
@@ -1020,8 +1020,8 @@ class TestChatContentReviewMintStream:
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "update n1"}, headers=_auth(token),
@@ -1145,13 +1145,14 @@ class TestMergedAgentModes:
             calls.append(messages)
             return "{}"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         status, _, record = delegation.run_delegate(
             key, pid, self.PLANNER, capability, {"keywords": {}}, self._config(),
             parent_execution_id="parent", parent_coord=DF, attachment_id=None,
         )
         assert status == "ok"
         (messages,) = calls
+        self.slots = messages[0]["slots"]
         return messages[0]["content"], record
 
     def test_a_scoped_entry_delegates_only_its_capabilities(self, client, user_and_token, tmp_curio):
@@ -1184,6 +1185,8 @@ class TestMergedAgentModes:
         configuration = system.index(contracts.CONFIGURATION_FRAME)
         assert system.index(preamble.strip()[:200]) < system.index(bind.strip()) < configuration
         assert "curio.v1" not in system
+        # The provider receives the same three slots.
+        assert [slot["kind"] for slot in self.slots] == ["preamble", "instruction", "configuration"]
 
     def test_the_digest_pins_the_modes_own_prompt(self):
         # A roster manifest carries no digests, so stamp one per prompt as a

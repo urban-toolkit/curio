@@ -186,9 +186,13 @@ class LiveRun:
                 )},
             )
             record.transcript = self._transcript(project_id, attachment_id)
+            usage = turn.get("usage") or {}
             record.usage = {
-                "inputTokens": int((turn.get("usage") or {}).get("inputTokens") or 0),
-                "outputTokens": int((turn.get("usage") or {}).get("outputTokens") or 0),
+                "inputTokens": int(usage.get("inputTokens") or 0),
+                "outputTokens": int(usage.get("outputTokens") or 0),
+                # Part of inputTokens, when the provider reports them.
+                **{key: int(usage[key]) for key in ("cacheReadTokens", "cacheWriteTokens")
+                   if isinstance(usage.get(key), int)},
             }
             proposals = [
                 part for part in (turn.get("content") or [])

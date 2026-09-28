@@ -179,3 +179,27 @@ class TestConcurrency:
         codes = [os.waitpid(pid, 0)[1] >> 8 for pid in pids]
         assert codes == [0, 0]
         assert ledger.aggregates(UKEY)["runs"] == 3
+
+
+class TestCachedInput:
+    """A caching provider reports cache reads and writes; they are kept and
+    summed when reported, and they are part of inputTokens, never added to it."""
+
+    def test_they_are_kept_and_summed_when_reported(self, tmp_curio):
+        first = ledger.reserve("43")
+        ledger.settle("43", first, usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheReadTokens": 80, "cacheWriteTokens": 0,
+        })
+        second = ledger.reserve("43")
+        ledger.settle("43", second, usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheReadTokens": 0, "cacheWriteTokens": 90,
+        })
+        ledger.record_housekeeping_usage("43", {"inputTokens": 10, "outputTokens": 1})
+        assert ledger.aggregates("43")["usage"] == {
+            "inputTokens": 210, "outputTokens": 11, "cacheReadTokens": 80, "cacheWriteTokens": 90,
+        }
+
+    def test_a_provider_that_reports_none_adds_none(self, tmp_curio):
+        run = ledger.reserve("44")
+        ledger.settle("44", run, usage={"inputTokens": 7, "outputTokens": 3})
+        assert ledger.aggregates("44")["usage"] == {"inputTokens": 7, "outputTokens": 3}

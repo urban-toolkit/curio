@@ -389,3 +389,167 @@ class TestUsageCapture:
         sink = {}
         run_chat_completion(_cfg(), [{"role": "user", "content": "hi"}], usage_out=sink)
         assert sink == {}
+
+
+# ---------------------------------------------------------------------------
+# The typed turn: system slots per provider, cache usage, and the shim
+# ---------------------------------------------------------------------------
+
+from utk_curio.backend.app.agents import contracts
+from utk_curio.backend.app.agents.providers import (
+    ChatTurn,
+    run_chat_turn,
+    stream_chat_completion,
+    stream_chat_turn,
+)
+
+
+def _slotted():
+    """A system turn the way a run builds it, then the conversation."""
+    system = contracts.system_message(contracts.compose_system(
+        preamble="PREAMBLE", instruction="INSTRUCTION", configuration="SETTINGS",
+        tool_protocol="TOOLS", runtime=("ROSTER",),
+    ))
+    return [system, {"role": "user", "content": "hi"}]
+
+
+class TestTheSystemTurnPerProvider:
+    def test_the_message_carries_its_slots_and_the_joined_text(self):
+        system = _slotted()[0]
+        assert system["content"] == "PREAMBLE\n\nINSTRUCTION\n\nSETTINGS\n\nTOOLS\n\nROSTER"
+        assert [s["kind"] for s in system["slots"]] == [
+            "preamble", "instruction", "configuration", "tool-protocol", "runtime",
+        ]
+
+    def test_anthropic_gets_a_block_per_slot_with_the_preamble_cacheable(self, monkeypatch):
+        seen = {}
+
+        def _create(model, system, messages, max_tokens):
+            seen.update(system=system, messages=messages)
+            return types.SimpleNamespace(
+                content=[types.SimpleNamespace(type="text", text="ok")],
+                usage=types.SimpleNamespace(input_tokens=10, output_tokens=4,
+                                            cache_read_input_tokens=900, cache_creation_input_tokens=0),
+            )
+
+        fake = types.ModuleType("anthropic")
+        fake.NOT_GIVEN = object()
+        fake.Anthropic = lambda **kw: types.SimpleNamespace(messages=types.SimpleNamespace(create=_create))
+        monkeypatch.setitem(sys.modules, "anthropic", fake)
+        sink = {}
+        turn = run_chat_turn(_cfg(api_type="anthropic"), _slotted(), usage_out=sink)
+        assert turn == ChatTurn(text="ok")
+        assert seen["system"] == [
+            {"type": "text", "text": "PREAMBLE", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "INSTRUCTION"},
+            {"type": "text", "text": "SETTINGS"},
+            {"type": "text", "text": "TOOLS"},
+            {"type": "text", "text": "ROSTER"},
+        ]
+        assert seen["messages"] == [{"role": "user", "content": "hi"}]
+        # Every input token is counted, the cached ones too.
+        assert sink == {"inputTokens": 910, "outputTokens": 4, "cacheReadTokens": 900, "cacheWriteTokens": 0}
+
+    def test_anthropic_streams_the_same_blocks_and_counts_a_cache_write(self, monkeypatch):
+        seen = {}
+
+        class FakeStream:
+            text_stream = iter(["a"])
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+            def get_final_message(self):
+                return types.SimpleNamespace(usage=types.SimpleNamespace(
+                    input_tokens=10, output_tokens=2, cache_read_input_tokens=0,
+                    cache_creation_input_tokens=900))
+
+        def _stream(**kwargs):
+            seen.update(kwargs)
+            return FakeStream()
+
+        fake = types.SimpleNamespace(
+            Anthropic=lambda **kw: types.SimpleNamespace(messages=types.SimpleNamespace(stream=_stream)),
+            NOT_GIVEN="NG",
+        )
+        monkeypatch.setitem(sys.modules, "anthropic", fake)
+        sink = {}
+        assert list(stream_chat_turn(_cfg(api_type="anthropic"), _slotted(), usage_out=sink)) == ["a"]
+        assert seen["system"][0]["cache_control"] == {"type": "ephemeral"}
+        assert sink == {"inputTokens": 910, "outputTokens": 2, "cacheReadTokens": 0, "cacheWriteTokens": 900}
+
+    def test_gemini_gets_a_list_of_system_instructions(self, monkeypatch):
+        seen = {}
+
+        class FakeChat:
+            def send_message(self, msg, **kwargs):
+                # A function-call part has no text; response.text would raise.
+                parts = [types.SimpleNamespace(text="he"), types.SimpleNamespace(text="", function_call=object()),
+                         types.SimpleNamespace(text="llo")]
+                return types.SimpleNamespace(
+                    candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=parts))],
+                    usage_metadata=types.SimpleNamespace(prompt_token_count=50, candidates_token_count=3,
+                                                         cached_content_token_count=40),
+                )
+
+        class FakeModel:
+            def __init__(self, model, system_instruction=None):
+                seen["system_instruction"] = system_instruction
+            def start_chat(self, history):
+                return FakeChat()
+
+        fake = types.ModuleType("google.generativeai")
+        fake.configure = lambda api_key: None
+        fake.GenerativeModel = FakeModel
+        google_pkg = types.ModuleType("google")
+        google_pkg.generativeai = fake
+        monkeypatch.setitem(sys.modules, "google", google_pkg)
+        monkeypatch.setitem(sys.modules, "google.generativeai", fake)
+        sink = {}
+        turn = run_chat_turn(_cfg(api_type="gemini"), _slotted(), usage_out=sink)
+        assert turn.text == "hello"
+        assert seen["system_instruction"] == ["PREAMBLE", "INSTRUCTION", "SETTINGS", "TOOLS", "ROSTER"]
+        assert sink == {"inputTokens": 50, "outputTokens": 3, "cacheReadTokens": 40}
+
+    def test_an_openai_compatible_server_gets_one_joined_system_message(self, monkeypatch):
+        seen = {}
+
+        def _create(**kwargs):
+            seen.update(kwargs)
+            return types.SimpleNamespace(
+                choices=[types.SimpleNamespace(message=types.SimpleNamespace(content=None),
+                                               finish_reason="tool_calls")],
+                usage=types.SimpleNamespace(prompt_tokens=120, completion_tokens=6,
+                                            prompt_tokens_details=types.SimpleNamespace(cached_tokens=100)),
+            )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=_create))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        sink = {}
+        turn = run_chat_turn(_cfg(), _slotted(), usage_out=sink)
+        # Some local chat templates reject several system messages; the slots stay home.
+        assert seen["messages"] == [
+            {"role": "system", "content": "PREAMBLE\n\nINSTRUCTION\n\nSETTINGS\n\nTOOLS\n\nROSTER"},
+            {"role": "user", "content": "hi"},
+        ]
+        # A reply with no content is an empty text, not None.
+        assert turn == ChatTurn(text="", stop_reason="tool_calls")
+        assert sink == {"inputTokens": 120, "outputTokens": 6, "cacheReadTokens": 100}
+
+
+class TestTheShim:
+    def test_a_bare_string_is_a_text_turn(self):
+        assert ChatTurn.of("reply") == ChatTurn(text="reply")
+        turn = ChatTurn(text="x", stop_reason="stop")
+        assert ChatTurn.of(turn) is turn
+        assert ChatTurn.of(None) == ChatTurn(text="")
+
+    def test_the_text_stream_leaves_out_other_events(self, monkeypatch):
+        from utk_curio.backend.app.agents import providers as providers_mod
+
+        monkeypatch.setattr(providers_mod, "stream_chat_turn",
+                            lambda *a, **k: iter(["a", object(), "b"]))
+        assert list(stream_chat_completion(_cfg(), [])) == ["a", "b"]

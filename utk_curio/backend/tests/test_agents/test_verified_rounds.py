@@ -764,7 +764,7 @@ class TestValidateNodeCarriesDatasetPaths:
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         exec_payloads = []
 
         def _exec(endpoint, payload):
@@ -861,7 +861,7 @@ class TestVerifiedSolve:
             ca_calls.append(frame)
             return ca_script[min(len(ca_calls) - 1, len(ca_script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         exec_payloads: list = []
         outcomes = exec_outcomes or {}
 
@@ -1194,7 +1194,7 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
         """A batch whose data-loading child blocks on *gate* — the request can
         be dropped while the job is mid-flight."""
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
-        original = services_mod.run_chat_completion
+        original = services_mod.run_chat_turn
 
         def _blocking(config, messages, **kwargs):
             frame = (messages[-1].get("content") or "") if messages else ""
@@ -1202,7 +1202,7 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
                 gate.wait(timeout=10)
             return original(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _blocking)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _blocking)
         return ctx
 
     def _events(self, r):
@@ -1342,7 +1342,7 @@ class TestSolveNode:
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)] if script else "df = arg[0]\nreturn df"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         payloads: list = []
         outcomes = exec_outcomes or {}
 

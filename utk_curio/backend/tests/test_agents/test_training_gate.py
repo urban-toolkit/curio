@@ -135,7 +135,8 @@ class TestTheGateIsNotAThreshold:
         import re
 
         forbidden = re.compile(
-            r"(run_chat_completion|stream_chat_completion|generated-content-evaluator"
+            r"(run_chat_completion|stream_chat_completion|run_chat_turn|stream_chat_turn"
+            r"|generated-content-evaluator"
             r"|delegate|content\.quality\.evaluate)"
         )
         for name in ("gate.py", "records.py", "consent.py", "dataset.py"):
@@ -149,6 +150,7 @@ class TestTheGateIsNotAThreshold:
         # The service talks to the provider for TUNING only — never for a
         # completion, and never to an evaluator agent.
         assert "run_chat_completion" not in service_source
+        assert "run_chat_turn" not in service_source
         assert "generated-content-evaluator" not in service_source
 
 

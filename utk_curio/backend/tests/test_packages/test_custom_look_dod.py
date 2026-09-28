@@ -280,7 +280,7 @@ class TestDodThroughTheResearcher:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -399,7 +399,7 @@ class TestWeatherInParisScenario:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -523,7 +523,7 @@ class TestCurioNotesRetry:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -611,7 +611,7 @@ class TestReuseFirstNoteCreation:
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
 
         # Turn 1: install the notes package through the reviewed draft.
         script["replies"] = [
