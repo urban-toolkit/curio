@@ -4,8 +4,10 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   AgentDatasetCandidatesCard,
   composeConfirmationPrompt,
+  rowProvenance,
 } from "../../components/agents/content/AgentDatasetCandidatesCard";
 import type { AgentDatasetCandidatesPart } from "../../api/agentsApi";
+import { DatasetDetailsContext } from "../../components/datasets/catalog/datasetDetailsContext";
 
 const PART: AgentDatasetCandidatesPart = {
   type: "datasetCandidates",
@@ -40,10 +42,56 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     expect(screen.getAllByText("Not installed")).toHaveLength(1);
   });
 
-  it("rows carry NO action buttons — checkboxes only (docs/06)", () => {
+  it("selection is the only action a row takes (docs/06)", () => {
     render(<AgentDatasetCandidatesCard part={PART} />);
-    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    // The one button per catalog row opens what it names, read-only; nothing
+    // here applies, installs or downloads.
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((b) => b.textContent)).toEqual(["View details", "View details"]);
+  });
+
+  it("a catalog row opens the dataset's details, like the same row anywhere else", () => {
+    const openDatasetDetails = jest.fn();
+    const onComposePrompt = jest.fn();
+    render(
+      <DatasetDetailsContext.Provider value={{ openDatasetDetails }}>
+        <AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} />
+      </DatasetDetailsContext.Provider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "View details" })[0]);
+    expect(openDatasetDetails).toHaveBeenCalledWith("imported.abc@1");
+    // Opening details is not a selection.
+    expect(onComposePrompt).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select Cities" })).not.toBeChecked();
+  });
+
+  it("links an external row to its portal only when the runtime vouched for the URL", () => {
+    const part: AgentDatasetCandidatesPart = {
+      type: "datasetCandidates",
+      lanes: {
+        external: [
+          { name: "Verified", sourceType: "api", url: "https://ok.example/x",
+            verification: { status: "verified" } } as any,
+          { name: "Downloadable", sourceType: "lake", url: "https://lake.example/r",
+            acquirable: true, sourceId: "lake.a", resourceId: "r" },
+          { name: "Model claim", sourceType: "api", url: "https://claimed.example/y" },
+          { name: "Bad scheme", sourceType: "api", url: "javascript:alert(1)",
+            verification: { status: "verified" } } as any,
+        ],
+        catalog: [],
+      },
+    };
+    render(<AgentDatasetCandidatesCard part={part} />);
+    const links = screen.getAllByRole("link", { name: "View on the portal ↗" });
+    expect(links.map((a) => a.getAttribute("href"))).toEqual([
+      "https://ok.example/x",
+      "https://lake.example/r",
+    ]);
+    links.forEach((a) => expect(a).toHaveAttribute("rel", expect.stringContaining("noopener")));
+    // Unvouched URLs stay plain text, as before.
+    expect(screen.getByText("https://claimed.example/y")).toBeInTheDocument();
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument();
   });
 
   it("hostile metadata renders inert as plain text", () => {
@@ -137,8 +185,12 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
       "Build the data-loading node — load from the Data Catalog: Cities (imported.abc@1); " +
         "fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
-    // Still no row-level buttons — the prompt stays the vehicle (docs/06).
-    expect(screen.queryByRole("button")).toBeNull();
+    // Still only the read-only View details buttons; the prompt stays the
+    // vehicle (docs/06).
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "View details",
+      "View details",
+    ]);
   });
 
   it("the finder variant is the default and unchanged", () => {
@@ -215,7 +267,10 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     await act(async () => {
       fireEvent.change(input, { target: { files: [file] } });
     });
-    expect(onImportDataset).toHaveBeenCalledWith(file);
+    // The file carries where it came from: the row's link, recorded with it.
+    expect(onImportDataset).toHaveBeenCalledWith(file, {
+      resourceUrl: "https://geosampa.example.gov.br/downloads",
+    });
     // The just-imported dataset IS the node's source — one catalog pick.
     expect(onRecordSelection).toHaveBeenCalledWith([
       { lane: "catalog", key: "imported.x99@1" },
@@ -268,5 +323,75 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     expect(
       screen.getByText(/picks this node up on its next pass/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
+  const LAKE: AgentDatasetCandidatesPart = {
+    type: "datasetCandidates",
+    lanes: {
+      external: [
+        {
+          // A connector row whose landing page is a portal: the probe says a
+          // person would download it, but Curio downloads it itself.
+          name: "Chicago community areas",
+          sourceType: "lake",
+          url: "https://data.cityofchicago.org/d/cauq-8yn6",
+          sourceId: "lake.cityofchicago.data-portal@1",
+          resourceId: "cauq-8yn6",
+          acquirable: true,
+          access: "manual-download",
+          accessWhy: "the data URL answered with a web page",
+          downloadSteps: ["Open the portal page in your browser: https://data.cityofchicago.org"],
+        },
+        {
+          name: "Chicago wards",
+          sourceType: "lake",
+          sourceId: "lake.cityofchicago.data-portal@1",
+          resourceId: "sp34-6z76",
+          acquirable: true,
+        },
+      ],
+      catalog: [],
+    },
+  };
+
+  it("offers only the download, never the portal steps", () => {
+    render(<AgentDatasetCandidatesCard part={LAKE} onImportDataset={jest.fn()} />);
+    expect(screen.getAllByText("Downloadable")).toHaveLength(2);
+    expect(screen.queryByText(/Download it from the portal/)).toBeNull();
+    expect(screen.queryByText("Import dataset")).toBeNull();
+  });
+
+  it("confirms a row with no url by its coordinate and says it is downloading", async () => {
+    const onRecordSelection = jest.fn().mockResolvedValue({
+      attachmentId: "att-df",
+      nodeId: "n1",
+      status: "awaiting-install",
+      picks: [],
+      delegated: {
+        status: "acquiring",
+        reason: "Chicago wards is downloading into your Data Catalog; Solve the node once it lands",
+      },
+    });
+    render(<AgentDatasetCandidatesCard part={LAKE} onRecordSelection={onRecordSelection} />);
+    fireEvent.click(screen.getByLabelText("Select Chicago wards"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Confirm source for this node/ }));
+    });
+    expect(onRecordSelection).toHaveBeenCalledWith([
+      { lane: "external", key: "lake.cityofchicago.data-portal@1/sp34-6z76" },
+    ]);
+    expect(screen.getByText(/downloading into your Data Catalog/)).toBeInTheDocument();
+  });
+});
+
+describe("rowProvenance", () => {
+  it("states a row's coordinate and link, and nothing for a row with neither", () => {
+    expect(rowProvenance({
+      name: "a", sourceType: "lake", url: "https://x.example/a.csv",
+      sourceId: "lake.a.b@1", resourceId: "r1",
+    })).toEqual({ lakeId: "lake.a.b@1", resourceId: "r1", resourceUrl: "https://x.example/a.csv" });
+    expect(rowProvenance({ name: "a", sourceType: "document" })).toBeUndefined();
   });
 });

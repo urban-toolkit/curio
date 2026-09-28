@@ -70,20 +70,33 @@ describe('DataLakeResourceRow', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
   });
 
-  test('a row already held says so, and links instead of offering a second copy', () => {
+  test('a row already held says so, and offers it instead of a second copy', () => {
+    const onViewDataset = jest.fn();
     render(
       <DataLakeResourceRow
         resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef' })}
         onDownload={jest.fn()}
-        datasetHref={(id) => `/catalog/data/${id}`}
+        onViewDataset={onViewDataset}
       />
     );
     expect(screen.getByText('In your Data Catalog')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View dataset' })).toHaveAttribute(
-      'href',
-      '/catalog/data/imported.xdeadbeef'
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'View dataset' }));
+    expect(onViewDataset).toHaveBeenCalledWith('imported.xdeadbeef');
     expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+  });
+
+  test('View dataset is a button, not a link to the dataset page', () => {
+    // It was an <a href="/catalog/data/:id">, so it left the lake page for the
+    // Data Catalog's full-page view, while every other way into a dataset's
+    // details opens the modal and stays put.
+    render(
+      <DataLakeResourceRow
+        resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef' })}
+        onViewDataset={jest.fn()}
+      />
+    );
+    expect(screen.queryByRole('link', { name: 'View dataset' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
   });
 
   test('a non-acquirable row cannot be downloaded even with a handler', () => {
@@ -158,18 +171,17 @@ describe('DataLakeResourceRow: a download in flight', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  test('a finished download links to where it landed', () => {
+  test('a finished download opens where it landed', () => {
+    const onViewDataset = jest.fn();
     render(
       <DataLakeResourceRow
         resource={resource()}
         job={job({ status: 'completed', datasetId: 'imported.xabc' })}
-        datasetHref={(id) => `/catalog/data/${id}`}
+        onViewDataset={onViewDataset}
       />
     );
-    expect(screen.getByRole('link', { name: 'View dataset' })).toHaveAttribute(
-      'href',
-      '/catalog/data/imported.xabc'
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'View dataset' }));
+    expect(onViewDataset).toHaveBeenCalledWith('imported.xabc');
   });
 
   test.each(['failed', 'refused'] as const)(

@@ -7,7 +7,7 @@ import {
 
 /**
  * The filter chips on `/catalog/lakes`, mirroring
- * `pages/dataHub/dataHubBrowseConstants.ts`.
+ * `pages/dataCatalog/dataCatalogBrowseConstants.ts`.
  *
  * Declared rather than derived from the facets so the chip ORDER is stable:
  * a row that reorders itself as counts change is hard to aim at. Facets still

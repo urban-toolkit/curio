@@ -1,7 +1,8 @@
 import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDownload, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
-import { packagesApi } from "../../../../api/packagesApi";
+import { faCircleInfo, faDownload, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import { packagesApi, type PackagePayload } from "../../../../api/packagesApi";
+import { PackageDetailModal } from "../../../packages/publishing/PackageDetailModal";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
 import { PackageMetadataModal } from "../../../packages/editing";
@@ -40,6 +41,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
     const rowTitle = summaryTitle ?? group.name;
     const { showToast } = useToastContext();
     const [metadataOpen, setMetadataOpen] = useState(false);
+    const [detailPkg, setDetailPkg] = useState<PackagePayload | null>(null);
     const isReadOnly = !!group.descriptors[0]?.package?.readOnly;
 
     const onExportClick = useCallback(
@@ -57,8 +59,47 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
         },
         [group.key, showToast],
     );
+    // The palette holds only a package's summary, so its details are read on
+    // demand: the account's copy first, then the shared catalog's.
+    const onDetailsClick = useCallback(
+        async (e: React.MouseEvent<HTMLButtonElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                const mine = await packagesApi.listInstalled();
+                let pkg = mine.packages.find((p) => p.dirName === group.key) ?? null;
+                if (!pkg) {
+                    const shared = await packagesApi.catalog();
+                    pkg = shared.packages.find((p) => p.dirName === group.key) ?? null;
+                }
+                if (pkg) setDetailPkg(pkg);
+                else showToast(`Couldn't find the details of ${group.name}.`, "error");
+            } catch (err) {
+                showToast(
+                    `Couldn't load the details of ${group.name}: ${(err as Error)?.message ?? "unknown error"}`,
+                    "error",
+                );
+            }
+        },
+        [group.key, group.name, showToast],
+    );
     const actions = (
         <>
+            {/* The way into the package's details, as every catalog card offers. */}
+            <button
+                type="button"
+                className={packageStyles.packageSummaryExportBtn}
+                title="View details"
+                aria-label={`View ${group.name} details`}
+                data-curio-package-palette-node-action="true"
+                onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }}
+                onClick={(e) => void onDetailsClick(e)}
+            >
+                <FontAwesomeIcon icon={faCircleInfo} aria-hidden />
+            </button>
             <button
                 type="button"
                 className={packageStyles.packageSummaryExportBtn}
@@ -126,6 +167,13 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                 <PackageMetadataModal
                     dirName={group.key}
                     onClose={() => setMetadataOpen(false)}
+                />
+            ) : null}
+            {detailPkg ? (
+                <PackageDetailModal
+                    pkg={detailPkg}
+                    isPublished={catalogMetadataLoaded ? isCatalogPublished : undefined}
+                    onClose={() => setDetailPkg(null)}
                 />
             ) : null}
         </PaletteAccordion>
