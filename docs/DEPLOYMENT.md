@@ -83,7 +83,8 @@ Two things a deployment should know:
   confirmed, so a blind request to an internal service is not *prevented*, only
   its response is withheld. Closing that needs connection-factory work.
 
-Rate limiting is per user, per source, and **in-process**. Under several
+Rate limiting is per user, per portal, and **in-process**; requests to buckets
+and repositories are not counted. Under several
 workers the effective rate is the configured rate times the worker count. It is
 a politeness mechanism toward portals you do not own and a brake on accidental
 loops, not a guarantee you can make to a third party.
@@ -95,15 +96,15 @@ loops, not a guarantee you can make to a third party.
 
 ### Storage sources
 
-A storage source lists a folder, a public S3 bucket or a Hugging Face
+A storage source lists a folder, a public S3 bucket or a Hugging Face dataset
 repository in the Data Lake Catalog. The manifest format is in
 [DATA-LAKE-CATALOG.md § The manifest](DATA-LAKE-CATALOG.md#8-the-manifest).
 
 - **Your own sources** go in
   `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `./.curio`
-  mount keeps across image rebuilds. Restart to list a new one. An id a shipped
-  source uses is refused, and a `folder` source's `root` must be absolute.
-  Node code cannot write to this directory.
+  mount keeps across image rebuilds. A source whose folder name a shipped one
+  uses is not listed, and the log says so. A `folder` source's `root` must be
+  absolute. Under `--deploy`, node code cannot write to this directory.
 - **Mount a folder read-only.** Curio never writes to one. Add the mount in a
   compose override and give the manifest the path inside the container:
 
@@ -121,20 +122,24 @@ repository in the Data Lake Catalog. The manifest format is in
 - **`curio-exec` must be able to read it.** Under `--deploy`, node code runs as
   `curio-exec`, so every directory on the way to the files needs `o+x` and the
   files `o+r` (or a group `curio-exec` is in). At boot the backend logs each
-  folder source it cannot read, with the directory that stops it.
-- **Buckets and repositories** are read over the same outbound policy as the
-  portals, public ones only. Their manifests usually raise
-  `limits.requestsPerMinute`, since a listing is many small requests.
+  folder source it cannot read, with the folder or file that stops it.
+- **Buckets and repositories** are read through the same outbound policy as the
+  portals: public S3 buckets, and Hugging Face dataset repositories, with the
+  account's token for one that needs it. `limits.requestsPerMinute` does not
+  apply to them.
 - **Disk.** A bucket collection's files are cached per account on request,
   under `.curio/exec-scratch/users/<key>/media/objects/` with isolation on and
   `.curio/users/<key>/media/objects/` without. `CURIO_MEDIA_CACHE_MAX_GB`
   (default 20) caps each account. Thumbnails, posters and spectrograms are
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
   thumbnails under `.curio/datalakes-cache/`. Deleting a collection removes
-  its caches, never the source's files.
+  its caches, never the source's files. With isolation on, the cached files
+  and the frames, clips and mosaics nodes derive are in the account's work
+  directory, which other accounts' node code can read: the execution account
+  is shared (see the [security checklist](#security-checklist)).
 - **Libraries.** Probing and thumbnails use `av` (PyAV) and `rasterio`, which
-  are dependencies of `curio.builtin@1`. The image installs them, and so does
-  `python curio.py setup`.
+  are dependencies of `curio.builtin@1`. Curio installs them when it starts,
+  and so does `python curio.py setup`.
 - **Tokens.** `CURIO_DEFAULT_HUGGINGFACE_TOKEN` is a Hugging Face token every
   account inherits until it saves its own.
 

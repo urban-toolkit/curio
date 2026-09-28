@@ -1,6 +1,6 @@
 # Data Lake Catalog
 
-The Data Lake Catalog is where Curio lists the **open data portals** and the **storage** it can reach: folders on the Curio machine, public S3 buckets and Hugging Face repositories. You search a portal and download a dataset, or open a storage source and add one of the resources it declares. Either way it lands in your Data Catalog.
+The Data Lake Catalog is where Curio lists the **open data portals** and the **storage** it can reach: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories. You search a portal and download a dataset, or open a storage source and add one of the resources it declares. Either way it lands in your Data Catalog.
 
 Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Data Lake Catalog the portals and storage you take datasets from.
 
@@ -25,7 +25,7 @@ This guide is in eight parts, plus operator notes:
 The unit of this catalog is a **source**. A source is not a dataset. There are two kinds:
 
 - **A portal**, such as a city's open data site. Its datasets are found live, when you search it, and you download the ones you want.
-- **A storage source**: a folder on the Curio machine, a public S3 bucket, or a Hugging Face repository. Its manifest declares its **resources**, and how the files of each are organized, the way a portal's manifest declares its endpoints. Curio lists what the manifest declares and never guesses a layout.
+- **A storage source**: a folder on the Curio machine, a public S3 bucket, or a Hugging Face dataset repository. Its manifest declares its **resources**, and how the files of each are organized, the way a portal's manifest declares its endpoints. Curio lists what the manifest declares and never guesses a layout.
 
 A storage resource is one of two things:
 
@@ -72,13 +72,13 @@ datalakes/
 
 There are two pages, plus an agent that works on the canvas:
 
-- **The `/catalog/lakes` page** lists the sources. Reach it from `/projects` and the **Data Lake Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every portal at once, each tagged with the portal it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
-- **A source's page**, `/catalog/lakes/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. A storage source's page lists its resources at once, one row each, with a kind (**Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, **Audio**, or the table's format), a line saying how many files it holds, what its path fields cover, and its size, and thumbnails of its first files.
+- **The `/catalog/lakes` page** lists the sources. Reach it from `/projects` and the **Data Lake Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
+- **A source's page**, `/catalog/lakes/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
 - **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
 
 On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
 
-A storage source is read when it is first opened, and again when its listing is 15 minutes old. While that runs the page says **Scanning `<source>`…**. **Rescan** reads it again at once, for files added since. When the source holds files no resource declares, the page says how many, for whoever writes its manifest.
+A storage source is read when it is first opened, and again when its listing is 15 minutes old. While that runs the page says **Scanning `<source>`…**, and keeps the rows of the last reading. **Rescan** reads it again at once, for files added since. When the source holds files no resource declares, the page says how many.
 
 ### Action matrix
 
@@ -91,15 +91,16 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Cancel** | The row's progress bar | Nothing is kept | The download stops. |
 | **View dataset** | A row marked **In your Data Catalog** | Nothing | The dataset's details, over the page. |
 | **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
-| **Add to Data Catalog** | A storage source's row | Your Data Catalog gains a dataset | A dialog to keep only some values of each path field, then a progress bar, then *"Added `<title>` to your Data Catalog."* with **View details**. |
+| **Add to Data Catalog** | A storage source's row | Your Data Catalog gains a dataset | A dialog to keep only some values of each path field, when there are any to choose from, then a progress bar, then *"Added `<title>` to your Data Catalog."* with **View details**. |
+| **Add again** | A storage source's row marked **In your Data Catalog** | Your Data Catalog gains a dataset, when the row's files changed | A progress bar, then *"Added `<title>` to your Data Catalog."*, or *"Nothing has changed in `<title>` since it was added."* |
 | **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
-| **Rescan** | A storage source's page | Nothing | The source is read again, and its rows are listed as they are now. |
+| **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
 | **Set a token** | **AI Settings** | Your account | The source's card reads **Token set**. |
 
 ### Workflows
 
-**I want a dataset but do not know which portal has it.** Open `/catalog/lakes` and type in the search box. Every searchable portal is asked at once and the results are interleaved. If a portal is slow or down, a line names it and the other portals' results still show.
+**I want a dataset but do not know which portal has it.** Open `/catalog/lakes` and type in the search box. Every searchable portal and every storage source is asked at once and the results are interleaved. If a portal is slow or down, a line names it and the other results still show. A storage source still being read for the first time is named in a line of its own, and its rows join the results when it is done.
 
 **I want to download a dataset and use it.** Find it, pick a format if the row offers a choice, and click **Download**. When it finishes, the row offers **View dataset**. To use it in a dataflow, add it from the Data Catalog ([part 3](#3-using-a-lake-dataset-in-a-dataflow)).
 
@@ -107,7 +108,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **AI Settings**, and save. See [part 5](#5-api-tokens).
 
-**I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, and how many files of each kind it holds.
+**I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
 **I have a folder of orthorectified images, by year.** Its manifest declares one `rasters` resource, `orthos/{year:int}/{tile}.tif`. The lake lists one row with the years it covers; **Add to Data Catalog**, keeping only the years you want, gives one collection with each tile's footprint. On the canvas, a Vega-Lite map draws the footprints and **Mosaic Rasters** joins one year's tiles into one raster: see [example 17](examples/17-storage-orthorectified-imagery.md).
 
@@ -137,7 +138,7 @@ Downloading or adding does not add the dataset to a dataflow. Add it from the Da
 
 While a download or an add runs, its row shows a progress bar and **Cancel**. The bar fills when the size is known, counts files when a resource has many, and shows what the work is doing otherwise.
 
-- **Two at a time.** Each account runs at most two downloads at once.
+- **Two at a time.** Each account runs at most two downloads, adds and **Cache files** at once.
 - **A restart loses it.** A download still running when the server restarts is lost, and its row says so. Start it again.
 - **Downloading again.** A row marked **In your Data Catalog** has already been downloaded in that format. Its button is **View dataset**, and nothing is fetched again. The same resource in another format is a separate download and a separate dataset.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers.
@@ -148,21 +149,21 @@ When a download fails, the row says why in the server's own words, for example t
 
 ### Adding from a storage source
 
-- **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. Several files land as one Parquet table, with a column per path field and a `source_file` column; geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system.
+- **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it, in whatever letter case they are named, and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. A CSV declared with `options` is read with them and lands as Parquet. Several files land as one Parquet table, with a column per path field and a `source_file` column; a file's own column of the same name keeps its name, and the added one ends in `_from_path`. Geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system. GeoPackage and PBF files are added one at a time, with `"datasets": "per-file"`.
 - **Collections are referenced.** The Data Catalog keeps an index; the files stay where the source keeps them, and nothing is written to the source. Deleting the collection deletes its index and never the files.
-- **Adding again.** A row marked **In your Data Catalog** offers **View dataset**. After its files change, add it again for a new dataset of what is there now.
+- **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
-- **A bucket's files.** In a collection from a bucket or a Hugging Face repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
-- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 files unless its manifest sets another limit.
-- **Publishing.** A collection cannot be published: its files are not in the Data Catalog to share.
+- **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
+- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: narrow it in the **Add** dialog, or pick files under **Files**.
+- **Publishing.** A collection cannot be published.
 
 ---
 
 ## 5. API tokens
 
-Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit.
+Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
 
-A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, optional, or inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
 
 Guest accounts cannot save a token.
 
@@ -213,16 +214,16 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. |
 | `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. |
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `datalakes/` may give one relative to the repository. |
-| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face repository. |
+| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository. |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
 | `auth.secretId`, `auth.headerName`, `auth.scheme`, `auth.valuePrefix` | With a token | Which account credential to send, in which header, and what comes before it (`Bearer ` for Hugging Face). Curio knows `socrata.app-token` and `huggingface.token`, and `scheme` is always `header`. |
 | `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
-| `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage source's formats follow from its resources. |
+| `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage source's formats follow from its resources, and a storage manifest that declares them is refused. |
 | `capabilities.maxDownloadBytes` | | A download limit below the 64 MiB default. |
 | `capabilities.allowOffBaseDistributions` | | Lets a download come from a host other than `baseUrl`, for a CKAN portal whose files live on each publisher's own site. Off by default. |
-| `limits.requestsPerMinute` | | Requests per minute, per user. Default 30. |
-| `limits.maxFiles` | | A storage source: how many files it lists at most. Default 200,000. |
+| `limits.requestsPerMinute` | | Requests per minute to a portal, per user. Default 30. A storage source's requests are not counted. |
+| `limits.maxFiles` | | A storage source: how many matched files it lists and adds at once. Default and most 200,000. |
 | `resources` | For storage | The resources a storage source declares, below. |
 
 ### Resources
@@ -237,11 +238,11 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `path` | Yes | Which files belong to it, as a path template relative to the folder, bucket prefix or repository. |
 | `format` | For `table` | `csv`, `json`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. |
 | `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. |
-| `extensions` | | For a collection, the file extensions it takes. Images default to jpg, jpeg, png, webp, gif, bmp and tif; videos to mp4, mov and webm; audio to wav, flac, mp3, ogg, opus, m4a and aiff. |
-| `options` | | For a CSV table: `delimiter` and `header`. |
-| `fps` | | For `frames`: frames per second, which gives each frame its time. |
-| `time` | | For `images`, `videos`, `media` and `audio`: the path field that is each file's time. |
-| `metadata` | | For a collection: a table joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. |
+| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2. A table's follow its format: geojson and json for `geojson`, the format's own for the others. |
+| `options` | | For a CSV table: `delimiter` and `header`. A table read with them lands as Parquet. |
+| `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
+| `time` | | For a collection: the date or time path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. |
+| `metadata` | | For a collection: a CSV, Parquet or JSON table of up to 256 MiB, in the same source, joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. Its `lat` and `lon` (or `latitude` and `longitude`) columns give a file its position. |
 
 **Path templates.** A template matches each file's path:
 
@@ -254,9 +255,9 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `*` | Anything within one folder or file name. |
 | `**` | Any number of folders. |
 
-Each named part becomes a column of the dataset and a field the **Add** dialog can narrow by. For `frames`, `{sequence}` and `{frame:int}` name the sequence and the frame number; without `{sequence}`, a frame's folder is its sequence. Some names are taken by a collection's own columns (`path`, `name`, `kind`, `bytes`, and the like) and a manifest that uses one is refused, with the reason.
+Each named part becomes a column of the dataset and a field the **Add** dialog can narrow by. For `frames`, `{sequence}` and `{frame:int}` name the sequence and the frame number; without `{sequence}`, a frame's folder is its sequence. Some names are taken by a collection's own columns (`path`, `name`, `kind`, `bytes`, and the like). A manifest that uses one is not listed, and the source's page gives the reason.
 
-One manifest per use case, from the example storage source:
+The example storage source's manifest, with one resource per use case (abridged):
 
 ```jsonc
 {
@@ -287,7 +288,7 @@ One manifest per use case, from the example storage source:
 }
 ```
 
-A bucket or a Hugging Face repository is declared the same way, with the templates matching object keys:
+A bucket or a Hugging Face dataset repository is declared the same way, with the templates matching object keys:
 
 ```jsonc
 { "provider": { "type": "s3", "baseUrl": "https://sentinel-cogs.s3.us-west-2.amazonaws.com",
@@ -296,7 +297,7 @@ A bucket or a Hugging Face repository is declared the same way, with the templat
                    "path": "{scene}/L2A_PVI.tif" } ] }
 ```
 
-Curio reads public buckets and repositories only. It does not sign S3 requests, reach buckets on a private network, or read images stored inside Parquet files.
+Curio reads public S3 buckets, and Hugging Face dataset repositories, with your token for one that needs it. It does not sign S3 requests, reach buckets on a private network, or read images stored inside Parquet files.
 
 [`datalakes/ICONS.md`](../datalakes/ICONS.md) records where each shipped icon came from. Replacing or removing one is a PNG and a manifest line.
 
@@ -308,16 +309,16 @@ Curio reads public buckets and repositories only. It does not sign S3 requests, 
 |---|---|---|
 | `CURIO_DATALAKE_ROOT` | none | Reads the shipped sources from this directory instead of `<repo_root>/datalakes`. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
-| `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | none | A Hugging Face token every account inherits until it saves its own. |
+| `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | `--huggingface-token` | A Hugging Face token every account inherits until it saves its own. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `datalakes/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 
-**Your own sources** go in `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `.curio` volume keeps across image rebuilds. They are listed after the shipped ones after a restart. A `folder` source there takes an absolute `root`, and an id a shipped source already uses is refused. Nodes cannot write to this directory.
+**Your own sources** go in `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `.curio` volume keeps across image rebuilds. They appear the next time the page loads. A `folder` source there takes an absolute `root`, and one whose folder name a shipped source already uses is not listed; the server's log says so. Under `--deploy`, nodes cannot write to this directory.
 
-**Folders.** Mount a folder read-only; Curio never writes to one. Under `--deploy`, node code runs as `curio-exec`, which must be able to read the folder: at startup the backend logs every folder source it cannot, with the reason. See [DEPLOYMENT.md § Storage sources](DEPLOYMENT.md#storage-sources).
+**Folders.** Mount a folder read-only; Curio never writes to one. Under `--deploy`, node code runs as `curio-exec`, which must be able to read the folder: at startup the backend logs every folder source it cannot, naming the folder or file in the way. See [DEPLOYMENT.md § Storage sources](DEPLOYMENT.md#storage-sources).
 
-**Outbound requests.** This catalog makes requests to third-party portals on your users' behalf. What bounds them is in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests).
+**Outbound requests.** This catalog makes requests to third-party portals, buckets and repositories on your users' behalf. What bounds them is in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests).
 
 ---
 

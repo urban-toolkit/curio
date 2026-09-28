@@ -8,7 +8,7 @@
 - [Node catalog](NODE-CATALOG.md): add, share, and publish node packages, and save a canvas node as one
 - [Data catalog](DATA-CATALOG.md): import, reuse, and publish datasets, including your nodes' outputs
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
-- [Data lake catalog](DATA-LAKE-CATALOG.md): search open data portals and download datasets into your Data Catalog
+- [Data lake catalog](DATA-LAKE-CATALOG.md): search open data portals, and open folders, buckets and repositories, and bring their datasets into your Data Catalog
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 

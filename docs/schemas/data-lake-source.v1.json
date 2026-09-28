@@ -15,7 +15,7 @@
     "id": {
       "type": "string",
       "pattern": "^lake\\.[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,4}$",
-      "description": "lake.<publisher>.<portal>, 3 to 6 dot-separated lowercase segments."
+      "description": "lake.<publisher>.<source>, 3 to 6 dot-separated lowercase segments."
     },
     "name": {
       "type": "string",
@@ -259,7 +259,7 @@
               "parquet"
             ]
           },
-          "description": "An upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time: a manifest can narrow what may be ingested, never widen it."
+          "description": "A portal only: an upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time, so a manifest can narrow what may be ingested, never widen it. A storage manifest that declares it is refused: its formats follow from its resources."
         },
         "maxDownloadBytes": {
           "type": "integer",
@@ -284,7 +284,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200000,
-          "description": "How many files a storage source may hold. A manifest may lower it, never raise it."
+          "description": "For a storage source: how many matched files it lists and adds at once. A listing stops at the limit, and adding a resource with more files than it is refused. A manifest may lower it, never raise it."
         }
       }
     },
@@ -366,18 +366,19 @@
             "items": {
               "type": "string",
               "pattern": "^[a-z0-9]{1,8}$"
-            }
+            },
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
           },
           "fps": {
             "type": "number",
             "exclusiveMinimum": 0,
             "maximum": 1000,
-            "description": "Frames per second of a 'frames' resource, for the t_s column."
+            "description": "Frames per second of a 'frames' resource: each frame's t_s is its number over it."
           },
           "time": {
             "type": "string",
             "pattern": "^[a-z_][a-z0-9_]{0,31}$",
-            "description": "The date or strftime capture holding each file's timestamp."
+            "description": "A collection only: the date or strftime capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds."
           },
           "metadata": {
             "type": "object",
@@ -392,10 +393,11 @@
                 "type": "string"
               }
             },
-            "description": "A table joined onto a collection's rows, by file_name, frame or a capture."
+            "description": "A collection only: a CSV, Parquet or JSON table joined onto the rows, by file_name, frame or a capture."
           },
           "options": {
-            "type": "object"
+            "type": "object",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet."
           }
         }
       }

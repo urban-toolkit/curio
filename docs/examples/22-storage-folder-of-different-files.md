@@ -28,7 +28,7 @@ reads the committed copies, **Example roads** and **Example parks**.
 flowchart LR
   R[`Data Loading`<br/>the roads] --> M[`Merge Flow`]
   P[`Data Loading`<br/>the parks] --> M
-  M --> C[`Computation Analysis`<br/>one GeoDataFrame]
+  M --> C[`Python Computation`<br/>one GeoDataFrame]
   C --> V[`Vega-Lite`<br/>parks and roads]
 ```
 

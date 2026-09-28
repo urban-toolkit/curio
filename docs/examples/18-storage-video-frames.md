@@ -47,7 +47,7 @@ from the telemetry.
 ## The frames in order
 
 **Simple View** shows a card per frame, drawn from each row's `thumbnail`,
-with the rest of the row beneath it.
+with four of its columns beneath it.
 
 ## Where each sequence drove
 

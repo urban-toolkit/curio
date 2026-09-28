@@ -145,6 +145,30 @@ def test_mosaic_rasters_joins_adjacent_tiles(collection):
     assert np.array_equal(mosaic.read(1)[:, :32], left)
 
 
+def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
+    """The mosaic is the RASTER a zonal-statistics node takes: UHVI Zonal
+    Stats averages it under a polygon, as it does any raster."""
+    import geopandas as gpd
+    import numpy as np
+    from rasterio.features import geometry_mask
+    from shapely.geometry import box
+
+    tiles, helpers = collection("orthos")
+    mosaic = run_node("mosaic-rasters", tiles[tiles["year"] == 2024], helpers)
+    west, south, east, north = mosaic.bounds
+    # The mosaic's left half: one tile's footprint.
+    zone = box(west, south, (west + east) / 2, north)
+    zones = gpd.GeoDataFrame({"zone": ["left"]}, geometry=[zone], crs=mosaic.crs)
+    code = (REPO / "packages" / "ai.urbanlab.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
+    body = "\n".join("    " + line for line in code.splitlines())
+    ns: dict = {}
+    exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this
+    out = ns["userCode"]([mosaic, zones])
+    band = mosaic.read(1).astype(float)
+    inside = geometry_mask([zone], transform=mosaic.transform, invert=True, out_shape=band.shape)
+    assert out["uhvi_mean"].iloc[0] == pytest.approx(float(np.mean(band[inside])))
+
+
 def test_mosaic_rasters_names_what_differs(collection):
     tiles, helpers = collection("orthos")
     mixed = tiles.copy()

@@ -1,7 +1,8 @@
 # `curio.media@1`: Media
 
-Nodes for the collections the Data Lake Catalog adds from a folder or a
-bucket: images, video frames, recordings and raster tiles. Each node takes the
+Nodes for the collections the Data Lake Catalog adds from a folder, a bucket
+or a Hugging Face dataset repository: videos, recordings and raster tiles.
+Each node takes the
 rows a Data Loading node returns for a collection (`curio_collection(...)`) and
 returns rows or a raster the other nodes already read, so Simple View, the map
 views and the zonal-statistics nodes work on the result as they are.
@@ -26,7 +27,7 @@ Each node's settings are constants at the top of its code:
 ```
 [ Data Loading: a collection ] ──► [ Sample Video Frames ] ──► [ Simple View ]
 [ Data Loading: noise recordings ] ──► [ Split Audio ] ──► [ Vega-Lite: level over time ]
-[ Data Loading: orthoimagery ] ──► [ Python: keep one year ] ──► [ Mosaic Rasters ] ──► [ zonal statistics ]
+[ Data Loading: orthoimagery ] ──► [ Data Transformation: keep one year ] ──► [ Mosaic Rasters ] ──► [ UHVI Zonal Stats ]
 ```
 
 ## Files

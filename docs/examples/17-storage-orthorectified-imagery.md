@@ -28,7 +28,7 @@ flowchart LR
   L[`Data Loading`<br/>the tile collection] --> M[`Vega-Lite`<br/>footprints by year]
   L --> F[`Data Transformation`<br/>2024 only]
   F --> X[`Mosaic Rasters`<br/>one raster]
-  X --> B[`Computation Analysis`<br/>band means]
+  X --> B[`Python Computation`<br/>band means]
   B --> V[`Simple View`<br/>the summary]
 ```
 
@@ -82,7 +82,7 @@ opened.
 
 ## One year's tiles as one raster
 
-Filter to one year first, so every tile shares a grid:
+Filter to one year first: the two years cover the same ground, and a mosaic holds one of them.
 
 ```python
 tiles = arg

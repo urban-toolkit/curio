@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "b981c286695d4ddefe91c5dd9bf32216a27eb1157743d8a6887effae4a535432",
+    "README.md": "7920d34c048046027861bff7829fb3b268204c523ae055fa5e6745958ff77608",
     "manifest.json": "14be3bc87885c8646c73252cce7e2e48ca4f8dd723ee52a58cc293c68f8b50c9",
     "sources/mosaic-rasters.py": "340d4c53f78e330739b0489ba98f7b335d64cdc474f4b6b690b3144dbe9af6a1",
     "sources/split-audio.py": "06701ca2d02116edf5a2902d9780950159fea0511189d8b2345ac654f2016b75",

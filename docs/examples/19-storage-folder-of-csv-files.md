@@ -16,7 +16,9 @@ sensor and the day from the path; the stations file is one table:
 
 ```jsonc
 { "id": "air-quality", "name": "Air quality readings", "kind": "table",
-  "format": "csv", "path": "air-quality/{sensor}/{day:date}.csv" }
+  "format": "csv", "path": "air-quality/{sensor}/{day:date}.csv" },
+{ "id": "stations", "name": "Sensor stations", "kind": "table",
+  "format": "csv", "path": "air-quality/stations.csv" }
 ```
 
 Adding the readings copies all nine files into one Parquet table, the rows of
@@ -32,7 +34,7 @@ flowchart LR
   R[`Data Loading`<br/>the readings] --> C[`Vega-Lite`<br/>PM2.5 over time]
   R --> M[`Merge Flow`]
   S[`Data Loading`<br/>the stations] --> M
-  M --> J[`Computation Analysis`<br/>mean per station]
+  M --> J[`Python Computation`<br/>mean per station]
   J --> P[`Vega-Lite`<br/>stations by mean]
 ```
 

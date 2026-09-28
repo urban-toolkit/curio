@@ -2,7 +2,7 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the open data portals you download datasets from.
+Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
 
 This guide is in six parts, plus operator notes:
 
@@ -261,7 +261,7 @@ Curio ships with **no default LLM endpoint**. Until an operator configures a pro
 | `CURIO_DEFAULT_LLM_API_KEY` | none | The default API key. Set it in the environment. |
 | `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key guests use. Unset, guests use the default API key. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | none | A separate provider for guests. Unset, guests use the default provider. |
-| `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | `--huggingface-token` | A fallback HuggingFace token for the Street Vision node's gated models. A user's own token wins. |
+| `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | `--huggingface-token` | A fallback HuggingFace token for the Street Vision node's gated models and the Data Lake Catalog's Hugging Face sources. A user's own token wins. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
 
 Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it.

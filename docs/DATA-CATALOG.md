@@ -145,6 +145,10 @@ The generated Python depends on the format:
 
 The generated code names the dataset with `curio_dataset_path("<datasetId>")`, or `curio_collection("<datasetId>")` for a collection, instead of a file path, so it keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the same call, with a copy button.
 
+**Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
+
+A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
+
 ### Collections
 
 A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Data Lake Catalog](DATA-LAKE-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
@@ -156,7 +160,7 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 | The path fields | One column per field of the source's path template, such as `year`, `sensor` or `sequence`. |
 | `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
 | `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
-| Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. |
+| Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. Frames come in sequence and frame order. |
 | Videos | `duration_s`, `fps`, `codec`, `width`, `height`. |
 | Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`. |
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
@@ -164,11 +168,7 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 
 Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card. The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
 
-A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
-
-**Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
-
-A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
+A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
 
 ---
 

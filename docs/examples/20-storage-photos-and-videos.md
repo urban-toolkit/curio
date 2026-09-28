@@ -53,7 +53,7 @@ card.
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Where each photo and video was taken.",
+  "description": "Where each photo was taken.",
   "mark": {
     "type": "circle",
     "size": 80
