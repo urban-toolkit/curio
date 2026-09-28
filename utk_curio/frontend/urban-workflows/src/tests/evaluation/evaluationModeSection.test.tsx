@@ -235,7 +235,7 @@ describe("a run in progress", () => {
     await waitFor(() =>
       expect(screen.getByText(/waiting for the model/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText("Open the generated dataflow")).toBeNull();
+    expect(screen.queryByText(/Open the generated dataflow/)).toBeNull();
     expect(
       screen.getByText(/dataflow opens when the run finishes/),
     ).toBeInTheDocument();
@@ -265,7 +265,7 @@ describe("a finished run", () => {
     expect(screen.getByRole("row", { name: /intents/ })).toHaveTextContent(
       "not measured",
     );
-    const link = screen.getByText("Open the generated dataflow");
+    const link = screen.getByText("Open the generated dataflow ↗");
     expect(link).toHaveAttribute("href", "/dataflow/project-1");
     // The note points at the transcript, which now carries the whole run.
     expect(screen.getByText(/chat there carries the whole run/)).toBeInTheDocument();

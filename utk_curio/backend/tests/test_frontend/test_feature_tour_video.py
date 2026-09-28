@@ -21,7 +21,13 @@ Environment:
 ``CURIO_TOUR_SCENES``        comma-separated scene ids to record (default: all)
 ``CURIO_TOUR_OUT``           output directory (default ``.curio/tour/``)
 ``CURIO_TOUR_SPEED``         pacing multiplier, >1 is faster (default 1.0)
+``CURIO_TOUR_CAPTIONS=0``    record without captions, chapter cards or chip
+``CURIO_TOUR_RING=0``        no spotlight ring around what the cursor points at
+``CURIO_TOUR_HALO=0``        no pulse under the cursor on a click
 ===========================  ==================================================
+
+Stills: a scene can call ``ctx.tour.still(name)`` to save a PNG screenshot of
+that moment to ``<out>/stills/<name>.png``; the marks file records when.
 
 Scene ids, in order: see ``SCENES`` at the bottom of this file.
 
@@ -53,6 +59,7 @@ to a remote model, so it is also the one most likely to be the scene that broke.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -70,7 +77,6 @@ from .utils import (
     accept_confirm_dialog,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
-    activate_header_icon,
     canvas_nodes,
     edge_client_point,
     close_tools_palette,
@@ -79,9 +85,11 @@ from .utils import (
     drag_to_canvas,
     node_locator,
     open_tools_palette,
+    play_node,
     run_node_and_wait,
     set_node_code,
     stub_db_login,
+    wait_for_node_done,
     wait_for_projects_page,
 )
 
@@ -159,6 +167,28 @@ TRANSFORM_TILE = "#step-transformation"
 LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 
+# The quickstart scene is docs/QUICK-START.md on camera, with its code and spec.
+LOADING_TILE = "#step-loading"
+VEGA_TILE = "#step-vega"
+QUICKSTART_CODE = (
+    "import pandas as pd\n\n"
+    "d = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], "
+    "'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\n"
+    "df = pd.DataFrame(data=d)\n\n"
+    "return df\n"
+)
+QUICKSTART_SPEC = json.dumps(
+    {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": "a", "type": "nominal", "axis": {"labelAngle": 0}},
+            "y": {"field": "b", "type": "quantitative", "stack": None},
+        },
+    },
+    indent=2,
+)
+
 POS_LOADER = (150, 150)
 POS_TRANSFORM = (760, 150)
 
@@ -172,12 +202,28 @@ TRANSFORM_CODE = (
 EXAMPLE_LINKED = os.path.join(
     REPO_ROOT, "docs", "examples", "03-vega-lite-linked-temporal-charts.json",
 )
+# What the saveload scene loads back: a published example small enough to fit
+# the frame without zooming out.
+EXAMPLE_SAVELOAD = os.path.join(
+    REPO_ROOT, "docs", "examples", "01-vega-lite-chained-transforms.json",
+)
+# The notebook the jupyter scene imports. The project it becomes is named after
+# the file.
+NOTEBOOK = os.path.join(REPO_ROOT, "docs", "examples", "dataflows", "test_notebook.ipynb")
 EXAMPLE_INTERACTION = os.path.join(
     REPO_ROOT, "docs", "examples", "dataflows", "Interaction_Vega_Simple.json",
 )
 EXAMPLE_AUTARK = os.path.join(
     REPO_ROOT, "docs", "examples", "11-autark-pbf-loading.json",
 )
+# What the heat scene runs: Milan's heat exposure, from a thermal raster, a
+# weather feed and census tracts to a map and two linked charts.
+EXAMPLE_HEAT = os.path.join(
+    REPO_ROOT, "docs", "examples", "09-heterogeneous-data-linked-views.json",
+)
+# The heat scene's still is larger than the video frame, so the views stay
+# legible when the guide shows it at half a page wide.
+STILL_SIZE = {"width": 1920, "height": 1200}
 
 
 def _log(message: str) -> None:
@@ -301,12 +347,26 @@ def _new_dataflow_from_menu(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.click(_menu(page, "File"), force=True)
     tour.click(page.get_by_role("button", name="New dataflow", exact=True))
+    # The guard is an in-app modal now, which the page's native "dialog"
+    # handler never sees. It only appears when an autosave is still pending,
+    # so its absence is not an error.
+    guard = page.get_by_role("dialog", name="Discard unsaved changes?")
+    try:
+        guard.wait_for(state="visible", timeout=1500)
+    except PlaywrightTimeoutError:
+        pass
+    else:
+        tour.click(guard.get_by_role("button", name="Discard and continue", exact=True))
     page.wait_for_url("**/dataflow/new", timeout=20000)
     page.wait_for_timeout(1200)
 
 
-def _play_all(ctx: Ctx, *, timeout_ms: int = 240000) -> None:
-    """Press the rail's Run-all button and wait for every node to settle.
+def _play_all(
+    ctx: Ctx, *, timeout_ms: int = 240000,
+    settle: list[tuple[str, str]] | None = None,
+) -> None:
+    """Press the rail's Run-all button and wait for every node to settle, or
+    only for the (node id, node type) pairs in *settle*.
 
     The button sits at the foot of the left rail, under three catalog dropdowns,
     and the rail does not scroll. If the frame is ever too short for all of it,
@@ -328,6 +388,14 @@ def _play_all(ctx: Ctx, *, timeout_ms: int = 240000) -> None:
             "The left rail is taller than the frame."
         )
         tour.click(button, dispatch=True, hold=400)
+    if settle:
+        # A Merge Flow node's status stays "idle" after it runs: it hands its
+        # inputs on without an output of its own, so a dataflow that has one
+        # never satisfies the every-node check below.
+        for node_id, node_type in settle:
+            wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
+        page.wait_for_timeout(1500)
+        return
     page.wait_for_function(
         """() => {
             const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -1453,21 +1521,14 @@ def scene_dashboard(ctx: Ctx) -> None:
         hold=2600,
     )
     for node_id in (ctx.state.get("vega_ids") or _node_ids_by_type(page, "vis-vega"))[:2]:
-        # The header icons are FontAwesome svgs with role="button" and no
-        # accessible name (the `title` prop does not survive into the DOM here),
-        # so the icon class is the only stable handle: faCircle when unpinned,
-        # faCircleDot once pinned. They activate on pointerdown/up so that
-        # press-and-drag still moves the node, which is what
-        # activate_header_icon sends.
-        pin = node_locator(page, node_id).locator(
-            'svg[role="button"].fa-circle, svg[role="button"].fa-circle-dot'
-        ).first
+        # Found by its accessible name, as the walkthroughs find it
+        # (walkthroughs.py, dashboard-page-renders-pinned-charts). The icon
+        # classes this used to match changed, and the scene then pinned nothing.
+        pin = node_locator(page, node_id).get_by_role("button", name="Pin to dashboard").first
         if not pin.count():
             _log(f"[tour] no dashboard pin control on {node_id}")
             continue
-        tour.focus(pin, hold=450)
-        activate_header_icon(pin)
-        tour.beat(700)
+        tour.click(pin, hold=700)
     tour.hush()
 
     # Pins live in the saved spec, and the dashboard renders what is on disk.
@@ -1560,7 +1621,10 @@ def scene_interaction(ctx: Ctx) -> None:
     # view is one canvas, so every mark shares its bounding box and hovering
     # "each mark" would hover the same pixel five times. Walking x across the
     # plotting area is what actually fires pointerover on successive bars.
-    plot = node_locator(page, vega_ids[0]).locator("canvas, svg").first
+    # The chart itself, inside its Vega mount (``"vega" + nodeId``, as the
+    # dashboard walkthrough finds it). A bare "canvas, svg" in the node matches
+    # the first icon in its title bar instead.
+    plot = page.locator(f"#vega{vega_ids[0]}").locator("canvas, svg.marks").first
     box = plot.bounding_box()
     if box:
         y = box["y"] + box["height"] * 0.7
@@ -1602,6 +1666,128 @@ def scene_autark(ctx: Ctx) -> None:
         # inside a 525x350 node, which is not what this chapter is about.
         _center_on(page, ids[-1], zoom=1.25)
         tour.beat(5000)
+
+
+def _fit_nodes(page, node_ids: list[str], padding: float = 0.06) -> None:
+    """Frame only these nodes."""
+    page.evaluate(
+        """({ ids, padding }) => {
+            const rf = window.__curio_reactFlow;
+            if (!rf) return;
+            rf.fitView({ nodes: ids.map((id) => ({ id })), padding, duration: 600 });
+        }""",
+        {"ids": node_ids, "padding": padding},
+    )
+    page.wait_for_timeout(1200)
+
+
+def _node_positions(page) -> dict[str, tuple[float, float]]:
+    """Every node's canvas position."""
+    return {
+        n["id"]: (n["x"], n["y"])
+        for n in page.evaluate(
+            """() => window.__curio_reactFlow.getNodes().map((n) => ({
+                id: n.id, x: n.position.x, y: n.position.y,
+            }))"""
+        )
+    }
+
+
+def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
+    """Drag a node by its header, *dx* and *dy* in canvas units, with the mouse.
+
+    Not ``setNodes``: see utils, a store write is pushed back on the next render.
+
+    Across first, then up or down, a few pixels at a time. Autark pans a map on
+    any move of a pressed pointer over its canvas, even one that was not
+    pressed there (autk-map's ``pointerMove``), and a big step lets the pointer
+    run ahead of the node it drags: a straight drag of the heat scene's scatter
+    plot up past the map's corner panned the map.
+    """
+    zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
+    box = node_locator(page, node_id).bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + 15 * zoom
+    page.mouse.move(x, y)
+    page.mouse.down()
+    for leg_x, leg_y in ((dx * zoom, 0.0), (0.0, dy * zoom)):
+        steps = max(1, math.ceil(max(abs(leg_x), abs(leg_y)) / 6))
+        for i in range(1, steps + 1):
+            page.mouse.move(x + leg_x * i / steps, y + leg_y * i / steps)
+            page.wait_for_timeout(20)
+        x, y = x + leg_x, y + leg_y
+    page.mouse.up()
+    page.wait_for_timeout(600)
+
+
+def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> None:
+    """Pan and zoom so these nodes fill *box* (left, top, right, bottom, in page pixels)."""
+    page.evaluate(
+        """({ ids, box }) => {
+            const rf = window.__curio_reactFlow;
+            const nodes = rf.getNodes().filter((n) => ids.includes(n.id));
+            const x0 = Math.min(...nodes.map((n) => n.position.x));
+            const y0 = Math.min(...nodes.map((n) => n.position.y));
+            const x1 = Math.max(...nodes.map((n) => n.position.x + (n.width || 525)));
+            const y1 = Math.max(...nodes.map((n) => n.position.y + (n.height || 350)));
+            const [left, top, right, bottom] = box;
+            const zoom = Math.min((right - left) / (x1 - x0), (bottom - top) / (y1 - y0));
+            const pane = document.querySelector('.react-flow').getBoundingClientRect();
+            rf.setViewport({
+                x: left - pane.left + ((right - left) - (x1 - x0) * zoom) / 2 - x0 * zoom,
+                y: top - pane.top + ((bottom - top) - (y1 - y0) * zoom) / 2 - y0 * zoom,
+                zoom,
+            }, { duration: 600 });
+        }""",
+        {"ids": node_ids, "box": list(box)},
+    )
+    page.wait_for_timeout(1200)
+
+
+def scene_heat(ctx: Ctx) -> None:
+    """The Milan heat example, run end to end, for the guide's home page.
+
+    Only when CURIO_TOUR_SCENES names it: the still is taken at a larger
+    viewport than the video's, which would show as a jump in the full tour.
+    """
+    page, tour = ctx.page, ctx.tour
+    wanted = os.environ.get("CURIO_TOUR_SCENES") or ""
+    if "heat" not in {name.strip() for name in wanted.split(",")}:
+        _log("[tour] heat runs only when CURIO_TOUR_SCENES names it; skipped")
+        return
+    _new_dataflow_from_menu(ctx)
+    _load_example(ctx, EXAMPLE_HEAT, expected_nodes=_example_node_count(EXAMPLE_HEAT))
+    tour.hush()
+    maps = _node_ids_by_type(page, "autk-grammar")
+    charts = _node_ids_by_type(page, "vis-vega")
+    _play_all(
+        ctx, timeout_ms=420000,
+        settle=[(i, "autk-grammar") for i in maps] + [(i, "vis-vega") for i in charts],
+    )
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+    # The dataflow ends in a column of views. Moving the scatter plot beside the
+    # map makes a block that fills a wide frame: the gt_65 projection (the Data
+    # Transformation in the map's column) and its box plot above, the map and
+    # the scatter plot below.
+    at = _node_positions(page)
+    scatter, boxplot = sorted(charts, key=lambda i: at[i][0])
+    projection = next(
+        i for i in _node_ids_by_type(page, "data-transformation")
+        if abs(at[i][0] - at[maps[0]][0]) < 1
+    )
+    block = [projection, boxplot] + maps + [scatter]
+    _fit_nodes(page, block)
+    _drag_node_by(
+        page, scatter,
+        at[boxplot][0] - at[scatter][0], at[maps[0]][1] - at[scatter][1],
+    )
+    # Clear of the left rail, the dataflow's title and the version line, which
+    # the guide crops away.
+    _frame_nodes(page, block, (230, 140, 1870, 1160))
+    tour.beat(2500)
+    tour.still("heat-views")
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
 
 
 def scene_catalog_pages(ctx: Ctx) -> None:
@@ -1662,6 +1848,320 @@ def scene_catalog_pages(ctx: Ctx) -> None:
     tour.hush()
 
 
+_SET_GRAMMAR_JS = r"""({ nodeId, text }) => {
+    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const pane = nodeEl && nodeEl.querySelector(".tab-pane.active");
+    const editorEl = pane && pane.querySelector(".monaco-editor");
+    if (!editorEl) return "no editor in the active tab";
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const match = editors.find((e) => editorEl.contains(e.getDomNode()));
+    if (!match) return "no monaco instance owns the grammar editor";
+    match.setValue(text);
+    return match.getValue() === text ? "ok" : "not set";
+}"""
+
+
+def _set_node_grammar(ctx: Ctx, node_id: str, text: str) -> None:
+    """Open a grammar node's Grammar tab on camera and replace its specification.
+
+    ``utils.set_node_code`` does the same for the Code tab: Monaco's ``setValue``
+    fires the change handler a keystroke would, while typing JSON into the editor
+    comes back re-indented and with doubled brackets.
+    """
+    page, tour = ctx.page, ctx.tour
+    tab = node_locator(page, node_id).locator('.nav-link[data-rr-ui-event-key="grammar"]').first
+    tab.wait_for(state="visible", timeout=15000)
+    if "active" not in (tab.get_attribute("class") or ""):
+        tour.click(tab, hold=500)
+    node_locator(page, node_id).locator(".tab-pane.active .monaco-editor").first.wait_for(
+        state="visible", timeout=15000,
+    )
+    result = page.evaluate(_SET_GRAMMAR_JS, {"nodeId": node_id, "text": text})
+    assert result == "ok", f"could not set the grammar of node {node_id}: {result}"
+
+
+def _rename_dataflow(ctx: Ctx, name: str) -> None:
+    """Click the canvas title and type a new name, as the rename walkthrough does."""
+    page, tour = ctx.page, ctx.tour
+    title = page.locator("h1").first
+    title.wait_for(state="visible", timeout=30000)
+    tour.click(title, hold=400)
+    box = page.locator("input[type='text']").last
+    box.wait_for(state="visible", timeout=10000)
+    box.fill("")
+    box.press_sequentially(name, delay=55 / tour.pace)
+    box.press("Enter")
+    tour.beat(700)
+
+
+def scene_quickstart(ctx: Ctx) -> None:
+    """docs/QUICK-START.md: a Data Loading node, a Vega-Lite node, a bar chart."""
+    page, tour = ctx.page, ctx.tour
+    _new_dataflow_from_menu(ctx)
+    tour.beat(900)
+    # File > New dataflow keeps the previous dataflow's name, so give this one
+    # its own before anything is photographed.
+    _rename_dataflow(ctx, "My first dataflow")
+    tour.still("quickstart-blank-canvas")
+    tour.say(
+        "Start from a blank canvas",
+        "The built-in node types are on the left rail: drag one out.",
+        hold=2400,
+    )
+    _reset_zoom(page)
+    loader_tile = page.locator(LOADING_TILE)
+    tour.focus(loader_tile, hold=600)
+    loader_id = drag_to_canvas(page, loader_tile, at=POS_LOADER)
+    tour.beat(900)
+    tour.say("Write a few lines of pandas", "Whatever the code returns flows to the next node.", hold=2200)
+    set_node_code(page, loader_id, QUICKSTART_CODE)
+    tour.beat(900)
+    tour.focus(node_locator(page, loader_id).locator("svg.fa-circle-play"), hold=500)
+    run_node_and_wait(page, loader_id, node_type=LOADER_TYPE)
+    tour.beat(1200)
+    tour.still("quickstart-data-loading")
+    tour.hush()
+
+    tour.say(
+        "Add a Vega-Lite node and connect it",
+        "Then give it a specification in its Grammar tab.",
+        hold=2400,
+    )
+    _reset_zoom(page)
+    vega_tile = page.locator(VEGA_TILE)
+    tour.focus(vega_tile, hold=600)
+    vega_id = drag_to_canvas(page, vega_tile, at=POS_TRANSFORM)
+    tour.beat(900)
+    _fit_view(page)
+    connect_nodes(page, loader_id, vega_id)
+    tour.beat(900)
+    _set_node_grammar(ctx, vega_id, QUICKSTART_SPEC)
+    tour.beat(1200)
+    tour.focus(node_locator(page, vega_id).locator("svg.fa-circle-play"), hold=500)
+    # Not run_node_and_wait: that reads the node's text output, and a chart has none.
+    play_node(page, vega_id)
+    wait_for_node_done(page, vega_id, node_type="vis-vega", timeout_ms=120000)
+    tour.beat(1800)
+    _fit_view(page, padding=0.12)
+    tour.beat(900)
+    tour.still("quickstart-bar-chart")
+    tour.hush()
+
+
+def scene_collaboration(ctx: Ctx) -> None:
+    """Two people in one dataflow, seen from the owner's screen.
+
+    Needs a stack started with ``--collab`` (``CURIO_E2E_COLLAB=1``). The second
+    person drives a context of their own that is not recorded: the video shows
+    what the owner sees when someone joins, adds a node and proposes a change.
+    """
+    page, tour = ctx.page, ctx.tour
+    if os.environ.get("CURIO_E2E_COLLAB", "0").strip().lower() not in ("1", "true", "yes", "on"):
+        _log("[tour] collaboration needs a --collab stack (CURIO_E2E_COLLAB=1); skipped")
+        return
+    if "/dataflow/" in page.url:
+        _new_dataflow_from_menu(ctx)
+    else:
+        page.goto(f"{ctx.frontend}/dataflow/new")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    tour.beat(900)
+    _rename_dataflow(ctx, "Shared dataflow")
+    _reset_zoom(page)
+    loader_id = drag_to_canvas(page, page.locator(LOADING_TILE), at=POS_LOADER)
+    set_node_code(page, loader_id, QUICKSTART_CODE)
+    tour.beat(700)
+    with page.expect_response(
+        lambda r: "/api/projects" in r.url and r.request.method in ("POST", "PUT") and r.ok,
+        timeout=40000,
+    ):
+        tour.click(page.locator("[data-curio-save-state]").first, force=True)
+    page.wait_for_url(re.compile(r".*/dataflow/[0-9a-f-]{36}"), timeout=30000)
+    project_id = re.search(r"/dataflow/([0-9a-f-]{36})", page.url).group(1)
+    # Only rendered when the server runs with --collab.
+    people = page.locator('button[title^="Collaboration"]')
+    people.wait_for(state="visible", timeout=30000)
+
+    other = page.context.browser.new_context(viewport=VIDEO_SIZE)
+    try:
+        page2 = other.new_page()
+        page2.emulate_media(reduced_motion="reduce")
+        stub_db_login(
+            page2, frontend_url=ctx.frontend, backend_url=ctx.backend,
+            username="ben_planner", name="Ben Planner", password=USER_PASSWORD,
+        )
+        page2.goto(f"{ctx.frontend}/dataflow/{project_id}")
+        page2.wait_for_selector(".react-flow__node", timeout=45000)
+        expect(people).to_have_attribute("title", "Collaboration (2 online)", timeout=30000)
+        tour.say(
+            "Someone else opens the same dataflow",
+            "The people icon counts who is here; the panel lists them.",
+            hold=2400,
+        )
+        # The panel opens with the canvas; the icon only toggles it.
+        listed = page.get_by_text("Users (2)", exact=True)
+        if listed.is_visible():
+            tour.focus(listed, hold=1400)
+        else:
+            tour.click(people, hold=1400)
+        tour.still("collaboration-users")
+
+        # Ben adds a node, and it appears on this canvas.
+        _reset_zoom(page2)
+        drag_to_canvas(page2, page2.locator(VEGA_TILE), at=POS_TRANSFORM)
+        page.wait_for_function(
+            "() => document.querySelectorAll('.react-flow__node').length >= 2", timeout=30000,
+        )
+        tour.beat(1500)
+        _fit_view(page)
+        tour.beat(900)
+
+        # Ben edits the loader's code: this canvas shows his lock while he types,
+        # and a proposal once he leaves the editor.
+        node_locator(page2, loader_id).locator(".view-lines").first.click()
+        page2.keyboard.press("ControlOrMeta+End")
+        page2.keyboard.press("Enter")
+        page2.keyboard.type("# checked by Ben", delay=40)
+        tour.beat(1800)
+        tour.still("collaboration-lock")
+        page2.mouse.click(1100, 720)
+        banner = node_locator(page, loader_id).get_by_text("proposed a code change")
+        banner.wait_for(state="visible", timeout=30000)
+        tour.focus(banner, hold=1400)
+        tour.still("collaboration-proposal", cursor=True)
+        tour.click(node_locator(page, loader_id).get_by_role("button", name="Approve", exact=True), hold=1800)
+    finally:
+        other.close()
+    tour.hush()
+
+
+def _example_node_count(path: str) -> int:
+    with open(path, encoding="utf-8") as handle:
+        return len(json.load(handle)["dataflow"]["nodes"])
+
+
+def scene_saveload(ctx: Ctx) -> None:
+    """File > Save dataflow as downloads the dataflow; File > Load dataflow opens one."""
+    page, tour = ctx.page, ctx.tour
+    tour.say(
+        "Keep a dataflow as a file",
+        "Save dataflow as downloads it as JSON, to archive or to send to someone.",
+        hold=2600,
+    )
+    tour.click(_menu(page, "File"), force=True)
+    save_as = page.get_by_role("button", name="Save dataflow as", exact=True)
+    save_as.wait_for(state="visible", timeout=10000)
+    tour.focus(save_as, hold=900)
+    tour.still("saveload-file-menu", cursor=True)
+    with page.expect_download(timeout=20000) as download:
+        tour.click(save_as)
+    _log(f"[tour] saved {download.value.suggested_filename}")
+    tour.hush()
+
+    tour.say(
+        "Open one back",
+        "Load dataflow reads a saved file, such as one of the published examples.",
+        hold=2600,
+    )
+    _new_dataflow_from_menu(ctx)
+    _load_example(ctx, EXAMPLE_SAVELOAD, expected_nodes=_example_node_count(EXAMPLE_SAVELOAD))
+    tour.beat(1200)
+    tour.still("saveload-loaded")
+    tour.hush()
+
+
+def scene_jupyter(ctx: Ctx) -> None:
+    """Import a notebook as a new dataflow, open it, and export it back as a notebook."""
+    page, tour = ctx.page, ctx.tour
+    if "/projects" not in page.url:
+        page.goto(f"{ctx.frontend}/projects")
+        page.wait_for_load_state("domcontentloaded")
+        wait_for_projects_page(page, timeout=30000)
+    tour.say(
+        "Bring a notebook with you",
+        "Import Jupyter notebook turns its code cells into the nodes of a new dataflow.",
+        hold=2600,
+    )
+    button = page.get_by_role("button", name="Import Jupyter notebook")
+    tour.focus(button, hold=700)
+    with page.expect_file_chooser() as chooser:
+        button.click()
+    chooser.value.set_files(NOTEBOOK)
+    name = os.path.splitext(os.path.basename(NOTEBOOK))[0]
+    card = page.locator("[data-project-id]").filter(has_text=name).first
+    card.wait_for(state="visible", timeout=30000)
+    tour.click(card, hold=900)
+    tour.still("jupyter-imported")
+    tour.click(page.get_by_role("button", name="Open dataflow", exact=True))
+    page.wait_for_url("**/dataflow/**", timeout=30000)
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    tour.beat(1200)
+    _fit_view(page)
+    tour.still("jupyter-dataflow")
+    tour.hush()
+
+    tour.say(
+        "And back out",
+        "Export as notebook writes any dataflow as an .ipynb, one cell per node.",
+        hold=2600,
+    )
+    tour.click(_menu(page, "File"), force=True)
+    export = page.get_by_role("button", name="Export as notebook", exact=True)
+    export.wait_for(state="visible", timeout=10000)
+    tour.focus(export, hold=900)
+    with page.expect_download(timeout=20000) as download:
+        tour.click(export)
+    _log(f"[tour] exported {download.value.suggested_filename}")
+    tour.hush()
+    # The next scene (aisettings) opens its panel from the projects page.
+    page.goto(f"{ctx.frontend}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    wait_for_projects_page(page, timeout=30000)
+
+
+def scene_data_lakes(ctx: Ctx) -> None:
+    """The Data Lake Catalog page and one portal's details. No search, so no portal is contacted."""
+    page, tour = ctx.page, ctx.tour
+    page.goto(f"{ctx.frontend}/catalog/lakes")
+    page.wait_for_load_state("domcontentloaded")
+    expect(page.get_by_role("heading", name="Data Lake Catalog")).to_be_visible(timeout=30000)
+    tour.beat(1800)
+    tour.say(
+        "Open data portals, reachable from Curio",
+        "Each card is a portal this deployment can search and download from.",
+        hold=2800,
+    )
+    tour.still("datalakes-catalog")
+    tour.focus(page.get_by_label("Search every portal"), hold=1200)
+    card = page.locator("article[data-lake-source]").first
+    details = card.get_by_role("button", name="View details", exact=True)
+    if details.count():
+        tour.click(details, hold=1600)
+        tour.still("datalakes-source")
+        page.keyboard.press("Escape")
+        tour.beat(600)
+    tour.hush()
+
+
+def scene_monitor(ctx: Ctx) -> None:
+    """The /monitor page: every instance's own health, on a public page."""
+    page, tour = ctx.page, ctx.tour
+    page.goto(f"{ctx.frontend}/monitor")
+    page.wait_for_load_state("domcontentloaded")
+    page.locator("#mon-deployment").wait_for(state="visible", timeout=30000)
+    # The charts fill from the first samples.
+    tour.beat(3000)
+    tour.say(
+        "Every instance reports its own health",
+        "Deployment, hardware, execution, accounts, storage and errors, on one page.",
+        hold=2800,
+    )
+    tour.still("monitor")
+    tour.scroll(700, steps=7)
+    tour.beat(800)
+    tour.hush()
+
+
 def scene_outro(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     page.goto(f"{ctx.frontend}/projects")
@@ -1689,6 +2189,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("intro", scene_intro),
     ("signup", scene_signup),
     ("projects", scene_projects),
+    ("jupyter", scene_jupyter),
     ("aisettings", scene_ai_settings),
     ("canvas", scene_canvas),
     ("datacatalog", scene_data_catalog),
@@ -1699,12 +2200,25 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("agentcatalog", scene_agent_catalog),
     ("agentattach", scene_agent_attach),
     ("agentrun", scene_agent_run),
+    # Before linkedviews, which opens a new dataflow: the lineage and agent
+    # scenes still use the one build made.
+    ("saveload", scene_saveload),
     ("linkedviews", scene_linked_views),
     ("dashboard", scene_dashboard),
     ("provenance", scene_provenance),
     ("interaction", scene_interaction),
     ("autark", scene_autark),
+    # Only when CURIO_TOUR_SCENES names it; see scene_heat.
+    ("heat", scene_heat),
+    # Late, because it opens a dataflow of its own and the scenes before it
+    # build on the one they share.
+    ("quickstart", scene_quickstart),
     ("catalogpages", scene_catalog_pages),
+    ("datalakes", scene_data_lakes),
+    ("monitor", scene_monitor),
+    # Needs a --collab stack (CURIO_E2E_COLLAB=1), so the full tour skips it
+    # unless that is set; see scene_collaboration.
+    ("collaboration", scene_collaboration),
     ("outro", scene_outro),
 ]
 
@@ -1713,9 +2227,10 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
 #: where a partial re-record has to start from. ``aisettings`` is deliberately
 #: absent: it runs on /projects, where the header that opens the panel lives.
 CANVAS_SCENES = {
-    "datacatalog", "build", "lineage", "nodecatalog", "libraries",
+    "datacatalog", "build", "saveload", "lineage", "nodecatalog", "libraries",
     "agentcatalog", "agentattach", "agentrun",
-    "linkedviews", "dashboard", "provenance", "interaction", "autark",
+    "linkedviews", "dashboard", "provenance", "interaction", "autark", "heat", "quickstart",
+    "collaboration",
 }
 
 
@@ -1803,6 +2318,15 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
             name=USER_NAME,
             password=USER_PASSWORD,
             project_name="Feature Tour",
+            # Without a spec the canvas is titled with the harness default,
+            # "StubbedWorkflow", which then sits in every frame of the video.
+            project_spec={
+                "name": "Feature Tour",
+                "dataflow": {
+                    "name": "Feature Tour", "nodes": [], "edges": [], "task": "",
+                    "timestamp": 0, "provenance_id": "Feature Tour",
+                },
+            },
         )
         # Land where the first selected scene expects to be: the canvas scenes
         # assume a dataflow is already open, and dropping them on /projects
@@ -1819,9 +2343,12 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     failures: list[tuple[str, str]] = []
     for name, scene in scenes:
         _log(f"[tour] scene: {name}")
+        tour.mark(name, "start")
         try:
             scene(ctx)
+            tour.mark(name, "end")
         except Exception:  # noqa: BLE001 - one bad scene must not lose the take
+            tour.mark(name, "failed")
             failures.append((name, traceback.format_exc()))
             _log(f"[tour] scene {name} FAILED:\n{traceback.format_exc()}")
             # A still of the moment it broke localises the failure much faster
@@ -1839,7 +2366,10 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     page.close()
     context.close()
     written = finalize_video(page, stem="curio-feature-tour")
-    for kind, path in written.items():
+    # Where each scene starts and ends in the video, to cut one clip per scene.
+    marks = os.path.join(out_dir(), "curio-feature-tour.marks.json")
+    tour.write_marks(marks)
+    for kind, path in {**written, "marks": marks}.items():
         _log(f"[tour] wrote {kind}: {path}")
 
     assert written, "no video was recorded"
