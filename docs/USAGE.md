@@ -399,6 +399,17 @@ The first matching rule wins:
 | one nominal | `bar` of counts |
 | nothing usable | the editor stays empty |
 
+### Linking charts
+
+A selection in one chart highlights the matching rows in the charts linked to it. Link them with an interaction edge, either through a Data Pool or directly:
+
+- **Through a Data Pool.** Draw an interaction edge between the chart and the pool, and feed the charts from the pool. The pool marks each row in a column named `interacted`, `"1"` when selected and `"0"` otherwise, and every chart it feeds receives the marked rows.
+- **Directly.** Draw an interaction edge between two charts. The receiving chart marks its own rows the same way.
+
+The receiving chart styles the marked rows through its spec, for example `"color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}`. A selection only restyles the rows; the chart is not redrawn, and its own selection stays where it is.
+
+A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
+
 
 ## Dashboards
 
