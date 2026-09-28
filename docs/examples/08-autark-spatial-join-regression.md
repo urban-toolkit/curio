@@ -97,17 +97,19 @@ array, `arg[1]` is the raster row.
 
 ## Step 3: Spatial join LST → roads (`js-computation`, DuckDB)
 
-The join node re-ingests each OSM layer into DuckDB, loads the raster with
-`loadGeoTiff`, and runs a `NEAR` `spatialQuery` to average each of the 24 bands within 1 km of every road
-segment. A final `rawQuery` reshapes the per-band averages into a single `lst_timeseries` array per road and
-re-emits the layer stack (all in EPSG:3395) for a consistent CRS across surface/parks/water/roads.
+The join node re-ingests each OSM layer into DuckDB, with its coordinates on a 1 cm grid so autk-db can clip it
+to the surface again. It loads the raster with `loadGeoTiff`, turns each raster cell into a point at its center
+carrying the cell's 24 values, and runs a `NEAR` `spatialQuery` to average each band over the cells within 1 km of
+every road segment. A final `rawQuery` reshapes the per-band averages into a single `lst_timeseries` array per road
+and re-emits the layer stack (all in EPSG:3395) for a consistent CRS across surface/parks/water/roads.
 
 ```js
 for (const layer of osmLayers)
-  await db.loadGeojson({ geojsonObject: layer.geojson, outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });
+  await db.loadGeojson({ geojsonObject: snapLayer(layer.geojson), outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });
 await db.loadGeoTiff({ geotiffArrayBuffer, outputTableName: 'lst', coordinateFormat: 'EPSG:4326' });
+// … getRaster('lst') becomes one point per cell, loaded as the `lst_cells` points layer …
 await db.spatialQuery({
-  tableRootName: 'table_osm_roads', tableJoinName: 'lst', near: { distance: 1000 },
+  tableRootName: 'table_osm_roads', tableJoinName: 'lst_cells', near: { distance: 1000 },
   groupBy: Array.from({ length: 24 }, (_, i) => ({ column: `band_${i + 1}`, aggregateFn: 'avg' })),
 });
 // … rawQuery packs the 24 band averages into properties.lst_timeseries …
