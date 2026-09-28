@@ -103,7 +103,7 @@ describe("every catalog card root carries its identity attribute", () => {
   // components did not actually have one, so a browse-page card could only be
   // addressed by its title — which is exactly what the README warns against.
   const CARDS: [string, string, string][] = [
-    ["data browse", "pages/dataHub/DataCatalogBrowseCard.tsx", "data-dataset-id"],
+    ["data browse", "pages/dataCatalog/DataCatalogBrowseCard.tsx", "data-dataset-id"],
     ["agent browse", "pages/agents/AgentCatalogBrowseCard.tsx", "data-agent-coord"],
     ["node browse", "pages/catalog/PackageBrowseCard.tsx", "data-pkg-dir"],
     ["node drawer", "components/packages/publishing/PackageCard.tsx", "data-pkg-dir"],
@@ -179,8 +179,8 @@ describe("the publish pill says what kind of thing it is publishing", () => {
   const DATASET_SURFACES = [
     "components/datasets/catalog/DatasetCard.tsx",
     "components/datasets/catalog/InstalledDatasetsList.tsx",
-    "pages/dataHub/DataCatalogBrowseCard.tsx",
-    "pages/dataHub/DataCatalogBrowseDrawer.tsx",
+    "pages/dataCatalog/DataCatalogBrowseCard.tsx",
+    "pages/dataCatalog/DataCatalogBrowseDrawer.tsx",
   ];
   const AGENT_SURFACES = [
     "components/agents/catalog/AgentCatalogDrawer.tsx",

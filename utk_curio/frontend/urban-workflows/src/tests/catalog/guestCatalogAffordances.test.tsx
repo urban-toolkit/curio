@@ -30,11 +30,11 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
 // The drawer's hero fetches a preview on mount. Nothing here is about the
 // preview, and its async setState lands after the assertions as an act()
 // warning, so stub it out rather than wait on it.
-jest.mock("../../pages/dataHub/DataCatalogGeoPreview", () => ({
+jest.mock("../../pages/dataCatalog/DataCatalogGeoPreview", () => ({
   DataCatalogGeoPreview: () => null,
 }));
 
-import { DataCatalogBrowseDrawer } from "../../pages/dataHub/DataCatalogBrowseDrawer";
+import { DataCatalogBrowseDrawer } from "../../pages/dataCatalog/DataCatalogBrowseDrawer";
 import { UserContext } from "../../providers/UserProvider";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 

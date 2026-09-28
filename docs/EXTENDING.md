@@ -160,7 +160,7 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs. That is f
 
 - Cache key = hash of the request inputs (e.g., `pano_id + size`).
 - TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. A deployment-wide cache is a cross-user read wherever the serving route is unauthenticated: Street Vision's overlay route has no `@require_auth`, so a shared directory would let anyone who could guess an image id fetch somebody else's imagery.
+- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. Serve the cache from a route with `@require_auth` that resolves the caller's own directory, as Street Vision's overlay route does.
 
 ### 3.7 The error contract back to the frontend
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { authHeaders } from './apiAuth';
 
 /**
  * Street View Fetcher behavior.
@@ -80,7 +81,7 @@ export const useStreetViewFetcherBehavior: NodeBehaviorHook = (data, nodeState) 
   // backend doesn't need to advertise its key state anymore.
   useEffect(() => {
     const check = () => {
-      fetch(`${API_BASE}/health`)
+      fetch(`${API_BASE}/health`, { headers: authHeaders() })
         .then(r => { setBackendUp(r.ok); })
         .catch(() => setBackendUp(false));
     };
@@ -94,7 +95,7 @@ export const useStreetViewFetcherBehavior: NodeBehaviorHook = (data, nodeState) 
     setErr(null);
     setCoverage(null);
     setBbox(null);
-    fetch(`${API_BASE}/data/streetview/search_place?query=${encodeURIComponent(query)}`)
+    fetch(`${API_BASE}/data/streetview/search_place?query=${encodeURIComponent(query)}`, { headers: authHeaders() })
       .then(async r => { if (!r.ok) throw new Error((await r.json())?.error || `HTTP ${r.status}`); return r.json(); })
       .then(place => {
         if (!place.bbox) throw new Error('No bbox returned');
@@ -111,7 +112,7 @@ export const useStreetViewFetcherBehavior: NodeBehaviorHook = (data, nodeState) 
         setBbox(bb);
         return fetch(`${API_BASE}/data/streetview/coverage`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify({ bbox: bb, api_key: apiKey }),
         });
       })
@@ -127,7 +128,7 @@ export const useStreetViewFetcherBehavior: NodeBehaviorHook = (data, nodeState) 
     setResultCount(null);
     fetch(`${API_BASE}/data/streetview/fetch`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ bbox, limit, api_key: apiKey }),
     })
       .then(async r => { if (!r.ok) throw new Error((await r.json())?.error || `HTTP ${r.status}`); return r.json(); })

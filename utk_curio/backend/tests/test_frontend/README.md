@@ -383,12 +383,25 @@ Measured run-to-run drift for the three full-canvas baselines
 manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
 wide. They were captured with the executable `browser_type_launch_args` resolves
 to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
-so regenerate them on the machine that will police them if that ever diverges. To
-regenerate, delete the PNG and re-run the test.
+so regenerate them on the machine that will police them if that ever diverges.
 
 A failing comparison writes `screenshot_<stem>_<test_name>_actual.png` next to the
 baseline and attaches expected/actual/diff to the Allure report. Those `_actual`
 files are debris; do not commit them.
+
+With `CURIO_E2E_COMPARE_DIR` set, every comparison, passing or not, also writes a
+folder there: the expected and created images, a difference image (red: pixels
+counted against the budget; amber: different, but within the per-channel
+tolerance), and `record.json` with the tolerance, the budget and the measured
+share. test-gpu sets it and builds `curio-ci-report.html` from it at the end of
+the job; open it from the run's artifact list. The same page from a local run:
+
+```bash
+CURIO_E2E_COMPARE_DIR=$PWD/.curio/compare PYTEST_ADDOPTS=--junitxml=$PWD/.curio/e2e.xml \
+  bash scripts/test.sh --e2e-only
+python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
+  --comparisons .curio/compare --failures .curio/playwright/failures --out report.html
+```
 
 ## Workflow Subset Filtering
 
@@ -913,6 +926,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with** — `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch now fails with that sentence rather than a bare `401`. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
+| `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

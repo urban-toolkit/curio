@@ -140,7 +140,7 @@ function renderPanel(lineage: DatasetLineage, dataset = catalogItem()) {
   mockUseDatasetLineage.mockReturnValue(lineage);
   return render(
     <MemoryRouter>
-      <DatasetDetailPanel dataset={dataset} variant="modal" dataflowId="flow-1" />
+      <DatasetDetailPanel dataset={dataset} dataflowId="flow-1" />
     </MemoryRouter>,
   );
 }
