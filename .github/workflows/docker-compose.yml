@@ -630,8 +630,11 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2030"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
-      # Python nodes only; see the note above the job.
-      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json,17-storage-orthorectified-imagery.json,20-storage-photos-and-videos.json,21-storage-audio-recordings.json
+      # Python nodes only; see the note above the job. Not example 17: under
+      # isolation a node's raster output is stored under its artifact id, so
+      # the browser's run and the harness's name different files and cannot
+      # be compared, although the mosaic itself runs.
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json,20-storage-photos-and-videos.json,21-storage-audio-recordings.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
       CURIO_E2E_TRACE: "1"
 

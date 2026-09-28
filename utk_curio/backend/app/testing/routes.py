@@ -33,6 +33,7 @@ import shutil
 from flask import Blueprint, jsonify, request
 
 from utk_curio.backend.app.common.safe_paths import is_within
+from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import testing_provider
 from utk_curio.backend.extensions import db
@@ -208,7 +209,8 @@ def dataset_paths():
       * ``code`` – node source to scan for literal ``curio_dataset_path`` calls.
       * ``username`` – optional; resolve as this user, for ids that live in an
         account store. Omitted means hub datasets only, which is what the
-        curated examples use.
+        curated examples use. Ignored without sign-in (``CURIO_NO_AUTH``),
+        where the browser runs every node as the shared guest.
       * ``dataflow_id`` – optional, forwarded to the catalog listing.
 
     Response: ``{"paths": {"<id>": "<absolute path>"}, "collections": {...},
@@ -232,6 +234,10 @@ def dataset_paths():
         return jsonify({"error": "code must be a string"}), 400
 
     username = (body.get("username") or "").strip()
+    # Without sign-in every request the browser makes is the shared guest's,
+    # whichever account a test created, so that is whom execution resolves as.
+    if config.CURIO_NO_AUTH:
+        username = ""
     g.user = user_repo.user_by_identifier(username) if username else None
 
     paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"))
