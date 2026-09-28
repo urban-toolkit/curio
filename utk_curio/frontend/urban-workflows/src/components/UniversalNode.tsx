@@ -10,6 +10,7 @@ import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '..
 import { isRegistryReady, subscribeToRegistryReady } from '../registry/packageRegistryBootstrap';
 import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
+import { isSelectionEcho } from "../utils/selectionEcho";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { classifyAutkSpecString } from '../utils/autkSpecKind';
@@ -182,6 +183,10 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
+    // A selection coming back through a Data Pool: the same rows with new
+    // `interacted` flags, which useVega's hot reload swaps into the view it
+    // already has. Rebuilding the chart would throw its own selection away.
+    if (isSelectionEcho(data.input)) return;
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     lastRenderedInputRef.current = data.input;

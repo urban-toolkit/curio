@@ -7,6 +7,7 @@ import { IPropagation, useFlowContext } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
 import { hasIncomingEdge, incomingSourceIds } from '../../utils/nodeEmptyState';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
+import { isSelectionEcho } from '../../utils/selectionEcho';
 
 export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Which empty state to show turns on whether anything is wired in, which
@@ -42,6 +43,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // True once any feature has been marked interacted="1" so that a subsequent
   // "clear brush" (UNDETERMINED signal) still resets features to "0".
   const anyInteractedRef = useRef(false);
+  // The input and propagation toggle the last run saw. A run that another
+  // pool's propagation started (the toggle flipped, the input did not change)
+  // re-emits the same rows, and so does one fed by an upstream pool's echo.
+  const lastRunRef = useRef<{ input: unknown; propagation: unknown } | null>(null);
 
   useEffect(() => {
     const hasInput = (() => {
@@ -59,8 +64,14 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       return;
     }
 
+    const last = lastRunRef.current;
+    const selectionEcho = isSelectionEcho(data.input) || (
+      last != null && last.input === data.input && last.propagation !== data.newPropagation
+    );
+    lastRunRef.current = { input: data.input, propagation: data.newPropagation };
+
     let cancelled = false;
-    const p = processDataAsync();
+    const p = processDataAsync({ selectionEcho });
     inflightRef.current = p;
     (async () => {
       try {
@@ -475,7 +486,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
         : cloneLayer(rawContent);
       setOutput({ code: "success", content: clonedOutput });
       if (typeof data.outputCallback === 'function') {
-        data.outputCallback(data.nodeId, clonedOutput);
+        // The same rows with new flags: linked charts swap them in and
+        // highlight, they do not redraw (utils/selectionEcho).
+        data.outputCallback(data.nodeId, clonedOutput, { selectionEcho: true });
       }
 
       // call callback propagation
