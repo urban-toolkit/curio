@@ -96,6 +96,7 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 | `sourceLabel` | No | Short provenance label shown on cards; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | No | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | No | Last-modified date of the *original file* at import time. |
+| `lakeSource` | No | Where a remote file came from. A Data Lake download records its source (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt` and the bytes' `contentSha256`. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
 | `featureCount` / `rowCount` | No | Counts for geo and tabular data respectively. |
 | `schema` | No | Object describing fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | No | Multi-part imports (OSM PBF): every layer of one import shares a `groupId`. |

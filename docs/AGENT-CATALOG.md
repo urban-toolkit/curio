@@ -333,18 +333,19 @@ from the same probe — never from the model's prose:
 
 | The row's access | What the card offers |
 |---|---|
-| **fetchable**: the data URL answered with data (JSON, GeoJSON, CSV) | Confirming it starts this node's own builder on it immediately. There is no prompt to compose: the loader is written, verified and lands as the ordinary reviewed content, and the card says the builder is writing it now. |
-| **manual-download**: the data URL answered with a *page*, gated it (401/403/451), or served an archive, which you unpack before importing | The card carries the portal's download steps (its URL, the page as it actually answered, the file format, the row's stated requirement) and an **Import dataset** button, the same Data Catalog import as the drawer footer and the catalog page. After the import, that dataset becomes the node's source and the builder starts on it, by id. |
+| **fetchable**: the data URL answered with data Curio does not download itself (an XML API, or a plain http link) | Confirming it starts this node's own builder on it immediately. There is no prompt to compose: the loader is written, verified and lands as the ordinary reviewed content, and the card says the builder is writing it now. |
+| **manual-download**: the data URL answered with a *page*, gated it (401/403/451), or served an archive, which you unpack before importing | The card carries the portal's download steps (its URL, the page as it actually answered, the file format, the row's stated requirement) and an **Import dataset** button, the same Data Catalog import as the drawer footer and the catalog page. After the import, that dataset becomes the node's source and the builder starts on it, by id. The imported file records the row's link as where it came from, and a file you already hold is not registered twice. |
 | **unknown** — nothing was probed, the policy refused the URL, or the answer was neither | The row says so, and nothing upgrades it silently. |
 
 A row marked **Downloadable** is one Curio fetches itself: a Data Lake source
 that offers downloads, or a plain https link to a file the probe read as a
-format the Data Lake stores. Confirming it downloads the file into your Data
-Catalog with the same download the Data Lake Catalog page runs, and that dataset
-becomes the node's source. A small file lands before the confirmation answers
-and the builder starts on it; a larger one keeps the node waiting, and the next
-Solve picks it up once it has landed. A downloadable row offers only that: no
-portal steps and no fetch code.
+format the Data Lake stores. Its **Download** button runs the same download as
+the Data Lake Catalog page, with progress on the button, and keeps going if you
+close the chat; the dataset it lands becomes the node's source. Confirming the
+row does the same: a small file lands before the confirmation answers and the
+builder starts on it, and a larger one keeps the node waiting until the next
+Solve finds it landed. A downloadable row offers only that: no portal steps and
+no fetch code.
 
 The steps are the portal's, not Curio's invention: when a page title is all the
 portal gave, the step says the portal describes the click path. Automating the
