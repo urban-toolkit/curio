@@ -23,7 +23,14 @@ export interface DatasetImportOptions {
     file: File,
     opts?: { lakeSource?: DatasetLakeSourceInput },
   ) => Promise<DatasetCatalogItem | null | undefined>;
-  showToast: (message: string, kind: "success" | "error") => void;
+  showToast: (
+    message: string,
+    kind: "success" | "error",
+    options?: { action?: { label: string; onClick: () => void } },
+  ) => void;
+  /** Opens a dataset's details, so the toast for a single import can offer
+   *  "View details" like every other toast about a dataset. */
+  openDatasetDetails?: (datasetId: string) => void;
   /** Optional in-list placeholder, which only the drawer renders. */
   onBegin?: (key: string, label: string) => void;
   onEnd?: (key: string) => void;
@@ -32,6 +39,7 @@ export interface DatasetImportOptions {
 export function useDatasetImport({
   importDataset,
   showToast,
+  openDatasetDetails,
   onBegin,
   onEnd,
 }: DatasetImportOptions) {
@@ -58,12 +66,16 @@ export function useDatasetImport({
         const count =
           (imported as { importedDatasetCount?: number } | null | undefined)
             ?.importedDatasetCount ?? 1;
-        showToast(
-          count > 1
-            ? `Registered ${count} datasets from ${file.name} in the Data Catalog.`
-            : `Registered ${file.name} in the Data Catalog.`,
-          "success",
-        );
+        const importedId = count === 1 ? imported?.id : undefined;
+        if (count > 1) {
+          showToast(`Registered ${count} datasets from ${file.name} in the Data Catalog.`, "success");
+        } else if (importedId && openDatasetDetails) {
+          showToast(`Registered ${file.name} in the Data Catalog.`, "success", {
+            action: { label: "View details", onClick: () => openDatasetDetails(importedId) },
+          });
+        } else {
+          showToast(`Registered ${file.name} in the Data Catalog.`, "success");
+        }
         return imported ?? null;
       } catch (err) {
         showToast((err as Error)?.message || "Could not import dataset.", "error");
@@ -74,7 +86,7 @@ export function useDatasetImport({
         setImporting(false);
       }
     },
-    [importDataset, showToast, onBegin, onEnd],
+    [importDataset, showToast, openDatasetDetails, onBegin, onEnd],
   );
 
   return { importing, importFile };

@@ -371,7 +371,7 @@ declared facts, never from a list of node names:
 | The node carries | What Solve does | What it says |
 |---|---|---|
 | **Code** the sandbox runs (`hasCode`) | Generates, gates the sources, runs it, and **reads the shape of the result**: a table or geotable with **no rows**, produced from inputs that had rows, is a failed round with the diagnosis — the inputs' row counts, their key columns and their sample **values** (memo dev/133) | *verified*, or a failure naming what happened |
-| A **document** (`hasGrammar` — a Vega-Lite chart, an AUTK grammar) | Validates it against the schema the renderer itself uses, or the renderer's own requirements. An invalid document is a correction round; a reply that is not a document at all (prose, a decline) is refused the same way (memo dev/134) | *validated as a document, not executed* |
+| A **document** (`hasGrammar`: a Vega-Lite chart, an Autark grammar) | Validates it against its grammar's JSON Schema: the one Vega-Lite publishes, or the one [autk-grammar publishes](../utk_curio/backend/app/agents/schemas/autk-grammar.v1.json). An invalid document is a correction round; a reply that is not a document at all (prose, a decline) is refused the same way (memo dev/134) | *validated as a document, not executed* |
 | **Nothing** — a Merge Flow, a Data Pool, a Simple View, a Spatial Join | Nothing. These nodes are wired, not written: everything they do comes from their connections and their input, so no model is asked for their content and nothing is written into them | *wired, not written* |
 
 The reason the middle and bottom rows matter: before dev/134 a document and a
@@ -448,6 +448,7 @@ does:
 | What the renderer saw | What it says | Who must change |
 |---|---|---|
 | Every layer the document asks for was dropped (its `dataRef` names a table this dataflow does not produce) | *rendered nothing — every layer this document asks for names data the dataflow does not produce (asked for: …; available: …)* | the **document** |
+| The node's own data sources loaded no rows | *rendered nothing: the data sources this document loads returned 0 rows …* | the **document** |
 | No rows arrived | *rendered nothing — 0 rows arrived at this node … this document is not at fault* | the **upstream node** |
 | Rows arrived and no mark was drawn | *rendered nothing — 12 rows arrived and no mark was drawn: an encoding, a transform or a scale domain removed every row* | the **document** |
 
@@ -536,13 +537,14 @@ as an ungrounded source is refused. A merge with only one connected input passes
 its value straight through, so there `arg` IS the value and nothing is refused.
 
 **A document that cannot be run is still checked.** A Vega-Lite chart and an
-AUTK map grammar are documents, so before either is written into a node the
-runtime validates it — Vega-Lite against the schema Curio already ships, the
-map grammar against what the renderer cannot draw without (a `map`, a non-empty
-`layerRefs`, a `dataRef` per layer) — and an invalid document is a **correction
-round** like a failing traceback, with the validator's complaint as the
-instruction (memo dev/129; before it, an invalid spec was written and the chat
-said *solved* while the node rendered red). A written document is reported as
+Autark grammar are documents, so before either is written into a node the
+runtime validates it: Vega-Lite against the schema Curio already ships, and an
+Autark document against the
+[JSON Schema autk-grammar publishes](../utk_curio/backend/app/agents/schemas/autk-grammar.v1.json),
+plus one rule: the document must load, compute or draw something, and a map
+must list a layer. An invalid document is a **correction round** like a failing
+traceback, with the validator's complaint as the instruction. A written
+document is reported as
 *"document validated — not executed"*: still honest that nothing ran, no longer
 silent about whether it is well-formed. And a kind nothing here can validate is
 **not written at all** — the node stays *pending* with the reason, because

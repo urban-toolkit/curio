@@ -5,7 +5,7 @@ import {
   relativeTime,
 } from "../../components/datasets/catalog/datasetDetailHelpers";
 
-// Re-export the shared catalog helpers so data-hub callers keep importing them
+// Re-export the shared catalog helpers so Data Catalog callers keep importing them
 // from here, but there is a single implementation. ``datasetCount`` uses the
 // compact (``"feat."``) variant the browse rows have always rendered.
 export { formatBytes, relativeTime };

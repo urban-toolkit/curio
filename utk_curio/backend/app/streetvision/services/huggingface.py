@@ -43,9 +43,9 @@ def _token_fingerprint(token: Optional[str]) -> str:
 def resolve_user_key() -> str:
     """Whose ``.curio/users/<key>/streetvision/`` this request reads and writes.
 
-    Falls back to the shared guest key, which is what the rest of Curio does
-    for an unauthenticated caller: these routes carry no ``@require_auth``, and
-    with ``--no-project`` there is no signed-in user at all.
+    Every Street Vision route requires a signed-in caller (the shared guest
+    signs in automatically when auth is off), so the guest key below is only
+    reached outside a request.
 
     Must be called from a request context; the worker thread has none, so the
     key is captured alongside the token and handed down.

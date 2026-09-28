@@ -5,6 +5,8 @@ import type {
   AgentDatasetPick,
   AgentDatasetSelection,
 } from "../../../api/agentsApi";
+import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
+import { sanitizeAgentUrl } from "./sanitizeAgentContent";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
 import {
@@ -98,15 +100,28 @@ export function pickKey(
   return undefined;
 }
 
+/** The portal page an external row may link to: only a URL the runtime
+ *  vouched for (a source it can download from, or one its probe verified),
+ *  and only over http(s). Anything else stays plain text (REQ-SEC-002). */
+export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null {
+  if (!row.url) return null;
+  if (!row.acquirable && row.verification?.status !== "verified") return null;
+  const safe = sanitizeAgentUrl(row.url);
+  return safe && /^https?:\/\//i.test(safe) ? safe : null;
+}
+
 /**
  * The dev/50 two-lane suggestions surface (docs/06): one grouped card, two
  * labeled lanes, keyboard-operable multi-select rows carrying safe metadata
  * only. Toggling a selection composes the editable confirmation prompt into
  * the chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
  * on review cards. The one row action is Download, on a row Curio can
- * download: the same download the Data Lake Catalog page runs. Every text field
- * arrives bounded + scheme-allowlisted from the server and renders as plain
- * text here (REQ-SEC-002).
+ * download: the same download the Data Lake Catalog page runs. A row may also
+ * open what it names, read-only, the way the same dataset or portal row does
+ * everywhere else: a catalog row's "View details", and a verified external
+ * row's "View on the portal". Every text field arrives bounded +
+ * scheme-allowlisted from the server and renders as plain text here
+ * (REQ-SEC-002).
  */
 export const AgentDatasetCandidatesCard: React.FC<{
   part: AgentDatasetCandidatesPart;
@@ -133,6 +148,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
   onImportDataset,
 }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { openDatasetDetails } = useDatasetDetails();
   const [recording, setRecording] = useState(false);
   const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
@@ -293,6 +309,8 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const renderRow = (lane: "external" | "catalog", row: AgentDatasetCandidateRow, i: number) => {
     const key = rowKey(lane, i);
     const meta = [row.provider, row.format, row.coverage].filter(Boolean).join(" · ");
+    const portalUrl = lane === "external" ? verifiedPortalUrl(row) : null;
+    const datasetId = lane === "catalog" ? row.datasetId : undefined;
     return (
       <li key={key} className={styles.row}>
         <label className={styles.rowLabel}>
@@ -328,7 +346,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
               ) : null}
             </span>
             {meta ? <span className={styles.meta}>{meta}</span> : null}
-            {row.url ? <span className={styles.url}>{row.url}</span> : null}
+            {row.url && !portalUrl ? <span className={styles.url}>{row.url}</span> : null}
             {row.fit ? (
               <span className={styles.fit}>
                 Fit {row.fit.score}/100 — {row.fit.rationale}
@@ -377,6 +395,31 @@ export const AgentDatasetCandidatesCard: React.FC<{
             ) : null}
           </span>
         </label>
+        {datasetId || portalUrl ? (
+          // Outside the label, so opening what the row names never toggles
+          // the selection.
+          <div className={styles.rowActions}>
+            {datasetId ? (
+              <button
+                type="button"
+                className={styles.rowLink}
+                onClick={() => openDatasetDetails(datasetId)}
+              >
+                View details
+              </button>
+            ) : null}
+            {portalUrl ? (
+              <a
+                className={styles.rowLink}
+                href={portalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View on the portal ↗
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </li>
     );
   };

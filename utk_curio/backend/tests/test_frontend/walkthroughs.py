@@ -34,6 +34,7 @@ from playwright.sync_api import expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    MAX_DIFF_RATIO,
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
@@ -229,7 +230,7 @@ class Walkthrough:
     #: A tight value only means something on a CLIPPED capture, where the
     #: subject fills the frame. On a full page it is raised to
     #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
-    max_diff_ratio: float = 0.20
+    max_diff_ratio: float = MAX_DIFF_RATIO
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
     #:
@@ -1423,8 +1424,15 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.say("WebGPU is back", "Check again re-probes and re-runs the node.")
     check_again.click()
     expect(fallback.first).to_be_hidden(timeout=45000)
+    # The compute pass feeding this map needed WebGPU too and failed without
+    # it, so nothing reached the map: it says so, and names the upstream.
+    expect(autark).to_contain_text("0 rows arrived at this node", timeout=45000)
+    ctx.focus(autark, hold=1200)
+    ctx.say("Its input never came", "The compute pass upstream needed WebGPU as well.")
+    run_all_and_wait(page, timeout_ms=180000)
     wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
     ctx.focus(autark, hold=1200)
+    ctx.say("Run the dataflow", "With WebGPU back, the whole chain draws.")
     ctx.capture("webgpu-recovered")
     assert not errors, f"an uncaught page error escaped during recovery: {errors}"
 

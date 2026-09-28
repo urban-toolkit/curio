@@ -14,6 +14,10 @@ import {
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
 import { useToastContext } from "../providers/ToastProvider";
+import {
+    useDatasetDetails,
+    viewDatasetDetailsToast,
+} from "./datasets/catalog/datasetDetailsContext";
 import { useUserContext } from "../providers/UserProvider";
 import { commentsFromMetadata, commentsToMetadata } from "../utils/nodeComments";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
@@ -136,6 +140,7 @@ export const NodeContainer = ({
     isLoading?: boolean;
 }) => {
     const { showToast } = useToastContext();
+    const { openDatasetDetails } = useDatasetDetails();
     const {
         nodes,
         edges,
@@ -487,7 +492,11 @@ export const NodeContainer = ({
         updateDefaultCode(nodeId, applied.code);
         sendCodeToWidgets?.(applied.code);
         markDirty();
-        showToast(`Applied ${dataset.title} to this node.`, "success");
+        showToast(
+            `Applied ${dataset.title} to this node.`,
+            "success",
+            viewDatasetDetailsToast(openDatasetDetails, dataset.datasetId),
+        );
     };
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);

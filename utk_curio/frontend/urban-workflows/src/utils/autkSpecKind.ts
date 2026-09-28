@@ -1,5 +1,22 @@
+import { AUTK_FAMILIES, AutkFamily } from "../generated/autkGrammar";
+
 /** What kind of step an Autark (UrbanSpec) document describes. */
 export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
+
+/**
+ * The step each top-level family describes. Keyed by the families of the
+ * vendored schema, so a family the grammar adds fails typecheck until it is
+ * routed here.
+ */
+const FAMILY_KIND: Record<AutkFamily, Exclude<AutkSpecKind, "unknown">> = {
+  map: "render",
+  plot: "render",
+  compute: "compute",
+  data: "data",
+};
+
+/** Drawing wins over computing, and computing over loading. */
+const KIND_ORDER = ["render", "compute", "data"] as const;
 
 /**
  * Which kind of step an UrbanSpec describes (#282).
@@ -15,10 +32,16 @@ export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
  */
 export function classifyAutkSpec(spec: any): AutkSpecKind {
   if (!spec || typeof spec !== "object") return "unknown";
-  if (spec.map != null || spec.plot != null) return "render";
-  if (Array.isArray(spec.compute) && spec.compute.length > 0) return "compute";
-  if (Array.isArray(spec.data) && spec.data.length > 0) return "data";
-  return "unknown";
+  // A map or plot counts as soon as it is named; a step list only when it
+  // holds a step.
+  const names = (family: AutkFamily) =>
+    FAMILY_KIND[family] === "render"
+      ? spec[family] != null
+      : Array.isArray(spec[family]) && spec[family].length > 0;
+  const kind = KIND_ORDER.find((k) =>
+    AUTK_FAMILIES.some((family) => FAMILY_KIND[family] === k && names(family))
+  );
+  return kind ?? "unknown";
 }
 
 export function classifyAutkSpecString(specString: unknown): AutkSpecKind {

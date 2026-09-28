@@ -758,6 +758,227 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(injected.coordinateFormat).toBe('EPSG:4326');
     });
 
+    // The counts behind the empty-render verdict ride as data. Where they
+    // cannot be counted there is no verdict and no invented zero; where a node's
+    // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('empty-render counts', () => {
+      const setOutputKinds = (setOutput: jest.Mock) =>
+        setOutput.mock.calls.map((c: any[]) => c[0]?.kind).filter(Boolean);
+
+      test('the default sandbox path counts nothing, so it claims nothing', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+        const last = setOutput.mock.calls[setOutput.mock.calls.length - 1][0];
+        expect(last.code).toBe('success');
+        expect(last.content).toBe('Loaded 1 table: table_osm_parks');
+        expect(last.content).not.toContain('undefined');
+        expect(setOutputKinds(setOutput)).toEqual([]);
+      });
+
+      test('a data node whose own sources loaded zero rows reports empty-source', async () => {
+        // The backend is down, so the in-browser load hands back layers in hand,
+        // and the one it loaded is empty.
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+        );
+        mockAutkDbLoadOsm.mockReset();
+        mockAutkDbLoadOsm.mockResolvedValue(undefined);
+        mockAutkDbGetLayerTables.mockReset();
+        mockAutkDbGetLayerTables.mockReturnValue([{ name: 'table_osm_parks', type: 'parks' }]);
+        mockAutkDbGetLayer.mockResolvedValue({ type: 'FeatureCollection', features: [] });
+
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // Not `no-input-rows`: that would tell the harness to stop repairing a
+        // document whose own source is what came back empty.
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+        expect(errCall![0].content).toContain('table_osm_parks (0 features)');
+
+        mockAutkDbGetLayerTables.mockReset();
+        mockAutkDbGetLayerTables.mockReturnValue([]);
+      });
+
+      test('a map whose upstream delivered nothing blames the upstream, not its layerRefs', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: undefined as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            map: { layerRefs: [{ dataRef: 'table_osm_roads' }] },
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // No table arrived at all, so no name could have resolved: the node
+        // that should feed this one is what must change.
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).not.toContain('does not produce');
+      });
+
+      test('a compute node fed an empty upstream reports no-input-rows', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          {
+            outputCallback: jest.fn(),
+            input: { dataType: 'geodataframe', data: { type: 'FeatureCollection', features: [] } } as any,
+          },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // Counted before the empty layer was dropped: zero rows arrived, and
+        // the compute document is not at fault for that.
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        // Nor does the message go on to blame the spec for naming nothing.
+        expect(errCall![0].content).toContain('not at fault');
+        expect(errCall![0].content).not.toContain('names no');
+      });
+
+      test('a data node whose load found no tables says only that its sources were empty', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+        );
+        mockAutkDbLoadOsm.mockReset();
+        mockAutkDbLoadOsm.mockResolvedValue(undefined);
+        mockAutkDbGetLayerTables.mockReset();
+        mockAutkDbGetLayerTables.mockReturnValue([]);
+
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+        // The spec does name a table; the load just found no rows for it.
+        expect(errCall![0].content).not.toContain('names no');
+      });
+
+      test('a map that drew one layer and dropped an empty one says so', async () => {
+        const { fetchData } = require('../../../services/api');
+        const { AutkGrammar } = require('@urban-toolkit/autk-grammar');
+        let runSpec: any = null;
+        (AutkGrammar as jest.Mock).mockReset();
+        (AutkGrammar as jest.Mock).mockImplementation(() => ({
+          run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
+          data: {},
+        }));
+        const point = { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: {} };
+        (fetchData as jest.Mock).mockResolvedValueOnce({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: { type: 'FeatureCollection', features: [point] } } },
+            { dataType: 'dict', data: { name: 'parks', type: 'parks', geojson: { type: 'FeatureCollection', features: [] } } },
+          ],
+        });
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-mixed', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['roads', 'parks'] } }],
+            map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'parks' }] },
+          }));
+        });
+
+        // Only the populated layer reached the grammar ...
+        expect(runSpec.map.layerRefs).toEqual([{ dataRef: 'roads' }]);
+        // ... and the run still succeeds, naming the layer it lost.
+        const last = setOutput.mock.calls[setOutput.mock.calls.length - 1][0];
+        expect(last.code).toBe('success');
+        expect(last.content).toContain('drew 1 of 2 layers');
+        expect(last.content).toContain('parks has no rows');
+      });
+
+      test('a map whose ref names its own EMPTY table blames the source, not the ref', async () => {
+        const { fetchData } = require('../../../services/api');
+        (fetchData as jest.Mock).mockResolvedValueOnce({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'parks', type: 'parks', geojson: { type: 'FeatureCollection', features: [] } } },
+          ],
+        });
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-empty', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+            map: { layerRefs: [{ dataRef: 'parks' }] },
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // The table exists with zero rows: `no-layers` would claim the
+        // document names data the dataflow does not produce.
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+      });
+    });
+
     // Regression: the flaky 06-autark-what-if-shadow-study failure. The backend
     // data load occasionally returns no artifact; the node then fell back to an
     // in-browser AutkDb load whose PBF fetch 404'd, and autk-db crashed with
@@ -1020,9 +1241,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
     // The other side of the predicate: missing WITHOUT a recorded error is a
     // genuinely empty query area (autk-db creates a layer table even at zero
-    // features), so it must warn rather than fail. This is what keeps the
-    // contract check from turning sparse data into a red node.
-    test('data-only node: an empty query area with no load error does not fail (#248)', async () => {
+    // features), so the contract check must not call it a partial load. What
+    // it does report is an empty render: the sources loaded no rows, which is
+    // the document's to fix (empty-source), not a load failure.
+    test('data-only node: an empty query area is an empty source, not a partial load (#248)', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>
           cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
@@ -1053,6 +1275,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
       expect(errCall?.[0]?.content ?? '').not.toContain('fewer table');
+      expect(errCall?.[0]?.kind).toBe('empty-render:empty-source');
     });
 
     // The case the seven-workflow e2e run turned up: the layers exist in the DB
