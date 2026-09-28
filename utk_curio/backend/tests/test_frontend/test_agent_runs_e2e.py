@@ -38,6 +38,7 @@ from utk_curio.backend.app.agents import builtin
 
 from .utils import (
     api_json,
+    captured_agent_offers,
     captured_agent_prompts,
     captured_system_prompt,
     require_project_page,
@@ -395,3 +396,116 @@ def test_the_roster_matches_the_served_catalog(current_server: str):
         f"served but not covered: {sorted(served - covered)}; "
         f"covered but not served: {sorted(covered - served)}"
     )
+
+
+# ── native tool calls ────────────────────────────────────────────────────────
+
+
+def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, list]:
+    """The turn :func:`_scripted_replies` scripts, its request made as a native
+    call. Natively a plan is the call's arguments, with no dataflowPlan key."""
+    leg, tool = _characteristic(spec)
+    if leg == "prompts":
+        return _scripted_replies(spec)
+    if leg == "mint":
+        arguments = _mint_params(tool, spec)
+        arguments = arguments.get("dataflowPlan", arguments)
+    elif tool in ("node.read", "node.runtime.read"):
+        # A canvas attachment names no node, so the read has to.
+        arguments = {"nodeId": _mint_node_id(spec)}
+    else:
+        arguments = {}
+    follow_up = (
+        "I have proposed the change for your review." if leg == "mint"
+        else "That is what the project currently contains."
+    )
+    return leg, tool, [
+        {"text": VISIBLE_PROSE, "toolCalls": [{"name": tool, "arguments": arguments}]},
+        follow_up,
+    ]
+
+
+def _attached(spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str) -> tuple[str, str, str]:
+    """A fresh account and project with *spec* installed and attached, on the
+    scripted provider: ``(token, agents base url, attachment id)``."""
+    coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+    session = stub_db_user(
+        current_server,
+        username=_username(spec.agent_id)[:32] + "_" + suffix,
+        name=f"{spec.name} E2E",
+        project_name=f"AgentRun {spec.name}",
+        project_spec=_project_spec(),
+    )
+    token = session["token"]
+    base = f"{current_server}/api/agents/projects/{session['project']['id']}"
+    use_scripted_llm(current_server, token)
+    api_json(f"{base}/install", token, method="POST", payload={"coord": coord})
+    attachment = api_json(
+        f"{base}/attachments", token, method="POST",
+        payload={"coord": coord, "target": _target_for(spec)},
+    )
+    return token, base, attachment["attachmentId"]
+
+
+@pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
+def test_agent_runs_on_native_tools(spec, current_server: str):
+    """The same turn on an endpoint that calls tools natively: the run is
+    offered its tools instead of the fenced syntax, and the model's call does
+    what the fenced request does, its result answering the call."""
+    from utk_curio.backend.app.agents import tools
+
+    require_project_page()
+    require_user_auth()
+    token, base, attachment_id = _attached(spec, current_server, "native")
+    leg, tool, replies = _native_replies(spec)
+    script_agent_replies(current_server, *replies, native_tools=True)
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": f"Hello {spec.name}, do your job."},
+    )
+    assert VISIBLE_PROSE in run["reply"], run["reply"]
+
+    system = captured_system_prompt(current_server)
+    assert '"toolRequest"' not in system and '"delegateRequest"' not in system, (
+        "a run on native tools was still taught the fenced request syntax"
+    )
+    offers = captured_agent_offers(current_server)
+    names = {tools.wire_name(t) for t in spec.tools} | ({"delegate"} if spec.delegates_to else set())
+    assert set(offers[0]["tools"]) <= names and offers[0]["toolChoice"] == "auto", offers[0]
+    if leg == "prompts":
+        return
+    assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
+    result = captured_agent_prompts(current_server)[1][-1]
+    assert result["role"] == "tool" and result["is_error"] is False, result
+    if leg == "mint":
+        proposals = [p for p in run["content"] if p.get("type") == "proposal"]
+        assert proposals and proposals[0]["tool"] == tool, run["content"]
+    else:
+        assert result["name"] == tools.wire_name(tool)
+
+
+def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_server: str):
+    """An endpoint that refuses the tools it is offered (a 400) gets the same
+    round again on the fenced protocol, and the run completes."""
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.chat-agent")
+    token, base, attachment_id = _attached(spec, current_server, "fallback")
+    script_agent_replies(
+        current_server,
+        {"error": "this model does not support tools", "status": 400},
+        _tail({"toolRequest": {"tool": "dataflow.read", "params": {}}}),
+        "That is what the project currently contains.",
+        native_tools=True,
+    )
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": "What is in this project?"},
+    )
+    assert run["reply"].endswith("That is what the project currently contains.")
+    offers = captured_agent_offers(current_server)
+    assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None}, offers
+    assert '"toolRequest"' in captured_system_prompt(current_server, call=1)
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    pins = turns[-1]["execution"]["pins"]
+    assert pins["toolProtocol"] == "fenced" and pins["nativeToolsRefused"] is True

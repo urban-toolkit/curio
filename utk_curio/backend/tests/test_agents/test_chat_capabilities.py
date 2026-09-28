@@ -15,10 +15,18 @@ import types
 import pytest
 
 from utk_curio.backend.app.agents import chat_capabilities as cc
-from utk_curio.backend.app.agents import ledger, model_catalog, testing_provider
+from utk_curio.backend.app.agents import ledger, model_catalog, providers, testing_provider
 from utk_curio.backend.app.agents.providers import ProviderConfig
 
 USER = "7"
+
+_REAL_PROBE = providers.probe_native_tools
+
+
+@pytest.fixture(autouse=True)
+def _the_trial_runs(monkeypatch, _endpoint_not_asked_about_tools):
+    """These tests are about the trial, so it asks the (faked) endpoint."""
+    monkeypatch.setattr(providers, "probe_native_tools", _REAL_PROBE)
 
 
 def _cfg(**kw):

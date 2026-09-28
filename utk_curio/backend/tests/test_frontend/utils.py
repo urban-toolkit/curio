@@ -3192,8 +3192,8 @@ def use_scripted_llm(backend_url: str, token: str) -> dict:
 
 
 def script_agent_replies(
-    backend_url: str, *replies: str, reset: bool = True,
-    by_intent: dict | None = None,
+    backend_url: str, *replies: str | dict, reset: bool = True,
+    by_intent: dict | None = None, native_tools: bool = False,
 ) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
@@ -3201,16 +3201,21 @@ def script_agent_replies(
     ``toolRequest`` tail is answered by the runtime and the model is prompted
     again, so script the follow-up too. Returns how many are pending.
 
+    A reply is its text, ``{"text", "toolCalls"}`` for native tool calls, or
+    ``{"error", "status"}`` for an endpoint error. *native_tools* makes the
+    scripted endpoint call tools natively, so runs are offered their tools
+    instead of the fenced syntax (a reset puts it back on the fenced protocol).
+
     *by_intent* maps a substring of a delegated call's ``intent`` to its reply,
     for calls whose order the test cannot know (Solve's per-node content).
 
     Resets by default. A reply left over from a previous test would be consumed
     by this one, and the failure would point anywhere but at the cause.
     """
-    body = _post_json(
-        f"{backend_url}/api/testing/agent-script",
-        {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})},
-    )
+    payload = {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})}
+    if native_tools:
+        payload["chatCapabilities"] = {"tools": True}
+    body = _post_json(f"{backend_url}/api/testing/agent-script", payload)
     return body["pending"]
 
 
@@ -3229,6 +3234,13 @@ def captured_agent_calls(backend_url: str) -> list:
     """``{configId, model}`` of every scripted call since the last reset, oldest
     first: which LLM configuration answered each one, never its key."""
     return _get_json(f"{backend_url}/api/testing/agent-script")["calls"]
+
+
+def captured_agent_offers(backend_url: str) -> list:
+    """``{tools, toolChoice}`` of every scripted call since the last reset,
+    oldest first: the native tools each call offered, none on the fenced
+    protocol."""
+    return _get_json(f"{backend_url}/api/testing/agent-script")["offered"]
 
 
 def captured_system_prompt(backend_url: str, *, call: int = 0) -> str:

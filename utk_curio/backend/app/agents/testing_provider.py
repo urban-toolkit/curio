@@ -33,6 +33,13 @@ prove *which* agent's prompt composed the turn - the run path assembles the
 system turn from the agent's own preamble + instruction, and a reply alone
 cannot distinguish one agent from another.
 
+A reply is its text, or an entry ``{"text", "toolCalls"}`` whose calls the
+model makes natively, each ``{"name", "arguments", "id"}`` (``name`` is the
+tool id or its native name, ``id`` optional), or ``{"error", "status"}``,
+which the call raises as that endpoint error. A native call can only answer a
+call that offered tools (:func:`script_chat_capabilities`), and what each call
+offered is recorded (:func:`offered`).
+
 When nothing matches, :data:`FALLBACK_REPLY` is returned rather than raising:
 a test that forgot to script one leg of a multi-turn conversation should fail
 on the assertion it cares about, not on an exception from the provider.
@@ -40,6 +47,7 @@ on the assertion it cares about, not on an exception from the provider.
 
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 from collections import deque
@@ -64,16 +72,30 @@ _captured: deque = deque(maxlen=MAX_CAPTURED)
 #: Which LLM configuration each call answered with: ``{configId, model}``, in
 #: the same order as ``_captured``.
 _calls: deque = deque(maxlen=MAX_CAPTURED)
+#: What each call offered natively: ``{tools: [names], toolChoice}``, in the
+#: same order as ``_captured``.
+_offered: deque = deque(maxlen=MAX_CAPTURED)
 #: Replies keyed by a substring of a delegated call's ``intent``.
 _by_intent: dict = {}
 #: What the scripted endpoint says it can do beyond text
 #: (``chat_capabilities``): nothing, so runs use the fenced protocol.
 _DEFAULT_CHAT_CAPABILITIES = {"tools": False, "structuredOutput": False}
 _chat_capabilities: dict = dict(_DEFAULT_CHAT_CAPABILITIES)
+#: Ids for scripted calls that name none, unique for the process.
+_call_ids = itertools.count(1)
 
 
 class TestingProviderUnavailable(RuntimeError):
     """Raised when the testing provider is selected outside a test run."""
+
+
+class ScriptedEndpointError(RuntimeError):
+    """A scripted ``{"error", "status"}`` reply: the endpoint failed with
+    that HTTP status, as a real SDK's error carries it."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def enabled() -> bool:
@@ -83,13 +105,14 @@ def enabled() -> bool:
     return _is_testing()
 
 
-def push_reply(reply: str, *, usage: dict | None = None) -> None:
-    """Queue one reply for the next completion call."""
+def push_reply(reply: str | dict, *, usage: dict | None = None) -> None:
+    """Queue one reply for the next completion call: its text, or an entry
+    (see the module docstring)."""
     with _lock:
         _queue.append((reply, usage))
 
 
-def push_replies(*replies: str) -> None:
+def push_replies(*replies: str | dict) -> None:
     """Queue several replies, consumed in order."""
     for reply in replies:
         push_reply(reply)
@@ -151,6 +174,7 @@ def reset() -> None:
         _queue.clear()
         _captured.clear()
         _calls.clear()
+        _offered.clear()
         _by_intent.clear()
         _chat_capabilities.clear()
         _chat_capabilities.update(_DEFAULT_CHAT_CAPABILITIES)
@@ -186,6 +210,14 @@ def calls() -> list:
         return [dict(c) for c in _calls]
 
 
+def offered() -> list:
+    """``{tools, toolChoice}`` of every call since the last :func:`reset`: the
+    native names of the tools it offered (none on the fenced protocol) and
+    whether it let the model call one."""
+    with _lock:
+        return [{"tools": list(o["tools"]), "toolChoice": o["toolChoice"]} for o in _offered]
+
+
 def last_messages() -> list | None:
     """The most recent call's ``messages``, or None when nothing ran yet."""
     with _lock:
@@ -199,13 +231,28 @@ def pending() -> int:
 
 
 def run_scripted_completion(messages: list, usage_out: dict | None = None, config=None) -> str:
-    """Return the next scripted reply and record its token usage.
+    """The text of the next scripted reply (:func:`run_scripted_turn`)."""
+    return run_scripted_turn(messages, usage_out=usage_out, config=config).text
+
+
+def run_scripted_turn(
+    messages: list,
+    usage_out: dict | None = None,
+    config=None,
+    tools: list | None = None,
+    tool_choice: str = "auto",
+):
+    """Return the next scripted reply as a turn and record its token usage.
 
     ``messages`` does not choose the reply - the queue does, so a test's
     scripting stays independent of prompt wording. It is recorded, though, so a
-    test can assert what actually reached the model (see :func:`captured`).
+    test can assert what actually reached the model (see :func:`captured`), as
+    are the tools the call offered (:func:`offered`).
 
-    Raises :class:`TestingProviderUnavailable` when called outside a test run.
+    Raises :class:`TestingProviderUnavailable` when called outside a test run,
+    :class:`ScriptedEndpointError` for an ``{"error", "status"}`` reply, and
+    ``ValueError`` for native calls scripted where the call offered no tool to
+    call: a real model could not have made them.
     """
     if not enabled():
         raise TestingProviderUnavailable(
@@ -221,12 +268,19 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None, confi
             "configId": getattr(config, "config_id", None),
             "model": getattr(config, "model", None),
         })
+        _offered.append({
+            "tools": [t.get("name") for t in tools or ()],
+            "toolChoice": tool_choice if tools else None,
+        })
         routed = _routed_reply(messages)
         queued = None if routed is not None else (_queue.popleft() if _queue else None)
     if routed is not None:
         reply, usage = routed, None
     else:
         reply, usage = queued if queued is not None else (FALLBACK_REPLY, None)
+    if isinstance(reply, dict) and reply.get("error") is not None:
+        # A failed call is not charged, so it reports no usage.
+        raise ScriptedEndpointError(str(reply["error"]), int(reply.get("status") or 500))
 
     counts = usage if isinstance(usage, dict) else DEFAULT_USAGE
     if usage_out is not None:
@@ -236,7 +290,30 @@ def run_scripted_completion(messages: list, usage_out: dict | None = None, confi
         for key, name in (("cacheRead", "cacheReadTokens"), ("cacheWrite", "cacheWriteTokens")):
             if isinstance(counts.get(key), int):
                 usage_out[name] = counts[key]
-    return reply
+    return _scripted_turn(reply, tools, tool_choice)
+
+
+def _scripted_turn(reply, tools: list | None, tool_choice: str):
+    from utk_curio.backend.app.agents import tools as tool_registry
+    from utk_curio.backend.app.agents.providers import ChatTurn, ToolCall
+
+    if not isinstance(reply, dict):
+        return ChatTurn.of(reply)
+    scripted_calls = reply.get("toolCalls") or []
+    if scripted_calls and (not tools or tool_choice == "none"):
+        raise ValueError(
+            "the script makes a native tool call, but this call offered no tool "
+            "to call (the run speaks the fenced protocol, or this is its last round)"
+        )
+    calls = []
+    for call in scripted_calls:
+        name = str(call.get("name") or "")
+        calls.append(ToolCall(
+            id=str(call.get("id") or f"scripted-call-{next(_call_ids)}"),
+            name=tool_registry.wire_name(name) if "." in name else name,
+            arguments=dict(call.get("arguments") or {}),
+        ))
+    return ChatTurn(text=str(reply.get("text") or ""), tool_calls=tuple(calls))
 
 
 # ---------------------------------------------------------------------------

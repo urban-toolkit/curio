@@ -40,6 +40,24 @@ def _default_provider(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _endpoint_not_asked_about_tools(monkeypatch):
+    """The suite's endpoint is never asked whether it calls tools natively.
+
+    A run with tools asks an OpenAI-compatible endpoint once per model
+    (``chat_capabilities``, through ``providers.probe_native_tools``). The
+    endpoint above is unroutable, so the answer here is the one an endpoint
+    that cannot be asked gets: the fenced protocol, which every scripted fake
+    in the suite speaks. The trial's own tests restore the real probe.
+    """
+    from utk_curio.backend.app.agents import providers
+
+    monkeypatch.setattr(
+        providers, "probe_native_tools",
+        lambda config, usage_out=None: (None, "not asked in the test suite"),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _pinned_repair_budget(monkeypatch):
     """dev/127: pin the repair loop to the historical THREE attempts.
 

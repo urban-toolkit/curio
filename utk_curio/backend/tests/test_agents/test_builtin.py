@@ -757,9 +757,9 @@ class TestResearcher:
     # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
-        # The interaction sentence stopped listing templates by suffix: which
-        # visualizations qualify is read from the roster (plan_topology).
-        "f3f65915b736c874fd447c71049159ff5ba6c0230fbe157acff07bb4ba436b2e"
+        # The plan is named, not called a block: on native tools it is the
+        # dataflow.plan.write call, on the fenced protocol its block.
+        "a5484d129fd049279d57425a68ea200540e7af584da4d21d62cb83957eb66376"
     )
 
     def test_manifest_surface(self):

@@ -553,3 +553,485 @@ class TestTheShim:
         monkeypatch.setattr(providers_mod, "stream_chat_turn",
                             lambda *a, **k: iter(["a", object(), "b"]))
         assert list(stream_chat_completion(_cfg(), [])) == ["a", "b"]
+
+
+# --- Native tools ------------------------------------------------------------
+
+_TOOLS = [
+    {"name": "node__read", "description": "Read one node.",
+     "parameters": {"type": "object", "properties": {"nodeId": {"type": "string"}}}},
+    {"name": "delegate", "description": "Delegate.",
+     "parameters": {"type": "object", "properties": {
+         "capability": {"type": "string", "enum": ["node.content.generate"]},
+         "inputs": {"type": "object", "description": "What the delegate needs."},
+     }, "required": ["capability"]}},
+]
+
+#: One native round: the model's call, its result, and the follow-up.
+_NATIVE_ROUND = [
+    {"role": "system", "content": "sys"},
+    {"role": "user", "content": "go"},
+    {"role": "assistant", "content": "Reading.", "tool_calls": [
+        {"id": "c1", "name": "node__read", "arguments": {"nodeId": "n1"}},
+        {"id": "c2", "name": "delegate", "arguments": {"capability": "node.content.generate"}},
+    ]},
+    {"role": "tool", "tool_call_id": "c1", "name": "node__read", "content": '{"id": "n1"}', "is_error": False},
+    {"role": "tool", "tool_call_id": "c2", "name": "delegate", "content": "not run", "is_error": True},
+]
+
+
+class _Refusal(Exception):
+    def __init__(self, message, status_code):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _fake_openai(monkeypatch, *, message=None, chunks=None, error=None):
+    seen = {}
+
+    def _create(**kwargs):
+        seen.update(kwargs)
+        if error is not None:
+            raise error
+        if kwargs.get("stream"):
+            return iter(chunks)
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=message, finish_reason="tool_calls")])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=_create))
+
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    return seen
+
+
+def _openai_call(call_id, name, arguments):
+    return types.SimpleNamespace(id=call_id, function=types.SimpleNamespace(name=name, arguments=arguments))
+
+
+class TestNativeToolsOnOpenAI:
+    def test_tools_and_the_choice_are_sent_and_calls_read_back(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+
+        message = types.SimpleNamespace(content=None, tool_calls=[
+            _openai_call("c1", "node__read", '{"nodeId": "n1"}'),
+            _openai_call("c2", "node__read", '{"nodeId": '),
+        ])
+        seen = _fake_openai(monkeypatch, message=message)
+        turn = run_chat_turn(_cfg(), [{"role": "user", "content": "go"}], tools=_TOOLS, tool_choice="none")
+        assert seen["tool_choice"] == "none"
+        assert seen["tools"][0] == {"type": "function", "function": {
+            "name": "node__read", "description": "Read one node.", "parameters": _TOOLS[0]["parameters"]}}
+        assert turn.text == ""
+        assert turn.tool_calls[0] == ToolCall("c1", "node__read", {"nodeId": "n1"})
+        assert turn.tool_calls[1].error.startswith("the arguments are not valid JSON")
+
+    def test_a_native_round_is_sent_in_openai_shape(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(content="ok", tool_calls=None))
+        run_chat_turn(_cfg(), _NATIVE_ROUND, tools=_TOOLS)
+        assert seen["messages"][2] == {"role": "assistant", "content": "Reading.", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "node__read", "arguments": '{"nodeId": "n1"}'}},
+            {"id": "c2", "type": "function", "function": {
+                "name": "delegate", "arguments": '{"capability": "node.content.generate"}'}},
+        ]}
+        assert seen["messages"][3:] == [
+            {"role": "tool", "tool_call_id": "c1", "content": '{"id": "n1"}'},
+            {"role": "tool", "tool_call_id": "c2", "content": "not run"},
+        ]
+
+    def test_without_tools_the_request_carries_none(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(
+            content="hi", tool_calls=[_openai_call("c1", "node__read", "{}")]))
+        turn = run_chat_turn(_cfg(), [{"role": "user", "content": "go"}])
+        assert "tools" not in seen and "tool_choice" not in seen
+        assert turn.tool_calls == ()
+
+    def test_a_streamed_call_is_put_together_by_index(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+
+        def _chunk(text=None, calls=None):
+            delta = types.SimpleNamespace(content=text, tool_calls=calls)
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta)], usage=None)
+
+        def _piece(index, call_id=None, name=None, arguments=None):
+            return types.SimpleNamespace(index=index, id=call_id,
+                                         function=types.SimpleNamespace(name=name, arguments=arguments))
+
+        chunks = [
+            _chunk("Reading."),
+            _chunk(calls=[_piece(0, "c1", "node__read", '{"node')]),
+            _chunk(calls=[_piece(0, None, None, 'Id": "n1"}')]),
+            _chunk(calls=[_piece(1, "c2", "delegate", '{"capability": "node.content.generate"}')]),
+        ]
+        seen = _fake_openai(monkeypatch, chunks=chunks)
+        events = list(stream_chat_turn(_cfg(), [{"role": "user", "content": "go"}], tools=_TOOLS))
+        assert seen["tools"] and seen["tool_choice"] == "auto"
+        assert events == [
+            "Reading.",
+            ToolCall("c1", "node__read", {"nodeId": "n1"}),
+            ToolCall("c2", "delegate", {"capability": "node.content.generate"}),
+        ]
+
+    @pytest.mark.parametrize("status", [400, 422])
+    def test_a_refusal_of_the_tools_is_typed_and_keyless(self, monkeypatch, status):
+        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn, stream_chat_turn
+
+        _fake_openai(monkeypatch, error=_Refusal("tools not supported for key sk-secret-000", status))
+        config = _cfg(api_key="sk-secret-000")
+        with pytest.raises(NativeToolsRefused) as refused:
+            run_chat_turn(config, [{"role": "user", "content": "go"}], tools=_TOOLS)
+        assert "sk-secret-000" not in str(refused.value) and "tools not supported" in str(refused.value)
+        with pytest.raises(NativeToolsRefused):
+            list(stream_chat_turn(config, [{"role": "user", "content": "go"}], tools=_TOOLS))
+
+    def test_other_errors_and_requests_without_tools_raise_as_they_are(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        _fake_openai(monkeypatch, error=_Refusal("bad request", 400))
+        with pytest.raises(_Refusal):
+            run_chat_turn(_cfg(), [{"role": "user", "content": "go"}])
+        _fake_openai(monkeypatch, error=_Refusal("server error", 500))
+        with pytest.raises(_Refusal):
+            run_chat_turn(_cfg(), [{"role": "user", "content": "go"}], tools=_TOOLS)
+
+
+class TestNativeToolsOnAnthropic:
+    def _fake(self, monkeypatch, content_blocks, *, stream_text=()):
+        seen = {}
+
+        class FakeStream:
+            text_stream = iter(stream_text)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get_final_message(self):
+                return types.SimpleNamespace(content=content_blocks, usage=None)
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.messages = types.SimpleNamespace(create=self._create, stream=self._stream)
+
+            def _create(self, **kwargs):
+                seen.update(kwargs)
+                return types.SimpleNamespace(content=content_blocks, usage=None, stop_reason="tool_use")
+
+            def _stream(self, **kwargs):
+                seen.update(kwargs)
+                return FakeStream()
+
+        monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=FakeClient, NOT_GIVEN="NG"))
+        return seen
+
+    def test_tools_calls_and_results_in_anthropic_shape(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+
+        blocks = [types.SimpleNamespace(type="text", text="Reading."),
+                  types.SimpleNamespace(type="tool_use", id="t1", name="node__read", input={"nodeId": "n1"})]
+        seen = self._fake(monkeypatch, blocks)
+        turn = run_chat_turn(_cfg(api_type="anthropic"), _NATIVE_ROUND, tools=_TOOLS, tool_choice="none")
+        assert seen["tool_choice"] == {"type": "none"}
+        assert seen["tools"][1] == {"name": "delegate", "description": "Delegate.",
+                                    "input_schema": _TOOLS[1]["parameters"]}
+        assert seen["messages"][1] == {"role": "assistant", "content": [
+            {"type": "text", "text": "Reading."},
+            {"type": "tool_use", "id": "c1", "name": "node__read", "input": {"nodeId": "n1"}},
+            {"type": "tool_use", "id": "c2", "name": "delegate", "input": {"capability": "node.content.generate"}},
+        ]}
+        # One user turn answers both calls, the refused one flagged.
+        assert seen["messages"][2:] == [{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "c1", "content": '{"id": "n1"}'},
+            {"type": "tool_result", "tool_use_id": "c2", "content": "not run", "is_error": True},
+        ]}]
+        assert (turn.text, turn.tool_calls) == ("Reading.", (ToolCall("t1", "node__read", {"nodeId": "n1"}),))
+
+    def test_a_stream_ends_with_the_calls_of_the_final_message(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+
+        blocks = [types.SimpleNamespace(type="tool_use", id="t1", name="node__read", input={})]
+        seen = self._fake(monkeypatch, blocks, stream_text=["Read", "ing."])
+        events = list(stream_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], tools=_TOOLS))
+        assert events == ["Read", "ing.", ToolCall("t1", "node__read", {})]
+        assert seen["tool_choice"] == {"type": "auto"}
+
+
+class TestNativeToolsOnGemini:
+    def _fake(self, monkeypatch, parts):
+        seen = {}
+
+        class FakeChat:
+            def send_message(self, message, **kwargs):
+                seen["sent"], seen["send_kwargs"] = message, kwargs
+                return types.SimpleNamespace(
+                    candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=parts))],
+                    usage_metadata=None,
+                )
+
+        class FakeModel:
+            def __init__(self, model, system_instruction=None):
+                pass
+
+            def start_chat(self, history):
+                seen["history"] = history
+                return FakeChat()
+
+        fake = types.ModuleType("google.generativeai")
+        fake.configure = lambda api_key: None
+        fake.GenerativeModel = FakeModel
+        google_pkg = types.ModuleType("google")
+        google_pkg.generativeai = fake
+        monkeypatch.setitem(sys.modules, "google", google_pkg)
+        monkeypatch.setitem(sys.modules, "google.generativeai", fake)
+        return seen
+
+    def test_declarations_calls_and_responses_in_gemini_shape(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import run_chat_turn
+
+        call = types.SimpleNamespace(name="delegate", args={
+            "capability": "node.content.generate", "inputs": '{"intent": "load", "rows": 3.0}'})
+        parts = [types.SimpleNamespace(text="Delegating.", function_call=None),
+                 types.SimpleNamespace(text="", function_call=call)]
+        seen = self._fake(monkeypatch, parts)
+        turn = run_chat_turn(_cfg(api_type="gemini"), _NATIVE_ROUND, tools=_TOOLS, tool_choice="none")
+        (declarations,) = seen["send_kwargs"]["tools"]
+        delegate = declarations["function_declarations"][1]["parameters"]
+        # Gemini has no open objects: inputs is offered as a JSON string.
+        assert delegate["properties"]["inputs"]["type"] == "string"
+        assert delegate["properties"]["capability"] == {
+            "type": "string", "enum": ["node.content.generate"], "format": "enum"}
+        assert seen["send_kwargs"]["tool_config"] == {"function_calling_config": {"mode": "NONE"}}
+        assert seen["history"][-1] == {"role": "model", "parts": ["Reading.",
+            {"function_call": {"name": "node__read", "args": {"nodeId": "n1"}}},
+            {"function_call": {"name": "delegate", "args": {"capability": "node.content.generate"}}}]}
+        assert seen["sent"] == {"role": "user", "parts": [
+            {"function_response": {"name": "node__read", "response": {"result": '{"id": "n1"}'}}},
+            {"function_response": {"name": "delegate", "response": {"error": "not run"}}}]}
+        (made,) = turn.tool_calls
+        assert turn.text == "Delegating."
+        assert (made.name, made.arguments) == (
+            "delegate", {"capability": "node.content.generate", "inputs": {"intent": "load", "rows": 3}})
+
+    def test_the_sdk_takes_the_declarations_and_the_conversation(self):
+        """The real SDK's conversion, offline: every tool the registry offers,
+        and a native round, become its protos without complaint."""
+        content_types = pytest.importorskip("google.generativeai.types.content_types")
+        from utk_curio.backend.app.agents import providers, tools
+
+        specs = tools.native_tools(list(tools.REGISTRY), ["node.content.generate"])
+        content_types._make_tools(providers._gemini_tools(specs))
+        history, last = providers._gemini_turn(_NATIVE_ROUND)
+        content_types.to_contents(history)
+        content_types.to_content(last)
+        content_types.to_tool_config(providers._gemini_tool_config("none"))
+
+    def test_a_refusal_is_read_from_the_code_gemini_errors_carry(self, monkeypatch):
+        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+
+        class InvalidArgument(Exception):
+            code = 400
+
+        class FakeChat:
+            def send_message(self, message, **kwargs):
+                raise InvalidArgument("function calling is not enabled")
+
+        fake = types.ModuleType("google.generativeai")
+        fake.configure = lambda api_key: None
+        fake.GenerativeModel = lambda model, system_instruction=None: types.SimpleNamespace(
+            start_chat=lambda history: FakeChat())
+        google_pkg = types.ModuleType("google")
+        google_pkg.generativeai = fake
+        monkeypatch.setitem(sys.modules, "google", google_pkg)
+        monkeypatch.setitem(sys.modules, "google.generativeai", fake)
+        with pytest.raises(NativeToolsRefused):
+            run_chat_turn(_cfg(api_type="gemini"), [{"role": "user", "content": "go"}], tools=_TOOLS)
+
+
+class TestTheRealSDKs:
+    """The OpenAI and Anthropic SDKs themselves, over a mock HTTP transport:
+    they serialize the request this module builds and parse the endpoint's
+    answer into their own types, streamed tool calls included. The transport
+    comes from the HTTP library the installed SDK is built on (``httpx``, or
+    ``httpx2`` in the newer releases), read off its client class."""
+
+    @staticmethod
+    def _http(sdk_name: str):
+        import importlib
+
+        sdk = pytest.importorskip(sdk_name)
+        return importlib.import_module(sdk.DefaultHttpxClient.__mro__[1].__module__.split(".")[0])
+
+    @staticmethod
+    def _sse(events) -> bytes:
+        return "".join(events).encode("utf-8")
+
+    def _openai(self, monkeypatch, respond):
+        import json as _json
+
+        import openai
+
+        httpx = self._http("openai")
+
+        seen: list = []
+
+        def handler(request):
+            seen.append(_json.loads(request.content))
+            return respond(request)
+
+        real = openai.OpenAI
+        monkeypatch.setattr(openai, "OpenAI", lambda **kw: real(
+            **kw, max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handler))))
+        return seen
+
+    def _anthropic(self, monkeypatch, respond):
+        import json as _json
+
+        import anthropic
+
+        httpx = self._http("anthropic")
+
+        seen: list = []
+
+        def handler(request):
+            seen.append(_json.loads(request.content))
+            return respond(request)
+
+        real = anthropic.Anthropic
+        monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: real(
+            **kw, max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handler))))
+        return seen
+
+    def test_openai_a_call_and_a_native_round(self, monkeypatch):
+        httpx = self._http("openai")
+
+        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+
+        seen = self._openai(monkeypatch, lambda request: httpx.Response(200, json={
+            "id": "chatcmpl-1", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
+                "role": "assistant", "content": None, "tool_calls": [{
+                    "id": "call_1", "type": "function",
+                    "function": {"name": "node__read", "arguments": '{"nodeId": "n1"}'}}]}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }))
+        sink: dict = {}
+        turn = run_chat_turn(_cfg(base_url="http://endpoint.test/v1"), _NATIVE_ROUND,
+                             usage_out=sink, tools=_TOOLS)
+        assert turn.tool_calls == (ToolCall("call_1", "node__read", {"nodeId": "n1"}),)
+        assert turn.stop_reason == "tool_calls" and sink["inputTokens"] == 10
+        (sent,) = seen
+        assert sent["tool_choice"] == "auto" and sent["tools"][1]["function"]["name"] == "delegate"
+        assert [m["role"] for m in sent["messages"]] == ["system", "user", "assistant", "tool", "tool"]
+        assert sent["messages"][2]["tool_calls"][0]["function"]["arguments"] == '{"nodeId": "n1"}'
+
+    def test_openai_a_streamed_call(self, monkeypatch):
+        import json as _json
+
+        httpx = self._http("openai")
+
+        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+
+        def chunk(delta, finish=None):
+            return "data: " + _json.dumps({
+                "id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}) + "\n\n"
+
+        body = self._sse([
+            chunk({"role": "assistant", "content": "Reading."}),
+            chunk({"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+                                   "function": {"name": "node__read", "arguments": ""}}]}),
+            chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"nodeId": '}}]}),
+            chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"n1"}'}}]}, "tool_calls"),
+            "data: [DONE]\n\n",
+        ])
+        seen = self._openai(monkeypatch, lambda request: httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=body))
+        events = list(stream_chat_turn(_cfg(base_url="http://endpoint.test/v1"),
+                                       [{"role": "user", "content": "go"}], tools=_TOOLS, tool_choice="none"))
+        assert events == ["Reading.", ToolCall("call_1", "node__read", {"nodeId": "n1"})]
+        assert seen[0]["stream"] is True and seen[0]["tool_choice"] == "none"
+
+    def test_openai_a_refusal_of_the_tools(self, monkeypatch):
+        httpx = self._http("openai")
+
+        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+
+        self._openai(monkeypatch, lambda request: httpx.Response(
+            400, json={"error": {"message": "tools is not supported", "type": "invalid_request_error"}}))
+        with pytest.raises(NativeToolsRefused, match="tools is not supported"):
+            run_chat_turn(_cfg(base_url="http://endpoint.test/v1"), [{"role": "user", "content": "go"}],
+                          tools=_TOOLS)
+
+    def test_anthropic_a_call_and_a_native_round(self, monkeypatch):
+        httpx = self._http("anthropic")
+
+        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+
+        seen = self._anthropic(monkeypatch, lambda request: httpx.Response(200, json={
+            "id": "msg_1", "type": "message", "role": "assistant", "model": "c",
+            "stop_reason": "tool_use", "stop_sequence": None,
+            "content": [{"type": "text", "text": "Reading."},
+                        {"type": "tool_use", "id": "toolu_1", "name": "node__read", "input": {"nodeId": "n1"}}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        }))
+        turn = run_chat_turn(_cfg(api_type="anthropic"), _NATIVE_ROUND, tools=_TOOLS)
+        assert (turn.text, turn.tool_calls) == ("Reading.", (ToolCall("toolu_1", "node__read", {"nodeId": "n1"}),))
+        (sent,) = seen
+        assert sent["tool_choice"] == {"type": "auto"}
+        assert sent["tools"][0]["input_schema"] == _TOOLS[0]["parameters"]
+        assert [block["type"] for block in sent["messages"][1]["content"]] == ["text", "tool_use", "tool_use"]
+        assert [block["tool_use_id"] for block in sent["messages"][2]["content"]] == ["c1", "c2"]
+
+    def test_anthropic_a_streamed_call(self, monkeypatch):
+        import json as _json
+
+        httpx = self._http("anthropic")
+
+        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+
+        def event(kind, data):
+            return f"event: {kind}\ndata: {_json.dumps({'type': kind, **data})}\n\n"
+
+        body = self._sse([
+            event("message_start", {"message": {
+                "id": "msg_1", "type": "message", "role": "assistant", "model": "c", "content": [],
+                "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 1}}}),
+            event("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
+            event("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "Reading."}}),
+            event("content_block_stop", {"index": 0}),
+            event("content_block_start", {"index": 1, "content_block": {
+                "type": "tool_use", "id": "toolu_1", "name": "node__read", "input": {}}}),
+            event("content_block_delta", {"index": 1, "delta": {
+                "type": "input_json_delta", "partial_json": '{"nodeId": '}}),
+            event("content_block_delta", {"index": 1, "delta": {
+                "type": "input_json_delta", "partial_json": '"n1"}'}}),
+            event("content_block_stop", {"index": 1}),
+            event("message_delta", {"delta": {"stop_reason": "tool_use", "stop_sequence": None},
+                                    "usage": {"output_tokens": 12}}),
+            event("message_stop", {}),
+        ])
+        self._anthropic(monkeypatch, lambda request: httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=body))
+        sink: dict = {}
+        events = list(stream_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}],
+                                       usage_out=sink, tools=_TOOLS))
+        assert events == ["Reading.", ToolCall("toolu_1", "node__read", {"nodeId": "n1"})]
+        assert sink["outputTokens"] == 12
+
+    def test_anthropic_a_refusal_of_the_tools(self, monkeypatch):
+        httpx = self._http("anthropic")
+
+        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn, stream_chat_turn
+
+        self._anthropic(monkeypatch, lambda request: httpx.Response(400, json={
+            "type": "error", "error": {"type": "invalid_request_error", "message": "tools: bad schema"}}))
+        with pytest.raises(NativeToolsRefused, match="bad schema"):
+            run_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], tools=_TOOLS)
+        with pytest.raises(NativeToolsRefused, match="bad schema"):
+            list(stream_chat_turn(_cfg(api_type="anthropic"), [{"role": "user", "content": "go"}], tools=_TOOLS))

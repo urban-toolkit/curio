@@ -21,6 +21,11 @@ support varies per model, so the answer comes from one of:
 An endpoint that cannot be asked right now (offline, a rejected key) gets the
 fenced protocol without a record, so it is asked again next time.
 
+A run offered native tools that its endpoint refuses (a 400 or 422) carries on
+with the fenced protocol. Once that fenced call succeeds, the refusal is the
+answer for an endpoint the table does not know
+(:func:`record_native_refusal`), so the next run starts fenced.
+
 A manifest's ``providerRequirements`` is a preference: nothing here refuses a
 run because its configuration lacks a capability.
 """
@@ -132,3 +137,27 @@ def chat_capabilities(config: ProviderConfig, user_key: str, *, refresh: bool = 
         {"tools": found.tools, "structuredOutput": found.structured_output, "reason": reason},
     )
     return found
+
+
+def record_native_refusal(config: ProviderConfig, user_key: str, reason: str) -> None:
+    """Remember that *config*'s endpoint refused a run's native tools, which
+    the run's fenced retry then got past. For an endpoint the table knows, the
+    table still answers: a refusal there means a tool the run offered was
+    malformed, which is logged instead."""
+    import logging
+
+    from utk_curio.backend.app.agents import model_catalog
+
+    if config.api_type == "testing" or config.trained:
+        return
+    if _from_table(config) is not None:
+        logging.getLogger(__name__).warning(
+            "%s refused the native tools a run offered (%s); the run used the fenced protocol",
+            config.api_type, reason,
+        )
+        return
+    model_catalog.remember_chat_capabilities(
+        user_key, config.api_type, config.base_url, config.model,
+        {"tools": False, "structuredOutput": False,
+         "reason": f"the endpoint refused a run's native tools: {reason}"},
+    )

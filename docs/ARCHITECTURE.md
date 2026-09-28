@@ -809,7 +809,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 | preamble | The built-ins' shared `default_preamble.txt`, an imported definition's own `prompts.system`, or none | the repository, or the definition |
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
-| tool protocol | The `toolRequest` syntax and the granted tools, with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
+| tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
 | runtime | The template roster, the enlistable templates and the delegation paragraph, each its own slot | the runtime |
 
 A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots: it is tool-less and depth-1.
@@ -825,6 +825,14 @@ What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/bac
 - **Modes.** A capability that names an `instruction` (a `prompts` key) is a mode. A delegated run of it runs that prompt in place of the agent's `instruction`, and pins that prompt's digest. The two merged internal agents are built this way: each of the Dataflow Planner's six capabilities and the Dataflow Reader's two keeps its own prompt file (`builtin.BuiltinMode`).
 - **Scoped delegation.** A `delegatesTo` entry may name the capabilities it delegates (`{"id", "capabilities"}`). `delegation.resolve` and the delegation paragraph honour the scope, and the capability fallback never reaches an internal agent, which is reached only through a parent that delegates it.
 - **Catalog settings.** `contracts.CATALOG_SETTINGS` defines each setting once: its key, JSON Schema, shipped default and renderer. [`catalog_settings.py`](../utk_curio/backend/app/agents/catalog_settings.py) stores the values an account changed in `.curio/users/<u>/catalog-settings.json` (the read never raises: a missing, corrupt or no longer valid value reads as the default) and renders the configuration slot for the keys a run reads, `inputs.requiredConfig` for every run and a delegated capability's own `requiredConfig`. A key no setting defines is skipped with a warning. The slot's digest is pinned as `configurationSha256`.
+
+**Native tools.** An attached run whose configuration calls tools natively is offered its grants and its delegates as tools (`tools.native_tools`): each contract with the JSON Schema of its params (`ToolContract.parameters`), named by its id with each dot written as two underscores (`dataflow__read`), and one `delegate` tool whose `capability` lists what the agent may delegate. Its system turn carries a line on calling them in place of the tool list and the `toolRequest` syntax, and its delegation paragraph names the `delegate` tool in place of the `delegateRequest` syntax.
+
+- **One path.** The model's first call becomes the request part a fenced block parses to, through the same parser and budgets (`parse_tool_request_verbose`, `parse_delegate_request_verbose`), and from there takes the fenced request's path: grant check, mint, delegate, round accounting. A fenced block in a native run is still honoured, and answered in kind.
+- **Results.** A tool message answers the call, flagged as an error unless the status is `ok` or `proposed`; a call that cannot be read gets its errors back and spends a round. Every other call of the reply is answered as not run, and the last round offers no call (`tool_choice` none).
+- **Per provider.** OpenAI receives `tool_calls` and `tool` messages, Anthropic `tool_use` and `tool_result` blocks, Gemini function calls and responses. Gemini's schema has no open objects, so one (a manifest, a delegate's `inputs`) is offered as a JSON string and read back as an object.
+- **The fallback.** An endpoint that answers a request offering tools with a 400 or 422 (`providers.NativeToolsRefused`) gets the same round again on the fenced protocol. `services._RunConversation` keeps the fenced form of every round beside the native one, so the run carries on from where it was. Once that fenced call succeeds, the refusal is recorded for an endpoint the table does not know (`chat_capabilities.record_native_refusal`), and the next run starts fenced.
+- **Records.** The execution record pins `toolProtocol` (`native` or `fenced`) for a run that can call anything, and `nativeToolsRefused` after a fallback. Sessions keep text only, so a conversation moves between protocols and configurations freely. A delegated run is tool-less, so it never changes protocol.
 
 ---
 
@@ -1231,10 +1239,11 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/provider_config.py` | `resolve_llm`, the one LLM resolver, and the only reader of the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
 | `backend/app/agents/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the only method that returns a key |
 | `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys and LLM configurations |
-| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, cache usage, the native-tools trial, and the live model listing |
+| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
+| `backend/app/agents/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
 | `backend/app/agents/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, trained and scripted configurations |
 | `backend/app/agents/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible (#241). Derived from the API, never hand-authored; a suggestion, never an allowlist |
-| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |
+| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives. A reply is text, native tool calls, or an endpoint error |
 | `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |

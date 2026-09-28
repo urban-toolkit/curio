@@ -779,6 +779,26 @@ it. An agent's details show what it runs on, with **Change in AI Settings**; a
 reply's status line says, on hover, which configuration and model answered it;
 and a delegated task in the chat names what the delegate ran on.
 
+### How an agent calls its tools
+
+An agent's tools (reading the dataflow, proposing a node or a plan, handing a
+task to another agent) are called one of two ways, depending on the
+configuration it runs on:
+
+| Configuration | How the model calls a tool |
+|---|---|
+| OpenAI, Anthropic, Gemini, and a Custom endpoint whose model calls tools | Natively, the way that provider defines tool calls, one per reply |
+| A Custom endpoint whose model does not, and a model trained in Curio | With a request block at the end of its reply |
+
+For a Custom endpoint, Curio asks once per model, the first time an agent with
+tools runs on it: one short request offering one tool, billed like any other
+and kept in the usage record. The answer is remembered for your account. When
+an endpoint refuses the tools a run offers, the run carries on with request
+blocks; on a Custom endpoint the model is then remembered that way.
+
+Either way an agent has the same tools, every change still waits for your
+review, and the chat shows the same reply.
+
 ### Choosing the model
 
 The **Fetch models** button under the Model field asks the endpoint what it
