@@ -349,18 +349,24 @@ def _spectrogram(path: Path, *, seconds: float = 60.0):
 # ── sample thumbnails, before anything is added ────────────────────────────
 
 
-def sample_thumbnail(manifest, provider, sample) -> Path:
-    """A thumbnail of one of a lake row's sample files, cached per source.
+def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None) -> Path:
+    """A thumbnail of one of a lake row's sample files.
 
-    Shared by every user, like the listing the row belongs to, and cached
-    under Curio's state directory, never in the source.
+    Cached with the listing it belongs to: per source for a public one, and in
+    *user_key*'s own media cache for a source that sends a token. Never in the
+    source itself.
     """
     from utk_curio.backend.app.common.user_storage import curio_root
 
     if sample.kind not in ("image", "frame", "raster", "video", "audio"):
         raise MediaUnavailable("no preview for this file")
-    folder = curio_root() / "datalakes-cache" / manifest.dir_name / "samples"
-    folder.mkdir(parents=True, exist_ok=True)
+    if user_key is None:
+        folder = curio_root() / "datalakes-cache" / manifest.dir_name / "samples"
+        folder.mkdir(parents=True, exist_ok=True)
+    else:
+        source = hashlib.sha1(manifest.dir_name.encode("utf-8")).hexdigest()[:16]
+        folder = media_dirs.media_cache_dir(user_key, "lake-samples") / source
+        folder.mkdir(parents=True, exist_ok=True)
     key = hashlib.sha1(f"{sample.relpath}:{sample.bytes}:{sample.mtime}".encode()).hexdigest()[:20]
     target = folder / f"{key}.jpg"
     if target.is_file():

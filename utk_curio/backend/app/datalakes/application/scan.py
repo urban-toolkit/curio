@@ -460,15 +460,29 @@ class _State:
     unmatched: int = 0
     truncated: bool = False
     scanned_at: float | None = None
+    started_at: float = 0.0
+    #: Files walked so far, while a scan runs.
+    seen: int = 0
     error: str | None = None
+    #: The last finished scan, served while this one runs.
+    previous: "_State | None" = None
     done: threading.Event = field(default_factory=threading.Event)
+
+    def view(self) -> "_State | None":
+        """The scan whose rows to serve: this one once ready, else the last."""
+        return self if self.status == "ready" else self.previous
 
 
 class ListingCache:
-    """One summary per source, shared by every user, refreshed in the background."""
+    """One summary per source and scope, refreshed in the background.
+
+    A public source's summary is shared by every user. A source that sends a
+    token is scanned per user (*scope*), so one account's listing is never
+    served to another.
+    """
 
     def __init__(self, ttl_seconds: int = SUMMARY_TTL_SECONDS) -> None:
-        self._states: dict[str, _State] = {}
+        self._states: dict[tuple[str, str], _State] = {}
         self._lock = threading.Lock()
         self.ttl_seconds = ttl_seconds
 
@@ -477,6 +491,7 @@ class ListingCache:
         manifest: LakeSourceManifest,
         build_provider: Callable[[], Any],
         *,
+        scope: str = "shared",
         rescan: bool = False,
         wait: float = LISTING_WAIT_SECONDS,
     ) -> _State:
@@ -484,36 +499,46 @@ class ListingCache:
 
         Waits up to *wait* seconds for a scan it starts or finds running, so a
         small folder answers in one request, and returns the state as it stands
-        otherwise, for the caller to report as ``scanning``.
+        otherwise. While a scan runs, ``view()`` is the last finished one.
         """
+        key = (manifest.dir_name, scope)
+        now = time.time()
         with self._lock:
-            state = self._states.get(manifest.dir_name)
-            fresh = (
-                state is not None
-                and state.status == "ready"
-                and state.scanned_at is not None
-                and time.time() - state.scanned_at < self.ttl_seconds
-            )
-            if state is None or state.status == "failed" or (not fresh and state.status != "scanning") or (
-                rescan and state.status != "scanning"
-            ):
-                state = _State(status="scanning")
-                self._states[manifest.dir_name] = state
-                threading.Thread(
-                    target=self._run, args=(manifest, build_provider, state), daemon=True
-                ).start()
+            state = self._states.get(key)
+            if state is not None and state.status == "scanning":
+                pass
+            else:
+                fresh = (
+                    state is not None
+                    and state.status == "ready"
+                    and state.scanned_at is not None
+                    and now - state.scanned_at < self.ttl_seconds
+                )
+                # One walk at a time per source and scope: a rescan asked for
+                # while one runs is that same walk.
+                if state is None or state.status == "failed" or not fresh or rescan:
+                    previous = state.view() if state is not None else None
+                    state = _State(status="scanning", started_at=now, previous=previous)
+                    self._states[key] = state
+                    threading.Thread(
+                        target=self._run, args=(manifest, build_provider, state), daemon=True
+                    ).start()
         if state.status == "scanning" and wait > 0:
             state.done.wait(wait)
         return state
 
     def _run(self, manifest: LakeSourceManifest, build_provider, state: _State) -> None:
+        def progress(seen: int) -> None:
+            state.seen = seen
+
         try:
-            result = scan(manifest, build_provider())
+            result = scan(manifest, build_provider(), progress=progress)
             state.resources = [to_resource(manifest, group) for group in result.groups]
             state.groups = {group.resource_id: group for group in result.groups}
             state.unmatched = result.unmatched
             state.truncated = result.truncated
             state.scanned_at = result.scanned_at
+            state.previous = None
             state.status = "ready"
         except Exception as exc:  # noqa: BLE001 - a scan must always end
             state.error = f"{exc}"[:300] or type(exc).__name__
@@ -521,17 +546,18 @@ class ListingCache:
         finally:
             state.done.set()
 
-    def group(self, manifest: LakeSourceManifest, resource_id: str) -> Group | None:
+    def group(self, manifest: LakeSourceManifest, resource_id: str, *, scope: str = "shared") -> Group | None:
         """One row of the last finished scan, without starting another."""
         with self._lock:
-            state = self._states.get(manifest.dir_name)
-        if state is None or state.status != "ready":
-            return None
-        return state.groups.get(resource_id)
+            state = self._states.get((manifest.dir_name, scope))
+        view = state.view() if state is not None else None
+        return view.groups.get(resource_id) if view is not None else None
 
-    def sample(self, manifest: LakeSourceManifest, resource_id: str, index: int) -> Sample | None:
+    def sample(
+        self, manifest: LakeSourceManifest, resource_id: str, index: int, *, scope: str = "shared"
+    ) -> Sample | None:
         """The file at *index* of a collection row, to draw a thumbnail of."""
-        group = self.group(manifest, resource_id)
+        group = self.group(manifest, resource_id, scope=scope)
         if group is None or not group.spec.is_collection:
             return None
         return sample_at(group, index)
@@ -541,5 +567,5 @@ class ListingCache:
             self._states.clear()
 
 
-#: Process-wide, like the rate limiter: it bounds work per source, not per user.
+#: Process-wide: a public source is walked once for every user.
 listings = ListingCache()

@@ -91,8 +91,15 @@ def lake_row_thumbnail(source_dir: str, index: int, resource_id: str):
 
     service = _service()
     manifest = service.get_manifest(source_dir)
-    sample = scan.listings.sample(manifest, resource_id, index)
+    sample = scan.listings.sample(
+        manifest, resource_id, index, scope=service._listing_scope(manifest)
+    )
     if sample is None:
         raise ResourceNotFound("no such file; list the source again")
-    path = media.sample_thumbnail(manifest, service._storage_for(manifest), sample)
+    path = media.sample_thumbnail(
+        manifest,
+        service._storage_for(manifest),
+        sample,
+        user_key=service.user_key if manifest.auth.uses_token else None,
+    )
     return _served(path, "image/jpeg", cache_seconds=3600)

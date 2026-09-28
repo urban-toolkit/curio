@@ -28,7 +28,12 @@ from utk_curio.backend.app.datalakes.domain.errors import (
     SourceNotFound,
 )
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
-from utk_curio.backend.app.datalakes.domain.resource import LakeField, LakeResourceDetail, SearchQuery
+from utk_curio.backend.app.datalakes.domain.resource import (
+    LakeField,
+    LakeResourceDetail,
+    SearchPage,
+    SearchQuery,
+)
 from utk_curio.backend.app.datalakes.infrastructure import credentials, ratelimit
 from utk_curio.backend.app.datalakes.infrastructure import transport as transport_mod
 from utk_curio.backend.app.datalakes.schemas.payloads import (
@@ -113,6 +118,38 @@ class DataLakeService:
 
         return build_storage(manifest, self._transport_for(manifest))
 
+    def _listing_scope(self, manifest: LakeSourceManifest) -> str:
+        """Whose listing this is: every user's for a public source, this
+        account's own for one that sends a token."""
+        return f"user:{self.user_key}" if manifest.auth.uses_token else "shared"
+
+    def _storage_builder(self, manifest: LakeSourceManifest):
+        """A provider factory for a background scan.
+
+        The transport, and any token it carries, is resolved here on the
+        request thread; the scan thread only calls the factory.
+        """
+        from utk_curio.backend.app.datalakes.providers import build_storage
+
+        transport = self._transport_for(manifest)
+        return lambda: build_storage(manifest, transport)
+
+    def _storage_needs_token(self, manifest: LakeSourceManifest) -> dict[str, Any] | None:
+        """The leg for a source that cannot be listed without a token this
+        account does not hold, as a portal's search reports it."""
+        if manifest.auth.needs_token and not self._credential_for(manifest):
+            return {
+                "sourceId": manifest.id,
+                "status": "needs-token",
+                "detail": f"add a {manifest.auth.secret_id} token to list this source",
+            }
+        return None
+
+    def _listing(self, manifest: LakeSourceManifest, **kwargs):
+        return scanning.listings.get(
+            manifest, self._storage_builder(manifest), scope=self._listing_scope(manifest), **kwargs
+        )
+
     def _credential_for(self, manifest: LakeSourceManifest) -> str | None:
         return credentials.credential_header(self.user, manifest)
 
@@ -168,28 +205,33 @@ class DataLakeService:
         names = {m.id: m.name for m in manifests}
         portals = [m for m in manifests if not m.is_storage]
         query = _query(q, fmt, limit, None)
-        rows, legs = self._browse.search_all(portals, query)
+        storage_pages = []
+        storage_legs = []
         for manifest in (m for m in manifests if m.is_storage):
             # A storage source searches what it declares, from the listing's
-            # summary. It never waits here: a source still being scanned is a
-            # leg that says so, like a portal that did not answer.
-            state = scanning.listings.get(
-                manifest, lambda m=manifest: self._storage_for(m), wait=0
-            )
-            if state.status == "ready":
-                found = [r for r in state.resources if _storage_matches(r, query.text)]
+            # summary. It never waits here: a source being scanned for the
+            # first time is a leg that says so, like a portal that did not
+            # answer; one being rescanned answers from its last scan.
+            blocked = self._storage_needs_token(manifest)
+            if blocked is not None:
+                storage_legs.append(blocked)
+                continue
+            state = self._listing(manifest, wait=0)
+            view = state.view()
+            if view is not None:
+                found = [r for r in view.resources if _storage_matches(r, query.text)]
                 if query.fmt:
                     found = [r for r in found if query.fmt in r.formats]
-                rows.extend(found)
-                legs.append({"sourceId": manifest.id, "status": "ok", "count": len(found)})
+                storage_pages.append(SearchPage(resources=tuple(found)))
+                storage_legs.append({"sourceId": manifest.id, "status": "ok", "count": len(found)})
             else:
-                legs.append({
+                storage_legs.append({
                     "sourceId": manifest.id,
-                    "status": state.status if state.status in ("scanning", "failed") else "scanning",
+                    "status": "failed" if state.status == "failed" else "scanning",
                     **({"detail": state.error} if state.error else {}),
                 })
-        rows = rows[: query.limit]
-        legs.sort(key=lambda leg: leg["sourceId"])
+        rows, legs = self._browse.search_all(portals, query, extra_pages=storage_pages)
+        legs = sorted(legs + storage_legs, key=lambda leg: leg["sourceId"])
         held = self._held_index()
         dirs = {m.id: m.dir_name for m in manifests}
         return search_payload(
@@ -224,10 +266,16 @@ class DataLakeService:
     # ── storage ────────────────────────────────────────────────────────────
 
     def _storage_listing(self, manifest: LakeSourceManifest, *, q: str, rescan: bool) -> dict[str, Any]:
-        """A storage source's rows, from its declared resources and a scan."""
-        state = scanning.listings.get(
-            manifest, lambda: self._storage_for(manifest), rescan=rescan
-        )
+        """A storage source's rows, from its declared resources and a scan.
+
+        While a scan runs, the rows are the last finished scan's, and the leg
+        says ``scanning`` with how many files it has walked so far.
+        """
+        blocked = self._storage_needs_token(manifest)
+        if blocked is not None:
+            return search_payload([], sources=[blocked])
+        state = self._listing(manifest, rescan=rescan)
+        view = state.view()
         held = self._held_index()
         rows = [
             resource_row(
@@ -235,7 +283,7 @@ class DataLakeService:
                 source_name=manifest.name,
                 already_held_dataset_id=held.get((manifest.dir_name, r.resource_id)),
             )
-            for r in state.resources
+            for r in (view.resources if view is not None else [])
             if _storage_matches(r, q)
         ]
         # "ok" like a portal leg; "scanning" and "failed" say why rows are missing.
@@ -243,9 +291,11 @@ class DataLakeService:
         leg = {"sourceId": manifest.id, "status": status, "count": len(rows)}
         if state.error:
             leg["detail"] = state.error
-        payload = search_payload(rows, sources=[leg], truncated=state.truncated)
-        payload["unmatched"] = state.unmatched
-        payload["scannedAt"] = _iso(state.scanned_at)
+        if state.status == "scanning":
+            leg["seen"] = state.seen
+        payload = search_payload(rows, sources=[leg], truncated=view.truncated if view else False)
+        payload["unmatched"] = view.unmatched if view else 0
+        payload["scannedAt"] = _iso(view.scanned_at) if view else None
         return payload
 
     def storage_files(
@@ -256,7 +306,7 @@ class DataLakeService:
         if not manifest.is_storage:
             raise CapabilityUnsupported(f"{manifest.name} lists datasets, not files")
         scanning.parse_resource_id(manifest, resource_id)
-        group = scanning.listings.group(manifest, resource_id)
+        group = scanning.listings.group(manifest, resource_id, scope=self._listing_scope(manifest))
         if group is None:
             raise ResourceNotFound(f"{resource_id!r} is not listed; list {manifest.name} again")
         offset = max(0, int(offset))
@@ -279,8 +329,9 @@ class DataLakeService:
         }
 
     def _storage_detail(self, manifest: LakeSourceManifest, resource_id: str) -> LakeResourceDetail:
-        state = scanning.listings.get(manifest, lambda: self._storage_for(manifest))
-        for resource in state.resources:
+        state = self._listing(manifest)
+        view = state.view()
+        for resource in (view.resources if view is not None else []):
             if resource.resource_id == resource_id:
                 spec = scanning.parse_resource_id(manifest, resource_id).spec
                 return LakeResourceDetail(
@@ -291,7 +342,7 @@ class DataLakeService:
                     license=manifest.license,
                     extra={"path": spec.path, "datasets": spec.datasets, "kind": spec.kind},
                 )
-        if state.status != "ready":
+        if view is None:
             raise SourceNotFound(f"{manifest.name} is still being scanned; try again shortly")
         raise SourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
 

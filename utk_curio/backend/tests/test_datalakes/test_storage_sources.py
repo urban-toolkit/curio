@@ -626,3 +626,96 @@ class TestTheFilesList:
 
     def test_it_needs_a_sign_in(self, client, app, shipped_root):
         assert client.get(f"/api/datalakes/sources/{EXAMPLE}/files/orthos").status_code == 401
+
+
+class TestTheListingCache:
+    """What a storage listing serves while it is being refreshed, and whose it is."""
+
+    def test_a_refresh_keeps_serving_the_last_scan(self, client, auth, app, shipped_root, monkeypatch):
+        import threading
+
+        from utk_curio.backend.app.datalakes.application import scan
+
+        listing(client, auth, source=EXAMPLE)
+        release = threading.Event()
+        real_scan = scan.scan
+
+        def slow_scan(*args, **kwargs):
+            release.wait(10)
+            return real_scan(*args, **kwargs)
+
+        monkeypatch.setattr(scan, "scan", slow_scan)
+        try:
+            body = client.get(f"/api/datalakes/sources/{EXAMPLE}/search?rescan=1", headers=auth).get_json()
+            assert body["sources"][0]["status"] == "scanning"
+            # The last scan's rows, Files and thumbnails, while the new walk runs.
+            assert {r["resourceId"] for r in body["resources"]} >= {"orthos", "air-quality"}
+            files = client.get(f"/api/datalakes/sources/{EXAMPLE}/files/orthos", headers=auth)
+            assert files.status_code == 200 and files.get_json()["total"] == 4
+            thumb = client.get(f"/api/datalakes/sources/{EXAMPLE}/thumbnails/0/orthos", headers=auth)
+            assert thumb.status_code == 200
+        finally:
+            release.set()
+        assert listing(client, auth, source=EXAMPLE)["sources"][0]["status"] == "ok"
+
+    def _token_source(self, lake_root, tmp_path, mode):
+        root = write_files(tmp_path / "f", {"pics/a.jpg": b"\xff\xd8\xff\xe0 not really"})
+        write_source(lake_root, SOURCE, a_storage_manifest(root, [
+            {"id": "pics", "name": "Pictures", "kind": "images", "path": "pics/*"},
+        ], auth={
+            "mode": mode, "secretId": "huggingface.token", "headerName": "Authorization",
+            "valuePrefix": "Bearer ",
+        }))
+
+    def test_a_source_that_sends_a_token_is_listed_per_user(
+        self, client, auth, app, lake_root, tmp_path, monkeypatch
+    ):
+        from utk_curio.backend.app.datalakes.application import scan
+        from utk_curio.backend.app.datalakes.service import DataLakeService
+
+        self._token_source(lake_root, tmp_path, "optional-token")
+        monkeypatch.setattr(DataLakeService, "_credential_for", lambda self, m: "Authorization:Bearer t")
+        assert listing(client, auth)["sources"][0]["status"] == "ok"
+        scopes = {scope for (dir_name, scope) in scan.listings._states if dir_name == SOURCE}
+        assert scopes and all(scope.startswith("user:") for scope in scopes)
+
+    def test_a_public_source_is_listed_once_for_everyone(self, client, auth, app, shipped_root):
+        from utk_curio.backend.app.datalakes.application import scan
+
+        listing(client, auth, source=EXAMPLE)
+        assert (EXAMPLE, "shared") in scan.listings._states
+
+    def test_a_source_that_needs_a_token_is_not_listed_without_one(
+        self, client, auth, app, lake_root, tmp_path
+    ):
+        from utk_curio.backend.app.datalakes.application import scan
+
+        scan.listings.reset()
+        self._token_source(lake_root, tmp_path, "required-token")
+        body = client.get(f"/api/datalakes/sources/{SOURCE}/search", headers=auth).get_json()
+        assert body["sources"][0]["status"] == "needs-token"
+        assert body["resources"] == []
+        assert not [key for key in scan.listings._states if key[0] == SOURCE]
+
+
+class TestFederatedStorageRows:
+    def test_storage_matches_are_kept_when_the_portals_fill_the_page(
+        self, client, auth, app, shipped_root, monkeypatch
+    ):
+        from utk_curio.backend.app.datalakes.application.browse import LakeBrowse
+        from utk_curio.backend.app.datalakes.domain.resource import LakeResource, SearchPage
+
+        listing(client, auth, source=EXAMPLE)
+
+        def full_page(self, manifest, query):
+            rows = tuple(
+                LakeResource(source_id=manifest.id, resource_id=f"r{i}", name=f"Noise report {i}")
+                for i in range(query.limit)
+            )
+            return {"status": "ok", "count": len(rows)}, SearchPage(resources=rows)
+
+        monkeypatch.setattr(LakeBrowse, "_leg", full_page)
+        monkeypatch.setattr(LakeBrowse, "_why_not_searchable", lambda self, m: None)
+        body = client.get("/api/datalakes/search?q=noise", headers=auth).get_json()
+        assert len(body["resources"]) == 20
+        assert any(r["sourceId"] == "lake.curio.example-storage" for r in body["resources"])
