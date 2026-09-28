@@ -670,6 +670,13 @@ def _js_value_to_saveable_frame(value):
     return None, None
 
 
+# Conditions a dynamic ``import()`` in Node matches, see _pick_export_entry.
+_ACTIVE_CONDITIONS = ('node', 'import', 'default')
+# Not conditions Node resolves an ``import()`` with, but where a package with no
+# active one keeps its entry; tried only after every active condition failed.
+_FALLBACK_CONDITIONS = ('module', 'require')
+
+
 def _pick_export_entry(node):
     """Resolve a package.json ``exports`` subtree down to a relative path string.
 
@@ -680,15 +687,24 @@ def _pick_export_entry(node):
     degrading to the bare specifier, which then resolves only when the Node
     subprocess cwd happens to sit inside the repo.
 
-    Condition order matches what the js_wrapper needs: it runs under
-    ``--input-type=commonjs`` but reaches packages through dynamic ``import()``,
-    so the ESM conditions win over ``require``.
+    The pick is Node's own: the first key, in the order the package lists
+    them, that is a condition this import satisfies. The js_wrapper runs under
+    ``--input-type=commonjs`` but reaches packages through dynamic ``import()``
+    in Node, so ``node``, ``import`` and ``default`` are active. A fixed
+    priority of our own picked ``import`` over ``node``, which for autk-db 3
+    (``browser``, ``node``, ``import``, ``default``) is its browser build: it
+    needs a ``Worker`` that Node does not have.
     """
     if isinstance(node, str):
         return node
     if not isinstance(node, dict):
         return None
-    for key in ('import', 'module', 'node', 'default', 'require'):
+    for key, value in node.items():
+        if key in _ACTIVE_CONDITIONS:
+            entry = _pick_export_entry(value)
+            if entry:
+                return entry
+    for key in _FALLBACK_CONDITIONS:
         if key in node:
             entry = _pick_export_entry(node[key])
             if entry:

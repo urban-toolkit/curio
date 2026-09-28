@@ -85,6 +85,22 @@ class TestPickExportEntry(unittest.TestCase):
         node = {'import': {'types': './only.d.ts'}, 'default': './real.js'}
         self.assertEqual(_pick_export_entry(node), './real.js')
 
+    def test_node_build_wins_where_the_package_lists_it_first(self):
+        # autk-db 3's shape: "import" is its browser build, which needs a
+        # Worker. Node itself takes "node", the first active key.
+        node = {
+            'types': './dist/index.d.ts',
+            'browser': './dist/browser.js',
+            'node': './dist/node.js',
+            'import': './dist/browser.js',
+            'default': './dist/browser.js',
+        }
+        self.assertEqual(_pick_export_entry(node), './dist/node.js')
+
+    def test_the_package_key_order_decides(self):
+        self.assertEqual(_pick_export_entry({'default': './a.js', 'node': './b.js'}), './a.js')
+        self.assertEqual(_pick_export_entry({'import': './esm.mjs', 'node': './n.js'}), './esm.mjs')
+
     def test_unresolvable_shapes_return_none(self):
         for node in (None, 42, [], {}, {'types': './x.d.ts'}):
             with self.subTest(node=node):
