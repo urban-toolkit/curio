@@ -4,7 +4,7 @@ A transport, not a runtime: it drives the SAME endpoints a browser drives --
 create a project, install and attach the Dataflow Builder, send one turn, apply
 what came back, Solve, read the persisted spec -- through the Flask test client,
 with the provider and the sandbox replaced the way every agent test replaces
-them (``services.run_chat_completion`` and ``runner._http_exec``).
+them (``services.run_chat_turn`` and ``runner._http_exec``).
 
 It lives under ``tests/`` on purpose. The evaluation library itself
 (``app/agents/evaluation``) takes values and returns values; anything that
@@ -105,13 +105,23 @@ class InProcessDriver:
 
     # ── setup ──────────────────────────────────────────────────────────────
     def use_scripted_provider(self) -> None:
-        """Point the account's provider at the in-process test provider, the
-        way a live run points it at a real endpoint."""
-        self.client.patch(
-            "/api/auth/me",
-            json={"llmApiType": "testing", "llmModel": "scripted"},
+        """Make a configuration on the in-process test provider the account's
+        default, the way a live run makes a real endpoint's the default."""
+        listing = self.client.get("/api/agents/llm", headers=auth(self.token)).get_json()
+        config = next((c for c in listing["configs"] if c["label"] == "Scripted"), None)
+        if config is None:
+            created = self.client.post(
+                "/api/agents/llm/configs",
+                json={"label": "Scripted", "apiType": "testing", "model": "scripted"},
+                headers=auth(self.token),
+            )
+            assert created.status_code == 201, created.get_json()
+            config = created.get_json()["config"]
+        chosen = self.client.put(
+            "/api/agents/llm/default", json={"configId": config["id"]},
             headers=auth(self.token),
         )
+        assert chosen.status_code == 200, chosen.get_json()
 
     def stub_pip(self, *, import_errors: Mapping | None = None) -> None:
         """Keep pip out of the deterministic suite.
@@ -288,7 +298,7 @@ class InProcessDriver:
             return responder(messages, len(calls) - 1)
 
         self.monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
 
     def fake_sandbox(self, kind_for: Callable | None = None) -> None:

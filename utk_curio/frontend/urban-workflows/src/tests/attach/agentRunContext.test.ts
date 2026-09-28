@@ -84,7 +84,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("generic reads compose labeled fragments in declared order", () => {
     const att = attachment({
-      coord: "agent.workflow-suggester@1.0.0",
+      coord: "agent.dataflow-reader@1.0.0",
       reads: ["dataflowContext", "workflowGoal"],
     });
     const context = composeAgentRunContext(att, canvas)!;
@@ -110,7 +110,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("node-scoped reads are omitted for canvas attachments", () => {
     const att = attachment({
-      coord: "agent.execution-subtask-planner@1.0.0",
+      coord: "agent.dataflow-planner@1.0.0",
       target: { kind: "canvas" },
       reads: ["nodeContent", "nodeType", "currentTask"],
     });
@@ -118,9 +118,23 @@ describe("composeAgentRunContext (memo dev/44)", () => {
     expect(composeAgentRunContext(att, canvas)).toBeNull();
   });
 
-  it("agents with no composable reads yield null (chat agent)", () => {
+  it("agents with no composable reads yield null", () => {
     const att = attachment({ reads: ["userMessage"] });
     expect(composeAgentRunContext(att, canvas)).toBeNull();
+  });
+
+  it("the chat agent sees the dataflow on screen, and its node when attached to one", () => {
+    // It explains and debugs, so it reads what the removed explainer and
+    // debugger read: the live canvas, unsaved nodes included.
+    const reads = ["userMessage", "nodeContext", "dataflowContext"];
+    const onCanvas = composeAgentRunContext(attachment({ reads }), canvas);
+    expect(onCanvas).toContain("n2-unsaved");
+    const onNode = composeAgentRunContext(
+      attachment({ reads, target: { kind: "node", targetId: "n1" } }),
+      canvas,
+    );
+    expect(onNode).toContain("print('old')");
+    expect(onNode).toContain("n2-unsaved");
   });
 });
 

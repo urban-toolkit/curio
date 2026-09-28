@@ -277,3 +277,65 @@ class TestCapture:
         testing_provider.push_reply("streamed")
         list(stream_chat_completion(_config(), [{"role": "user", "content": "streamy"}]))
         assert testing_provider.last_messages()[0]["content"] == "streamy"
+
+
+class TestNativeCalls:
+    """A scripted reply may call tools natively, as a model offered tools does."""
+
+    TOOLS = [{"name": "node__read", "description": "", "parameters": {}}]
+
+    def test_an_entry_makes_its_calls_under_their_native_names(self):
+        from utk_curio.backend.app.agents.providers import ToolCall
+
+        testing_provider.push_reply({"text": "Reading.", "toolCalls": [
+            {"name": "node.read", "arguments": {"nodeId": "n1"}, "id": "c1"},
+            {"name": "node__read"},
+        ]})
+        turn = testing_provider.run_scripted_turn([], tools=self.TOOLS)
+        assert turn.text == "Reading."
+        first, second = turn.tool_calls
+        assert first == ToolCall("c1", "node__read", {"nodeId": "n1"})
+        assert (second.name, second.arguments) == ("node__read", {})
+        assert second.id and second.id != first.id
+
+    def test_a_call_needs_a_call_that_offered_tools(self):
+        testing_provider.push_replies(
+            {"toolCalls": [{"name": "node.read"}]}, {"toolCalls": [{"name": "node.read"}]},
+        )
+        with pytest.raises(ValueError, match="offered no tool"):
+            testing_provider.run_scripted_turn([])
+        with pytest.raises(ValueError, match="last round"):
+            testing_provider.run_scripted_turn([], tools=self.TOOLS, tool_choice="none")
+
+    def test_an_error_entry_fails_the_call_uncharged(self):
+        testing_provider.push_reply({"error": "no tools here", "status": 400})
+        sink: dict = {}
+        with pytest.raises(testing_provider.ScriptedEndpointError) as raised:
+            testing_provider.run_scripted_turn([], usage_out=sink, tools=self.TOOLS)
+        assert raised.value.status_code == 400 and sink == {}
+
+    def test_what_each_call_offered_is_recorded(self):
+        testing_provider.run_scripted_turn([], tools=self.TOOLS)
+        testing_provider.run_scripted_turn([])
+        assert testing_provider.offered() == [
+            {"tools": ["node__read"], "toolChoice": "auto", "replySchema": None},
+            {"tools": [], "toolChoice": None, "replySchema": None},
+        ]
+        testing_provider.reset()
+        assert testing_provider.offered() == []
+
+    def test_the_stream_yields_the_text_then_the_calls(self):
+        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+
+        testing_provider.push_reply({"toolCalls": [{"name": "node.read", "id": "c1"}]})
+        events = list(stream_chat_turn(_config(), [], tools=self.TOOLS))
+        assert events == [ToolCall("c1", "node__read", {})]
+        testing_provider.push_reply("plain")
+        assert list(stream_chat_turn(_config(), [])) == ["plain"]
+
+    def test_an_endpoint_error_on_a_call_offering_tools_is_a_refusal_of_them(self):
+        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+
+        testing_provider.push_reply({"error": "no tools here", "status": 422})
+        with pytest.raises(NativeToolsRefused):
+            run_chat_turn(_config(), [], tools=self.TOOLS)

@@ -55,82 +55,86 @@ class EvaluationServiceError(Exception):
 
 # ── readiness: is a model configured, and where did it come from ────────────
 
-def readiness(user) -> dict:
-    """Whether an evaluation can run at all, and which model would answer.
+#: The agent an evaluation attaches. It runs on its own configuration, and
+#: each agent it delegates to on that agent's choice, else the Builder's.
+EVALUATED_AGENT = "agent.dataflow-builder"
 
-    The correction's *"actionable blocked state when no LLM is configured"*
-    needs one more distinction than "configured or not": a model can come from
-    the account's own AI Settings **or** from the deployment's own start flags
-    (``curio.py start --llm-provider/--llm-base-url/--llm-model``, and
-    ``--guest-llm-api-key`` for the shared guest). Both are real
-    configurations, so a panel that only looked at the user row would tell an
-    operator who configured the model on the command line that they had not
-    configured it.
-    """
-    from utk_curio.backend import config as backend_config
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
+
+def _provider_payload(config) -> dict:
     from utk_curio.backend.app.agents.evaluation.training_host import host_of
 
-    deployment = {
-        "apiType": backend_config.DEFAULT_LLM_API_TYPE or "",
-        "baseUrlHost": host_of(backend_config.DEFAULT_LLM_BASE_URL or ""),
-        "model": backend_config.DEFAULT_LLM_MODEL or "",
-        "hasApiKey": bool(backend_config.DEFAULT_LLM_API_KEY),
+    return {
+        "apiType": config.api_type or "",
+        "baseUrlHost": host_of(config.base_url, config.api_type),
+        "model": config.model or "",
+        "configId": config.config_id,
+        "label": config.label,
     }
-    account = {
-        "apiType": getattr(user, "llm_api_type", None) or "",
-        "baseUrlHost": host_of(getattr(user, "llm_base_url", None) or ""),
-        "model": getattr(user, "llm_model", None) or "",
-        "hasApiKey": bool(getattr(user, "llm_api_key", None)),
-    }
+
+
+def _evaluated_configs(user, user_key: str):
+    """The Dataflow Builder's configuration, as an attached run resolves it,
+    and every distinct configuration the run uses: the Builder's and those of
+    the agents it requires, each resolved with the Builder as its caller.
+    Returns ``(config, rows)``; each row is a provider payload plus the
+    ``agents`` that run on it."""
+    from utk_curio.backend.app.agents import builtin
+    from utk_curio.backend.app.agents.provider_config import ProviderConfigError, resolve_llm
+
+    guest = bool(getattr(user, "is_guest", False))
+    manifest = builtin.get_builtin_manifest(DFB_COORD)
     try:
-        config = resolve_provider_config(user, require_model=True)
+        config = resolve_llm(user_key, EVALUATED_AGENT, guest=guest)
+        used = [(getattr(manifest, "name", None) or "Dataflow Builder", config)]
+        for agent_id in getattr(manifest, "requires_agents", None) or ():
+            required = builtin.get_builtin_manifest(f"{agent_id}@{builtin.BUILTIN_VERSION}")
+            used.append((
+                getattr(required, "name", None) or agent_id,
+                resolve_llm(user_key, agent_id, caller=config, guest=guest),
+            ))
     except ProviderConfigError as exc:
+        raise EvaluationServiceError(str(exc), 400) from exc
+    rows: list[dict] = []
+    for name, agent_config in used:
+        payload = _provider_payload(agent_config)
+        row = next((r for r in rows if {k: r[k] for k in payload} == payload), None)
+        if row is None:
+            row = {**payload, "agents": []}
+            rows.append(row)
+        row["agents"].append(name)
+    return config, rows
+
+
+def readiness(user) -> dict:
+    """Whether an evaluation can run at all, and which configurations would answer.
+
+    The run attaches the Dataflow Builder, so its configuration is the one an
+    attached Dataflow Builder resolves: its choice in AI Settings, else the
+    account's default, else the deployment default (``curio.py start
+    --llm-provider/--llm-base-url/--llm-model``). ``source`` says which,
+    because a model configured on the command line is as real as one chosen in
+    AI Settings. ``configurations`` lists every distinct configuration the run
+    and the agents it requires use.
+    """
+    from utk_curio.backend.app.agents.provider_config import storage_key
+
+    try:
+        config, rows = _evaluated_configs(user, storage_key(user))
+    except EvaluationServiceError as exc:
         return {
             "configured": False,
-            "reason": str(exc),
+            "reason": exc.message,
             "source": "none",
-            "provider": {"apiType": "", "baseUrlHost": "", "model": ""},
-            "account": account,
-            "deployment": deployment,
+            "provider": {"apiType": "", "baseUrlHost": "", "model": "", "configId": None, "label": ""},
+            "configurations": [],
         }
-    # Which of the two supplied the model the run will actually use. The
-    # resolved config is the truth; these two only explain where it came from.
-    source = "account" if account["model"] and account["model"] == config.model else (
-        "deployment" if deployment["model"] and deployment["model"] == config.model
-        else "account"
-    )
     return {
         "configured": True,
         "reason": "",
-        "source": source,
-        "provider": {
-            "apiType": config.api_type or "",
-            "baseUrlHost": host_of(config.base_url),
-            "model": config.model or "",
-        },
-        "account": account,
-        "deployment": deployment,
+        "source": config.source,
+        "provider": _provider_payload(config),
+        "configurations": rows,
     }
-
-
-def _provider_config(user):
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
-
-    try:
-        return resolve_provider_config(user, require_model=True)
-    except ProviderConfigError as exc:
-        raise EvaluationServiceError(
-            f"{exc} Configure a provider and model in AI Settings, or start "
-            "Curio with --llm-provider/--llm-base-url/--llm-model.",
-            400,
-        ) from exc
 
 
 # ── fixtures ────────────────────────────────────────────────────────────────
@@ -196,17 +200,14 @@ def start(user, user_key: str, fixture_id: str) -> dict:
             )
 
     fixture = _fixture_or_refuse(fixture_id)
-    config = _provider_config(user)
+    config, configurations = _evaluated_configs(user, user_key)
 
     record = records_mod.EvaluationRecord(
         run_id=records_mod.new_run_id(),
         fixture_id=fixture.fixture_id,
         review_status=fixture.review_status,
-        provider={
-            "apiType": config.api_type or "",
-            "baseUrlHost": _host_of(config.base_url),
-            "model": config.model or "",
-        },
+        provider=_provider_payload(config),
+        configurations=configurations,
         digests={
             "fixtureSha256": fixture.fixture_sha256(),
             "promptSha256": fixture.prompt_sha256(),
@@ -229,6 +230,7 @@ def start(user, user_key: str, fixture_id: str) -> dict:
         kind="evaluation-run",
         job_id=record.run_id,
         events=_run_events(user, user_key, record.run_id, fixture, config),
+        redact_values={"llm-api-key": config.api_key},
     )
     return record.as_dict()
 
@@ -360,6 +362,9 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
         record.usage = {
             "inputTokens": int(usage.get("inputTokens") or 0),
             "outputTokens": int(usage.get("outputTokens") or 0),
+            # Part of inputTokens, when the provider reports them.
+            **{key: int(usage[key]) for key in ("cacheReadTokens", "cacheWriteTokens")
+               if isinstance(usage.get(key), int)},
         }
         proposals = [
             part for part in (turn.get("content") or [])
@@ -730,12 +735,6 @@ def _instruction_digest() -> str:
         return digest_of([builtin.read_instruction_text(DFB_COORD) or ""])
     except Exception:  # noqa: BLE001
         return ""
-
-
-def _host_of(base_url: str) -> str:
-    from utk_curio.backend.app.agents.evaluation.training_host import host_of
-
-    return host_of(base_url)
 
 
 # ── reading runs ────────────────────────────────────────────────────────────

@@ -35,11 +35,10 @@ export const AgentDock: React.FC<{
   return (
     <div className={styles.dock} role="toolbar" aria-label="Canvas agents">
       {showGoal && (
-        // The dataflow's goal. Five built-in agents declare `workflowGoal` in
+        // The dataflow's goal. Built-in agents declare `workflowGoal` in
         // their manifest `reads` (Node Content Builder, Connection Builder,
-        // Workflow Suggester, Plan Coherence Validator, and the mission
-        // composites), and the Dataflow Task Planner exists to turn a goal
-        // into a plan. The context composer has always had a producer for it;
+        // and the planning and reading delegates), and planning exists to turn
+        // a goal into a plan. The context composer has always had a producer for it;
         // what disappeared with the old AI-assistance chrome was the only
         // place to type one, so the value was permanently "" and those agents
         // ran without the input their prompts are written around.

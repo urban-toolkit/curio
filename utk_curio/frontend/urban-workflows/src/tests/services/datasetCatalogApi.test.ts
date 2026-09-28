@@ -72,4 +72,20 @@ describe("datasetCatalogApi.importDataset (source file date)", () => {
     const body = fetchMock.mock.calls[0][1].body as FormData;
     expect(body.get("sourceUpdatedAt")).toBeNull();
   });
+
+  test("states where a hand-downloaded file came from, and nothing for a plain upload", async () => {
+    const fetchMock = mockFetch();
+    const file = new File(["a,b\n1,2"], "cities.csv", { type: "text/csv" });
+
+    await datasetCatalogApi.importDataset(file, {
+      lakeSource: { resourceUrl: "https://data.example.org/cities.csv" },
+    });
+    await datasetCatalogApi.importDataset(file);
+
+    const stated = fetchMock.mock.calls[0][1].body as FormData;
+    expect(JSON.parse(stated.get("lakeSource") as string)).toEqual({
+      resourceUrl: "https://data.example.org/cities.csv",
+    });
+    expect((fetchMock.mock.calls[1][1].body as FormData).get("lakeSource")).toBeNull();
+  });
 });

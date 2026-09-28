@@ -15,6 +15,7 @@ from utk_curio.backend.app.users.schemas import (
 )
 from utk_curio.backend.app.users import repositories as repo
 from utk_curio.backend.app.users import security
+from utk_curio.backend.app.users.capabilities import token_refusal
 from utk_curio.backend.config import (
     CURIO_SHARED_GUEST_NAME,
     CURIO_SHARED_GUEST_USERNAME,
@@ -40,10 +41,6 @@ def _user_out(u: User) -> UserOut:
         profile_image=u.profile_image,
         type=u.type,
         is_guest=u.is_guest,
-        has_llm_api_key=bool(u.llm_api_key),
-        llm_api_type=u.llm_api_type,
-        llm_base_url=u.llm_base_url,
-        llm_model=u.llm_model,
         has_huggingface_token=bool(u.huggingface_token),
         has_socrata_app_token=bool(u.socrata_app_token),
     )
@@ -171,24 +168,17 @@ def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
         user.email = data.email if data.email else None
     if data.type is not None:
         user.type = data.type
-    if data.llm_api_key is not None:
-        if user.is_guest:
-            raise AuthError("Guest users cannot set an API key.", 403)
-        user.llm_api_key = data.llm_api_key if data.llm_api_key else None
-    if data.socrata_app_token is not None:
-        # Refused out loud rather than quietly dropped, matching the LLM key
-        # above: a guest account is shared, so a personal token saved on it
-        # would be everyone's, and a UI that accepts the value and discards it
-        # leaves the user believing they are authenticated when they are not.
-        if user.is_guest:
-            raise AuthError("Guest users cannot set a portal token.", 403)
-        user.socrata_app_token = data.socrata_app_token or None
-    if not user.is_guest:
-        if data.llm_api_type is not None:
-            user.llm_api_type = data.llm_api_type if data.llm_api_type else None
-        if data.llm_base_url is not None:
-            user.llm_base_url = data.llm_base_url if data.llm_base_url else None
-        if data.llm_model is not None:
-            user.llm_model = data.llm_model if data.llm_model else None
-        if data.huggingface_token is not None:
-            user.huggingface_token = data.huggingface_token or None
+    for field, noun in (
+        ("socrata_app_token", "a portal token"),
+        ("huggingface_token", "a HuggingFace token"),
+    ):
+        value = getattr(data, field)
+        if value is None:
+            continue
+        # Refused out loud rather than quietly dropped: a UI that accepts the
+        # value and discards it leaves the user believing they are
+        # authenticated when they are not.
+        refusal = token_refusal(user, noun)
+        if refusal:
+            raise AuthError(refusal, 403)
+        setattr(user, field, value or None)

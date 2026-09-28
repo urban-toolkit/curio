@@ -133,18 +133,25 @@ def me_get_route():
     return jsonify(user_out.to_dict()), 200
 
 
+#: The single LLM configuration the account row used to hold. Its fields are
+#: refused by name, so an old client learns where they went.
+_LLM_FIELDS = ("llm_api_type", "llm_base_url", "llm_api_key", "llm_model")
+
+
 @auth_bp.route("/me", methods=["PATCH"])
 @require_auth
 def me_patch_route():
     body = request.get_json(silent=True) or {}
+    retired = sorted(k for k in _LLM_FIELDS if k in body)
+    if retired:
+        return jsonify({"error": (
+            f"{', '.join(retired)} are not account fields: LLM settings are LLM "
+            "configurations, managed in AI Settings (/api/agents/llm)."
+        )}), 400
     data = UserPatchIn(
         name=body.get("name"),
         email=body.get("email"),
         type=body.get("type"),
-        llm_api_type=body.get("llm_api_type"),
-        llm_base_url=body.get("llm_base_url"),
-        llm_api_key=body.get("llm_api_key"),
-        llm_model=body.get("llm_model"),
         huggingface_token=body.get("huggingface_token"),
         socrata_app_token=body.get("socrata_app_token"),
     )

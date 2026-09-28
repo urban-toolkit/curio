@@ -376,17 +376,55 @@ def _scripted_guard():
     return None
 
 
+def _reply_entry_error(entry: object) -> str | None:
+    """Why *entry* is not a scripted reply, or None when it is one: a string,
+    ``{text, toolCalls}`` or ``{error, status}``."""
+    if isinstance(entry, str):
+        return None
+    if not isinstance(entry, dict):
+        return "each reply must be a string or an object"
+    if "error" in entry:
+        if set(entry) - {"error", "status"}:
+            return "an error reply takes only 'error' and 'status'"
+        if not isinstance(entry["error"], str) or not isinstance(entry.get("status", 500), int):
+            return "an error reply is {'error': <string>, 'status': <int>}"
+        return None
+    if set(entry) - {"text", "toolCalls"}:
+        return "a reply object takes only 'text' and 'toolCalls'"
+    if not isinstance(entry.get("text", ""), str):
+        return "'text' must be a string"
+    calls = entry.get("toolCalls", [])
+    if not isinstance(calls, list):
+        return "'toolCalls' must be a list"
+    for call in calls:
+        if not (
+            isinstance(call, dict)
+            and not set(call) - {"name", "arguments", "id"}
+            and isinstance(call.get("name"), str) and call["name"]
+            and isinstance(call.get("arguments", {}), dict)
+            and isinstance(call.get("id", ""), str)
+        ):
+            return "each tool call is {'name': <string>, 'arguments': <object>, 'id': <string, optional>}"
+    return None
+
+
 @testing_bp.route("/agent-script", methods=["POST"])
 def agent_script_push():
     """Queue scripted replies for the next agent turns.
 
     Body (JSON):
-      * ``replies`` - list of reply strings, consumed in order, one per
-        provider call. A multi-round run (a toolRequest and its follow-up)
-        needs one entry per round.
+      * ``replies`` - list of replies, consumed in order, one per provider
+        call. A multi-round run (a tool call and its follow-up) needs one entry
+        per round. A reply is its text, ``{"text", "toolCalls"}`` for native
+        tool calls (each ``{"name", "arguments", "id"}``, ``id`` optional), or
+        ``{"error", "status"}`` for an endpoint error (see
+        ``testing_provider``).
       * ``byIntent`` - optional ``{substring: reply}``. A delegated call whose
         ``intent`` contains a key gets that reply instead of the next queued
         one (see ``testing_provider.route_by_intent``).
+      * ``chatCapabilities`` - optional ``{tools, structuredOutput}``: what the
+        scripted endpoint can do beyond text. ``{"tools": true}`` puts runs on
+        native tools; without it they use the fenced protocol.
       * ``reset`` - drop anything queued and captured first. Defaults to true,
         which is what a test almost always wants: a leftover reply from a
         previous test would be consumed by this one and the failure would point
@@ -401,18 +439,34 @@ def agent_script_push():
     replies = body.get("replies")
     if replies is None:
         replies = []
-    if not isinstance(replies, list) or not all(isinstance(r, str) for r in replies):
-        return jsonify({"error": "'replies' must be a list of strings"}), 400
+    if not isinstance(replies, list):
+        return jsonify({"error": "'replies' must be a list"}), 400
+    for entry in replies:
+        problem = _reply_entry_error(entry)
+        if problem:
+            return jsonify({"error": problem}), 400
     by_intent = body.get("byIntent") or {}
     if not isinstance(by_intent, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in by_intent.items()
     ):
         return jsonify({"error": "'byIntent' must map strings to strings"}), 400
+    capabilities = body.get("chatCapabilities")
+    if capabilities is not None and not (
+        isinstance(capabilities, dict)
+        and not set(capabilities) - {"tools", "structuredOutput"}
+        and all(isinstance(v, bool) for v in capabilities.values())
+    ):
+        return jsonify({"error": "'chatCapabilities' is {'tools': <bool>, 'structuredOutput': <bool>}"}), 400
     if body.get("reset", True):
         testing_provider.reset()
     testing_provider.push_replies(*replies)
     if by_intent:
         testing_provider.route_by_intent(by_intent)
+    if capabilities is not None:
+        testing_provider.script_chat_capabilities(
+            tools=capabilities.get("tools", False),
+            structured_output=capabilities.get("structuredOutput", False),
+        )
     return jsonify({"pending": testing_provider.pending()}), 200
 
 
@@ -426,7 +480,12 @@ def agent_script_read():
     agent's own instruction bytes - which a reply, being scripted, can never
     show.
 
-    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...]}``
+    ``calls`` holds ``{configId, model}`` for each of those calls: which LLM
+    configuration answered it. ``offered`` holds ``{tools, toolChoice}`` for
+    each: the native tools it offered, none on the fenced protocol.
+
+    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
+    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``
     """
     denied = _scripted_guard()
     if denied is not None:
@@ -436,6 +495,8 @@ def agent_script_read():
             {
                 "pending": testing_provider.pending(),
                 "captured": testing_provider.captured(),
+                "calls": testing_provider.calls(),
+                "offered": testing_provider.offered(),
             }
         ),
         200,

@@ -85,6 +85,9 @@ class TrainingRecord:
     """One job, as this account knows it."""
 
     job_id: str
+    # The LLM configuration the job was submitted on: status, cancel and
+    # activation all use it, never whatever the account's default is now.
+    config_id: str | None = None
     provider: dict = field(default_factory=dict)
     dataset: dict = field(default_factory=dict)
     consent: dict = field(default_factory=dict)
@@ -98,7 +101,8 @@ class TrainingRecord:
     evaluation: dict | None = None
     activation: dict = field(
         default_factory=lambda: {
-            "activatedAt": None, "previousModel": None, "rolledBackAt": None,
+            "activatedAt": None, "configId": None, "agentId": None, "previousChoice": None,
+            "rolledBackAt": None,
         }
     )
     events: list = field(default_factory=list)
@@ -132,6 +136,7 @@ class TrainingRecord:
         return {
             "recordVersion": RECORD_VERSION,
             "jobId": self.job_id,
+            "configId": self.config_id,
             "provider": dict(self.provider),
             "dataset": dict(self.dataset),
             "consent": dict(self.consent),
@@ -155,6 +160,7 @@ class TrainingRecord:
     def from_dict(cls, payload: Mapping) -> "TrainingRecord":
         return cls(
             job_id=str(payload.get("jobId") or ""),
+            config_id=payload.get("configId") or None,
             provider=dict(payload.get("provider") or {}),
             dataset=dict(payload.get("dataset") or {}),
             consent=dict(payload.get("consent") or {}),
@@ -168,7 +174,8 @@ class TrainingRecord:
             evaluation=payload.get("evaluation"),
             activation=dict(
                 payload.get("activation")
-                or {"activatedAt": None, "previousModel": None, "rolledBackAt": None}
+                or {"activatedAt": None, "configId": None, "agentId": None, "previousChoice": None,
+                    "rolledBackAt": None}
             ),
             events=[dict(e) for e in (payload.get("events") or []) if isinstance(e, Mapping)],
             created_at=str(payload.get("createdAt") or _now()),

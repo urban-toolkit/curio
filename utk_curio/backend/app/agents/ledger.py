@@ -54,6 +54,8 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
 from utk_curio.backend.app.agents import storage
 
 _ZERO_USAGE = {"inputTokens": 0, "outputTokens": 0}
+#: Counted when a provider reports them: inputTokens already includes both.
+_CACHE_KEYS = ("cacheReadTokens", "cacheWriteTokens")
 
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
@@ -137,16 +139,21 @@ def _append(user_key: str, day: str, entry: dict) -> None:
 
 def _usage_counts(raw: object) -> dict:
     usage = raw if isinstance(raw, dict) else {}
-    return {
+    counts = {
         key: usage[key] if isinstance(usage.get(key), int) else 0
         for key in _ZERO_USAGE
     }
+    counts.update({key: usage[key] for key in _CACHE_KEYS if isinstance(usage.get(key), int)})
+    return counts
 
 
 def _add_usage(total: dict, raw: object) -> None:
     counts = _usage_counts(raw)
     total["inputTokens"] += counts["inputTokens"]
     total["outputTokens"] += counts["outputTokens"]
+    for key in _CACHE_KEYS:
+        if key in counts:
+            total[key] = total.get(key, 0) + counts[key]
 
 
 def _aggregate(entries: list[dict]) -> dict:
@@ -197,11 +204,14 @@ def reserve(
     template_key: str | None = None,
     attachment_key: str | None = None,
     reservation_id: str | None = None,
+    llm_config_id: str | None = None,
 ) -> dict:
     """Record that one run is starting. Never denies: nothing is capped.
 
     The append still happens under the lock so concurrent runs cannot tear a
     line, and the returned handle is what :func:`settle` closes.
+    ``llm_config_id`` is the LLM configuration that answers the run (None for
+    the deployment's own).
     """
     now = _now()
     day = now.date().isoformat()
@@ -216,6 +226,7 @@ def reserve(
                 "ts": now.isoformat(),
                 "templateKey": template_key,
                 "attachmentKey": attachment_key,
+                "llmConfigId": llm_config_id,
             },
         )
     return {"reservationId": rid, "day": day}
@@ -246,7 +257,8 @@ def settle(
 
 
 def record_housekeeping_usage(
-    user_key: str, usage: dict | None, *, note: str = "housekeeping"
+    user_key: str, usage: dict | None, *, note: str = "housekeeping",
+    llm_config_id: str | None = None,
 ) -> None:
     """Count an internal provider call (the title call): tokens only, never
     run-counted, no reservation. The token counters may therefore exceed what
@@ -262,5 +274,6 @@ def record_housekeeping_usage(
                 "ts": _now().isoformat(),
                 "note": note,
                 "usage": _usage_counts(usage),
+                "llmConfigId": llm_config_id,
             },
         )

@@ -1,7 +1,8 @@
 """The one seam that touches both the store and the endpoint (dev/122).
 
-Everything else in this package is pure. This module resolves the account's
-provider config, builds the set from the fixtures on disk, writes the record,
+Everything else in this package is pure. This module resolves the LLM
+configuration a job runs on, builds the set from the fixtures on disk, writes
+the record,
 talks to the endpoint, and folds its answers back — in that order, because the
 order is a contract: the consent record is written and flushed *before* the
 first byte is uploaded (dev/87: every export appends an audit record before the
@@ -23,6 +24,7 @@ from utk_curio.backend.app.agents.training import consent as consent_mod
 from utk_curio.backend.app.agents.training import dataset as dataset_mod
 from utk_curio.backend.app.agents.training import gate as gate_mod
 from utk_curio.backend.app.agents.training import records as records_mod
+from utk_curio.backend.app.agents.provider_config import redact_error
 
 #: The suffix a trained model carries, so it is recognisable in the endpoint's
 #: own console as something Curio produced.
@@ -38,26 +40,96 @@ class TrainingServiceError(Exception):
         self.status = status
 
 
-def _provider_config(user):
+#: The agent whose prompts build the training set (``training/dataset.py``),
+#: and so the one a trained model is chosen for.
+TRAINED_AGENT = "agent.dataflow-builder"
+
+
+def _training_config(user, user_key: str, config_id: str | None):
+    """The configuration a fine-tune runs on: *config_id*, else the one the
+    Dataflow Builder runs on (its choice in AI Settings, else the account's
+    default). It must hold the user's own key, so training never spends this
+    Curio install's key or a guest's."""
+    from utk_curio.backend.app.agents import llm_configs
     from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
+        SOURCE_DEFAULT,
+        build_config,
+        is_hosted_guest,
     )
 
+    guest = bool(getattr(user, "is_guest", False))
+    if is_hosted_guest(user_key, guest=guest):
+        raise TrainingServiceError(
+            "Training is not available to guests on this Curio, because every guest "
+            "shares one account. Sign in and add a configuration with your own API key.",
+            403,
+        )
+    store = llm_configs.default_store()
     try:
-        return resolve_provider_config(user, require_model=False)
-    except ProviderConfigError as exc:
-        raise TrainingServiceError(str(exc), 400) from exc
+        if config_id:
+            chosen = config_id
+        else:
+            builder = store.choices(user_key).get(TRAINED_AGENT)
+            chosen = (
+                None if builder == llm_configs.CHOICE_DEPLOYMENT
+                else builder or store.default_id(user_key)
+            )
+        record = store.record(user_key, chosen) if chosen else None
+    except llm_configs.LlmConfigError as exc:
+        raise TrainingServiceError(str(exc), exc.status) from exc
+    if not chosen:
+        raise TrainingServiceError(
+            "Choose the LLM configuration to train on. Training runs on a configuration "
+            "holding your own API key, and the Dataflow Builder runs on this deployment's.",
+            409,
+        )
+    if record is None:
+        raise TrainingServiceError(f"There is no LLM configuration {chosen!r}.", 404)
+    label = record.get("label") or chosen
+    if record.get("endpoint") == llm_configs.ENDPOINT_DEPLOYMENT:
+        raise TrainingServiceError(
+            f"The configuration {label!r} uses this Curio install's endpoint. Training "
+            "runs only on a configuration holding your own API key.",
+            409,
+        )
+    if not record.get("apiKey"):
+        raise TrainingServiceError(
+            f"The configuration {label!r} holds no API key. Training runs only on a "
+            "configuration holding your own key.",
+            409,
+        )
+    return build_config(user_key, chosen, record, source=SOURCE_DEFAULT, guest=guest)
+
+
+def _job_config(user, user_key: str, record):
+    """The configuration *record*'s job was submitted on, never the default now."""
+    if not record.config_id:
+        raise TrainingServiceError(
+            "this job records no LLM configuration, so there is no endpoint to ask", 409
+        )
+    return _training_config(user, user_key, record.config_id)
+
+
+def running_config_ids(user_key: str) -> set[str]:
+    """The configurations a live job runs on: their endpoint and key cannot
+    change, and they cannot be removed, until it ends."""
+    return {
+        record.config_id
+        for record in records_mod.list_records(user_key)
+        if record.submitted and not record.terminal and record.config_id
+    }
 
 
 def _provider_identity(config) -> dict:
     return {
         "apiType": config.api_type or "",
         "baseUrlHost": consent_mod.host_of(config.base_url, config.api_type),
+        "configId": config.config_id,
+        "label": config.label,
     }
 
 
-def capability(user, user_key: str, *, refresh: bool = True) -> dict:
+def capability(user, user_key: str, *, config_id: str | None = None, refresh: bool = True) -> dict:
     """What this account's endpoint says about fine-tuning, live or replayed.
 
     Mirrors ``provider-models``: a live answer is recorded; when a live answer
@@ -65,7 +137,7 @@ def capability(user, user_key: str, *, refresh: bool = True) -> dict:
     because presenting a recording as the present tense is how someone ends up
     staring at a feature their endpoint does not have.
     """
-    config = _provider_config(user)
+    config = _training_config(user, user_key, config_id)
     identity = _provider_identity(config)
     if refresh:
         result = providers.fine_tuning_capabilities(config)
@@ -78,7 +150,7 @@ def capability(user, user_key: str, *, refresh: bool = True) -> dict:
         user_key, config.api_type, config.base_url
     )
     if remembered is None:
-        return capability(user, user_key, refresh=True)
+        return capability(user, user_key, config_id=config_id, refresh=True)
     return {
         **remembered,
         "probedAt": seen_at or "",
@@ -143,9 +215,9 @@ def build_set(*, split: str = "train"):
         raise TrainingServiceError(str(refusal), 409) from refusal
 
 
-def preview(user, *, split: str = "train") -> dict:
-    """What would be sent, for a person to read before consenting."""
-    config = _provider_config(user)
+def preview(user, user_key: str, *, config_id: str | None = None, split: str = "train") -> dict:
+    """What would be sent, and where, for a person to read before consenting."""
+    config = _training_config(user, user_key, config_id)
     training_set, fixtures = build_set(split=split)
     licences = {
         fixture.fixture_id: dataset_mod.licence_of(fixture) or "MIT (this repository)"
@@ -171,10 +243,16 @@ def start(
     base_model: str,
     rows_digest: str,
     confirmed: bool,
+    destination_host: str = "",
+    config_id: str | None = None,
     split: str = "train",
     price_per_mtoken=None,
 ) -> dict:
     """Consent, then upload, then submit — in that order, and recorded so.
+
+    Consent names what is sent (the rows digest) and where (the destination
+    host): both are echoed back from the preview, so a configuration changed
+    in between cannot receive a set its owner agreed to send elsewhere.
 
     Refuses a second in-flight job for the account: a fine-tune costs money and
     a double-click must not spend twice.
@@ -193,7 +271,7 @@ def start(
             400,
         )
 
-    config = _provider_config(user)
+    config = _training_config(user, user_key, config_id)
     probe = providers.fine_tuning_capabilities(config)
     if not probe.supported:
         raise TrainingServiceError(probe.reason, 409)
@@ -207,6 +285,13 @@ def start(
         training_set, base_url=config.base_url, api_type=config.api_type,
         licences=licences,
     )
+    if (destination_host or "").strip() != statement.destination_host:
+        raise TrainingServiceError(
+            f"the set would go to {statement.destination_host}, not the "
+            f"{destination_host or 'unnamed host'} the preview showed; preview again "
+            "before sending",
+            409,
+        )
     try:
         granted = consent_mod.grant(
             statement, user_key=user_key, echoed_digest=rows_digest, confirmed=confirmed
@@ -216,6 +301,7 @@ def start(
 
     record = records_mod.TrainingRecord(
         job_id=records_mod.new_job_id(),
+        config_id=config.config_id,
         provider={**_provider_identity(config), "baseModel": base_model},
         dataset=training_set.as_dict(),
         consent=granted.as_dict(),
@@ -240,11 +326,12 @@ def start(
             suffix=MODEL_SUFFIX,
         )
     except providers.FineTuningUnavailable as exc:
+        detail = redact_error(exc, config)
         record.status = "failed"
-        record.error = str(exc)
-        record.append("error", detail=str(exc))
+        record.error = detail
+        record.append("error", detail=detail)
         records_mod.write(user_key, record)
-        raise TrainingServiceError(str(exc), 502) from exc
+        raise TrainingServiceError(detail, 502) from exc
 
     record.append("submitted", providerJobId=job.id, baseModel=job.base_model)
     records_mod.fold_provider_status(record, job)
@@ -281,10 +368,10 @@ def status(user, user_key: str, job_id: str, *, price_per_mtoken=None) -> dict:
         payload = record.as_dict()
         payload["gate"] = _gate_payload(user_key, record)
         return payload
-    config = _provider_config(user)
     try:
+        config = _job_config(user, user_key, record)
         job = providers.get_fine_tuning_job(config, record.provider_job_id)
-    except providers.FineTuningUnavailable as exc:
+    except (providers.FineTuningUnavailable, TrainingServiceError) as exc:
         # The record keeps its last known state; the reason travels with it
         # rather than becoming a fabricated status.
         payload = record.as_dict()
@@ -318,7 +405,7 @@ def cancel(user, user_key: str, job_id: str) -> dict:
         raise TrainingServiceError(
             "this job was never submitted, so there is nothing to cancel", 409
         )
-    config = _provider_config(user)
+    config = _job_config(user, user_key, record)
     try:
         job = providers.cancel_fine_tuning_job(config, record.provider_job_id)
     except providers.FineTuningUnavailable as exc:
@@ -329,39 +416,32 @@ def cancel(user, user_key: str, job_id: str) -> dict:
     return record.as_dict()
 
 
-def _set_account_model(user, model: str) -> str:
-    """Point the account at *model*; return what it pointed at before.
-
-    Writes through the users domain's own patch path — the same one AI Settings
-    writes — so there is exactly one place an account's model changes, and a
-    guest is refused there rather than here.
-    """
-    from utk_curio.backend.app.users.schemas import UserPatchIn
-    from utk_curio.backend.app.users.services import patch_me
-
-    previous = getattr(user, "llm_model", None) or ""
-    try:
-        patch_me(user, UserPatchIn(llm_model=model))
-    except Exception as exc:  # noqa: BLE001 - AuthError carries its own status
-        raise TrainingServiceError(
-            f"could not change the account's model: {exc}",
-            getattr(exc, "status", 400),
-        ) from exc
-    return previous
-
-
 def activate(user, user_key: str, job_id: str) -> dict:
-    """Point the account at a trained model — once it has been evaluated.
+    """Give the trained model a configuration of its own and choose it for the
+    Dataflow Builder, once it has been evaluated.
 
-    The gate is checked against the corpus as it is *now*, so an evaluation
-    that describes examples which have since moved cannot authorise anything.
+    The new configuration copies the one the job trained on (the key is copied
+    server-side) with the trained model and ``origin: trained``. The Builder's
+    previous choice is recorded so :func:`rollback` can restore it. The gate is
+    checked against the corpus as it is *now*, so an evaluation that describes
+    examples which have since moved cannot authorise anything.
     """
+    from utk_curio.backend.app.agents import llm_configs
+
     record = _read_or_refuse(user_key, job_id)
     if record is None:
         raise TrainingServiceError(f"no training job {job_id}", 404)
     if record.status != "succeeded":
         raise TrainingServiceError(
             f"this job is {record.status}; there is nothing to activate yet", 409
+        )
+    store = llm_configs.default_store()
+    source = store.record(user_key, record.config_id) if record.config_id else None
+    if source is None:
+        raise TrainingServiceError(
+            "the LLM configuration this job trained on is gone, so there is no "
+            "endpoint to give the trained model; add one for it in AI Settings",
+            409,
         )
     fixtures = load_fixtures()
     try:
@@ -373,23 +453,41 @@ def activate(user, user_key: str, job_id: str) -> dict:
     except gate_mod.GateRefused as refusal:
         raise TrainingServiceError(str(refusal), 409) from refusal
 
-    previous = _set_account_model(user, str(record.trained_model))
+    try:
+        previous = store.choices(user_key).get(TRAINED_AGENT)
+        created = store.duplicate(
+            user_key, record.config_id,
+            label=store.free_label(user_key, f"{source.get('label') or 'Configuration'} (trained)"),
+            model=str(record.trained_model), origin=llm_configs.ORIGIN_TRAINED,
+            extra={"jobId": job_id, "sourceId": record.config_id},
+        )
+        store.set_choice(user_key, TRAINED_AGENT, created["id"])
+    except llm_configs.LlmConfigError as exc:
+        raise TrainingServiceError(str(exc), exc.status) from exc
     record.activation = {
         "activatedAt": records_mod._now(),
-        "previousModel": previous,
+        "configId": created["id"],
+        "agentId": TRAINED_AGENT,
+        "previousChoice": previous,
         "rolledBackAt": None,
     }
     record.evaluation = gate_mod.summary(checked)
     record.append(
-        "activated", model=record.trained_model, previousModel=previous,
-        runId=checked.run_id,
+        "activated", model=record.trained_model, configId=created["id"],
+        agentId=TRAINED_AGENT, previousChoice=previous, runId=checked.run_id,
     )
     records_mod.write(user_key, record)
     return record.as_dict()
 
 
 def rollback(user, user_key: str, job_id: str) -> dict:
-    """Put the account back on the model it had before this activation."""
+    """Restore the Dataflow Builder's choice this activation replaced. Refused
+    once that choice has been changed by hand since, because rolling back would
+    undo the change. The trained configuration stays, to use or remove in AI
+    Settings."""
+    from utk_curio.backend.app.agents import llm_configs
+    from utk_curio.backend.app.agents.provider_config import deployment_config
+
     record = _read_or_refuse(user_key, job_id)
     if record is None:
         raise TrainingServiceError(f"no training job {job_id}", 404)
@@ -397,60 +495,39 @@ def rollback(user, user_key: str, job_id: str) -> dict:
         raise TrainingServiceError(
             "this job's model is not active, so there is nothing to roll back", 409
         )
-    previous = record.activation.get("previousModel") or ""
-    _set_account_model(user, previous)
-    record.activation = {
-        **record.activation,
-        "rolledBackAt": records_mod._now(),
-    }
-    record.append("rolled-back", restoredModel=previous)
+    agent_id = record.activation.get("agentId") or TRAINED_AGENT
+    store = llm_configs.default_store()
+    restored = None
+    try:
+        if store.choices(user_key).get(agent_id) != record.activation.get("configId"):
+            raise TrainingServiceError(
+                "the Dataflow Builder's LLM configuration has changed since this model "
+                "was activated; choose it in AI Settings instead",
+                409,
+            )
+        previous = record.activation.get("previousChoice")
+        if previous == llm_configs.CHOICE_DEPLOYMENT:
+            guest = bool(getattr(user, "is_guest", False))
+            if deployment_config(user_key, guest=guest) is None:
+                previous = None
+        elif previous:
+            restored = store.record(user_key, previous)
+            if restored is None:
+                previous = None
+        store.set_choice(user_key, agent_id, previous)
+    except llm_configs.LlmConfigError as exc:
+        raise TrainingServiceError(str(exc), exc.status) from exc
+    record.activation = {**record.activation, "rolledBackAt": records_mod._now()}
+    record.append("rolled-back", restoredChoice=previous)
     records_mod.write(user_key, record)
     payload = record.as_dict()
-    if not previous:
-        # Honest: an empty previous model means the account inherits the
-        # deployment default again, which is a different thing from a model.
-        payload["rollbackNote"] = (
-            "the account had no model of its own before, so it now inherits the "
-            "deployment's default again"
-        )
+    if restored is not None:
+        payload["rollbackNote"] = f"the Dataflow Builder runs on {restored.get('label')!r} again"
+    elif previous == llm_configs.CHOICE_DEPLOYMENT:
+        payload["rollbackNote"] = "the Dataflow Builder runs on the Deployment default again"
     else:
-        payload["rollbackNote"] = (
-            f"the account is back on {previous!r}; if the endpoint no longer "
-            "serves it, AI Settings will show it as not listed"
-        )
+        payload["rollbackNote"] = "the Dataflow Builder follows your default again"
     return payload
-
-
-def account_model_check(user, user_key: str) -> dict:
-    """Whether the account is on a trained model nobody recorded activating.
-
-    An evaluation switches the account's model temporarily (that is how a model
-    is measured before it is activated). If that switch is interrupted, the
-    account is left on a trained model with no activation record — which this
-    reports so the panel can say so, rather than leaving it silent.
-    """
-    from utk_curio.backend.app.agents import model_catalog
-
-    config = _provider_config(user)
-    current = getattr(user, "llm_model", None) or ""
-    trained = {
-        row["model"]: row
-        for row in model_catalog.trained_models(
-            user_key, config.api_type, config.base_url
-        )
-    }
-    if current not in trained:
-        return {"model": current, "trainedInCurio": False, "unrecorded": False}
-    activated = any(
-        record.activated and record.trained_model == current
-        for record in records_mod.list_records(user_key)
-    )
-    return {
-        "model": current,
-        "trainedInCurio": True,
-        "unrecorded": not activated,
-        "jobId": trained[current].get("jobId"),
-    }
 
 
 def _gate_payload(user_key: str, record) -> dict | None:

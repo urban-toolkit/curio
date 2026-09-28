@@ -141,7 +141,7 @@ class _Harness:
             return LOADER
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
         self.exec_payloads: list = []
 

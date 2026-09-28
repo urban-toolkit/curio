@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import testing_provider
+from utk_curio.backend.app.agents import llm_configs, testing_provider
 from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths, load_fixture
 from utk_curio.backend.app.agents.training import gate as gate_mod
 from utk_curio.backend.app.agents.training import records as records_mod
@@ -135,7 +135,8 @@ class TestTheGateIsNotAThreshold:
         import re
 
         forbidden = re.compile(
-            r"(run_chat_completion|stream_chat_completion|generated-content-evaluator"
+            r"(run_chat_completion|stream_chat_completion|run_chat_turn|stream_chat_turn"
+            r"|generated-content-evaluator"
             r"|delegate|content\.quality\.evaluate)"
         )
         for name in ("gate.py", "records.py", "consent.py", "dataset.py"):
@@ -149,6 +150,7 @@ class TestTheGateIsNotAThreshold:
         # The service talks to the provider for TUNING only — never for a
         # completion, and never to an evaluator agent.
         assert "run_chat_completion" not in service_source
+        assert "run_chat_turn" not in service_source
         assert "generated-content-evaluator" not in service_source
 
 
@@ -188,6 +190,7 @@ class TestActivationThroughTheRoutes:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -218,7 +221,22 @@ class TestActivationThroughTheRoutes:
         assert status["gate"]["satisfied"] is False
         assert "no evaluation" in status["gate"]["reason"]
 
-    def test_activation_then_rollback_moves_the_account_model_both_ways(
+    def _activate(self, client, account, job):
+        gate_mod.write_gate(
+            account["key"], job["jobId"], _gate(trained_model=job["trainedModel"])
+        )
+        return client.post(
+            f"/api/agents/training/jobs/{job['jobId']}/activate",
+            headers=_auth(account["token"]),
+        )
+
+    def _listing(self, client, account):
+        return client.get("/api/agents/llm", headers=_auth(account["token"])).get_json()
+
+    def _builder(self, listing):
+        return next(row for row in listing["agents"] if row["id"] == "agent.dataflow-builder")
+
+    def test_activation_chooses_a_trained_configuration_for_the_builder_and_rollback_restores(
         self, client, account, approved_corpus
     ):
         job = self._succeeded_job(client, account)
@@ -231,17 +249,24 @@ class TestActivationThroughTheRoutes:
         ).get_json()
         assert status["gate"]["satisfied"] is True
 
-        activated = client.post(
-            f"/api/agents/training/jobs/{job['jobId']}/activate",
-            headers=_auth(account["token"]),
-        )
+        activated = self._activate(client, account, job)
         assert activated.status_code == 200, activated.get_json()
         payload = activated.get_json()
-        assert payload["activation"]["previousModel"] == "scripted"
+        trained_id = payload["activation"]["configId"]
+        assert payload["activation"]["agentId"] == "agent.dataflow-builder"
+        # The Builder had no choice of its own: it followed the default.
+        assert payload["activation"]["previousChoice"] is None
         assert payload["activation"]["activatedAt"]
         assert payload["evaluation"]["meanScore"] == 0.94
-        me = client.get("/api/auth/me", headers=_auth(account["token"])).get_json()
-        assert me["llm_model"] == job["trainedModel"]
+        listing = self._listing(client, account)
+        # The Builder runs on the trained model; the default is untouched.
+        assert listing["assignments"] == {"agent.dataflow-builder": trained_id}
+        assert self._builder(listing)["answers"]["configId"] == trained_id
+        assert listing["default"] == account["configId"]
+        trained = next(c for c in listing["configs"] if c["id"] == trained_id)
+        assert trained["model"] == job["trainedModel"]
+        assert trained["origin"] == "trained" and trained["label"] == "Scripted (trained)"
+        assert (trained["jobId"], trained["sourceId"]) == (job["jobId"], account["configId"])
 
         rolled = client.post(
             f"/api/agents/training/jobs/{job['jobId']}/rollback",
@@ -249,9 +274,52 @@ class TestActivationThroughTheRoutes:
         )
         assert rolled.status_code == 200
         assert rolled.get_json()["activation"]["rolledBackAt"]
-        assert "back on 'scripted'" in rolled.get_json()["rollbackNote"]
-        me = client.get("/api/auth/me", headers=_auth(account["token"])).get_json()
-        assert me["llm_model"] == "scripted"
+        assert rolled.get_json()["rollbackNote"] == "the Dataflow Builder follows your default again"
+        listing = self._listing(client, account)
+        assert listing["assignments"] == {}
+        assert self._builder(listing)["answers"]["configId"] == account["configId"]
+        # The trained configuration stays, to use or remove in AI Settings.
+        assert any(c["id"] == trained_id for c in listing["configs"])
+
+    def test_rollback_restores_a_previous_choice(self, client, account, approved_corpus):
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": account["configId"]},
+                   headers=_auth(account["token"]))
+        job = self._succeeded_job(client, account)
+        activated = self._activate(client, account, job).get_json()
+        assert activated["activation"]["previousChoice"] == account["configId"]
+        rolled = client.post(
+            f"/api/agents/training/jobs/{job['jobId']}/rollback",
+            headers=_auth(account["token"]),
+        ).get_json()
+        assert rolled["rollbackNote"] == "the Dataflow Builder runs on 'Scripted' again"
+        assert self._listing(client, account)["assignments"] == {
+            "agent.dataflow-builder": account["configId"]
+        }
+
+    def test_rollback_after_the_choice_was_changed_by_hand_is_refused(
+        self, client, account, approved_corpus
+    ):
+        job = self._succeeded_job(client, account)
+        assert self._activate(client, account, job).status_code == 200
+        client.put("/api/agents/llm/assignments", json={"agent.dataflow-builder": None},
+                   headers=_auth(account["token"]))
+        refused = client.post(
+            f"/api/agents/training/jobs/{job['jobId']}/rollback",
+            headers=_auth(account["token"]),
+        )
+        assert refused.status_code == 409
+        assert "has changed since this model was activated" in refused.get_json()["error"]
+        assert self._listing(client, account)["assignments"] == {}
+
+    def test_activation_needs_the_configuration_the_job_trained_on(
+        self, client, account, approved_corpus
+    ):
+        job = self._succeeded_job(client, account)
+        client.delete(f"/api/agents/llm/configs/{account['configId']}",
+                      headers=_auth(account["token"]))
+        refused = self._activate(client, account, job)
+        assert refused.status_code == 409
+        assert "is gone" in refused.get_json()["error"]
 
     def test_a_gate_for_another_model_does_not_authorise_this_one(
         self, client, account, approved_corpus
@@ -297,6 +365,7 @@ class TestActivationThroughTheRoutes:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -319,37 +388,6 @@ class TestActivationThroughTheRoutes:
         assert response.status_code == 409
         assert "nothing to roll back" in response.get_json()["error"]
 
-    def test_an_account_left_on_a_trained_model_is_reported(
-        self, client, account, approved_corpus
-    ):
-        """An evaluation switches the account's model temporarily. If that is
-        interrupted, the account is on a trained model with no activation
-        record — and the panel must say so rather than leave it silent."""
-        job = self._succeeded_job(client, account)
-        client.patch(
-            "/api/auth/me", json={"llm_model": job["trainedModel"]},
-            headers=_auth(account["token"]),
-        )
-        check = training_service.account_model_check(account["user"], account["key"])
-        assert check["trainedInCurio"] is True
-        assert check["unrecorded"] is True
-        assert check["jobId"] == job["jobId"]
-
-    def test_an_activated_model_is_not_reported_as_unrecorded(
-        self, client, account, approved_corpus
-    ):
-        job = self._succeeded_job(client, account)
-        gate_mod.write_gate(
-            account["key"], job["jobId"], _gate(trained_model=job["trainedModel"])
-        )
-        client.post(
-            f"/api/agents/training/jobs/{job['jobId']}/activate",
-            headers=_auth(account["token"]),
-        )
-        check = training_service.account_model_check(account["user"], account["key"])
-        assert check["trainedInCurio"] is True
-        assert check["unrecorded"] is False
-
     def test_activation_never_touches_the_key(
         self, client, account, approved_corpus
     ):
@@ -362,9 +400,13 @@ class TestActivationThroughTheRoutes:
             headers=_auth(account["token"]),
         ).get_json()
         assert API_KEY not in json.dumps(payload)
-        me = client.get("/api/auth/me", headers=_auth(account["token"])).get_json()
-        assert me["has_llm_api_key"] is True
-        assert "llm_api_key" not in me
+        listing = client.get("/api/agents/llm", headers=_auth(account["token"]))
+        assert API_KEY not in listing.get_data(as_text=True)
+        # The key was copied server-side into the trained configuration, and
+        # the one it trained on still holds its own.
+        store = llm_configs.default_store()
+        assert store.record(account["key"], account["configId"])["apiKey"] == API_KEY
+        assert store.record(account["key"], payload["activation"]["configId"])["apiKey"] == API_KEY
 
 
 class TestTheEvalToolsGateFlags:

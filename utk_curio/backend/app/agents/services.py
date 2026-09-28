@@ -18,6 +18,7 @@ import uuid
 from utk_curio.backend.app.agents import (
     attachments,
     builtin,
+    catalog_settings,
     content,
     delegation,
     imports,
@@ -30,7 +31,9 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents import (
     agent_jobs,
+    chat_capabilities,
     contracts,
+    provider_config,
     document_validation,
     egress,
     failure_text,
@@ -46,9 +49,12 @@ from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES, AgentManifest
 from utk_curio.backend.app.agents.providers import (
+    ChatTurn,
+    NativeToolsRefused,
     ProviderConfig,
-    run_chat_completion,
-    stream_chat_completion,
+    ToolCall,
+    run_chat_turn,
+    stream_chat_turn,
 )
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -132,6 +138,8 @@ def _manifest_to_card(
         "publishable": publishable,
         "scope": scope,
         "requiresAgents": list(requires_agents or []),
+        # An internal built-in runs only as a delegate; no listing shows one.
+        "inCatalog": not builtin.is_internal(m.dir_name),
     }
 
 
@@ -259,10 +267,13 @@ def _materialize_builtin(user_key: str, coord: str) -> None:
     instruction = builtin.read_prompt_text(coord, "instruction")
     if instruction is None:
         return  # prompt file missing — leave the built-in fallback to handle runtime
-    files = {manifest["prompts"]["instruction"]["path"]: instruction}
-    preamble = builtin.read_prompt_text(coord, "system")
-    if preamble is not None:
-        files[manifest["prompts"]["system"]["path"]] = preamble
+    # Every prompt the manifest declares: the preamble, the instruction, and
+    # each mode's own.
+    files = {}
+    for key, asset in manifest["prompts"].items():
+        text = builtin.read_prompt_text(coord, key)
+        if text is not None:
+            files[asset["path"]] = text
     storage.write_definition(user_key, coord, manifest, files)
 
 
@@ -385,7 +396,8 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
     # Global Catalog = built-in roster ∪ published definitions (published wins on dupes).
     by_dir: dict[str, tuple[AgentManifest, bool]] = {}
     for m in builtin.list_builtin_manifests():
-        by_dir[m.dir_name] = (m, False)
+        if not builtin.is_internal(m.dir_name):
+            by_dir[m.dir_name] = (m, False)
     for m in publications.list_published():
         by_dir[m.dir_name] = (m, True)
     return [
@@ -416,7 +428,7 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
             installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in sorted(imported):
-        m = _resolve_definition(user_key, coord)
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
         if m is None:
             continue
         # Publishable only when it is an owned imported definition (trust=imported) —
@@ -435,6 +447,29 @@ def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
     return out
 
 
+def choosable_agents(user_key: str) -> list[dict]:
+    """The agents whose LLM configuration this account may choose: the catalog
+    cards, the published definitions and the account's imports, one row
+    (``{id, name, category}``) per agent id, since a choice covers every
+    version. Never an internal built-in, which always runs on its caller's."""
+    internal = builtin.internal_agent_ids()
+    rows: dict[str, dict] = {}
+
+    def _add(m: AgentManifest) -> None:
+        if m.agent_id not in internal:
+            rows.setdefault(m.agent_id, {"id": m.agent_id, "name": m.name, "category": m.category})
+
+    for m in builtin.list_builtin_manifests():
+        _add(m)
+    for m in publications.list_published():
+        _add(m)
+    for coord in sorted(imports.load_imported_agents(user_key)):
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
+        if m is not None:
+            _add(m)
+    return sorted(rows.values(), key=lambda row: (row["name"].casefold(), row["id"]))
+
+
 def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     """The project's installed templates from its ``dataflow.agents`` lockfile."""
     spec = projects_storage.read_spec(user_key, project_id)
@@ -444,7 +479,7 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in project_agents.project_agents(spec):
-        m = _resolve_definition(user_key, coord)
+        m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
         if m is None:
             continue
         out.append(
@@ -495,6 +530,67 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     return results
 
 
+def _refuse_internal(coord: str) -> None:
+    """An internal built-in runs only as a delegate of other agents: it is
+    never imported, installed or attached."""
+    if builtin.is_internal(coord):
+        spec = builtin.get_builtin_spec(coord) or builtin.get_builtin_spec(
+            f"{coord}@{builtin.BUILTIN_VERSION}"
+        )
+        name = spec.name if spec else coord
+        raise AgentServiceError(
+            f"{name} runs only as a delegate of other agents; it is not installed or attached",
+            400,
+        )
+
+
+def catalog_settings_listing(user_key: str) -> list[dict]:
+    """Every catalog setting: its schema and default, the account's value, and
+    each agent and capability that reads it. Account-level and independent of
+    cards: internal agents are listed as readers, and nothing here depends on
+    what a project installed."""
+    readers = _settings_readers(user_key)
+    stored = catalog_settings.stored_values(user_key)
+    current = catalog_settings.values(user_key)
+    return [
+        {
+            "key": key,
+            "label": setting.label,
+            "description": setting.description,
+            "schema": setting.schema,
+            "default": setting.default,
+            "value": current[key],
+            "isDefault": key not in stored,
+            "readBy": readers.get(key, []),
+        }
+        for key, setting in contracts.CATALOG_SETTINGS.items()
+    ]
+
+
+def _settings_readers(user_key: str) -> dict[str, list[dict]]:
+    """Setting key to the ``{agentId, agentName, capability, internal}`` entries
+    that read it, over the built-ins and the account's own definitions. A
+    ``capability`` of ``None`` means every run of the agent."""
+    manifests = list(builtin.list_builtin_manifests())
+    for coord in sorted(imports.load_imported_agents(user_key)):
+        m = _resolve_definition(user_key, coord)
+        if m is not None and m.provenance.trust != "built-in":
+            manifests.append(m)
+    readers: dict[str, list[dict]] = {}
+    for m in manifests:
+        declared = [(None, key) for key in m.inputs_required_config] + [
+            (cap.id, key) for cap in m.capabilities for key in cap.required_config
+        ]
+        for capability, key in declared:
+            readers.setdefault(key, []).append({
+                "agentId": m.agent_id,
+                "agentName": m.name,
+                "capability": capability,
+                "internal": builtin.is_internal(m.dir_name),
+            })
+    return readers
+
+
 def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     """Record *coord* in My Imports and install it into every project.
 
@@ -502,6 +598,7 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     ``user_key`` keep working unchanged; without it this records the coordinate
     and nothing else, exactly as before.
     """
+    _refuse_internal(coord)
     _require_definition(user_key, coord)
     _materialize_builtin(user_key, coord)
     imports.add_imported_agent(user_key, coord)
@@ -555,6 +652,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     Returns ``{"agents": lockfile, "installed": [coords newly added, root
     first], "required": [the closure's coords]}``.
     """
+    _refuse_internal(coord)
     root = _require_definition(user_key, coord)
     required, missing = delegation.required_closure(user_key, root)
     if missing:
@@ -988,7 +1086,7 @@ def update_attachment_title(
 
 def record_dataset_selection(
     user_key: str, project_id: str, attachment_id: str, picks: object,
-    config: "ProviderConfig | None" = None,
+    guest: bool = False,
 ) -> dict:
     """dev/126: record the user's confirmed dataset selection for a node.
 
@@ -1039,12 +1137,19 @@ def record_dataset_selection(
     # record must carry what is true NOW (the row keeps its own mint-time
     # verdict in the transcript either way).
     budget = egress.CallBudget(_RUN_EGRESS_CALLS)
+    roster = _LazyRoster()
     for row in rows:
-        if row["lane"] == "external" and row.get("url"):
+        if row["lane"] != "external":
+            continue
+        if row.get("url"):
             row["verification"] = verify.verify_external_source(row["url"], budget=budget)
             # dev/132: and what can be DONE with it now — the card's verdict
             # may be days old, and the delegation below depends on this one.
             _mint_row_access(row)
+        _mint_row_acquirable(row, roster)
+    # A row Curio can download is downloaded now, by the Data Lake, and
+    # recorded as the catalog pick it becomes.
+    acquisitions = _acquire_confirmed_picks(rows)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = _read_spec_or_404(user_key, project_id)
         state = dataset_resolution.record_selection(fresh, attachment_id, rows)
@@ -1058,6 +1163,7 @@ def record_dataset_selection(
                 f"{r['lane']} · {r.get('name') or r.get('datasetId') or r.get('url')}"
                 + (f" · {(r.get('verification') or {}).get('status')}"
                    if r["lane"] == "external" else
+                   " · downloading" if r.get("acquiring") else
                    (" · installed" if r.get("installed") else " · not installed yet"))
                 for r in rows[:8]
             ]
@@ -1066,7 +1172,10 @@ def record_dataset_selection(
                 [sessions.make_turn(
                     "agent",
                     f"Source recorded for this node: {names}."
-                    + (" The dataset must be installed from the Data Catalog before "
+                    + (" It is downloading into the Data Catalog; Solve the node "
+                       "once it lands."
+                       if any(r.get("acquiring") for r in rows) else
+                       " The dataset must be installed from the Data Catalog before "
                        "Solve can load it."
                        if state["status"] == dataset_resolution.STATE_AWAITING_INSTALL else
                        " Solve the node to build its loader from this source."
@@ -1094,20 +1203,151 @@ def record_dataset_selection(
     # builder automatically — the owner asked for the delegation, not for a
     # prompt they must compose. A manual row is not delegated: its file does
     # not exist yet, and its card teaches the download and offers Import.
+    if acquisitions:
+        payload["acquisitions"] = acquisitions
     delegated = _delegate_confirmed_fetch(
-        user_key, project_id, str(target.get("targetId") or ""), rows, state, config,
-    )
+        user_key, project_id, str(target.get("targetId") or ""), rows, state, guest=guest,
+    ) or _acquisition_outcome(acquisitions)
     if delegated is not None:
         payload["delegated"] = delegated
     return payload
 
 
+def _acquire_format(row: dict) -> str | None:
+    """The format to download a confirmed row as, when it can be named: a
+    ``direct`` row's from the content type the probe saw, a connector row's
+    from its own ``format`` when that is one the Data Lake accepts."""
+    from utk_curio.backend.app.datalakes.domain import formats
+    from utk_curio.backend.app.datalakes.domain.manifest import LAKE_ACQUIRABLE_FORMATS
+
+    probed = formats.CONTENT_TYPE_FORMATS.get(formats.content_type_of(
+        {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
+    ))
+    if probed and row.get("resourceId") == row.get("url"):
+        return probed
+    named = str(row.get("format") or "").strip().lower()
+    return named if named in LAKE_ACQUIRABLE_FORMATS else None
+
+
+def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
+    """Download every confirmed acquirable row through the Data Lake, and record
+    each as the catalog pick it becomes.
+
+    The download is ``DataLakeService.start_acquire``, the one the Data Lake page
+    uses, so the dataset carries its ``lakeSource`` and a resource the account
+    already holds is not fetched again. It is not handed to a builder: the
+    builder writes fetch code, and here Curio fetches. Every download shares one
+    wait. One that lands inside it becomes an imported catalog pick; one still
+    running becomes a pick that is ``acquiring``, settled by
+    ``_settle_lake_acquisitions`` once the dataset is held. Returns one summary
+    per download.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+    from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+
+    summaries: list[dict] = []
+    running: list[tuple[int, dict, str]] = []
+    service = None
+    for index, row in enumerate(rows):
+        if row.get("lane") != "external" or not row.get("acquirable"):
+            continue
+        service = service or _lake_service()
+        summary = {"name": row.get("name"), "sourceId": row["sourceId"],
+                   "resourceId": row["resourceId"]}
+        try:
+            started = service.start_acquire(
+                row["sourceId"], row["resourceId"], fmt=_acquire_format(row),
+            )
+        except DataLakeError as exc:
+            row["acquireError"] = str(exc)[:200]
+            summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
+            continue
+        if started.get("alreadyPresent"):
+            dataset_id = (started.get("dataset") or {}).get("id")
+            rows[index] = dataset_resolution.acquired_pick(row, dataset_id)
+            summaries.append({**summary, "status": "acquired", "datasetId": dataset_id,
+                              "alreadyPresent": True})
+        else:
+            running.append((index, summary, str(started.get("jobId") or "")))
+    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    for index, summary, job_id in running:
+        row = rows[index]
+        outcome = _await_lake_job(service, job_id, deadline=deadline) or {}
+        status = outcome.get("status")
+        dataset_id = outcome.get("datasetId") or (outcome.get("dataset") or {}).get("id")
+        if status == "completed" and dataset_id:
+            rows[index] = dataset_resolution.acquired_pick(row, dataset_id)
+            summaries.append({**summary, "status": "acquired", "datasetId": dataset_id})
+        elif status in ("failed", "refused", "cancelled"):
+            row["acquireError"] = str(outcome.get("error") or f"the download was {status}")[:200]
+            summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
+        else:
+            rows[index] = dataset_resolution.acquiring_pick(row, job_id)
+            summaries.append({**summary, "status": "acquiring", "jobId": job_id})
+    return summaries
+
+
+def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
+    """What the confirmation says when no builder was started: a download still
+    running, or one that failed."""
+    running = [a for a in acquisitions if a.get("status") == "acquiring"]
+    failed = [a for a in acquisitions if a.get("status") == "failed"]
+    if running:
+        names = ", ".join(str(a.get("name") or a.get("resourceId")) for a in running)
+        return {
+            "status": "acquiring",
+            "jobIds": [a["jobId"] for a in running],
+            "reason": f"{names} is downloading into your Data Catalog; Solve the node once it lands",
+        }
+    if failed:
+        first = failed[0]
+        return {
+            "status": "acquire-failed",
+            "reason": f"the download of {first.get('name') or first.get('resourceId')} failed: {first.get('error')}",
+        }
+    return None
+
+
+def _settle_lake_acquisitions(user_key: str, project_id: str) -> None:
+    """Resolve nodes whose confirmed download has landed since it was confirmed.
+
+    Called at a Solve's entry, while the request's user can read the datasets
+    domain (a detached job cannot). Reads the spec first, so a project with no
+    download in flight costs one read.
+    """
+    from utk_curio.backend.app.agents import dataset_resolution
+
+    spec = projects_storage.read_spec(user_key, project_id)
+    if not dataset_resolution.has_acquiring_picks(spec):
+        return
+    user = _acting_user()
+    if user is None:
+        return
+    try:
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        held = UserDatasetRepository(user).lake_resource_index()
+    except Exception:  # noqa: BLE001 - an unreadable store settles nothing
+        log.warning("Could not read the held Data Lake datasets for project %s",
+                    project_id, exc_info=True)
+        return
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = projects_storage.read_spec(user_key, project_id)
+        if fresh is not None and dataset_resolution.settle_acquisitions(fresh, held):
+            projects_storage.write_spec(user_key, project_id, fresh)
+
+
 #: dev/132: the two rows worth delegating a fetch for — an external row the
 #: probe could read, and a catalog row already installed (its path exists).
+#: A row Curio downloads is never one: it becomes a catalog pick instead.
 def _fetchable_picks(rows: list[dict]) -> list[dict]:
     out = []
     for row in rows or []:
         if not isinstance(row, dict):
+            continue
+        if row.get("lane") == "external" and row.get("acquirable"):
             continue
         if row.get("lane") == "external" and row.get("access") == verify.ACCESS_FETCHABLE:
             out.append(row)
@@ -1122,7 +1362,8 @@ def _delegate_confirmed_fetch(
     node_id: str,
     rows: list[dict],
     state: dict,
-    config: "ProviderConfig | None",
+    *,
+    guest: bool = False,
 ) -> dict | None:
     """dev/132 (R1): start the node's own builder on the confirmed source.
 
@@ -1139,6 +1380,10 @@ def _delegate_confirmed_fetch(
     next pass (its record just moved, which is exactly its trigger),
     ``manual-download`` when the file is still on a portal, or a reason —
     never raising: a selection is recorded whether or not a build can start.
+
+    The build runs on the BUILDER's LLM configuration, resolved once it is
+    picked: the selection was posted to the Dataset Finder, whose choice in AI
+    Settings says nothing about what builds the node.
     """
     from utk_curio.backend.app.agents import agent_jobs, dataset_resolution
 
@@ -1146,7 +1391,10 @@ def _delegate_confirmed_fetch(
         return None
     fetchable = _fetchable_picks(rows)
     if not fetchable:
-        manual = [r for r in rows if (r or {}).get("access") == verify.ACCESS_MANUAL]
+        manual = [
+            r for r in rows
+            if (r or {}).get("access") == verify.ACCESS_MANUAL and not (r or {}).get("acquirable")
+        ]
         if manual:
             return {
                 "status": "manual-download",
@@ -1157,8 +1405,6 @@ def _delegate_confirmed_fetch(
                 ),
             }
         return None
-    if config is None:
-        return {"status": "skipped", "reason": "no provider is configured for this user"}
     try:
         spec = _read_spec_or_404(user_key, project_id)
     except AgentServiceError:
@@ -1187,10 +1433,16 @@ def _delegate_confirmed_fetch(
             ),
         }
     builder_id = str(builder.get("attachmentId") or "")
+    builder_coord = str(builder.get("coord") or "")
+    builder_manifest = _resolve_definition(user_key, builder_coord)
+    builder_name = getattr(builder_manifest, "name", None) or builder_coord.split("@", 1)[0]
     try:
+        config = provider_config.resolve_llm(user_key, builder_coord.split("@", 1)[0], guest=guest)
         subscription = solve_node_stream(
             user_key, project_id, builder_id, config, node_id=node_id,
         )
+    except provider_config.ProviderConfigError as exc:
+        return {"status": "skipped", "reason": f"the node's {builder_name} cannot start: {exc}"}
     except AgentServiceError as exc:
         return {"status": "skipped", "reason": str(exc)}
     except Exception:  # noqa: BLE001 — a selection is recorded regardless
@@ -1215,6 +1467,16 @@ def _record_or_404(spec: dict, attachment_id: str) -> dict:
     if record is None:
         raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
     return record
+
+
+def attachment_agent_id(user_key: str, project_id: str, attachment_id: str) -> str | None:
+    """The agent id (the coordinate before ``@``) an attachment binds, or None
+    when the project or the attachment is not there (the run that follows says
+    so itself)."""
+    spec = projects_storage.read_spec(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id) if spec else None
+    coord = str((record or {}).get("coord") or "")
+    return coord.split("@", 1)[0] or None
 
 
 def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
@@ -1886,7 +2148,7 @@ def _mint_dataflow_plan(
         node = existing_nodes.get(endpoint)
         return node.get("type") if node else None
 
-    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint)
+    kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available)
     if kind_errors:
         return "refused", "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors), None
     net_pairs = plan_topology.net_data_edges(
@@ -2730,9 +2992,28 @@ def apply_plan_edges(
     }
 
 
-def _plan_correction_message(errors: list[str]) -> dict:
+#: The correction for a plan found outside a terminal curio.v1 block.
+_PLAN_FENCE_GUIDANCE = (
+    "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
+    "your reply (not ```json)"
+)
+
+
+def _plan_correction_message(errors: list[str], *, native: bool = False) -> dict:
     """The corrective round's feedback (dev/54): precise, model-actionable,
-    and explicit that the invalid block never reached the user."""
+    and explicit that the invalid block never reached the user. A run on
+    native tools is asked for the plan as a call instead of a block."""
+    if native:
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _PLAN_FENCE_GUIDANCE][:10])
+        return {
+            "role": "user",
+            "content": (
+                "[plan validation] Your dataflowPlan was invalid and was NOT shown "
+                "to the user. Fix exactly these problems and call "
+                f"{tools.wire_name('dataflow.plan.write')} with the COMPLETE "
+                "corrected plan (all nodes and edges):\n" + listed
+            ),
+        }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
@@ -2767,10 +3048,7 @@ def _handle_plan_reply(
     if "dataflow.plan.write" not in loop_ctx.get("granted", []):
         return "none", parts, None
     visible_override: str | None = None
-    fence_guidance = (
-        "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
-        "your reply (not ```json)"
-    )
+    fence_guidance = _PLAN_FENCE_GUIDANCE
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
     if plan_part is not None:
         status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
@@ -2814,10 +3092,28 @@ def _handle_plan_reply(
     return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
-def _tool_correction_message(errors: list[str]) -> dict:
+#: The correction for a tool request found outside a terminal curio.v1 block.
+_TOOL_FENCE_GUIDANCE = (
+    "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
+    "thing in your reply (not ```json, and with no text after it)"
+)
+
+
+def _tool_correction_message(errors: list[str], *, native: bool = False) -> dict:
     """The corrective round's feedback for a tool request (#245) — the
     ``_plan_correction_message`` twin: precise, model-actionable, and explicit
-    that the invalid block never reached the user."""
+    that the invalid block never reached the user. A run on native tools is
+    asked for a call instead of a block."""
+    if native:
+        listed = "\n".join(f"- {e}" for e in [e for e in errors if e != _TOOL_FENCE_GUIDANCE][:10])
+        return {
+            "role": "user",
+            "content": (
+                "[tool validation] Your tool request was invalid and was NOT "
+                "shown to the user. Fix exactly these problems and call the "
+                "tool with the COMPLETE corrected arguments:\n" + listed
+            ),
+        }
     listed = "\n".join(f"- {e}" for e in errors[:10])
     return {
         "role": "user",
@@ -2891,10 +3187,7 @@ def _handle_tool_reply(
         return tool is not None and tool in granted
 
     visible_override: str | None = None
-    fence_guidance = (
-        "put the tool request in a ```curio.v1 fenced block as the VERY LAST "
-        "thing in your reply (not ```json, and with no text after it)"
-    )
+    fence_guidance = _TOOL_FENCE_GUIDANCE
 
     _, tail_body = content.split_tail(reply)
     errors = content.tool_tail_diagnosis(tail_body)
@@ -3920,10 +4213,11 @@ def _apply_datalake_acquire(
 _LAKE_APPLY_WAIT_S = 20
 
 
-def _await_lake_job(service, job_id: str | None) -> dict | None:
+def _await_lake_job(service, job_id: str | None, *, deadline: float | None = None) -> dict | None:
     if not job_id:
         return None
-    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    if deadline is None:
+        deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
     while time.monotonic() < deadline:
         row = service.get_job(job_id)
         if row.get("status") in ("completed", "failed", "refused", "cancelled"):
@@ -4492,6 +4786,38 @@ _SOLVE_STALE_SECONDS = 15 * 60
 _SOLVE_CANCEL_EVENTS: dict[str, object] = {}
 
 
+def _is_data_loading_node(node: object) -> bool:
+    from utk_curio.backend.app.packages import services as _pkg_services
+
+    return source_grounding.is_data_loading_type(
+        _pkg_services.canonical_template_id((node or {}).get("type") if isinstance(node, dict) else None)
+    )
+
+
+def _delegate_capabilities(nodes) -> list[str]:
+    """What a content run always delegates: the content, and discovery when a
+    data-loading node may need a source."""
+    capabilities = ["node.content.generate"]
+    if any(_is_data_loading_node(node) for node in nodes):
+        capabilities.append("dataset.discover")
+    return capabilities
+
+
+def _check_delegate_llms(user_key: str, project_id: str, manifest, config: ProviderConfig,
+                         capabilities: list[str]) -> None:
+    """Resolve the LLM configuration of each delegate a run always relies on,
+    BEFORE anything is written, so a broken choice in AI Settings refuses the
+    run once, with its remedy, instead of failing every node. Raises
+    ``ProviderConfigError``. A delegate that does not resolve at all is left
+    to the run, which reports a missing specialist its own way."""
+    if manifest is None:
+        return
+    for capability in capabilities:
+        resolution = delegation.resolve(user_key, project_id, manifest, capability)
+        if resolution.outcome == "ok" and resolution.coord:
+            provider_config.resolve_llm(user_key, resolution.coord.split("@", 1)[0], caller=config)
+
+
 def solve_attachment(
     user_key: str,
     project_id: str,
@@ -4634,6 +4960,11 @@ def solve_attachment_stream(
     # linked to the expired one — recorded, never replayed.
     retry_of = session.pop("interruptedExecutionId", None) if session.get("phase") == "interrupted" else None
     session.pop("interruptedAt", None)
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    _check_delegate_llms(
+        user_key, project_id, manifest, config,
+        _delegate_capabilities(nodes_by_id.get(node_id) for node_id in targets),
+    )
     # The in-flight guard + cancellation identity persist before any provider
     # work; the cancel endpoint finds the run through ``solveExecutionId``.
     session["phase"] = "solving"
@@ -4643,7 +4974,6 @@ def solve_attachment_stream(
     projects_storage.write_spec(user_key, project_id, spec)
     stop = threading.Event()
     _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
-    manifest = _resolve_definition(user_key, record.get("coord", ""))
     coord = record.get("coord", "")
     session_id = record.get("sessionId")
     # dev/115: everything that needs the REQUEST context is resolved here —
@@ -4655,6 +4985,7 @@ def solve_attachment_stream(
         if verify else {}
     )
     # dev/126: and the Data Catalog rows the discovery delegate is handed.
+    _settle_lake_acquisitions(user_key, project_id)
     solve_catalog_rows = _catalog_rows_for_discovery(user_key, project_id)
     # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
     # DURING the session can still be resolved to a sandbox path.
@@ -4673,6 +5004,7 @@ def solve_attachment_stream(
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
         kind="solve-batch", job_id=solve_execution_id, events=events,
+        redact_values={"llm-api-key": config.api_key},
     )
     return agent_jobs.subscribe(job)
 
@@ -5248,7 +5580,8 @@ def _solve_events(
                         execution=_execution_record(
                             solve_execution_id,
                             {"coord": coord, "provider": config.api_type,
-                             "model": config.model, "tools": [], "intentEdited": False},
+                             "model": config.model, "tools": [], "intentEdited": False,
+                             "llm": provider_config.llm_pin(config)},
                             {}, started, "ok", delegations=delegations,
                             retry_of=retry_of,
                         ),
@@ -5942,6 +6275,10 @@ def simulate_stream(
     now = _time.time()
     if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < _SIMULATE_STALE_SECONDS:
         raise AgentServiceError("a simulation is already running for this attachment", 409)
+    _check_delegate_llms(
+        user_key, project_id, _resolve_definition(user_key, record.get("coord", "")), config,
+        _delegate_capabilities((proposal.get("plan") or {}).get("nodes") or []),
+    )
     simulate_execution_id = uuid.uuid4().hex
     session["simulatingSince"] = now
     session["simulateExecutionId"] = simulate_execution_id
@@ -6784,12 +7121,14 @@ def solve_node_stream(
             "Node Content Builder first",
             409,
         )
+    _check_delegate_llms(user_key, project_id, manifest, config, _delegate_capabilities([node]))
     try:
         agent_jobs.check_can_start(user_key, attachment_id)
     except agent_jobs.JobRefused as exc:
         raise AgentServiceError(str(exc), exc.status)
     execution_id = uuid.uuid4().hex
     # Request-context pieces, resolved before the job thread starts.
+    _settle_lake_acquisitions(user_key, project_id)
     base = _solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
     dataset_paths = _resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
     events = _solve_node_events(
@@ -6803,6 +7142,7 @@ def solve_node_stream(
     job = agent_jobs.start_job(
         user_key=user_key, project_id=project_id, attachment_id=attachment_id,
         kind="solve-node", job_id=execution_id, events=events,
+        redact_values={"llm-api-key": config.api_key},
     )
     return agent_jobs.subscribe(job)
 
@@ -7114,6 +7454,7 @@ def validate_node_stream(
     """
     import time as _time
 
+    _settle_lake_acquisitions(user_key, project_id)
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
@@ -7140,6 +7481,7 @@ def validate_node_stream(
             "Node Content Builder first",
             409,
         )
+    _check_delegate_llms(user_key, project_id, manifest, config, _delegate_capabilities([node]))
     session_id = record.get("sessionId")
     coord = record.get("coord", "")
     if ref is None:
@@ -8503,9 +8845,12 @@ def _verified_content_rounds(
             # dev/134: routed by the roster's own grammarId, and checked
             # against the columns this node's input actually has — the same
             # rows the generation request was handed (DEC-063).
+            # The roster's own row only: an unknown kind is not passive.
+            roster_row = (loop_templates or {}).get(str(node_type).split("@", 1)[0]) or {}
             document = document_validation.validate(
                 node_type, candidate,
                 grammar_id=workflow_spec.grammar_id_of(node_type, loop_templates),
+                content_kind=roster_row.get("contentKind"),
                 columns=upstream_schema.columns_of(
                     (extra_inputs or {}).get("upstreamOutputs")
                 ),
@@ -9005,7 +9350,8 @@ def _validate_events(
 
 
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
-    """A definition's prompt asset text (``"instruction"`` or ``"system"``).
+    """A definition's prompt asset text, by prompts key: ``"instruction"``,
+    ``"system"``, or a mode's own.
 
     **Built-in trust follows the ROSTER bytes** (dev/60) — the same rule
     ``_resolve_definition`` applies to metadata, for the same reason: an
@@ -9037,9 +9383,22 @@ def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     return builtin.read_prompt_text(coord, name)
 
 
-def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
-    """The agent's instruction prompt text (see ``_resolve_prompt_text``)."""
-    return _resolve_prompt_text(user_key, coord, "instruction")
+def _resolve_instruction_text(
+    user_key: str, coord: str, *, capability: str | None = None
+) -> str | None:
+    """The agent's instruction prompt text (see ``_resolve_prompt_text``), or
+    *capability*'s own when the agent declares it as a mode."""
+    return _resolve_prompt_text(user_key, coord, _instruction_key(user_key, coord, capability))
+
+
+def _instruction_key(user_key: str, coord: str, capability: str | None) -> str:
+    """The prompts key a run of *capability* reads: its mode's, else ``instruction``."""
+    if capability:
+        m = _resolve_definition(user_key, coord)
+        declared = m.capability(capability) if m is not None else None
+        if declared is not None and declared.instruction:
+            return declared.instruction
+    return "instruction"
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
@@ -9067,6 +9426,13 @@ def sanitize_title(raw: object) -> str | None:
     return text or None
 
 
+def _turn_text(config: ProviderConfig, messages: list, **kwargs) -> str:
+    """The text of one model turn, for a call that needs nothing else (the
+    title). Through the same seam as the run loops (``run_chat_turn``), so one
+    test fake answers both, and a fake's bare string is a text turn."""
+    return ChatTurn.of(run_chat_turn(config, messages, **kwargs)).text
+
+
 def _generate_conversation_title(
     user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
 ) -> None:
@@ -9082,7 +9448,7 @@ def _generate_conversation_title(
         # it writes no execution record and holds no reservation, but its
         # tokens are still spent, so the ledger counts them.
         usage_sink: dict = {}
-        raw = run_chat_completion(
+        raw = _turn_text(
             config,
             [
                 {"role": "system", "content": TITLE_PROMPT},
@@ -9091,7 +9457,9 @@ def _generate_conversation_title(
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
         )
-        ledger.record_housekeeping_usage(user_key, usage_sink, note="title-call")
+        ledger.record_housekeeping_usage(
+            user_key, usage_sink, note="title-call", llm_config_id=config.config_id
+        )
         title = sanitize_title(raw)
         if title is None:
             return
@@ -9137,13 +9505,26 @@ def _run_policy(
     }
 
 
-def _prompt_digest(m: AgentManifest | None) -> str | None:
-    """The resolved definition's instruction-prompt sha256 (a DEC-031 pin).
+def _configuration_pin(configuration: str | None) -> dict:
+    """The run pin for the configuration slot: its sha256, when the run had one."""
+    if not configuration:
+        return {}
+    import hashlib
+
+    return {"configurationSha256": hashlib.sha256(configuration.encode("utf-8")).hexdigest()}
+
+
+def _prompt_digest(m: AgentManifest | None, *, capability: str | None = None) -> str | None:
+    """The resolved definition's instruction-prompt sha256 (a DEC-031 pin):
+    *capability*'s mode prompt when it declares one.
 
     Read from the manifest asset, not recomputed — the digest identifies the
     definition bytes that were dispatched. ``None`` when the manifest carries
     no digest (tolerated; pre-upload-import definitions may be unstamped)."""
-    asset = m.prompts.get("instruction") if m is not None else None
+    if m is None:
+        return None
+    declared = m.capability(capability) if capability else None
+    asset = m.prompts.get(declared.instruction if declared and declared.instruction else "instruction")
     return asset.sha256 if asset is not None else None
 
 
@@ -9191,8 +9572,9 @@ def _execution_record(
 
 def _add_usage(total: dict, sink: dict) -> None:
     """Sum one provider call's sink into the run's usage total (dev/41 — a
-    tool loop makes several calls; the run settles their sum, dev/40)."""
-    for key in ("inputTokens", "outputTokens"):
+    tool loop makes several calls; the run settles their sum, dev/40). The
+    cache counts are summed when a provider reported them."""
+    for key in ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"):
         if isinstance(sink.get(key), int):
             total[key] = total.get(key, 0) + sink[key]
 
@@ -9242,19 +9624,18 @@ def _prepare_run(
         raise AgentServiceError(
             f"no instruction prompt available for {coord!r} (not materialized)", 422
         )
-    # Migration parity (dev/06): the legacy call sites composed the system
-    # preamble + the prompt; an edited intent replaces the instruction portion
-    # only, so the preamble still applies.
+    # An edited intent replaces the instruction slot only, so the preamble,
+    # the configuration and every runtime-owned slot still apply
+    # (contracts.compose_system).
     preamble = _resolve_prompt_text(user_key, coord, "system")
-    system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
-    # Structured-tail protocol (memos dev/39/41): the runtime-owned
-    # instruction composes AFTER the preamble + intent, so an edited intent
-    # can neither strip nor spoof it. Grant-less runs keep the T2 instruction
-    # byte-identical; granted runs get the toolRequest paragraph.
-    granted = tools.resolve_grants(requested_tools)
-    system_content = (
-        f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
+    configuration = (
+        catalog_settings.configuration_for(user_key, manifest.config_keys())
+        if manifest is not None else None
     )
+    # Grant-less runs keep the T2 tail byte-identical; granted runs get the
+    # toolRequest paragraph (memos dev/39/41).
+    granted = tools.resolve_grants(requested_tools)
+    runtime_blocks: list[str | None] = []
     # Reuse-first (dev/48; plans too, dev/52): a grant that can put a template
     # on the canvas, into the project, or author a new one carries the live
     # template roster, composed fresh per run from the packages registry — the
@@ -9290,26 +9671,41 @@ def _prepare_run(
                 getattr(manifest, "capability_ids", None) or []
             ),
         )
-        if templates_block:
-            system_content = f"{system_content}\n\n{templates_block}"
+        runtime_blocks.append(templates_block)
         # dev/93 D4: the second half of the roster — what the user owns but
         # this project has not enlisted — goes only to a run that can act on
         # it. Offering it without the grant would name a door the model
         # cannot open, which is how the Researcher ended up authoring a
         # duplicate package instead.
         if "package.install" in granted:
-            enlistable = _enlistable_templates_block(
+            runtime_blocks.append(_enlistable_templates_block(
                 project_id, landscape, _TEMPLATES_BLOCK_MAX_ENTRIES
-            )
-            if enlistable:
-                system_content = f"{system_content}\n\n{enlistable}"
+            ))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list.
+    entries: list = []
     if manifest is not None and manifest.delegates_to:
         entries = delegation.visible_capability_entries(user_key, manifest)
+    native_tools = _native_tools_for(config, user_key, granted, entries)
+
+    def _system(native: bool) -> dict:
+        # The two protocols differ only in how a tool or a delegate is asked for.
+        blocks = list(runtime_blocks)
         if entries:
-            system_content = f"{system_content}\n\n{content.delegation_instruction(entries)}"
+            blocks.append(content.delegation_instruction(entries, native_tools=native))
+        return contracts.system_message(contracts.compose_system(
+            preamble=preamble,
+            instruction=instruction,
+            configuration=configuration,
+            tool_protocol=content.tail_instruction(
+                tools.grant_descriptions(granted), native_tools=native
+            ),
+            runtime=blocks,
+        ))
+
+    fenced_system = _system(False)
+    system = _system(True) if native_tools else fenced_system
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -9320,7 +9716,7 @@ def _prepare_run(
     # never replayed from history. Absent → byte-identical to before.
     context_block = _bounded_context(run_context)
     messages = [
-        {"role": "system", "content": system_content},
+        system,
         *sessions.context_messages(prior),
         *(
             [{"role": "user", "content": f"{_CONTEXT_FRAME}{context_block}"}]
@@ -9341,9 +9737,14 @@ def _prepare_run(
         "intentEdited": bool(record.get("intent")),
         "provider": config.api_type,
         "model": config.model,
+        # Which LLM configuration answered, never its key.
+        "llm": provider_config.llm_pin(config),
         # Granted tool ids (dev/39): requested ∩ registry ∩ policy.
         "tools": granted,
         "policy": run_policy["policy_pins"],
+        **_configuration_pin(configuration),
+        # How the run asks for a tool or a delegate, when it can ask at all.
+        **({"toolProtocol": "native" if native_tools else "fenced"} if granted or entries else {}),
     }
     loop_ctx = {
         "granted": granted,
@@ -9354,8 +9755,31 @@ def _prepare_run(
         # delegatesTo resolution inside the loop.
         "coord": coord,
         "manifest": manifest,
+        # The tool protocol (_RunConversation): the native tools offered, and
+        # the fenced system turn a refusal of them falls back to.
+        "native_tools": native_tools,
+        "fenced_system": fenced_system,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+def _native_tools_for(
+    config: ProviderConfig, user_key: str, granted: list, entries: list
+) -> list | None:
+    """The run's tools and delegates as native tools, when its LLM
+    configuration calls tools natively (``chat_capabilities``); None puts the
+    run on the fenced protocol. A run with nothing to call asks nothing."""
+    if not granted and not entries:
+        return None
+    try:
+        protocol = chat_capabilities.chat_capabilities(config, user_key).protocol
+    except Exception as exc:  # the question never fails a run: it runs fenced
+        log.warning("Could not tell whether %s calls tools natively (%s: %s); using the fenced protocol",
+                    config.model, type(exc).__name__, exc)
+        return None
+    if protocol != "native":
+        return None
+    return tools.native_tools(granted, [capability for capability, _ in entries])
 
 
 # Bounds for the run-time template roster (dev/48): plenty for every real
@@ -9935,6 +10359,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
         if loop_ctx is not None
         else egress.CallBudget(_RUN_EGRESS_CALLS)
     )
+    roster = _LazyRoster()
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -9945,19 +10370,17 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
             url = row.get("url")
             if not url:
                 row["verification"] = verify.verify_external_source(None)
-                _mint_row_access(row)
-                continue
-            if budget.exhausted:
+            elif budget.exhausted:
                 row["verification"] = {
                     "status": "unverified",
-                    "detail": "the egress budget was spent before this row — not checked",
+                    "detail": "the egress budget was spent before this row, so it was not checked",
                 }
-                _mint_row_access(row)
-                continue
-            row["verification"] = verify.verify_external_source(url, budget=budget)
+            else:
+                row["verification"] = verify.verify_external_source(url, budget=budget)
+                if loop_ctx is not None and row["verification"].get("status") == "verified":
+                    loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             _mint_row_access(row)
-            if loop_ctx is not None and row["verification"].get("status") == "verified":
-                loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
+            _mint_row_acquirable(row, roster)
 
 
 def _mint_row_access(row: dict) -> None:
@@ -9971,13 +10394,104 @@ def _mint_row_access(row: dict) -> None:
     ``downloadSteps`` rides only the manual answer.
     """
     outcome = row.get("verification") if isinstance(row.get("verification"), dict) else {}
-    verdict = verify.classify_access(outcome)
+    verdict = verify.classify_access(outcome, row.get("url"))
     row["access"] = verdict["access"]
     row["accessWhy"] = verdict["why"]
     if verdict["access"] == verify.ACCESS_MANUAL:
         steps = verify.download_steps(row, outcome)
         if steps:
             row["downloadSteps"] = steps
+
+
+class _LazyRoster:
+    """The Data Lake sources this deployment has, by ``dirName``, read off disk
+    on first use, so a pass with no coordinate never touches the roster and
+    costs no web budget. An unreadable roster is an empty one."""
+
+    def __init__(self, sources: dict | None = None) -> None:
+        self._sources = sources
+
+    def get(self, dir_name: object) -> dict | None:
+        if self._sources is None:
+            self._sources = {}
+            try:
+                from utk_curio.backend.app.datalakes.service import DataLakeService
+
+                listing = DataLakeService().list_catalog()
+            except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
+                log.warning("Could not read the Data Lake roster", exc_info=True)
+                listing = {}
+            for source in listing.get("sources") or []:
+                if source.get("dirName"):
+                    self._sources[source["dirName"]] = source
+        return self._sources.get(dir_name) if isinstance(dir_name, str) else None
+
+    def direct(self) -> str | None:
+        """The source that downloads a plain link, when the roster has one."""
+        self.get(None)
+        for dir_name, source in (self._sources or {}).items():
+            if source.get("provider") == "direct" and (source.get("capabilities") or {}).get("download"):
+                return dir_name
+        return None
+
+
+def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
+    """Whether Curio can download this row into the Data Catalog: the one answer.
+
+    The model may name a source; it may not claim the source can be acted on,
+    so a model-supplied ``acquirable`` never survives. The answer reads the
+    roster and the probe, never the run's grants: a person confirming the row
+    uses the download route, which needs only their sign-in, and an agent's
+    own ``datalake.acquire`` proposal is checked against its grant where it is
+    minted.
+
+    - A connector source (anything but ``direct``) is acquirable when the
+      roster has it and it downloads. The connector knows how to fetch the
+      resource, so the probe of a landing page does not decide it.
+    - A ``direct`` source downloads the URL itself, so the probe decides: an
+      https URL the probe read as data, whose content type maps to a format the
+      source accepts, and whose ``resourceId`` is that same URL, so what is
+      downloaded is what was probed.
+
+    A row with a plain link and no coordinate is tried as a ``direct`` row: the
+    coordinate is minted here, after parsing, so it is never model-supplied and
+    never meets the parser's length cap. It stays only when the row qualifies.
+    A downloadable row offers that and nothing else, so it carries no portal
+    steps.
+    """
+    row.pop("acquirable", None)
+    minted = False
+    if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
+        direct = roster.direct()
+        if direct:
+            row["sourceId"], row["resourceId"] = direct, row["url"]
+            minted = True
+    if _acquirable(row, roster):
+        row["acquirable"] = True
+        row.pop("downloadSteps", None)
+    elif minted:
+        row.pop("sourceId", None)
+        row.pop("resourceId", None)
+
+
+def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
+    source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
+    capabilities = (source or {}).get("capabilities") or {}
+    if not capabilities.get("download"):
+        return False
+    if source.get("provider") != "direct":
+        return True
+    url = str(row.get("url") or "")
+    if not url.startswith("https://") or row.get("resourceId") != url:
+        return False
+    if row.get("access") != verify.ACCESS_FETCHABLE:
+        return False
+    from utk_curio.backend.app.datalakes.domain import formats
+
+    content_type = formats.content_type_of(
+        {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
+    )
+    return formats.CONTENT_TYPE_FORMATS.get(content_type) in (capabilities.get("formats") or ())
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
@@ -10431,47 +10945,6 @@ def _dataset_discover_inputs(user_key: str, project_id: str, inputs: dict) -> di
     return enriched
 
 
-def _mark_acquirable_candidates(parts: list, granted: set[str]) -> None:
-    """Decide, server-side, which external rows Curio can actually download.
-
-    The model may NAME a source; it may not claim the run can act on it. This
-    is the catalog lane's mandatory-``datasetId`` discipline applied one lane
-    over: a row is acquirable only when the source really exists in this
-    deployment's roster, really offers downloads, and the run really holds the
-    grant. Anything the model asserted about that is ignored.
-
-    Reads the roster off disk, so it costs no web budget.
-    """
-    rows = [
-        row
-        for part in parts
-        if isinstance(part, dict) and part.get("type") == "datasetCandidates"
-        for row in (part.get("lanes") or {}).get("external") or []
-        if isinstance(row, dict)
-    ]
-    # Never leave the key model-supplied: a row the model marked acquirable
-    # must read as false unless the runtime says otherwise.
-    for row in rows:
-        row.pop("acquirable", None)
-    candidates = [r for r in rows if r.get("sourceId") and r.get("resourceId")]
-    if not candidates or "datalake.acquire" not in granted:
-        return
-    try:
-        from utk_curio.backend.app.datalakes.service import DataLakeService
-
-        listing = DataLakeService().list_catalog()
-    except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
-        return
-    downloadable = {
-        source.get("dirName")
-        for source in listing.get("sources") or []
-        if (source.get("capabilities") or {}).get("download")
-    }
-    for row in candidates:
-        if row.get("sourceId") in downloadable:
-            row["acquirable"] = True
-
-
 #: The tools that spend the per-run web budget. ``datalake.sources`` is absent
 #: on purpose: it reads manifests off disk, and charging it would burn a run's
 #: allowance on a free call.
@@ -10543,13 +11016,13 @@ def _execute_tool_request(
     return status, text
 
 
+#: Appended to the result of the last round a run may spend on a tool.
+_FINAL_ROUND_NOTE = "\nNo further tool calls are available this turn — answer with what you have."
+
+
 def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -> dict:
     """The tool result fed back as provider context (untrusted data, framed)."""
-    suffix = (
-        "\nNo further tool calls are available this turn — answer with what you have."
-        if final
-        else ""
-    )
+    suffix = _FINAL_ROUND_NOTE if final else ""
     return {"role": "user", "content": f"[tool result] {tool_id}: {status}\n{text}{suffix}"}
 
 
@@ -10559,12 +11032,187 @@ def _delegate_result_message(
     """The delegate's result fed back as provider context (untrusted data,
     framed — memo dev/48 §3.4)."""
     who = f"{coord} ({capability})" if coord else capability
-    suffix = (
-        "\nNo further tool calls are available this turn — answer with what you have."
-        if final
-        else ""
-    )
+    suffix = _FINAL_ROUND_NOTE if final else ""
     return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
+
+
+# --- Native tool calls -------------------------------------------------------
+#
+# A run on native tools (``_native_tools_for``) is offered its grants and its
+# delegates as tools, and the model calls one instead of writing a fenced
+# block. Its first call becomes the request part a fenced block parses to,
+# through the same parser and budgets, and from there takes the same path:
+# grant check, mint, delegate, round accounting. Only the way a result goes
+# back differs: a tool message answering the call, flagged when it is an error.
+# A fenced block in a native run is still honoured, and answered in kind.
+
+#: The statuses of a result that is not an error.
+_NATIVE_OK_STATUSES = frozenset({"ok", "proposed"})
+
+#: The answer to every call of a reply after its first, which is the one run.
+_NATIVE_NOT_RUN = (
+    "not run: one tool call per reply, and this reply's first call was the "
+    "one run. Call this one again on its own if you still need it."
+)
+
+
+def _native_request(call: ToolCall) -> tuple[dict | None, list[str]]:
+    """*call* as the request part its fenced block would parse to, or why it
+    is not one."""
+    if call.error:
+        return None, [call.error]
+    if call.name == tools.DELEGATE_TOOL:
+        return content.parse_delegate_request_verbose(call.arguments)
+    tool_id = tools.tool_id_of(call.name)
+    if tool_id is None:
+        return None, [f"there is no tool named {call.name!r}"]
+    return content.parse_tool_request_verbose({"tool": tool_id, "params": call.arguments})
+
+
+def _native_result_text(status: str, text: str, *, final: bool) -> str:
+    body = text if status in _NATIVE_OK_STATUSES and text else (
+        f"{status}: {text}" if text else status
+    )
+    return body + (_FINAL_ROUND_NOTE if final else "")
+
+
+def _fenced_request_reply(text: str, req: dict) -> str:
+    """A reply whose request was a native call, as the fenced protocol
+    writes it: its text, then the request's block."""
+    import json as _json
+
+    if req.get("type") == "delegateRequest":
+        payload = {"delegateRequest": {"capability": req.get("capability"),
+                                       "inputs": req.get("inputs") or {}}}
+    else:
+        payload = {"toolRequest": {"tool": req.get("tool"), "params": req.get("params") or {}}}
+    block = f"{content.TAIL_FENCE}\n{_json.dumps(payload, ensure_ascii=False)}\n```"
+    return f"{text}\n\n{block}" if text else block
+
+
+def _unreadable_call_reply(text: str, call: ToolCall) -> str:
+    """A reply whose native call could not be read, as the fenced protocol
+    writes it."""
+    if call.name == tools.DELEGATE_TOOL:
+        return _fenced_request_reply(text, {**(call.arguments or {}), "type": "delegateRequest"})
+    return _fenced_request_reply(text, {"type": "toolRequest",
+                                        "tool": tools.tool_id_of(call.name) or call.name,
+                                        "params": call.arguments or {}})
+
+
+def _is_mutate_call(call: ToolCall) -> bool:
+    return tools.tool_id_of(call.name) in MUTATE_PROPOSAL_TOOLS
+
+
+class _RunConversation:
+    """The provider messages of one attached run, in the tool protocol it speaks.
+
+    A run on native tools keeps the fenced form of every round beside the
+    native one, so when its endpoint refuses the tools mid-run
+    (``NativeToolsRefused``) the conversation carries on, fenced, from where it
+    was. The refusal is recorded (``chat_capabilities.record_native_refusal``)
+    once a fenced call has succeeded, which shows it was about the tools.
+    """
+
+    def __init__(self, messages: list, loop_ctx: dict):
+        self.native_tools = loop_ctx.get("native_tools") or None
+        fenced_system = loop_ctx.get("fenced_system")
+        self._native = list(messages) if self.native_tools else None
+        self._fenced = (
+            [fenced_system, *messages[1:]]
+            if self.native_tools and fenced_system is not None
+            else list(messages)
+        )
+        self._refused: str | None = None
+
+    @property
+    def messages(self) -> list:
+        return self._native if self.native_tools else self._fenced
+
+    def offer(self, rounds_used: int) -> dict:
+        """The next call's tool keywords. None on the fenced protocol, so its
+        call is exactly what it was before native tools; on the last round the
+        model may not call one."""
+        if not self.native_tools:
+            return {}
+        return {
+            "tools": self.native_tools,
+            "tool_choice": "none" if rounds_used >= MAX_TOOL_ROUNDS else "auto",
+        }
+
+    def native_calls(self, turn: ChatTurn) -> tuple:
+        """*turn*'s native calls, when this run offered any."""
+        return tuple(turn.tool_calls) if self.native_tools else ()
+
+    def fall_back(self, refusal: Exception, pins: dict) -> None:
+        self.native_tools = None
+        self._native = None
+        self._refused = str(refusal)
+        pins["toolProtocol"] = "fenced"
+        pins["nativeToolsRefused"] = True
+
+    def answered(self, config: ProviderConfig, user_key: str) -> None:
+        if self._refused is not None:
+            chat_capabilities.record_native_refusal(config, user_key, self._refused)
+            self._refused = None
+
+    def _lists(self) -> list:
+        return [m for m in (self._native, self._fenced) if m is not None]
+
+    def add_text_round(self, reply: str, feedback: dict, native_feedback: dict | None = None) -> None:
+        """A reply answered with a user message: a correction, or the result
+        of a request it wrote as a fenced block. *native_feedback* is what the
+        native conversation receives instead, when its wording differs."""
+        for messages in self._lists():
+            messages.append({"role": "assistant", "content": reply})
+            messages.append(
+                native_feedback if native_feedback is not None and messages is self._native
+                else feedback
+            )
+
+    def add_call_round(
+        self, turn: ChatTurn, req: dict, status: str, text: str, *,
+        final: bool, fenced_feedback: dict,
+    ) -> None:
+        """A reply whose first native call ran as *req*."""
+        self._fenced.append({"role": "assistant", "content": _fenced_request_reply(turn.text, req)})
+        self._fenced.append(fenced_feedback)
+        self._answer_calls(
+            turn, _native_result_text(status, text, final=final),
+            is_error=status not in _NATIVE_OK_STATUSES,
+        )
+
+    def add_unreadable_call_round(self, turn: ChatTurn, errors: list[str], *, final: bool) -> None:
+        """A reply whose first native call could not be read: the errors go
+        back as its result, and the fenced form is a correction."""
+        first = turn.tool_calls[0]
+        self._fenced.append({"role": "assistant", "content": _unreadable_call_reply(turn.text, first)})
+        self._fenced.append(_tool_correction_message(errors))
+        listed = "\n".join(f"- {e}" for e in errors[:10])
+        self._answer_calls(
+            turn,
+            "invalid call, not run. Fix exactly these problems and call it again:\n"
+            + listed + (_FINAL_ROUND_NOTE if final else ""),
+            is_error=True,
+        )
+
+    def _answer_calls(self, turn: ChatTurn, first_result: str, *, is_error: bool) -> None:
+        if self._native is None:
+            return
+        self._native.append({
+            "role": "assistant",
+            "content": turn.text,
+            "tool_calls": [
+                {"id": call.id, "name": call.name, "arguments": call.arguments}
+                for call in turn.tool_calls
+            ],
+        })
+        first, *rest = turn.tool_calls
+        self._native.append({"role": "tool", "tool_call_id": first.id, "name": first.name,
+                             "content": first_result, "is_error": is_error})
+        for call in rest:
+            self._native.append({"role": "tool", "tool_call_id": call.id, "name": call.name,
+                                 "content": _NATIVE_NOT_RUN, "is_error": True})
 
 
 def _mint_project_install(
@@ -10683,6 +11331,10 @@ def _delegation_home(
             att_id = _attach_node_builder(spec, target_node)
             if att_id:
                 return attachments.get_attachment(spec, att_id), True
+        return None, False
+    if builtin.is_internal(coord):
+        # An internal agent is never attached, so its work has no home of its
+        # own: the parent's trace carries it.
         return None, False
     agent_id = coord.split("@", 1)[0]
     fallback = None
@@ -10804,8 +11456,10 @@ def _run_delegate_traced(
     return status, text, child, home_attachment_id
 
 
-def _delegation_part_for(resolution, capability: str, status: str, text: str, home_attachment_id: str | None) -> dict:
+def _delegation_part_for(resolution, capability: str, status: str, text: str,
+                         home_attachment_id: str | None, child: dict | None = None) -> dict:
     manifest = getattr(resolution, "manifest", None)
+    pins = (child or {}).get("pins") or {}
     return content.make_delegation_part(
         capability=capability,
         coord=getattr(resolution, "coord", "") or "",
@@ -10814,6 +11468,8 @@ def _delegation_part_for(resolution, capability: str, status: str, text: str, ho
         attachment_id=home_attachment_id,
         status=status,
         summary=(text or "")[:200],
+        model=str(pins.get("model") or ""),
+        llm_label=str((pins.get("llm") or {}).get("label") or ""),
     )
 
 
@@ -11922,6 +12578,7 @@ def run_attachment(
     reservation = ledger.reserve(
         user_key,
         reservation_id=execution_id,
+        llm_config_id=config.config_id,
         **run_policy["admit"],
     )
     usage_total: dict = {}
@@ -11930,7 +12587,7 @@ def run_attachment(
     minted: list = []
     folded: list[str] = []
     final_parts: list = []
-    messages_work = list(messages)
+    conversation = _RunConversation(messages, loop_ctx)
     rounds_used = 0
     refusals_used = 0  # dev/105 D2: free parameter corrections taken
     started = time.monotonic()
@@ -11940,21 +12597,47 @@ def run_attachment(
         # most MAX_TOOL_ROUNDS request executions per run (one shared budget).
         while True:
             usage_sink: dict = {}
-            reply = run_chat_completion(
-                config,
-                messages_work,
-                max_output_tokens=run_policy["max_output_tokens"],
-                usage_out=usage_sink,
-            )
+            try:
+                turn = ChatTurn.of(run_chat_turn(
+                    config,
+                    conversation.messages,
+                    max_output_tokens=run_policy["max_output_tokens"],
+                    usage_out=usage_sink,
+                    **conversation.offer(rounds_used),
+                ))
+            except NativeToolsRefused as refusal:
+                # The endpoint takes no native tools after all: the same round
+                # again, on the fenced protocol.
+                conversation.fall_back(refusal, pins)
+                continue
+            conversation.answered(config, user_key)
+            reply = turn.text
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
-            _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
                 else None
             )
+            native_calls = conversation.native_calls(turn)
+            if native_calls:
+                # A native call is the round's request, whatever the text says.
+                req, call_errors = _native_request(native_calls[0])
+                if req is None:
+                    if rounds_used < MAX_TOOL_ROUNDS:
+                        rounds_used += 1
+                        conversation.add_unreadable_call_round(
+                            turn, call_errors, final=rounds_used >= MAX_TOOL_ROUNDS
+                        )
+                        continue
+                    # Past the cap: the text stays, and a proposal that could
+                    # not be made says why.
+                    if visible:
+                        folded.append(visible)
+                    if _is_mutate_call(native_calls[0]):
+                        final_parts = [_tool_cap_card(call_errors)]
+                    break
             if req is None:
                 # Plan handling (dev/52 mint; dev/54 correction rounds).
                 kind, payload, visible_override = _handle_plan_reply(
@@ -11964,8 +12647,10 @@ def run_attachment(
                     # Corrective prose is not folded: the invalid attempt never
                     # reaches the user; the final round's text is the truth.
                     rounds_used += 1
-                    messages_work.append({"role": "assistant", "content": reply})
-                    messages_work.append(_plan_correction_message(payload))
+                    conversation.add_text_round(
+                        reply, _plan_correction_message(payload),
+                        _plan_correction_message(payload, native=True),
+                    )
                     continue
                 if kind == "none":
                     # #245: only once the plan handler has declined — a
@@ -11977,9 +12662,9 @@ def run_attachment(
                     )
                     if kind == "correct":
                         rounds_used += 1
-                        messages_work.append({"role": "assistant", "content": reply})
-                        messages_work.append(
-                            _tool_correction_message(payload)
+                        conversation.add_text_round(
+                            reply, _tool_correction_message(payload),
+                            _tool_correction_message(payload, native=True),
                         )
                         continue
                 if req is None:
@@ -12106,7 +12791,8 @@ def run_attachment(
                         status = notes_outcome
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
-                        resolution, req["capability"], status, delegate_summary, home_att
+                        resolution, req["capability"], status, delegate_summary, home_att,
+                        child=child,
                     ))
                     result_msg = _delegate_result_message(
                         resolution.coord, req["capability"], status, text, final=final
@@ -12115,8 +12801,12 @@ def run_attachment(
                     result_msg = _delegate_result_message(
                         None, req["capability"], status, text, final=final
                     )
-                messages_work.append({"role": "assistant", "content": reply})
-                messages_work.append(result_msg)
+                if native_calls:
+                    conversation.add_call_round(
+                        turn, req, status, text, final=final, fenced_feedback=result_msg
+                    )
+                else:
+                    conversation.add_text_round(reply, result_msg)
                 continue
             status, text = _execute_tool_request(
                 user_key, project_id, loop_ctx, req, tool_calls, minted
@@ -12126,10 +12816,13 @@ def run_attachment(
             else:
                 rounds_used += 1
             final = rounds_used >= MAX_TOOL_ROUNDS
-            messages_work.append({"role": "assistant", "content": reply})
-            messages_work.append(
-                _tool_result_message(req["tool"], status, text, final=final)
-            )
+            result_msg = _tool_result_message(req["tool"], status, text, final=final)
+            if native_calls:
+                conversation.add_call_round(
+                    turn, req, status, text, final=final, fenced_feedback=result_msg
+                )
+            else:
+                conversation.add_text_round(reply, result_msg)
     except Exception as exc:
         _add_usage(usage_total, usage_sink)
         # An error settles too: the hold releases and the truth is recorded.
@@ -12142,14 +12835,16 @@ def run_attachment(
             session_id,
             attachment_id,
             message,
-            f"(error) {exc}",
+            f"(error) {provider_config.redact_error(exc, config)}",
             error=True,
             execution=_execution_record(
                 execution_id, pins, usage_total, started, "error", tool_calls,
                      delegations=delegations,
             ),
         )
-        raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
+        raise AgentServiceError(
+            f"agent run failed: {provider_config.redact_error(exc, config)}", 502
+        ) from exc
     reply_text = "\n\n".join(folded)
     run_parts = minted + final_parts  # proposals ride the turn (dev/41)
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
@@ -12217,6 +12912,7 @@ def stream_attachment(
     reservation = ledger.reserve(
         user_key,
         reservation_id=execution_id,
+        llm_config_id=config.config_id,
         **run_policy["admit"],
     )
 
@@ -12232,7 +12928,7 @@ def stream_attachment(
         return buf, ""
 
     def _stream_round(
-        messages_work: list, usage_sink: dict, result: dict,
+        conversation: "_RunConversation", rounds_used: int, usage_sink: dict, result: dict,
         hold_plan_tail: bool = False, hold_request_tail: bool = False,
     ):
         """Stream one provider round: yields ("delta", text) with the dev/39
@@ -12246,14 +12942,21 @@ def stream_attachment(
         released: the params are a whole source file, and streaming them as
         chat prose IS the bug (see ``_handle_tool_reply``)."""
         chunks: list[str] = []
+        calls: list = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
-        for delta in stream_chat_completion(
+        for delta in stream_chat_turn(
             config,
-            messages_work,
+            conversation.messages,
             max_output_tokens=run_policy["max_output_tokens"],
             usage_out=usage_sink,
+            **conversation.offer(rounds_used),
         ):
+            if isinstance(delta, ToolCall):
+                calls.append(delta)  # a native call is an event, never text
+                continue
+            if not isinstance(delta, str):
+                continue  # a text delta is a bare string
             chunks.append(delta)
             if withheld is not None:
                 withheld += delta
@@ -12281,7 +12984,6 @@ def stream_attachment(
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         _verify_candidate_parts(parts, loop_ctx)  # dev/67-4: no unverified laundering
-        _mark_acquirable_candidates(parts, set(loop_ctx.get("granted") or ()))
         if withheld is not None and not parts:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld
@@ -12305,6 +13007,7 @@ def stream_attachment(
         result["reply"] = reply
         result["visible"] = visible
         result["parts"] = parts
+        result["turn"] = ChatTurn(text=reply, tool_calls=tuple(calls))
 
     def _events():
         usage_total: dict = {}
@@ -12316,7 +13019,7 @@ def stream_attachment(
         homed_reviews: list = []
         folded: list[str] = []
         final_parts: list = []
-        messages_work = list(messages)
+        conversation = _RunConversation(messages, loop_ctx)
         rounds_used = 0
         refusals_used = 0  # dev/105 D2: free parameter corrections taken
         usage_sink: dict = {}
@@ -12332,15 +13035,23 @@ def stream_attachment(
             while True:
                 usage_sink = {}
                 result: dict = {}
-                yield from _stream_round(
-                    messages_work,
-                    usage_sink,
-                    result,
-                    hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
-                    hold_request_tail=bool(
-                        set(loop_ctx.get("granted") or []) & MUTATE_PROPOSAL_TOOLS
-                    ),
-                )
+                try:
+                    yield from _stream_round(
+                        conversation,
+                        rounds_used,
+                        usage_sink,
+                        result,
+                        hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
+                        hold_request_tail=bool(
+                            set(loop_ctx.get("granted") or []) & MUTATE_PROPOSAL_TOOLS
+                        ),
+                    )
+                except NativeToolsRefused as refusal:
+                    # Refused before anything streamed: the same round again,
+                    # on the fenced protocol.
+                    conversation.fall_back(refusal, pins)
+                    continue
+                conversation.answered(config, user_key)
                 _add_usage(usage_total, usage_sink)
                 if usage_sink:
                     # dev/80: interim Actual sums, once per provider round —
@@ -12353,6 +13064,28 @@ def stream_attachment(
                     if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
                     else None
                 )
+                native_calls = conversation.native_calls(result["turn"])
+                if native_calls:
+                    # A native call is the round's request, whatever the text says.
+                    req, call_errors = _native_request(native_calls[0])
+                    if req is None:
+                        if rounds_used < MAX_TOOL_ROUNDS:
+                            rounds_used += 1
+                            yield (
+                                "tool_revision",
+                                {"attempt": rounds_used, "errors": len(call_errors)},
+                            )
+                            conversation.add_unreadable_call_round(
+                                result["turn"], call_errors,
+                                final=rounds_used >= MAX_TOOL_ROUNDS,
+                            )
+                            continue
+                        # Past the cap: see the non-streaming path.
+                        if result["visible"]:
+                            folded.append(result["visible"])
+                        if _is_mutate_call(native_calls[0]):
+                            final_parts = [_tool_cap_card(call_errors)]
+                        break
                 if req is None:
                     # Plan handling (dev/52 mint; dev/54 correction rounds).
                     kind, payload, visible_override = _handle_plan_reply(
@@ -12364,10 +13097,10 @@ def stream_attachment(
                             "plan_revision",
                             {"attempt": rounds_used, "errors": len(payload)},
                         )
-                        messages_work.append(
-                            {"role": "assistant", "content": result["reply"]}
+                        conversation.add_text_round(
+                            result["reply"], _plan_correction_message(payload),
+                            _plan_correction_message(payload, native=True),
                         )
-                        messages_work.append(_plan_correction_message(payload))
                         continue
                     if kind == "none":
                         # #245: the toolRequest twin, after the plan handler.
@@ -12380,11 +13113,9 @@ def stream_attachment(
                                 "tool_revision",
                                 {"attempt": rounds_used, "errors": len(payload)},
                             )
-                            messages_work.append(
-                                {"role": "assistant", "content": result["reply"]}
-                            )
-                            messages_work.append(
-                                _tool_correction_message(payload)
+                            conversation.add_text_round(
+                                result["reply"], _tool_correction_message(payload),
+                                _tool_correction_message(payload, native=True),
                             )
                             continue
                         # A held request tail is NOT released at the cap: see
@@ -12524,7 +13255,8 @@ def stream_attachment(
                             status = notes_outcome
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
-                            resolution, req["capability"], status, delegate_summary, home_att
+                            resolution, req["capability"], status, delegate_summary, home_att,
+                            child=child,
                         ))
                         yield (
                             "delegate_result",
@@ -12537,6 +13269,9 @@ def stream_attachment(
                                 if resolution.manifest else None,
                                 "status": status,
                                 "durationMs": child.get("durationMs"),
+                                # What the child ran on, which may not be the parent's.
+                                "model": (child.get("pins") or {}).get("model"),
+                                "llmLabel": ((child.get("pins") or {}).get("llm") or {}).get("label"),
                             },
                         )
                         result_msg = _delegate_result_message(
@@ -12550,10 +13285,13 @@ def stream_attachment(
                         result_msg = _delegate_result_message(
                             None, req["capability"], status, text, final=final
                         )
-                    messages_work.append(
-                        {"role": "assistant", "content": result["reply"]}
-                    )
-                    messages_work.append(result_msg)
+                    if native_calls:
+                        conversation.add_call_round(
+                            result["turn"], req, status, text,
+                            final=final, fenced_feedback=result_msg,
+                        )
+                    else:
+                        conversation.add_text_round(result["reply"], result_msg)
                     continue
                 yield ("tool_requested", {"tool": req["tool"]})
                 yield ("tool_started", {"tool": req["tool"]})
@@ -12566,10 +13304,14 @@ def stream_attachment(
                 else:
                     rounds_used += 1
                 final = rounds_used >= MAX_TOOL_ROUNDS
-                messages_work.append({"role": "assistant", "content": result["reply"]})
-                messages_work.append(
-                    _tool_result_message(req["tool"], status, text, final=final)
-                )
+                result_msg = _tool_result_message(req["tool"], status, text, final=final)
+                if native_calls:
+                    conversation.add_call_round(
+                        result["turn"], req, status, text,
+                        final=final, fenced_feedback=result_msg,
+                    )
+                else:
+                    conversation.add_text_round(result["reply"], result_msg)
         except Exception as exc:  # provider failure mid-stream
             _add_usage(usage_total, usage_sink)
             settled = ledger.settle(
@@ -12581,14 +13323,14 @@ def stream_attachment(
                 session_id,
                 attachment_id,
                 message,
-                f"(error) {exc}",
+                f"(error) {provider_config.redact_error(exc, config)}",
                 error=True,
                 execution=_execution_record(
                     execution_id, pins, usage_total, started, "error", tool_calls,
                      delegations=delegations,
                 ),
             )
-            yield ("error", f"agent run failed: {exc}")
+            yield ("error", f"agent run failed: {provider_config.redact_error(exc, config)}")
             return
         reply_text = "\n\n".join(folded)
         run_parts = minted + final_parts  # proposals ride the turn (dev/41)

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import agent_jobs, provider_config
+from utk_curio.backend import config
+from utk_curio.backend.app.agents import agent_jobs
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -30,10 +31,30 @@ def _default_provider(monkeypatch):
     - anything that actually reaches out is stubbed, and a test that forgot to
     stub should fail loudly rather than make a real call.
     """
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")
+    # provider_config reads these at call time, so patching the config module
+    # is what every resolution sees.
+    monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "test-key")
+
+
+@pytest.fixture(autouse=True)
+def _endpoint_not_asked_about_tools(monkeypatch):
+    """The suite's endpoint is never asked whether it calls tools natively.
+
+    A run with tools asks an OpenAI-compatible endpoint once per model
+    (``chat_capabilities``, through ``providers.probe_native_tools``). The
+    endpoint above is unroutable, so the answer here is the one an endpoint
+    that cannot be asked gets: the fenced protocol, which every scripted fake
+    in the suite speaks. The trial's own tests restore the real probe.
+    """
+    from utk_curio.backend.app.agents import providers
+
+    monkeypatch.setattr(
+        providers, "probe_native_tools",
+        lambda config, usage_out=None: (None, "not asked in the test suite"),
+    )
 
 
 @pytest.fixture(autouse=True)
