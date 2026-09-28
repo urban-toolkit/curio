@@ -98,7 +98,7 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
     )
     require_owner_view(page)
 
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = _drawer(page)
 

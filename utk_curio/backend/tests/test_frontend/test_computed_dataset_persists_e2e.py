@@ -105,7 +105,7 @@ def _enable_save_toggle(page, node_id: str) -> None:
 
 
 def _open_data_catalog(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     page.locator(DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     dialog = page.get_by_role("dialog").filter(

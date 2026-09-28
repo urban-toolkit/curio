@@ -37,6 +37,19 @@
   text-decoration: none;
 }
 
+/* The down arrow after a menu's name, drawn with borders instead of written as
+   "⏷": a written arrow needs a font that has it, and a system without one drew
+   a box in its place. */
+.menuCaret::after {
+  content: "";
+  display: inline-block;
+  margin-left: 0.2em;
+  border-left: 0.32em solid transparent;
+  border-right: 0.32em solid transparent;
+  border-top: 0.55em solid currentColor;
+  vertical-align: 0.08em;
+}
+
 /* Must appear after .button so it wins the cascade when both classes are present */
 .aiIconActive {
   color: #5cb85c;

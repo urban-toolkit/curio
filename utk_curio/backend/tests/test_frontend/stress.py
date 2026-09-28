@@ -701,7 +701,7 @@ def reset_zoom(page) -> None:
 
 def menu(page, label: str):
     """Top-bar dropdown trigger (``File``, ``View``, ``Data``, ...)."""
-    return page.get_by_role("button", name=f"{label} ⏷", exact=True)
+    return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
 def load_example(run: "StressRun", path: str, *, expected_nodes: int,
