@@ -8,11 +8,15 @@ condition) and the AUTK grammar written beside it, unread.
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from utk_curio.backend.app.agents import document_validation as dv
 
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 OWNERS_VEGA = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -95,18 +99,26 @@ class TestVegaLite:
 
 
 class TestAutkGrammar:
+    """Against the grammar's own JSON Schema, vendored from autk-grammar, plus
+    the one rule no schema form states: the document must run something."""
+
     def test_the_owners_grammar_is_valid(self):
+        # Also the canary for open additional properties: its "initialView" is
+        # a key the schema does not name.
         assert dv.validate(AUTK, OWNERS_AUTK) == {"status": dv.STATUS_VALID}
 
-    def test_a_document_without_a_map_is_invalid(self):
-        verdict = dv.validate(AUTK, json.dumps({"layers": []}))
-        assert verdict["status"] == dv.STATUS_INVALID
-        assert '"map"' in verdict["detail"]
+    def test_a_document_naming_nothing_is_invalid(self):
+        for grammar in ({}, {"layers": []}, {"compute": []}, {"data": []}):
+            verdict = dv.validate(AUTK, json.dumps(grammar))
+            assert verdict["status"] == dv.STATUS_INVALID, grammar
+            assert '"map"' in verdict["detail"]
+            assert "layerRefs" in verdict["detail"] and "dataRef" in verdict["detail"]
 
     def test_a_map_with_no_layers_renders_nothing_and_is_invalid(self):
-        for grammar in ({"map": {}}, {"map": {"layerRefs": []}}):
+        for grammar in ({"map": {}}, {"map": {"layerRefs": []}},
+                        {"map": [{"layerRefs": []}]}):
             verdict = dv.validate(AUTK, json.dumps(grammar))
-            assert verdict["status"] == dv.STATUS_INVALID
+            assert verdict["status"] == dv.STATUS_INVALID, grammar
             assert "layerRefs" in verdict["detail"]
 
     def test_a_layer_without_a_dataref_is_invalid(self):
@@ -114,17 +126,112 @@ class TestAutkGrammar:
         assert verdict["status"] == dv.STATUS_INVALID
         assert "dataRef" in verdict["detail"]
 
-    def test_a_malformed_initial_view_is_invalid(self):
-        verdict = dv.validate(AUTK, json.dumps({
-            "map": {"layerRefs": [{"dataRef": "x"}], "initialView": {"center": [1]}},
-        }))
-        assert verdict["status"] == dv.STATUS_INVALID
-        assert "longitude" in verdict["detail"]
+    def test_a_missing_field_is_named_where_it_belongs(self):
+        verdict = dv.validate(AUTK, json.dumps({"map": {}}))
+        assert verdict["detail"].startswith('map: missing "layerRefs"')
+        verdict = dv.validate(AUTK, json.dumps({"map": {"layerRefs": [{}]}}))
+        assert verdict["detail"].startswith('map.layerRefs[0]: missing "dataRef"')
 
-    def test_an_absent_initial_view_is_fine(self):
-        assert dv.validate(AUTK, json.dumps({"map": {"layerRefs": [{"dataRef": "x"}]}})) == {
-            "status": dv.STATUS_VALID
-        }
+    @pytest.mark.parametrize("grammar", [
+        {"map": [{"layerRefs": [{"dataRef": "upstream"}]}]},
+        {"plot": {"dataRef": "upstream", "mark": "bar", "axis": ["name", "value"]}},
+        {"compute": [{"dataRef": "upstream", "attributes": {"h": "properties.height"},
+                      "wglsFunction": "return h * 2.0;", "outputColumnName": "h2"}]},
+        {"data": [{"type": "csv", "csvFileUrl": "a.csv", "outputTableName": "t"}]},
+    ], ids=["map-list", "plot", "compute", "data"])
+    def test_one_document_per_family_is_valid(self, grammar):
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
+
+    @pytest.mark.parametrize("grammar,named", [
+        ({"plot": {"dataRef": "upstream", "mark": "pie", "axis": ["a"]}}, "pie"),
+        ({"plot": {"dataRef": "upstream", "mark": "bar", "axis": []}}, "plot.axis"),
+        ({"compute": [{"dataRef": "upstream", "attributes": {},
+                       "wglsFunction": "return 1.0;"}]}, "outputColumnName"),
+        # A heatmap once validated as a csv source; the type now selects its fields.
+        ({"data": [{"type": "heatmap", "outputTableName": "x"}]}, "tableJoinName"),
+    ], ids=["plot-mark", "plot-axis", "compute-output", "data-type"])
+    def test_one_document_per_family_is_invalid_and_says_why(self, grammar, named):
+        verdict = dv.validate(AUTK, json.dumps(grammar))
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert named in verdict["detail"]
+
+    def test_the_widened_compute_forms_are_valid(self):
+        grammar = {"compute": [{
+            "dataRef": "upstream",
+            "attributes": {"h": "properties.height"},
+            "wglsFunction": ["let x = h;", "// a comment", "return x;"],
+            "uniforms": {"sun": {"fromFeature": {"layer": "sun", "path": "properties.alt",
+                                                 "iterate": "batched"}, "default": 0}},
+            "uniformMatrices": {"box": {"fromFeature": {"layer": "zones", "path": "geometry"},
+                                        "cols": 2}},
+            "outputColumnName": "shade",
+        }]}
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
+
+    def test_keys_the_schema_does_not_name_are_allowed(self):
+        grammar = {"note": "x", "map": {"layerRefs": [{"dataRef": "t", "custom": 1}],
+                                        "initialView": {"zoom": 3}}}
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
+
+    def test_at_most_five_complaints_are_reported(self):
+        grammar = {"map": {"layerRefs": [{} for _ in range(8)]}}
+        detail = dv.validate(AUTK, json.dumps(grammar))["detail"]
+        assert detail.count('missing "dataRef"') == dv._MAX_SCHEMA_ERRORS
+
+    def test_jsonschema_missing_degrades_to_unchecked(self, monkeypatch):
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _no_jsonschema(name, *a, **k):
+            if name == "jsonschema":
+                raise ImportError("no jsonschema here")
+            return real_import(name, *a, **k)
+
+        dv.validate(AUTK, OWNERS_AUTK)  # anything cached is already warm
+        monkeypatch.setattr(builtins, "__import__", _no_jsonschema)
+        verdict = dv.validate(AUTK, OWNERS_AUTK)
+        assert verdict["status"] == dv.STATUS_UNCHECKED
+        assert "jsonschema is unavailable" in verdict["why"]
+
+    def test_an_unreadable_schema_degrades_to_unchecked(self, monkeypatch):
+        from utk_curio.backend.app.agents import contracts
+
+        def _missing():
+            raise FileNotFoundError("autk-grammar.v1.json")
+
+        monkeypatch.setattr(contracts, "load_autk_schema", _missing)
+        verdict = dv.validate(AUTK, OWNERS_AUTK)
+        assert verdict["status"] == dv.STATUS_UNCHECKED
+        assert "could not be read" in verdict["why"]
+
+
+def _shipped_autk_documents() -> list:
+    """Every Autark node's content in the shipped examples, as (where, content)."""
+    found = []
+
+    def _walk(value, where):
+        if isinstance(value, dict):
+            if value.get("type") in ("AUTK_GRAMMAR", AUTK) and isinstance(value.get("content"), str):
+                found.append((f"{where}#{value.get('id')}", value["content"]))
+            for child in value.values():
+                _walk(child, where)
+        elif isinstance(value, list):
+            for child in value:
+                _walk(child, where)
+
+    for path in sorted((REPO_ROOT / "docs" / "examples").rglob("*.json")):
+        _walk(json.loads(path.read_text(encoding="utf-8")), path.relative_to(REPO_ROOT))
+    return found
+
+
+class TestShippedAutarkDocuments:
+    def test_every_shipped_document_is_valid(self):
+        documents = _shipped_autk_documents()
+        assert len(documents) >= 28
+        refused = {where: verdict for where, content in documents
+                   if (verdict := dv.validate(AUTK, content))["status"] != dv.STATUS_VALID}
+        assert refused == {}
 
 
 class TestRouting:
@@ -226,6 +333,14 @@ class TestProseIsARefusalNotAnUnchecked:
         assert "no document here at all" in verdict["detail"]
         assert "layerRefs" in verdict["detail"]  # the shape is named
         assert "dataRef" in verdict["detail"]
+
+    def test_the_attempt_trail_keeps_the_map_example(self):
+        # The trail cuts each detail shorter than the refusal itself.
+        from utk_curio.backend.app.agents import services
+
+        verdict = dv.validate(AUTK, "not controllable")
+        head = dv.refusal_text(AUTK, verdict)[:services._ATTEMPT_DETAIL_CHARS]
+        assert '"layerRefs"' in head and '"dataRef"' in head
 
     def test_empty_content_is_refused_for_a_grammar_kind(self):
         verdict = dv.validate("curio.builtin/vis-vega", "   ")

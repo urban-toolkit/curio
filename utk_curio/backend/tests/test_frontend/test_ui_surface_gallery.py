@@ -214,7 +214,7 @@ def test_gallery_pages(gallery, owner, app_frontend, current_server, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("page-catalog-agents", str(exc))
 
-    # Dataset detail page. Navigated by id read from the catalog API rather
+    # A dataset link. Navigated by id read from the catalog API rather
     # than by clicking a card's "View details": the id is what the route keys
     # on, and asking the backend for it keeps the capture working whatever the
     # running catalog happens to contain.
@@ -228,10 +228,10 @@ def test_gallery_pages(gallery, owner, app_frontend, current_server, page):
             raise AssertionError("dataset catalog is empty")
         dataset_id = items[0]["id"]
         page.goto(base + "/catalog/data/" + quote(dataset_id, safe=""))
-        # No locator assertion here on purpose. Every other capture has a
-        # landmark worth waiting on; this route renders its own "Dataset not
-        # found." state, and a capture of that is more useful to a reviewer than
-        # a MISS line that says only "expected to be visible".
+        # The Data Catalog page with that dataset's details open. No locator
+        # assertion on purpose: a bad id renders "Dataset not found." in the
+        # modal, and a capture of that is more useful to a reviewer than a MISS
+        # line that says only "expected to be visible".
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1500)
         gallery.shot("page-catalog-data-detail")

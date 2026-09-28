@@ -1,4 +1,4 @@
-import { quickFormatFilters } from "../../pages/dataHub/dataHubBrowseConstants";
+import { quickFormatFilters } from "../../pages/dataCatalog/dataCatalogBrowseConstants";
 import { DATASET_FORMAT_LABEL } from "../../services/datasetCatalog";
 import type { DatasetFormat } from "../../services/datasetCatalog";
 

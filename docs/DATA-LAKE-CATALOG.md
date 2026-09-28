@@ -122,6 +122,10 @@ interleaving them past page one would repeat and drop rows.
 The query lives in the URL in both places, so a search is linkable and survives
 a reload.
 
+A source card's **View details** shows its endpoint, licence, formats, download
+limit and token requirements without leaving the page. Right-click a card for
+the same actions.
+
 ### Partial failure is a result, not an error
 
 A federated search asks several third parties at once, and sometimes one of
@@ -161,7 +165,8 @@ free inside a fan-out.
 Downloading fetches the bytes server-side and hands them to the same import
 path a file upload uses, so the result is an **ordinary Data Catalog dataset**
 with a manifest, preview, schema and `curio_dataset_path()` loader. Nothing
-downstream needs to know it came from a portal.
+downstream needs to know it came from a portal. Once a resource is in your Data
+Catalog, its row offers **View dataset**, which opens the dataset's details.
 
 The catalog does **not** install it into a dataflow or create a node. Adding a
 dataset to a dataflow is the Data Catalog's existing job, it works the same
@@ -396,6 +401,9 @@ it with your own sign-in; an agent's download proposal still needs the
 
 This is the same discipline the catalog lane already has, where a row without a
 `datasetId` from `catalog.search` is dropped.
+
+On the card, a catalog row offers **View details**, and an external row the
+runtime vouched for offers **View on the portal ↗**. Neither selects the row.
 
 ### What a fan-out costs
 
