@@ -78,8 +78,12 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/132: import a dataset the user downloaded from a portal, through the
    * ONE catalog import pathway (`useDatasetImport` — same register, same
    * toast, same cross-surface refresh), and resolve with its dataset id so
-   * the card can confirm it as the node's source. */
-  importDataset: (file: File) => Promise<string | null>;
+   * the card can confirm it as the node's source. `lakeSource` is where the
+   * file came from, recorded with it. */
+  importDataset: (
+    file: File,
+    lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+  ) => Promise<string | null>;
   /** dev/67-9: run the Simulation Mode driver (step or auto) — canvas
    * mutations from the stream apply live; resolves with the done payload. */
   runSimulation: (
@@ -196,8 +200,11 @@ export const AgentAttachmentsProvider: React.FC<{
     showToast,
   });
   const importDataset = useCallback(
-    async (file: File) => {
-      const imported = await importDatasetFile(file);
+    async (
+      file: File,
+      lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+    ) => {
+      const imported = await importDatasetFile(file, lakeSource ? { lakeSource } : undefined);
       const id = (imported as { id?: string } | null | undefined)?.id;
       return typeof id === "string" && id ? id : null;
     },

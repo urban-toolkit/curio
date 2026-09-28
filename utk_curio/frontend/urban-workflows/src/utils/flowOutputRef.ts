@@ -77,6 +77,16 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
     data?: unknown;
   };
 
+  // Rows that travel inline stay inline, even when the payload also names the
+  // artifact they were read from. A Data Pool emits exactly that (its fetched
+  // envelope, `filename` included, with the `interacted` flags set): reduced to
+  // a reference, every chart it feeds re-fetched the original rows, so a
+  // selection never reached them.
+  const hasPath = typeof r.path === "string" && r.path.trim() !== "";
+  if (r.data !== undefined && !hasPath && typeof r.dataType === "string" && r.dataType.trim()) {
+    return { ...r };
+  }
+
   const path = sandboxArtifactId(raw);
   if (!path) {
     // Merge bundles and other in-memory payloads (no DuckDB artifact id).
@@ -94,6 +104,26 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
     normalized.dataset = r.dataset.trim();
   }
   return normalized;
+}
+
+/**
+ * What a code node sends the backend as its input: the reference alone, when
+ * an inline payload also names its artifact. The backend reads only
+ * `filename` / `path` and `dataType` (routes.py `_parse_input_ref`), so a Data
+ * Pool's rows riding along would be shipped in every request for nothing.
+ * Merge bundles keep their `data`: for them it is the list of references.
+ */
+export function executionInputRef<T>(input: T): T | Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const r = input as Record<string, unknown>;
+  if (r.dataType === "outputs" || r.data === undefined) return input;
+  const named = (v: unknown) => typeof v === "string" && v.trim() !== "";
+  if (!named(r.filename) && !named(r.path)) return input;
+  const ref: Record<string, unknown> = {};
+  for (const key of ["path", "filename", "dataset", "dataType"]) {
+    if (r[key] !== undefined) ref[key] = r[key];
+  }
+  return ref;
 }
 
 export function sandboxArtifactId(raw: unknown): string | null {

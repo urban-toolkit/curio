@@ -213,92 +213,168 @@ export function acquireKey(sourceId: string, resourceId: string): string {
 }
 
 /**
- * Start downloads and follow them.
+ * Every download started in this page session, keyed `<sourceId>:<resourceId>`.
  *
+ * Held in the module rather than in a component, so a download keeps being
+ * followed, and whoever started it still hears how it ended, after the card
+ * or page that started it unmounts. The Data Lake page and the Dataset
+ * Finder's card share it, so the same resource shows one download in both.
+ */
+const acquisitions = {
+  jobs: {} as Record<string, LakeAcquireJob>,
+  timers: {} as Record<string, ReturnType<typeof setTimeout>>,
+  settled: {} as Record<string, Array<(job: LakeAcquireJob) => void>>,
+  listeners: new Set<() => void>(),
+};
+
+function publish(key: string, job: LakeAcquireJob): void {
+  acquisitions.jobs = { ...acquisitions.jobs, [key]: job };
+  acquisitions.listeners.forEach((listener) => listener());
+}
+
+function settle(key: string, job: LakeAcquireJob): void {
+  const waiting = acquisitions.settled[key] ?? [];
+  delete acquisitions.settled[key];
+  waiting.forEach((callback) => callback(job));
+}
+
+/**
  * Polling rather than a socket: a download is minutes at worst, the backend
  * already exposes the job, and a socket for this would be a second transport
  * to keep alive. It backs off, and stops the moment a job reaches a terminal
  * state - a poll loop that keeps running after the answer arrived is how a
  * backgrounded tab quietly generates traffic forever.
  */
+function follow(key: string, jobId: string, delay: number): void {
+  acquisitions.timers[key] = setTimeout(() => {
+    dataLakeCatalogApi
+      .getJob(jobId)
+      .then((job) => {
+        publish(key, job);
+        if (isTerminal(job.status)) {
+          delete acquisitions.timers[key];
+          settle(key, job);
+          return;
+        }
+        follow(key, jobId, Math.min(delay * 1.5, POLL_MAX_MS));
+      })
+      .catch((err: Error) => {
+        // The job is gone, or the backend is. Either way, stop: retrying a
+        // job we can no longer read is a loop with no exit.
+        delete acquisitions.timers[key];
+        const failed = {
+          ...(acquisitions.jobs[key] as LakeAcquireJob),
+          status: "failed",
+          error: err.message || "Lost track of that download.",
+        } as LakeAcquireJob;
+        publish(key, failed);
+        settle(key, failed);
+      });
+  }, delay);
+}
+
+/**
+ * Start a download, or learn at once that the account already holds it, and
+ * call `onSettled` with the job's terminal state either way: `completed`
+ * (with the dataset, also when it was already held), `failed`, `refused` or
+ * `cancelled`. A request that fails to start rejects instead.
+ */
+export async function startLakeAcquire(
+  dirName: string,
+  resourceId: string,
+  opts: { format?: string; title?: string; refresh?: boolean } = {},
+  onSettled?: (job: LakeAcquireJob) => void,
+): Promise<LakeAcquireStart> {
+  const key = acquireKey(dirName, resourceId);
+  if (onSettled) (acquisitions.settled[key] ??= []).push(onSettled);
+  let started: LakeAcquireStart;
+  try {
+    started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
+  } catch (err) {
+    if (onSettled) {
+      acquisitions.settled[key] = (acquisitions.settled[key] ?? []).filter((c) => c !== onSettled);
+    }
+    throw err;
+  }
+  if (started.jobId) {
+    publish(key, started as LakeAcquireJob);
+    if (!acquisitions.timers[key]) follow(key, started.jobId, POLL_START_MS);
+  } else if (started.alreadyPresent) {
+    const dataset = started.dataset ?? null;
+    const held = {
+      jobId: "",
+      bytesRead: 0,
+      totalBytes: null,
+      stageMessage: "",
+      error: null,
+      unchanged: true,
+      ...started,
+      status: "completed",
+      dataset,
+      datasetId: (dataset?.id as string | undefined) ?? started.datasetId ?? null,
+      alreadyPresent: true,
+      sourceId: dirName,
+      resourceId,
+    } as LakeAcquireJob;
+    publish(key, held);
+    settle(key, held);
+  }
+  return started;
+}
+
+/** Forget every download: for tests, which share the module between cases. */
+export function resetLakeAcquisitions(): void {
+  Object.values(acquisitions.timers).forEach(clearTimeout);
+  acquisitions.jobs = {};
+  acquisitions.timers = {};
+  acquisitions.settled = {};
+  acquisitions.listeners.forEach((listener) => listener());
+}
+
+/**
+ * Start downloads and follow them, from the shared store above. `onCompleted`
+ * hears every download this component starts that completes, a resource the
+ * account already held included.
+ */
 export function useLakeAcquire(
   onCompleted?: (job: LakeAcquireJob) => void
 ): UseLakeAcquireResult {
-  const [jobs, setJobs] = useState<Record<string, LakeAcquireJob>>({});
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  // Lets `cancel` read the current jobs without being re-created on every
-  // progress tick, which would re-render every row that holds it.
-  const jobsRef = useRef(jobs);
-  jobsRef.current = jobs;
+  const [jobs, setJobs] = useState<Record<string, LakeAcquireJob>>(acquisitions.jobs);
   const done = useRef(onCompleted);
   done.current = onCompleted;
 
-  useEffect(
-    () => () => {
-      Object.values(timers.current).forEach(clearTimeout);
-      timers.current = {};
-    },
-    []
-  );
-
-  const poll = useCallback((key: string, jobId: string, delay: number) => {
-    timers.current[key] = setTimeout(() => {
-      dataLakeCatalogApi
-        .getJob(jobId)
-        .then((job) => {
-          setJobs((prev) => ({ ...prev, [key]: job }));
-          if (isTerminal(job.status)) {
-            delete timers.current[key];
-            if (job.status === "completed") done.current?.(job);
-            return;
-          }
-          poll(key, jobId, Math.min(delay * 1.5, POLL_MAX_MS));
-        })
-        .catch((err: Error) => {
-          // The job is gone, or the backend is. Either way, stop: retrying a
-          // job we can no longer read is a loop with no exit.
-          delete timers.current[key];
-          setJobs((prev) => ({
-            ...prev,
-            [key]: {
-              ...(prev[key] as LakeAcquireJob),
-              status: "failed",
-              error: err.message || "Lost track of that download.",
-            },
-          }));
-        });
-    }, delay);
+  useEffect(() => {
+    const listener = () => setJobs(acquisitions.jobs);
+    acquisitions.listeners.add(listener);
+    listener();
+    return () => {
+      acquisitions.listeners.delete(listener);
+    };
   }, []);
 
   const start = useCallback(
-    async (dirName: string, resourceId: string, opts = {}) => {
-      const key = acquireKey(dirName, resourceId);
-      const started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
-      if (started.jobId) {
-        setJobs((prev) => ({ ...prev, [key]: started as LakeAcquireJob }));
-        poll(key, started.jobId, POLL_START_MS);
-      }
-      return started;
-    },
-    [poll]
+    (dirName: string, resourceId: string, opts = {}) =>
+      startLakeAcquire(dirName, resourceId, opts, (job) => {
+        if (job.status === "completed") done.current?.(job);
+      }),
+    []
   );
 
   const cancel = useCallback((dirName: string, resourceId: string) => {
-    const key = acquireKey(dirName, resourceId);
-    const job = jobsRef.current[key];
+    const job = acquisitions.jobs[acquireKey(dirName, resourceId)];
     if (!job?.jobId) return;
     void dataLakeCatalogApi.cancelJob(job.jobId).catch(() => undefined);
   }, []);
 
   const dismiss = useCallback((dirName: string, resourceId: string) => {
     const key = acquireKey(dirName, resourceId);
-    clearTimeout(timers.current[key]);
-    delete timers.current[key];
-    setJobs((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+    clearTimeout(acquisitions.timers[key]);
+    delete acquisitions.timers[key];
+    delete acquisitions.settled[key];
+    const next = { ...acquisitions.jobs };
+    delete next[key];
+    acquisitions.jobs = next;
+    acquisitions.listeners.forEach((listener) => listener());
   }, []);
 
   return { jobs, start, cancel, dismiss };
