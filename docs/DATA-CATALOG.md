@@ -156,7 +156,7 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 | The path fields | One column per field of the source's path template, such as `year`, `sensor` or `sequence`. |
 | `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
 | `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
-| Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`, the frame's offset. |
+| Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. |
 | Videos | `duration_s`, `fps`, `codec`, `width`, `height`. |
 | Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`. |
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |

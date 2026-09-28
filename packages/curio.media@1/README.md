@@ -10,9 +10,9 @@ views and the zonal-statistics nodes work on the result as they are.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `curio.media/video-frames` | Sample Video Frames | A collection with videos | One row per frame: `path`, `thumbnail`, `image_url`, `width`, `height`, `t_s`, `sequence`, `frame`, and the video's fields, position and time |
-| `curio.media/split-audio` | Split Audio | A collection with recordings | One row per window: `level_dbfs`, `peak_dbfs`, `t_s`, `duration_s`, a playable clip (`audio_url`), and the recording's fields and time |
-| `curio.media/mosaic-rasters` | Mosaic Rasters | A raster collection's rows, often filtered | One RASTER: a virtual mosaic of the tiles |
+| `curio.media/video-frames` | Sample Video Frames | A collection with videos | One row per frame: `path`, `thumbnail`, `image_url`, `width`, `height`, `t_s` (the frame's time in the video), `sequence` (the video), `frame` (the frame's number in it), and the video's fields, position and time |
+| `curio.media/split-audio` | Split Audio | A collection with recordings | One row per window: `level_dbfs` and `peak_dbfs` over all of the recording's channels, `t_s`, `duration_s`, a playable clip in the recording's channels (`audio_url`), and the recording's fields and time |
+| `curio.media/mosaic-rasters` | Mosaic Rasters | A raster collection's rows, often filtered | One RASTER: a virtual mosaic of the tiles, which must share their CRS, resolution, bands, data type and no-data value. Where tiles overlap, a tile's no-data pixels show the tile below |
 
 ## Settings
 

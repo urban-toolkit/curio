@@ -1,9 +1,9 @@
 {
   "sha256": {
-    "README.md": "e646bb23d51a013a6051c9956df802f22d55528eb0c18d837f47445323d36d39",
+    "README.md": "b981c286695d4ddefe91c5dd9bf32216a27eb1157743d8a6887effae4a535432",
     "manifest.json": "14be3bc87885c8646c73252cce7e2e48ca4f8dd723ee52a58cc293c68f8b50c9",
-    "sources/mosaic-rasters.py": "271021d0424ea775651be84ea32b02058920cb609ebfafe083650c74503067b1",
-    "sources/split-audio.py": "8ceec1750a38dd0e4513e5d67c52b524feeceb56f4b479c42abc592328e551e5",
-    "sources/video-frames.py": "fb67a7bdf3e67aa0a3685bab286067c012104371a4195cb3505f1dc034d581d7"
+    "sources/mosaic-rasters.py": "340d4c53f78e330739b0489ba98f7b335d64cdc474f4b6b690b3144dbe9af6a1",
+    "sources/split-audio.py": "06701ca2d02116edf5a2902d9780950159fea0511189d8b2345ac654f2016b75",
+    "sources/video-frames.py": "74528432ae99f7ea4912dbbc0a4a31c29ca63d4d0be01197f08e929640034a2d"
   }
 }

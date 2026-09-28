@@ -41,8 +41,8 @@ return collection
 ```
 
 One row per frame, ordered by `sequence` and `frame`. `t_s` is the frame's
-offset in its sequence, `frame` over the declared 10 frames per second, and
-`lat` and `lon` come from the telemetry.
+time, `frame` over the declared 10 frames per second, and `lat` and `lon` come
+from the telemetry.
 
 ## The frames in order
 

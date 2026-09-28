@@ -92,7 +92,7 @@ card.
 
 **Sample Video Frames**, from the `curio.media` package, turns every video row
 into a row per sampled frame, and leaves photos out. Here its
-`EVERY_SECONDS` setting is `0.25`, so the one-second clip gives five frames,
-from 0 to 1 second.
+`EVERY_SECONDS` setting is `0.25`, so the one-second clip gives four frames,
+at 0, 0.25, 0.5 and 0.75 seconds.
 Each frame row has the columns an image row has, so the next **Simple View**
 shows the frames the way it shows photos.
