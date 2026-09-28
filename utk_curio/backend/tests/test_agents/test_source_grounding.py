@@ -141,6 +141,23 @@ class TestCatalogIdForm:
         broken = 'p = curio_dataset_path("computed.n1@1")\nreturn (p'  # syntax error → regex
         assert [(r.kind, r.literal) for r in sg.scan_sources(broken, "python")] == [("catalog-id", "computed.n1@1")]
 
+    def test_a_collection_is_grounded_by_its_dataset_id(self):
+        """``curio_collection("<id>")`` names a Data Catalog dataset the same
+        way: a known id is grounded, an unknown one refused by its own call."""
+        ctx = _ctx(is_data_loading=True, catalog_ids={
+            "data.curio.storage-noise": sg.CatalogRef("data.curio.storage-noise", "Noise", "collection", ""),
+        })
+        ok = sg.check_grounding('collection = curio_collection("data.curio.storage-noise")\nreturn collection', "python", ctx)
+        assert ok.ok and ok.source["kind"] == "catalog"
+        assert ok.source["refs"][0]["value"] == 'curio_collection("data.curio.storage-noise")'
+        assert ok.source["refs"][0]["datasetId"] == "data.curio.storage-noise"
+        bad = sg.check_grounding('collection = curio_collection("data.ghost")\nreturn collection', "python", ctx)
+        assert not bad.ok and bad.violations[0].startswith("curio_collection('data.ghost')")
+        broken = 'c = curio_collection("data.curio.storage-noise")\nreturn (c'  # syntax error, regex
+        assert [(r.kind, r.literal) for r in sg.scan_sources(broken, "python")] == [
+            ("catalog-id", "data.curio.storage-noise")
+        ]
+
 
 class TestUserTexts:
     def test_user_paths_from_free_text(self):

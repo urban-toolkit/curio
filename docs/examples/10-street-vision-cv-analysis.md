@@ -26,11 +26,11 @@ flowchart LR
   SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
 ```
 
-Six nodes do the work plus two `Vega-Lite` views consume the output. The split is deliberate: each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
+Six nodes do the work plus two `Vega-Lite` views consume the output. Each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 
-Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project. The original PR shipped two monolithic nodes (`STREET_VISION`, `CV_ANALYSIS`) talking to a companion FastAPI service in a separate repo; the merged version decomposes them into the two reusable package nodes used here, ports the FastAPI service inside Curio's Flask backend, and adds a generic `Spatial Join` node to `curio.builtin@1`.
+Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project.
 
 The defaults baked into [`10-street-vision-cv-analysis.json`](10-street-vision-cv-analysis.json) (bbox, recommended model, class list) reproduce the **Chicago Greenery case study** from the original project's evaluation:
 - bbox: `[-87.66, 41.91, -87.62, 41.94]` (Lincoln Park)

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/data-lake-source.v1.json",
   "title": "Curio Data Lake Source Manifest (v1)",
-  "description": "Schema for a Curio data lake source manifest.json. A source describes a data PORTAL (a Socrata or CKAN site, an ArcGIS hub, an OGC WFS server, or a bare https link), not a dataset: the datasets it holds are discovered live. It ships in a directory named '<sourceId>@<major>' containing this manifest and an optional icon.png. Field names are camelCase. Source ids begin with 'lake.' to distinguish them from dataset and node package ids, and they name the PUBLISHER, never the software - 'lake.socrata.chicago' would bake a fact that belongs in provider.type into an immutable coordinate, and it is wrong the day a portal migrates. Manifests are operator-authored: there is no import route, because a source declares a host the server will make outbound requests to on a user's behalf. This schema is the canonical spec; the backend validator in utk_curio/backend/app/datalakes/domain/manifest.py implements the supported subset, and tests/test_datalakes/test_schema_matches_validator.py keeps the two from drifting. User-facing overview: docs/DATA-LAKE-CATALOG.md.",
+  "description": "Schema for a Curio data lake source manifest.json. A source describes either a data PORTAL (a Socrata or CKAN site, an ArcGIS hub, an OGC WFS server, or a bare https link), whose datasets are discovered live, or a STORAGE location (a folder, a public S3 bucket, a Hugging Face dataset repo), whose files are organized by the resources it declares. It ships in a directory named '<sourceId>@<major>' containing this manifest and an optional icon.png, under datalakes/ or an instance's .curio/datalakes/. Field names are camelCase. Source ids begin with 'lake.' and name the PUBLISHER, never the software. Manifests are operator-authored: there is no import route. This schema is the canonical spec; the backend validator in utk_curio/backend/app/datalakes/domain/manifest.py implements the supported subset, and tests/test_datalakes/test_schema_matches_validator.py keeps the two from drifting. User-facing overview: docs/DATA-LAKE-CATALOG.md.",
   "type": "object",
   "required": [
     "id",
@@ -15,7 +15,7 @@
     "id": {
       "type": "string",
       "pattern": "^lake\\.[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,4}$",
-      "description": "lake.<publisher>.<portal>, 3 to 6 dot-separated lowercase segments."
+      "description": "lake.<publisher>.<source>, 3 to 6 dot-separated lowercase segments."
     },
     "name": {
       "type": "string",
@@ -76,19 +76,94 @@
             "arcgis",
             "ckan",
             "direct",
+            "folder",
+            "huggingface",
+            "s3",
             "socrata",
             "wfs"
           ]
         },
         "baseUrl": {
           "type": "string",
-          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own - a 'direct' resource id IS the URL."
+          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own (a 'direct' resource id IS the URL), and 'folder', which has a root instead."
         },
         "options": {
           "type": "object",
-          "description": "Provider-specific wiring. Never served to clients."
+          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main)."
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A 'folder' source's directory. Absolute, or relative to the repository for a manifest shipped under datalakes/. Never served to clients."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "folder"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "root"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "huggingface"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "baseUrl",
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "required": [
+                  "repo"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "arcgis",
+                  "ckan",
+                  "s3",
+                  "socrata",
+                  "wfs"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "baseUrl"
+            ]
+          }
+        }
+      ]
     },
     "auth": {
       "type": "object",
@@ -126,6 +201,14 @@
             "string",
             "null"
           ]
+        },
+        "valuePrefix": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z]{1,16} $",
+          "description": "Written before the token in the header value, e.g. 'Bearer '."
         }
       },
       "allOf": [
@@ -176,7 +259,7 @@
               "parquet"
             ]
           },
-          "description": "An upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time: a manifest can narrow what may be ingested, never widen it."
+          "description": "A portal only: an upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time, so a manifest can narrow what may be ingested, never widen it. A storage manifest that declares it is refused: its formats follow from its resources."
         },
         "maxDownloadBytes": {
           "type": "integer",
@@ -196,6 +279,12 @@
         "requestsPerMinute": {
           "type": "integer",
           "minimum": 1
+        },
+        "maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000,
+          "description": "For a storage source: how many matched files it lists and adds at once. A listing stops at the limit, and adding a resource with more files than it is refused. A manifest may lower it, never raise it."
         }
       }
     },
@@ -210,6 +299,138 @@
         "string",
         "null"
       ]
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "A storage source's files, as the datasets they form. Required for 'folder', 's3' and 'huggingface'; refused for a portal. Each entry's path is a template relative to the root whose captures become columns.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "path"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "audio",
+              "frames",
+              "images",
+              "media",
+              "rasters",
+              "table",
+              "videos"
+            ],
+            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders."
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "geojson",
+              "gpkg",
+              "json",
+              "parquet",
+              "pbf",
+              "shp"
+            ],
+            "description": "The file format of a 'table' resource."
+          },
+          "datasets": {
+            "type": "string",
+            "pattern": "^(one|per-file|per:[a-z_][a-z0-9_]{0,31}(,[a-z_][a-z0-9_]{0,31})*)$",
+            "description": "'one' (default): every matched file forms one dataset. 'per:<field>': one dataset per value of a capture. 'per-file': one per file, for tables and rasters."
+          },
+          "extensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]{1,8}$"
+            },
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
+          },
+          "fps": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "description": "Frames per second of a 'frames' resource: each frame's t_s is its number over it."
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_]{0,31}$",
+            "description": "A collection only: the date or strftime capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds."
+          },
+          "metadata": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "on": {
+                "type": "string"
+              }
+            },
+            "description": "A collection only: a CSV, Parquet or JSON table joined onto the rows, by file_name, frame or a capture."
+          },
+          "options": {
+            "type": "object",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet."
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "folder",
+                  "huggingface",
+                  "s3"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ]
+      }
+    }
+  ]
 }

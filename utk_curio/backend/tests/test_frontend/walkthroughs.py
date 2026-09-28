@@ -34,6 +34,7 @@ from playwright.sync_api import expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    MAX_DIFF_RATIO,
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
@@ -230,7 +231,7 @@ class Walkthrough:
     #: A tight value only means something on a CLIPPED capture, where the
     #: subject fills the frame. On a full page it is raised to
     #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
-    max_diff_ratio: float = 0.20
+    max_diff_ratio: float = MAX_DIFF_RATIO
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
     #:
@@ -1609,7 +1610,8 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     # The body lives in the editor's Output pane; before a run the grammar
     # tab is the active one, so open the pane the way a user would.
     node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
-    before = node.locator('[data-curio-node-empty="upstream-not-run"]')
+    # It loads its own data, so it is "not run" (not waiting on an upstream).
+    before = node.locator('[data-curio-node-empty="not-run"]')
     before.first.wait_for(state="visible", timeout=15000)
     assert "loads data" in (before.first.inner_text() or ""), (
         "the pre-run body should say this step loads data"
@@ -1696,6 +1698,13 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
                 "Chips here used to take a colour from the format or category.")
         page.goto(f"{ctx.frontend}{route}")
         page.wait_for_load_state("domcontentloaded")
+        if kind == "Node":
+            # The page lists the newest package first, and the capture is the
+            # first card's chips, so a newly shipped package would change the
+            # frame. One named package keeps it the same card every time.
+            page.locator(card_sel).first.wait_for(state="visible", timeout=30000)
+            page.get_by_placeholder("Search packages…").fill("Custom UI")
+            expect(page.locator(card_sel)).to_have_count(1, timeout=10000)
 
         card = page.locator(card_sel).first
         card.wait_for(state="visible", timeout=30000)

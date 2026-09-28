@@ -36,6 +36,35 @@
   color: var(--curio-text-meta);
 }
 
+/* A storage source's Rescan: light with a border, a secondary action beside
+   the search box. */
+.rescan {
+  height: 30px;
+  margin-left: 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rescan:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* For the manifest's author: what the source holds that no resource names. */
+.unmatched {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-meta);
+}
+
 /* The result list: rows on a card surface, bounded so the page scrolls its
    results rather than the whole document. */
 .results {

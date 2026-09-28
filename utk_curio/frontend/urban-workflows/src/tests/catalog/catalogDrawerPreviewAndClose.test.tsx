@@ -22,7 +22,7 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
 
-import { DataCatalogBrowseDrawer } from "../../pages/dataHub/DataCatalogBrowseDrawer";
+import { DataCatalogBrowseDrawer } from "../../pages/dataCatalog/DataCatalogBrowseDrawer";
 import { UserContext } from "../../providers/UserProvider";
 import { datasetCatalogApi } from "../../services/datasetCatalog";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";

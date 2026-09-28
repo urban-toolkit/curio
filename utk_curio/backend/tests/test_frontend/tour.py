@@ -13,10 +13,12 @@ above the app, so it narrates without changing what is being demonstrated.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
 
 REPO_ROOT = os.path.abspath(
@@ -40,6 +42,37 @@ def out_dir() -> str:
     path = os.environ.get("CURIO_TOUR_OUT") or DEFAULT_OUT_DIR
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _switch(name: str) -> bool:
+    """An on-by-default environment switch: ``0``, ``false``, ``no`` or ``off`` turn it off."""
+    return os.environ.get(name, "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def captions_on() -> bool:
+    """Whether the overlay narrates: captions, chapter cards and the chapter chip.
+
+    ``CURIO_TOUR_CAPTIONS=0`` records the same scenes with only the cursor, the
+    click pulse and the spotlight ring, for clips that are shown next to their
+    own text (the Curio guide at curio.urbantk.org, for one) and would otherwise
+    say everything twice.
+    """
+    return _switch("CURIO_TOUR_CAPTIONS")
+
+
+def ring_on() -> bool:
+    """Whether the overlay rings what the cursor points at.
+
+    ``CURIO_TOUR_RING=0`` keeps the cursor and the click pulse but drops the
+    ring. In a clip shown on its own page, without the tour's captions, the ring
+    reads as a box the app drew around whatever is clicked.
+    """
+    return _switch("CURIO_TOUR_RING")
+
+
+def halo_on() -> bool:
+    """Whether a click shows the pulse under the cursor (``CURIO_TOUR_HALO=0`` drops it)."""
+    return _switch("CURIO_TOUR_HALO")
 
 
 def speed() -> float:
@@ -249,10 +282,20 @@ class Tour:
     described, and there is a beat either side for the viewer to follow it.
     """
 
-    def __init__(self, page, *, pace: float | None = None) -> None:
+    def __init__(
+        self, page, *, pace: float | None = None, captions: bool | None = None,
+        ring: bool | None = None, halo: bool | None = None,
+    ) -> None:
         self.page = page
         self.pace = pace if pace is not None else speed()
+        self.captions = captions if captions is not None else captions_on()
+        self.ring = ring if ring is not None else ring_on()
+        self.halo = halo if halo is not None else halo_on()
         self._chapter = ""
+        # Seconds since the page was created, which is where Playwright starts
+        # the recording, so a mark is also a position in the video.
+        self._started = time.monotonic()
+        self.marks: list[dict[str, Any]] = []
         page.add_init_script(f"({_INSTALL_OVERLAY_JS})();")
 
     # -- plumbing ---------------------------------------------------------
@@ -265,6 +308,39 @@ class Tour:
     def beat(self, ms: float = 700) -> None:
         self.page.wait_for_timeout(max(40, ms / self.pace))
 
+    def mark(self, name: str, event: str) -> None:
+        """Note where something starts or ends in the recording."""
+        self.marks.append({
+            "name": name, "event": event,
+            "seconds": round(time.monotonic() - self._started, 2),
+        })
+
+    def write_marks(self, path: str) -> None:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {"captions": self.captions, "ring": self.ring, "halo": self.halo, "marks": self.marks},
+                handle, indent=2,
+            )
+
+    def still(self, name: str, *, cursor: bool = False) -> str:
+        """Save this moment as ``<out>/stills/<name>.png`` and mark it.
+
+        A screenshot rather than a frame of the video: the recording is VP8, and
+        text in a frame pulled from it is visibly softer than on screen. The
+        overlay is cleared first, so the still shows only the app, unless
+        *cursor* keeps the pointer in it.
+        """
+        directory = os.path.join(out_dir(), "stills")
+        os.makedirs(directory, exist_ok=True)
+        if not cursor:
+            self._js("() => window.__curioTour.clearAll()")
+            # Let the overlay's own fades (300 to 420 ms) finish.
+            self.page.wait_for_timeout(450)
+        path = os.path.join(directory, f"{name}.png")
+        self.page.screenshot(path=path)
+        self.mark(name, "still")
+        return path
+
     # -- narration --------------------------------------------------------
 
     def chapter(
@@ -272,6 +348,9 @@ class Tour:
     ) -> None:
         """Full-frame chapter break, then leave the chip showing."""
         self._chapter = title
+        if not self.captions:
+            self.beat(500)
+            return
         words = len((f"{title} {sub}").split())
         self._js(
             "([k, t, s]) => { window.__curioTour.clearAll();"
@@ -291,6 +370,10 @@ class Tour:
         twenty. Callers can still pass *hold* to pin a beat (a one-word label
         under a spotlight, say), and it is treated as a floor, not a ceiling.
         """
+        if not self.captions:
+            # Nothing to read, so only the pause that was asked for, if any.
+            self.beat(hold or 600)
+            return
         words = len((f"{title} {sub}").split())
         # ~2.6 words/second, which is a slow, comfortable read, plus a beat at
         # each end for the fade.
@@ -314,7 +397,7 @@ class Tour:
         return locator.bounding_box()
 
     def focus(self, locator, *, hold: float = 900, ring: bool = True):
-        """Move the synthetic cursor onto *locator* and ring it."""
+        """Move the synthetic cursor onto *locator* and ring it (unless the ring is off)."""
         box = self._box(locator)
         if not box:
             return None
@@ -323,7 +406,7 @@ class Tour:
         self._js(
             "([x, y, r, box]) => { window.__curioTour.cursorTo(x, y);"
             " window.__curioTour.ring(r ? box : null); }",
-            [cx, cy, ring, box],
+            [cx, cy, ring and self.ring, box],
         )
         self.beat(hold)
         return (cx, cy)
@@ -348,7 +431,7 @@ class Tour:
         header icons under the canvas chrome).
         """
         point = self.focus(locator, hold=380, ring=ring)
-        if point:
+        if point and self.halo:
             self._js(
                 "([x, y]) => window.__curioTour.clickPulse(x, y)",
                 [point[0], point[1]],

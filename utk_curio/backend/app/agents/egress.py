@@ -77,6 +77,9 @@ class EgressResult:
     redirects: int = 0
     elapsed_ms: int = 0
     audit: dict = field(default_factory=dict)
+    #: The final response's headers. A paginated API (a ``Link: rel="next"``)
+    #: needs them; every other caller ignores them.
+    headers: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -319,6 +322,7 @@ def fetch(
             truncated=truncated,
             redirects=redirects,
             elapsed_ms=int((time.monotonic() - started) * 1000),
+            headers=dict(headers or {}),
         )
         result.audit = {
             "url": url,

@@ -219,7 +219,7 @@ def render_autk_region(schema: dict, label: str) -> str:
         f"{_either(autk_families(schema))}.",
         f'In the document, the node\'s own input is the layer named "{AUTK_UPSTREAM_LAYER}"; the '
         f'layers an upstream {label} node produces keep their table names, such as '
-        f'"table_osm_buildings".',
+        f'"table_osm_buildings". The document writes no "data" entry for its input.',
         "",
         f'- "data": {props.get("data", {}).get("description", "")} Each entry\'s "type" selects its fields:',
     ]

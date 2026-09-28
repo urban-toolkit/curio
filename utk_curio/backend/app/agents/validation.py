@@ -114,11 +114,19 @@ def validate_candidate(
     ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
     Data Catalog's ``curio_dataset_path("<id>")`` loaders resolve exactly as
     on Play."""
+    from utk_curio.backend.app.datalakes.application.exec_collections import (
+        resolve_spec_collections,
+    )
+
+    collections, media_dir = resolve_spec_collections(
+        spec_dict, exec_user_key or user_key, candidate_content,
+    )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
         dataset_paths=dataset_paths, exec_user_key=exec_user_key, secrets=secrets,
+        collections=collections, media_dir=media_dir,
         prior_outputs=prior_outputs,
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
         templates=templates,  # dev/119: the roster classifies executability

@@ -39,6 +39,9 @@ const READERS: Record<DatasetFormat, string | null> = {
   // parquet datasets, so there is no single path to generate for. Each member
   // is an ordinary `parquet` dataset and takes that branch.
   gpkg: null,
+  // A collection's index, with a readable path for every file, which only the
+  // sandbox's `curio_collection` can resolve.
+  collection: "curio_collection",
 };
 
 function snippetFor(format: DatasetFormat) {
@@ -63,9 +66,8 @@ describe("snippetForFormat", () => {
 
   it.each(covered)("addresses %s by dataset id, not by path", (format) => {
     const snippet = snippetFor(format);
-    expect(snippet.code).toContain(
-      'curio_dataset_path("data.urbanlab.example")',
-    );
+    const call = format === "collection" ? "curio_collection" : "curio_dataset_path";
+    expect(snippet.code).toContain(`${call}("data.urbanlab.example")`);
     // A machine-specific absolute path in generated code is what the portable
     // id call exists to avoid; it must not appear when an id is available.
     expect(snippet.code).not.toContain("/tmp/example-file");
@@ -99,6 +101,15 @@ describe("snippetForFormat", () => {
     );
     expect(code).toContain("df = pd.read_csv(dataset_path)");
     expect(code.trimEnd().endsWith("return df")).toBe(true);
+  });
+
+  it("loads a collection the way the backend's generator does", () => {
+    const code = buildDatasetLoaderCode({
+      id: "imported.xabc@1",
+      format: "collection",
+      path: "/tmp/index.parquet",
+    } as never);
+    expect(code).toBe('collection = curio_collection("imported.xabc@1")\nreturn collection');
   });
 
   it("prefers a backend-supplied snippet over the local generator", () => {

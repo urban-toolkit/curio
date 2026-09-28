@@ -14,13 +14,6 @@ projects: ``.curio/`` is gitignored, so those 18-odd files exist only on your
 machine. This script is the half that reaches them, which is what makes "all
 dataflow jsons are checked against the schema" true rather than aspirational.
 
-Expect your ``.curio`` projects to report failures. They are a genuinely looser
-dialect — saved before the schema existed, often missing ``provenance_id`` or
-``timestamp``, and mixing versioned (``curio.builtin/vis-vega@1``) with
-unversioned node types. That report is the point: it is the migration triage
-``docs/NODE-CATALOG.md`` asks for when it says legacy projects need a one-time
-JSON rewrite. A non-zero exit from ``--all`` is information, not a broken build.
-
 What this does NOT check is whether a node's ``type`` resolves to a template
 that actually exists. Nodes are defined by package manifests, so resolution
 depends on which packages are installed; the schema validates only the shape of
@@ -345,13 +338,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"\n{checked - failed}/{checked} file(s) validated against {_rel(SCHEMA_PATH)}")
         if failed:
-            # Loud enough to notice, calm enough not to read as a build break:
-            # .curio projects predate the schema and are expected to differ.
-            print(
-                f"{failed} file(s) did not validate. For projects under .curio/ this is "
-                f"migration triage rather than a regression — see docs/TRILL-SPEC.md.",
-                file=sys.stderr,
-            )
+            print(f"{failed} file(s) did not validate.", file=sys.stderr)
     elif checked == 0:
         return 2
     return status

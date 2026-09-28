@@ -1,87 +1,49 @@
 # Data Lake Catalog
 
-The fourth catalog, beside the [Node Catalog](NODE-CATALOG.md), the
-[Data Catalog](DATA-CATALOG.md) and the [Agent Catalog](AGENT-CATALOG.md).
+The Data Lake Catalog is where Curio lists the **open data portals** and the **storage** it can reach: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories. You search a portal and download a dataset, or open a storage source and add one of the resources it declares. Either way it lands in your Data Catalog.
 
-The Data Catalog holds datasets you already have. This one holds the **places
-you can get more**: open data portals and lakes. You browse a portal, download
-what you want, and it lands in your Data Catalog as an ordinary dataset.
+Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Data Lake Catalog the portals and storage you take datasets from.
 
-> **Status.** The catalog works end to end, by hand and through the agents.
-> What remains is the end-to-end browser tests.
+This guide is in eight parts, plus operator notes:
 
-## 1. A source is a portal, not a dataset
+- [1. What is the Data Lake Catalog?](#1-what-is-the-data-lake-catalog): sources, what ships, and where things are stored.
+- [2. Surfaces and workflows](#2-surfaces-and-workflows): the two pages, the action matrix, and walkthroughs.
+- [3. Using a lake dataset in a dataflow](#3-using-a-lake-dataset-in-a-dataflow): tables and collections are Data Catalog datasets.
+- [4. Downloading and adding](#4-downloading-and-adding): progress, formats, limits, what is copied and what is referenced.
+- [5. API tokens](#5-api-tokens): sources that take a token, and where to set yours.
+- [6. The Dataset Finder](#6-the-dataset-finder): letting an agent search the portals for you.
+- [7. Importing, publishing, and sharing](#7-importing-publishing-and-sharing): how sources are added.
+- [8. The manifest](#8-the-manifest): the fields a source declares, and how a storage source declares its files.
+- [Operator notes](#operator-notes): adding your own sources, mounting folders, and the cache limit.
 
-Every other catalog's unit is a thing you can put on a canvas. This one's unit
-is a **source connector**: a manifest describing a portal, what software it
-runs, whether it needs a token, and what it is allowed to hand you. The
-datasets inside are discovered live rather than committed, because a portal
-holds thousands of them and they change without us.
+---
+
+## 1. What is the Data Lake Catalog?
+
+### Concept
+
+The unit of this catalog is a **source**. A source is not a dataset. There are two kinds:
+
+- **A portal**, such as a city's open data site. Its datasets are found live, when you search it, and you download the ones you want.
+- **A storage source**: a folder on the Curio machine, a public S3 bucket, or a Hugging Face dataset repository. Its manifest declares its **resources**, and how the files of each are organized, the way a portal's manifest declares its endpoints. Curio lists what the manifest declares and never guesses a layout.
+
+A storage resource is one of two things:
+
+- **A table**: CSV, JSON, GeoJSON, Parquet, GeoPackage, shapefile or OSM PBF files. Adding it copies it into your Data Catalog, as a download does. Many files of one resource, such as one CSV per sensor and day, become one table.
+- **A collection**: rasters, video frames, images, videos, or audio. Adding it indexes it: the Data Catalog gains one dataset with a row per file, and the files stay where they are.
+
+A folder of images is therefore one row in the lake and one dataset in your Data Catalog, not one per image.
+
+A source is a folder with a `manifest.json`, identified by `lake.<publisher>.<source>` and a major version:
 
 ```
 datalakes/
   lake.cityofchicago.data-portal@1/
     manifest.json
-    icon.png              # optional
-  lake.uk.data-gov@1/
-  lake.esri.hub-opendata@1/
-  lake.saopaulo.geosampa@1/
-  lake.curio.direct-url@1/
+    icon.png          # optional
 ```
 
-The root is `<repo>/datalakes`, overridable with `CURIO_DATALAKE_ROOT`. It is
-never created eagerly: a deployment with no sources has no empty directory
-suggesting otherwise.
-
-### Source ids
-
-`lake.<publisher>.<portal>`, three to six dot-separated lowercase segments,
-with a mandatory `lake.` prefix. The prefix does the same job `agent.` does:
-it makes a directory self-describing and makes a lake source impossible to
-mistake for a dataset if the two roots are ever misconfigured onto each other.
-
-**The provider type is deliberately not in the id.** `lake.socrata.chicago`
-would bake a fact that lives in `provider.type` into an immutable coordinate,
-and it is wrong the day a portal migrates from Socrata to CKAN - which
-happens. Ids name *who publishes* the portal.
-
-## 2. The manifest
-
-Validated in `utk_curio/backend/app/datalakes/domain/manifest.py`, with a JSON
-Schema at [`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json).
-A test asserts the two agree, deriving every assertion from the validator so
-there is no third thing to keep in sync.
-
-| Field | Required | Notes |
-|---|---|---|
-| `id` | yes | `lake.<publisher>.<portal>` |
-| `name` | yes | What the card says |
-| `version` | yes | The manifest's own version |
-| `compatibility.major` | | Defaults to 1; forms the directory suffix |
-| `description`, `publisher`, `homepage`, `license`, `tags` | | Display |
-| `icon` | | A single `.png` filename in the source folder. See §5 |
-| `provider.type` | yes | `socrata` \| `ckan` \| `arcgis` \| `wfs` \| `direct` |
-| `provider.baseUrl` | yes* | https, no trailing slash. *Optional only for `direct` |
-| `provider.options` | | Provider wiring. Never served to a client |
-| `auth.mode` | | `public` \| `optional-token` \| `required-token` |
-| `auth.secretId` | with a token | Names a credential *slot*, never a value |
-| `auth.headerName` | with a token | The header the token is sent in |
-| `auth.scheme` | | `header` only. See §6 |
-| `auth.helpUrl` | | Where a user gets a token |
-| `capabilities.search` / `describe` / `download` | | Default true |
-| `capabilities.formats` | | What this portal may deliver |
-| `capabilities.maxDownloadBytes` | | May *lower* the server ceiling, never raise it |
-| `capabilities.allowOffBaseDistributions` | | See §4 |
-| `limits.requestsPerMinute` | | Default 30 |
-
-`capabilities.formats` is an **upper bound**. At download time it is
-intersected with the Data Catalog's own `SUPPORTED_FORMATS`, so a manifest can
-narrow what may be ingested but never widen it. The acquirable set is `csv`,
-`geojson`, `json`, `parquet`, `geotiff` - narrower than the Data Catalog's,
-because `shp` is meaningless without its sibling `.dbf`/`.shx` and `bundle` is
-a node output rather than anything a portal serves.
-
-## 3. The five shipped sources
+### What ships with Curio
 
 | Source | Provider | Access |
 |---|---|---|
@@ -89,345 +51,284 @@ a node output rather than anything a portal serves.
 | data.gov.uk | CKAN | Public |
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
-| Direct URL | none | Public; no search, takes a link to a file |
+| Direct URL | none | Public. Nothing to browse: it downloads one file from an https link |
+| Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
+| Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
+| Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 
-**Not data.gov.** The US federal portal's CKAN API was retired: every
-`/api/3/action/*` endpoint 404s and `/dataset` now redirects to the homepage.
-Shipping it would ship a card that cannot answer. data.gov.uk is the CKAN
-example instead - it serves its API from `ckan.publishing.service.gov.uk`,
-which is why that manifest carries a `landingBase` option so links still point
-at the site people know.
+### Storage layers
 
-**Direct URL** is the escape hatch: for a portal Curio has no connector for,
-paste the link to the file itself.
-
-**GeoSampa** is a GeoServer publishing OGC services rather than a portal API.
-That is why the `wfs` provider exists, and it is worth more than one portal:
-GeoServer and MapServer are what most municipal geospatial portals outside the
-US run, so one connector reaches a great many of them.
-
-## 4. Browsing
-
-**Two levels, because a manifest describes a portal and the datasets inside it
-are discovered live.**
-
-`/catalog/lakes` lists the sources when idle. Type in the search box and it
-**fans out across every searchable portal at once**, replacing the cards with
-results tagged by the portal each came from - so you can find a dataset without
-first guessing which site holds it. Opening a source gives you
-`/catalog/lakes/<sourceId>@<major>`, the same search scoped to one portal, and
-the only place that paginates: five portals paginate independently and
-interleaving them past page one would repeat and drop rows.
-
-The query lives in the URL in both places, so a search is linkable and survives
-a reload.
-
-### Partial failure is a result, not an error
-
-A federated search asks several third parties at once, and sometimes one of
-them is slow, rate-limiting, or simply down. That must not empty the page. Each
-leg reports its own status (`ok`, `failed`, `refused`, `rate-limited`,
-`unsupported`, `needs-token`), the rows that arrived are shown, and a line
-names the portals that did not answer. The request is a 200 either way.
-
-A link-only source reporting `unsupported` is not surfaced: it says that on
-every search, and showing it would train people to ignore the line that also
-carries real failures.
-
-### Bounds
-
-- One request per searchable source, run concurrently, at most four at a time.
-- The per-source rate limit applies to each leg independently, so a fan-out
-  cannot be used to multiply one user's rate past a portal's bucket.
-- The search box debounces, and each new keystroke aborts the request in
-  flight, so a typed word is one fan-out rather than one per letter.
-- Results are interleaved round-robin across portals, so the first screen is
-  not monopolised by whichever site returned the most.
-
-### Caching
-
-The source roster is cached; **search results never are**. A portal can
-publish, withdraw or rename a dataset between two searches, and serving a stale
-row leads to a download that 404s against something the user was just shown.
-
-The one exception is a WFS server's capabilities document, which is a
-*catalogue* rather than a query result: it lists every published layer, changes
-only when an operator publishes one, and runs to hundreds of kilobytes.
-It is cached per source with a short TTL, which also makes a WFS source nearly
-free inside a fan-out.
-
-## 5. Downloading
-
-Downloading fetches the bytes server-side and hands them to the same import
-path a file upload uses, so the result is an **ordinary Data Catalog dataset**
-with a manifest, preview, schema and `curio_dataset_path()` loader. Nothing
-downstream needs to know it came from a portal.
-
-The catalog does **not** install it into a dataflow or create a node. Adding a
-dataset to a dataflow is the Data Catalog's existing job, it works the same
-whether or not a project is open, and keeping it there means this catalog never
-needs to know about the current project.
-
-### It is a job, not a request
-
-A 64 MiB file from a municipal portal can outlast any comfortable request
-timeout, and the page wants a progress bar rather than a spinner. So a download
-returns a job id and the page polls it: determinate when the portal sent a
-`Content-Length`, indeterminate with a stage message when it did not, with a
-Cancel that takes effect on the next chunk.
-
-Jobs are per account - asking for someone else's id is indistinguishable from
-asking for one that does not exist - and finished ones are swept after fifteen
-minutes. They are process-local and **lost on restart**: a download in flight
-when the backend stops is gone, and the page says so rather than waiting
-forever.
-
-Two downloads at a time per account, so nobody can queue fifty against a
-municipal portal.
-
-### "Do I already have this?"
-
-The `lakeSource` block on a downloaded dataset records which portal resource it
-came from, so the second click on Download answers from what you hold and
-**contacts the portal not at all**. The same resource in two formats is two
-datasets: holding the CSV is not holding the GeoJSON.
-
-`refresh` forces a fetch. If the bytes hash the same, no second dataset is
-created - the download was paid for, a duplicate would not be. If they differ,
-a **new** dataset is minted and the old one is left alone: a saved dataflow
-loads a dataset by id, and rewriting its bytes would change that dataflow's
-results with nothing on screen to explain it.
-
-### What kind of file is this?
-
-Portals disagree about how to say. Detection is a ladder, most-trusted first:
-
-1. **what we asked for** - the provider put the format in the URL, so we know
-   what we requested rather than what a server claims;
-2. the **final URL's suffix**, after redirects;
-3. the **`Content-Disposition`** filename;
-4. the **`Content-Type`**, which plenty of sites get wrong;
-5. the **first bytes** - `PAR1` for Parquet, the TIFF magic, and a JSON probe
-   that tells GeoJSON from plain JSON by looking for a geometry type.
-
-That last distinction matters: GeoJSON filed as `json` produces a node that
-returns a dict where the user expected a GeoDataFrame.
-
-Whatever it decides is checked against what the source is allowed to deliver,
-and anything it cannot identify is an honest error rather than a guess.
-
-### Bounds and refusals
-
-- **64 MiB**, the server's ceiling; a manifest may lower it, never raise it.
-  `Content-Length` over the bound is refused before a body byte is read, and
-  the stream is capped again while writing so a lying or absent length cannot
-  get past it.
-- **Archives are refused**, by content type and by extension. Nothing is
-  unpacked: that is the decompression-bomb surface and it deserves its own
-  design rather than arriving as a side effect of a download.
-- Remote filenames are sanitised, and the dataset *directory* is minted as
-  `imported.x<uuid>` by the importer - which no remote input can influence at
-  all, and is the reason a hostile `Content-Disposition` cannot reach the
-  filesystem even if the sanitiser were wrong.
-- Bytes land in a per-user staging directory under `.curio/users/<id>/`, not
-  `/tmp`: they are user data under a tree we already scope, and a crashed job
-  leaves an orphan somewhere a sweep can find it.
-
-Failures are reported in the server's own words - "that resource is a
-application/zip archive", "the response declares 999999999 bytes" - because any
-of those is more use than "download failed".
-
-## 6. Icons
-
-A source may ship an `icon.png`. A source without one, or whose icon is
-missing or oversized, renders the shared lake glyph instead - so a broken icon
-costs a logo, not a page.
-
-PNG only. An SVG served from the app's own origin can carry script, and the
-icon is the only file in this feature whose bytes are rendered rather than
-parsed. The file is served with a fixed content type, `nosniff`, an `ETag` and
-a 256 KiB cap, and is resolved inside its own source folder.
-
-Each shipped mark is the portal's own, and
-[`datalakes/ICONS.md`](../datalakes/ICONS.md) records where it was fetched from
-and when. Replacing or removing one is a PNG and a manifest line; remove it and
-the card renders the glyph.
-
-## 7. Credentials
-
-Some portals take an API token. Socrata app tokens are the case that matters
-today: the portals answer without one, but a token raises the caller's rate
-limit sharply.
-
-**A token is a per-person entitlement, so it lives on your account**, exactly
-as the keys of your LLM configurations do. One shared secret would mean everyone
-on an install spending the same allowance and being throttled together.
-
-Set it in **AI Settings**, from the button in the top bar, below your LLM
-configurations. Blank means keep what is saved; there is an explicit *Remove
-saved token* for clearing one.
-
-**Guests are refused out loud** - a 403, the way the LLM key refuses them -
-rather than having the value quietly discarded. A guest account is shared, so a
-personal token on it would be everyone's, and accepting the value silently
-would leave someone believing they are authenticated when they are not.
-
-Curio reports only *whether* a token is stored, never its value: a source card
-shows "Token set" or "Token needed", and the API answers with a boolean.
-
-### A deployment can supply one for everybody
-
-Set `CURIO_DEFAULT_SOCRATA_APP_TOKEN` and every user who has not saved their
-own inherits it; anyone can still override it with theirs. The same per-field
-inheritance the LLM provider config has, and useful for the same reason: an
-operator running Curio for a class raises the rate limit for the whole room
-with one environment variable.
-
-There is deliberately **no `curio.py start` flag** for it, matching
-`--llm-api-key`'s absence and for the same reason: a secret passed as an
-argument is visible in the process list to every user on the host.
-
-The settings screen says which applies - `(optional)`, `(inherited - leave
-blank to use it)`, or `(saved)` - and the "is a token set" the source card
-shows means *will one be sent*, so an inherited token satisfies a portal that
-requires one.
-
-### Slots are a server-owned allowlist
-
-A manifest names the credential it wants (`auth.secretId`), but **which
-credentials can exist is decided in code**, by `SLOT_COLUMNS` in
-`datalakes/infrastructure/credentials.py`. A manifest naming an unknown slot
-fails to load, with a message saying so.
-
-This is the same posture the agent tool registry takes, and for the same
-reason: a manifest is operator-authored configuration, and letting it invent a
-credential slot would let it invent somewhere for a secret to live. Adding a
-slot is a column on the user row, a migration, and one line in that registry -
-deliberately the same cost as adding any other account credential, because
-that is what it is.
-
-### `auth.scheme` is `header` only
-
-That single constraint is what keeps a secret out of every URL, which in turn
-makes the egress audit record, every refusal message and every job record safe
-to store verbatim. Providers are handed a header *name* and a slot; the
-transport is the only code that turns that into a value, and it binds it at
-construction so no provider ever handles a token or could put one in a URL it
-builds.
-
-## 8. Adding a provider
-
-A provider is one module in `datalakes/providers/`, implementing search,
-describe and download-url against the `LakeProvider` protocol, plus one line in
-the registry. The manifest format, the roster, the routes and the UI need no
-changes.
-
-Each module also exports a transport-free `recognize(url)` and
-`metadata_evidence(payload)`. Those are what `agents/verify.py` uses to add
-richer evidence to an agent's external-source check, so a provider's URL
-knowledge lives in one place rather than being half-copied into the verifier.
-
-Two invariants a provider is held to, because they are what stops a hostile or
-merely broken portal response from steering a request:
-
-1. a `resourceId` is validated against the provider's own pattern **before** it
-   is interpolated into any URL - ids arrive from search results, saved agent
-   proposals and URLs people typed, so none is trusted;
-2. every URL a provider builds starts with the manifest's `baseUrl`. Redirects
-   *off* the base are fine and each hop is re-checked; it is request
-   *construction* that is pinned.
-
-### Testing one
-
-No test in this package opens a socket. Providers take their transport as a
-required constructor argument, so forgetting to inject a fake is a `TypeError`
-rather than a real request, and the suite-wide guard in
-`utk_curio/backend/tests/netguard.py` catches anything that slips past.
-
-The fixture corpus under `tests/test_datalakes/fixtures/` was recorded by
-driving the real providers against the live portals
-(`scripts/record_datalake_fixtures.py`), so tests assert against what the sites
-actually answered. `test_provider_contracts.py` is the drift detector: it hits
-the real portals in CI, asserts only response *shape*, and **skips** whenever
-anything is unreachable, non-2xx or not JSON - so it can tell you a portal
-changed without ever failing a build for someone else's outage.
-
-## 9. The agents
-
-The Dataset Finder's candidate card has always had two lanes: datasets already
-in your Data Catalog, and external ones it found elsewhere. **The external lane
-used to dead-end.** It could name a portal dataset, and Curio could verify the
-URL was real, but nothing could act on it - so the only move was a handoff to
-Node Builder to write fetch code.
-
-Three tool contracts change that:
-
-| Tool | Effect | What it does |
+| Layer | On disk | Written by |
 |---|---|---|
-| `datalake.sources` | read | The roster. Disk only, so it costs no web budget. |
-| `datalake.search` | read | Searches portals live. |
-| `datalake.acquire` | **mutate** | Proposes a download. |
+| **Sources**, the portals and storage this install can reach | `<repo_root>/datalakes/<sourceId>@<major>/`, or `$CURIO_DATALAKE_ROOT` when set, and `.curio/datalakes/` for an operator's own | The operator. Nothing in the app writes here. |
+| **Your token**, for sources that take one | Your account | You, in **AI Settings**. |
+| **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
+| **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
+| **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
 
-A download writes bytes into your store and mints a catalog row, so it is a
-**mutate**: it goes through the review path and **cannot be executed by the
-model loop at all**. The read executor has no branch for it. Nothing is
-downloaded without your explicit approval, and the proposal card is grounded in
-a real `describe()` call - it shows the portal's own name, format and size
-rather than the model's claim about them.
+---
 
-`agent.node-builder` stays among the Dataset Finder's delegates: a source no
-provider covers is still real, and writing fetch code is still the right answer
-for it. It just stops being the only answer.
+## 2. Surfaces and workflows
 
-### Only the runtime says a row is actionable
+There are two pages, plus an agent that works on the canvas:
 
-A candidate row may carry a `sourceId` and `resourceId` copied from a
-`datalake.search` result. Whether Curio can actually download it is decided
-**server-side**, against the real roster and the run's own grants - the model
-may name a source, it may not claim the run can act on one. Any `acquirable`
-the model sets is stripped before the check.
+- **The `/catalog/lakes` page** lists the sources. Reach it from `/projects` and the **Data Lake Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
+- **A source's page**, `/catalog/lakes/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
+- **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
 
-This is the same discipline the catalog lane already has, where a row without a
-`datasetId` from `catalog.search` is dropped.
+On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
 
-### What a fan-out costs
+A storage source is read when it is first opened, and again when its listing is 15 minutes old. While that runs the page says **Scanning `<source>`…**, and keeps the rows of the last reading. **Rescan** reads it again at once, for files added since. When the source holds files no resource declares, the page says how many.
 
-`datalake.search` without a `sourceId` contacts every searchable portal, and
-the per-run web budget is charged **per portal** rather than per tool call. A
-flat tick would let one call issue five requests against a budget of four. The
-tool's own description says so, so a model can choose to name a source and
-spend one instead.
+### Action matrix
 
-`datalake.sources` is free: it reads manifests off disk.
+| Action | Where | What it changes | What you see |
+|---|---|---|---|
+| **Search every portal** | The `/catalog/lakes` search box | Nothing | Results from every portal that can be searched, and the storage sources' matching resources, tagged by source. |
+| **Browse datasets** | Card, drawer, or right-click menu | Nothing | The source's page, searching that portal only. |
+| **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
+| **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. |
+| **Cancel** | The row's progress bar | Nothing is kept | The download stops. |
+| **View dataset** | A row marked **In your Data Catalog** | Nothing | The dataset's details, over the page. |
+| **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
+| **Add to Data Catalog** | A storage source's row | Your Data Catalog gains a dataset | A dialog to keep only some values of each path field, when there are any to choose from, then a progress bar, then *"Added `<title>` to your Data Catalog."* with **View details**. |
+| **Add again** | A storage source's row marked **In your Data Catalog** | Your Data Catalog gains a dataset, when the row's files changed | A progress bar, then *"Added `<title>` to your Data Catalog."*, or *"Nothing has changed in `<title>` since it was added."* |
+| **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
+| **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
+| **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
+| **Set a token** | **AI Settings** | Your account | The source's card reads **Token set**. |
+
+### Workflows
+
+**I want a dataset but do not know which portal has it.** Open `/catalog/lakes` and type in the search box. Every searchable portal and every storage source is asked at once and the results are interleaved. If a portal is slow or down, a line names it and the other results still show. A storage source still being read for the first time is named in a line of its own, and its rows join the results when it is done.
+
+**I want to download a dataset and use it.** Find it, pick a format if the row offers a choice, and click **Download**. When it finishes, the row offers **View dataset**. To use it in a dataflow, add it from the Data Catalog ([part 3](#3-using-a-lake-dataset-in-a-dataflow)).
+
+**I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone.
+
+**A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **AI Settings**, and save. See [part 5](#5-api-tokens).
+
+**I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
+
+**I have a folder of orthorectified images, by year.** Its manifest declares one `rasters` resource, `orthos/{year:int}/{tile}.tif`. The lake lists one row with the years it covers; **Add to Data Catalog**, keeping only the years you want, gives one collection with each tile's footprint. On the canvas, a Vega-Lite map draws the footprints and **Mosaic Rasters** joins one year's tiles into one raster: see [example 18](examples/18-storage-orthorectified-imagery.md).
+
+**I have a folder of video frames.** Its manifest declares one `frames` resource, such as `dashcam/{date:date}/{sequence}_{frame:int}.jpg`, with the frame rate as `fps`. The collection orders the frames by sequence and number and gives each its time; a telemetry table declared as `metadata` gives each frame a position. **Simple View** shows the frames in order: see [example 19](examples/19-storage-video-frames.md).
+
+**I have a folder of CSV files, by sensor or by date.** Its manifest declares one `table` resource, such as `air-quality/{sensor}/{day:date}.csv`. Adding it copies every file into one Parquet table with a `sensor` and a `day` column, the rows of every file under the columns of all of them: see [example 20](examples/20-storage-folder-of-csv-files.md). With `"datasets": "per:sensor"` the lake lists one row per sensor instead, and each adds as its own table.
+
+**I have photos and videos.** A `media` resource takes both. Each photo carries its EXIF time and position, and a video plays in **Simple View**; **Sample Video Frames** turns videos into frames: see [example 21](examples/21-storage-photos-and-videos.md).
+
+**I have audio recordings.** An `audio` resource, whose file names can carry the recording time. **Simple View** shows each recording as a spectrogram with **Play**, and **Split Audio** measures the level of each window: see [example 22](examples/22-storage-audio-recordings.md).
+
+**I have a folder of unrelated data files.** Declare one resource per file, as a portal lists its datasets, and add each: see [example 23](examples/23-storage-folder-of-different-files.md). A folder of unrelated files of one format, such as `{name}.csv` with `"datasets": "per-file"`, lists one row per file.
+
+---
+
+## 3. Using a lake dataset in a dataflow
+
+A download, and a table added from a storage source, lands in your Data Catalog as an ordinary imported dataset, with a preview, a schema, and the same loader code as any other. Nothing downstream needs to know where it came from.
+
+A collection lands as a dataset of format **Collection**. Its **Data Loading** node reads it with `curio_collection("<id>")`, which returns one row per file: the path fields, what Curio read from each file, and `path`, where the file can be opened. Rows with a position come back as a GeoDataFrame. **Simple View** shows the rows as cards; a video or a recording plays in its card. The `curio.media` package's nodes work on these rows: **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**. See [DATA-CATALOG.md](DATA-CATALOG.md#collections) for the columns.
+
+Downloading or adding does not add the dataset to a dataflow. Add it from the Data Catalog drawer on the canvas, then drag it onto the canvas: see [DATA-CATALOG.md part 3](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow).
+
+---
+
+## 4. Downloading and adding
+
+While a download or an add runs, its row shows a progress bar and **Cancel**. The bar fills when the size is known, counts files when a resource has many, and shows what the work is doing otherwise.
+
+- **Two at a time.** Each account runs at most two downloads, adds and **Cache files** at once.
+- **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
+- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded. Its button is **View dataset**, and nothing is fetched again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
+- **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
+- **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
+- **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
+
+When a download fails, the row says why in the server's own words, for example that the file is an archive or larger than the limit.
+
+### Adding from a storage source
+
+- **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it, in whatever letter case they are named, and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. A CSV declared with `options` is read with them and lands as Parquet. Several files land as one Parquet table, with a column per path field and a `source_file` column; a file's own column of the same name keeps its name, and the added one ends in `_from_path`. Geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system. GeoPackage and PBF files are added one at a time, with `"datasets": "per-file"`.
+- **Collections are referenced.** The Data Catalog keeps an index; the files stay where the source keeps them, and nothing is written to the source. Deleting the collection deletes its index and never the files.
+- **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
+- **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
+- **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
+- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: narrow it in the **Add** dialog, or pick files under **Files**.
+- **Publishing.** A collection cannot be published.
+
+---
+
+## 5. API tokens
+
+Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
+
+A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source, below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
+
+A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
+
+A source that takes a token shows its state on the card:
+
+| Badge | Meaning |
+|---|---|
+| **Token set** | A token will be sent: yours, or the inherited one. |
+| **Token optional** | The portal works without one; a token raises the rate limit. |
+| **Token needed** | The portal will not answer without one. The card offers no **Browse datasets** until a token is set. |
+
+Curio never shows a token's value, only whether one is set.
+
+---
+
+## 6. The Dataset Finder
+
+The **Dataset Finder** agent can look beyond your Data Catalog. Its candidate card has two lanes, **From your Data Catalog** and **External sources**, and an external row Curio can download is marked **Downloadable**: a row from one of these portals that offers downloads, or a plain https link to a file in a format Curio downloads, which goes through Direct URL.
+
+Selecting rows writes a confirmation into the chat for you to send. A download the agent proposes appears as a review card, and nothing is downloaded until you apply it. The card shows the portal's own name, format and size for the resource, and an applied download lands in your Data Catalog like any other.
+
+A **Downloadable** row has a **Download** button. It is this catalog's own download: the same job, which keeps going after you close the chat, and the resource shows one download on the card and on this catalog's page. The dataset it lands becomes the node's source. Confirming a Downloadable row downloads it the same way, and so does an applied download proposal.
+
+An external source Curio has no connector for goes to **Node Builder**, which writes code to fetch it.
+
+The Dataset Finder does not list, search or propose storage sources: you add their rows from this catalog's pages.
+
+To add the Dataset Finder to a dataflow, see the [Agent Catalog](AGENT-CATALOG.md).
+
+---
+
+## 7. Importing, publishing, and sharing
+
+Sources are not imported, published, or shared from the app. They ship with the deployment, or the operator adds one by adding its folder (see [part 8](#8-the-manifest) and the [operator notes](#operator-notes)), and every user on the install sees the same sources. On your own machine you are the operator: to list a folder of your own, write a manifest for it in `.curio/datalakes/`.
+
+What you download is yours, like any imported dataset. To offer it to everyone on the install, publish it from the Data Catalog ([DATA-CATALOG.md part 6](DATA-CATALOG.md#6-importing-publishing-and-sharing)).
+
+---
+
+## 8. The manifest
+
+[`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json) is the full reference for a source's `manifest.json`. The shipped sources in [`datalakes/`](../datalakes/) are the canonical examples.
+
+| Field | Required | What it declares |
+|---|---|---|
+| `id` | Yes | `lake.<publisher>.<source>`: three to six dot-separated lowercase segments, naming who publishes it. |
+| `name` | Yes | What the card says. |
+| `version` | Yes | The manifest's own version string. |
+| `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
+| `description`, `publisher`, `homepage`, `license`, `tags` | | Shown on the card and in the details. |
+| `icon` | | A `.png` file in the source's folder, at most 256 KiB. Without one, the card shows the catalog's lake glyph. |
+| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. |
+| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. |
+| `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `datalakes/` may give one relative to the repository. |
+| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository. |
+| `auth.mode` | | `public`, `optional-token`, or `required-token`. |
+| `auth.secretId`, `auth.headerName`, `auth.scheme`, `auth.valuePrefix` | With a token | Which account credential to send, in which header, and what comes before it (`Bearer ` for Hugging Face). Curio knows `socrata.app-token` and `huggingface.token`, and `scheme` is always `header`. |
+| `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
+| `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
+| `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage source's formats follow from its resources, and a storage manifest that declares them is refused. |
+| `capabilities.maxDownloadBytes` | | A download limit below the 64 MiB default. |
+| `capabilities.allowOffBaseDistributions` | | Lets a download come from a host other than `baseUrl`, for a CKAN portal whose files live on each publisher's own site. Off by default. |
+| `limits.requestsPerMinute` | | Requests per minute to a portal, per user. Default 30. A storage source's requests are not counted. |
+| `limits.maxFiles` | | A storage source: how many matched files it lists and adds at once. Default and most 200,000. |
+| `resources` | For storage | The resources a storage source declares, below. |
+
+### Resources
+
+A storage source's `resources` say how its files are organized. `provider` says where they are.
+
+| Field | Required | What it declares |
+|---|---|---|
+| `id` | Yes | Unique in the source. |
+| `name`, `description` | `name` | What the row says. |
+| `kind` | Yes | `table`, or a collection: `rasters`, `frames`, `images`, `videos`, `media` (images and videos together), or `audio`. |
+| `path` | Yes | Which files belong to it, as a path template relative to the folder, bucket prefix or repository. |
+| `format` | For `table` | `csv`, `json`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. |
+| `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. |
+| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2. A table's follow its format: geojson and json for `geojson`, the format's own for the others. |
+| `options` | | For a CSV table: `delimiter` and `header`. A table read with them lands as Parquet. |
+| `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
+| `time` | | For a collection: the date or time path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. |
+| `metadata` | | For a collection: a CSV, Parquet or JSON table of up to 256 MiB, in the same source, joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. Its `lat` and `lon` (or `latitude` and `longitude`) columns give a file its position. |
+
+**Path templates.** A template matches each file's path:
+
+| Part | Matches |
+|---|---|
+| `{name}` | Part of one folder or file name, as text. |
+| `{name:int}` | A whole number. |
+| `{name:date}` | A date written `2024-05-01`. |
+| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in. |
+| `*` | Anything within one folder or file name. |
+| `**` | Any number of folders. |
+
+Each named part becomes a column of the dataset and a field the **Add** dialog can narrow by. For `frames`, `{sequence}` and `{frame:int}` name the sequence and the frame number; without `{sequence}`, a frame's folder is its sequence. Some names are taken by a collection's own columns (`path`, `name`, `kind`, `bytes`, and the like). A manifest that uses one is not listed, and the source's page gives the reason.
+
+The example storage source's manifest, with one resource per use case (abridged):
+
+```jsonc
+{
+  "id": "lake.curio.example-storage", "name": "Example storage", "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "provider": { "type": "folder", "root": "docs/examples/data/storage" },
+  "auth": { "mode": "public" },
+  "resources": [
+    // A folder of CSV files, by sensor and day: one table.
+    { "id": "air-quality", "name": "Air quality readings", "kind": "table", "format": "csv",
+      "path": "air-quality/{sensor}/{day:date}.csv" },
+    // Different files in one folder: a resource each.
+    { "id": "roads", "name": "Roads", "kind": "table", "format": "shp", "path": "city/roads.shp" },
+    { "id": "parks", "name": "Parks", "kind": "table", "format": "geojson", "path": "city/parks.geojson" },
+    // Orthorectified images, by year.
+    { "id": "orthos", "name": "Drone orthoimagery", "kind": "rasters",
+      "path": "orthos/{year:int}/{tile}.tif" },
+    // Video frames, with a telemetry file.
+    { "id": "dashcam", "name": "Dashcam frames", "kind": "frames", "fps": 10,
+      "path": "dashcam/{date:date}/{sequence}_{frame:int}.jpg",
+      "metadata": { "path": "dashcam/{date:date}/telemetry.csv", "on": "file_name" } },
+    // Photos and videos.
+    { "id": "survey", "name": "Street survey", "kind": "media", "path": "survey/{year:int}/**/*" },
+    // Audio recordings, timed by their file names.
+    { "id": "noise", "name": "Noise recordings", "kind": "audio", "time": "recorded",
+      "path": "noise/{sensor}/{recorded:%Y%m%d_%H%M%S}.wav" }
+  ]
+}
+```
+
+A bucket or a Hugging Face dataset repository is declared the same way, with the templates matching object keys:
+
+```jsonc
+{ "provider": { "type": "s3", "baseUrl": "https://sentinel-cogs.s3.us-west-2.amazonaws.com",
+                "options": { "prefix": "sentinel-s2-l2a-cogs/16/T/DM/2024/7/" } },
+  "resources": [ { "id": "previews", "name": "True-color previews", "kind": "rasters",
+                   "path": "{scene}/L2A_PVI.tif" } ] }
+```
+
+Curio reads public S3 buckets, and Hugging Face dataset repositories, with your token for one that needs it. It does not sign S3 requests, reach buckets on a private network, or read images stored inside Parquet files.
+
+[`datalakes/ICONS.md`](../datalakes/ICONS.md) records where each shipped icon came from. Replacing or removing one is a PNG and a manifest line.
+
+---
 
 ## Operator notes
 
-### `CURIO_DATALAKE_ROOT`
+| Variable | Flag | Effect |
+|---|---|---|
+| `CURIO_DATALAKE_ROOT` | none | Reads the shipped sources from this directory instead of `<repo_root>/datalakes`. |
+| `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
+| `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 
-Points the catalog at a directory other than `<repo>/datalakes`. Set it to a
-persistent volume in a container deployment, as you would `CURIO_CATALOG_ROOT`
-for the Data Catalog.
+**Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `datalakes/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 
-### Manifests are operator-authored, and there is no import route
+**Your own sources** go in `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `.curio` volume keeps across image rebuilds. They appear the next time the page loads. A `folder` source there takes an absolute `root`, and one whose folder name a shipped source already uses is not listed; the server's log says so. Under `--deploy`, nodes cannot write to this directory.
 
-Deliberate, and an asymmetry with the Node and Agent catalogs worth stating.
-Importing a node package or an agent puts an artifact in *your own* account,
-and its blast radius is your account. A lake manifest declares a host **the
-server will make outbound requests to, with a credential attached, on a user's
-behalf** - its blast radius is the server's network position. So sources ship
-with the deployment; there is no upload endpoint, and adding one would need a
-different trust story than "the user asked for it".
+**Folders.** Mount a folder read-only; Curio never writes to one. Under `--deploy`, node code runs as `curio-exec`, which must be able to read the folder: at startup the backend logs every folder source it cannot, naming the folder or file in the way. See [DEPLOYMENT.md § Storage sources](DEPLOYMENT.md#storage-sources).
 
-### Outbound requests
+**Outbound requests.** This catalog makes requests to third-party portals, buckets and repositories on your users' behalf. What bounds them is in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests).
 
-Every request this catalog makes goes through the same policy the agent tools
-use: https/http only, private and link-local addresses refused after DNS
-resolution, every redirect hop re-checked, and the connected peer confirmed
-before any response body is read. The residual documented in
-`app/common/egress_policy.py` applies here too: the request line is on the wire
-before the peer check, so a blind request to an internal service is not
-prevented, only its response is withheld.
+---
 
-A source manifest can never exempt a host from that policy. The one exemption
-in the codebase is for an operator-configured search provider, and this catalog
-does not use it.
+## See also
+
+- [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): where downloads land, and how a dataset reaches a dataflow.
+- [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the Dataset Finder and the other agents.
+- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#data-lake-catalog): how search and downloads work, and how to add a provider.
+- [`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json): the manifest JSON Schema.

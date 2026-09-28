@@ -312,6 +312,11 @@ def curio_servers(session_app, request):
         extra_args.append("--testing")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
+    # Real-time collaboration is off unless the server starts with --collab,
+    # and main.py sets ENABLE_COLLAB from that flag, so an env var alone cannot
+    # turn it on. The tour's collaboration scene records with CURIO_E2E_COLLAB=1.
+    if env.get("CURIO_E2E_COLLAB", "0") in ("1", "true", "yes", "on"):
+        extra_args.append("--collab")
     # Saving a node's output to the Data Catalog is opt-in per node by default
     # (#180). Several tests here are ABOUT that save - test_dataset_palette,
     # test_dataset_lineage_e2e, test_dataset_export all expect a computed dataset
@@ -759,6 +764,9 @@ def loaded_workflow(
     )
     request.cls.spec = spec
     request.cls.page = workflow_page
+    # The ground-truth run resolves datasets as this user too, so the files a
+    # node derives land where the browser's run puts them.
+    request.cls.username = username
     yield
     os.unlink(seeded_tmp.name)
     if os.environ.get("CURIO_PAUSE_AFTER"):

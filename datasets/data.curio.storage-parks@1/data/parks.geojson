@@ -1,0 +1,1 @@
+{"type": "FeatureCollection", "features": [{"id": "0", "type": "Feature", "properties": {"name": "Millennium Park"}, "geometry": {"type": "Polygon", "coordinates": [[[-87.625, 41.881], [-87.621, 41.881], [-87.621, 41.884], [-87.625, 41.884], [-87.625, 41.881]]]}}]}

@@ -1,0 +1,294 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 814,
+        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\n# Downtown: the Loop and its neighbours.\ndowntown = [\"60601\", \"60602\", \"60603\", \"60604\", \"60605\",\n            \"60606\", \"60607\", \"60611\", \"60654\", \"60661\"]\ngdf = gdf[gdf[\"zip\"].isin(downtown)]\n\n# A number to colour by: each ZIP's area, measured in a projected CRS.\ngdf[\"area_km2\"] = (gdf.to_crs(26971).area / 1e6).round(2)\n\nreturn gdf[[\"zip\", \"area_km2\", \"geometry\"]]",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "eb39411d-d742-52c8-93aa-1424997ead25",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 215,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"area_km2\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9f7b9d8e-2faa-5ae4-9216-5f4f8c5b4a5b",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 1075,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A GeoDataFrame, drawn by Vega-Lite.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"stroke\": \"white\",\n    \"strokeWidth\": 0.5\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"area_km2\",\n      \"type\": \"quantitative\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7651188c-d864-5de0-acde-54376c0be3a0",
+        "type": "curio.builtin/data-transformation",
+        "x": 645,
+        "y": 645,
+        "content": "import pandas as pd\n\n# A plain DataFrame that still holds a column of shapely geometries.\nreturn pd.DataFrame(arg)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "82f3f32b-33f8-5ead-abdf-d3fc43edd0cc",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"area_km2\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b5bf05fa-42ff-577f-9b2e-ca62a0e625cc",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 860,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A DataFrame with one geometry column.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"stroke\": \"white\",\n    \"strokeWidth\": 0.5\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"area_km2\",\n      \"type\": \"quantitative\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b3f68832-7b27-52db-9b76-883f643efd36",
+        "type": "curio.builtin/data-transformation",
+        "x": 645,
+        "y": 1505,
+        "content": "import pandas as pd\n\n# The attributes alone: nothing here can be drawn on a map.\nreturn pd.DataFrame(arg.drop(columns=\"geometry\"))",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "08f7511f-03d0-5df3-b25e-1d7fbec33101",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 1290,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"area_km2\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 1720,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A DataFrame with no geometry column.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"stroke\": \"white\",\n    \"strokeWidth\": 0.5\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"area_km2\",\n      \"type\": \"quantitative\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "a557e70d-aeba-59a0-8de0-f1b0ce394053",
+        "type": "curio.builtin/data-transformation",
+        "x": 1290,
+        "y": 322,
+        "content": "# The same frame in a projected CRS (Illinois East, in metres), declared.\nreturn arg.to_crs(26971)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "427cb38f-e10e-54a6-8aac-7486f0bf22a9",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2580,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"area_km2\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c62accab-509b-57b2-adc6-d1363dc9f4e0",
+        "type": "curio.builtin/vis-vega",
+        "x": 2580,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The same frame in EPSG:26971.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"stroke\": \"white\",\n    \"strokeWidth\": 0.5\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"area_km2\",\n      \"type\": \"quantitative\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ae1128ee-768a-5aac-be11-4a90acd27829",
+        "type": "curio.builtin/data-transformation",
+        "x": 1290,
+        "y": 752,
+        "content": "gdf = arg\n\n# Two layers: the ZIP polygons, and a point at each one's centre.\ncentres = gdf.copy()\ncentres[\"geometry\"] = gdf.to_crs(26971).centroid.to_crs(4326)\n\nreturn gdf, centres",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aa70f3d8-1191-580e-8387-1fbe27487603",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2580,
+        "y": 860,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream_0\",\n        \"getFnv\": \"area_km2\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      },\n      {\n        \"dataRef\": \"upstream_1\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "dfdcf935-96c9-5dcf-bb44-90376fbafad8",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 1182,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Area by ZIP. Hover a bar to highlight that ZIP on the linked map.\",\n  \"params\": [\n    {\n      \"name\": \"highlight\",\n      \"select\": {\n        \"type\": \"point\",\n        \"on\": \"pointerover\"\n      }\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-y\",\n      \"axis\": {\n        \"labels\": false\n      }\n    },\n    \"y\": {\n      \"field\": \"area_km2\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"condition\": {\n        \"test\": \"datum.interacted === '1'\",\n        \"value\": \"red\"\n      },\n      \"value\": \"steelblue\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-eb39411d-d742-52c8-93aa-1424997ead25in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "eb39411d-d742-52c8-93aa-1424997ead25"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-9f7b9d8e-2faa-5ae4-9216-5f4f8c5b4a5bin",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "9f7b9d8e-2faa-5ae4-9216-5f4f8c5b4a5b"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-7651188c-d864-5de0-acde-54376c0be3a0in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "7651188c-d864-5de0-acde-54376c0be3a0"
+      },
+      {
+        "id": "reactflow__edge-7651188c-d864-5de0-acde-54376c0be3a0out-82f3f32b-33f8-5ead-abdf-d3fc43edd0ccin",
+        "source": "7651188c-d864-5de0-acde-54376c0be3a0",
+        "target": "82f3f32b-33f8-5ead-abdf-d3fc43edd0cc"
+      },
+      {
+        "id": "reactflow__edge-7651188c-d864-5de0-acde-54376c0be3a0out-b5bf05fa-42ff-577f-9b2e-ca62a0e625ccin",
+        "source": "7651188c-d864-5de0-acde-54376c0be3a0",
+        "target": "b5bf05fa-42ff-577f-9b2e-ca62a0e625cc"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-b3f68832-7b27-52db-9b76-883f643efd36in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "b3f68832-7b27-52db-9b76-883f643efd36"
+      },
+      {
+        "id": "reactflow__edge-b3f68832-7b27-52db-9b76-883f643efd36out-08f7511f-03d0-5df3-b25e-1d7fbec33101in",
+        "source": "b3f68832-7b27-52db-9b76-883f643efd36",
+        "target": "08f7511f-03d0-5df3-b25e-1d7fbec33101"
+      },
+      {
+        "id": "reactflow__edge-b3f68832-7b27-52db-9b76-883f643efd36out-dbda2a2f-5ff1-5ce4-a88b-d4599ffa254fin",
+        "source": "b3f68832-7b27-52db-9b76-883f643efd36",
+        "target": "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-a557e70d-aeba-59a0-8de0-f1b0ce394053in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "a557e70d-aeba-59a0-8de0-f1b0ce394053"
+      },
+      {
+        "id": "reactflow__edge-a557e70d-aeba-59a0-8de0-f1b0ce394053out-427cb38f-e10e-54a6-8aac-7486f0bf22a9in",
+        "source": "a557e70d-aeba-59a0-8de0-f1b0ce394053",
+        "target": "427cb38f-e10e-54a6-8aac-7486f0bf22a9"
+      },
+      {
+        "id": "reactflow__edge-a557e70d-aeba-59a0-8de0-f1b0ce394053out-c62accab-509b-57b2-adc6-d1363dc9f4e0in",
+        "source": "a557e70d-aeba-59a0-8de0-f1b0ce394053",
+        "target": "c62accab-509b-57b2-adc6-d1363dc9f4e0"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-ae1128ee-768a-5aac-be11-4a90acd27829in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "ae1128ee-768a-5aac-be11-4a90acd27829"
+      },
+      {
+        "id": "reactflow__edge-ae1128ee-768a-5aac-be11-4a90acd27829out-aa70f3d8-1191-580e-8387-1fbe27487603in",
+        "source": "ae1128ee-768a-5aac-be11-4a90acd27829",
+        "target": "aa70f3d8-1191-580e-8387-1fbe27487603"
+      },
+      {
+        "id": "reactflow__edge-b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0out-dfdcf935-96c9-5dcf-bb44-90376fbafad8in",
+        "source": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",
+        "target": "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-dfdcf935-96c9-5dcf-bb44-90376fbafad8in/out-eb39411d-d742-52c8-93aa-1424997ead25in/out",
+        "source": "dfdcf935-96c9-5dcf-bb44-90376fbafad8",
+        "target": "eb39411d-d742-52c8-93aa-1424997ead25"
+      }
+    ],
+    "name": "Autark GeoDataFrame maps",
+    "description": "Downtown Chicago ZIPs drawn by the Autark node beside the Vega-Lite node: the same inputs, the same refusals, two layers from one node, and a chart linked to a map.",
+    "task": "",
+    "timestamp": 1789300000000,
+    "provenance_id": "DefaultWorkflow",
+    "datasets": [
+      {
+        "datasetId": "data.urbanlab.chicago-boundary",
+        "dirName": "data.urbanlab.chicago-boundary@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-26T00:00:00Z"
+      }
+    ]
+  }
+}

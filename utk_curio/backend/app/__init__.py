@@ -99,8 +99,15 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.datasets import datasets_bp
     app.register_blueprint(datasets_bp)
 
-    from utk_curio.backend.app.datalakes import datalakes_bp
+    from utk_curio.backend.app.datalakes import datalakes_bp, media_bp
     app.register_blueprint(datalakes_bp)
+    app.register_blueprint(media_bp)
+    try:
+        from utk_curio.backend.app.datalakes.infrastructure.storage import audit_folder_roots
+
+        audit_folder_roots()
+    except Exception:  # noqa: BLE001 - an audit must never stop a boot
+        pass
 
     from utk_curio.backend.app.agents.routes import agents_bp
     app.register_blueprint(agents_bp)

@@ -34,6 +34,13 @@ class LakeResource:
     #: Bytes, when the portal says. A hint, never trusted as a bound - the real
     #: cap is enforced against bytes actually written.
     size_hint: int | None = None
+    #: Storage rows only: the resource's kind (``table``, ``rasters``, ...),
+    #: how many files it covers, the values each captured field took, and a
+    #: few of its files for a preview. None or empty for a portal's rows.
+    kind: str | None = None
+    file_count: int | None = None
+    fields: tuple[dict[str, Any], ...] = ()
+    samples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

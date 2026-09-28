@@ -63,4 +63,10 @@ describe("datasetReferenceCode", () => {
   test("is the code half of the reference", () => {
     expect(datasetReferenceCode(item())).toBe(datasetReference(item()).code);
   });
+
+  test("hands over curio_collection for a collection", () => {
+    expect(
+      datasetReferenceCode({ id: "imported.xabc@1", path: "/x/index.parquet", uri: "", format: "collection" }),
+    ).toBe('curio_collection("imported.xabc@1")');
+  });
 });
