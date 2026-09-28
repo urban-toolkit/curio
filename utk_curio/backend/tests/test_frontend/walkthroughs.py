@@ -38,6 +38,7 @@ from .utils import (
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
+    assert_autark_map_drawn,
     dismiss_toasts,
     assert_vega_canvas_rendered,
     canvas_nodes,
@@ -1431,6 +1432,9 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.say("Its input never came", "The compute pass upstream needed WebGPU as well.")
     run_all_and_wait(page, timeout_ms=180000)
     wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
+    # The frame below cannot show it (a screenshot on the GPU runner has every
+    # WebGPU canvas blank, #427), so the map's own pixels say it drew.
+    assert_autark_map_drawn(page, node_id, timeout=45000, attach_as="webgpu-recovered map canvas")
     ctx.focus(autark, hold=1200)
     ctx.say("Run the dataflow", "With WebGPU back, the whole chain draws.")
     ctx.capture("webgpu-recovered")

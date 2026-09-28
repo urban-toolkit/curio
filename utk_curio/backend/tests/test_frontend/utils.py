@@ -3030,6 +3030,90 @@ def assert_vega_canvas_rendered(
         )
 
 
+# An Autark map's canvas as it last drew, read after two animation frames. The
+# id is autkGrammarBehavior's ``'autk-grammar-map-' + nodeId``.
+_AUTK_MAP_PIXELS_JS = """async (id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return canvas.toDataURL('image/png');
+}"""
+
+# How the map canvas sits in the page: its box, the styles that could hide it,
+# and what the page reports on top at its centre.
+_AUTK_MAP_PLACEMENT_JS = """(id) => {
+    const canvas = document.getElementById('autk-grammar-map-' + id);
+    if (!canvas) return null;
+    const box = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const describe = (el) => el ? `${el.tagName.toLowerCase()}#${el.id}.${String(el.className).slice(0, 60)}` : null;
+    return {
+        box: [box.left, box.top, box.width, box.height],
+        backing: [canvas.width, canvas.height],
+        style: {display: style.display, visibility: style.visibility, opacity: style.opacity,
+                position: style.position, zIndex: style.zIndex},
+        topElement: describe(top),
+        topIsCanvas: top === canvas,
+    };
+}"""
+
+
+def assert_autark_map_drawn(
+    page, node_id: str, *, timeout: float = 30000, attach_as: str = ""
+) -> None:
+    """Assert an Autark map node's canvas holds a drawn, opaque map.
+
+    Read in the page, not from a screenshot. A drawn map is mostly opaque and
+    holds more than 8 colours; a cleared canvas is transparent, and a
+    background-only one holds one or two. With ``attach_as``, the Allure report
+    gets the canvas pixels, the canvas as an element, viewport and full-page
+    screenshot, and how the canvas is placed, so a map that drew but does not
+    show can be told apart from one that did not draw.
+    """
+    import base64
+
+    from PIL import Image
+
+    deadline = time.monotonic() + timeout / 1000
+    png, colours, opaque = None, 0, 0.0
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        if url:
+            png = base64.b64decode(url.split(",", 1)[1])
+            pixels = list(Image.open(BytesIO(png)).convert("RGBA").getdata())
+            solid = [p[:3] for p in pixels if p[3] >= 250]
+            opaque = len(solid) / max(1, len(pixels))
+            colours = len(set(solid))
+            if (colours > 8 and opaque > 0.5) or time.monotonic() >= deadline:
+                break
+        elif time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if attach_as:
+        if png:
+            allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+        canvas = page.locator(f"#autk-grammar-map-{node_id}")
+        if canvas.count():
+            allure.attach(canvas.first.screenshot(), name=f"{attach_as}: canvas screenshot",
+                          attachment_type=allure.attachment_type.PNG)
+        # The same moment as a viewport capture and as the full-page capture the
+        # baselines use, which re-renders the page into a larger surface.
+        page.evaluate("window.scrollTo(0, 0)")
+        allure.attach(page.screenshot(), name=f"{attach_as}: viewport screenshot",
+                      attachment_type=allure.attachment_type.PNG)
+        allure.attach(page.screenshot(full_page=True), name=f"{attach_as}: full-page screenshot",
+                      attachment_type=allure.attachment_type.PNG)
+        placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, node_id)
+        allure.attach(json.dumps({"opaqueShare": opaque, "opaqueColours": colours, "placement": placement}, indent=1),
+                      name=f"{attach_as}: canvas placement", attachment_type=allure.attachment_type.JSON)
+    assert png, f"Autark node {node_id} has no map canvas"
+    assert colours > 8 and opaque > 0.5, (
+        f"Autark node {node_id}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
+        f"colours, so no map was drawn"
+    )
+
+
 def assert_vega_node_empty_state(page, node_id: str, reason: str, *, timeout: float = 30000) -> None:
     """Assert a VIS_VEGA node explains why it has nothing to draw.
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getToken } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
 import styles from "./NodeOutcomeStrip.module.css";
@@ -16,12 +16,14 @@ import styles from "./NodeOutcomeStrip.module.css";
  * Two sources, one formatter, so a user and an agent never read different
  * explanations of the same node:
  *
- * - the LIVE outcome (`data.output`) while this tab holds one — it appears the
- *   instant a render fails;
- * - the JOURNAL otherwise, fetched once on mount, so the reason is still there
- *   after a reload. That is also the record the agents read (`DEC-052`), and it
- *   is deliberately not a new field on the saved node: dev/135 keeps the
- *   document and the run log apart.
+ * - the LIVE outcome (`data.output`) while this tab holds a settled one. A
+ *   failure appears the instant a render fails, and a success clears the strip;
+ * - the JOURNAL otherwise, so the reason is still there after a reload. That is
+ *   also the record the agents read (`DEC-052`), and it is deliberately not a
+ *   new field on the saved node: dev/135 keeps the document and the run log
+ *   apart. It is never read over a settled outcome: the success of a rerun is
+ *   posted to the journal after the node settles, so a read at that moment
+ *   still returns the failure it replaced.
  */
 
 export interface NodeOutcomeStripProps {
@@ -47,7 +49,14 @@ function textOf(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** The live outcome, or null when this tab has nothing settled to show. */
+/** Whether this tab holds the node's outcome, so the journal has nothing to add. */
+export function isSettled(
+  output: { code?: string; content?: unknown } | null | undefined,
+): boolean {
+  return output?.code === "success" || output?.code === "error";
+}
+
+/** The live outcome, or null when this tab has no failure to show. */
 export function liveOutcome(
   output: { code?: string; content?: unknown } | null | undefined,
 ): Outcome | null {
@@ -85,9 +94,18 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
 }) => {
   const [recorded, setRecorded] = useState<Outcome | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // The collapsed line is cut to the node's width, so a single long line can
+  // hide text too; the disclosure follows what is actually cut.
+  const [clipped, setClipped] = useState(false);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const settled = isSettled(output);
   const live = liveOutcome(output);
 
   useEffect(() => {
+    if (settled) {
+      setRecorded(null);
+      return;
+    }
     if (!projectId || !nodeId) return;
     let cancelled = false;
     const token = getToken();
@@ -109,24 +127,38 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [projectId, nodeId, output]);
+  }, [projectId, nodeId, settled]);
 
-  const outcome = live ?? recorded;
-  if (!outcome || !outcome.text) return null;
+  const outcome = settled ? live : recorded;
+  const text = outcome?.text ?? "";
 
-  const head = firstLine(outcome.text);
-  const hasMore = outcome.text.trim() !== head;
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    const measure = () => setClipped(el.scrollWidth > el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+
+  if (!outcome || !text) return null;
+
+  const head = firstLine(text);
+  const hasMore = clipped || text.trim() !== head;
 
   return (
     <div
-      className={`${styles.strip} ${outcome.level === "error" ? styles.error : styles.notice}`}
+      className={`${styles.strip} ${outcome.level === "error" ? styles.error : styles.notice}` +
+        (expanded ? ` ${styles.expanded}` : "")}
       role="status"
       data-testid={`node-outcome-${nodeId}`}
     >
       <span className={styles.label}>
         {outcome.live ? "Error" : "Last run"}
       </span>
-      <span className={styles.text}>{expanded ? outcome.text : head}</span>
+      <span ref={textRef} className={styles.text}>{expanded ? text : head}</span>
       {hasMore ? (
         <button
           type="button"
