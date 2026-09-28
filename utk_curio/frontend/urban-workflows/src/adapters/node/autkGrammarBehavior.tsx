@@ -11,6 +11,7 @@ import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
+import { snapSourceToGrid } from '../../utils/geoPrecision';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { runComputeChecked } from './autkComputeScopes';
 import { withExtensionRetry } from './duckdbExtensionRetry';
@@ -324,7 +325,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         (s: any) => !emptySources.includes(s),
                     );
                 }
-                spec = { ...spec, data: dataSectionSources };
+                // On a 1 cm grid, so autk-db's second clip of these already
+                // clipped layers holds (see utils/geoPrecision).
+                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
