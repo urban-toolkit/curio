@@ -56,6 +56,8 @@ TSC_ERROR = re.compile(
 )
 # xdist's --dist loadgroup appends "@<group>" to every node id.
 XDIST_GROUP = re.compile(r"@[^\[\]@]*$")
+# npm's own lines around a script, which say nothing about tsc's result.
+NPM_CHATTER = re.compile(r"^(>|npm (notice|warn)\b)", re.IGNORECASE)
 
 TRACE_KEEP = 6000  # characters kept from each end of a long trace
 MAX_LISTED = 200  # failures listed per suite
@@ -298,7 +300,7 @@ def read_tsc(label, path):
             suite.tsc_errors.append(match.groupdict())
         elif line[:1].isspace() and line.strip() and suite.tsc_errors:
             suite.tsc_errors[-1]["message"] += "\n" + line.strip()
-        elif line.strip() and not line.startswith(">") and not line.lower().startswith("npm warn"):
+        elif line.strip() and not NPM_CHATTER.match(line):
             unexpected = True
     if unexpected and not suite.tsc_errors:
         suite.raw_tail = "\n".join(text.splitlines()[-40:])
@@ -394,9 +396,12 @@ def encode_images(paths, workers):
                 return _data_uri("image/webp", buf.getvalue())
             except Exception:
                 pass  # not an image Pillow reads; embed the bytes as they are
-        with open(path, "rb") as handle:
-            return _data_uri("image/png" if path.lower().endswith(".png") else
-                             "application/octet-stream", handle.read())
+        try:
+            with open(path, "rb") as handle:
+                return _data_uri("image/png" if path.lower().endswith(".png") else
+                                 "application/octet-stream", handle.read())
+        except OSError:
+            return None  # one unreadable file costs its own image, not the page's
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         # Pillow releases the GIL while encoding, so threads do scale here.
@@ -722,7 +727,8 @@ def render_case(report, case):
 def _screenshot(report, path, caption):
     uri = report.images.get(path)
     if not uri:
-        return f'<p class="note">{esc(caption)}: left out, the page reached its {report.image_mb} MB image budget.</p>'
+        return (f'<p class="note">{esc(caption)}: left out, unreadable or past the page\'s '
+                f'{report.image_mb} MB image budget.</p>')
     return (f'<figure class="failure-shot"><button type="button" class="shot" aria-label="Open at original size">'
             f'<img src="{uri}" alt="{esc(caption)}" loading="lazy" decoding="async" data-caption="{esc(caption)}">'
             f"</button><figcaption>{esc(caption)}</figcaption></figure>")
@@ -816,7 +822,7 @@ def render_comparison(report, record):
                 f'<img src="{uri}" alt="{esc(full)}" loading="lazy" decoding="async" data-caption="{esc(full)}">'
                 f"</button><figcaption>{caption}</figcaption></figure>")
         else:
-            why = ("left out: the page reached its image budget" if path else
+            why = ("left out: unreadable, or past the page's image budget" if path else
                    {"expected": "no baseline", "created": "nothing was captured",
                     "diff": "nothing to compare"}[kind])
             figures.append(f'<figure class="empty"><div class="placeholder">{esc(why)}</div>'
@@ -839,7 +845,7 @@ def render_footer(report):
             f"{link}</p></footer>")
 
 
-def render_summary(report, page_name=""):
+def render_summary(report):
     """Markdown for $GITHUB_STEP_SUMMARY: the suite table and comparison counts."""
     def cell(text):
         return str(text).replace("|", "\\|").replace("\n", " ")

@@ -186,8 +186,14 @@ def test_tsc_errors_and_a_clean_run(tmp_path):
     assert "comes from property 'x'" in suite.tsc_errors[0]["message"]
     assert suite.status == "failed"
 
-    (tmp_path / "clean.txt").write_text("\n> x typecheck\n> tsc --noEmit\n\n", encoding="utf-8")
+    clean = ("\n> x typecheck\n> tsc --noEmit\n\n"
+             "npm notice New minor version of npm available! 11.1.0 -> 11.2.0\n")
+    (tmp_path / "clean.txt").write_text(clean, encoding="utf-8")
     assert ci_report.read_tsc("tsc", str(tmp_path / "clean.txt")).status == "passed"
+
+    (tmp_path / "odd.txt").write_text("> x typecheck\nnpm error Missing script\n", encoding="utf-8")
+    odd = ci_report.read_tsc("tsc", str(tmp_path / "odd.txt"))
+    assert odd.status == "unclear" and "Missing script" in odd.raw_tail
 
 
 def test_the_page_is_self_contained(tmp_path):
