@@ -530,6 +530,8 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
 
     time_field = raw.get("time")
     if time_field is not None:
+        if kind == "table":
+            raise ManifestError(f"manifest.{where}.time only applies to a collection")
         time_field = _require_str(time_field, f"{where}.time")
         capture = next((c for c in template.captures if c.name == time_field), None)
         if capture is None or capture.type not in ("date", "datetime"):
