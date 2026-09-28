@@ -9,11 +9,12 @@
  * that lesson the hard way (#221: two surfaces with hand-written lists
  * disagreed about what a project allowed).
  *
- * The three catalogs differ in their primary action, which is why this is three
- * functions rather than one: a dataset is added to every project or detached
- * from it, an agent is imported or un-imported, a package is installed and can
- * then be updated. Each builder takes the state its drawer already computes, so
- * neither surface decides anything the other cannot see.
+ * The catalogs differ in their primary action, which is why this is one
+ * function each rather than one for all: a dataset is added to every project or
+ * detached from it, an agent is imported or un-imported, a package is installed
+ * and can then be updated, and a data lake source is browsed. Each builder
+ * takes the state its drawer already computes, so neither surface decides
+ * anything the other cannot see.
  *
  * Publish and Unpublish are deliberately absent. They are not plain buttons in
  * the drawer: `CatalogPublishPill` puts a confirmation in front of each,
@@ -31,6 +32,7 @@ export type CatalogCardActionId =
   | "add-to-all-projects"
   | "remove-from-all-projects"
   | "update-all-projects"
+  | "browse-datasets"
   | "view-details";
 
 export interface CatalogCardAction {
@@ -82,5 +84,18 @@ export function packageCardActions(state: {
     : state.hasUpdate
       ? [{ id: "update-all-projects", label: "Update all projects" }]
       : [];
+  return [...primary, VIEW_DETAILS];
+}
+
+export function lakeSourceCardActions(state: {
+  /** Searchable by this account: `unsearchableReason` found nothing. */
+  browsable: boolean;
+}): CatalogCardAction[] {
+  // A source that cannot be searched gets a sentence in the drawer's primary
+  // slot, not a button, so the menu offers no primary either - the same rule
+  // as an installed, current package.
+  const primary: CatalogCardAction[] = state.browsable
+    ? [{ id: "browse-datasets", label: "Browse datasets" }]
+    : [];
   return [...primary, VIEW_DETAILS];
 }

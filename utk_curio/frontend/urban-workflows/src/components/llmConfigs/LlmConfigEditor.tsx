@@ -222,7 +222,7 @@ export const LlmConfigEditor: React.FC<{
           </span>
           {info.keyLink ? (
             <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
-              {info.keyLinkLabel} →
+              {info.keyLinkLabel} ↗
             </a>
           ) : null}
           {keySaved && !info.keyRequired ? (

@@ -75,6 +75,7 @@ class DataLakeService:
             download_target=self._browse.download_target,
             install_bytes=self._install_bytes,
             find_held=self._find_held,
+            find_by_content=self._find_by_content,
         )
 
     # ── collaborators ──────────────────────────────────────────────────────
@@ -195,6 +196,13 @@ class DataLakeService:
         return UserDatasetRepository(self.user).find_by_lake_resource(
             lake_id, resource_id, fmt
         )
+
+    def _find_by_content(self, content_sha256):
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        return UserDatasetRepository(self.user).find_by_content(content_sha256)
 
     def start_acquire(
         self, dir_name: str, resource_id: str, *, fmt=None, title=None, refresh=False
