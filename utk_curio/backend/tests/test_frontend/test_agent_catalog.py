@@ -49,9 +49,9 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 # A built-in with no requiresAgents: the plain install path.
-AGENT_COORD = "agent.node-explainer@1.0.0"
-AGENT_ID = "agent.node-explainer"
-AGENT_NAME = "Node Explainer"
+AGENT_COORD = "agent.chat-agent@1.0.0"
+AGENT_ID = "agent.chat-agent"
+AGENT_NAME = "Chat"
 
 # The one built-in that declares a hard dependency (on agent.node-content-builder),
 # which is what makes the closure assertable end to end.

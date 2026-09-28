@@ -9,10 +9,11 @@ from utk_curio.backend.app.agents.manifest import AgentManifest
 
 # The dev/06 canonical map: agent id -> its prompt file and capabilities.
 _EXPECTED = {
-    "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine"]),
-    "agent.debug-agent": ("debug_prompt.txt", ["code.debug.diagnose", "code.fix.propose"]),
+    # The chat agent absorbed the node explainer and the debugger: it explains
+    # and diagnoses as well as chatting.
+    "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine",
+                                             "node.explain", "code.debug.diagnose"]),
     "agent.dataflow-explainer": ("explanation_prompt.txt", ["dataflow.explain"]),
-    "agent.node-explainer": ("single_box_explanation_prompt.txt", ["node.explain", "node.output.interpret"]),
     "agent.node-content-builder": ("new_content_prompt.txt", ["node.content.generate"]),
     "agent.execution-subtask-planner": ("new_subtask_from_exec_prompt.txt", ["execution.followup.plan"]),
     "agent.dataflow-task-planner": ("new_subtasks_prompt.txt", ["workflow.plan.create"]),
@@ -25,13 +26,70 @@ _EXPECTED = {
 }
 
 
+#: The catalog cards, pinned by id rather than recomputed from the rule they
+#: follow, which would only restate it. A card acts on the project (P1), has a
+#: capability whose input or reply the runtime treats as structure (P2), or is
+#: the only agent for a canvas target (P3); the chat agent is the one
+#: conversational surface.
+_CARDS = {
+    "agent.dataflow-builder", "agent.dataset-finder", "agent.node-builder",
+    "agent.node-content-builder", "agent.node-researcher", "agent.package-builder",
+    "agent.package-recommendation", "agent.researcher", "agent.connection-builder",
+    "agent.chat-agent",
+}
+
+
 class TestRoster:
-    def test_sixteen_agents(self):
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
+    def test_nineteen_agents(self):
+        # 11 migrations + the three composites (dev/48, dev/50, dev/52)
         # + the node researcher (dev/67-4) + package recommendation (dev/84)
         # + the authored evaluator (DEC-055, dev/85/86)
         # + the package builder (dev/89) + the notes researcher (dev/90).
-        assert len(builtin.BUILTIN_AGENTS) == 21
+        assert len(builtin.BUILTIN_AGENTS) == 19
+
+    def test_the_ten_cards_and_the_rest_internal(self):
+        cards = {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
+        assert cards == _CARDS
+        assert builtin.internal_agent_ids() == {
+            s.agent_id for s in builtin.BUILTIN_AGENTS
+        } - _CARDS
+
+    def test_every_card_meets_the_rule(self):
+        from utk_curio.backend.app.agents import content, services
+
+        mutate = set(services.MUTATE_PROPOSAL_TOOLS)
+        structured = set(content.STRUCTURED_CAPABILITIES)
+        for spec in builtin.BUILTIN_AGENTS:
+            if not spec.in_catalog:
+                continue
+            acts = bool(mutate & set(spec.tools))
+            understood = bool(structured & set(spec.capabilities))
+            others = [s for s in builtin.BUILTIN_AGENTS if s is not spec]
+            owns_target = any(
+                kind not in {k for o in others for k in o.target_kinds()}
+                for kind in spec.target_kinds()
+            )
+            surface = spec.agent_id == "agent.chat-agent"
+            assert acts or understood or owns_target or surface, spec.agent_id
+
+    def test_no_internal_agent_meets_the_rule(self):
+        # Otherwise it would be a card.
+        from utk_curio.backend.app.agents import content, services
+
+        mutate = set(services.MUTATE_PROPOSAL_TOOLS)
+        structured = set(content.STRUCTURED_CAPABILITIES)
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.in_catalog:
+                continue
+            assert not mutate & set(spec.tools), spec.agent_id
+            assert not structured & set(spec.capabilities), spec.agent_id
+
+    def test_internal_agents_are_known_by_coordinate(self):
+        assert builtin.is_internal("agent.dataflow-task-planner")
+        assert builtin.is_internal("agent.dataflow-task-planner@1.0.0")
+        # The owner's own definition under the same id is not the built-in.
+        assert not builtin.is_internal("agent.dataflow-task-planner@2.0.0")
+        assert not builtin.is_internal("agent.chat-agent@1.0.0")
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
@@ -64,7 +122,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 21
+        assert len(manifests) == 19
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -76,9 +134,9 @@ class TestManifests:
             assert m.provenance.trust == "built-in"
 
     def test_get_by_coord(self):
-        m = builtin.get_builtin_manifest("agent.node-explainer@1.0.0")
-        assert m is not None and m.agent_id == "agent.node-explainer"
-        assert builtin.get_builtin_manifest("agent.node-explainer@9.9.9") is None
+        m = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
+        assert m is not None and m.agent_id == "agent.chat-agent"
+        assert builtin.get_builtin_manifest("agent.chat-agent@9.9.9") is None
         assert builtin.get_builtin_manifest("curio.builtin@1") is None
 
 

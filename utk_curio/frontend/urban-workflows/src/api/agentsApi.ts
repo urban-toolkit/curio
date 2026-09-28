@@ -26,7 +26,7 @@ export interface ProviderDefault {
 
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
-  id: string; // e.g. "agent.node-explainer"
+  id: string; // e.g. "agent.my-helper"
   version: string;
   dirName: string; // "<id>@<version>"
   name: string;
@@ -46,6 +46,9 @@ export interface AgentCard {
   /** dev/106: server-resolved hard dependencies (``requiresAgents``) — what an
    * Install adds alongside this agent. ``[]`` for every leaf agent. */
   requiresAgents: AgentRequirement[];
+  /** Whether the agent is a catalog card. Every listing shows cards only; an
+   * internal built-in runs as a delegate and is never listed or attached. */
+  inCatalog?: boolean;
 }
 
 /** One direct hard dependency of an agent (dev/106). */

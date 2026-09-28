@@ -22,7 +22,7 @@ captures stay legible.
 Run::
 
     pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -v
-    pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -k node-explainer -v --headed
+    pytest utk_curio/backend/tests/test_frontend/test_agent_chat_e2e.py -k chat-agent -v --headed
 """
 from __future__ import annotations
 
@@ -267,9 +267,11 @@ def _send(panel, message: str):
 
 
 class TestAgentChatGallery:
-    """One rendered chat turn, and one committed baseline, per built-in agent."""
+    """One rendered chat turn, and one committed baseline, per catalog card."""
 
-    @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=_spec_id)
+    @pytest.mark.parametrize(
+        "spec", [s for s in builtin.BUILTIN_AGENTS if s.in_catalog], ids=_spec_id,
+    )
     def test_agent_chat_panel_baseline(self, spec, agent_chat_session):
         require_project_page()
         require_user_auth()
@@ -500,7 +502,7 @@ class TestNodeAttachedChatHeader:
     # Node-only by roster, so the server cannot answer a node attachment with
     # a canvas one and leave this reading the wrong header.
     SPEC = next(
-        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-explainer"
+        s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.node-content-builder"
     )
 
     def test_the_header_names_the_node_and_keeps_the_ids_on_the_tooltip(

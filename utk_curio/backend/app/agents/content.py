@@ -58,6 +58,14 @@ _DELEGATE_INPUTS_MAX_BYTES = 3072
 PACKAGE_AUTHORING_CAPABILITIES = frozenset({
     "node.kind.author", "package.build", "package.extend",
 })
+#: The capabilities whose delegated input the runtime shapes, or whose reply
+#: it parses as structure rather than prose (``services._enriched_delegate_inputs``
+#: and the delegation branches of both run loops, plus Solve for content
+#: generation). An agent declaring one is a catalog card.
+STRUCTURED_CAPABILITIES = frozenset({
+    "node.content.generate", "dataset.discover", "research.verify",
+    "research.notes.compose", *PACKAGE_AUTHORING_CAPABILITIES,
+})
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).
 _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
