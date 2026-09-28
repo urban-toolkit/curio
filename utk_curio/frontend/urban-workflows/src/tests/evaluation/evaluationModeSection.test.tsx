@@ -10,13 +10,17 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
  * flag that they had configured nothing.
  */
 
+const PROVIDER = {
+  apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4",
+  configId: "llm-00000000000a", label: "Lab server",
+};
+
 const READY = {
   configured: true,
   reason: "",
-  source: "account" as const,
-  provider: { apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4" },
-  account: { apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4", hasApiKey: true },
-  deployment: { apiType: "", baseUrlHost: "", model: "", hasApiKey: false },
+  source: "default" as const,
+  provider: PROVIDER,
+  configurations: [PROVIDER],
 };
 
 const FIXTURE = {
@@ -125,8 +129,9 @@ describe("the blocked state", () => {
       ...READY,
       configured: false,
       source: "none",
-      reason: "No LLM provider is configured for this account.",
-      provider: { apiType: "", baseUrlHost: "", model: "" },
+      reason: "No LLM configuration answers this run.",
+      provider: { apiType: "", baseUrlHost: "", model: "", configId: null, label: "" },
+      configurations: [],
     };
     await openSection();
     await waitFor(() =>
@@ -140,18 +145,12 @@ describe("the blocked state", () => {
     mockReadiness = {
       ...READY,
       source: "deployment",
-      account: { apiType: "", baseUrlHost: "", model: "", hasApiKey: false },
-      deployment: {
-        apiType: "openai_compatible",
-        baseUrlHost: "sage200.example.edu",
-        model: "gemma4",
-        hasApiKey: true,
-      },
+      provider: { ...PROVIDER, configId: null, label: "Deployment default" },
     };
     await openSection();
     await waitFor(() =>
       expect(
-        screen.getByText(/Configured by this deployment's start command/),
+        screen.getByText(/set by this deployment's start command/),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("gemma4")).toBeInTheDocument();
@@ -164,6 +163,9 @@ describe("the ready state", () => {
     await openSection();
     await waitFor(() => expect(screen.getByText("gemma4")).toBeInTheDocument());
     expect(screen.getByText(/sage200.example.edu/)).toBeInTheDocument();
+    // Named by the configuration that answers.
+    expect(screen.getByText(/Lab server/)).toBeInTheDocument();
+    expect(screen.getByText(/Your default LLM configuration/)).toBeInTheDocument();
     expect(screen.getByLabelText("Example to rebuild")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "The prompt that will be sent" }),

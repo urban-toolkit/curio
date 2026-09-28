@@ -16,10 +16,10 @@ This guide is in seven parts, plus operator notes:
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, and walkthroughs.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): authoring your own definitions.
-- [5. The provider](#5-the-provider): which model answers, and where it is set.
+- [5. LLM configurations](#5-llm-configurations): which model answers, and where it is set.
 - [6. Writing your own agent](#6-writing-your-own-agent): the manifest contract and capabilities.
 - [7. Measuring the agents against the shipped examples](#7-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, what that measurement may not do, and how to train a model on those examples.
-- [Operator notes](#operator-notes): the provider requirement and launcher flags.
+- [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
 ---
 
@@ -655,8 +655,8 @@ declines in one line and the node's failure ends with a concrete remedy —
 host filled in; save the key and Solve again.
 
 What this is not: encryption at rest. The store is a 0600 file under the
-user's own directory (unreadable by isolated node code), the same posture as
-the LLM key today; an encrypted store remains the deployment-tier remainder.
+user's own directory (unreadable by isolated node code), as the keys of LLM
+configurations are.
 A published dataflow carries key *names*, so whoever installs it saves their
 own key under the same name. The shared guest account, when authentication is
 off, shares one key store with every other guest, and the section says so.
@@ -722,29 +722,40 @@ that has already added the agent.
 
 ---
 
-## 5. The provider
+## 5. LLM configurations
 
-Every agent, on every dataflow, is answered by one model. Which one is an
-account-level setting, edited in **AI Settings** from the header.
+Every agent, on every dataflow, answers with your default **LLM configuration**.
+Configurations belong to your account and are edited in **AI Settings** from
+the header. A configuration is:
 
 | Field | What it is |
 |---|---|
-| Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
-| Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | **One per account**, held against the provider you saved it under. The saved-key markers and *Remove saved key* appear only on that provider's tab; on any other tab the field is empty and required, and saving there replaces the stored key rather than adding a second one. Leave blank to keep it while you are on its own tab. |
-| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; when it cannot be asked, Curio replays what that endpoint last reported. Leave blank to inherit the deployment's. |
-| HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
+| Label | Your name for it, unique in your account. |
+| Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers its endpoint. |
+| Base URL | Only for Custom: Ollama, LM Studio, vLLM, Groq, Azure. |
+| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
+| Model | Which model answers. **Fetch models** suggests what the endpoint serves. |
+
+Each row offers **Edit**, **Duplicate** (the copy keeps the key, copied on the
+server), **Make default** and **Remove**; an account holds up to 32. The
+**Deployment default** row is the operator's own configuration: read-only, and
+the one that answers while you have no default of your own. Removing your
+default goes back to it.
+
+The HuggingFace token below the configurations is not for agents: it unlocks
+*gated* models in the Street Vision node. Public models need none.
 
 ### Choosing the model
 
-The **Fetch models** button under the Model field asks the configured endpoint
-what it serves, using the base URL and key currently *on screen* rather than the
-saved ones, so you can choose a model for an endpoint you have not saved yet.
-What comes back becomes a dropdown.
+The **Fetch models** button under the Model field asks the endpoint what it
+serves, using the provider, base URL and key currently *on screen*, so you can
+choose a model for an endpoint you have not saved yet. While you edit a saved
+configuration, a blank key box asks with its saved key, as long as the endpoint
+on screen is still the configuration's own. What comes back is offered as
+suggestions in the Model box.
 
-It is a convenience, not a gate. A model you saved earlier stays selected and is
-marked *(not listed)* if the endpoint stops offering it, and the field is free
-text until you press the button. Two sources fill the dropdown:
+It is a convenience, not a gate: the field stays free text. Two sources fill
+the suggestions:
 
 | Source | What it is |
 |---|---|
@@ -754,16 +765,14 @@ text until you press the button. Two sources fill the dropdown:
 Suggestions are never an allowlist: a model you type by hand is always accepted.
 A replay is labelled with the date it was true.
 
-A brand-new account with no key has nothing to suggest, and the panel says so;
-the deployment's own configured model still shows as the placeholder. Curio does
-not send a placeholder key, so with no key the replay answers immediately.
+A brand-new account with no key has nothing to suggest, and the editor says so.
+Curio does not send a placeholder key, so with no key the replay answers
+immediately.
 
-Whoever runs the Curio install can set a default for all four with
-`curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and
-this panel write the same account-wide setting, so AI Settings shows the
-deployment's choice as the inherited value and you override it only by typing
-something else. Leave a field blank and you stay on the deployment default,
-including when the operator later changes it.
+Whoever runs the Curio install can set a Deployment default with
+`curio.py start` flags (see [Operator notes](#operator-notes)). It is not
+stored in your account, so when the operator changes it, the Deployment default
+row changes with it.
 
 **Curio does not meter, cap, or bill agent runs.** There is no quota screen and
 no spend limit: the tokens are billed to whoever's key is in use. No run is ever
@@ -933,14 +942,13 @@ Three things the harness will not do:
 
 ### Evaluation mode
 
-The place to ask it is **AI Settings → Evaluation mode**, because that is where
-the model is chosen. Pick an example, read the prompt that will be sent, and
-run it.
+The place to ask it is **AI Settings → Evaluation mode**, beside your LLM
+configurations. Pick an example, read the prompt that will be sent, and run it.
 
 What happens is the ordinary product, not a test harness: the run creates a
 **project of its own** (yours is untouched), installs and attaches the Dataflow
 Builder through the normal install flow with the agents it requires, sends the
-prompt through the normal runtime with **your** configured model, applies the
+prompt through the normal runtime with **your** default LLM configuration, applies the
 plan through the same endpoint the Apply button uses, and solves. Then the
 dataflow it built is compared with the saved example — server-side, so the
 reference never reaches the model. The panel names each step while it happens
@@ -969,9 +977,9 @@ a save that would delete a node, a connection or a node's code that the browser
 never saw is refused, and says what would be lost and to reload (memo
 `dev/124`). Editing is otherwise yours to do.
 
-A model configured by the launcher counts: if the deployment was started with
-`--llm-provider`, `--llm-base-url` and `--llm-model`, the panel says so and runs
-against it. With nothing configured anywhere it says so and offers no Run.
+The panel names the model and the configuration that will answer. With no
+default of your own, that is the Deployment default, and the panel says so.
+With nothing configured anywhere it says so and offers no Run.
 
 **Approving a prompt happens here too.** Each prompt was drafted by a model and
 needs a person's approval before it can be exported; the panel that shows you
@@ -992,8 +1000,8 @@ python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
 
 A run started from the panel is recorded per account under
-`.curio/users/<key>/agents/evaluation/`, with the fixture, the provider and
-model, the prompt and agent digests, the generated project id, the phases it
+`.curio/users/<key>/agents/evaluation/`, with the fixture, the configuration,
+provider and model, the prompt and agent digests, the generated project id, the phases it
 went through, its latency and token usage, the comparison and the score — and
 never a key. The command-line runner writes its own report to
 `.curio/eval/<runId>/` as `report.json` (the machine record: provider,
@@ -1012,14 +1020,18 @@ dataflows, in **AI Settings → Model training** (memo `dev/122`).
 **It tells you first whether your endpoint can do this at all.** Nobody
 maintains a list of which providers support fine-tuning — that list would drift
 the moment one shipped or retired the feature, exactly as a list of model ids
-would. Curio asks the endpoint you configured. So the section reads
+would. Curio asks the endpoint of the configuration you train on. So the section reads
 *Unavailable* with a different sentence for each real reason: an Anthropic key
 (its API publishes Messages, Batches, Token Counting, Models, Files and Skills,
 and no tuning endpoint), a local Ollama or LM Studio (chat routes only), or a
-key without the scope to list tuning jobs — which says the endpoint may still
+key without the scope to list tuning jobs, which says the endpoint may still
 support tuning, because the fix there is a different key. When the endpoint
 cannot be asked at all, the last answer it gave is replayed with the date it
 was true.
+
+**Training runs only on a configuration that holds your own API key.** **Train
+on** lists those; a This Curio install configuration is never offered, and a
+guest on a `--deploy` instance cannot train.
 
 **What gets sent, and what does not.** Only fixtures that are on the `train`
 split *and* approved by a person. Each row is one training example: the system
@@ -1032,9 +1044,11 @@ the contract did, so the same rule now includes them.) Every row is scrubbed and
 still resembling a credential stops the upload rather than being sent redacted.
 
 Before anything moves you see the row count, the byte count, the examples by
-name, their licences, and the **host** it would go to — the endpoint you
-configured, never a third party Curio chose. A row carries the prompt, the
-expected graph shape and the plan text, all authored in this repository, plus
+name, their licences, and the **host** it would go to: the endpoint of the
+configuration you train on, never a third party Curio chose. Start sends back
+the host you were shown, and a set that would go elsewhere is refused. A row
+carries the prompt, the expected graph shape and the plan text, all authored in
+this repository, plus
 dataset and package **identifiers**: no dataset row, column, geometry or file
 is included, which is why the datasets' own licences are not implicated.
 Consent is a tick plus the digest of that exact set, and it is recorded before
@@ -1054,14 +1068,19 @@ Curio deciding for you. The rule is narrower and enforceable — an evaluation o
 fixture digests still match the corpus. Four refusals, each naming what to fix.
 The scores come from the same deterministic comparator as everything else in
 part 7, so no model and no agent is anywhere in the approval path, and a
-candidate never judges itself. Switching over records the model you were using,
-so going back is one click.
+candidate never judges itself. Switching over adds an LLM configuration with
+the trained model, marked **Trained**, and makes it your default. Your previous
+default is recorded, so going back is one click, until you change your default
+by hand.
 
 ```bash
 export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run \
     --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
 ```
+
+`--model` runs on a temporary copy of your default configuration with that
+model, and puts your default back afterwards.
 
 Two honest limits. The training data is Curio's own examples, so this teaches
 the *shape* of a Curio dataflow, not your domain — training on your own
@@ -1073,15 +1092,16 @@ for you.
 
 ## Operator notes
 
-### An unconfigured install has no provider
+### An unconfigured install has no Deployment default
 
-Curio ships with **no default LLM endpoint**. An unconfigured install reaches a
-clear "no provider configured" error, and every agent surface that is blocked
-for want of one links to **AI Settings**.
+Curio ships with **no default LLM endpoint**. On an unconfigured install, a user
+with no LLM configuration of their own gets a clear "no LLM configuration
+answers" error, and every agent surface that is blocked for want of one links to
+**AI Settings**.
 
-So an operator must configure a provider, or each user must configure their own
-in AI Settings, before any agent will run. Guests can use AI only if the
-deployment ships a guest key, and AI Settings says so.
+So an operator sets a Deployment default, or each user adds a configuration in
+AI Settings, before any agent will run. Guests on a `--deploy` instance can use
+AI only if the deployment sets a guest configuration, and AI Settings says so.
 
 ### Launcher flags
 
@@ -1091,24 +1111,24 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 
 | Flag | Sets | Effect |
 |---|---|---|
-| `--llm-provider` | `CURIO_DEFAULT_LLM_API_TYPE` | The default provider kind. |
-| `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The default endpoint. |
-| `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The default model. |
-| `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The gate on guest AI. No key, no guest access. |
+| `--llm-provider` | `CURIO_DEFAULT_LLM_API_TYPE` | The provider kind of the deployment's endpoint. |
+| `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. With it or a key set, users are offered **This Curio install**. |
+| `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The Deployment default's model. Without one there is no Deployment default. |
+| `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The guest configuration's key. With neither it nor `CURIO_DEFAULT_LLM_API_KEY`, guests get no AI. |
 | `--huggingface-token` | `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | Fallback HuggingFace token for the Street Vision node's gated models. Each user can set their own in AI Settings, which wins over this. Not an agent setting, but it lives in the same panel. |
 | `--agent-search-url` | `CURIO_SEARCH_URL` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API. Point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked web results. |
 
 A flag writes its variable only when passed, so a value already set in the
 environment is not cleared by a start that omits it. That matters here more than
-for a boolean knob: an empty `CURIO_DEFAULT_LLM_MODEL` means "no provider" and
-would disable every AI surface.
+for a boolean knob: an empty `CURIO_DEFAULT_LLM_MODEL` means no Deployment
+default, and no AI for a user without a configuration of their own.
 
 ### Variables with no flag, on purpose
 
 | Variable | Why there is no flag |
 |---|---|
 | `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | The guest configuration takes the deployment's provider, endpoint and model; these override them for guests only. A guest configuration needs a key and a model. |
 
 ### There is no publish gate for agents
 

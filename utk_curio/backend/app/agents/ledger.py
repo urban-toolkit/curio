@@ -197,11 +197,14 @@ def reserve(
     template_key: str | None = None,
     attachment_key: str | None = None,
     reservation_id: str | None = None,
+    llm_config_id: str | None = None,
 ) -> dict:
     """Record that one run is starting. Never denies: nothing is capped.
 
     The append still happens under the lock so concurrent runs cannot tear a
     line, and the returned handle is what :func:`settle` closes.
+    ``llm_config_id`` is the LLM configuration that answers the run (None for
+    the deployment's own).
     """
     now = _now()
     day = now.date().isoformat()
@@ -216,6 +219,7 @@ def reserve(
                 "ts": now.isoformat(),
                 "templateKey": template_key,
                 "attachmentKey": attachment_key,
+                "llmConfigId": llm_config_id,
             },
         )
     return {"reservationId": rid, "day": day}
@@ -246,7 +250,8 @@ def settle(
 
 
 def record_housekeeping_usage(
-    user_key: str, usage: dict | None, *, note: str = "housekeeping"
+    user_key: str, usage: dict | None, *, note: str = "housekeeping",
+    llm_config_id: str | None = None,
 ) -> None:
     """Count an internal provider call (the title call): tokens only, never
     run-counted, no reservation. The token counters may therefore exceed what
@@ -262,5 +267,6 @@ def record_housekeeping_usage(
                 "ts": _now().isoformat(),
                 "note": note,
                 "usage": _usage_counts(usage),
+                "llmConfigId": llm_config_id,
             },
         )

@@ -12,6 +12,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 ## Contents
 
 - [1. Configure the stack](#1-configure-the-stack)
+  - [LLM configurations](#llm-configurations)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
 - [Updating](#updating)
@@ -56,7 +57,7 @@ The three directories you created are bind-mounted into the container and persis
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
 | `datalakes/` | The Data Lake Catalog: one manifest per data portal. Ships with the image | No |
-| `.curio/` | Per-user stores, logs, sandbox artifacts, and each account's agent imports and catalog settings | Yes, if users' imported datasets, computed outputs and settings matter |
+| `.curio/` | Per-user stores, logs, sandbox artifacts, and each account's agent imports, catalog settings and LLM configurations | Yes, if users' imported datasets, computed outputs and settings matter |
 
 `packages/` is **not** mounted. The node catalog is baked into the image so it
 always matches the deployed commit. Neither is `datalakes/`, for the same
@@ -90,6 +91,34 @@ Rate limiting is per user, per source, and **in-process**. Under several
 workers the effective rate is the configured rate times the worker count. It is
 a politeness mechanism toward portals you do not own and a brake on accidental
 loops, not a guarantee you can make to a third party.
+
+### LLM configurations
+
+Curio ships no LLM endpoint. Users add their own LLM configurations in AI
+Settings; the deployment can offer its own on top, through environment
+variables the backend reads at start:
+
+| Variable | What it sets |
+|---|---|
+| `CURIO_DEFAULT_LLM_API_TYPE` | The provider kind of the deployment's endpoint: `openai_compatible` (the default), `anthropic` or `gemini`. |
+| `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. |
+| `CURIO_DEFAULT_LLM_API_KEY` | Its key. `AICONN_API_KEY` is read when this is unset. |
+| `CURIO_DEFAULT_LLM_MODEL` | The model of the **Deployment default**. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each falls back to the matching `CURIO_DEFAULT_LLM_*` value, and it needs a key and a model. |
+
+With a model set, the Deployment default is a read-only row in every user's AI
+Settings, and it answers for any user who has not chosen a default of their
+own. With an endpoint or a key set, users are also offered **This Curio
+install**: a configuration of their own that runs on the deployment's endpoint
+with its key and a model they choose. The key never reaches a browser.
+
+Put the variables in `utk_curio/backend/.env`, which is copied into the image
+(rebuild after changing it), or in the container's `environment:` through a
+Compose override. `/srv/curio/.env` above is read by Docker Compose only.
+
+Each user's configurations, keys included, are kept in
+`.curio/users/<user>/llm-configs.json`, a 0600 file in a 0700 directory. The
+keys are not encrypted at rest, and the file is backed up with `.curio/`.
 
 > [!TIP]
 > `datasets/` lives inside the git checkout, so publishing a dataset dirties your
@@ -280,8 +309,8 @@ It shows:
 
 - **Deployment** - version, the requested and active isolation mode, and which
   optional features are configured. Settings that have a value somebody chose
-  (the execution account, the LLM base URL, model and key) are reported only as
-  "configured" or "none", never as their value.
+  (the execution account, and whether there is a Deployment default LLM) are
+  reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
   per core), and the resident memory of the backend and sandbox processes. The
   hostname is deliberately not reported.

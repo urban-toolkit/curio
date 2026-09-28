@@ -671,9 +671,9 @@ handed. Three things make that usable from a test:
 
 | Step | How |
 |---|---|
-| Point the user at it | `use_scripted_llm(backend, token)` - a real `PATCH /api/auth/me` writing `llm_api_type: "testing"`, so the production `resolve_provider_config` path is the one under test |
+| Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
-| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script` |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
 production guard every route in that blueprint carries - unlike `stub-login`,
@@ -803,10 +803,10 @@ invisible and a click would look unmotivated.
 
 ### The agent scenes need a provider
 
-`aisettings` types a base URL, an API key and a model into AI Settings on
-camera, and `agentrun` then asks that endpoint a real question. Curio ships no
-provider of its own and the tour's account starts with none, so this is
-load-bearing rather than decorative.
+`aisettings` adds an LLM configuration (a base URL, an API key and a model) in
+AI Settings on camera, and `agentrun` then asks that endpoint a real question.
+Curio ships no provider of its own and the tour's account starts with no
+configuration, so this is load-bearing rather than decorative.
 
 The endpoint and model default to the `LLM_*` constants at the top of the
 module. **The key is not a constant** — put it in `.curio/tour-provider.json`
@@ -865,7 +865,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
-| `agents` | AI Settings from both of its entry points, all four provider tabs, Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
+| `agents` | AI Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
 | `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
 
 ### What it produces

@@ -111,6 +111,8 @@ def report_lines(record, fixture, *, solved: int = 0, solvable: int = 0) -> list
     usage = record.usage or {}
     tokens = int(usage.get("inputTokens") or 0) + int(usage.get("outputTokens") or 0)
     detail = f"Model {provider.get('model') or 'unknown'}"
+    if provider.get("label"):
+        detail += f" ({provider['label']})"
     if provider.get("baseUrlHost"):
         detail += f" at {provider['baseUrlHost']}"
     if tokens:

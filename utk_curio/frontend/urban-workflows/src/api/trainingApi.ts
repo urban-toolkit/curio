@@ -23,7 +23,15 @@ export interface TrainingCapability {
   probedAt: string;
   source: "live" | "remembered";
   seenAt: string | null;
-  provider: { apiType: string; baseUrlHost: string };
+  provider: TrainingProvider;
+}
+
+/** The LLM configuration a fine-tune runs on; never its key. */
+export interface TrainingProvider {
+  apiType: string;
+  baseUrlHost: string;
+  configId: string | null;
+  label: string;
 }
 
 export interface TrainingConsent {
@@ -52,7 +60,7 @@ export interface TrainingDataset {
 export interface TrainingPreview {
   dataset: TrainingDataset;
   consent: TrainingConsent;
-  provider: { apiType: string; baseUrlHost: string };
+  provider: TrainingProvider;
 }
 
 export interface TrainingGate {
@@ -84,11 +92,16 @@ export interface TrainingJob {
   usage: { trainedTokens: number | null };
   cost: { operatorSupplied: boolean; estimatedUsd: number } | null;
   evaluation: Record<string, unknown> | null;
+  /** Activation makes a configuration with the trained model the default;
+   * `previousDefault` is what rollback restores (null: the deployment's). */
   activation: {
     activatedAt: string | null;
-    previousModel: string | null;
+    configId: string | null;
+    previousDefault: string | null;
     rolledBackAt: string | null;
   };
+  /** The configuration the job was submitted on. */
+  configId: string | null;
   events: { at: string; kind: string; [key: string]: unknown }[];
   createdAt: string;
   error: string | null;
@@ -102,23 +115,28 @@ export interface TrainingJob {
 const BASE = "/api/agents/training";
 
 export const trainingApi = {
-  /** `refresh: false` serves the recording instead of re-probing the endpoint. */
-  capability(refresh = true): Promise<TrainingCapability> {
-    return apiFetch(`${BASE}/capability?refresh=${refresh ? "1" : "0"}`);
+  /** `refresh: false` serves the recording instead of re-probing the endpoint.
+   * `configId` names the configuration to train on (the default when absent). */
+  capability(refresh = true, configId?: string | null): Promise<TrainingCapability> {
+    const config = configId ? `&configId=${encodeURIComponent(configId)}` : "";
+    return apiFetch(`${BASE}/capability?refresh=${refresh ? "1" : "0"}${config}`);
   },
 
-  /** What would be sent. Its digest is what a later start must echo. */
-  preview(split = "train"): Promise<TrainingPreview> {
+  /** What would be sent, and where. Its digest and host are what a later
+   * start must echo. */
+  preview(split = "train", configId?: string | null): Promise<TrainingPreview> {
     return apiFetch(`${BASE}/dataset/preview`, {
       method: "POST",
-      body: JSON.stringify({ split }),
+      body: JSON.stringify({ split, ...(configId ? { configId } : {}) }),
     });
   },
 
   start(input: {
     baseModel: string;
     rowsDigest: string;
+    destinationHost: string;
     confirmed: boolean;
+    configId?: string | null;
     split?: string;
   }): Promise<TrainingJob> {
     return apiFetch(`${BASE}/jobs`, { method: "POST", body: JSON.stringify(input) });

@@ -7,6 +7,7 @@ import {
   type TrainingJob,
   type TrainingPreview,
 } from "../../api/trainingApi";
+import { llmConfigsApi, type LlmConfig } from "../../api/llmConfigsApi";
 
 /**
  * dev/122 (DEC-078): Settings → Model training.
@@ -44,20 +45,42 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
   const [job, setJob] = useState<TrainingJob | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The configurations training may run on: the user's own endpoint and key,
+  // never this Curio install's. `undefined` while loading.
+  const [trainable, setTrainable] = useState<LlmConfig[] | undefined>(undefined);
+  const [configId, setConfigId] = useState<string | null>(null);
 
-  const loadCapability = useCallback(async (refresh: boolean) => {
-    setCapabilityError(null);
+  const loadConfigs = useCallback(async () => {
     try {
-      setCapability(await trainingApi.capability(refresh));
-    } catch (e) {
-      setCapabilityError(e instanceof Error ? e.message : "Could not ask this endpoint.");
+      const listing = await llmConfigsApi.listing();
+      const own = listing.configs.filter((c) => c.endpoint === "own" && c.hasApiKey);
+      setTrainable(own);
+      setConfigId((current) =>
+        current && own.some((c) => c.id === current)
+          ? current
+          : own.find((c) => c.id === listing.default)?.id ?? own[0]?.id ?? null,
+      );
+    } catch {
+      setTrainable([]);
+      setConfigId(null);
     }
   }, []);
 
+  const loadCapability = useCallback(async (refresh: boolean) => {
+    if (!configId) return;
+    setCapabilityError(null);
+    try {
+      setCapability(await trainingApi.capability(refresh, configId));
+    } catch (e) {
+      setCapabilityError(e instanceof Error ? e.message : "Could not ask this endpoint.");
+    }
+  }, [configId]);
+
   const loadPreview = useCallback(async () => {
+    if (!configId) return;
     setPreviewError(null);
     try {
-      const next = await trainingApi.preview();
+      const next = await trainingApi.preview("train", configId);
       setPreview(next);
       // Any change to what would be sent invalidates a tick: consent is for
       // one exact set (the digest is echoed on start).
@@ -66,7 +89,7 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
       setPreview(null);
       setPreviewError(e instanceof Error ? e.message : "Could not build the training set.");
     }
-  }, []);
+  }, [configId]);
 
   const loadJobs = useCallback(async () => {
     try {
@@ -81,9 +104,16 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
 
   useEffect(() => {
     if (!open || sharedGuest) return;
-    void loadCapability(true);
+    void loadConfigs();
     void loadJobs();
-  }, [open, sharedGuest, loadCapability, loadJobs]);
+  }, [open, sharedGuest, loadConfigs, loadJobs]);
+
+  useEffect(() => {
+    if (!open || sharedGuest || !configId) return;
+    setCapability(null);
+    setPreview(null);
+    void loadCapability(true);
+  }, [open, sharedGuest, configId, loadCapability]);
 
   useEffect(() => {
     if (!open || sharedGuest) return;
@@ -119,15 +149,41 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
   const body = (
     <div>
       <p className={styles.intro}>
-        Fine-tunes the model this account uses on Curio's own approved example
-        dataflows, so it plans in the shape the canvas accepts. The examples are
-        sent as prompts and expected graph shapes; your data is not.
+        Fine-tunes the model of the configuration you train on, using Curio's
+        own approved example dataflows, so it plans in the shape the canvas
+        accepts. The examples are sent as prompts and expected graph shapes;
+        your data is not.
       </p>
 
       {sharedGuest ? (
         <p className={styles.warning}>
           Training is not available on the shared guest account.
         </p>
+      ) : null}
+
+      {trainable && trainable.length === 0 ? (
+        <p className={styles.unavailable}>
+          Training runs on an LLM configuration that holds your own API key. Add one above.
+        </p>
+      ) : null}
+
+      {trainable && trainable.length > 0 ? (
+        <div className={modal.field}>
+          <label className={modal.label} htmlFor="training-config">Train on</label>
+          <select
+            id="training-config"
+            className={modal.select}
+            value={configId ?? ""}
+            onChange={(e) => setConfigId(e.target.value || null)}
+            disabled={busy !== null}
+          >
+            {trainable.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label} ({c.model}{c.baseUrlHost ? ` at ${c.baseUrlHost}` : ""})
+              </option>
+            ))}
+          </select>
+        </div>
       ) : null}
 
       {capabilityError ? <p className={modal.error}>{capabilityError}</p> : null}
@@ -228,7 +284,9 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
                       trainingApi.start({
                         baseModel,
                         rowsDigest: preview.consent.rowsDigest,
+                        destinationHost: preview.consent.destinationHost,
                         confirmed: true,
+                        configId,
                       }),
                     )
                   }
@@ -338,13 +396,13 @@ export const ModelTrainingSection: React.FC<{ sharedGuest?: boolean }> = ({
           {activatable ? (
             <p className={styles.note} id="training-activate-note">
               {job.gate?.satisfied
-                ? "Points this account's agents at the trained model. The previous model is recorded so you can go back."
+                ? "Adds an LLM configuration with the trained model and makes it your default. Your previous default is recorded so you can go back."
                 : "Available once this model has been evaluated on the held-out examples."}
             </p>
           ) : null}
           {rollbackable ? (
             <p className={styles.note} id="training-rollback-note">
-              Restores {job.activation.previousModel || "the deployment default"}.
+              Restores your previous default configuration.
             </p>
           ) : null}
         </div>

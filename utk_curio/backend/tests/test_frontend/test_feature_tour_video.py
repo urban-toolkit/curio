@@ -127,12 +127,12 @@ CARD = 'article:not([role="status"])'
 # ---------------------------------------------------------------------------
 #
 # Typed into AI Settings by ``scene_aisettings`` rather than pre-set with the
-# launcher's --llm-* flags, because configuring a provider through the interface
-# is one of the things the video exists to show. The account the tour signs up
-# starts with nothing, which is also why the panel's "No default is configured
-# on this deployment" copy is on screen to be read.
+# launcher's --llm-* flags, because adding an LLM configuration through the
+# interface is one of the things the video exists to show. The account the tour
+# signs up starts with none, which is also why the panel's "No LLM configuration
+# answers this run" line is on screen to be read.
 #
-# The key renders as dots: the field is type="password" (AiSettingsModal.tsx).
+# The key renders as dots: the field is type="password" (LlmConfigEditor.tsx).
 #
 # The endpoint and model are not secret and stay here so a checkout records
 # against the same provider by default. The key is not: it is read from
@@ -446,19 +446,13 @@ def _close_data_drawer(page) -> None:
     expect(page.locator(DRAWER_DATA)).to_have_count(0, timeout=8000)
 
 
-#: AI Settings inputs, by the id their label points at. The panel's fields grew
-#: real ``htmlFor``/``id`` pairs when the model dropdown landed, so these are
-#: stable accessible controls rather than "the input after this text".
-_AI_FIELDS = {
-    "Base URL": "#ai-settings-base-url",
-    "API Key": "#ai-settings-api-key",
-    "Model": "#ai-settings-model",
-    "HuggingFace token": "#ai-settings-hf-token",
-}
+#: The configuration editor's inputs, by their labels. A new configuration's
+#: editor is the only one open, so its fields are unambiguous.
+_EDITOR = '[data-testid="llm-config-editor"]'
 
 
-def _ai_field(page, label: str):
-    return page.locator(_AI_FIELDS[label])
+def _editor_field(page, label):
+    return page.locator(_EDITOR).get_by_label(label)
 
 
 def _open_ai_settings(ctx: Ctx) -> None:
@@ -481,7 +475,7 @@ def _open_ai_settings(ctx: Ctx) -> None:
         drawer = _open_agent_drawer(ctx)
         tour.say(
             "On the canvas, the Agent Catalog holds the way in",
-            "The provider is an account setting, so it sits with the agents it answers.",
+            "LLM configurations are account settings, so they sit with the agents they answer.",
             hold=2600,
         )
         tour.click(drawer.get_by_role("button", name=re.compile("AI Settings")).first)
@@ -759,17 +753,17 @@ def scene_projects(ctx: Ctx) -> None:
 
 
 def scene_ai_settings(ctx: Ctx) -> None:
-    """Configure the AI provider, for real, before anything needs it.
+    """Add an LLM configuration, for real, before anything needs it.
 
     Placed before the canvas because the account the tour just signed up has no
-    provider, and ``resolve_provider_config`` refuses every agent surface until
-    one is set. Doing it here also means the panel's "No default is configured
-    on this deployment" copy is true and on screen.
+    configuration, and without a deployment default every agent surface is
+    refused until one is added. Doing it here also means the panel's "No LLM
+    configuration answers this run" line is true and on screen.
     """
     page, tour = ctx.page, ctx.tour
     tour.chapter(
         "02", "AI Settings",
-        "One provider answers every AI surface in Curio.",
+        "Your default LLM configuration answers every AI surface in Curio.",
     )
     if not LLM_API_KEY:
         _log(
@@ -784,30 +778,39 @@ def scene_ai_settings(ctx: Ctx) -> None:
             hold=3000,
         )
         tour.hush()
-        tour.click(page.get_by_role("button", name="Cancel", exact=True))
+        tour.click(page.get_by_role("button", name="Close", exact=True))
         return
 
     _open_ai_settings(ctx)
     tour.say(
         "Per-account, not per-dataflow",
-        "The agents, the node-authoring assistants and chat all use this one.",
+        "Name as many endpoints as you like; your default answers the agents and chat.",
         hold=2600,
     )
+    section = page.get_by_test_id("llm-configs-section")
+    tour.click(section.get_by_role("button", name="Add configuration", exact=True))
+    editor = page.locator(_EDITOR)
+    expect(editor).to_be_visible(timeout=15000)
+    tour.type_into(_editor_field(page, "Label"), "Lab server", delay=42)
 
     # Custom is the only tab that renders Base URL; it saves as the
     # openai_compatible provider kind.
-    tour.click(page.get_by_role("button", name="Custom", exact=True))
+    tour.click(editor.get_by_role("button", name="Custom", exact=True))
     tour.say(
         "Any OpenAI-compatible endpoint",
         "Ollama, LM Studio, vLLM, Groq, Azure - or a lab's own inference server.",
         hold=2600,
     )
 
-    tour.type_into(_ai_field(page, "Base URL"), LLM_BASE_URL, delay=42)
+    tour.type_into(_editor_field(page, "Base URL"), LLM_BASE_URL, delay=42)
 
     # type="password", so the recording shows dots rather than the secret.
-    tour.type_into(_ai_field(page, "API Key"), LLM_API_KEY, delay=42)
-    tour.say("Keys are stored per account", "Never returned to the browser once saved.", hold=2000)
+    tour.type_into(_editor_field(page, re.compile(r"^API key")), LLM_API_KEY, delay=42)
+    tour.say(
+        "A key belongs to its configuration",
+        "Never returned to the browser once saved, and never sent to another endpoint.",
+        hold=2400,
+    )
 
     # Ask the endpoint what it serves rather than typing a name from memory -
     # a model the endpoint does not have surfaces much later as a failed agent
@@ -817,7 +820,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
         "Curio queries the base URL above and offers what comes back.",
         hold=2800,
     )
-    fetch = page.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models"))
+    fetch = editor.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models"))
     with page.expect_response(
         lambda r: r.url.endswith("/api/agents/provider-models")
         and r.request.method == "POST",
@@ -828,52 +831,46 @@ def scene_ai_settings(ctx: Ctx) -> None:
         f"listing models failed: HTTP {listed.value.status} - "
         "check the base URL and key typed above"
     )
-
-    model_select = _ai_field(page, "Model")
-    expect(model_select).to_be_visible(timeout=20000)
-    tour.focus(model_select, hold=1200)
-    model_select.select_option(LLM_MODEL)
+    expect(editor.get_by_text(re.compile(r"^From this endpoint"))).to_be_visible(timeout=20000)
+    tour.type_into(_editor_field(page, "Model"), LLM_MODEL, delay=42)
     tour.beat(900)
+
+    make_default = _editor_field(page, "Make this my default")
+    expect(make_default).to_be_checked()
+    tour.focus(make_default, hold=1200)
     tour.say(
-        "The model is not optional here",
-        "With no deployment default, a blank model means no provider at all.",
-        hold=2800,
+        "The first one becomes your default",
+        "Change the default, or add another configuration, at any time.",
+        hold=2600,
     )
 
     tour.hush()
-    # Assert on the PATCH and on the panel closing, not on "Settings saved.".
-    # That message is transient by design - handleSave shows it and calls
-    # onClose 800ms later - and tour.click's own trailing beat eats most of the
-    # window, so waiting for it is a race the recording loses. The request and
-    # the close are the durable facts, and the request also surfaces a failed
-    # save instead of letting it read as a slow one.
+    # Assert on the POST and on the row it adds, not on a transient message:
+    # the request surfaces a failed save instead of letting it read as a slow
+    # one, and the row is the durable proof on screen.
     with page.expect_response(
-        lambda r: r.url.endswith("/api/auth/me")
-        and r.request.method == "PATCH",
+        lambda r: r.url.endswith("/api/agents/llm/configs")
+        and r.request.method == "POST",
         timeout=45000,
     ) as saved:
-        tour.click(page.get_by_role("button", name="Save", exact=True))
-    assert saved.value.ok, (
-        f"saving AI Settings failed: {saved.value.status} {saved.value.url}"
+        tour.click(editor.get_by_role("button", name="Add configuration", exact=True))
+    assert saved.value.status == 201, (
+        f"saving the configuration failed: {saved.value.status} {saved.value.text()}"
     )
-    expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
-    ).to_have_count(0, timeout=20000)
-    tour.beat(900)
-
-    # Reopen it: the only durable proof on screen that the key was stored, and
-    # the clearest way to show the per-field inheritance the panel implements.
-    _open_ai_settings(ctx)
-    remove = page.get_by_role("button", name="Remove saved key", exact=True)
-    expect(remove).to_be_visible(timeout=15000)
-    tour.focus(remove, hold=1500)
+    expect(editor).to_have_count(0, timeout=20000)
+    row = section.get_by_role("row").filter(has_text="Lab server")
+    expect(row).to_contain_text("Default", timeout=15000)
+    expect(row).to_contain_text("saved")
+    tour.focus(row, hold=1500)
     tour.say(
         "The key is saved, and never sent back",
-        "The panel only knows that one exists - blank now means keep it.",
+        "The table only knows that one exists.",
         hold=3000,
     )
+    expect(page.get_by_test_id("llm-active")).to_contain_text("Lab server")
+    tour.focus(page.get_by_test_id("llm-active"), hold=1500)
     tour.hush()
-    tour.click(page.get_by_role("button", name="Cancel", exact=True))
+    tour.click(page.get_by_role("button", name="Close", exact=True).last)
     expect(
         page.get_by_role("heading", name="AI Settings", level=2)
     ).to_have_count(0, timeout=15000)
@@ -1401,7 +1398,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         # an error bubble, and filming that is worse than filming nothing.
         _log("[tour] no provider key configured; skipping the live agent run")
         tour.say(
-            "Attach a provider in AI Settings to run it",
+            "Add an LLM configuration in AI Settings to run it",
             "Curio ships no endpoint of its own, so nothing is called until you set one.",
             hold=3000,
         )

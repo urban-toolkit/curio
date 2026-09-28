@@ -1735,23 +1735,27 @@ def main():
     parser.add_argument(
         "--llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
         help=(
-            "Default AI provider for agents, node authoring and chat when a "
-            "user has not configured their own (sets "
+            "Provider kind of this Curio's own LLM endpoint (sets "
             "CURIO_DEFAULT_LLM_API_TYPE, default openai_compatible)."
         ),
     )
     parser.add_argument(
         "--llm-base-url", default=None, metavar="URL",
         help=(
-            "Base URL of the default OpenAI-compatible endpoint (sets "
-            "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint: "
-            "without this, an unconfigured instance resolves no provider and "
-            "says so, rather than sending prompts somewhere nobody chose."
+            "Base URL of this Curio's own OpenAI-compatible endpoint (sets "
+            "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint. "
+            "With this or CURIO_DEFAULT_LLM_API_KEY set, users can add an LLM "
+            "configuration on it ('This Curio install' in AI Settings)."
         ),
     )
     parser.add_argument(
         "--llm-model", default=None, metavar="NAME",
-        help="Default model name (sets CURIO_DEFAULT_LLM_MODEL). No default.",
+        help=(
+            "Model of the Deployment default, the LLM configuration that "
+            "answers a user who has not chosen a default of their own (sets "
+            "CURIO_DEFAULT_LLM_MODEL). No default: without it there is no "
+            "Deployment default."
+        ),
     )
     # There is deliberately no --llm-api-key. A key passed as an argument is
     # visible in the process list to every user on the host; set
@@ -1759,11 +1763,12 @@ def main():
     parser.add_argument(
         "--guest-llm-api-key", default=None, metavar="KEY",
         help=(
-            "API key that enables AI features for guest users (sets "
-            "GUEST_LLM_API_KEY). Without one, guests are refused. Guests "
-            "otherwise inherit the default provider; GUEST_LLM_API_TYPE / "
-            "_BASE_URL / _MODEL remain env-only overrides for the rare "
-            "deployment that wants guests on a different model."
+            "API key of the guest configuration, which guests answer with "
+            "(sets GUEST_LLM_API_KEY). It otherwise takes "
+            "CURIO_DEFAULT_LLM_API_KEY, and with neither, guests get no AI. "
+            "The guest configuration takes the deployment's provider, URL "
+            "and model unless GUEST_LLM_API_TYPE / _BASE_URL / _MODEL "
+            "(env only) say otherwise."
         ),
     )
     parser.add_argument(

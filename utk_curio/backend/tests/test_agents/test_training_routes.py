@@ -35,21 +35,28 @@ def _user_key(user):
 
 @pytest.fixture()
 def account(client, user_and_token, tmp_curio):
-    """An account whose provider is the scripted one, with a key saved."""
+    """An account whose default LLM configuration is the scripted provider,
+    holding the account's own key."""
     user, token = user_and_token
-    response = client.patch(
-        "/api/auth/me",
+    created = client.post(
+        "/api/agents/llm/configs",
         json={
-            "llm_api_type": "testing",
-            "llm_model": "scripted",
-            "llm_api_key": API_KEY,
-            "llm_base_url": "http://scripted.example.com/v1",
+            "label": "Scripted",
+            "apiType": "testing",
+            "model": "scripted",
+            "apiKey": API_KEY,
+            "baseUrl": "http://scripted.example.com/v1",
         },
         headers=_auth(token),
     )
-    assert response.status_code == 200, response.get_json()
+    assert created.status_code == 201, created.get_json()
+    config_id = created.get_json()["config"]["id"]
+    chosen = client.put(
+        "/api/agents/llm/default", json={"configId": config_id}, headers=_auth(token)
+    )
+    assert chosen.status_code == 200, chosen.get_json()
     testing_provider.reset_fine_tuning()
-    yield {"user": user, "token": token, "key": _user_key(user)}
+    yield {"user": user, "token": token, "key": _user_key(user), "configId": config_id}
     testing_provider.reset_fine_tuning()
 
 
@@ -187,6 +194,7 @@ class TestStart:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -220,6 +228,7 @@ class TestStart:
             "/api/agents/training/jobs",
             json={
                 "baseModel": "b", "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": False,
             },
             headers=_auth(account["token"]),
@@ -229,7 +238,8 @@ class TestStart:
 
         stale = client.post(
             "/api/agents/training/jobs",
-            json={"baseModel": "b", "rowsDigest": "d" * 64, "confirmed": True},
+            json={"baseModel": "b", "rowsDigest": "d" * 64, "confirmed": True,
+                  "destinationHost": preview["consent"]["destinationHost"]},
             headers=_auth(account["token"]),
         )
         assert stale.status_code == 409
@@ -244,6 +254,7 @@ class TestStart:
             "/api/agents/training/jobs",
             json={
                 "baseModel": "", "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -260,6 +271,7 @@ class TestStart:
             "/api/agents/training/jobs",
             json={
                 "baseModel": "b", "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -274,6 +286,7 @@ class TestStart:
         body = {
             "baseModel": "scripted-base",
             "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
             "confirmed": True,
         }
         first = client.post(
@@ -305,6 +318,7 @@ class TestStart:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -333,6 +347,7 @@ class TestStatusAndCancel:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -392,6 +407,7 @@ class TestStatusAndCancel:
             json={
                 "baseModel": "scripted-base",
                 "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
                 "confirmed": True,
             },
             headers=_auth(account["token"]),
@@ -531,3 +547,105 @@ class TestTheRecordItself:
             if forbidden.search(path.read_text(encoding="utf-8")):
                 offenders.append(path.name)
         assert not offenders, offenders
+
+
+class TestTrainingRunsOnItsOwnConfiguration:
+    """A fine-tune runs on a named LLM configuration holding the user's own
+    key, sends only where the preview said, and keeps asking that
+    configuration's endpoint about its job whatever the default becomes."""
+
+    def _preview(self, client, token, **body):
+        return client.post(
+            "/api/agents/training/dataset/preview", json=body, headers=_auth(token),
+        ).get_json()
+
+    def _start(self, client, token, preview, **extra):
+        return client.post(
+            "/api/agents/training/jobs",
+            json={
+                "baseModel": "scripted-base",
+                "rowsDigest": preview["consent"]["rowsDigest"],
+                "destinationHost": preview["consent"]["destinationHost"],
+                "confirmed": True,
+                **extra,
+            },
+            headers=_auth(token),
+        )
+
+    def test_the_set_goes_only_where_the_preview_said(self, client, account, approved_corpus):
+        testing_provider.script_fine_tuning()
+        preview = self._preview(client, account["token"])
+        moved = self._start(client, account["token"], preview,
+                            destinationHost="somewhere-else.example.com")
+        assert moved.status_code == 409
+        assert "the preview showed" in moved.get_json()["error"]
+        assert testing_provider.uploaded_training_files() == []
+
+    def test_the_job_records_its_configuration(self, client, account, approved_corpus):
+        testing_provider.script_fine_tuning()
+        preview = self._preview(client, account["token"])
+        assert preview["provider"]["configId"] == account["configId"]
+        record = self._start(client, account["token"], preview).get_json()
+        assert record["configId"] == account["configId"]
+        assert record["provider"]["label"] == "Scripted"
+
+    def test_status_asks_the_jobs_configuration_not_the_default(
+        self, client, account, approved_corpus, monkeypatch
+    ):
+        testing_provider.script_fine_tuning()
+        record = self._start(client, account["token"], self._preview(client, account["token"])).get_json()
+        other = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Other", "apiType": "testing", "model": "other", "apiKey": "sk-other-000000"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        client.put("/api/agents/llm/default", json={"configId": other["id"]},
+                   headers=_auth(account["token"]))
+        asked = []
+        real = providers.get_fine_tuning_job
+
+        def _spy(config, job_id):
+            asked.append(config.config_id)
+            return real(config, job_id)
+
+        monkeypatch.setattr(providers, "get_fine_tuning_job", _spy)
+        client.get(f"/api/agents/training/jobs/{record['jobId']}", headers=_auth(account["token"]))
+        assert asked == [account["configId"]]
+
+    def test_this_curio_install_and_a_keyless_configuration_are_refused(
+        self, client, account, approved_corpus
+    ):
+        here = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Here", "endpoint": "deployment", "model": "m"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        refused = self._preview(client, account["token"], configId=here["id"])
+        assert "this Curio install's endpoint" in refused["error"]
+        keyless = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Keyless", "apiType": "testing", "model": "m"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        assert "holds no API key" in self._preview(client, account["token"], configId=keyless["id"])["error"]
+
+    def test_the_deployment_default_is_not_trained_on(self, client, account, approved_corpus):
+        client.put("/api/agents/llm/default", json={"configId": None}, headers=_auth(account["token"]))
+        response = client.post("/api/agents/training/dataset/preview", json={},
+                               headers=_auth(account["token"]))
+        assert response.status_code == 409
+        assert "Choose the LLM configuration to train on" in response.get_json()["error"]
+
+    def test_a_hosted_guest_cannot_train(self, client, db, tmp_curio, approved_corpus, monkeypatch):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-train-token"))
+        db.session.commit()
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        response = client.get("/api/agents/training/capability",
+                              headers=_auth("guest-train-token"))
+        assert response.status_code == 403

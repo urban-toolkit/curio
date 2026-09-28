@@ -48,6 +48,38 @@ const READY_PREVIEW = {
   provider: { apiType: "openai_compatible", baseUrlHost: "api.example.com" },
 };
 
+const OWN_CONFIG = {
+  id: "llm-00000000000a",
+  label: "Mine",
+  endpoint: "own",
+  apiType: "openai_compatible",
+  baseUrl: "https://api.example.com/v1",
+  baseUrlHost: "api.example.com",
+  hasApiKey: true,
+  model: "gpt-4o-mini",
+  origin: "user",
+  createdAt: "2026-09-09T11:00:00+00:00",
+  updatedAt: "2026-09-09T11:00:00+00:00",
+};
+
+const listingWith = (configs: Record<string, unknown>[], defaultId: string | null) => ({
+  configs,
+  default: defaultId,
+  deployment: {
+    label: "Deployment default",
+    endpointOffered: true,
+    apiType: "openai_compatible",
+    baseUrlHost: "llm.curio.example",
+    model: "curio-model",
+  },
+  active: { source: "default", configId: defaultId, label: "Mine", model: "gpt-4o-mini" },
+  editable: true,
+  reason: null,
+  shared: false,
+  maxConfigs: 32,
+});
+
+let mockListing: Record<string, unknown> = listingWith([OWN_CONFIG], OWN_CONFIG.id);
 let mockCapability: Record<string, unknown> = { ...READY_CAPABILITY };
 let mockPreview: Record<string, unknown> | Error = { ...READY_PREVIEW };
 let mockJobs: { jobs: Record<string, unknown>[]; inFlight: string | null } = {
@@ -56,13 +88,17 @@ let mockJobs: { jobs: Record<string, unknown>[]; inFlight: string | null } = {
 };
 
 const mockStart = jest.fn();
+const mockCapabilityCall = jest.fn();
 const mockActivate = jest.fn();
 const mockRollback = jest.fn();
 const mockCancel = jest.fn();
 
 jest.mock("../../api/trainingApi", () => ({
   trainingApi: {
-    capability: jest.fn(() => Promise.resolve(mockCapability)),
+    capability: (...args: unknown[]) => {
+      mockCapabilityCall(...args);
+      return Promise.resolve(mockCapability);
+    },
     preview: jest.fn(() =>
       mockPreview instanceof Error
         ? Promise.reject(mockPreview)
@@ -74,6 +110,12 @@ jest.mock("../../api/trainingApi", () => ({
     cancel: (...args: unknown[]) => mockCancel(...args),
     activate: (...args: unknown[]) => mockActivate(...args),
     rollback: (...args: unknown[]) => mockRollback(...args),
+  },
+}));
+
+jest.mock("../../api/llmConfigsApi", () => ({
+  llmConfigsApi: {
+    listing: jest.fn(() => Promise.resolve(mockListing)),
   },
 }));
 
@@ -91,7 +133,13 @@ const openSection = async () => {
 
 const succeededJob = (over: Record<string, unknown> = {}) => ({
   jobId: "train-20260909T120000Z-abcdef01",
-  provider: { apiType: "openai_compatible", baseUrlHost: "api.example.com" },
+  provider: {
+    apiType: "openai_compatible",
+    baseUrlHost: "api.example.com",
+    configId: OWN_CONFIG.id,
+    label: "Mine",
+  },
+  configId: OWN_CONFIG.id,
   dataset: READY_PREVIEW.dataset,
   consent: {},
   providerJobId: "ftjob-1",
@@ -102,7 +150,7 @@ const succeededJob = (over: Record<string, unknown> = {}) => ({
   usage: { trainedTokens: 4321 },
   cost: null,
   evaluation: null,
-  activation: { activatedAt: null, previousModel: null, rolledBackAt: null },
+  activation: { activatedAt: null, configId: null, previousDefault: null, rolledBackAt: null },
   events: [],
   createdAt: "2026-09-09T12:00:00+00:00",
   error: null,
@@ -113,6 +161,7 @@ const succeededJob = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockListing = listingWith([OWN_CONFIG], OWN_CONFIG.id);
   mockCapability = { ...READY_CAPABILITY };
   mockPreview = { ...READY_PREVIEW };
   mockJobs = { jobs: [], inFlight: null };
@@ -124,6 +173,42 @@ describe("the closed section", () => {
     expect(screen.getByText("Model training")).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("the configuration it trains on", () => {
+  it("offers only configurations holding the user's own key, and asks about the chosen one", async () => {
+    mockListing = listingWith(
+      [
+        { ...OWN_CONFIG, id: "llm-00000000000b", label: "Keyless", hasApiKey: false },
+        {
+          ...OWN_CONFIG,
+          id: "llm-00000000000c",
+          label: "Install",
+          endpoint: "deployment",
+          hasApiKey: false,
+        },
+        OWN_CONFIG,
+      ],
+      "llm-00000000000c",
+    );
+    await openSection();
+    const select = (await screen.findByLabelText("Train on")) as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([OWN_CONFIG.id]);
+    await waitFor(() => expect(mockCapabilityCall).toHaveBeenCalledWith(true, OWN_CONFIG.id));
+  });
+
+  it("says what to add when no configuration holds a key, and asks no endpoint", async () => {
+    mockListing = listingWith([{ ...OWN_CONFIG, hasApiKey: false }], null);
+    await openSection();
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Training runs on an LLM configuration that holds your own API key/),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByLabelText("Train on")).toBeNull();
+    expect(mockCapabilityCall).not.toHaveBeenCalled();
+    expect(screen.queryByText("Start training")).toBeNull();
   });
 });
 
@@ -188,7 +273,9 @@ describe("the Ready state", () => {
       expect(mockStart).toHaveBeenCalledWith({
         baseModel: "gpt-tunable",
         rowsDigest: "a".repeat(64),
+        destinationHost: "api.example.com",
         confirmed: true,
+        configId: OWN_CONFIG.id,
       }),
     );
   });
@@ -272,7 +359,8 @@ describe("a job that exists", () => {
       succeededJob({
         activation: {
           activatedAt: "2026-09-09T13:00:00+00:00",
-          previousModel: "gpt-4o-mini",
+          configId: "llm-00000000000b",
+          previousDefault: OWN_CONFIG.id,
           rolledBackAt: null,
         },
       }),
@@ -280,6 +368,9 @@ describe("a job that exists", () => {
     await openSection();
     const activate = await screen.findByText("Use this model");
     expect(activate).not.toBeDisabled();
+    expect(
+      screen.getByText(/Adds an LLM configuration with the trained model and makes it your default/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/mean score 0\.94/)).toBeInTheDocument();
     expect(screen.getByText(/that is your call/)).toBeInTheDocument();
     fireEvent.click(activate);
@@ -289,7 +380,7 @@ describe("a job that exists", () => {
     await waitFor(() =>
       expect(screen.getByText("Go back to the previous model")).toBeInTheDocument(),
     );
-    expect(screen.getByText(/Restores gpt-4o-mini/)).toBeInTheDocument();
+    expect(screen.getByText(/Restores your previous default configuration/)).toBeInTheDocument();
   });
 
   it("reports trained tokens as the provider gave them and invents no cost", async () => {

@@ -333,7 +333,7 @@ pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
 ```
 
 **Evaluation mode** (AI Settings → Evaluation mode, memo `dev/123`) runs an
-example through the real lifecycle with the configured model. Its whole
+example through the real lifecycle with the user's default LLM configuration. Its whole
 orchestration — the isolated project, the required-closure install, the narrow
 automated approval, the phases, the record — is covered offline against the
 scripted provider:

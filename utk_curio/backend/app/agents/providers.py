@@ -3,9 +3,9 @@
 This is the one place raw LLM-provider SDKs are used, so LLM/provider behavior
 stays out of the route/flow/node modules (the ``agents/`` ownership boundary in
 the plan's module-encapsulation memo). Callers resolve a :class:`ProviderConfig`
-(e.g. from the user's LLM settings or the aiconn default) and hand it to
-:func:`run_chat_completion`; they never import ``openai`` / ``anthropic`` /
-``google.generativeai`` directly.
+(``provider_config.resolve_llm``: an LLM configuration, the Deployment default
+or the guest configuration) and hand it to :func:`run_chat_completion`; they
+never import ``openai`` / ``anthropic`` / ``google.generativeai`` directly.
 
 The dispatch below was extracted verbatim from ``app/api/routes.py::_call_llm``
 (behavior-preserving) and is the seam a future LangChain adapter would sit behind.
@@ -15,7 +15,7 @@ User-facing overview: ``docs/AGENT-CATALOG.md``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 
@@ -28,12 +28,30 @@ class ProviderConfig:
     ``"openai_compatible"`` (the default, used by OpenAI, the aiconn sage200
     endpoint, Ollama, vLLM, etc.). ``base_url`` applies only to the
     openai-compatible backend; the others ignore it.
+
+    The rest say where the config came from (``provider_config.resolve_llm``):
+    the LLM configuration's id and label, ``source`` (``default``,
+    ``deployment`` or ``guest``), and whether its model was trained in Curio.
+    The key is left out of the repr, so a logged config never shows it.
     """
 
-    api_key: str
+    api_key: str = field(repr=False)
     api_type: str
     base_url: str
     model: str
+    config_id: str | None = None
+    label: str = ""
+    source: str = ""
+    trained: bool = False
+
+
+def _redacted(exc: BaseException, config: ProviderConfig) -> str:
+    """SDK error text with the call's own key taken out, for any message that
+    is persisted, streamed, logged or returned."""
+    from utk_curio.common.redaction import redact
+
+    text = str(exc)
+    return (redact(text, {"llm-api-key": config.api_key}) or text) if config.api_key else text
 
 
 def _capture_usage(usage_out: dict | None, input_tokens, output_tokens) -> None:
@@ -70,7 +88,7 @@ def run_chat_completion(
             run_scripted_completion,
         )
 
-        return run_scripted_completion(messages, usage_out=usage_out)
+        return run_scripted_completion(messages, usage_out=usage_out, config=config)
     if api_type == "anthropic":
         import anthropic
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
@@ -149,7 +167,7 @@ def stream_chat_completion(
             run_scripted_completion,
         )
 
-        yield run_scripted_completion(messages, usage_out=usage_out)
+        yield run_scripted_completion(messages, usage_out=usage_out, config=config)
         return
     if api_type == "anthropic":
         import anthropic
@@ -302,7 +320,7 @@ def list_provider_models(config: ProviderConfig) -> list[str]:
     except Exception as exc:  # noqa: BLE001 - every SDK failure is one answer here
         # A rejected key, an unreachable host and an endpoint without a models
         # route all mean "cannot offer a live choice".
-        raise ModelListingUnavailable(f"Could not list models: {exc}") from exc
+        raise ModelListingUnavailable(f"Could not list models: {_redacted(exc, config)}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +517,7 @@ def fine_tuning_capabilities(config: ProviderConfig) -> FineTuningCapabilities:
             )
         return FineTuningCapabilities(
             supported=False,
-            reason=f"Could not ask this endpoint about fine-tuning: {exc}",
+            reason=f"Could not ask this endpoint about fine-tuning: {_redacted(exc, config)}",
             probed_at=probed_at,
         )
 
@@ -567,7 +585,7 @@ def upload_training_file(
             file=(filename, content), purpose="fine-tune",
         )
     except Exception as exc:  # noqa: BLE001
-        raise FineTuningUnavailable(f"Could not upload the training file: {exc}") from exc
+        raise FineTuningUnavailable(f"Could not upload the training file: {_redacted(exc, config)}") from exc
     file_id = getattr(result, "id", None)
     if not file_id:
         raise FineTuningUnavailable(
@@ -598,7 +616,7 @@ def create_fine_tuning_job(
     try:
         job = _openai_client(config).fine_tuning.jobs.create(**payload)
     except Exception as exc:  # noqa: BLE001
-        raise FineTuningUnavailable(f"The endpoint refused the job: {exc}") from exc
+        raise FineTuningUnavailable(f"The endpoint refused the job: {_redacted(exc, config)}") from exc
     return _job_from_openai(job, fallback_base_model=base_model)
 
 
@@ -613,7 +631,7 @@ def get_fine_tuning_job(config: ProviderConfig, job_id: str) -> FineTuningJob:
     try:
         job = _openai_client(config).fine_tuning.jobs.retrieve(job_id)
     except Exception as exc:  # noqa: BLE001
-        raise FineTuningUnavailable(f"Could not read job {job_id}: {exc}") from exc
+        raise FineTuningUnavailable(f"Could not read job {job_id}: {_redacted(exc, config)}") from exc
     return _job_from_openai(job)
 
 
@@ -633,7 +651,7 @@ def cancel_fine_tuning_job(config: ProviderConfig, job_id: str) -> FineTuningJob
     try:
         job = _openai_client(config).fine_tuning.jobs.cancel(job_id)
     except Exception as exc:  # noqa: BLE001
-        raise FineTuningUnavailable(f"Could not cancel job {job_id}: {exc}") from exc
+        raise FineTuningUnavailable(f"Could not cancel job {job_id}: {_redacted(exc, config)}") from exc
     return _job_from_openai(job)
 
 

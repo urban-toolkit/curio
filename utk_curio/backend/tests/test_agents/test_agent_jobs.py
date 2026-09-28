@@ -149,3 +149,27 @@ class TestReconcileBuilderSession:
     def test_other_phases_and_shapes_are_untouched(self):
         for session in ({"phase": "ready"}, {"phase": "applied", "solveExecutionId": "x"}, {}, None):
             assert agent_jobs.reconcile_builder_session(session) is False
+
+
+class TestRedaction:
+    def test_a_failure_neither_publishes_nor_logs_the_key(self, caplog):
+        import logging
+
+        key = "sk-job-secret-0123456789"
+
+        def _events():
+            yield ("started", {})
+            raise RuntimeError(f"401 from the provider for key {key}")
+
+        caplog.set_level(logging.ERROR)
+        job = agent_jobs.start_job(
+            user_key="u-redact", project_id="p", attachment_id="a-redact", kind="solve-batch",
+            job_id="e-redact", events=_events(), redact_values={"llm-api-key": key},
+        )
+        job.thread.join(timeout=5)
+        events = list(agent_jobs.subscribe(job))
+        kind, message = events[-1]
+        assert kind == "error" and "401 from the provider" in message
+        assert key not in repr(events)
+        assert key not in caplog.text
+        assert key not in repr(job)

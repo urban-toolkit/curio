@@ -341,6 +341,44 @@ class TestDelegateChildRun:
         assert execution["status"] == "ok"
 
 
+class TestADelegateFailureNeverCarriesTheKey:
+    def test_the_childs_error_is_redacted_everywhere_it_goes(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend import config
+
+        key = "sk-delegate-secret-0123456789"
+        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", key)
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        prompts = []
+        state = {"n": 0}
+
+        def _fake_run(config_, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            prompts.append(messages)
+            state["n"] += 1
+            if state["n"] == 2:  # the CHILD provider call
+                raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {key}")
+            return _delegate_tail() if state["n"] == 1 else "Answered without the delegate."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        response = _run(client, token, pid, att_id)
+        assert response.status_code == 200
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
+        ).get_json()["turns"]
+        execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
+        (child,) = execution["delegations"]
+        assert child["status"] == "error"
+        # The failure is still reported, only without the key.
+        assert "401" in json.dumps(prompts[-1])
+        for where in (response.get_data(as_text=True), json.dumps(turns), json.dumps(prompts)):
+            assert key not in where
+
+
 class TestMissingSpecialist:
     def test_missing_delegate_mints_reviewed_install_proposal(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token

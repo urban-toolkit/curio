@@ -32,6 +32,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Generated Contracts](#generated-contracts)
   * [The Autark Schema](#the-autark-schema)
 * [Agent Prompt Composition](#agent-prompt-composition)
+* [LLM Configurations and Resolution](#llm-configurations-and-resolution)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -819,6 +820,54 @@ A run selects its instruction and never appends to one. An edited intent replace
 
 ---
 
+## LLM Configurations and Resolution
+
+An account's LLM configurations live in one owner-only file,
+`.curio/users/<u>/llm-configs.json` (`{version, configs, default, agents}`),
+kept by [`llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py).
+`LlmConfigStore.record` is the only method that returns a key: every response
+carries `hasApiKey` and `baseUrlHost` instead. The file is written through
+[`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
+which connection keys use too: a 0700 directory and a 0600 file, written to a
+temp file, fsynced and renamed under an exclusive lock.
+
+A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
+`baseUrl` and `apiKey`) or this Curio install's (`endpoint: "deployment"`),
+whose type, URL and key are read from the deployment when a run resolves it. A
+key never follows a configuration to another endpoint: an update that changes
+the type, or the URL's scheme, host or port, needs the key again or
+`clearApiKey`.
+
+[`provider_config.resolve_llm`](../utk_curio/backend/app/agents/provider_config.py)
+is the one resolver, and the only reader of `config.DEFAULT_LLM_*` and
+`GUEST_LLM_*`, both read at call time. It needs only the storage key, so it
+works in job threads:
+
+1. A hosted guest (a guest on a `--deploy` instance) runs on the guest
+   configuration, `GUEST_LLM_*`, and never opens the file.
+2. A delegated child runs on its caller's configuration.
+3. Otherwise the account's default configuration answers, else the Deployment
+   default (the deployment's endpoint with `CURIO_DEFAULT_LLM_MODEL`), else the
+   run is refused.
+
+A reference that does not resolve (a default naming no configuration, a This
+Curio install configuration whose deployment withdrew its endpoint, an
+unreadable file) is refused, never replaced with another configuration. A
+refusal is a `ProviderConfigError`, answered as a 400 with
+`remedy: {kind: "llm-config", agentId}`. The local shared guest (a launch
+without `--deploy`) owns a file like any account, and its Deployment default
+reads `GUEST_LLM_*`.
+
+The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
+`trained`, and its `api_key` is left out of its `repr`. Run pins record
+`llm: {configId, label, baseUrlHost, source}`, ledger entries record
+`llmConfigId`, and provider error text is redacted with the call's own key
+before it is streamed, persisted, logged or returned. Training runs only on a
+configuration that holds the user's own key, and activating a trained model
+adds a configuration with `origin: "trained"` and makes it the default.
+
+---
+
 ## Python Dependencies
 
 Curio's Python deps live in two places:
@@ -994,8 +1043,12 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
-| `/api/agents/provider-default` | GET | The deployment's default provider, base URL and model, so AI Settings can show what a user inherits. The API key is reported as a boolean only |
-| `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the base URL and key on screen; anything omitted falls back to the account's resolved provider. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
+| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, and what answers a run now. A hosted guest gets the guest configuration and `editable: false` |
+| `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
+| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default. **409** while a training job runs on it and the change touches its endpoint or key |
+| `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
+| `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
+| `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid (#241), both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is still a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
@@ -1100,7 +1153,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
-| `src/components/AiSettingsModal.tsx` | AI Settings: the account-level provider, model and credentials every AI surface reads |
+| `src/components/AiSettingsModal.tsx` | AI Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
+| `src/components/llmConfigs/` | The LLM configurations table and its editor, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
@@ -1138,7 +1192,9 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |
 | `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
 | `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
-| `backend/app/agents/provider_config.py` | The single provider resolver: guest env, then per-user `llm_*`, then the deployment default |
+| `backend/app/agents/provider_config.py` | `resolve_llm`, the one LLM resolver, and the only reader of the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
+| `backend/app/agents/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the only method that returns a key |
+| `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys and LLM configurations |
 | `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Chat completions, streaming, and the live model listing |
 | `backend/app/agents/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible (#241). Derived from the API, never hand-authored; a suggestion, never an allowlist |
 | `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives |

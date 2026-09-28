@@ -121,6 +121,12 @@ def _sandbox_section(payload) -> dict:
     }
 
 
+def _deployment_llm_configured() -> bool:
+    from utk_curio.backend.app.agents.provider_config import deployment_config
+
+    return deployment_config("", guest=False) is not None
+
+
 def _deployment(sandbox) -> dict:
     """Configuration facts. Booleans and closed vocabularies only.
 
@@ -144,7 +150,9 @@ def _deployment(sandbox) -> dict:
         "sharedInstallsAllowed": _env_true("CURIO_ALLOW_SHARED_INSTALLS"),
         "factoryPublishAllowed": _env_true("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"),
         "saveNodeOutputDefault": bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT),
-        "llmProviderConfigured": bool(os.environ.get("CURIO_LLM_PROVIDER", "").strip()),
+        # The Deployment default a signed-in user falls back to: the operator's
+        # endpoint with a model (``provider_config.deployment_config``).
+        "llmProviderConfigured": _deployment_llm_configured(),
         "searchToolConfigured": bool(os.environ.get("CURIO_AGENT_SEARCH_URL", "").strip()),
         "env": config.CURIO_ENV,
         "platform": platform.platform(),

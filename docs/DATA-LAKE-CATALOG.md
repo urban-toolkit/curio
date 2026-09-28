@@ -273,11 +273,11 @@ today: the portals answer without one, but a token raises the caller's rate
 limit sharply.
 
 **A token is a per-person entitlement, so it lives on your account**, exactly
-as your LLM provider key does. One shared secret would mean everyone on an
-install spending the same allowance and being throttled together.
+as the keys of your LLM configurations do. One shared secret would mean everyone
+on an install spending the same allowance and being throttled together.
 
-Set it in **AI Settings**, from the button in the top bar, beside the LLM
-provider key. Blank means keep what is saved; there is an explicit *Remove
+Set it in **AI Settings**, from the button in the top bar, below your LLM
+configurations. Blank means keep what is saved; there is an explicit *Remove
 saved token* for clearing one.
 
 **Guests are refused out loud** - a 403, the way the LLM key refuses them -
