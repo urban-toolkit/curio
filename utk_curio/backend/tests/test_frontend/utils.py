@@ -1087,13 +1087,19 @@ def _assert_mintable(image, expected_path: str, page) -> None:
         )
 
 
+#: The most any screenshot comparison may let differ. A map is often under a
+#: fifth of its frame, so with a looser budget a frame whose map is missing can
+#: still pass. A comparison may ask for less, never more.
+MAX_DIFF_RATIO = 0.20
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
     *,
     test_name: str,
     pixel_threshold: int = 30,
-    max_diff_ratio: float = 0.20,
+    max_diff_ratio: float = MAX_DIFF_RATIO,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
@@ -1153,6 +1159,11 @@ def save_workflow_test_screenshot(
 
     Returns the path to the expected screenshot file.
     """
+    if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
+        raise ValueError(
+            f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
+            "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
+        )
     from PIL import Image, ImageChops, ImageEnhance
     import numpy as np
 
