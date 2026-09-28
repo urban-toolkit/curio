@@ -27,6 +27,7 @@
     "resourceId": "air-quality",
     "fileCount": 9,
     "fields": "sensor,day",
-    "fetchedAt": "2024-05-01T00:00:00Z"
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "0bbf73094045f591f06c776cd059123c71345502973bf1189e819873c46fee87"
   }
 }

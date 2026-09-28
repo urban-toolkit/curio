@@ -28,6 +28,7 @@
     "sourcePath": "city/roads.shp",
     "fileCount": 1,
     "fetchedAt": "2024-05-01T00:00:00Z",
-    "contentSha256": "d7afa3888bdbd3a53a9d39b412b1342f8d638d562c353e15e334bb142d0412b5"
+    "fingerprint": "1670dd9002dce647f848fe7667fc55d1baa6823f713a15a83ac23c54b15c2612",
+    "contentSha256": "f24552f12bde8d845d945a97cfd32b18af63dc9422a42eda8739156fe54b2136"
   }
 }

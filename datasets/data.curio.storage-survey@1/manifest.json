@@ -27,7 +27,8 @@
     "resourceId": "survey",
     "fileCount": 4,
     "fields": "year",
-    "fetchedAt": "2024-05-01T00:00:00Z"
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "e0f6c12062100727877489de2dc3437bd543f765ffcce2a2f8c55f08791703e7"
   },
   "collection": {
     "kind": "media",
@@ -36,9 +37,21 @@
     "provider": "folder",
     "resourceId": "survey",
     "resource": "survey",
+    "resourceName": "Street survey",
     "path": "survey/{year:int}/**/*",
     "fields": [
       "year"
+    ],
+    "fieldValues": [
+      {
+        "name": "year",
+        "type": "int",
+        "distinct": 2,
+        "values": [
+          "2024",
+          "2025"
+        ]
+      }
     ],
     "counts": {
       "image": 3,
@@ -49,6 +62,12 @@
     "hasGps": true,
     "probeErrors": 0,
     "indexedAt": "2024-05-01T00:00:00Z",
-    "fingerprint": "e0f6c12062100727877489de2dc3437bd543f765ffcce2a2f8c55f08791703e7"
+    "fingerprint": "e0f6c12062100727877489de2dc3437bd543f765ffcce2a2f8c55f08791703e7",
+    "bounds": [
+      -87.636,
+      41.879,
+      -87.6233,
+      41.8841
+    ]
   }
 }

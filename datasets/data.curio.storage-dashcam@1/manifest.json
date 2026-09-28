@@ -27,7 +27,8 @@
     "resourceId": "dashcam",
     "fileCount": 10,
     "fields": "date,sequence,frame",
-    "fetchedAt": "2024-05-01T00:00:00Z"
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "f4f2ca441339b19cf61187af819fd7ac9048b4a8abb971aeaf3e5883dae89a45"
   },
   "collection": {
     "kind": "frames",
@@ -36,11 +37,44 @@
     "provider": "folder",
     "resourceId": "dashcam",
     "resource": "dashcam",
+    "resourceName": "Dashcam frames",
     "path": "dashcam/{date:date}/{sequence}_{frame:int}.jpg",
     "fields": [
       "date",
       "sequence",
       "frame"
+    ],
+    "fieldValues": [
+      {
+        "name": "date",
+        "type": "date",
+        "distinct": 1,
+        "values": [
+          "2024-05-01"
+        ]
+      },
+      {
+        "name": "sequence",
+        "type": "str",
+        "distinct": 2,
+        "values": [
+          "trip01",
+          "trip02"
+        ]
+      },
+      {
+        "name": "frame",
+        "type": "int",
+        "distinct": 6,
+        "values": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ]
+      }
     ],
     "counts": {
       "frame": 10
@@ -52,6 +86,12 @@
     "indexedAt": "2024-05-01T00:00:00Z",
     "fingerprint": "f4f2ca441339b19cf61187af819fd7ac9048b4a8abb971aeaf3e5883dae89a45",
     "fps": 10.0,
-    "sequences": 2
+    "sequences": 2,
+    "bounds": [
+      -87.6278,
+      41.882,
+      -87.6276,
+      41.8825
+    ]
   }
 }

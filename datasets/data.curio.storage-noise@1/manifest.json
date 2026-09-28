@@ -27,7 +27,8 @@
     "resourceId": "noise",
     "fileCount": 3,
     "fields": "sensor,recorded",
-    "fetchedAt": "2024-05-01T00:00:00Z"
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "20e2187cd868bfba659589e85e8563457746351c62a635f78ee03987e6fa993c"
   },
   "collection": {
     "kind": "audio",
@@ -36,10 +37,31 @@
     "provider": "folder",
     "resourceId": "noise",
     "resource": "noise",
+    "resourceName": "Noise recordings",
     "path": "noise/{sensor}/{recorded:%Y%m%d_%H%M%S}.wav",
     "fields": [
       "sensor",
       "recorded"
+    ],
+    "fieldValues": [
+      {
+        "name": "sensor",
+        "type": "str",
+        "distinct": 2,
+        "values": [
+          "sensor_01",
+          "sensor_02"
+        ]
+      },
+      {
+        "name": "recorded",
+        "type": "datetime",
+        "distinct": 2,
+        "values": [
+          "2024-05-01T06:00:00",
+          "2024-05-01T07:00:00"
+        ]
+      }
     ],
     "counts": {
       "audio": 3

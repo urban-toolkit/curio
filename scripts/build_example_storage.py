@@ -100,7 +100,11 @@ def write_city(root: Path) -> None:
         ],
         crs=4326,
     )
-    roads.to_file(folder / "roads.shp", engine="pyogrio")
+    # The .dbf header records a date, today's unless it is given one.
+    roads.to_file(
+        folder / "roads.shp", engine="pyogrio",
+        layer_options={"DBF_DATE_LAST_UPDATE": PINNED_ISO[:10]},
+    )
     parks = gpd.GeoDataFrame(
         {"name": ["Millennium Park"]},
         geometry=[Polygon([(-87.6250, 41.8810), (-87.6210, 41.8810),
@@ -285,6 +289,10 @@ def build_datasets() -> list[str]:
         from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
         from utk_curio.backend.app.datalakes.providers import build_storage
         from utk_curio.backend.app.datasets.install.installer import install_imported_path
+        from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+        # The build writes files to commit, with no database to index them in.
+        index_repo.safe_upsert_from_dir = lambda *_args, **_kwargs: None
 
         manifest = load_source_manifest(SOURCE)
         provider = build_storage(manifest, None)

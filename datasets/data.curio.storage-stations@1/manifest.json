@@ -28,6 +28,7 @@
     "sourcePath": "air-quality/stations.csv",
     "fileCount": 1,
     "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "e9c8a1f30b21785e3bd01f325857a8d6fd032b38db9a357544d0095781709869",
     "contentSha256": "c83fc7529b3cff8cc8df502f699ce6b15a5fd495a799c3d77ab5bdc4a90bc2d7"
   }
 }
