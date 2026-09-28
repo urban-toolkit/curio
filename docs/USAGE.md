@@ -342,7 +342,7 @@ GUEST_LLM_MODEL=claude-haiku-4-5
 
 Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
-One Autark-specific note: an Autark node's spec references incoming data by name. A single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+One Autark-specific note: an Autark node's document references incoming data by name. A single upstream frame is the table `upstream`, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Autark node](#autark-node).
 
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
@@ -415,7 +415,8 @@ Worked example: [GeoDataFrame maps in Vega-Lite](examples/12-vega-lite-geodatafr
 A newly dropped `Vega-Lite` node opens **empty**. When an input arrives, and
 only while the spec buffer is still empty, the editor fills with a complete
 starter spec chosen from the input's column types. It never overwrites anything
-you have typed, and it never runs the node: you still press play.
+you have typed or anything written into the node for you (by an agent, or by
+dropping a dataset on it), and it never runs the node: you still press play.
 
 Connecting an edge is not enough on its own. An edge carries no column types
 until the upstream node has actually produced output, so a connected-but-unrun
@@ -426,7 +427,7 @@ Columns are classified by pandas dtype:
 
 | pandas dtype | role |
 |---|---|
-| `geometry`, or the frame's active geometry column | geometry |
+| `geometry`, the frame's active geometry column, or the one `DataFrame` column that holds geometries | geometry |
 | `datetime64[*]`, `period[*]`, `timedelta64[*]` | temporal |
 | `int*`, `uint*`, `float*` | quantitative |
 | `bool`, `object`, `str`, `string`, `category` | nominal |
@@ -456,6 +457,58 @@ The receiving chart styles the marked rows through its spec, for example `"color
 
 A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+
+## Autark node
+
+The `Autark` node draws an Autark document: map layers, plots and GPU compute
+over tables. A table comes from the document's own `data` section (an OSM
+extract, a GeoJSON or CSV file) or from the node's input. The document writes
+no `data` entry for its input; it names the tables the input provides.
+
+### Its input
+
+- A single frame is the table `upstream`: a `GeoDataFrame`, a GeoJSON
+  FeatureCollection, or a `DataFrame` with a geometry column. A frame that
+  arrives under its own name (a Data Pool tab, a compute step's layer) keeps
+  that name, and `upstream` also names it.
+- Several layers keep their own names: a Python tuple, a Data Pool with tabs,
+  the tables of an upstream Autark node, or a Merge of GeoDataFrames. A layer
+  without a name is `upstream_0`, `upstream_1`, and so on.
+- A map draws only tables with geometry. A `DataFrame` is read through the one
+  column that holds geometries; with none, or with several, the node draws
+  nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- Coordinates are read in the CRS the frame declares. A frame with no CRS is
+  read as EPSG:4326 when its coordinates look like longitude and latitude, and
+  as EPSG:3395 otherwise, so declare a projected CRS to place it correctly.
+- A row without a geometry stays in the table and draws nothing; a selection
+  still lands on the row it names.
+- A `data` section runs in the sandbox, where the input is not available: its
+  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
+  or name it from a map, plot or compute block.
+
+Before it runs, a node that reads its input says what a `Vega-Lite` node says:
+connect a node, run the node feeding this one, the node feeding this one
+failed, or what this input lacks. A node whose document loads everything it
+draws only says it has not run yet. A run that ends on an input the node
+cannot draw names the reason in the node body and in its error.
+
+### The starter document
+
+A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and
+fills itself the same way: when an input arrives, and only while the editor is
+still empty, it fills with a complete starter document. It never overwrites
+anything you have typed or anything written into the node for you, and it
+never runs the node. Columns are classified as for the Vega-Lite starter.
+
+The first matching rule wins:
+
+| the input has | you get |
+|---|---|
+| two or more layers with geometry | a map with one layer per table |
+| one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis` |
+| one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
+| one layer with geometry only | a plain map |
+| no geometry | the editor stays empty |
 
 ## Dashboards
 

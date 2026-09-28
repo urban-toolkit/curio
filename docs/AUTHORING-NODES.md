@@ -310,11 +310,12 @@ not an empty `geodataframe`.
 A grammar node can offer a starter spec once it knows what the data looks like.
 The hook is `defaultValueOverride` in your behavior, which
 [`UniversalNode`](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx)
-gives top priority in the `defaultValue` chain. Gate it on an **empty buffer**
-and fill at most once: `useMonacoExternalValue` no-ops when the value is
-unchanged, so re-asserting is safe for the cursor and undo stack, but that is
-not licence to overwrite what someone has typed. `vegaBehavior.ts` is the
-worked example.
+gives top priority in the `defaultValue` chain.
+[`useStarterSpec`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts)
+does the gating for you: it fills only an editor that is empty now, at most
+once, only after an input has arrived, and never over `data.defaultCode`. Give
+it a reader and a ladder; `vegaBehavior.ts` and `autkGrammarBehavior.tsx` are
+the worked examples.
 
 ## Things that will trip you up
 

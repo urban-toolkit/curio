@@ -16,7 +16,7 @@ import { useNodeState } from '../hook/useNodeState';
 import { classifyAutkSpecString } from '../utils/autkSpecKind';
 import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
 import { hasIncomingEdge } from '../utils/nodeEmptyState';
-import { isEmptySpecBuffer } from '../utils/vegaDefaultSpec';
+import { isEmptySpecBuffer } from '../utils/starterSpec';
 import {
   DASHBOARD_TILE_DEFAULT_HEIGHT,
   DASHBOARD_TILE_DEFAULT_WIDTH,

@@ -10,10 +10,9 @@
 import {
   DEFAULT_SPEC_RULES,
   chooseDefaultSpec,
-  classifyColumns,
   defaultSpecText,
-  isEmptySpecBuffer,
 } from "../../utils/vegaDefaultSpec";
+import { classifyColumns, isEmptySpecBuffer } from "../../utils/starterSpec";
 
 const roles = (cols: ReturnType<typeof classifyColumns>) =>
   Object.fromEntries(cols.map((c) => [c.name, c.role]));

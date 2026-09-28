@@ -20,8 +20,16 @@ jest.mock('../../../providers/ProvenanceProvider', () => ({
   }),
 }));
 
+// The edges and exec statuses a grammar node reads its input state from
+// (hook/useGrammarInputState); settable per test, reset in afterEach.
+let mockFlowEdges: any[] = [];
+let mockNodeExecStatus: Record<string, string> = {};
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ workflowNameRef: { current: 'test-workflow' } }),
+  useFlowContext: () => ({
+    workflowNameRef: { current: 'test-workflow' },
+    edges: mockFlowEdges,
+    nodeExecStatus: mockNodeExecStatus,
+  }),
 }));
 
 jest.mock('../../../providers/ToastProvider', () => ({
@@ -263,6 +271,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useVegaBehavior', () => {
+    test('text typed into a fresh chart is not overwritten when its first input arrives', async () => {
+      const result = await callBehavior(
+        useVegaBehavior,
+        { input: { dataType: 'dataframe', data: { a: [1, 2] } } } as any,
+        { code: '{"mark": "line"}' } as any,
+      );
+      await act(async () => {});
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
     test('returns applyGrammar', async () => {
       const result = await callBehavior(useVegaBehavior);
       assertValidBehaviorResult(result.current);
@@ -555,12 +573,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
     });
 
-    test('returns applyGrammar, contentComponent, and default spec', async () => {
+    test('returns applyGrammar and contentComponent; a fresh node opens empty, like a Vega chart', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
     test('omits defaultValueOverride when node already has code', async () => {
@@ -571,34 +589,41 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
-    // dev/70 regression: the seed decision is frozen at mount. ``data.code`` is
-    // mutated by useNodeState one commit behind the editor (and the old reset
-    // chain even wrote ``undefined`` into it), so deriving the override from it
-    // per render flip-flopped ``defaultValue`` and reset the editor to the
-    // default spec while the user typed.
-    test('defaultValueOverride stays stable while data.code mutates mid-typing (dev/70)', async () => {
-      const stableData = makeMockData();
+    // dev/70 regression: ``data.code`` is mutated by useNodeState one commit
+    // behind the editor (and the old reset chain even wrote ``undefined`` into
+    // it), so an override derived from it per render flip-flopped
+    // ``defaultValue`` and reset the editor while the user typed. The starter,
+    // once offered, stays put until a document is written in from outside.
+    test('the starter stays stable while data.code mutates mid-typing (dev/70)', async () => {
+      const stableData = makeMockData({
+        input: {
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { pop: 1 } },
+          ] },
+        },
+      } as any);
       const stableNodeState = makeMockNodeState();
       let rendered: any;
       await act(async () => {
         rendered = renderHook(() => useAutkGrammarBehavior(stableData, stableNodeState));
       });
-
-      const seed = rendered.result.current.defaultValueOverride;
-      expect(typeof seed).toBe('string');
+      await waitFor(() => expect(rendered.result.current.defaultValueOverride).toBeDefined());
+      const starter = rendered.result.current.defaultValueOverride;
+      expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('upstream');
 
       // Editor floats a keystroke back into the mutable node data.
       (stableData as any).code = '{"user":"typed"}';
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
-      // The old reset chain cleared it again — the override must not flip back.
+      // The old reset chain cleared it again: the override must not flip.
       (stableData as any).code = undefined;
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
       // An explicit external update (dataset drop / LLM apply) writes
-      // data.defaultCode via updateDefaultCode and must win over the seed.
+      // data.defaultCode via updateDefaultCode and must win over the starter.
       (stableData as any).defaultCode = '{"map":{}}';
       await act(async () => { rendered.rerender(); });
       expect(rendered.result.current.defaultValueOverride).toBeUndefined();
@@ -672,26 +697,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     test('data-only node before its first run says what running it will do (#282)', async () => {
-      const result = await callBehavior(useAutkGrammarBehavior, {
-        code: JSON.stringify({
-          data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
-        }),
-      } as any);
+      const code = JSON.stringify({
+        data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
+      });
+      const result = await callBehavior(useAutkGrammarBehavior, { code } as any, { code } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      const empty = container.querySelector('[data-curio-node-empty="upstream-not-run"]');
+      // It loads its own data, so it is "not run", and says what running it does.
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
       expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('Not run yet');
       expect(empty!.textContent).toContain('This step loads data');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
-    test('render node body is the map box, not an empty-state or summary (#282)', async () => {
+    test('render node before its first run says it has not been drawn, as a Vega chart does', async () => {
       const result = await callBehavior(useAutkGrammarBehavior, {
         code: JSON.stringify({ map: { layerRefs: [] } }),
-      } as any);
+      } as any, { code: JSON.stringify({ map: { layerRefs: [] } }) } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
+      expect(empty?.textContent).toContain('Not drawn yet');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
@@ -761,6 +788,235 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // The counts behind the empty-render verdict ride as data. Where they
     // cannot be counted there is no verdict and no invented zero; where a node's
     // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('what an Autark node says before it draws, as a Vega chart does', () => {
+      const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
+      const body = async (code: string, data: any = {}) => {
+        const result = await callBehavior(useAutkGrammarBehavior, { code, ...data } as any, { code } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        return { result, container, reason: container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty') };
+      };
+
+      afterEach(() => {
+        mockFlowEdges = [];
+        mockNodeExecStatus = {};
+      });
+
+      test('a map on its input with nothing connected asks for a connection', async () => {
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('disconnected');
+      });
+
+      test('connected to a node that has not run: run it', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-not-run');
+      });
+
+      test('connected to a node that failed: says so', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        mockNodeExecStatus = { py: 'errored' };
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-errored');
+      });
+
+      test('a compute step needs its input; a data step does not', async () => {
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+          .toBe('disconnected');
+        const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
+        expect((await body(data)).reason).toBe('not-run');
+      });
+
+      test('an empty editor asks for a connection first, as Vega does', async () => {
+        expect((await body('')).reason).toBe('disconnected');
+      });
+
+      test('after a run, an input it cannot draw is named in the body', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        const { result, container } = await body(MAP_ON_UPSTREAM, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { pop: [1, 2] } },
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(MAP_ON_UPSTREAM);
+        });
+        const empty = container.querySelector('[data-curio-node-empty]');
+        expect(empty?.getAttribute('data-curio-node-empty')).toBe('geometry-unresolved');
+        expect(empty?.textContent).toContain('upstream has no geometry column');
+      });
+
+      test("typing does not change the body's identity, so the editor keeps its tab", async () => {
+        const stableData = makeMockData({ code: MAP_ON_UPSTREAM } as any);
+        // The node's output is state in the app: the same object until a run.
+        const output = { code: '', content: '', outputType: '' };
+        let code = MAP_ON_UPSTREAM;
+        const { result, rerender } = renderHook(
+          () => useAutkGrammarBehavior(stableData, makeMockNodeState({ code, output } as any)),
+        );
+        const before = result.current.contentComponent;
+        code = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream', getFnv: 'v' }] } });
+        rerender();
+        expect(result.current.contentComponent).toBe(before);
+      });
+    });
+
+    describe('its input, read the way the Vega-Lite node reads its own', () => {
+      const api = () => jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      const lastRunSpec = () => {
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const instances = AutkGrammar.mock.results.map((r: any) => r.value);
+        const run = instances[instances.length - 1]?.run as jest.Mock | undefined;
+        return run?.mock.calls[run.mock.calls.length - 1]?.[0];
+      };
+      const point = (x: number, y: number) => ({ type: 'Point', coordinates: [x, y] });
+
+      afterEach(() => {
+        api().fetchData.mockReset();
+        api().fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      });
+
+      test('a DataFrame with a geometry column reaches the map as the table upstream', async () => {
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { zone: ['n', 's'], where: [point(0, 0), point(1, 1)] } } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const upstream = lastRunSpec()?.data?.find((s: any) => s.outputTableName === 'upstream');
+        expect(upstream?.type).toBe('geojson');
+        expect(upstream?.geojsonObject.features.map((f: any) => f.properties.zone)).toEqual(['n', 's']);
+      });
+
+      test('upstream is added only when the document names it', async () => {
+        const layer = (name: string) => ({
+          dataType: 'geodataframe', layerName: name,
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'outputs', data: [layer('table_osm_roads'), layer('table_osm_water')] } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'table_osm_roads' }] } }));
+        });
+        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads', 'table_osm_water']);
+      });
+
+      test('a compute step reads its input once', async () => {
+        api().fetchData.mockResolvedValue({
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(1);
+      });
+
+      test('a DataFrame with no geometry column is refused with the reason, blaming the upstream', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          {
+            outputCallback: jest.fn(),
+            input: { dataType: 'dataframe', data: { zone: ['n'], pop: [3] } } as any,
+          },
+          { setOutput },
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const constructed = AutkGrammar.mock.calls.length;
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('upstream has no geometry column');
+        expect(errCall![0].content).toContain('not at fault');
+        // Nothing drawable, so the grammar is never handed the document.
+        expect(AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test('an input type it cannot read says so', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].content).toContain('raster is not a valid input type for the Autark node.');
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
+      });
+
+      test('an empty layer from an Autark data node reaches a compute step as an empty table', async () => {
+        // The data node's artifact, as /get returns it: a list of layer
+        // records, where a layer the load found empty has no feature list.
+        api().fetchData.mockResolvedValue({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_water', type: 'water', geojson: {
+              type: 'FeatureCollection', features: null } } },
+          ],
+        });
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { path: 'art-db', dataType: 'list' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        // One layer left, so it is passed on as a single frame.
+        const passedOn = outputCallback.mock.calls[0]?.[1];
+        expect(passedOn).toMatchObject({ dataType: 'geodataframe', layerName: 'table_osm_roads' });
+      });
+
+      test('a compute step with nothing it can read passes nothing on', async () => {
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { dataType: 'dataframe', data: { pop: [3] } } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('has no geometry column');
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      test('a data step does not read its input', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+        );
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          jsInterpreter: { interpretCode } as any,
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(0);
+      });
+    });
+
     describe('empty-render counts', () => {
       const setOutputKinds = (setOutput: jest.Mock) =>
         setOutput.mock.calls.map((c: any[]) => c[0]?.kind).filter(Boolean);
