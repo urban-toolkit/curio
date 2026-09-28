@@ -17,6 +17,25 @@ from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 
 VEGA = "curio.builtin/vis-vega"
+AUTK = "curio.builtin/autk-grammar"
+#: A data-only Autark document: it loads its own rows, so an empty load is its
+#: own fault, not an upstream's.
+PARKS_DOC = json.dumps({"data": [{
+    "type": "geojson", "outputTableName": "parks",
+    "geojsonObject": {"type": "FeatureCollection", "features": []},
+}]})
+FIXED_PARKS_DOC = json.dumps({"data": [{
+    "type": "geojson", "outputTableName": "parks",
+    "geojsonObject": {"type": "FeatureCollection", "features": [{
+        "type": "Feature", "properties": {"name": "Common"},
+        "geometry": {"type": "Point", "coordinates": [-71.07, 42.35]},
+    }]},
+}]})
+EMPTY_SOURCE = (
+    "rendered nothing: the data sources this document loads returned 0 rows. "
+    "The source it names, or the query or area that filters it, is what must "
+    "change. Loaded 1 table: parks (0 features)."
+)
 VALID_DOC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
     "mark": "bar",
@@ -64,6 +83,7 @@ class TestTheCauseDecidesWhoIsAtFault:
         assert rs.empty_render_cause("empty-render:nothing-drawn") == "nothing-drawn"
         assert rs.empty_render_cause("empty-render:no-layers") == "no-layers"
         assert rs.empty_render_cause("empty-render:no-input-rows") == "no-input-rows"
+        assert rs.empty_render_cause("empty-render:empty-source") == "empty-source"
         # An empty render whose reason this build does not know: still an empty
         # render, reason unknown.
         assert rs.empty_render_cause("empty-render:teleported") == ""
@@ -77,6 +97,8 @@ class TestTheCauseDecidesWhoIsAtFault:
         assert rs.is_document_at_fault("no-layers") is True
         assert rs.is_document_at_fault("") is True     # unknown: ask for a fix
         assert rs.is_document_at_fault("no-input-rows") is False
+        # A node's own sources loading nothing is the document's to fix.
+        assert rs.is_document_at_fault("empty-source") is True
 
     def test_the_refusal_leads_with_the_renderers_own_sentence(self):
         text = rs.empty_render_refusal(
@@ -175,3 +197,20 @@ class TestTheLoopCorrectsAnEmptyRender:
         assert inputs == []                              # the document validates
         assert outcome["verdict"] == "not-executable"
         assert outcome["evidence"].get("documentValidated") == "vis-vega"
+
+    def test_a_data_node_whose_own_source_loaded_nothing_is_CORRECTED(self, app, tmp_curio):
+        """`empty-source`, unlike `no-input-rows`, blames the document: a data
+        node has no upstream to wait on, so a correction round follows."""
+        node = {"id": "n1", "type": AUTK, "goal": "Parks", "content": PARKS_DOC}
+        events, outcome, inputs = _rounds(
+            app, node, replies=[FIXED_PARKS_DOC], exec_fn=_Exec(),
+            start_from_current=True,
+            recorded_failure=_recorded(EMPTY_SOURCE, "empty-source", content=PARKS_DOC),
+        )
+        assert outcome["attempts"][0]["kind"] == "empty-render"
+        assert "upstreamEmpty" not in (outcome["evidence"] or {})
+        assert inputs, "the loop asked for a new document"
+        assert "returned 0 rows" in inputs[0]["validationError"]
+        assert inputs[0]["previousAttempt"] == PARKS_DOC
+        assert outcome["candidate"] == FIXED_PARKS_DOC
+        assert outcome["evidence"].get("documentValidated") == "autk-grammar"

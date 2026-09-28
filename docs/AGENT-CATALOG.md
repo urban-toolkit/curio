@@ -438,6 +438,7 @@ does:
 | What the renderer saw | What it says | Who must change |
 |---|---|---|
 | Every layer the document asks for was dropped (its `dataRef` names a table this dataflow does not produce) | *rendered nothing — every layer this document asks for names data the dataflow does not produce (asked for: …; available: …)* | the **document** |
+| The node's own data sources loaded no rows | *rendered nothing: the data sources this document loads returned 0 rows …* | the **document** |
 | No rows arrived | *rendered nothing — 0 rows arrived at this node … this document is not at fault* | the **upstream node** |
 | Rows arrived and no mark was drawn | *rendered nothing — 12 rows arrived and no mark was drawn: an encoding, a transform or a scale domain removed every row* | the **document** |
 

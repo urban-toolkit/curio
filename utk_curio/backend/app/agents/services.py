@@ -30,6 +30,7 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents import (
     agent_jobs,
+    contracts,
     document_validation,
     egress,
     failure_text,
@@ -7404,7 +7405,7 @@ _HEAD_FIRST_KINDS = (
     # sentence that says what is wrong is the FIRST one.
     "document-invalid", "empty-result",
     # dev/136: and the render that drew nothing.
-    "empty-render",
+    contracts.EMPTY_RENDER_KIND,
 )
 
 
@@ -8557,7 +8558,7 @@ def _verified_content_rounds(
                         return {
                             "verdict": "fail",
                             "evidence": {
-                                "kind": "empty-render",
+                                "kind": contracts.EMPTY_RENDER_KIND,
                                 "detail": refusal,
                                 "upstreamEmpty": True,
                             },
@@ -8571,7 +8572,7 @@ def _verified_content_rounds(
                             "attempts": attempts + [{
                                 "round": rounds_used,
                                 "contentSha256": _content_sha(candidate),
-                                "verdict": "fail", "kind": "empty-render",
+                                "verdict": "fail", "kind": contracts.EMPTY_RENDER_KIND,
                                 "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
                                 "source": "current content",
                                 **_attempt_code_field(candidate),
@@ -8580,13 +8581,13 @@ def _verified_content_rounds(
                         }
                     verdict_result = {
                         "verdict": "fail",
-                        "evidence": {"kind": "empty-render", "detail": refusal[:2000]},
+                        "evidence": {"kind": contracts.EMPTY_RENDER_KIND, "detail": refusal[:2000]},
                     }
                     yield "round_verdict", {"round": rounds_used, "verdict": "fail"}
                     rounds_trace.append(f"round {rounds_used}: fail — {refusal[:200]}")
                     attempts.append({
                         "round": rounds_used, "contentSha256": _content_sha(candidate),
-                        "verdict": "fail", "kind": "empty-render",
+                        "verdict": "fail", "kind": contracts.EMPTY_RENDER_KIND,
                         "detail": refusal[:_ATTEMPT_DETAIL_CHARS],
                         "source": "current content",
                         **_attempt_code_field(candidate),
