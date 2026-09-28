@@ -22,8 +22,10 @@ export interface DataLakeResourceRowProps {
   job?: LakeAcquireJob;
   onCancel?: (resource: Row) => void;
   onDismiss?: (resource: Row) => void;
-  /** Where a finished download landed, so the toast/link can point at it. */
-  datasetHref?: (datasetId: string) => string;
+  /** Opens the dataset a finished (or earlier) download landed as. The page
+   *  shows it in the Data Catalog's details modal, the one every other
+   *  catalog opens, so reaching it never leaves the lake page. */
+  onViewDataset?: (datasetId: string) => void;
 }
 
 /**
@@ -42,7 +44,7 @@ export function DataLakeResourceRow({
   job,
   onCancel,
   onDismiss,
-  datasetHref,
+  onViewDataset,
 }: DataLakeResourceRowProps) {
   const [format, setFormat] = React.useState<LakeAcquirableFormat | "">(
     resource.formats[0] ?? ""
@@ -108,10 +110,14 @@ export function DataLakeResourceRow({
                 ))}
               </select>
             ) : null}
-            {(finished || held) && landedAt && datasetHref ? (
-              <a className={styles.viewDataset} href={datasetHref(landedAt)}>
+            {(finished || held) && landedAt && onViewDataset ? (
+              <button
+                type="button"
+                className={styles.viewDataset}
+                onClick={() => onViewDataset(landedAt)}
+              >
                 View dataset
-              </a>
+              </button>
             ) : (
               <button
                 type="button"

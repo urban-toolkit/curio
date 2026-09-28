@@ -78,7 +78,7 @@ def _get(base: str, path: str, accept: str = HTML_ACCEPT):
         # The regression: every id in the bundled catalog is dotted.
         "/catalog/data/data.urbanlab.acs-neighborhood-profile",
         "/catalog/data/data.cityofchicago.red-light-violations",
-        "/data-hub/data.urbanlab.chicago-boundary",
+        "/catalog/data/data.urbanlab.chicago-boundary",
         # Undotted routes, which worked before and must keep working.
         "/projects",
         "/catalog/nodes",

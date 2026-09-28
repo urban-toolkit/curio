@@ -30,6 +30,9 @@ import { AgentSolveAttemptsCard } from "../content/AgentSolveAttemptsCard";
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
+import { useNavigate } from "react-router-dom";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
@@ -165,7 +168,10 @@ export const AgentChatPanel: React.FC<{
   ) => Promise<import("../../../api/agentsApi").AgentDatasetSelection>;
   /** dev/132: the shared catalog import, for a candidate row the runtime
    * could not fetch — resolves with the imported dataset's id. */
-  onImportDataset?: (file: File) => Promise<string | null>;
+  onImportDataset?: (
+    file: File,
+    lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+  ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
@@ -221,6 +227,11 @@ export const AgentChatPanel: React.FC<{
   onSaveTitle,
   onClearConversation,
 }) => {
+  // A link the agent writes to another Curio page leaves this dataflow, so it
+  // asks first when there is unsaved work, like every other way out of it.
+  const navigate = useNavigate();
+  const { projectDirty } = useFlowContext();
+  const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [intentExpanded, setIntentExpanded] = useState(false);
@@ -770,7 +781,14 @@ export const AgentChatPanel: React.FC<{
                       (REQ-SEC-002); error markers are server-composed plain
                       text. Cards are informational plain data (docs/08);
                       proposals render the review card (dev/41). */}
-                  {t.error ? t.text : <SafeAgentContent text={t.text} />}
+                  {t.error ? (
+                    t.text
+                  ) : (
+                    <SafeAgentContent
+                      text={t.text}
+                      onInternalLink={(to) => leave(() => navigate(to))}
+                    />
+                  )}
                   {(t.content ?? [])
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (
@@ -1019,6 +1037,7 @@ export const AgentChatPanel: React.FC<{
           {sendBusy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
         </button>
       </div>
+      {leaveDialog}
     </div>
   );
 };

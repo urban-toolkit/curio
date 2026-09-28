@@ -929,7 +929,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
-| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
@@ -992,7 +992,7 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1 to 500, default 50; `offset`; `part` for bundles) |
 | `/api/datasets/<id>/usage` | GET | Dataflows across the user's projects that reference this dataset |
 | `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
-| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`) |
+| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`, and `lakeSource` for a file downloaded by hand, as JSON). **200** with the held dataset when the resource or the bytes are already there |
 | `/api/datasets/publish` | POST | Publish a dataset into the shared catalog |
 | `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog). **403** unless you published it |
 | `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
@@ -1006,6 +1006,13 @@ The **unit is a portal, not a dataset**: manifests under `datalakes/` describe
 where datasets can be fetched from, and the datasets themselves are discovered
 live. A download hands the bytes to the Data Catalog's own importer, so what
 comes out is an ordinary dataset carrying a `lakeSource` provenance block.
+
+It is the one path a remote file takes into the Data Catalog. The Data Lake
+page's Download, the Dataset Finder card's Download and confirmation, and an
+agent's approved `datalake.acquire` all call `DataLakeService.start_acquire`.
+A file a person downloads by hand is imported with its origin (the `lakeSource`
+field on `/api/datasets/import`), and both paths match by resource and by
+content digest, so one file is one dataset.
 
 | Route | Method | Purpose |
 |---|---|---|
