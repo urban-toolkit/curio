@@ -413,8 +413,11 @@ class TestAddingACollection:
         assert dataset["collection"]["sequences"] == 2
         trip = index[index["sequence"] == "trip01"].sort_values("frame")
         assert list(trip["frame"]) == [1, 2, 3, 4, 5, 6]
-        assert list(trip["t_s"]) == [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+        # The frame's number over the frame rate, the same in any add.
+        assert list(trip["t_s"]) == [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
         assert index["gps_lat"].notna().all() and index.geometry.notna().all()
+        # In sequence and frame order, as the rows are stored.
+        assert list(zip(index["sequence"], index["frame"])) == sorted(zip(index["sequence"], index["frame"]))
 
     def test_photos_and_a_video_share_one_collection(self, client, auth, app, shipped_root):
         import geopandas as gpd
@@ -700,8 +703,9 @@ class TestTheListingCache:
 
 class TestFederatedStorageRows:
     def test_storage_matches_are_kept_when_the_portals_fill_the_page(
-        self, client, auth, app, shipped_root, monkeypatch
+        self, client, auth, app, shipped_root, fixture_corpus, monkeypatch
     ):
+        """The shipped roster, with its buckets answered by the recorded corpus."""
         from utk_curio.backend.app.datalakes.application.browse import LakeBrowse
         from utk_curio.backend.app.datalakes.domain.resource import LakeResource, SearchPage
 

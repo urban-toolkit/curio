@@ -515,6 +515,11 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
             f"manifest.{where}.datasets must be 'one', 'per-file' or 'per:<field>'"
         )
 
+    if kind == "frames":
+        frame_capture = next((c for c in template.captures if c.name == "frame"), None)
+        if frame_capture is not None and frame_capture.type != "int":
+            raise ManifestError(f"manifest.{where}.path captures frame as a number: {{frame:int}}")
+
     fps = raw.get("fps")
     if fps is not None:
         if kind != "frames":

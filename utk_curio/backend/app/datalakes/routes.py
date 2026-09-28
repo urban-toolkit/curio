@@ -103,6 +103,16 @@ def _service() -> DataLakeService:
     )
 
 
+def _resource_id(service: DataLakeService, source_dir: str, raw: str) -> str:
+    """The resource id as the client sent it.
+
+    The server has already decoded the path once. A portal id is decoded once
+    more, as it always has been; a storage id is taken as it is, since a file
+    name may itself hold a ``%``.
+    """
+    return raw if service.get_manifest(source_dir).is_storage else unquote(raw)
+
+
 @datalakes_bp.route("/catalog", methods=["GET"])
 @require_auth
 @_map_lake_errors
@@ -210,7 +220,8 @@ def describe_datalake_resource(source_dir: str, resource_id: str):
     unquoted here and validated against the provider's own ``resource_id_re``
     before any URL is built from it.
     """
-    payload = _service().describe_resource(source_dir, unquote(resource_id))
+    service = _service()
+    payload = service.describe_resource(source_dir, _resource_id(service, source_dir, resource_id))
     return jsonify(payload), 200
 
 
@@ -227,9 +238,10 @@ def acquire_datalake_resource(source_dir: str, resource_id: str):
     portal at all.
     """
     body = request.get_json(silent=True) or {}
-    payload = _service().start_acquire(
+    service = _service()
+    payload = service.start_acquire(
         source_dir,
-        unquote(resource_id),
+        _resource_id(service, source_dir, resource_id),
         fmt=(body.get("format") or None),
         title=(body.get("title") or None),
         refresh=bool(body.get("refresh")),
@@ -254,9 +266,8 @@ def list_datalake_resource_files(source_dir: str, resource_id: str):
         limit = int(request.args.get("limit", 100))
     except ValueError:
         return jsonify({"error": "offset and limit are numbers"}), 400
-    payload = _service().storage_files(
-        source_dir, unquote(resource_id), offset=offset, limit=limit
-    )
+    # Storage only, so the id is taken as the client sent it.
+    payload = _service().storage_files(source_dir, resource_id, offset=offset, limit=limit)
     return jsonify(payload), 200
 
 

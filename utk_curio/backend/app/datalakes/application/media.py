@@ -367,7 +367,8 @@ def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None)
         source = hashlib.sha1(manifest.dir_name.encode("utf-8")).hexdigest()[:16]
         folder = media_dirs.media_cache_dir(user_key, "lake-samples") / source
         folder.mkdir(parents=True, exist_ok=True)
-    key = hashlib.sha1(f"{sample.relpath}:{sample.bytes}:{sample.mtime}".encode()).hexdigest()[:20]
+    stamp = f"{sample.relpath}:{sample.bytes}:{sample.mtime}:{sample.etag or ''}"
+    key = hashlib.sha1(stamp.encode()).hexdigest()[:20]
     target = folder / f"{key}.jpg"
     if target.is_file():
         return target
@@ -380,6 +381,7 @@ def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None)
 # ── signed links, for <video> and <audio> ──────────────────────────────────
 
 LINK_TTL_SECONDS = 600
+LINK_KEY_BYTES = 32
 _LINK_SALT = "curio-collection-media"
 
 
@@ -393,18 +395,36 @@ def _link_secret() -> bytes:
     from utk_curio.backend.app.common.user_storage import curio_root
 
     path = curio_root() / "media-link.key"
-    if path.is_file():
-        return path.read_bytes()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    secret = os.urandom(32)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     try:
-        fd = os.open(path, flags, 0o600)
-    except FileExistsError:
-        return path.read_bytes()
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(secret)
-    return secret
+        secret = path.read_bytes()
+    except FileNotFoundError:
+        secret = b""
+    if len(secret) >= LINK_KEY_BYTES:
+        return secret
+    # Written whole beside the key, then linked into place: a worker reading
+    # at the same moment finds no key or the whole key, never part of one,
+    # and of two workers making one at once, the first link wins for both.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".media-link.", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(os.urandom(LINK_KEY_BYTES))
+        if secret:
+            # Shorter than a key: left by an interrupted write, and unusable.
+            os.replace(tmp, path)
+        else:
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                pass
+            except OSError:
+                # A filesystem without hard links: renamed into place instead.
+                if not path.exists():
+                    os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return path.read_bytes()
 
 
 def _serializer():

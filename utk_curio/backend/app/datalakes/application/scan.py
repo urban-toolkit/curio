@@ -19,9 +19,10 @@ the folder holds at that moment.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable
 
@@ -29,7 +30,12 @@ from utk_curio.backend.app.datalakes.domain.errors import ResourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest, ResourceSpec
 from utk_curio.backend.app.datalakes.domain.resource import LakeResource
 from utk_curio.backend.app.datalakes.domain.templates import compile_template
-from utk_curio.backend.app.datalakes.providers.storage_base import FileEntry, is_sidecar, validate_relpath
+from utk_curio.backend.app.datalakes.providers.storage_base import (
+    SHAPEFILE_PARTS,
+    FileEntry,
+    is_sidecar,
+    validate_relpath,
+)
 
 #: How long a listing's summary is reused before the source is walked again.
 SUMMARY_TTL_SECONDS = 15 * 60
@@ -60,6 +66,8 @@ class MatchedFile:
     mtime: float
     values: dict[str, Any]
     etag: str | None = None
+    #: A shapefile's other parts (``.dbf``, ``.shx``...), as the source names them.
+    parts: tuple[FileEntry, ...] = ()
 
 
 @dataclass
@@ -73,7 +81,7 @@ class Group:
 
     @property
     def total_bytes(self) -> int:
-        return sum(f.size for f in self.files)
+        return sum(f.size + sum(p.size for p in f.parts) for f in self.files)
 
     @property
     def latest_mtime(self) -> float | None:
@@ -98,17 +106,30 @@ def _value_text(value: Any) -> str:
     return str(value)
 
 
+def _escape(value: str) -> str:
+    """A split value inside a row id, where ``;`` separates the fields."""
+    return value.replace("%", "%25").replace(";", "%3B")
+
+
+_ESCAPED = re.compile(r"%(25|3[Bb])")
+
+
+def _unescape(value: str) -> str:
+    return _ESCAPED.sub(lambda m: "%" if m.group(1) == "25" else ";", value)
+
+
 def group_id(spec: ResourceSpec, key: tuple) -> str:
     """The id a lake row carries, which the acquire route is later given back.
 
-    ``<resource>``, ``<resource>@<field>=<value>[;...]`` for a split row, and
+    ``<resource>``, ``<resource>@<field>=<value>[;...]`` for a split row (a
+    ``;`` or ``%`` in a value is written ``%3B`` or ``%25``), and
     ``<resource>/<relpath>`` for one file.
     """
     if spec.datasets == "per-file":
         return f"{spec.id}/{key[0]}"
     if spec.split_by:
         return spec.id + "@" + ";".join(
-            f"{name}={_value_text(value)}" for name, value in zip(spec.split_by, key)
+            f"{name}={_escape(_value_text(value))}" for name, value in zip(spec.split_by, key)
         )
     return spec.id
 
@@ -224,7 +245,7 @@ def parse_resource_id(manifest: LakeSourceManifest, resource_id: str) -> Selecti
         name, eq, value = part.partition("=")
         if not eq or name not in spec.split_by:
             raise ResourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
-        split[name] = value
+        split[name] = _unescape(value)
     if set(split) != set(spec.split_by):
         raise ResourceNotFound(f"{resource_id!r} names only part of how {spec.name} is split")
     return Selection(spec=spec, split=split)
@@ -286,12 +307,16 @@ def scan(
     groups: dict[tuple[str, tuple], Group] = {}
     matched = unmatched = seen = 0
     truncated = False
+    # A shapefile is read with its parts, so they are kept to be found again.
+    sidecars: dict[str, FileEntry] | None = {} if any(s.format == "shp" for s in specs) else None
     for entry in provider.scan(common_prefix(specs)):
         if cancelled is not None and cancelled():
             break
         seen += 1
         if progress is not None and seen % 500 == 0:
             progress(seen)
+        if sidecars is not None and is_sidecar(entry.relpath):
+            sidecars[entry.relpath.lower()] = entry
         hit = False
         for spec in specs:
             found = match_file(spec, entry)
@@ -301,6 +326,10 @@ def scan(
                 hit = True
                 continue
             hit = True
+            if matched >= manifest.max_files:
+                # A file past the limit, so the scan stops short of the source.
+                truncated = True
+                break
             if spec.datasets == "per-file":
                 key: tuple = (found.relpath,)
             elif spec.split_by:
@@ -314,9 +343,6 @@ def scan(
                 )
             group.files.append(found)
             matched += 1
-            if matched >= manifest.max_files:
-                truncated = True
-                break
         if (
             not hit
             and not is_sidecar(entry.relpath)
@@ -328,11 +354,20 @@ def scan(
     order = {spec.id: index for index, spec in enumerate(specs)}
     out = sorted(groups.values(), key=lambda g: (order[g.spec.id], tuple(map(_value_text, g.key))))
     for group in out:
+        if sidecars is not None and group.spec.format == "shp":
+            group.files = [_with_parts(f, sidecars) for f in group.files]
         group.files.sort(key=lambda f: f.relpath)
     return ScanResult(
         groups=out, matched=matched, unmatched=unmatched, truncated=truncated,
         scanned_at=time.time(),
     )
+
+
+def _with_parts(found: MatchedFile, sidecars: dict[str, FileEntry]) -> MatchedFile:
+    """*found*, a ``.shp``, with the parts beside it, whatever their case."""
+    stem = found.relpath[:-4].lower() if found.relpath.lower().endswith(".shp") else found.relpath.lower()
+    parts = tuple(sidecars[stem + suffix] for suffix in SHAPEFILE_PARTS if stem + suffix in sidecars)
+    return replace(found, parts=parts)
 
 
 def _selected(selection: Selection, found: MatchedFile) -> bool:
@@ -366,7 +401,8 @@ def field_summary(spec: ResourceSpec, files: list[MatchedFile]) -> list[dict[str
 
 
 def _iso(ts: float | None) -> str | None:
-    if ts is None:
+    """*ts* as ISO time; None when unknown, which a Hugging Face listing gives as 0."""
+    if not ts or ts <= 0:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -381,12 +417,41 @@ def _size_text(n: int) -> str:
     return f"{n} B"
 
 
+def _counted(n: int, one: str, many: str) -> str:
+    return f"{n:,} {one if n == 1 else many}"
+
+
+_FILE_NOUNS = {"image": ("image", "images"), "video": ("video", "videos"), "audio": ("recording", "recordings")}
+
+
+def count_parts(group: Group) -> list[str]:
+    """How many of what a row holds: frames by sequence, media by kind."""
+    from utk_curio.backend.app.datalakes.application.probe import file_kind
+
+    spec, files = group.spec, group.files
+    if spec.kind == "frames":
+        sequences = {
+            f.values["sequence"] if f.values.get("sequence") is not None
+            else (f.relpath.rsplit("/", 2)[-2] if "/" in f.relpath else "")
+            for f in files
+        }
+        return [_counted(len(sequences), "sequence", "sequences"), _counted(len(files), "frame", "frames")]
+    if spec.kind in ("media", "images", "videos", "audio"):
+        counts: dict[str, int] = {}
+        for f in files:
+            kind = file_kind(spec.kind, f.relpath)
+            counts[kind] = counts.get(kind, 0) + 1
+        return [", ".join(
+            _counted(counts[kind], *_FILE_NOUNS[kind]) for kind in _FILE_NOUNS if counts.get(kind)
+        )]
+    return [_counted(len(files), "file", "files")]
+
+
 def describe_line(group: Group, fields: list[dict[str, Any]]) -> str:
     """The profile line a row shows: kind, count, what its fields cover, size."""
     spec = group.spec
     kind = KIND_LABEL.get(spec.kind) or (spec.format or "table").upper()
-    count = len(group.files)
-    parts = [kind, f"{count:,} file{'s' if count != 1 else ''}"]
+    parts = [kind] + count_parts(group)
     for row in fields:
         if row["name"] in spec.split_by:
             continue
@@ -441,6 +506,7 @@ class Sample:
     kind: str
     bytes: int
     mtime: float
+    etag: str | None = None
 
 
 def sample_at(group: Group, index: int) -> Sample | None:
@@ -449,7 +515,7 @@ def sample_at(group: Group, index: int) -> Sample | None:
     if not 0 <= index < len(group.files):
         return None
     f = group.files[index]
-    return Sample(f.relpath, file_kind(group.spec.kind, f.relpath), f.size, f.mtime)
+    return Sample(f.relpath, file_kind(group.spec.kind, f.relpath), f.size, f.mtime, f.etag)
 
 
 @dataclass

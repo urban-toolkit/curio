@@ -48,9 +48,11 @@ class LakeCatalog:
         for path in storage.list_lake_sources():
             try:
                 manifest = load_source_manifest_from_dir(path)
-            except (ManifestError, ValueError):
+            except (ManifestError, ValueError) as exc:
+                storage.report_skipped(path, str(exc))
                 continue
             if manifest.dir_name != path.name:
+                storage.report_skipped(path, f"its folder must be named {manifest.dir_name}")
                 continue
             out.append(replace(manifest, origin=storage.origin_of(path)))
         return out

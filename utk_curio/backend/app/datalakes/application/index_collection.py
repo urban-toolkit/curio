@@ -38,6 +38,9 @@ PROBE_WORKERS = 4
 #: for GDAL to read a Cloud-Optimized GeoTIFF's georeferencing.
 PROBE_BYTES = 64 * 1024
 
+#: A metadata table is read whole to be joined, so one is bounded.
+MAX_METADATA_BYTES = 256 * 1024 * 1024
+
 #: Names the index uses, in the order its columns appear.
 LEADING_COLUMNS = ("file_id", "relpath", "name", "ext", "kind")
 TRAILING_COLUMNS = ("bytes", "mtime", "probe_error")
@@ -53,13 +56,23 @@ def file_id(relpath: str) -> str:
 
 
 def fingerprint(files: list[MatchedFile]) -> str:
+    """What the files were when read: a re-add with the same fingerprint found
+    nothing changed. A bucket's object tag counts too, since a Hugging Face
+    listing gives no times, and so do a shapefile's other parts."""
     digest = hashlib.sha256()
     for f in sorted(files, key=lambda f: f.relpath):
-        digest.update(f"{f.relpath}\0{f.size}\0{f.mtime:.3f}\n".encode("utf-8"))
+        for entry in (f, *f.parts):
+            line = f"{entry.relpath}\0{entry.size}\0{entry.mtime:.3f}"
+            if entry.etag:
+                line += f"\0{entry.etag}"
+            digest.update((line + "\n").encode("utf-8"))
     return digest.hexdigest()
 
 
-def _utc(ts: float) -> datetime:
+def _utc(ts: float) -> datetime | None:
+    """*ts* as a naive UTC time; None when the source gave no time (0)."""
+    if not ts or ts <= 0:
+        return None
     return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
 
 
@@ -79,12 +92,17 @@ def build_rows(
         found, kind = pair
         if cancelled is not None and cancelled():
             return {}
-        local = provider.local_path(found.relpath)
-        if local is not None:
-            return probing.probe(kind, Path(local))
-        if kind not in ("image", "frame", "raster"):
-            return {"probe_error": "a video or recording in a bucket is indexed without being read"}
-        return _probe_remote_head(provider, found, kind)
+        try:
+            local = provider.local_path(found.relpath)
+            if local is not None:
+                return probing.probe(kind, Path(local))
+            if kind not in ("image", "frame", "raster"):
+                # A video's or a recording's details can be anywhere in the
+                # file, so one in a bucket is indexed from its listing alone.
+                return {}
+            return _probe_remote_head(provider, found, kind)
+        except Exception as exc:  # noqa: BLE001 - one file must not stop the rest
+            return {"probe_error": f"{exc}"[:200] or type(exc).__name__}
 
     rows: list[dict[str, Any]] = []
     done = 0
@@ -148,22 +166,31 @@ def _fill_time(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:
 
 
 def _number_frames(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:
-    """Every frame gets a sequence, a number and, with a frame rate, a time."""
+    """Every frame gets a sequence, a number and, with a frame rate, a time.
+
+    ``t_s`` is the frame's number over the frame rate, so a frame has the same
+    time in every dataset it is added to. The rows are put in sequence and
+    frame order, which a name's sort order is not once numbers lose padding.
+    """
     for row in rows:
-        if not row.get("sequence"):
+        if row.get("sequence") is None:
             parts = row["relpath"].split("/")
             row["sequence"] = parts[-2] if len(parts) > 1 else ""
-    by_sequence: dict[str, list[dict[str, Any]]] = {}
+    # Keyed by the value itself: every row's sequence comes from the same
+    # capture, or every row's from its folder, so they sort as one type.
+    by_sequence: dict[Any, list[dict[str, Any]]] = {}
     for row in rows:
-        by_sequence.setdefault(str(row["sequence"]), []).append(row)
-    for members in by_sequence.values():
+        by_sequence.setdefault(row["sequence"], []).append(row)
+    ordered: list[dict[str, Any]] = []
+    for name in sorted(by_sequence):
+        members = by_sequence[name]
         members.sort(key=lambda r: (r.get("frame") is None, r.get("frame") or 0, r["relpath"]))
-        first = None
         for index, row in enumerate(members):
             if row.get("frame") is None:
                 row["frame"] = index
-            first = row["frame"] if first is None else first
-            row["t_s"] = round((row["frame"] - first) / spec.fps, 6) if spec.fps else None
+            row["t_s"] = round(row["frame"] / spec.fps, 6) if spec.fps else None
+        ordered.extend(members)
+    rows[:] = ordered
 
 
 def join_metadata(
@@ -181,13 +208,7 @@ def join_metadata(
         values = template.match(entry.relpath)
         if values is None:
             continue
-        local = provider.local_path(entry.relpath)
-        if local is None:
-            continue
-        try:
-            table = pd.read_csv(local, encoding="utf-8-sig")
-        except (UnicodeDecodeError, ValueError):
-            table = pd.read_csv(local, encoding="cp1252")
+        table = _read_metadata_table(spec, provider, entry)
         for name, value in values.items():
             table[name] = value
         tables.append(table)
@@ -221,6 +242,43 @@ def join_metadata(
             joined["gps_lon"] = joined["gps_lon"].fillna(joined[lon])
             break
     return joined
+
+
+def _read_metadata_table(spec: ResourceSpec, provider, entry):
+    """One metadata table, from the folder or fetched from the bucket: Parquet,
+    JSON, or CSV (UTF-8, else Windows-1252)."""
+    import io
+
+    import pandas as pd
+
+    if entry.size > MAX_METADATA_BYTES:
+        raise IndexError_(
+            f"{spec.name}: the metadata table {entry.relpath} is {entry.size:,} bytes; "
+            f"one is joined only up to {MAX_METADATA_BYTES:,}"
+        )
+    local = provider.local_path(entry.relpath)
+    try:
+        if local is not None:
+            data = Path(local).read_bytes()
+        else:
+            with provider.open(entry.relpath) as handle:
+                data = handle.read()
+    except DataLakeError as exc:
+        raise IndexError_(f"{spec.name}: the metadata table {entry.relpath} could not be read ({exc})") from exc
+    ext = entry.relpath.rsplit(".", 1)[-1].lower() if "." in entry.relpath else ""
+    try:
+        if ext == "parquet":
+            return pd.read_parquet(io.BytesIO(data))
+        if ext == "json":
+            return pd.read_json(io.BytesIO(data))
+        try:
+            return pd.read_csv(io.BytesIO(data), encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            return pd.read_csv(io.BytesIO(data), encoding="cp1252")
+    except Exception as exc:  # noqa: BLE001 - the reason is the answer
+        raise IndexError_(
+            f"{spec.name}: the metadata table {entry.relpath} could not be read ({exc})"[:400]
+        ) from exc
 
 
 def to_frame(spec: ResourceSpec, rows: list[dict[str, Any]]):
@@ -264,6 +322,36 @@ def write_index(spec: ResourceSpec, frame, columns, dest: Path) -> bool:
     return False
 
 
+def _crs_label(text: str) -> str:
+    """A CRS as a person reads it: its EPSG code, or the name its WKT gives."""
+    if text.startswith("EPSG:"):
+        return text
+    try:
+        from pyproj import CRS
+
+        return CRS.from_user_input(text).name[:80]
+    except Exception:  # noqa: BLE001 - a label, never a reason to fail
+        return "a custom CRS"
+
+
+def _bounds(frame) -> list[float] | None:
+    """West, south, east and north of every footprint or position, in EPSG:4326."""
+    boxes: list[tuple[float, float, float, float]] = []
+    if "geometry" in frame.columns:
+        boxes = [g.bounds for g in frame["geometry"] if hasattr(g, "bounds") and not g.is_empty]
+    elif {"gps_lat", "gps_lon"} <= set(frame.columns):
+        points = frame[["gps_lon", "gps_lat"]].dropna()
+        boxes = [(x, y, x, y) for x, y in points.itertuples(index=False)]
+    if not boxes:
+        return None
+    return [
+        round(min(b[0] for b in boxes), 6),
+        round(min(b[1] for b in boxes), 6),
+        round(max(b[2] for b in boxes), 6),
+        round(max(b[3] for b in boxes), 6),
+    ]
+
+
 def collection_block(
     manifest: LakeSourceManifest,
     spec: ResourceSpec,
@@ -274,6 +362,8 @@ def collection_block(
     *,
     has_gps: bool,
 ) -> dict[str, Any]:
+    from utk_curio.backend.app.datalakes.application.scan import field_summary
+
     counts: dict[str, int] = {}
     for kind in frame["kind"]:
         counts[kind] = counts.get(kind, 0) + 1
@@ -285,8 +375,10 @@ def collection_block(
         "provider": manifest.provider.type,
         "resourceId": resource_id,
         "resource": spec.id,
+        "resourceName": spec.name,
         "path": spec.path,
         "fields": list(spec.template.names),
+        "fieldValues": field_summary(spec, files),
         "counts": counts,
         "fileCount": len(files),
         "totalBytes": sum(f.size for f in files),
@@ -305,6 +397,13 @@ def collection_block(
         block["fps"] = spec.fps
     if spec.kind == "frames" and "sequence" in frame.columns:
         block["sequences"] = int(frame["sequence"].nunique())
-    if spec.kind == "audio" and "duration_s" in frame.columns:
+    if spec.kind == "audio" and "duration_s" in frame.columns and frame["duration_s"].notna().any():
         block["totalSeconds"] = round(float(frame["duration_s"].fillna(0).sum()), 3)
+    if "crs" in frame.columns:
+        labels = sorted({_crs_label(str(c)) for c in frame["crs"].dropna()})
+        if labels:
+            block["crs"] = labels[:8]
+    bounds = _bounds(frame)
+    if bounds is not None:
+        block["bounds"] = bounds
     return block

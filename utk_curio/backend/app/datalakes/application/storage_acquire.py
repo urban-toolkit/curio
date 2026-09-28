@@ -16,6 +16,7 @@ Nothing here writes to the source.
 from __future__ import annotations
 
 import hashlib
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -47,18 +48,36 @@ CHUNK_BYTES = 1024 * 1024
 #: Table formats installed as they are, without conversion.
 DIRECT_FORMATS = ("csv", "json", "geojson", "parquet")
 
+#: The manifest options that change how a CSV is read. A CSV declared with
+#: any of them is read by them and lands as Parquet, the way many files do.
+CSV_READ_OPTIONS = ("delimiter", "header")
+
 
 class Cancelled(Exception):
     """The user asked for this to stop."""
 
 
 def _iso_now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    """Now, to the millisecond: a row added twice in one second is held by
+    whichever add came last."""
+    now = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + f".{int(now * 1000) % 1000:03d}Z"
 
 
 def _narrowing(selection) -> dict[str, Any]:
     """Marks a dataset made from part of a row, so it never stands in for the row."""
     return {"narrowed": True} if selection.narrowed else {}
+
+
+def _held_fingerprint(held: dict[str, Any]) -> str | None:
+    """What the held dataset's files were when it was added."""
+    return (held.get("collection") or {}).get("fingerprint") or (
+        held.get("lakeSource") or {}
+    ).get("fingerprint")
+
+
+def _read_with_options(spec) -> bool:
+    return spec.format == "csv" and any(key in spec.options for key in CSV_READ_OPTIONS)
 
 
 class StorageAcquire:
@@ -98,6 +117,9 @@ class StorageAcquire:
         *filters* and *files* narrow the row to some of its files. A narrowed
         add is always a new dataset: it is not the row, so holding one says
         nothing about holding the other.
+
+        *refresh* adds a held row again. When its files are as they were, the
+        held dataset is the answer; when they changed, a new dataset is added.
         """
         selection = scanning.narrow(
             scanning.parse_resource_id(manifest, resource_id), filters=filters, files=files
@@ -113,10 +135,18 @@ class StorageAcquire:
         result = scanning.scan(manifest, provider, selection=selection, cancelled=cancelled)
         if cancelled is not None and cancelled():
             raise Cancelled()
+        if result.truncated:
+            raise DownloadTooLarge(
+                f"{spec.name} has more than {manifest.max_files:,} files, the most "
+                f"{manifest.name} adds at once; add part of it"
+            )
         files = [f for group in result.groups for f in group.files]
         if not files:
             raise ResourceNotFound(f"no files of {manifest.name} match {resource_id}")
         name = scanning.group_name(result.groups[0]) if result.groups else spec.name
+        fingerprint = index_collection.fingerprint(files)
+        if held is not None and _held_fingerprint(held) == fingerprint:
+            return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
         if spec.is_collection:
             dataset = self._add_collection(
@@ -124,10 +154,11 @@ class StorageAcquire:
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
             )
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
-        if len(files) > 1:
+        if len(files) > 1 or _read_with_options(spec):
             dataset = self._add_combined(
                 manifest, provider, spec, selection, files, resource_id=resource_id,
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
+                fingerprint=fingerprint,
             )
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
 
@@ -139,6 +170,7 @@ class StorageAcquire:
             "sourcePath": only.relpath,
             "fileCount": 1,
             "fetchedAt": _iso_now(),
+            "fingerprint": fingerprint,
             **_narrowing(selection),
         }
         dataset = self._add_file(
@@ -185,6 +217,7 @@ class StorageAcquire:
                 "fileCount": len(files),
                 "fields": ",".join(spec.template.names),
                 "fetchedAt": _iso_now(),
+                "fingerprint": block["fingerprint"],
                 **_narrowing(selection),
             }
             label = scanning.KIND_LABEL.get(spec.kind, "Files").lower()
@@ -204,7 +237,8 @@ class StorageAcquire:
     # ── many table files ───────────────────────────────────────────────────
 
     def _add_combined(
-        self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage, cancelled
+        self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage,
+        cancelled, fingerprint,
     ) -> dict[str, Any]:
         local = manifest.provider.type == "folder"
         combine_tables.check_bounds(files, local=local)
@@ -231,8 +265,14 @@ class StorageAcquire:
                 "fileCount": len(files),
                 "fields": ",".join(spec.template.names),
                 "fetchedAt": _iso_now(),
+                "fingerprint": fingerprint,
                 **_narrowing(selection),
             }
+            if len(files) == 1:
+                lake_source["sourcePath"] = files[0].relpath
+                description = f"Read from {files[0].relpath} of {manifest.name}."
+            else:
+                description = f"Combined from {len(files):,} {spec.format} files of {manifest.name}."
             return self._install_path(
                 combined.path,
                 dest.name,
@@ -240,9 +280,7 @@ class StorageAcquire:
                 title=title,
                 lake_source=lake_source,
                 row_count=combined.rows,
-                description=(
-                    f"Combined from {len(files):,} {spec.format} files of {manifest.name}."
-                ),
+                description=description,
             )
 
     def _stage_for_combine(
@@ -257,16 +295,15 @@ class StorageAcquire:
 
         local = provider.local_path(found.relpath)
         if local is None:
-            copied = into / f"part-{index:06d}{Path(found.relpath).suffix.lower()}"
-            self._copy(provider, found.relpath, copied, self._bound(manifest), found.size, None, cancelled)
             if spec.format == "shp":
-                for sibling in combine_tables.shapefile_parts(found.relpath):
-                    target = copied.with_suffix(Path(sibling).suffix.lower())
-                    try:
-                        self._copy(provider, sibling, target, self._bound(manifest), None, None, cancelled)
-                    except ResourceNotFound:
-                        pass
-            local = copied
+                folder = into / f"part-{index:06d}"
+                folder.mkdir()
+                local, _sha = self._stage_shapefile(
+                    provider, found, folder, self._bound(manifest), None, cancelled
+                )
+            else:
+                local = into / f"part-{index:06d}{Path(found.relpath).suffix.lower()}"
+                self._copy(provider, found.relpath, local, self._bound(manifest), found.size, None, cancelled)
         if spec.format in ("csv", "json", "geojson") and _first_invalid_utf8(local) is not None:
             target = into / f"part-{index:06d}-utf8{Path(found.relpath).suffix.lower()}"
             try:
@@ -305,24 +342,20 @@ class StorageAcquire:
             )
         filename = _filename(found.relpath)
         with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
-            staged = Path(tmp) / filename
-            sha = self._copy(provider, found.relpath, staged, bound, found.size, progress, cancelled)
+            work = Path(tmp)
+            if fmt == "shp":
+                # Its sha covers every part, so a changed .dbf is a change.
+                staged, sha = self._stage_shapefile(provider, found, work, bound, progress, cancelled)
+            else:
+                staged = work / filename
+                sha = self._copy(provider, found.relpath, staged, bound, found.size, progress, cancelled)
             if held is not None and (held.get("lakeSource") or {}).get("contentSha256") == sha:
                 return {"dataset": held, "alreadyPresent": True, "unchanged": True}
             lake_source = {**lake_source, "contentSha256": sha}
             if fmt in DIRECT_FORMATS:
                 return self._install_path(staged, filename, fmt, title=title, lake_source=lake_source)
             if fmt == "shp":
-                for suffix in SHAPEFILE_PARTS:
-                    sibling = _sibling(found.relpath, suffix)
-                    try:
-                        self._copy(provider, sibling, Path(tmp) / _filename(sibling), bound, None, None, cancelled)
-                    except ResourceNotFound:
-                        if suffix in (".dbf", ".shx"):
-                            raise ResourceNotFound(
-                                f"{found.relpath} needs its {suffix} beside it"
-                            ) from None
-                parquet = staged.with_suffix(".parquet")
+                parquet = work / (Path(filename).stem + ".parquet")
                 _shapefile_to_parquet(staged, parquet)
                 return self._install_path(
                     parquet, parquet.name, "parquet", title=title, lake_source=lake_source
@@ -332,6 +365,30 @@ class StorageAcquire:
                     fmt, staged.read_bytes(), filename, title=title, lake_source=lake_source
                 )
         raise CapabilityUnsupported(f"{fmt} cannot be added from {manifest.name}")
+
+    def _stage_shapefile(self, provider, found, work: Path, bound, progress, cancelled) -> tuple[Path, str]:
+        """The shapefile and its parts, staged under one name, and one sha of them all.
+
+        The parts are the ones the scan found beside it, in whatever case the
+        source names them (``roads.DBF`` beside ``roads.SHP``), and are staged
+        in lower case beside ``data.shp``, where the reader looks for them.
+        """
+        folder = work / "shapefile"
+        folder.mkdir()
+        shp = folder / "data.shp"
+        digest = hashlib.sha256()
+        sha = self._copy(provider, found.relpath, shp, bound, found.size, progress, cancelled)
+        digest.update(f".shp {sha}\n".encode())
+        parts = {part.relpath[-4:].lower(): part for part in found.parts}
+        for suffix in SHAPEFILE_PARTS:
+            part = parts.get(suffix)
+            if part is None:
+                if suffix in (".dbf", ".shx"):
+                    raise ResourceNotFound(f"{found.relpath} needs its {suffix} beside it")
+                continue
+            part_sha = self._copy(provider, part.relpath, folder / f"data{suffix}", bound, part.size, None, cancelled)
+            digest.update(f"{suffix} {part_sha}\n".encode())
+        return shp, digest.hexdigest()
 
     def _copy(self, provider, relpath, dest: Path, bound, total, progress, cancelled) -> str:
         """Stream one file of the source into *dest*, capped and hashed."""
@@ -359,17 +416,19 @@ class StorageAcquire:
         return path
 
 
+_SUFFIX_RE = re.compile(r"\.[a-z0-9]{1,16}")
+
+
 def _filename(relpath: str) -> str:
-    """A store-safe filename for *relpath*'s last part."""
+    """A store-safe filename for *relpath*'s last part, keeping its extension."""
     from werkzeug.utils import secure_filename
 
-    name = secure_filename(relpath.rsplit("/", 1)[-1]) or "data"
-    return validate_component(name[:120], field="file name")
-
-
-def _sibling(relpath: str, suffix: str) -> str:
-    stem = relpath[: -len(".shp")] if relpath.lower().endswith(".shp") else relpath
-    return stem + suffix
+    last = relpath.rsplit("/", 1)[-1]
+    suffix = Path(last).suffix.lower()
+    if not _SUFFIX_RE.fullmatch(suffix):
+        suffix = ""
+    stem = secure_filename(last[: len(last) - len(suffix)]) or "data"
+    return validate_component(stem[: 120 - len(suffix)] + suffix, field="file name")
 
 
 def _shapefile_to_parquet(shp: Path, dest: Path) -> None:

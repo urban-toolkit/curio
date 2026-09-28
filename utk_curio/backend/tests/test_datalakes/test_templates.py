@@ -34,6 +34,10 @@ class TestCaptures:
         t = compile_template("{sensor}/{day}.csv")
         assert t.match("a/b/c.csv") is None
 
+    def test_a_name_ending_in_a_newline_is_not_a_match(self):
+        t = compile_template("{name}.csv", reserved=frozenset())
+        assert t.match("a.csv\n") is None
+
 
 class TestWildcards:
     def test_a_star_matches_within_a_name(self):
@@ -70,6 +74,7 @@ class TestWildcards:
         ("{A}.csv", "lowercase"),
         ("{x:float}.csv", "unknown capture type"),
         ("{x:%Q}.csv", "unsupported date directive"),
+        ("{x:%Y%Y}.wav", "uses %Y twice"),
         ("", "non-empty"),
     ],
 )

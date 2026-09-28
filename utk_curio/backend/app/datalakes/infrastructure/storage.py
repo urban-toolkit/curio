@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 from utk_curio.backend.app.common.safe_paths import is_within
@@ -36,7 +37,15 @@ INSTANCE = "instance"
 
 
 class StorageRootError(StorageUnavailable):
-    """A folder source's root that cannot be used."""
+    """A folder source's root that cannot be used.
+
+    The message is shown to users, so it never names the folder; ``path`` is
+    for the operator's log.
+    """
+
+    def __init__(self, message: str, path: str | None = None) -> None:
+        super().__init__(message)
+        self.path = path
 
 
 def datalake_root() -> Path:
@@ -73,6 +82,26 @@ def _scan(root: Path) -> list[Path]:
     return found
 
 
+#: Sources already reported as skipped, by path and manifest time, so a
+#: listing that runs on every request says so once per edit.
+_reported: set[tuple[str, int]] = set()
+_reported_lock = threading.Lock()
+
+
+def report_skipped(path: Path, reason: str) -> None:
+    """Log, once per edit of its manifest, that the source at *path* is not listed."""
+    try:
+        stamp = (Path(path) / "manifest.json").stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    key = (str(path), stamp)
+    with _reported_lock:
+        if key in _reported:
+            return
+        _reported.add(key)
+    logger.warning("data lake source %s is not listed: %s", path, reason)
+
+
 def list_lake_sources() -> list[Path]:
     """Every well-formed source directory, shipped first, sorted within each.
 
@@ -85,9 +114,7 @@ def list_lake_sources() -> list[Path]:
     out = list(shipped)
     for path in _scan(instance_root()):
         if path.name in names:
-            logger.warning(
-                "lake source %s in %s reuses a shipped id and is ignored", path.name, path.parent
-            )
+            report_skipped(path, "a shipped source has the same id")
             continue
         out.append(path)
     return out
@@ -144,39 +171,52 @@ def storage_root(manifest) -> Path:
         path = repo_root() / path
     resolved = path.resolve()
     if not resolved.is_dir():
-        raise StorageRootError(f"{manifest.name}: the folder {raw} is not available")
+        raise StorageRootError(
+            f"{manifest.name}: its folder is not available on this machine", path=str(raw)
+        )
     return resolved
 
 
-def readable_by(path: Path, uid: int, gids: set[int]) -> bool:
-    """Whether *uid* can read *path* and reach it through every parent.
+def unreadable_part(path: Path, uid: int, gids: set[int]) -> Path | None:
+    """What stops *uid* reading *path*: itself, or a folder on the way to it.
 
-    From the mode bits, since ``os.access`` answers for this process's user
-    and the backend runs as root.
+    None when nothing does. From the mode bits, since ``os.access`` answers
+    for this process's user and the backend runs as root.
     """
     import stat as stat_module
 
-    def allows(st, read: int, owner_bit: int, group_bit: int, other_bit: int) -> bool:
+    def allows(st, owner_bit: int, group_bit: int, other_bit: int) -> bool:
         if st.st_uid == uid:
             return bool(st.st_mode & owner_bit)
         if st.st_gid in gids:
             return bool(st.st_mode & group_bit)
         return bool(st.st_mode & other_bit)
 
+    target = Path(path).resolve()
     try:
-        target = Path(path).resolve()
+        # Outermost first, so the answer is the first folder that stops the way.
+        for parent in reversed(list(target.parents)):
+            if not allows(parent.stat(), stat_module.S_IXUSR, stat_module.S_IXGRP, stat_module.S_IXOTH):
+                return parent
         st = target.stat()
-        if not allows(st, 0, stat_module.S_IRUSR, stat_module.S_IRGRP, stat_module.S_IROTH):
-            return False
-        for parent in [target] + list(target.parents):
-            pst = parent.stat()
-            if stat_module.S_ISDIR(pst.st_mode) and not allows(
-                pst, 0, stat_module.S_IXUSR, stat_module.S_IXGRP, stat_module.S_IXOTH
-            ):
-                return False
-        return True
+        if not allows(st, stat_module.S_IRUSR, stat_module.S_IRGRP, stat_module.S_IROTH):
+            return target
+        if stat_module.S_ISDIR(st.st_mode) and not allows(
+            st, stat_module.S_IXUSR, stat_module.S_IXGRP, stat_module.S_IXOTH
+        ):
+            return target
+        return None
     except OSError:
-        return False
+        return target
+
+
+def readable_by(path: Path, uid: int, gids: set[int]) -> bool:
+    """Whether *uid* can read *path* and reach it through every parent."""
+    return unreadable_part(path, uid, gids) is None
+
+
+#: How many of a root's files the boot audit looks at, beside the root itself.
+AUDIT_SAMPLE_FILES = 20
 
 
 def audit_folder_roots(log=logger) -> list[str]:
@@ -213,12 +253,34 @@ def audit_folder_roots(log=logger) -> list[str]:
 
             root = storage_root(replace(manifest, origin=origin_of(path)))
         except StorageRootError as exc:
-            warnings.append(f"{manifest.dir_name}: {exc}")
+            where = f" ({exc.path})" if exc.path else ""
+            warnings.append(f"{manifest.dir_name}: {exc}{where}")
             continue
-        if not readable_by(root, entry.pw_uid, gids):
+        blocked = unreadable_part(root, entry.pw_uid, gids)
+        if blocked is None:
+            blocked = _unreadable_sample(root, entry.pw_uid, gids)
+        if blocked is not None:
             warnings.append(
-                f"{manifest.dir_name}: {root} is not readable by {user}; nodes cannot open its files"
+                f"{manifest.dir_name}: {user} cannot read {blocked}, so nodes cannot open "
+                f"the files of {root}"
             )
     for warning in warnings:
         log.warning("data lake folder source %s", warning)
     return warnings
+
+
+def _unreadable_sample(root: Path, uid: int, gids: set[int]) -> Path | None:
+    """The first of a few of *root*'s files that *uid* cannot read, if any."""
+    looked = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for name in sorted(filenames):
+            if name.startswith("."):
+                continue
+            blocked = unreadable_part(Path(dirpath) / name, uid, gids)
+            if blocked is not None:
+                return blocked
+            looked += 1
+            if looked >= AUDIT_SAMPLE_FILES:
+                return None
+    return None

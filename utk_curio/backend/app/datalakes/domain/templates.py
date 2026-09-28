@@ -132,12 +132,16 @@ def _capture_type(spec: str | None) -> tuple[str, str | None, str]:
         return "date", None, r"\d{4}-\d{2}-\d{2}"
     if "%" in spec:
         parts = []
+        used: set[str] = set()
         index = 0
         while index < len(spec):
             if spec[index] == "%":
                 directive = spec[index:index + 2]
                 if directive not in _STRFTIME:
                     raise TemplateError(f"unsupported date directive {directive!r} in {spec!r}")
+                if directive in used:
+                    raise TemplateError(f"{spec!r} uses {directive} twice")
+                used.add(directive)
                 parts.append(_STRFTIME[directive])
                 index += 2
             else:
@@ -228,7 +232,8 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
 
     return Template(
         source=text,
-        regex=re.compile("^" + "".join(pattern_parts) + "$"),
+        # ``\Z``, not ``$``: a name ending in a newline is not a match.
+        regex=re.compile("^" + "".join(pattern_parts) + r"\Z"),
         captures=tuple(captures),
         literal_prefix="".join(literal_prefix),
     )

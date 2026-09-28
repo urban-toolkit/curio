@@ -439,16 +439,18 @@ class DataLakeService:
 
         def _run() -> None:
             with app.app_context():
-                # Re-loaded inside this context, so the worker's user belongs
-                # to the worker's own session. Everything downstream (the
-                # credential lookup, the install) hangs off it.
-                worker = DataLakeService(
-                    user_key,
-                    user=_user_by_id(user_id),
-                    transport=transport,
-                    budget=budget,
-                )
                 try:
+                    # Re-loaded inside this context, so the worker's user
+                    # belongs to the worker's own session. Everything
+                    # downstream (the credential lookup, the install) hangs off
+                    # it. Inside the try, so a failure here still ends the job
+                    # and gives its slot back.
+                    worker = DataLakeService(
+                        user_key,
+                        user=_user_by_id(user_id),
+                        transport=transport,
+                        budget=budget,
+                    )
                     job.status = "running"
                     job.stage_message = (
                         "Reading the files…" if manifest.is_storage else "Contacting the portal…"
@@ -524,7 +526,7 @@ class DataLakeService:
                 finally:
                     ratelimit.download_slots.release(user_key)
 
-        job_store.run_in_background(_run)
+        _start(job, _run, user_key)
         return job.to_row()
 
     # ── collections ────────────────────────────────────────────────────────
@@ -591,10 +593,10 @@ class DataLakeService:
 
         def _run() -> None:
             with app.app_context():
-                worker = DataLakeService(
-                    user_key, user=_user_by_id(user_id), transport=transport, budget=budget
-                )
                 try:
+                    worker = DataLakeService(
+                        user_key, user=_user_by_id(user_id), transport=transport, budget=budget
+                    )
                     job.status = "running"
                     job.stage_message = "Caching files…"
 
@@ -633,7 +635,7 @@ class DataLakeService:
                 finally:
                     ratelimit.download_slots.release(user_key)
 
-        job_store.run_in_background(_run)
+        _start(job, _run, user_key)
         return job.to_row()
 
     def get_job(self, job_id: str) -> dict[str, Any]:
@@ -646,6 +648,16 @@ class DataLakeService:
         if not job_store.jobs.cancel(self.user_key, job_id):
             raise JobNotFound(f"no download job {job_id!r} to cancel")
 
+
+
+def _start(job, run, user_key: str) -> None:
+    """Start *job*'s worker, or end the job and give its slot back."""
+    try:
+        job_store.run_in_background(run)
+    except Exception as exc:  # noqa: BLE001 - no thread, so nothing else will
+        ratelimit.download_slots.release(user_key)
+        job_store.jobs.finish(job, "failed", error=f"{exc}"[:300], stage_message="Failed")
+        raise
 
 
 def _storage_matches(resource, text: str) -> bool:
