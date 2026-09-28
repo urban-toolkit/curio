@@ -3194,6 +3194,7 @@ def use_scripted_llm(backend_url: str, token: str) -> dict:
 def script_agent_replies(
     backend_url: str, *replies: str | dict, reset: bool = True,
     by_intent: dict | None = None, native_tools: bool = False,
+    structured_output: bool = False,
 ) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
@@ -3205,6 +3206,9 @@ def script_agent_replies(
     ``{"error", "status"}`` for an endpoint error. *native_tools* makes the
     scripted endpoint call tools natively, so runs are offered their tools
     instead of the fenced syntax (a reset puts it back on the fenced protocol).
+    *structured_output* makes it take a reply schema, so a content generation
+    run for an Autark node is held to the Autark document's schema: its reply
+    is then scripted as the constrained JSON (``reply_schemas``).
 
     *by_intent* maps a substring of a delegated call's ``intent`` to its reply,
     for calls whose order the test cannot know (Solve's per-node content).
@@ -3213,8 +3217,8 @@ def script_agent_replies(
     by this one, and the failure would point anywhere but at the cause.
     """
     payload = {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})}
-    if native_tools:
-        payload["chatCapabilities"] = {"tools": True}
+    if native_tools or structured_output:
+        payload["chatCapabilities"] = {"tools": native_tools, "structuredOutput": structured_output}
     body = _post_json(f"{backend_url}/api/testing/agent-script", payload)
     return body["pending"]
 

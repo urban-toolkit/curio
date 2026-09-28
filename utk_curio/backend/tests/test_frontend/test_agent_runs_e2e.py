@@ -425,7 +425,9 @@ def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, li
     ]
 
 
-def _attached(spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str) -> tuple[str, str, str]:
+def _attached(
+    spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str, project_spec: dict | None = None,
+) -> tuple[str, str, str]:
     """A fresh account and project with *spec* installed and attached, on the
     scripted provider: ``(token, agents base url, attachment id)``."""
     coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
@@ -434,7 +436,7 @@ def _attached(spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str) 
         username=_username(spec.agent_id)[:32] + "_" + suffix,
         name=f"{spec.name} E2E",
         project_name=f"AgentRun {spec.name}",
-        project_spec=_project_spec(),
+        project_spec=project_spec or _project_spec(),
     )
     token = session["token"]
     base = f"{current_server}/api/agents/projects/{session['project']['id']}"
@@ -504,8 +506,64 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     )
     assert run["reply"].endswith("That is what the project currently contains.")
     offers = captured_agent_offers(current_server)
-    assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None}, offers
+    assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None, "replySchema": None}, offers
     assert '"toolRequest"' in captured_system_prompt(current_server, call=1)
     turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
     pins = turns[-1]["execution"]["pins"]
     assert pins["toolProtocol"] == "fenced" and pins["nativeToolsRefused"] is True
+
+
+# ── an Autark document under its schema ──────────────────────────────────────
+
+AUTK_NODE_ID = "agent-e2e-autk"
+
+#: Drawn from the node's own input, so no source is probed.
+AUTK_DOCUMENT = {
+    "compute": [{"dataRef": "upstream", "wglsFunction": "fn main() {}",
+                 "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
+    "map": {"layerRefs": [{"dataRef": "upstream"}]},
+}
+
+
+def test_an_autark_document_is_written_under_its_schema(current_server: str):
+    """On an endpoint that takes a reply schema, the content the Node Builder
+    delegates for an Autark node is held to the Autark document's schema, and
+    the review minted at the node's own agent carries the document decoded
+    from that reply."""
+    from utk_curio.backend.app.agents import reply_schemas
+
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.node-builder")
+    project = _project_spec()
+    project["dataflow"]["nodes"].append({
+        "id": AUTK_NODE_ID, "type": "curio.builtin/autk-grammar", "x": 1400, "y": 120,
+        "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "map the points",
+        "metadata": {"keywords": []},
+    })
+    token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
+    api_json(f"{base}/install", token, method="POST",
+             payload={"coord": f"agent.node-content-builder@{builtin.BUILTIN_VERSION}"})
+    constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
+    script_agent_replies(
+        current_server,
+        _tail({"delegateRequest": {"capability": "node.content.generate",
+                                   "inputs": {"nodeId": AUTK_NODE_ID, "intent": "map the points"}}}),
+        json.dumps(constrained),
+        "I have proposed the document for your review.",
+        structured_output=True,
+    )
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": "Write the map for the Autark node."},
+    )
+    offers = captured_agent_offers(current_server)
+    assert [o["replySchema"] for o in offers[:3]] == [None, "autk_grammar_document", None], offers
+    assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
+    (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
+    assert entry["status"] == "ok", entry
+    turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
+    proposals = [part for turn in turns for part in (turn.get("content") or [])
+                 if part.get("type") == "proposal"]
+    assert [p["tool"] for p in proposals] == ["node.content.write"], turns
+    assert json.loads(proposals[0]["preview"]) == AUTK_DOCUMENT

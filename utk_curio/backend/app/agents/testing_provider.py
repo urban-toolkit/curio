@@ -72,8 +72,8 @@ _captured: deque = deque(maxlen=MAX_CAPTURED)
 #: Which LLM configuration each call answered with: ``{configId, model}``, in
 #: the same order as ``_captured``.
 _calls: deque = deque(maxlen=MAX_CAPTURED)
-#: What each call offered natively: ``{tools: [names], toolChoice}``, in the
-#: same order as ``_captured``.
+#: What each call offered natively: ``{tools: [names], toolChoice,
+#: replySchema}``, in the same order as ``_captured``.
 _offered: deque = deque(maxlen=MAX_CAPTURED)
 #: Replies keyed by a substring of a delegated call's ``intent``.
 _by_intent: dict = {}
@@ -211,11 +211,13 @@ def calls() -> list:
 
 
 def offered() -> list:
-    """``{tools, toolChoice}`` of every call since the last :func:`reset`: the
-    native names of the tools it offered (none on the fenced protocol) and
-    whether it let the model call one."""
+    """``{tools, toolChoice, replySchema}`` of every call since the last
+    :func:`reset`: the native names of the tools it offered (none on the fenced
+    protocol), whether it let the model call one, and the name of the reply
+    schema it carried, or None."""
     with _lock:
-        return [{"tools": list(o["tools"]), "toolChoice": o["toolChoice"]} for o in _offered]
+        return [{"tools": list(o["tools"]), "toolChoice": o["toolChoice"],
+                 "replySchema": o["replySchema"]} for o in _offered]
 
 
 def last_messages() -> list | None:
@@ -241,13 +243,16 @@ def run_scripted_turn(
     config=None,
     tools: list | None = None,
     tool_choice: str = "auto",
+    reply_schema: dict | None = None,
 ):
     """Return the next scripted reply as a turn and record its token usage.
 
     ``messages`` does not choose the reply - the queue does, so a test's
     scripting stays independent of prompt wording. It is recorded, though, so a
     test can assert what actually reached the model (see :func:`captured`), as
-    are the tools the call offered (:func:`offered`).
+    are the tools the call offered and the reply schema it carried
+    (:func:`offered`). A reply to a call with a reply schema is scripted as the
+    constrained JSON a provider would return.
 
     Raises :class:`TestingProviderUnavailable` when called outside a test run,
     :class:`ScriptedEndpointError` for an ``{"error", "status"}`` reply, and
@@ -271,6 +276,7 @@ def run_scripted_turn(
         _offered.append({
             "tools": [t.get("name") for t in tools or ()],
             "toolChoice": tool_choice if tools else None,
+            "replySchema": (reply_schema or {}).get("name"),
         })
         routed = _routed_reply(messages)
         queued = None if routed is not None else (_queue.popleft() if _queue else None)

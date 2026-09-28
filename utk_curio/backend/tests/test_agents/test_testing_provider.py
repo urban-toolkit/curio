@@ -318,8 +318,8 @@ class TestNativeCalls:
         testing_provider.run_scripted_turn([], tools=self.TOOLS)
         testing_provider.run_scripted_turn([])
         assert testing_provider.offered() == [
-            {"tools": ["node__read"], "toolChoice": "auto"},
-            {"tools": [], "toolChoice": None},
+            {"tools": ["node__read"], "toolChoice": "auto", "replySchema": None},
+            {"tools": [], "toolChoice": None, "replySchema": None},
         ]
         testing_provider.reset()
         assert testing_provider.offered() == []
