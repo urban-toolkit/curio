@@ -24,6 +24,7 @@ from playwright.sync_api import (
 # them. Re-exported here because call sites across the suite import them
 # from utils.
 from .workflow_spec import resolve_widget_placeholders, seed_node_code  # noqa: F401
+from . import comparisons
 
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
@@ -607,20 +608,28 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     the sandbox's injected resolver already raises a clear per-id error, and
     the assertion below still names an id the catalog does not have.
     """
-    if "curio_dataset_path" not in code:
-        return {}
+    return _catalog_resolution(code)["paths"]
 
+
+def _catalog_resolution(code: str, username: str | None = None) -> dict:
+    """``{"paths", "collections", "mediaDir"}`` for *code*, as the backend
+    resolves them for ``/processPythonCode``, as *username* when given; see
+    ``_catalog_dataset_paths``.
+
+    Asked for every node, not only one that names a dataset: ``mediaDir`` is
+    where a node downstream of a collection writes the files it derives.
+    """
     url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
-    payload = json.dumps({"code": code}).encode("utf-8")
+    body = {"code": code, **({"username": username} if username else {})}
+    payload = json.dumps(body).encode("utf-8")
     req = Request(
         url, data=payload,
         headers={"Content-Type": "application/json"}, method="POST",
     )
     try:
         with urlopen(req, timeout=15) as resp:  # noqa: S310
-            resolved = (json.loads(resp.read().decode("utf-8")) or {}).get(
-                "paths"
-            ) or {}
+            answer = json.loads(resp.read().decode("utf-8")) or {}
+            resolved = answer.get("paths") or {}
     except HTTPError as exc:
         raise AssertionError(
             f"POST {url} answered {exc.code}. The stack must expose the testing "
@@ -642,11 +651,20 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
         f"catalog could not resolve (it resolved: {sorted(resolved)}). Note the "
         f"call takes the bare manifest id with no '@major'."
     )
-    return resolved
+    return {
+        "paths": resolved,
+        "collections": answer.get("collections") or {},
+        "mediaDir": answer.get("mediaDir"),
+    }
 
 
-def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
+def execute_workflow_programmatically(
+    spec, seed: int = 42, username: str | None = None
+) -> dict[str, str]:
     """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
+
+    *username* is the account the browser run signs in as, so datasets and the
+    files nodes derive from them resolve the same way in both runs.
 
     Routes all execution through the sandbox's /exec endpoint so the sandbox's
     persistent DuckDB connection remains the sole writer throughout the test.
@@ -690,6 +708,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         resolved = resolve_widget_placeholders(node.content)
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
+        resolution = _catalog_resolution(indented_code, username)
 
         resp = _req.post(
             f'{sandbox_url}/exec',
@@ -703,7 +722,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
-                "dataset_paths": _catalog_dataset_paths(indented_code),
+                "dataset_paths": resolution["paths"],
+                "collections": resolution["collections"],
+                "media_dir": resolution["mediaDir"],
             },
             headers=sandbox_auth_header(),
             timeout=120,
@@ -1085,13 +1106,19 @@ def _assert_mintable(image, expected_path: str, page) -> None:
         )
 
 
+#: The most any screenshot comparison may let differ. A map is often under a
+#: fifth of its frame, so with a looser budget a frame whose map is missing can
+#: still pass. A comparison may ask for less, never more.
+MAX_DIFF_RATIO = 0.20
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
     *,
     test_name: str,
     pixel_threshold: int = 30,
-    max_diff_ratio: float = 0.20,
+    max_diff_ratio: float = MAX_DIFF_RATIO,
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
@@ -1102,12 +1129,14 @@ def save_workflow_test_screenshot(
     compared pixel-by-pixel against it.  Both images are resized to the
     same dimensions before comparison so layout-only size changes don't
     cause false positives.  The assertion fails when more than
-    *max_diff_ratio* (default 15 %) of pixels differ by more than
+    *max_diff_ratio* (default 20%) of pixels differ by more than
     *pixel_threshold* (per-channel, 0-255).
 
     On failure the expected, actual, and diff images are attached to the
     Allure report so that reviewers can inspect the regression directly
-    from the GitHub Actions artifact.
+    from the GitHub Actions artifact. With ``CURIO_E2E_COMPARE_DIR`` set,
+    every comparison, passing or not, is also recorded there for the CI
+    report page (see comparisons.py).
 
     If the file does **not** exist the run FAILS. Creating a baseline is a
     deliberate act, ``pytest --mint-baselines``, because whatever the app renders
@@ -1149,6 +1178,11 @@ def save_workflow_test_screenshot(
 
     Returns the path to the expected screenshot file.
     """
+    if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
+        raise ValueError(
+            f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
+            "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
+        )
     from PIL import Image, ImageChops, ImageEnhance
     import numpy as np
 
@@ -1175,21 +1209,39 @@ def save_workflow_test_screenshot(
             return _capture_element(page, clip_selector)
         return _capture_full_page(page)
 
+    record_args = dict(
+        baseline=expected_path,
+        pixel_threshold=pixel_threshold,
+        max_diff_ratio=max_diff_ratio,
+        capture=f"element {clip_selector}" if clip_selector is not None else "full page",
+    )
+
+    minted_now = False
     if not os.path.isfile(expected_path):
         if not MINT_BASELINES:
-            raise AssertionError(
+            message = (
                 f"no baseline at {expected_path}. Run with --mint-baselines to "
                 "create it, on a build you trust and a machine whose rendering "
                 "matches CI's, then look at the PNG before committing it. A "
                 "baseline is the definition of correct for every later run, so "
                 "it is not something a test run should produce as a side effect."
             )
+            comparisons.record_missing(_capture, **record_args)
+            raise AssertionError(message)
         minted = _capture()
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
+        minted_now = True
 
     expected_img = Image.open(expected_path).convert("RGB")
-    actual_img = _capture()
+    try:
+        actual_img = _capture()
+    except Exception as exc:
+        comparisons.record(
+            "capture-error", expected=expected_img,
+            error=f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
 
     target_w = max(actual_img.width, expected_img.width)
     target_h = max(actual_img.height, expected_img.height)
@@ -1199,10 +1251,19 @@ def save_workflow_test_screenshot(
     diff = ImageChops.difference(actual_cmp, expected_cmp)
     arr = np.asarray(diff)
     total = int(arr.shape[0] * arr.shape[1])
-    mismatched = int((arr > pixel_threshold).any(axis=2).sum())
+    counted = (arr > pixel_threshold).any(axis=2)
+    mismatched = int(counted.sum())
     ratio = mismatched / total if total else 0.0
+    failed = ratio > max_diff_ratio
 
-    if ratio > max_diff_ratio:
+    comparisons.record(
+        "failed" if failed else "minted" if minted_now else "passed",
+        expected=expected_img, created=actual_img, expected_cmp=expected_cmp,
+        arr=arr, counted=counted, mismatched=mismatched, total=total,
+        ratio=ratio, **record_args,
+    )
+
+    if failed:
         actual_path = os.path.join(
             WORKFLOW_SCREENSHOT_EXPECTED_DIR,
             f"screenshot_{stem}_{test_name}_actual.png",

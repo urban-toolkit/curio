@@ -2,14 +2,17 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-This guide is in four parts, plus a developer appendix:
+Curio has four catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
 
-- [1. What is the Node Catalog?](#1-what-is-the-node-catalog): the four storage layers and where each kind of action writes.
-- [2. Surfaces and workflows](#2-surfaces-and-workflows): the two places you manage packages (the canvas drawer and the `/catalog` page), the action matrix between them, and step-by-step walkthroughs.
-- [3. Creating a new package from a canvas node](#3-creating-a-new-package-from-a-canvas-node): the **Save as package node** flow plus the per-package metadata editor.
-- [4. Packaging and sharing](#4-packaging-and-sharing): exporting an archive and importing one.
-- [Operator notes](#operator-notes): env vars and CLI flags that gate Publish.
-- [Appendix: adding a new behavior or icon (developer-only)](#appendix-adding-a-new-behavior-or-icon-developer-only): code-level extensions for when a new node needs runtime behavior the built-in behaviors don't cover.
+This guide is in six parts, plus operator notes:
+
+- [1. What is the Node Catalog?](#1-what-is-the-node-catalog): packages, what ships, and the four storage layers.
+- [2. Surfaces and workflows](#2-surfaces-and-workflows): the canvas drawer and the `/catalog/nodes` page, the action matrix, and walkthroughs.
+- [3. Using a node in a dataflow](#3-using-a-node-in-a-dataflow): the palette.
+- [4. Creating a package from a canvas node](#4-creating-a-package-from-a-canvas-node): **Save as package node** and the metadata editor.
+- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): archives, publishing, and versions.
+- [6. The manifest](#6-the-manifest): the schema, and where packages live on disk.
+- [Operator notes](#operator-notes): the publish switch, and what an operator can repair.
 
 ---
 
@@ -21,287 +24,199 @@ Every node Curio knows about belongs to a **package**, identified by a reverse-d
 
 ```
 <packageId>@<major>     e.g.   curio.builtin@1
-                            ai.urbanlab.uhvi@1
+                               ai.urbanlab.uhvi@1
 ```
 
-A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind), and a couple of small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
+A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
 
-Several packages ship with Curio:
+### What ships with Curio
 
 | Package | What it provides |
 |---|---|
-| `curio.builtin@1` | The default 12 node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
-| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. Both are plain Python nodes (`behavior: "code"`). `curio.weather@1` is also auto-seeded (still uninstallable) when Curio starts with `--with-examples`, because the seeded example workflows need its Python deps (rasterio, pythermalcomfort, rasterstats). |
-| `curio.example-ui@1` | A minimal worked example of a node with its **own React interface** rather than a code editor, with no API keys, no Python deps, and about 150 lines. The reference to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
-| `curio.streetvision@1` | A substantial custom-UI package (Street View fetch + HuggingFace inference). Its results are inspected with the built-in Simple View. Not auto-installed, `readOnly`, and needs a Google Maps API key plus torch/transformers. Read it for the advanced patterns, not as a starting point. |
+| `curio.builtin@1` | The 12 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
+| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
+| `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
+| `curio.streetvision@1` | A substantial custom-UI package (Street View fetch plus HuggingFace inference). Not installed by default, read-only, and needs a Google Maps API key plus torch and transformers. Read it for the advanced patterns, not as a starting point. |
 
-You can install any number of additional packages, either your own creations or archives shared by others.
+You can install any number of other packages, your own or archives shared by others.
 
-### The four storage layers
+### Storage layers
 
-Package state in Curio lives in four places. Knowing which one each user action writes to is the key to predicting what happens after an **Add to dataflow**, an **Add to all projects**, or a **Remove from dataflow**:
+Package state lives in four places. Knowing which one an action writes is the key to predicting what happens after **Add to project**, **Add to all projects**, or **Remove from project**:
 
-| Layer | On disk | Who writes |
+| Layer | On disk | Written by |
 |---|---|---|
-| **Shared catalog** (the source every user browses from) | `<repo_root>/packages/<packageId>@<major>/` | **Publish** (gated by `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`; see *Operator notes*). Otherwise read-only. |
-| **Per-user package store** (implementations on disk) | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Adding copies in; removing (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
-| **Per-user defaults** (what auto-seeds into new projects) | `.curio/users/<user-key>/default-packages.json` | The **Nodes** tab on `/catalog` (**Add to all projects**) adds an entry; the auto-prune sweep removes it when the last project drops the dep. An API-only `DELETE /api/packages/defaults/<dirName>` can also detach one directly (no UI; see *Operator notes*). |
-| **Per-project lockfile** (the source of truth for what a project needs) | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Add to dataflow** adds an entry for the open project; **Remove from dataflow** removes it. The **Nodes** tab on `/catalog` (**Add to all projects**) also walks every existing project and patches its lockfile. |
+| **Shared catalog**, what every user browses | `<repo_root>/packages/<packageId>@<major>/` | **Publish**, when the operator allows it (see [Operator notes](#operator-notes)). Read-only otherwise. |
+| **Per-user package store**, your installed copies | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed for you. Adding copies a package in; removing it from the last project that uses it deletes the copy. |
+| **Per-user defaults**, what new projects start with | `.curio/users/<user-key>/default-packages.json` | **Add to all projects** adds an entry. Removing the package from the last project that uses it drops the entry. |
+| **Per-project lockfile**, what one project needs | `dataflow.packages` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** also patches every existing project. |
 
-The canvas palette reads from the per-project lockfile (intersected with the user store), so two projects open in different tabs see different palettes even though they share one user store.
-
-### How a node ref looks in your saved workflow
-
-When you save a project, Curio writes each node's type as the **unversioned canonical id**:
-
-```
-curio.builtin/data-loading
-ai.urbanlab.uhvi/uhvi-load
-```
-
-At load time the runtime resolves this to the highest installed major of that package. If you specifically want to pin a workflow to a major version (e.g. when collaborating on a research artefact), edit the saved trill to use the **versioned** form:
-
-```
-curio.builtin/data-loading@1
-ai.urbanlab.uhvi/uhvi-load@1
-```
-
-### Data Loading nodes and API keys
-
-A Data Loading node that calls a key-gated API reaches the key by name, never
-as a literal: `api_key = curio_secret("<name>")`, resolved by the server at
-run time from the keys saved under **AI Settings → Connection keys** (see
-`docs/USAGE.md`). Like `curio_dataset_path("<id>")`, the name is what travels
-with the dataflow; the value is handed to the sandbox for the run only.
+The palette reads the open project's lockfile, so two projects open in different tabs can show different palettes even though they share one package store.
 
 ---
 
 ## 2. Surfaces and workflows
 
-There are exactly two places you manage packages:
+There are two places you manage packages:
 
-- **The drawer** (inside the canvas): per-project. Open it from the **Node Catalog** dropdown in the left-edge Tools panel → **Browse Node Catalog +**. Adding and removing here affect *only* the open project's lockfile (plus the user-store copy when needed), which is why its buttons say per-dataflow.
-- **The `/catalog` master page** (linked from **Catalog** on `/projects`): opens on the **Nodes** tab (`/catalog/nodes`). Adding there applies to every existing project of yours and auto-seeds into any new project, so the button reads **Add to all projects** rather than the drawer's **Add to dataflow**. There is no removal button here; see the workflows below. The sibling **Data** tab (`/catalog/data`) is the Data Catalog, which manages datasets rather than nodes (see [DATA-CATALOG.md](DATA-CATALOG.md)).
-
-The drawer's two working tabs are **Browse** and **In dataflow**; an *update available* note appears on a row whose catalog copy carries a different `version`. Each row on **In dataflow** also has a **Reload** button (circular-arrows icon) that re-copies the package from the shared catalog over your installed copy. Use it when you are editing a package under `packages/` and want your changes to show up (see [Authoring nodes](AUTHORING-NODES.md)). It is offered for any package the catalog also carries, whether or not the version differs. The **Nodes** tab on `/catalog` uses a Data Catalog-style layout with status and category filters plus a preview drawer.
+- **The drawer**, inside the canvas, works on the open project only. Open it from the top menu **Data ⏷ → Node Catalog**, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Data Lake Catalog** tabs beside it are the other three catalogs.
 
 ### Action matrix
 
-| Action | Where | Endpoint | Layers it writes | What you see |
-|---|---|---|---|---|
-| **Add to dataflow** (one project) | Drawer | `POST /api/packages/projects/<id>/install` | per-project lockfile (+ user store if missing) | Package shows in this project's palette only. |
-| **Add to all projects** | `/catalog` page | `POST /api/packages/defaults` | per-user defaults + every project's lockfile (+ user store if missing) | Package appears in every project's palette; future new projects auto-get it too. |
-| **Remove from dataflow** | Drawer only | `DELETE /api/packages/projects/<id>/<dirName>` | per-project lockfile; auto-prune may also delete from user store and defaults | Package leaves this project's palette. If no other project still references it, the user-store copy is deleted and the defaults entry (if any) is removed too. |
-| **Reload** | Drawer (**In dataflow**) | `POST /api/packages/catalog/install` with `replace: true` | per-user package store | The installed copy is overwritten from the shared catalog and the page reloads. The way to pick up edits to a package you are authoring under `packages/`. |
-| **Publish** | Drawer or `/catalog` page | `POST /api/packages/factory/publish-catalog` | shared catalog | Package becomes browseable by every user on this install. Button is hidden entirely when the env gate is off (see *Operator notes*). |
+| Action | Where | What it changes | What you see |
+|---|---|---|---|
+| **Add to project** | Drawer | This project's lockfile, plus your package store if the package is not there yet | The package's nodes appear in this project's palette only. |
+| **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
+| **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
+| **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
 ### Workflows
 
-**I want to add a package to one project.** Open the project, click **Node Catalog → Browse Node Catalog +** to open the drawer, find the package, click **Add to dataflow**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
+**I want to add a package to one project.** Open the project, click **Node Catalog → Browse Node Catalog +** to open the drawer, find the package, and click **Add to project**. Its nodes appear in this project's palette only; your other projects are unaffected.
 
-**I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Add to all projects**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
+**I want a package in all my projects, present and future.** On `/catalog/nodes`, find the package and click **Add to all projects**. It appears in every existing project's palette at once, and every project you create from then on starts with it.
 
-**I want to remove a package.** There is no global removal button on the `/catalog` page. Open the project (or each project, if it was added to several) and use the drawer's **Remove from dataflow** button. When you remove it from the last project that references the package, Curio also deletes the user-store copy and removes the package from your defaults list so it stops auto-seeding into new projects. An API-only endpoint detaches a default directly; see *Operator notes*.
+**I want to remove a package.** `/catalog/nodes` has no remove button. Open each project that has the package and use **Remove from project** in the drawer. When you remove it from the last one, Curio deletes your installed copy and drops the package from your defaults, so new projects stop getting it.
 
-**I want a package I just built to be installable by other users on this Curio install.** Build it via **Save as package node** (next section), then open the drawer or `/catalog` page and click **Publish** on the package. It writes into the shared catalog at `<repo_root>/packages/`. Note: the Publish button is hidden when the operator disabled catalog writes (see *Operator notes* below).
-
-**I want to make a package a default for new projects without adding it everywhere first.** Use **Add to all projects** once from the `/catalog` page. The drawer's **Add to dataflow** stays scoped to one project and never touches defaults.
-
-**I want to stop a package from auto-seeding into new projects.** Remove it from every project that currently references it. After the last removal, Curio's auto-prune sweep removes the package from defaults. To detach one directly, for scripted installs or to repair a defaults list by hand, call `DELETE /api/packages/defaults/<dirName>` (see *Operator notes*).
+**I want other users on this install to be able to add a package I built.** Build it with **Save as package node** ([part 4](#4-creating-a-package-from-a-canvas-node)), then click **Publish** on it in the Tools panel's **Node Catalog** dropdown or in the `/catalog/nodes` details drawer.
 
 ---
 
-## 3. Creating a new package from a canvas node
+## 3. Using a node in a dataflow
 
-The flow is **Save as package node**: build the node on the canvas, then save it into a (new or existing) package. Package metadata is edited per-package from the catalog drawer.
+Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
+
+A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **AI Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_dataset_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+
+---
+
+## 4. Creating a package from a canvas node
+
+The flow is **Save as package node**: build the node on the canvas, then save it into a new or existing package. Package metadata is edited per package from the **Node Catalog** dropdown.
 
 ### Save as package node
 
 1. Drop a node onto the canvas, either a built-in or one from an installed package, and edit its code as usual.
-2. Click the **cog** on the node header to open the **Node settings** modal. Tweak the label, ports, or editor mode if you want.
+2. Click the **cog** on the node header to open the **Node settings** modal. Change the label, ports, or editor mode if you want.
 3. Click **Save as package node…**. A picker appears.
-4. Choose **New package…** (creates a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are filtered out of the picker; the only way to "modify" a read-only package is to fork into a new one.
-5. After save, the canvas node is rebound automatically to the new package's kind, so re-opening **Node settings** resolves to the new descriptor.
-
-When you save **into an existing package**, the backend preserves the unedited templates' on-disk source, so your other templates are not clobbered.
+4. Choose **New package…** (a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are not offered; the way to change a read-only package is to fork it into a new one.
+5. After the save, the canvas node is rebound to the new package's kind.
 
 > [!IMPORTANT]
-> **Save as package node cannot produce a custom-UI node.** The archive it
-> builds carries `manifest.json`, `sources/`, `README.md` and `LICENSE`, but
-> never a `scripts/` directory. So every package authored this way is a
-> code-editor node, and **forking a custom-UI package this way drops its
-> interface**: the fork falls back to the generic code editor.
+> **Save as package node cannot produce a custom-UI node.** The package it
+> builds carries `manifest.json` and `sources/`, never a `scripts/` directory,
+> so **forking a custom-UI package this way drops its interface**.
 >
 > To author a node with its own React interface, work from a checkout and build
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
 > [EXTENDING.md §6](EXTENDING.md).
 
-### Source-driven dependencies
+### Dependencies are detected from the source
 
-`dependencies.python` and `dependencies.js` in the manifest are derived automatically from each template's source file. They are not entered by hand:
+`dependencies.python` and `dependencies.js` in the manifest are filled in from each kind's source file when you save. They are not entered by hand:
 
-- Each `import` / `from … import` at the top level of a `.py` source is collected. Standard-library modules and Curio-runtime modules are filtered out. A small alias table maps the common cases where the importable name differs from the PyPI install name (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`). Anything not in the alias map passes through unchanged.
-- For `.js` / `.mjs` / `.cjs` sources, `import … from "X"`, dynamic `import("X")`, and `require("X")` are scanned. Relative paths are skipped; subpaths collapse to the top-level (`lodash/fp` → `lodash`); scoped packages keep their scope (`@scope/pkg`).
-- Detected names land in the manifest with `*` as the version range. Pin-level control isn't exposed in the UI today.
-- Detection runs in `/api/packages/factory/install` and `/factory/build`. Uploaded `.curio.zip` archives and catalog installs are **not** re-scanned; those declarations come from the package author verbatim.
+- Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library and Curio's own modules. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
+- In `.js`, `.mjs` and `.cjs` sources, `import … from "X"`, dynamic `import("X")` and `require("X")` are collected. Relative paths are skipped, subpaths collapse to the package (`lodash/fp` → `lodash`), and scoped packages keep their scope (`@scope/pkg`).
+- Detected names are written with `*` as the version range. The UI does not offer version pins.
+- Imported archives and catalog installs are not re-scanned: their dependencies are what the package author declared.
 
 ### Editing package metadata
 
-Open the **Node Catalog** dropdown in the Tools panel, expand an installed package's accordion, and click the **pencil** button next to the export icon in the row's header. A modal lets you edit:
+Open the **Node Catalog** dropdown in the Tools panel, expand an installed package, and click the **pencil** next to the export icon in its header. A modal lets you edit:
 
 - Name, description, publisher, license
 - Permissions (comma-separated, e.g. `filesystem.read, network.fetch`)
 - Curio runtime range (advisory)
 - README contents
 
-Read-only packages (`curio.builtin@1` and any third-party package shipped with `readOnly: true`) hide the pencil, and the backend also returns `403` if you try to PATCH them. The detected `python` / `js` dependencies are shown as a read-only summary below the editable fields so you can confirm what the source scanner found.
+Read-only packages have no pencil. The detected `python` and `js` dependencies are shown below the editable fields, read-only, so you can check what the scanner found.
 
-### Where new packages land on disk
+---
 
-When you save (or upload) a package, it lands in your per-user store:
+## 5. Importing, publishing, and sharing
+
+A package is portable: you can export it, send it, and the recipient can import it.
+
+### Exporting
+
+Open the **Node Catalog** dropdown in the Tools panel and click the **download** icon on your package's row (**Export package**). It saves the package as `<packageId>@<major>.curio.zip`.
+
+The archive holds `manifest.json`, `sources/`, `README.md`, `LICENSE`, and `scripts/`, so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step. `integrity.json` is left out; the recipient's install regenerates it.
+
+Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` folder, which matters if you zip a package by hand. The installer ignores the archive's own name and takes the destination from the manifest.
+
+### Importing
+
+1. Open the catalog drawer (Tools panel → **Node Catalog** → **Browse Node Catalog +**).
+2. Click **Import package** in the footer.
+3. Pick the archive.
+
+The `/catalog/nodes` page has the same **Import package** button in its header.
+
+The manifest is validated before the package is installed, and an archive whose `<packageId>@<major>` you already have is refused.
+
+### Publishing
+
+**Publish** adds a package from your store to the shared catalog at `<repo_root>/packages/`, where every user on this install can browse and add it. **Unpublish** removes it from there. Both buttons are hidden when the operator turns publishing off (see [Operator notes](#operator-notes)).
+
+### Versioning
+
+- **Versioning.** Bump the `version` string for patch and minor releases; bump `compatibility.major` (and the folder name's suffix) for breaking changes. Two majors of one package install side by side.
+- **Node types.** A node type without a version, `<packageId>/<kindId>`, resolves to whatever major is installed; `<packageId>/<kindId>@<major>` names one.
+
+### Read-only packages
+
+A manifest with `"readOnly": true` at the top level marks its package read-only. Nothing can be saved into it: **Save as package node** does not offer it as a target, and **Node settings** shows a **Read-only** badge on its nodes, with **Save as package node…** as the way forward.
+
+`curio.builtin@1` is read-only, and the same flag suits org-curated packages you distribute without letting users overwrite their kinds. A fork of a read-only package starts without the flag.
+
+### Caveats
+
+- There is no hosted package registry. Sharing is by archive (email, Slack, S3, whatever fits), or through a deployment's shared catalog at `<repo_root>/packages/`.
+- To check your saved projects, run `python scripts/validate_trill.py --all --resolve`. It reports every dataflow that does not match [`docs/schemas/trill.v1.json`](schemas/trill.v1.json), and `--resolve` also flags node types with no template under `<repo_root>/packages/`. See [TRILL-SPEC.md](TRILL-SPEC.md).
+
+---
+
+## 6. The manifest
+
+[`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12) is the reference for what a package can declare. The catalog packages in `<repo_root>/packages/` are the canonical examples, starting with [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json). To write a package by hand, follow [Authoring nodes](AUTHORING-NODES.md).
+
+A package you save or import lands in your package store:
 
 ```
 <CURIO_LAUNCH_CWD>/.curio/users/<user-key>/packages/<packageId>@<major>/
   manifest.json
   sources/
     <template-id>.{py,js,...}
-  starters/<template-id>/        ← optional starter snippets
   integrity.json                 ← SHA-256 of every shipped file
 ```
-
-Developers can publish a draft into the repo's local catalog (`<repo_root>/packages/`) via the publish-to-catalog flow in the installed-packages list, gated by the `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` env var (on by default).
-
-### The manifest schema
-
-Every manifest is validated against [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a package can declare. The repo's catalog packages (`packages/curio.builtin@1/`, `packages/ai.urbanlab.uhvi@1/`, `packages/curio.weather@1/`) are the canonical examples.
-
----
-
-## 4. Packaging and sharing
-
-A package is portable: you can export it, send it, and the recipient can drop it back in.
-
-### Exporting
-
-Open the **Node Catalog** dropdown in the left Tools panel and click the **download** icon on your package's row ("Export package"). It saves the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). The metadata-edit button sits next to it on the same row.
-
-The archive contains exactly what's on disk: `manifest.json`, `sources/`, `README.md`, `LICENSE`, and `scripts/` (so a custom-UI package's compiled `behaviors.js` travels with it and the recipient needs no build step). `integrity.json` is the one exception: it is **not** shipped, because the installer regenerates it on the recipient's machine.
-
-Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` wrapper directory. Worth knowing if you ever hand-zip a package you built under `packages/` but never installed, since the export button only works on packages in your user store. The installer ignores the archive's own name and derives the destination directory from the manifest.
-
-### Importing
-
-To install someone else's archive:
-
-1. Open the catalog drawer (Tools panel → **Node Catalog** dropdown → **Browse Node Catalog +** in the footer).
-2. Click **Import package** in the footer.
-3. Pick the archive.
-
-The installer extracts into a tmp directory, validates the manifest, computes integrity hashes, then moves the result into your package store. If the package id collides with one you already have, the upload is rejected. Remove the existing copy from the **In dataflow** tab first, then import again.
-
-### Versioning, forks, and lineage
-
-- **Versioning.** Bump the `version` string for patch / minor releases; bump `compatibility.major` (and the directory name suffix) for breaking changes. Two majors of the same package coexist as separate installed coordinates.
-- **Forks.** Saving an installed-package node into a fresh package via **Save as package node** → **New package…** creates a fork. The new package carries `lineage.forkedFrom` (the immediate parent) and `lineage.root` (the original ancestor). The catalog drawer groups installed forks into accordions under their root, so it's easy to see a family at a glance.
-- **Family resolution.** The unversioned ref `<packageId>/<kindId>` resolves to whatever major is installed. If you want a workflow to pin against a specific fork, edit its trill to use the versioned form `<packageId>/<kindId>@<major>`.
-
-### Read-only packages
-
-Set `"readOnly": true` at the top level of a manifest to mark a package as read-only. The flag is honoured end-to-end:
-
-- The factory-install endpoint rejects any draft whose manifest declares `readOnly: true`, *and* it rejects drafts targeting an installed package coordinate whose on-disk manifest is read-only.
-- The Save-As destination picker filters read-only packages out of the dropdown.
-- The **Node settings** modal shows a **Read-only** badge when the underlying descriptor belongs to a read-only package, and its primary action stays **Save as package node…**.
-
-The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is available for **org-curated packages** you want to distribute internally without letting downstream users overwrite kinds in place. Forking via Save-As is unaffected; the new package starts unflagged.
-
-### Caveats
-
-- There is no hosted package registry yet. Sharing is file-based: archives by email, Slack, S3, whatever fits. The committed catalog at `<repo_root>/packages/` is a per-deployment alternative for first-party content.
-- To check your saved projects, run `python scripts/validate_trill.py --all --resolve`;
-  it reports every dataflow that does not match [`docs/schemas/trill.v1.json`](schemas/trill.v1.json),
-  and `--resolve` additionally flags node types with no installed template. See
-  [`docs/TRILL-SPEC.md`](TRILL-SPEC.md).
-- Trill files saved with the pre-package `NodeType` strings (`"DATA_LOADING"`, `"VIS_VEGA"`, etc.) need a one-time rewrite of their `type` fields to canonical refs (`"curio.builtin/data-loading"`, `"curio.builtin/vis-vega"`, etc.) before they render correctly.
 
 ---
 
 ## Operator notes
 
-### Disabling Publish
+| Variable | Flag | Effect |
+|---|---|---|
+| `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish**. When forbidden, both are refused and their buttons are hidden. |
+| `CURIO_PACKAGES_ROOT` | none | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. |
 
-The Publish / Unpublish actions write into `<repo_root>/packages/`. On a hosted deployment that directory may not be writable, or you may want to lock authoring down for non-dev installs. The env var `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` gates both the API and the UI:
+**`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.
 
-- **Unset / `1` / `true` / `yes` / `on`** → publishing allowed (the default).
-- **`0` / `false` / `no` / `off`** → publishing is forbidden. The backend returns `403` on both `POST /api/packages/factory/publish-catalog` and `DELETE /api/packages/catalog/<dirName>`, and the Publish / Unpublish buttons are **hidden entirely** in the drawer and on the `/catalog` page (not just disabled).
+**On a multi-user install, start with `--no-allow-publish`.** Any signed-in user can publish, and publishing can replace a package already in the shared catalog. Only a package's publisher can remove it. Treat `<repo_root>/packages/` as operator-managed. On a single-user local install this does not arise.
 
-The Curio launcher (`python curio.py start`) exposes the same flag as `--allow-publish` (default on) with the inverse `--no-allow-publish` opt-out. Note the launcher **sets this env var on every start**, so `--no-allow-publish` is the way to turn it off; putting `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in a `.env` has no effect when you start through `curio.py`. See [`docs/USAGE.md`](USAGE.md) for the full launcher reference and the env-var inventory in [`utk_curio/backend/config.py`](../utk_curio/backend/config.py).
+**Who may install a package.** A local run installs freely. On a hosted deployment installing can be restricted, and the UI says so where it is: see [DEPLOYMENT.md § Security checklist](DEPLOYMENT.md#security-checklist). Installing a package runs its setup code, so install packages you trust, as with any other dependency.
 
-Two things worth knowing before you leave publishing on for a shared install: publishing is allowed for **any** signed-in user, and `DELETE /api/packages/catalog/<dirName>` performs no ownership check, so anyone who can reach the API can replace or remove any package in the shared catalog, `curio.builtin@1` included. On a single-user local install (the normal case for authoring) this is a non-issue. On anything multi-user, start with `--no-allow-publish` and treat `<repo_root>/packages/` as operator-managed.
-
-### Detaching a package from the per-user defaults (API only)
-
-`DELETE /api/packages/defaults/<dirName>` removes one entry from a user's
-`default-packages.json` and touches nothing else: no project lockfile changes,
-no package is uninstalled from the user store, and it is idempotent. It undoes
-**Add to all projects** without opening every project.
-
-It has no UI. The normal way a package leaves the defaults list is the
-auto-prune fall-through described above; this endpoint is for scripted installs
-and manual repair.
-
-### Who may install a package
-
-A local run installs freely. On a hosted deployment installing can be restricted, and the UI says
-so where it is: see [DEPLOYMENT.md](DEPLOYMENT.md#operator-notes).
-
-Installing a package runs its setup code, so treat the catalog as a trust boundary: install
-packages you trust, the same as any other dependency.
-
-### Projects with an empty lockfile
-
-A project with an empty `dataflow.packages` field is backfilled on first read: the backend scans each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and takes the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves.
-
----
-
-## Appendix: adding a new behavior or icon (developer-only)
-
-A package can ship its own runtime behavior as a compiled bundle declared in `behaviorScript` (see [Authoring nodes](AUTHORING-NODES.md), Tier 2). This appendix covers the other case: changing Curio itself to add a **built-in** behavior, icon, or grammar adapter that every install must have before any package is loaded.
-
-### Adding a new behavior hook
-
-The behaviors a manifest can reference live in [`src/registry/behaviorRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts); the 11 built-ins are registered in [`src/registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts). To add a new one:
-
-1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). It must conform to the `NodeBehaviorHook` type in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). Look at `useCodeNodeBehavior` and `useVegaBehavior` as references.
-2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
-3. Reference it from a package manifest: `"behavior": "my-key"` on each kind that wants the new behavior.
-
-Third-party packages can reference any built-in key, or register their own from a `behaviorScript` bundle.
-
-### Adding a new icon
-
-[`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) maps `iconRef` strings (e.g. `"fa-solid:upload"`) to FontAwesome `IconDefinition` constants. To expose a new icon to manifests:
-
-1. Import the icon constant at the top of `iconRegistry.ts`.
-2. Add a `registerIcon("fa-solid:my-icon", faMyIcon);` line.
-3. Reference it in your manifest: `"iconRef": "fa-solid:my-icon"`.
-
-Unknown refs fall back to `faCube`, so missing-icon mistakes are visible but non-fatal.
-
-### Adding a new grammar adapter
-
-Same pattern, [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-workflows/src/registry/grammarAdapter.ts). The Vega-Lite adapter in [`src/adapters/vegaLiteAdapter.ts`](../utk_curio/frontend/urban-workflows/src/adapters/vegaLiteAdapter.ts) is the only one shipped today and is the canonical example.
+**Detaching a package from a user's defaults.** `DELETE /api/packages/defaults/<dirName>` removes one entry from that user's `default-packages.json` and touches nothing else: no lockfile changes and nothing is uninstalled. It has no UI, and is meant for scripted installs and repair.
 
 ---
 
 ## See also
 
-- [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the Data Catalog, which applies the same install and publish model to datasets.
-- [`docs/USAGE.md`](USAGE.md): installation and operating Curio, including the
-  [Vega-Lite node](USAGE.md#vega-lite-node): how a `GeoDataFrame` is drawn and how its
-  geometry columns are addressed.
+- [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
+- [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
+- [`docs/DATA-LAKE-CATALOG.md`](DATA-LAKE-CATALOG.md): the data portals you download datasets from.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
+- [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.
-- [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` is a
-  coordinate into a manifest's `templates[].id`; that schema validates the coordinate's shape, this one
-  defines what it points at.
-- [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json): the built-in package, used as the canonical example throughout this guide.
+- [`docs/schemas/trill.v1.json`](schemas/trill.v1.json): the dataflow JSON Schema. A node's `type` points into a manifest's `templates[].id`.

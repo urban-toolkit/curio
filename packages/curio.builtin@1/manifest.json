@@ -17,7 +17,9 @@
       "pyarrow": ">=24.0.0",
       "duckdb": ">=1.5.0",
       "fiona": ">=1.10.1",
-      "pillow": ">=12.2.0"
+      "pillow": ">=12.2.0",
+      "av": ">=15.0",
+      "rasterio": ">=1.4"
     }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",

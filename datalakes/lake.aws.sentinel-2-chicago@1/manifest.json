@@ -1,0 +1,35 @@
+{
+  "id": "lake.aws.sentinel-2-chicago",
+  "name": "Sentinel-2 over Chicago",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Sentinel-2 Level-2A scenes of the tile over Chicago (MGRS 16TDM) from July 2024, as Cloud-Optimized GeoTIFFs in the Registry of Open Data on AWS. Each scene brings a small true-color preview and a thumbnail.",
+  "publisher": "Element 84 and the European Space Agency",
+  "homepage": "https://registry.opendata.aws/sentinel-2-l2a-cogs/",
+  "license": "Copernicus Sentinel data terms",
+  "tags": ["satellite", "sentinel-2", "chicago", "orthoimagery"],
+  "provider": {
+    "type": "s3",
+    "baseUrl": "https://sentinel-cogs.s3.us-west-2.amazonaws.com",
+    "options": { "prefix": "sentinel-s2-l2a-cogs/16/T/DM/2024/7/" }
+  },
+  "auth": { "mode": "public" },
+  "resources": [
+    {
+      "id": "previews",
+      "name": "True-color previews",
+      "description": "One georeferenced preview per scene.",
+      "kind": "rasters",
+      "path": "{scene}/L2A_PVI.tif"
+    },
+    {
+      "id": "thumbnails",
+      "name": "Scene thumbnails",
+      "kind": "images",
+      "path": "{scene}/thumbnail.jpg"
+    }
+  ],
+  "limits": { "requestsPerMinute": 600 },
+  "createdAt": "2026-09-27T00:00:00Z",
+  "updatedAt": "2026-09-27T00:00:00Z"
+}

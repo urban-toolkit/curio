@@ -103,4 +103,10 @@ describe("nodeLinkedDatasetIds with code references", () => {
     const data = { code: 'curio_dataset_path("other@1")' };
     expect(isNodeLinkedToAnyDataset(data, ["wanted@1"])).toBe(false);
   });
+
+  test("counts a collection loaded with curio_collection", () => {
+    expect(datasetIdsInCode('media = curio_collection("imported.xabc@1")')).toEqual([
+      "imported.xabc@1",
+    ]);
+  });
 });

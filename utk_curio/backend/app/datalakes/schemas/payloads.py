@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest
+from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest, ResourceSpec
 from utk_curio.backend.app.datalakes.domain.resource import (
     LakeResource,
     LakeResourceDetail,
@@ -60,8 +60,34 @@ def source_row(
             "formats": list(manifest.capabilities.formats),
             "maxDownloadBytes": manifest.capabilities.max_download_bytes,
         },
+        # ``storage`` sources declare their resources; a ``portal``'s are found
+        # by searching it. The root of a folder is NOT sent: it is a path on
+        # the server, and the resources say everything a user acts on.
+        "kind": "storage" if manifest.is_storage else "portal",
+        "resources": [declared_resource_row(spec) for spec in manifest.resources],
         "createdAt": manifest.created_at,
         "updatedAt": manifest.updated_at,
+    }
+
+
+def declared_resource_row(spec: ResourceSpec) -> dict[str, Any]:
+    """What a storage manifest says about one resource, before any scan."""
+    return {
+        "resourceId": spec.id,
+        "name": spec.name,
+        "description": spec.description,
+        "kind": spec.kind,
+        # What lands in the Data Catalog: a table's file format, or
+        # ``collection``.
+        "format": spec.dataset_format,
+        "fileFormat": spec.format,
+        "path": spec.path,
+        "datasets": spec.datasets,
+        "splitBy": list(spec.split_by),
+        "fields": [
+            {"name": capture.name, "type": capture.type}
+            for capture in spec.template.captures
+        ],
     }
 
 
@@ -95,6 +121,10 @@ def resource_row(
         "sizeHint": resource.size_hint,
         "acquirable": bool(acquirable),
         "alreadyHeldDatasetId": already_held_dataset_id,
+        "kind": resource.kind,
+        "fileCount": resource.file_count,
+        "fieldValues": [dict(row) for row in resource.fields],
+        "samples": list(resource.samples),
     }
 
 

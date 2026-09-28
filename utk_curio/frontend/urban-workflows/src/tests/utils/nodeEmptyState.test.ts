@@ -260,6 +260,19 @@ describe("resolveGrammarEmptyReason", () => {
     ...over,
   });
 
+  test("a document that reads no input says nothing about one", () => {
+    // An Autark document that loads everything it draws: nothing connected is
+    // not a problem, so the first thing worth saying is about the spec.
+    const selfContained = inputs({ connected: false, hasInput: false, needsInput: false, hasRun: false });
+    expect(resolveGrammarEmptyReason(selfContained)).toBe("not-run");
+    expect(resolveGrammarEmptyReason({ ...selfContained, upstreamErrored: true })).toBe("not-run");
+    expect(resolveGrammarEmptyReason({ ...selfContained, hasSpec: false })).toBe("no-spec");
+  });
+
+  test("the no-spec copy names no grammar", () => {
+    expect(NODE_EMPTY_COPY["no-spec"].hint).toBe("Write a spec, or connect an input to generate one.");
+  });
+
   test("connectivity is asked first", () => {
     expect(
       resolveGrammarEmptyReason(inputs({ connected: false, hasInput: false, hasSpec: false })),

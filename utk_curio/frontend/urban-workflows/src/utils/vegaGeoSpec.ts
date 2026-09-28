@@ -42,6 +42,7 @@
  * `vegaSpecSizing.ts`.
  */
 import { detectCrs } from "./geoCrs";
+import { isGeoJsonGeometry, resolveGeometryField } from "./geometryField";
 
 /** Why a grammar node has nothing to draw. Mirrors `NodeEmptyReason`. */
 export type GeoEmptyReason = "geometry-unresolved" | "geometry-ambiguous";
@@ -52,16 +53,6 @@ export type NormalizeGeoResult = {
   detail?: string;
 };
 
-const GEOJSON_GEOMETRY_TYPES = new Set([
-  "Point",
-  "MultiPoint",
-  "LineString",
-  "MultiLineString",
-  "Polygon",
-  "MultiPolygon",
-  "GeometryCollection",
-]);
-
 /** Channels whose presence means vega-lite will build a projection. */
 const PROJECTION_CHANNELS = ["longitude", "latitude", "longitude2", "latitude2"];
 
@@ -70,13 +61,6 @@ const CHILD_ARRAY_KEYS = ["layer", "concat", "vconcat", "hconcat"];
 
 function isObject(value: any): boolean {
   return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-/** A GeoJSON *geometry* object (not a Feature, not a FeatureCollection). */
-function isGeoJsonGeometry(value: any): boolean {
-  if (!isObject(value)) return false;
-  if (!GEOJSON_GEOMETRY_TYPES.has(value.type)) return false;
-  return value.coordinates !== undefined || value.geometries !== undefined;
 }
 
 /** The mark type, whether written as a string or an object. */
@@ -159,37 +143,6 @@ export function specNeedsGeometry(spec: any): boolean {
     const shape = unit?.encoding?.shape;
     return isObject(shape) && shape.type === "geojson";
   });
-}
-
-/**
- * Which column to draw.
- *
- * 1. The payload declared one -- the active geometry column always wins.
- *    Secondary columns are addressed by name in their own layer, which is what
- *    drawing polygons and their centroids together needs anyway.
- * 2. Otherwise look for geometry-valued fields in the first non-empty row.
- *    Exactly one is unambiguous, so use it. (This is what lets a plain
- *    DataFrame carrying shapely objects work.)
- * 3. Zero or several: refuse to guess, and hand back the candidates so the
- *    caller can name them.
- */
-export function resolveGeometryField(
-  rows: any[],
-  declaredName: string | null | undefined,
-): { field: string | null; candidates: string[] } {
-  if (declaredName) return { field: declaredName, candidates: [declaredName] };
-
-  const sample = (Array.isArray(rows) ? rows : []).find((row) => isObject(row));
-  if (!sample) return { field: null, candidates: [] };
-
-  const candidates = Object.keys(sample).filter((key) => {
-    const value = sample[key];
-    if (isGeoJsonGeometry(value)) return true;
-    // Already-wrapped Features count too, so a second pass is idempotent.
-    return isObject(value) && value.type === "Feature" && value.geometry != null;
-  });
-
-  return { field: candidates.length === 1 ? candidates[0] : null, candidates };
 }
 
 /** Twice the signed area of a ring; positive means counter-clockwise. */

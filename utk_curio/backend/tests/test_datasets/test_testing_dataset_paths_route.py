@@ -82,6 +82,34 @@ class TestResolvesTheCommittedCatalog:
         assert resolved.is_absolute()
         assert resolved.is_file()
 
+    def test_a_collection_resolves_to_its_files_too(self, client):
+        """The harness also sends what ``curio_collection`` needs: where the
+        collection's files are, and where a node writes what it derives."""
+        code = 'media = curio_collection("data.curio.storage-orthos")'
+        body = _post(client, {"code": code}).get_json()
+        assert set(body["paths"]) == {"data.curio.storage-orthos"}
+        entry = body["collections"]["data.curio.storage-orthos"]
+        assert entry["kind"] == "rasters"
+        assert (Path(entry["root"]) / "orthos" / "2024" / "tile_0001.tif").is_file()
+        assert body["mediaDir"]
+
+    def test_without_sign_in_it_resolves_as_the_guest_the_browser_runs_as(
+        self, client, user_and_token, monkeypatch
+    ):
+        """A stack with ``CURIO_NO_AUTH`` runs every node as the shared guest,
+        so the files a node derives land in the guest's folder; the harness's
+        run has to write them there too, or the two outputs name different
+        paths."""
+        from utk_curio.backend import config
+
+        user, _token = user_and_token
+        code = 'media = curio_collection("data.curio.storage-orthos")'
+        signed_in = _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"]
+        guest = _post(client, {"code": code}).get_json()["mediaDir"]
+        assert signed_in != guest
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+        assert _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"] == guest
+
     def test_code_without_a_call_costs_nothing(self, client):
         resp = _post(client, {"code": "return 1 + 1"})
         assert resp.status_code == 200

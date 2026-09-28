@@ -1,7 +1,11 @@
 export * from "./dataLakeCatalogTypes";
 export * from "./dataLakeCatalogCache";
 export * from "./dataLakeCatalogHooks";
-export { dataLakeCatalogApi, notifyLakeCatalogRefresh } from "./dataLakeCatalogApi";
+export {
+  dataLakeCatalogApi,
+  lakeThumbnailPath,
+  notifyLakeCatalogRefresh,
+} from "./dataLakeCatalogApi";
 
 /**
  * The cross-catalog seam.

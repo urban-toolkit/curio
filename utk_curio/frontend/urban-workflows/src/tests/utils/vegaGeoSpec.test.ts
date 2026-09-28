@@ -14,10 +14,10 @@
  */
 import {
   normalizeGeoSpec,
-  resolveGeometryField,
   rewindRingsClockwise,
   specNeedsGeometry,
 } from "../../utils/vegaGeoSpec";
+import { resolveGeometryField } from "../../utils/geometryField";
 
 const CW = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]];
 const CCW = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]];

@@ -66,8 +66,8 @@ def test_load_workflow_files(workflow_files):
 # Test class
 # ---------------------------------------------------------------------------
 
-#: VIS_VEGA nodes that are *supposed* to have nothing on their canvas, keyed by
-#: workflow then node id. A ``None`` reason means the spec compiled and drew a
+#: Grammar nodes (VIS_VEGA, AUTK_GRAMMAR) that are *supposed* to have nothing
+#: on their canvas, keyed by workflow then node id. A ``None`` reason means the spec compiled and drew a
 #: real but markless chart (an empty frame, an all-null geometry column); a
 #: string means the spec could not be drawn at all and the node body is expected
 #: to say so, using that ``data-curio-node-empty`` reason.
@@ -76,7 +76,7 @@ def test_load_workflow_files(workflow_files):
 #: these nodes are expected to error with that verdict, and their canvas or
 #: empty-state marker is still checked. Everything not listed here still has to
 #: draw and finish Done.
-EXPECTED_EMPTY_VEGA = {
+EXPECTED_EMPTY = {
     "13-vega-lite-geometry-columns.json": {
         "5b98d1d6-9332-5fb1-a149-c8f607025a42": "geometry-unresolved",
         "1340a3df-26a8-53db-8de3-dc04db64d6fc": "geometry-ambiguous",
@@ -84,6 +84,11 @@ EXPECTED_EMPTY_VEGA = {
     "14-vega-lite-crs-and-geometry-types.json": {
         "f5626141-f328-514e-be15-779e1cf43cbc": None,  # an empty frame
         "e789669d-c845-5d49-a4ec-ae2212a535ad": None,  # every geometry null
+    },
+    # The same DataFrame with no geometry column, refused by both grammars.
+    "17-autark-geodataframe-maps.json": {
+        "08f7511f-03d0-5df3-b25e-1d7fbec33101": "geometry-unresolved",  # Autark
+        "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f": "geometry-unresolved",  # Vega-Lite
     },
 }
 
@@ -102,16 +107,6 @@ class TestWorkflowCanvas:
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
 
-    # WebGPU (AUTK_GRAMMAR) workflows render maps/shadows on the GPU, which is
-    # non-deterministic across GPU, driver, anti-aliasing and run (the
-    # shadow-study canvas can differ ~20-25% run-to-run). They need a looser
-    # screenshot pixel-diff tolerance than the deterministic Vega/data
-    # workflows; AUTK *correctness* is independently guarded by the per-node
-    # "Done" check and ``_assert_hardware_webgpu``, so the screenshot here is
-    # only a coarse layout/regression guard.
-    _WEBGPU_SCREENSHOT_MAX_DIFF_RATIO = 0.35
-    _DEFAULT_SCREENSHOT_MAX_DIFF_RATIO = 0.20
-
     def _save_screenshot(self, request):
         """Persist canvas screenshot (see ``save_workflow_test_screenshot``)
         and dump the captured browser console/pageerror log alongside it.
@@ -121,16 +116,10 @@ class TestWorkflowCanvas:
         calling ``console.error``), so we always write it — not just on
         failure — while we're debugging the rendering issue.
         """
-        is_webgpu = any(n.type in self._WEBGPU_DIAGNOSTIC_TYPES for n in self.spec.nodes)
         save_workflow_test_screenshot(
             self.page,
             self.spec.filepath,
             test_name=request.function.__name__,
-            max_diff_ratio=(
-                self._WEBGPU_SCREENSHOT_MAX_DIFF_RATIO
-                if is_webgpu
-                else self._DEFAULT_SCREENSHOT_MAX_DIFF_RATIO
-            ),
             # Expected-empty views leave an error toast each; keep them out of
             # the capture.
             sweep_toasts=bool(self._expected_empty()),
@@ -307,8 +296,8 @@ class TestWorkflowCanvas:
         )
 
     def _expected_empty(self) -> dict:
-        """This workflow's ``EXPECTED_EMPTY_VEGA`` entries, keyed by node id."""
-        return EXPECTED_EMPTY_VEGA.get(os.path.basename(self.spec.filepath), {})
+        """This workflow's ``EXPECTED_EMPTY`` entries, keyed by node id."""
+        return EXPECTED_EMPTY.get(os.path.basename(self.spec.filepath), {})
 
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
@@ -666,7 +655,9 @@ class TestWorkflowCanvas:
         ``load_artifact_as_dict``; VIS_VEGA nodes are verified via SVG
         structural comparison.
         """
-        expected_map = execute_workflow_programmatically(self.spec, seed=42)
+        expected_map = execute_workflow_programmatically(
+            self.spec, seed=42, username=getattr(self, "username", None)
+        )
 
         self._execute_all_playable_nodes()
 
@@ -823,7 +814,7 @@ class TestWorkflowCanvas:
                     # The probe and its poll live in ``utils`` so the per-dataset
                     # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
-                        expected = EXPECTED_EMPTY_VEGA.get(
+                        expected = EXPECTED_EMPTY.get(
                             os.path.basename(self.spec.filepath), {}
                         )
                         if node.id in expected:
@@ -839,6 +830,16 @@ class TestWorkflowCanvas:
                                 )
                         else:
                             assert_vega_canvas_rendered(self.page, node.id)
+                    elif node.id in EXPECTED_EMPTY.get(os.path.basename(self.spec.filepath), {}):
+                        # An Autark map that cannot draw its input says why in
+                        # its body, as a Vega chart does.
+                        reason = EXPECTED_EMPTY[os.path.basename(self.spec.filepath)][node.id]
+                        marker = node_el.locator(f'[data-curio-node-empty="{reason}"]')
+                        marker.first.wait_for(state="attached", timeout=30000)
+                        assert (marker.first.inner_text() or "").strip(), (
+                            f"Autark node {node.id}: reported {reason!r} but "
+                            f"rendered no message for the user to read"
+                        )
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all

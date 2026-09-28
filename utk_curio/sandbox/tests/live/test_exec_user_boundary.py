@@ -257,6 +257,7 @@ DENIED = (
     (".curio/data", "the artifact store: every session's data"),
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
+    (".curio/datalakes", "the operator's lake manifests: each names a folder or host the server reads"),
 )
 
 
@@ -376,3 +377,76 @@ def test_the_deployment_secret_cannot_be_read():
     if outcome == "absent":
         pytest.skip("this stack has no .env, so there is nothing to deny")
     assert outcome == "denied", "an isolated node could read " + target
+
+
+# ---------------------------------------------------------------------------
+# A collection's files, from the child's side
+# ---------------------------------------------------------------------------
+
+#: The committed example collection and the folder source its files are in.
+#: Both ship in the image, so nothing has to be seeded for these.
+EXAMPLE_COLLECTION = "data.curio.storage-orthos"
+
+
+def _collection_request(code):
+    """Execute *code* with the example collection resolved the way the backend
+    resolves it for ``/processPythonCode``: its index as a dataset path, its
+    folder as the collection's root, and this user's media directory."""
+    body = textwrap.indent(textwrap.dedent(code).strip("\n"), "    ")
+    return _request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": NODE_TYPE,
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "dataset_paths": {
+            EXAMPLE_COLLECTION: LAUNCH_DIR
+            + "/datasets/" + EXAMPLE_COLLECTION + "@1/data/index.parquet",
+        },
+        "collections": {
+            EXAMPLE_COLLECTION: {
+                "kind": "rasters",
+                "root": LAUNCH_DIR + "/docs/examples/data/storage",
+            },
+        },
+        "media_dir": LAUNCH_DIR + "/.curio/exec-scratch/users/" + USER_KEY + "/media",
+    })
+
+
+def test_a_folder_collections_files_are_readable_by_the_exec_user():
+    """A folder source is read in place, by the child, as the execution user.
+
+    The index reaches the child staged like any dataset; the files do not, so
+    the folder itself has to be readable by ``curio-exec``. That is what the
+    backend's boot audit warns about for an operator's own folders.
+    """
+    result = assert_ran(_collection_request("""
+        import os
+        tiles = curio_collection("%s")
+        print(len(tiles))
+        print(sum(1 for p in tiles["path"] if p and os.access(p, os.R_OK)))
+    """ % EXAMPLE_COLLECTION), "reading the example collection")
+    total, readable = printed(result).splitlines()
+    assert int(total) > 0, "the example collection indexes no files"
+    assert readable == total, (
+        "%s of %s of the collection's files are readable as the execution user"
+        % (readable, total)
+    )
+
+
+def test_a_node_can_write_what_it_derives_from_a_collection():
+    """``curio_derived_file`` names a file in the user's media directory, under
+    the work tree the execution user owns, and the node can write it there."""
+    result = assert_ran(_collection_request("""
+        import os
+        tiles = curio_collection("%s")
+        row = curio_derived_file("%s", tiles["file_id"].iloc[0], 0, "txt", kind="video")
+        with open(row["path"], "w") as handle:
+            handle.write("derived")
+        print(open(row["path"]).read())
+        print(os.stat(row["path"]).st_uid == os.getuid())
+    """ % (EXAMPLE_COLLECTION, EXAMPLE_COLLECTION)), "writing a derived file")
+    content, owned = printed(result).splitlines()
+    assert content == "derived"
+    assert owned == "True", "the derived file is not owned by the execution user"

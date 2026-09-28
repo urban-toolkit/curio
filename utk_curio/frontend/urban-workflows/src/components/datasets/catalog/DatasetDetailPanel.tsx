@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
+  DATASET_COLLECTION_KIND_LABEL,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetCatalogApi,
@@ -11,6 +11,12 @@ import {
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import {
+  CollectionInfoSection,
+  CollectionStrip,
+  useCollectionStatus,
+} from "./DatasetCollectionPanel";
+import { DetailLink } from "./DetailLink";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   downstreamFromDataflowUsage,
@@ -220,7 +226,8 @@ const LineageMainSection: React.FC<{
   dataset: DatasetCatalogItem;
   lineage: DatasetLineage;
   canvasAvailable: boolean;
-}> = ({ dataset, lineage, canvasAvailable }) => {
+  onFollowLink?: (to: string) => void;
+}> = ({ dataset, lineage, canvasAvailable, onFollowLink }) => {
   const { consumingNodes } = lineage.downstream;
   return (
     <div className={styles.lineageSection}>
@@ -247,7 +254,7 @@ const LineageMainSection: React.FC<{
 
       {/* Cross-dataflow usage (resolved from saved specs by the backend, so it
           works even without a live canvas). */}
-      <DatasetDataflowUsageSection datasetId={dataset.id} />
+      <DatasetDataflowUsageSection datasetId={dataset.id} onFollowLink={onFollowLink} />
     </div>
   );
 };
@@ -256,34 +263,36 @@ export interface DatasetDetailPanelProps {
   dataset: DatasetCatalogItem | null;
   loading?: boolean;
   error?: string | null;
-  variant?: "page" | "modal";
   /**
    * True only where a live ReactFlow canvas is mounted behind this panel —
    * i.e. the in-canvas Data Catalog drawer. Drives whether lineage is read
-   * from the canvas or from the backend's saved specs. Not the same thing
-   * as `variant`: the browse page opens this panel as a modal too, and has
-   * no canvas.
+   * from the canvas or from the backend's saved specs. The browse pages open
+   * this panel too, and have no canvas.
    */
   canvasAvailable?: boolean;
   dataflowId?: string | null;
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
   initialTab?: (typeof TABS)[number];
-  onBack?: () => void;
   /** Called after publish/unpublish so the parent can refetch the dataset. */
   onMutated?: () => void;
+  /** How an in-app link in these details is followed; see `DetailLink`. */
+  onFollowLink?: (to: string) => void;
+  /** In the account's "all projects" list. Left out until it is known, so the
+   *  row never guesses. */
+  inAllProjects?: boolean;
 }
 
 export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   dataset,
   loading = false,
   error = null,
-  variant = "modal",
   canvasAvailable = false,
   dataflowId = null,
   liveOutputs,
   initialTab = "Overview",
-  onBack,
   onMutated,
+  onFollowLink,
+  inAllProjects,
 }) => {
   const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
@@ -308,6 +317,9 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     () => (dataset ? datasetReference(dataset) : null),
     [dataset],
   );
+  const collection = useCollectionStatus(
+    dataset?.format === "collection" ? dataset.id : undefined,
+  );
 
   const columnsLabel =
     fields.length > 0
@@ -315,7 +327,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
       : resolvedSchema.fetching
         ? "…"
         : "Unknown";
-  const rootClass = variant === "page" ? styles.pageRoot : styles.modalRoot;
+  const rootClass = styles.modalRoot;
 
   if (loading && !dataset) {
     return <p className={styles.loading}>Loading dataset...</p>;
@@ -340,9 +352,16 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Bundles are multi-part and have no single serialized file to export.
-  // Neither a multi-part bundle nor an OSM group is a single exportable file.
-  const canExport = dataset.format !== "bundle" && dataset.format !== "osm";
+  // Neither a multi-part bundle, an OSM group nor a collection (an index of
+  // files kept where they are) is a single exportable file.
+  const canExport =
+    dataset.format !== "bundle" && dataset.format !== "osm" && dataset.format !== "collection";
+  const lake = dataset.lakeSource;
+  // A storage source's resource is a folder or a bucket, not a portal page.
+  // Which words describe where the bytes came from: a file the person
+  // downloaded by hand, then a storage source's files, then a portal download.
+  const manual = Boolean(lake?.manual);
+  const fromStorage = Boolean(lake && !manual && (lake.fingerprint || lake.fileCount != null));
   const activeDataset = dataset;
 
   const handleExport = async () => {
@@ -378,9 +397,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             a panel opened from the Data Catalog - three tellings of one fact,
             and the trail led nowhere because none of it was a link. The peers
             (Agent, Node) never had one. */}
-        {variant === "page" && onBack ? (
-          <button className={styles.backButton} type="button" onClick={onBack}>Back</button>
-        ) : null}
 
         {/* The shared header, the same one the Agent and Node details views
             render. There used to be two stylesheets and three results - two
@@ -405,7 +421,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               title={
                 canExport
                   ? undefined
-                  : "Multi-part (bundle) datasets cannot be exported as a single file."
+                  : "This dataset has no single file to export."
               }
             >
               {exporting ? "Exporting…" : "Export"}
@@ -421,6 +437,11 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <span className={formatClass(dataset.format, styles)}>
               {DATASET_FORMAT_LABEL[dataset.format]}
             </span>
+            {dataset.collection ? (
+              <span className={styles.installedBadge}>
+                {DATASET_COLLECTION_KIND_LABEL[dataset.collection.kind] ?? dataset.collection.kind}
+              </span>
+            ) : null}
             {countLabel ? <span>{countLabel}</span> : null}
             {fields.length > 0 ? (
               <>
@@ -468,9 +489,11 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               dataset={dataset}
               lineage={effectiveLineage}
               canvasAvailable={canvasAvailable}
+              onFollowLink={onFollowLink}
             />
           ) : (
             <div className={styles.previewSection}>
+              {dataset.collection ? <CollectionStrip status={collection.status} /> : null}
               <div className={styles.previewSubtab}>
                 <span className={styles.previewSubtabActive}>Table Preview</span>
               </div>
@@ -518,6 +541,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
               <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "In project" : "Available"}</span></dd></div>
+              {/* The two account-level facts the Node and Agent details show,
+                  under the same names. */}
+              {inAllProjects !== undefined ? (
+                <div><dt>In all projects</dt><dd>{inAllProjects ? "Yes" : "No"}</dd></div>
+              ) : null}
+              <div><dt>In the catalog</dt><dd>{published ? "Published" : "Not published"}</dd></div>
               <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
               {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
@@ -526,40 +555,69 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </dl>
           </div>
 
-          {dataset.lakeSource ? (
+          {dataset.collection ? (
+            <CollectionInfoSection
+              dataset={dataset}
+              status={collection.status}
+              error={collection.error}
+              job={collection.job}
+              onCacheFiles={collection.cacheFiles}
+              onFollowLink={onFollowLink}
+            />
+          ) : lake ? (
             // Where the bytes came from. Without it a downloaded dataset is
             // indistinguishable from a hand-uploaded one, and the question it
             // answers - "which portal is this, and can I go back to it?" - has
-            // no other home on this page.
+            // no other home on this page. A collection says it in its own
+            // section, above.
             <div className={styles.infoSection}>
-              <p className={styles.infoSectionLabel}>Downloaded from</p>
+              <p className={styles.infoSectionLabel}>
+                {manual ? "Downloaded by hand from" : fromStorage ? "Added from" : "Downloaded from"}
+              </p>
               <dl className={styles.infoRows}>
-                <div>
-                  <dt>Portal</dt>
-                  <dd>
-                    <Link to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}>
-                      {dataset.lakeSource.lakeName}
-                    </Link>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Resource</dt>
-                  <dd>
-                    <a
-                      href={dataset.lakeSource.resourceUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      {dataset.lakeSource.resourceId}
-                    </a>
-                  </dd>
-                </div>
-                {dataset.lakeSource.fetchedAt ? (
+                {lake.lakeId ? (
                   <div>
-                    <dt>Downloaded</dt>
-                    <dd title={absoluteDate(dataset.lakeSource.fetchedAt)}>
-                      {relativeTime(dataset.lakeSource.fetchedAt)}
+                    <dt>{fromStorage ? "Source" : "Portal"}</dt>
+                    <dd>
+                      <DetailLink
+                        to={`/catalog/lakes/${encodeURIComponent(lake.lakeId)}`}
+                        onFollow={onFollowLink}
+                      >
+                        {lake.lakeName || lake.lakeId}
+                      </DetailLink>
                     </dd>
+                  </div>
+                ) : null}
+                {lake.resourceUrl ? (
+                  <div>
+                    <dt>{lake.resourceId ? "Resource" : "Link"}</dt>
+                    <dd>
+                      <a href={lake.resourceUrl} target="_blank" rel="noreferrer noopener">
+                        {lake.resourceId || lake.resourceUrl} ↗
+                      </a>
+                    </dd>
+                  </div>
+                ) : lake.resourceId ? (
+                  <div>
+                    <dt>Resource</dt>
+                    <dd>{lake.resourceId}</dd>
+                  </div>
+                ) : null}
+                {lake.fileCount != null && lake.fileCount > 1 ? (
+                  <div>
+                    <dt>Combined from</dt>
+                    <dd>{lake.fileCount.toLocaleString()} files</dd>
+                  </div>
+                ) : lake.sourcePath ? (
+                  <div>
+                    <dt>File</dt>
+                    <dd>{lake.sourcePath}</dd>
+                  </div>
+                ) : null}
+                {lake.fetchedAt ? (
+                  <div>
+                    <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
+                    <dd title={absoluteDate(lake.fetchedAt)}>{relativeTime(lake.fetchedAt)}</dd>
                   </div>
                 ) : null}
               </dl>
@@ -597,7 +655,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             {/* Cross-dataflow usage — resolved from saved specs by the backend,
                 so it works on the canvas-less standalone catalog page too. */}
             {lineageTabActive ? null : (
-              <DatasetDataflowUsageSection datasetId={dataset.id} />
+              <DatasetDataflowUsageSection datasetId={dataset.id} onFollowLink={onFollowLink} />
             )}
           </div>
 
