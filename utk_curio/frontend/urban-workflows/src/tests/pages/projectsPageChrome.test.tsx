@@ -283,7 +283,7 @@ describe('project card selection', () => {
     for (const page of [
       'projects/ProjectsList.tsx',
       'catalog/NodeCatalogBrowse.tsx',
-      'dataHub/DataCatalogBrowse.tsx',
+      'dataCatalog/DataCatalogBrowse.tsx',
     ]) {
       expect(read(page)).not.toContain('hubStatusChip');
     }

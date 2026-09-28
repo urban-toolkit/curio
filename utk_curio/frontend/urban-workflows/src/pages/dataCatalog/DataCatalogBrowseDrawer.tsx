@@ -20,7 +20,7 @@ import {
 } from "../../services/datasetCatalog";
 import { useUserContext } from "../../providers/UserProvider";
 import { DataCatalogGeoPreview } from "./DataCatalogGeoPreview";
-import { datasetCount, formatBytes, metaLeft } from "./dataHubBrowseFormat";
+import { datasetCount, formatBytes, metaLeft } from "./dataCatalogBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface DataCatalogBrowseDrawerProps {
@@ -127,8 +127,10 @@ function DataCatalogBrowseDrawerContent({
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
-          {dataset.installed ? (
-            <span className={styles.drawerInstalledBadge}>✓ In project</span>
+          {/* The account-level fact, as on the Node and Agent drawers: this
+              page has no project for "In project" to be about. */}
+          {inAllProjects ? (
+            <span className={styles.drawerInstalledBadge}>✓ In all projects</span>
           ) : null}
         </>
       }

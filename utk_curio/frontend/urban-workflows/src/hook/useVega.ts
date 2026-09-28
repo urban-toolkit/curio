@@ -9,6 +9,7 @@ import { applyContainerSizing } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
+import { matchSelections, objectRows } from "../utils/selectionMatch";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 // The same stylesheet NodeEmptyState uses, so a blank Vega node looks exactly
@@ -58,6 +59,35 @@ export const useVega = ({
   // The spec most recently compiled. `processData` needs it to prepare rows the
   // same way `compileGrammar` did -- hot reload never goes through the latter.
   const lastSpecRef = React.useRef<any>(null);
+
+  // The rows the view holds, which a direct selection is matched against.
+  const lastValuesRef = React.useRef<any[]>([]);
+  const incomingSelectionRef = React.useRef<any>(data.interactions);
+  incomingSelectionRef.current = data.interactions;
+
+  /**
+   * A selection from a chart joined to this one by a direct interaction edge,
+   * with no Data Pool between them. The rows it picks out are flagged
+   * `interacted` in the view as it is, so the spec's `datum.interacted`
+   * condition highlights them exactly as it does behind a pool. The chart is
+   * never rebuilt for it. Also re-applied after new rows arrive, so a selection
+   * that is still active survives an upstream run.
+   */
+  const applyDirectSelection = (view: any) => {
+    const incoming = incomingSelectionRef.current;
+    if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
+    const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
+    view
+      .change(
+        "data",
+        vega.changeset().modify(
+          () => true,
+          "interacted",
+          (t: any) => (picked.has(t.__row_index__) ? "1" : "0"),
+        ),
+      )
+      .runAsync();
+  };
 
   // Why the node body is blank, when it is. Persistent, unlike a toast.
   const [emptyReason, setEmptyReason] = useState<NodeEmptyReason | null>(null);
@@ -176,6 +206,7 @@ export const useVega = ({
     const prepared = await prepareVegaInput(data.input, lastSpecRef.current);
     setEmptyState(prepared);
     const values = prepared.values;
+    lastValuesRef.current = values;
 
     let changeset = vega
       .changeset()
@@ -187,6 +218,7 @@ export const useVega = ({
       prevView.change("data", changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
+        applyDirectSelection(prevView);
       });
     }
 
@@ -201,6 +233,10 @@ export const useVega = ({
       showToast(error.message, "error");
     });
   }, [data.input]);
+
+  useEffect(() => {
+    applyDirectSelection(currentViewRef.current);
+  }, [data.interactions]);
 
 
   // The states that exist *before* anything compiles: nothing connected, an
@@ -277,6 +313,7 @@ export const useVega = ({
     const prepared = await prepareVegaInput(data.input, specObj);
     setEmptyState(prepared);
     const values = prepared.values;
+    lastValuesRef.current = values;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
     const { usableRows, usableFields } = usableCounts(values, specObj);
@@ -377,6 +414,7 @@ export const useVega = ({
     }).then(() => {
       const map = buildVgsidMap(view);
       if (map.size > 0) vgsidToIndexRef.current = map;
+      applyDirectSelection(view);
       return countDrawnMarks(view);
     }).catch(() => undefined);   // could not count: no claim (dev/136)
 
