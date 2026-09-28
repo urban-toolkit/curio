@@ -418,7 +418,9 @@ def test_adding_a_collection_narrowed_by_year(
     expect(details).to_be_visible(timeout=30000)
     expect(details.get_by_text("Collection", exact=True).first).to_be_visible()
     expect(details.get_by_text("2 rasters")).to_be_visible()
-    expect(details.get_by_text("year 2024")).to_be_visible()
+    # The kept year, as Narrowed to says it; Path fields says it too, with the tiles.
+    expect(details.get_by_text("year 2024", exact=True)).to_be_visible()
+    expect(details.get_by_text("year 2024 · tile tile_0001, tile_0002")).to_be_visible()
     expect(details.get_by_role("link", name="Example storage")).to_be_visible()
     expect(details.locator('img[src^="blob:"]').first).to_be_visible(timeout=30000)
 
