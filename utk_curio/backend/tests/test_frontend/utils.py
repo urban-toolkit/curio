@@ -1109,9 +1109,8 @@ def save_workflow_test_screenshot(
     compared pixel-by-pixel against it.  Both images are resized to the
     same dimensions before comparison so layout-only size changes don't
     cause false positives.  The assertion fails when more than
-    *max_diff_ratio* of pixels differ by more than *pixel_threshold*
-    (per-channel, 0-255). It defaults to ``MAX_DIFF_RATIO``, which is also the
-    most it may be.
+    *max_diff_ratio* (default 15 %) of pixels differ by more than
+    *pixel_threshold* (per-channel, 0-255).
 
     On failure the expected, actual, and diff images are attached to the
     Allure report so that reviewers can inspect the regression directly
@@ -1214,13 +1213,6 @@ def save_workflow_test_screenshot(
     total = int(arr.shape[0] * arr.shape[1])
     mismatched = int((arr > pixel_threshold).any(axis=2).sum())
     ratio = mismatched / total if total else 0.0
-    # Passing comparisons report too, so a budget can be set from what CI
-    # measures rather than guessed.
-    allure.attach(
-        f"{mismatched}/{total} pixels differ ({ratio:.2%}), allowed {max_diff_ratio:.2%}",
-        name=f"{filename}: pixels that differ",
-        attachment_type=allure.attachment_type.TEXT,
-    )
 
     if ratio > max_diff_ratio:
         actual_path = os.path.join(
