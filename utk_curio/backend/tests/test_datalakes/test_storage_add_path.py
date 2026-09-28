@@ -508,3 +508,66 @@ class TestTheLinkKey:
         assert len(keys) == racers
         assert {len(key) for key in keys} == {32}
         assert len(set(keys)) == 1
+
+
+class TestDifferentFilesInOneFolder:
+    """Case F: a resource per file, whatever each file is."""
+
+    def test_a_geopackage_adds_one_dataset_per_layer(self, client, auth, app, lake_root, tmp_path):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        folder = tmp_path / "f" / "city"
+        folder.mkdir(parents=True)
+        path = folder / "parcels.gpkg"
+        gpd.GeoDataFrame({"n": [1]}, geometry=[Point(0, 0)], crs=4326).to_file(path, layer="parcels", driver="GPKG")
+        gpd.GeoDataFrame({"n": [2, 3]}, geometry=[Point(1, 1), Point(2, 2)], crs=4326).to_file(
+            path, layer="lots", driver="GPKG"
+        )
+        a_source(lake_root, tmp_path / "f", [
+            {"id": "parcels", "name": "Parcels", "kind": "table", "format": "gpkg", "path": "city/parcels.gpkg"}
+        ])
+        dataset = added(client, auth, "parcels")
+        assert dataset["format"] == "parquet"
+        assert dataset["importedDatasetCount"] == 2
+
+    def test_one_raster_is_a_collection_of_one(self, client, auth, app, lake_root, tmp_path):
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_origin
+
+        folder = tmp_path / "f" / "dem"
+        folder.mkdir(parents=True)
+        with rasterio.open(
+            folder / "dem.tif", "w", driver="GTiff", width=4, height=4, count=1, dtype="uint8",
+            crs="EPSG:32616", transform=from_origin(447000.0, 4641000.0, 1.0, 1.0),
+        ) as dst:
+            dst.write(np.ones((4, 4), dtype=np.uint8), 1)
+        a_source(lake_root, tmp_path / "f", [
+            {"id": "dem", "name": "Elevation", "kind": "rasters", "path": "dem/{tile}.tif", "datasets": "per-file"}
+        ])
+        assert [r["resourceId"] for r in listing(client, auth)["resources"]] == ["dem/dem/dem.tif"]
+        dataset = added(client, auth, "dem/dem/dem.tif")
+        assert dataset["format"] == "collection" and dataset["rowCount"] == 1
+        assert dataset["collection"]["crs"] == ["EPSG:32616"]
+
+
+class TestTextInCombinedTables:
+    def test_a_file_in_another_encoding_is_read_as_an_import_reads_it(self, client, auth, app, lake_root, tmp_path):
+        """Combining transcodes each file the way a single import does."""
+        import pandas as pd
+
+        from utk_curio.backend.app.datasets.infrastructure.text_encoding import to_utf8
+
+        cp1252 = "city,note\nCafé,naïve\nZürich,Öl\n".encode("cp1252")
+        expected = pd.read_csv(io.BytesIO(to_utf8(cp1252)[0]))
+        root = write_files(tmp_path / "f", {
+            "aq/s1/2024-01-01.csv": "city,note\nChicago,loop\n",
+            "aq/s2/2024-01-01.csv": cp1252,
+        })
+        a_source(lake_root, root, [
+            {"id": "aq", "name": "Readings", "kind": "table", "format": "csv", "path": "aq/{sensor}/{day:date}.csv"}
+        ])
+        frame = pd.read_parquet(added(client, auth, "aq")["path"])
+        assert list(frame["city"]) == ["Chicago"] + list(expected["city"]) == ["Chicago", "Café", "Zürich"]
+        assert list(frame["note"])[1:] == list(expected["note"])
