@@ -56,7 +56,7 @@ The three directories you created are bind-mounted into the container and persis
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
 | `datalakes/` | The Data Lake Catalog: one manifest per data portal. Ships with the image | No |
-| `.curio/` | Per-user stores, logs, sandbox artifacts | Yes, if users' imported datasets and computed outputs matter |
+| `.curio/` | Per-user stores, logs, sandbox artifacts, and each account's agent imports and catalog settings | Yes, if users' imported datasets, computed outputs and settings matter |
 
 `packages/` is **not** mounted. The node catalog is baked into the image so it
 always matches the deployed commit. Neither is `datalakes/`, for the same

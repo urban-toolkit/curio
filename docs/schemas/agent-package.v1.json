@@ -76,6 +76,25 @@
             "type": "string",
             "minLength": 1,
             "description": "Capability contract version (string), e.g. '1'."
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The prompts key of this capability's own instruction, which makes the capability a mode. A delegated run of the capability runs this prompt in place of 'instruction'; an attached run always runs 'instruction'. Must name an entry in prompts."
+          },
+          "reads": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Context a run of this capability reads."
+          },
+          "requiredConfig": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Catalog settings a run of this capability receives, by key, for example 'keywordTypes'. Their values are the user's, edited in the Agent Catalog, and reach the run as data after its instruction. A key Curio does not define is skipped."
           }
         }
       }
@@ -83,10 +102,38 @@
     "delegatesTo": {
       "type": "array",
       "items": {
-        "type": "string",
-        "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "An agent id: every capability of that agent may be delegated."
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "capabilities"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              "capabilities": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+                }
+              }
+            },
+            "description": "An agent id and the only capabilities of that agent that may be delegated."
+          }
+        ]
       },
-      "description": "Agent ids this agent may delegate to. Expresses a preferred/required implementation only; it grants nothing and never auto-imports or auto-installs."
+      "description": "Agents this agent may delegate to, in preference order, each named once. Expresses a preferred/required implementation only; it grants nothing and never auto-imports or auto-installs."
     },
     "requiresAgents": {
       "type": "array",
@@ -170,19 +217,21 @@
     },
     "inputs": {
       "type": "object",
-      "description": "Context this agent reads and the config it requires.",
+      "description": "Context this agent reads and the catalog settings every run of it receives.",
       "properties": {
         "reads": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Context this agent reads."
         },
         "requiredConfig": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Catalog settings every run of this agent receives, by key. See capabilities[].requiredConfig for settings only one capability reads."
         }
       },
       "additionalProperties": true
@@ -196,7 +245,7 @@
     },
     "configuration": {
       "type": "object",
-      "description": "Non-secret configuration options and defaults. RESERVED: accepted for forward compatibility but not read by the current manifest parser, so it has no effect on how an agent runs.",
+      "description": "Non-secret configuration options and defaults. RESERVED: accepted for forward compatibility but not read by the current manifest parser, so it has no effect on how an agent runs. The values a run does receive are catalog settings, declared with inputs.requiredConfig and capabilities[].requiredConfig.",
       "properties": {
         "options": {
           "type": "array",

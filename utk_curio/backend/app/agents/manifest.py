@@ -101,10 +101,18 @@ def _validate_asset_path(raw: object, *, where: str) -> str:
 
 @dataclass(frozen=True)
 class CapabilityDeclaration:
-    """A semantic capability the agent declares, by id and contract version."""
+    """A semantic capability the agent declares, by id and contract version.
+
+    A capability may be a MODE: its own instruction (a ``prompts`` key), the
+    context it reads and the catalog settings it needs. A delegated run of the
+    capability runs that mode; without one it runs the agent's instruction.
+    """
 
     id: str
     contract_version: str
+    instruction: str | None = None
+    reads: tuple[str, ...] = ()
+    required_config: tuple[str, ...] = ()
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "CapabilityDeclaration":
@@ -112,7 +120,17 @@ class CapabilityDeclaration:
             raise AgentManifestError(f"{where}: expected object, got {type(raw).__name__}")
         cap_id = _validate_capability_id(raw.get("id"), where=where)
         contract_version = _require_str(raw.get("contractVersion"), where=f"{where}.contractVersion")
-        return cls(id=cap_id, contract_version=contract_version)
+        instruction = raw.get("instruction")
+        if instruction is not None:
+            instruction = _require_str(instruction, where=f"{where}.instruction")
+        lists = {}
+        for key in ("reads", "requiredConfig"):
+            value = raw.get(key, [])
+            if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+                raise AgentManifestError(f"{where}.{key} must be a list of strings")
+            lists[key] = tuple(value)
+        return cls(id=cap_id, contract_version=contract_version, instruction=instruction,
+                   reads=lists["reads"], required_config=lists["requiredConfig"])
 
 
 @dataclass(frozen=True)
@@ -236,6 +254,9 @@ class AgentManifest:
     settings_profile_id: str | None
     settings_profile_version: str | None
     provenance: Provenance
+    # A delegatesTo entry that names capabilities: agent id -> the only
+    # capabilities of it this agent delegates. Absent means all of them.
+    delegate_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def dir_name(self) -> str:
@@ -244,6 +265,24 @@ class AgentManifest:
     @property
     def capability_ids(self) -> list[str]:
         return [c.id for c in self.capabilities]
+
+    def capability(self, capability_id: str) -> CapabilityDeclaration | None:
+        return next((c for c in self.capabilities if c.id == capability_id), None)
+
+    def delegates(self, agent_id: str, capability_id: str) -> bool:
+        """Whether this agent delegates *capability_id* to *agent_id*."""
+        if agent_id not in self.delegates_to:
+            return False
+        scope = self.delegate_scopes.get(agent_id)
+        return scope is None or capability_id in scope
+
+    def config_keys(self, capability_id: str | None = None) -> tuple[str, ...]:
+        """The catalog settings a run reads: every run's
+        (``inputs.requiredConfig``) and, for a run of *capability_id*, that
+        capability's own."""
+        declared = self.capability(capability_id) if capability_id else None
+        own = declared.required_config if declared is not None else ()
+        return tuple(dict.fromkeys([*self.inputs_required_config, *own]))
 
 
 def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManifest:
@@ -283,7 +322,22 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
     if not isinstance(delegates_raw, list):
         raise AgentManifestError(f"{where}.delegatesTo must be a list")
     delegates_to: list[str] = []
+    delegate_scopes: dict[str, tuple[str, ...]] = {}
     for i, d in enumerate(delegates_raw):
+        if isinstance(d, dict):
+            # {"id": ..., "capabilities": [...]}: only those capabilities of it.
+            scope = d.get("capabilities")
+            if not isinstance(scope, list) or not scope:
+                raise AgentManifestError(
+                    f"{where}.delegatesTo[{i}].capabilities must be a non-empty list"
+                )
+            scope_ids = tuple(
+                _validate_capability_id(c, where=f"{where}.delegatesTo[{i}].capabilities[{j}]")
+                for j, c in enumerate(scope)
+            )
+            d = d.get("id")
+        else:
+            scope_ids = None
         d_id = _require_str(d, where=f"{where}.delegatesTo[{i}]")
         if not AGENT_ID_RE.match(d_id):
             raise AgentManifestError(
@@ -291,7 +345,11 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
             )
         if d_id == agent_id:
             raise AgentManifestError(f"{where}.delegatesTo must not reference the agent itself")
+        if d_id in delegates_to:
+            raise AgentManifestError(f"{where}.delegatesTo: duplicate {d_id!r}")
         delegates_to.append(d_id)
+        if scope_ids is not None:
+            delegate_scopes[d_id] = scope_ids
 
     requires_raw = raw.get("requiresAgents", [])
     if not isinstance(requires_raw, list):
@@ -320,6 +378,11 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         name: PromptAsset.from_json(name, asset, where=f"{where}.prompts.{name}")
         for name, asset in prompts_raw.items()
     }
+    for i, cap in enumerate(capabilities):
+        if cap.instruction is not None and cap.instruction not in prompts:
+            raise AgentManifestError(
+                f"{where}.capabilities[{i}].instruction {cap.instruction!r} names no prompts entry"
+            )
 
     targets_raw = raw.get("compatibleTargets", [])
     if not isinstance(targets_raw, list):
@@ -405,6 +468,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
         settings_profile_id=profile_id,
         settings_profile_version=profile_version,
         provenance=provenance,
+        delegate_scopes=delegate_scopes,
     )
 
 

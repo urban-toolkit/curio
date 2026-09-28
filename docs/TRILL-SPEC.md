@@ -148,14 +148,6 @@ of the same shape, requiring only `nodes` and `edges`.
 
 ## Known drift
 
-- **`llm-prompts/default_preamble.txt` embeds a stale Draft-07 schema** and sends
-  it to the model on every AI call. It declares `timestamp` as a string, node
-  types as a dead uppercase enum (`DATA_LOADING`), and three fields nothing reads
-  (`node.output`, `metadata.annotations`, edge type `"Data"`), while omitting
-  everything added since: `title`, the `dashboard*` family, `saveOutputDataset`,
-  `metadata.appearance`, the handles, and all of `packages`, `datasets`, `agents`
-  and `agentAttachments`. Until it is rewritten, LLM-generated specs will not
-  validate against this schema.
 - **Two name conventions coexist.** `dataflow.name` is authoritative, but
   `execution/workflow_spec.py` still reads a top-level `name`. Both are valid; a
   top-level one *without* a `dataflow.name` is the footgun documented in

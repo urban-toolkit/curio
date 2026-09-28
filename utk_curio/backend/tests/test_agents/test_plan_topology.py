@@ -1,6 +1,6 @@
 """dev/112 (DEC-070) — the one plan-topology helper: acyclicity over DATA
 edges of the NET graph, and the preamble's interaction-edge rule made
-executable."""
+executable from the roster."""
 from utk_curio.backend.app.agents import plan_topology as pt
 
 
@@ -84,39 +84,78 @@ class TestNetDataEdges:
         assert pt.find_data_cycle(pt.net_data_edges(cyclic, plan, set(), {"e5"})) is not None
 
 
+#: The roster rows the interaction rule reads, as available_templates gives them.
+ROSTER = {
+    "curio.builtin/data-loading": {"category": "data"},
+    "curio.builtin/data-transformation": {"category": "data"},
+    "curio.builtin/merge-flow": {"category": "flow"},
+    "curio.builtin/data-pool": {"category": "data", "bidirectional": True},
+    "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
+    "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
+    "curio.builtin/autk-grammar": {"category": "vis_grammar", "bidirectional": True},
+}
+
+
 class TestInteractionEdgeErrors:
     type_of = staticmethod(lambda ep: TYPES.get(ep))
 
     def test_vis_to_pool_is_legal_both_directions(self):
         for src, dst in (("vis", "pool"), ("pool", "vis")):
             plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
-            assert pt.interaction_edge_errors(plan, self.type_of) == []
+            assert pt.interaction_edge_errors(plan, self.type_of, ROSTER) == []
 
     def test_vis_to_merge_names_the_offender_and_the_fix(self):
         plan = {"edges": [{"from": "vis", "to": "merge", "kind": "interaction"}]}
-        (err,) = pt.interaction_edge_errors(plan, self.type_of)
-        assert err.startswith("edges[0]: an interaction edge connects a visualization")
+        (err,) = pt.interaction_edge_errors(plan, self.type_of, ROSTER)
+        assert err.startswith(
+            "edges[0]: an interaction edge connects a visualization "
+            "(autk-grammar, vis-simple, vis-vega) to a data-pool node"
+        )
         assert "'merge' is merge-flow" in err
         assert "target the data-pool" in err
 
     def test_pool_to_pool_is_refused(self):
         types = dict(TYPES, pool2="curio.builtin/data-pool")
         plan = {"edges": [{"from": "pool", "to": "pool2", "kind": "interaction"}]}
-        assert len(pt.interaction_edge_errors(plan, types.get)) == 1
+        assert len(pt.interaction_edge_errors(plan, types.get, ROSTER)) == 1
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}
-        assert pt.interaction_edge_errors(plan, self.type_of) == []
+        assert pt.interaction_edge_errors(plan, self.type_of, ROSTER) == []
+        types = dict(TYPES, other="acme.maps/unlisted@1")
+        plan = {"edges": [{"from": "other", "to": "pool", "kind": "interaction"}]}
+        assert pt.interaction_edge_errors(plan, types.get, ROSTER) == []
 
     def test_data_edges_are_never_judged(self):
         plan = {"edges": [{"from": "vis", "to": "merge"}]}
-        assert pt.interaction_edge_errors(plan, self.type_of) == []
+        assert pt.interaction_edge_errors(plan, self.type_of, ROSTER) == []
 
-    def test_other_capable_visualizations(self):
-        types = {"m": "acme.maps/autk-map@2", "s": "curio.builtin/vis-simple", "p": "x/data-pool"}
+    def test_a_packages_visualization_is_capable_when_it_declares_it(self):
+        roster = dict(ROSTER, **{"acme.maps/autk-map": {"category": "vis_grammar", "bidirectional": True}})
+        types = {"m": "acme.maps/autk-map@2", "s": "curio.builtin/vis-simple", "p": "curio.builtin/data-pool"}
         for v in ("m", "s"):
             plan = {"edges": [{"from": v, "to": "p", "kind": "interaction"}]}
-            assert pt.interaction_edge_errors(plan, types.get) == []
+            assert pt.interaction_edge_errors(plan, types.get, roster) == []
+        # Without the declaration it is refused like any other node.
+        roster["acme.maps/autk-map"] = {"category": "vis_grammar"}
+        plan = {"edges": [{"from": "m", "to": "p", "kind": "interaction"}]}
+        assert len(pt.interaction_edge_errors(plan, types.get, roster)) == 1
+
+    def test_the_roles_come_from_the_built_in_manifest(self):
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.services import _catalog_manifests, _template_entry
+
+        manifest = _catalog_manifests()["curio.builtin@1"]
+        roster = {
+            row["id"]: row
+            for row in (_template_entry(manifest.package_id, t) for t in manifest.templates)
+        }
+        pools, visualizations = pt.interaction_roles(roster)
+        assert pools == {"curio.builtin/data-pool"}
+        assert visualizations == {
+            "curio.builtin/vis-vega", "curio.builtin/vis-simple", "curio.builtin/autk-grammar",
+        }
+        assert packages_services  # the roster rows are the packages layer's own
 
 
 class TestHelpers:

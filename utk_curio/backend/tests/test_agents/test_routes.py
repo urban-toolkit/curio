@@ -147,7 +147,7 @@ class TestGlobalCatalog:
         assert all(a["inCatalog"] is True for a in agents)
         ids = {a["id"] for a in agents}
         assert ids == {s.agent_id for s in builtin.BUILTIN_AGENTS if s.in_catalog}
-        assert "agent.dataflow-task-planner" not in ids
+        assert "agent.dataflow-planner" not in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.
@@ -182,7 +182,7 @@ class TestGlobalCatalog:
         self, client, user_and_token, tmp_curio, alice_project
     ):
         _, token = user_and_token
-        coord = "agent.dataflow-task-planner@1.0.0"
+        coord = "agent.dataflow-planner@1.0.0"
         imported = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
         assert imported.status_code == 400
         assert "runs only as a delegate" in imported.get_json()["error"]
@@ -2696,9 +2696,12 @@ class TestOutputCapReachesTheProvider:
         # unregistered route does answer 404, so a status assertion would work
         # now - but the map is the more direct statement of "this rule is gone",
         # and it cannot be satisfied by a 404 that came from somewhere else.
+        #
+        # ``/api/agents/settings`` was one of them and is taken again, by the
+        # account's catalog settings (test_catalog_settings.py): a different
+        # contract that shares only the path.
         rules = {str(r.rule) for r in app.url_map.iter_rules()}
         for gone in (
-            "/api/agents/settings",
             "/api/agents/projects/<project_id>/defaults/<coord>",
             "/api/agents/projects/<project_id>/attachments/<attachment_id>/settings",
         ):
@@ -8960,7 +8963,7 @@ class TestPlanTopologyMint:
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
         {"id": "data-pool", "label": "Data Pool", "category": "data", "engine": "python",
-         "editor": "none", "hasCode": False, "description": "d",
+         "editor": "none", "hasCode": False, "description": "d", "bidirectional": True,
          "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
         {"id": "merge-flow", "label": "Merge Flow", "category": "data", "engine": "python",
@@ -8968,7 +8971,7 @@ class TestPlanTopologyMint:
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
         {"id": "vis-vega", "label": "Vega", "category": "visualization", "engine": "javascript",
-         "editor": "grammar", "description": "d",
+         "editor": "grammar", "description": "d", "bidirectional": True,
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
     ]

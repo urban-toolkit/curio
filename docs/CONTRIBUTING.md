@@ -437,8 +437,10 @@ Some files are generated from a single source and committed: everything under
 with a header naming its generator and source. The preamble has no header,
 because the model reads it verbatim; its hand-written text lives in
 `default_preamble.template.txt` beside it, and the `{{...}}` fields in the
-template are the generated parts. Do not edit an output by hand: change
-`contracts.py` or the template, then regenerate and commit both.
+template are the generated parts. The preamble also reads
+`docs/schemas/trill.v1.json` and `packages/curio.builtin@1/manifest.json`, so a
+change to either needs a regeneration too. Do not edit an output by hand:
+change the source, then regenerate and commit both.
 
 ```bash
 # rewrite every generated file
