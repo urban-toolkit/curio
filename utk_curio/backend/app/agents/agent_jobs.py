@@ -29,6 +29,7 @@ import logging
 import queue
 import threading
 import time
+import traceback
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Iterator
@@ -75,6 +76,9 @@ class AgentJob:
     subscribers: list = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
     thread: threading.Thread | None = None
+    # Secret values (the job's LLM key) taken out of a failure before it is
+    # published or logged.
+    redact_values: dict = field(default_factory=dict, repr=False)
 
     @property
     def live(self) -> bool:
@@ -164,18 +168,21 @@ def start_job(
     job_id: str,
     events: Iterator[tuple[str, Any]],
     app_context=None,
+    redact_values: dict | None = None,
 ) -> AgentJob:
     """Register *job_id* and drive *events* (a ``(kind, payload)`` generator)
     in a daemon thread. Every item is appended to the job's log and fanned
     out to live subscribers; the generator's own ``finally`` blocks (the
     Solve ``_finish`` persist) run inside the thread exactly as they did
     inside the request. An exception in the generator becomes a terminal
-    ``error`` event, never a lost job."""
+    ``error`` event, never a lost job, with *redact_values* taken out of its
+    text."""
     if kind not in JOB_KINDS:
         raise ValueError(f"unknown job kind {kind!r}")
     check_can_start(user_key, attachment_id)
     job = AgentJob(job_id=job_id, kind=kind, user_key=user_key,
-                   project_id=project_id, attachment_id=attachment_id)
+                   project_id=project_id, attachment_id=attachment_id,
+                   redact_values=dict(redact_values or {}))
     with _LOCK:
         _JOBS[job_id] = job
         _BY_ATTACHMENT[(user_key, attachment_id)] = job_id
@@ -207,8 +214,11 @@ def _run(job: AgentJob, events: Iterator[tuple[str, Any]], app_context=None) -> 
             for item in events:
                 _publish(job, item)
     except Exception as exc:  # the generator's failure is an EVENT, not a lost job
-        log.exception("agent job %s (%s) failed", job.job_id, job.kind)
-        _publish(job, ("error", f"job failed: {str(exc)[:300]}"))
+        from utk_curio.common.redaction import redact
+
+        log.error("agent job %s (%s) failed:\n%s", job.job_id, job.kind,
+                  redact(traceback.format_exc(), job.redact_values))
+        _publish(job, ("error", f"job failed: {(redact(str(exc), job.redact_values) or '')[:300]}"))
         status = "error"
     finally:
         with job.lock:

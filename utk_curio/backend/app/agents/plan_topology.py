@@ -10,10 +10,9 @@ saved spec, so the mint, both apply paths, and the applied summary agree:
    excluded exactly as the canvas's ``hasCycle`` and the execution runner
    exclude them.
 2. Are the plan's interaction edges legal?  The default preamble teaches the
-   rule ("Visualizations can be connected to DATA_POOL with an edge of type
-   Interaction"; capable nodes: VIS_VEGA, AUTK_GRAMMAR, VIS_SIMPLE, DATA_POOL) —
-   here it is executable: one endpoint is a data-pool node, the other an
-   interaction-capable visualization.
+   rule ("Visualizations can be connected to a Data Pool with an edge of type
+   Interaction"), and here it is executable: one endpoint is a pool, the other a
+   visualization, both read from the roster's ``bidirectional`` templates.
 
 Before this module, plan mint validated endpoints and fan-in only; the bulk
 bridge inserts edges without the canvas's connect-time cycle check; and the
@@ -32,35 +31,18 @@ from __future__ import annotations
 
 INTERACTION_EDGE_TYPE = "Interaction"
 
-# Template-id suffixes (unversioned, package-agnostic — dev/50's `requires`
-# idiom) of the nodes the preamble lists as interaction-capable
-# (``default_preamble.txt``: "Nodes that can have interaction connection edge").
-#
-# dev/125 §3.1, stated rather than hidden: this is a hand-kept set, which DEC-076
-# retired for executability. It is defensible only because NO template metadata
-# declares interaction capability today — ``available_templates`` exports
-# ``maxIncomingEdges`` as the rendered arity truth and nothing equivalent for
-# interaction. Do not mistake the frontend's ``ContainerConfig.handleType``
-# ('in' | 'out' | 'in/out') for it: that means "this node has both ports",
-# derived from port counts, and wears the interaction handle id as a string by
-# coincidence. If a template ever declares the capability, this set reads from
-# the roster and stops being a list (dev/125 F1).
-INTERACTION_POOL_SUFFIX = "data-pool"
-INTERACTION_VIS_SUFFIXES = frozenset({
-    "vis-vega",
-    "vis-simple",
-    # dev/125: the roster's Autark template is `autk-grammar` (legacy
-    # AUTK_GRAMMAR). dev/112 transcribed the preamble's list, which says
-    # AUTK_MAP / "autk-map" — a template id that exists in NO manifest on this
-    # branch, while the four shipped linked-view examples wire their
-    # interaction edges into `autk-grammar`. Transcribing prompt prose is
-    # exactly the drift DEC-076 retired; the corpus is the check that caught
-    # it. `autk-map` is kept only so a future roster entry by that name is not
-    # refused — it costs nothing and names no lie.
-    "autk-grammar",
-    "autk-map",
-})
-INTERACTION_CAPABLE_SUFFIXES = INTERACTION_VIS_SUFFIXES | {INTERACTION_POOL_SUFFIX}
+
+
+def interaction_roles(templates: dict) -> tuple[frozenset[str], frozenset[str]]:
+    """``(pools, visualizations)``: the template ids an interaction edge may
+    join, read from the roster. A template that declares ``bidirectional`` has
+    the interaction handle; it is a visualization when its category is one
+    (``vis_*``) and a pool otherwise."""
+    capable = {tid for tid, row in templates.items() if isinstance(row, dict) and row.get("bidirectional")}
+    visualizations = frozenset(
+        tid for tid in capable if str(templates[tid].get("category") or "").startswith("vis")
+    )
+    return frozenset(capable - visualizations), visualizations
 
 
 def strip_type_version(node_type: object) -> str:
@@ -213,29 +195,29 @@ def format_cycle(path: list[str], label_of) -> str:
     return " → ".join(str(label_of(n)) for n in path)
 
 
-def interaction_edge_errors(plan: dict, type_of_endpoint) -> list[str]:
-    """Corrective errors for plan edges of kind ``interaction`` that violate the
-    preamble's rule.  ``type_of_endpoint(endpoint) -> str | None`` returns the
-    (possibly versioned) template id of a plan ref or existing node id; ``None``
-    (unknown template) fails open — no fabricated refusal."""
+def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> list[str]:
+    """Corrective errors for plan edges of kind ``interaction`` that do not join
+    a visualization to a pool (``interaction_roles``, from the *templates*
+    roster).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
+    versioned) template id of a plan ref or existing node id; an unknown
+    template fails open: no fabricated refusal."""
+    pools, visualizations = interaction_roles(templates)
+    pool_names = " or ".join(sorted(template_suffix(t) for t in pools)) or "pool"
     errors: list[str] = []
     for i, edge in enumerate(plan.get("edges", []) or []):
         if not is_interaction_edge(edge):
             continue
-        src_type, dst_type = type_of_endpoint(edge["from"]), type_of_endpoint(edge["to"])
-        if src_type is None or dst_type is None:
+        src, dst = (strip_type_version(type_of_endpoint(edge[end])) for end in ("from", "to"))
+        if src not in templates or dst not in templates:
             continue
-        src_sfx, dst_sfx = template_suffix(src_type), template_suffix(dst_type)
-        has_pool = INTERACTION_POOL_SUFFIX in (src_sfx, dst_sfx)
-        other = dst_sfx if src_sfx == INTERACTION_POOL_SUFFIX else src_sfx
-        if has_pool and other in INTERACTION_VIS_SUFFIXES:
+        if (src in pools and dst in visualizations) or (dst in pools and src in visualizations):
             continue
-        offender = edge["to"] if dst_sfx not in INTERACTION_CAPABLE_SUFFIXES else edge["from"]
-        offender_sfx = dst_sfx if offender == edge["to"] else src_sfx
+        offender = edge["to"] if dst not in pools | visualizations else edge["from"]
+        offender_sfx = template_suffix(dst if offender == edge["to"] else src)
         errors.append(
             f"edges[{i}]: an interaction edge connects a visualization "
-            f"({', '.join(sorted(INTERACTION_VIS_SUFFIXES))}) to a {INTERACTION_POOL_SUFFIX} "
-            f"node; {offender!r} is {offender_sfx or 'untyped'} — use a data edge, or "
-            f"target the {INTERACTION_POOL_SUFFIX}"
+            f"({', '.join(sorted(template_suffix(t) for t in visualizations))}) to a "
+            f"{pool_names} node; {offender!r} is {offender_sfx or 'untyped'}; use a data "
+            f"edge, or target the {pool_names}"
         )
     return errors

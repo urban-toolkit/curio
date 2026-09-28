@@ -10,13 +10,17 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
  * flag that they had configured nothing.
  */
 
+const PROVIDER = {
+  apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4",
+  configId: "llm-00000000000a", label: "Lab server",
+};
+
 const READY = {
   configured: true,
   reason: "",
-  source: "account" as const,
-  provider: { apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4" },
-  account: { apiType: "openai_compatible", baseUrlHost: "sage200.example.edu", model: "gemma4", hasApiKey: true },
-  deployment: { apiType: "", baseUrlHost: "", model: "", hasApiKey: false },
+  source: "default" as const,
+  provider: PROVIDER,
+  configurations: [PROVIDER],
 };
 
 const FIXTURE = {
@@ -119,14 +123,34 @@ describe("the closed section", () => {
   });
 });
 
+describe("a run on more than one configuration", () => {
+  it("names each configuration and the agents on it", async () => {
+    mockReadiness = {
+      ...READY,
+      source: "assigned",
+      configurations: [
+        { ...PROVIDER, agents: ["Dataflow Builder", "Dataset Finder", "Node Builder"] },
+        { ...PROVIDER, configId: "llm-00000000000c", label: "Local", model: "llama3",
+          baseUrlHost: "localhost:11434", agents: ["Node Content Builder"] },
+      ],
+    };
+    await openSection();
+    const list = await screen.findByRole("list", { name: "Configurations this run uses" });
+    expect(list).toHaveTextContent("Node Content Builder: llama3 (Local) at localhost:11434");
+    expect(list).toHaveTextContent("Dataflow Builder, Dataset Finder, Node Builder:");
+    expect(screen.getByText(/The configuration chosen for the Dataflow Builder/)).toBeInTheDocument();
+  });
+});
+
 describe("the blocked state", () => {
   it("says there is nothing to evaluate and names the fix", async () => {
     mockReadiness = {
       ...READY,
       configured: false,
       source: "none",
-      reason: "No LLM provider is configured for this account.",
-      provider: { apiType: "", baseUrlHost: "", model: "" },
+      reason: "No LLM configuration answers this run.",
+      provider: { apiType: "", baseUrlHost: "", model: "", configId: null, label: "" },
+      configurations: [],
     };
     await openSection();
     await waitFor(() =>
@@ -140,18 +164,12 @@ describe("the blocked state", () => {
     mockReadiness = {
       ...READY,
       source: "deployment",
-      account: { apiType: "", baseUrlHost: "", model: "", hasApiKey: false },
-      deployment: {
-        apiType: "openai_compatible",
-        baseUrlHost: "sage200.example.edu",
-        model: "gemma4",
-        hasApiKey: true,
-      },
+      provider: { ...PROVIDER, configId: null, label: "Deployment default" },
     };
     await openSection();
     await waitFor(() =>
       expect(
-        screen.getByText(/Configured by this deployment's start command/),
+        screen.getByText(/set by this deployment's start command/),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("gemma4")).toBeInTheDocument();
@@ -164,6 +182,9 @@ describe("the ready state", () => {
     await openSection();
     await waitFor(() => expect(screen.getByText("gemma4")).toBeInTheDocument());
     expect(screen.getByText(/sage200.example.edu/)).toBeInTheDocument();
+    // Named by the configuration that answers.
+    expect(screen.getByText(/Lab server/)).toBeInTheDocument();
+    expect(screen.getByText(/Your default LLM configuration/)).toBeInTheDocument();
     expect(screen.getByLabelText("Example to rebuild")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "The prompt that will be sent" }),
@@ -235,7 +256,7 @@ describe("a run in progress", () => {
     await waitFor(() =>
       expect(screen.getByText(/waiting for the model/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText("Open the generated dataflow")).toBeNull();
+    expect(screen.queryByText(/Open the generated dataflow/)).toBeNull();
     expect(
       screen.getByText(/dataflow opens when the run finishes/),
     ).toBeInTheDocument();
@@ -265,7 +286,7 @@ describe("a finished run", () => {
     expect(screen.getByRole("row", { name: /intents/ })).toHaveTextContent(
       "not measured",
     );
-    const link = screen.getByText("Open the generated dataflow");
+    const link = screen.getByText("Open the generated dataflow ↗");
     expect(link).toHaveAttribute("href", "/dataflow/project-1");
     // The note points at the transcript, which now carries the whole run.
     expect(screen.getByText(/chat there carries the whole run/)).toBeInTheDocument();

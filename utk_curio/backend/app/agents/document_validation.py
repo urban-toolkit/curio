@@ -411,9 +411,17 @@ def grammar_shape(grammar: str | None) -> str:
     return _GRAMMAR_SHAPES.get(grammar or "", "a JSON document")
 
 
-#: Kinds whose content is never authored (the preamble's "uncontrollable"
-#: boxes): nothing to validate, and nothing to write.
-_PASSIVE = ("merge-flow", "data-pool", "vis-simple", "spatial-join")
+def _authors_nothing(node_type: object, content_kind: object) -> bool:
+    """Whether this kind is known to author nothing: the roster's content kind
+    when there is one, else the offline tables for a kind they name."""
+    from utk_curio.backend.app.execution import workflow_spec
+
+    if content_kind is not None:
+        return content_kind == workflow_spec.CONTENT_KIND_NONE
+    legacy = workflow_spec.normalize_type(str(node_type or ""))
+    if legacy not in workflow_spec.NAMESPACED_TO_LEGACY.values():
+        return False
+    return workflow_spec.content_kind(legacy) == workflow_spec.CONTENT_KIND_NONE
 
 
 def canonical_suffix(node_type: object) -> str:
@@ -438,9 +446,15 @@ def validate(
     content: object,
     *,
     grammar_id: object = None,
+    content_kind: object = None,
     columns: list | None = None,
 ) -> dict:
     """Validate a non-executable node's content. See the module docstring.
+
+    ``content_kind`` is the roster's for this template; a kind of ``none``
+    authors nothing (it renders or forwards its input), so a marker in its
+    place is ``passive``. Without a roster row the offline tables answer for
+    the kinds they know, and an unknown kind is not passive.
 
     dev/134: the kind is routed by its GRAMMAR (the roster's ``grammarId``), and
     a reply that is not a document at all — prose, a decline, the
@@ -452,6 +466,7 @@ def validate(
     text = content if isinstance(content, str) else ""
     suffix = canonical_suffix(node_type)
     grammar = grammar_of(node_type, grammar_id)
+    passive = _authors_nothing(node_type, content_kind)
     validator = _VALIDATORS.get(grammar or "")
     stripped = text.strip()
     if not stripped or stripped.lower() == NOT_CONTROLLABLE:
@@ -467,11 +482,11 @@ def validate(
         # A wired box's marker, or nothing at all: there is no document.
         return {"status": STATUS_UNCHECKED,
                 "why": "there is no authored document to validate",
-                "passive": suffix in _PASSIVE}
+                "passive": passive}
     if validator is None:
         return {"status": STATUS_UNCHECKED,
                 "why": f"no document validator exists for {grammar or suffix or 'this kind'}",
-                "passive": suffix in _PASSIVE}
+                "passive": passive}
     if not stripped.startswith(("{", "[")):
         # Prose where a document belongs: say what was expected rather than
         # letting a JSON parse error stand in for the real problem.

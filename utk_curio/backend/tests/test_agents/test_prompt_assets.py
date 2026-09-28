@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 class TestPromptFilesResolve:
     @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
     def test_every_declared_prompt_file_exists(self, spec):
-        for filename in (spec.prompt_file, spec.preamble_file):
+        for filename in spec.prompt_files().values():
             assert (builtin.PROMPT_SOURCE_DIR / filename).is_file(), (
                 f"{spec.agent_id} names {filename!r}, which is not in "
                 f"{builtin.PROMPT_SOURCE_DIR}"
@@ -36,9 +36,23 @@ class TestPromptFilesResolve:
     @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
     def test_every_agent_materializes_with_prompt_bytes(self, spec):
         coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
-        for name in ("instruction", "system"):
+        for name in spec.prompt_files():
             text = builtin.read_prompt_text(coord, name)
             assert text, f"{coord} resolved no {name} prompt"
+
+
+class TestUserOwnedValuesStayOutOfPrompts:
+    """A value the user owns is a catalog setting, rendered into the run that
+    reads it. A copy in a prompt file would be a second source that edits in
+    the Agent Catalog never reach."""
+
+    def test_no_prompt_file_carries_a_keyword_type(self):
+        from utk_curio.backend.app.agents import contracts
+
+        lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
+        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.txt")):
+            found = lines & set(path.read_text(encoding="utf-8").splitlines())
+            assert not found, f"{path.name} carries keyword types: {sorted(found)[:2]}"
 
 
 class TestPromptsArePackaged:

@@ -136,21 +136,26 @@ class LiveRun:
 
     # ── provider identity, never the key ───────────────────────────────────
     def provider_record(self) -> ProviderRecord:
-        me = self.client.json("/api/auth/me")
-        # The users domain answers in snake_case (``users/schemas.py``'s
-        # ``UserOut.to_dict``), and it never returns the key at all — only
-        # ``has_llm_api_key``.
-        base_url = str(me.get("llm_base_url") or "")
-        host = urllib.parse.urlparse(base_url).netloc if base_url else ""
-        api_type = str(me.get("llm_api_type") or "")
-        model = str(me.get("llm_model") or "")
-        if not api_type and not model:
+        # What the attached Dataflow Builder answers with, as the account's LLM
+        # configurations resolve it (``GET /api/agents/llm``): its choice, else
+        # the default. Never a key, only the host it goes to.
+        listing = self.client.json("/api/agents/llm")
+        builder = next(
+            (row for row in listing.get("agents") or [] if row.get("id") == "agent.dataflow-builder"),
+            None,
+        )
+        active = (builder or {}).get("answers") or listing.get("active") or {}
+        if not active.get("source"):
             raise LiveEvalRefused(
-                "the evaluation account has no provider or model configured; set "
-                "them in AI Settings first. Nothing is guessed and no key is read "
-                "by this tool."
+                "no LLM configuration answers a run on the evaluation account ("
+                f"{active.get('error') or 'none is configured'}); add one in AI "
+                "Settings first. Nothing is guessed and no key is read by this tool."
             )
-        return ProviderRecord(api_type=api_type, base_url_host=host, model=model)
+        return ProviderRecord(
+            api_type=str(active.get("apiType") or ""),
+            base_url_host=str(active.get("baseUrlHost") or ""),
+            model=str(active.get("model") or ""),
+        )
 
     # ── one attempt ────────────────────────────────────────────────────────
     def skip_reasons(self, fixture) -> list:
@@ -181,9 +186,13 @@ class LiveRun:
                 )},
             )
             record.transcript = self._transcript(project_id, attachment_id)
+            usage = turn.get("usage") or {}
             record.usage = {
-                "inputTokens": int((turn.get("usage") or {}).get("inputTokens") or 0),
-                "outputTokens": int((turn.get("usage") or {}).get("outputTokens") or 0),
+                "inputTokens": int(usage.get("inputTokens") or 0),
+                "outputTokens": int(usage.get("outputTokens") or 0),
+                # Part of inputTokens, when the provider reports them.
+                **{key: int(usage[key]) for key in ("cacheReadTokens", "cacheWriteTokens")
+                   if isinstance(usage.get(key), int)},
             }
             proposals = [
                 part for part in (turn.get("content") or [])

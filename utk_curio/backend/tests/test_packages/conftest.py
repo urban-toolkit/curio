@@ -219,9 +219,9 @@ def default_llm_provider(monkeypatch):
     is unroutable on purpose - every provider call in these tests is stubbed,
     and one that forgot should fail loudly rather than reach the network.
     """
-    from utk_curio.backend.app.agents import provider_config
+    from utk_curio.backend import config
 
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
-    monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "test-model")
+    monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "test-key")

@@ -164,6 +164,9 @@ _TRAINED_FILENAME = "trained-models.json"
 #: this only decides when the panel offers to re-ask.
 CAPABILITY_STALE_AFTER_HOURS = 24
 
+#: Per model, what a chat endpoint was found to do beyond text.
+_CHAT_CAPABILITIES_FILENAME = "chat-capabilities.json"
+
 
 def _sidecar_path(user_key: str, filename: str) -> Path:
     return _users_base() / _user_key_segment(user_key) / filename
@@ -233,6 +236,38 @@ def remembered_capability(
         },
         seen_at if isinstance(seen_at, str) else None,
     )
+
+
+def _chat_key(api_type: str, base_url: str, model: str) -> str:
+    return f"{provider_key(api_type, base_url)}#{(model or '').strip()}"
+
+
+def remember_chat_capabilities(
+    user_key: str, api_type: str, base_url: str, model: str, capabilities: dict
+) -> None:
+    """Record what a trial found this endpoint's model can do beyond text
+    (``chat_capabilities``). Never raises."""
+    if not isinstance(capabilities, dict):
+        return
+    entries = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints")
+    entries[_chat_key(api_type, base_url, model)] = {
+        "tools": bool(capabilities.get("tools")),
+        "structuredOutput": bool(capabilities.get("structuredOutput")),
+        "reason": str(capabilities.get("reason") or ""),
+        "seenAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    _write_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints", entries)
+
+
+def remembered_chat_capabilities(
+    user_key: str, api_type: str, base_url: str, model: str
+) -> dict | None:
+    """``{tools, structuredOutput, reason, seenAt}`` for this endpoint and
+    model, or None when it was never asked."""
+    entry = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints").get(
+        _chat_key(api_type, base_url, model)
+    )
+    return dict(entry) if isinstance(entry, dict) else None
 
 
 def remember_trained_model(

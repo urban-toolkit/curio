@@ -42,6 +42,7 @@ from utk_curio.backend.app.agents.evaluation.compare import Universe
 from utk_curio.backend.app.agents.evaluation.fixtures import FIXTURE_ROOT, load_fixture
 
 from .utils import (
+    SCRIPTED_LABEL,
     SCRIPTED_MODEL,
     api_json,
     canvas_nodes,
@@ -498,12 +499,16 @@ class TestEvaluationModeRunsFromAiSettings:
         expect(section).to_be_visible(timeout=20000)
         section.locator("summary").click()
 
-        # Readiness: the panel must name the model that will actually answer,
-        # not merely that something is configured. Matched as the sentence,
-        # because an earlier run's summary in the same panel names it too.
+        # Readiness: the panel must name the model and the configuration that
+        # will actually answer, not merely that something is configured.
+        # Matched as the sentence, because an earlier run's summary in the same
+        # panel names it too.
         expect(
             section.get_by_text(
-                re.compile(rf"{re.escape(SCRIPTED_MODEL)}(?: at \S+)? will answer")
+                re.compile(
+                    rf"{re.escape(SCRIPTED_MODEL)} \({re.escape(SCRIPTED_LABEL)}\)"
+                    r"(?: at .+?)? will answer"
+                )
             )
         ).to_be_visible(timeout=20000)
 

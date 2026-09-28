@@ -107,3 +107,11 @@
     color: var(--curio-text-muted);
     font-size: var(--curio-font-size-sm);
 }
+
+/* One line per configuration, when the run's agents do not all share one. */
+.configurations {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}

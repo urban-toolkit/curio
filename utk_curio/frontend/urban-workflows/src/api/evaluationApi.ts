@@ -2,8 +2,8 @@ import { apiFetch } from "../utils/authApi";
 
 /**
  * dev/123 (DEC-079): Evaluation mode. Runs one of Curio's own example prompts
- * through the real agent lifecycle with the model this account uses, then
- * scores the dataflow it built against the reference.
+ * through the real agent lifecycle on the LLM configuration that answers the
+ * user's runs, then scores the dataflow it built against the reference.
  *
  * Kept light beside `connectionKeysApi` and `trainingApi` for the dev/91
  * reason: a settings screen should not drag the vega-heavy `agentsApi` in.
@@ -13,15 +13,27 @@ import { apiFetch } from "../utils/authApi";
  * could carry it is one hop from being in a prompt.
  */
 
+/** The LLM configuration a run answers with; never its key. */
+export interface EvaluationProvider {
+  apiType: string;
+  baseUrlHost: string;
+  model: string;
+  configId: string | null;
+  label: string;
+}
+
 export interface EvaluationReadiness {
   configured: boolean;
   /** Populated when it is not configured: what to do about it. */
   reason: string;
-  /** Where the model came from: the account's settings, or the start command. */
-  source: "account" | "deployment" | "none";
-  provider: { apiType: string; baseUrlHost: string; model: string };
-  account: { apiType: string; baseUrlHost: string; model: string; hasApiKey: boolean };
-  deployment: { apiType: string; baseUrlHost: string; model: string; hasApiKey: boolean };
+  /** Where the Dataflow Builder's configuration came from: its choice in AI
+   * Settings, the account's default configuration, the deployment default
+   * (the start command), or the guest configuration. */
+  source: "assigned" | "default" | "deployment" | "guest" | "none";
+  provider: EvaluationProvider;
+  /** Every distinct configuration the run and the agents it requires use,
+   * with the agents on each. */
+  configurations: (EvaluationProvider & { agents?: string[] })[];
 }
 
 export interface EvaluationFixture {

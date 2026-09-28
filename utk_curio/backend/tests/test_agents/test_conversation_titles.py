@@ -49,7 +49,7 @@ def _mock_provider(monkeypatch, reply="ok", title="Dataset Import Help"):
             return title
         return reply
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
     return title_calls
 
 
@@ -184,7 +184,7 @@ class TestAutoTitleRoutes:
                 raise RuntimeError("title provider down")
             return "the reply"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         _, token = user_and_token
         att_id = _attach_builtin(client, token, alice_project)["attachmentId"]
         r = client.post(
@@ -216,7 +216,7 @@ class TestAutoTitleRoutes:
             yield "hi"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
         )
         _mock_provider(monkeypatch, title="Stream Title Words")
         _, token = user_and_token
@@ -237,7 +237,7 @@ class TestAutoTitleRoutes:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
         )
         title_calls = _mock_provider(monkeypatch)
         _, token = user_and_token
@@ -318,7 +318,7 @@ class TestManualTitleRoutes:
                 return "Auto Title"
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q1"}, headers=_auth(token),

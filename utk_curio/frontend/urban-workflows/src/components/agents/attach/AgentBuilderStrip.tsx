@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../api/agentsApi";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
@@ -126,6 +127,9 @@ export const AgentBuilderStrip: React.FC<{
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
   const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The refusal's remedy, when it has one (no LLM configuration answers a
+  // delegate this run relies on).
+  const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
@@ -172,6 +176,7 @@ export const AgentBuilderStrip: React.FC<{
   const solve = async (nodeIds?: string[]) => {
     setSolving(true);
     setError(null);
+    setErrorRemedy(null);
     setNotice(null);
     try {
       const result = (await onSolve(nodeIds)) as
@@ -186,6 +191,7 @@ export const AgentBuilderStrip: React.FC<{
         );
       }
     } catch (e) {
+      setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "Solve failed");
     } finally {
       setSolving(false);
@@ -241,6 +247,7 @@ export const AgentBuilderStrip: React.FC<{
     if (!onSimulate || simBusy) return;
     setSimBusy(mode);
     setError(null);
+    setErrorRemedy(null);
     setNotice(null);
     try {
       const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
@@ -250,6 +257,7 @@ export const AgentBuilderStrip: React.FC<{
         setNotice("Simulation cancelled — everything already built stays.");
       }
     } catch (e) {
+      setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "The simulation failed");
     } finally {
       setSimBusy(null);
@@ -262,9 +270,11 @@ export const AgentBuilderStrip: React.FC<{
     if (!onSolveNode || nodeSolving) return;
     setNodeSolving(nodeId);
     setError(null);
+    setErrorRemedy(null);
     try {
       await onSolveNode(nodeId);
     } catch (e) {
+      setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "Solving that node failed");
     } finally {
       setNodeSolving(null);
@@ -278,9 +288,11 @@ export const AgentBuilderStrip: React.FC<{
     if (!fn || !proposalId || reviewBusy) return;
     setReviewBusy(true);
     setError(null);
+    setErrorRemedy(null);
     try {
       await fn(proposalId);
     } catch (e) {
+      setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "The review action failed");
     } finally {
       setReviewBusy(false);
@@ -613,7 +625,11 @@ export const AgentBuilderStrip: React.FC<{
         </div>
       ) : null}
       {notice ? <div className={styles.hint}>{notice}</div> : null}
-      {error ? <div className={styles.error}>{error}</div> : null}
+      {error ? (
+        <div className={styles.error}>
+          {error} <LlmConfigAction remedy={errorRemedy} />
+        </div>
+      ) : null}
     </div>
   );
 };

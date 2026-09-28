@@ -90,7 +90,7 @@ def _script(monkeypatch, replies):
         entry = replies[min(len(calls) - 1, len(replies) - 1)]
         return entry(calls) if callable(entry) else entry
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
     return calls
 
 

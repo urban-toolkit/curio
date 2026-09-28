@@ -96,6 +96,7 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 | `sourceLabel` | No | Short provenance label shown on cards; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | No | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | No | Last-modified date of the *original file* at import time. |
+| `lakeSource` | No | Where a remote file came from. A Data Lake download records its source (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt` and the bytes' `contentSha256`. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
 | `featureCount` / `rowCount` | No | Counts for geo and tabular data respectively. |
 | `schema` | No | Object describing fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | No | Multi-part imports (OSM PBF): every layer of one import shares a `groupId`. |
@@ -107,7 +108,7 @@ Dataset manifests are validated in code ([`domain/manifest.py`](../utk_curio/bac
 
 There are three places you interact with datasets, and unlike the Node Catalog, they are **not** interchangeable:
 
-- **The `/catalog/data` page** is a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's detail page. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none.
+- **The `/catalog/data` page** is a read-only library view. Reach it from `/projects` → **Catalog** in the top nav → the **Data** tab. You can browse, filter, preview, publish, and open a dataset's details. You **cannot add a dataset to a dataflow from here**, because adding is always relative to a dataflow and this page has none.
 - **The Data Catalog drawer** (inside the canvas) is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown → **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: Add to dataflow, Remove from dataflow, Import, Publish, Unpublish, Delete.
 - **The Data palette** (left Tools panel, the **Data Catalog** dropdown) holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits in the left rail below the built-in nodes and the **Node Catalog** dropdown, mirroring the latter; its panel opens in the strip to the right of the rail.
 
@@ -309,7 +310,7 @@ Who may unpublish or delete is decided by the manifest's `publisher` field: you 
 
 ## 6. Previews, schema, and export
 
-The dataset detail view, either the `/catalog/data/<id>` page or the modal opened from a drawer card, has four tabs: **Overview**, **Schema**, **Table Preview**, and **Lineage**. Previews page six rows at a time and are capped server-side at 500 rows per request.
+A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**, and **Lineage**. Previews page six rows at a time and are capped server-side at 500 rows per request.
 
 | Format | Preview |
 |---|---|

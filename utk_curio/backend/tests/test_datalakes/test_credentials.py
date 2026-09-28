@@ -255,9 +255,9 @@ class TestNoResponseOrLogCarriesIt:
 class TestTheDeploymentFallback:
     """A user who sets nothing inherits what the operator configured.
 
-    The same per-field inheritance the LLM provider config has: an operator
-    running Curio for a class raises the rate limit for everyone with one
-    environment variable, and any user can still override it with their own.
+    An operator running Curio for a class raises the rate limit for everyone
+    with one environment variable, and any user can still override it with
+    their own.
     """
 
     def test_with_nothing_configured_there_is_no_token(self, app, db, user_and_token, monkeypatch):

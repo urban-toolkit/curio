@@ -383,12 +383,25 @@ Measured run-to-run drift for the three full-canvas baselines
 manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
 wide. They were captured with the executable `browser_type_launch_args` resolves
 to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
-so regenerate them on the machine that will police them if that ever diverges. To
-regenerate, delete the PNG and re-run the test.
+so regenerate them on the machine that will police them if that ever diverges.
 
 A failing comparison writes `screenshot_<stem>_<test_name>_actual.png` next to the
 baseline and attaches expected/actual/diff to the Allure report. Those `_actual`
 files are debris; do not commit them.
+
+With `CURIO_E2E_COMPARE_DIR` set, every comparison, passing or not, also writes a
+folder there: the expected and created images, a difference image (red: pixels
+counted against the budget; amber: different, but within the per-channel
+tolerance), and `record.json` with the tolerance, the budget and the measured
+share. test-gpu sets it and builds `curio-ci-report.html` from it at the end of
+the job; open it from the run's artifact list. The same page from a local run:
+
+```bash
+CURIO_E2E_COMPARE_DIR=$PWD/.curio/compare PYTEST_ADDOPTS=--junitxml=$PWD/.curio/e2e.xml \
+  bash scripts/test.sh --e2e-only
+python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
+  --comparisons .curio/compare --failures .curio/playwright/failures --out report.html
+```
 
 ## Workflow Subset Filtering
 
@@ -521,7 +534,7 @@ CURIO_NO_PROJECT=1 pytest \
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
 reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
-sees five packages, three datasets and twenty-one agents.
+sees five packages, three datasets and ten agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
@@ -561,7 +574,7 @@ Other things that surprise people here:
   conflicts); Data and Agent use the plain ConfirmDialog.
 - **`get_by_role("dialog")` is ambiguous while a drawer is open.** The drawers
   are themselves `role="dialog"`, so scope by accessible name -
-  `page.get_by_role("dialog", name="Remove Node Explainer?")` - which
+  `page.get_by_role("dialog", name="Remove Chat?")` - which
   ConfirmDialog wires from its heading via `aria-labelledby`.
 - **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
   blanket `page.on("dialog", lambda d: d.accept())` is still required for
@@ -623,16 +636,16 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
-**What gets captured, and why it differs by agent.** Only 4 of the 21 built-ins
+**What gets captured, and why it differs by agent.** Only 4 of the 10 catalog agents
 can mutate anything - the rest are `report-only` by contract - so there are two
 kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
-| report-only (17) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| report-only (6) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
 | mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
@@ -658,9 +671,10 @@ handed. Three things make that usable from a test:
 
 | Step | How |
 |---|---|
-| Point the user at it | `use_scripted_llm(backend, token)` - a real `PATCH /api/auth/me` writing `llm_api_type: "testing"`, so the production `resolve_provider_config` path is the one under test |
+| Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
-| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script` |
+| Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools and which reply schema each call carried |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
 production guard every route in that blueprint carries - unlike `stub-login`,
@@ -790,10 +804,10 @@ invisible and a click would look unmotivated.
 
 ### The agent scenes need a provider
 
-`aisettings` types a base URL, an API key and a model into AI Settings on
-camera, and `agentrun` then asks that endpoint a real question. Curio ships no
-provider of its own and the tour's account starts with none, so this is
-load-bearing rather than decorative.
+`aisettings` adds an LLM configuration (a base URL, an API key and a model) in
+AI Settings on camera, and `agentrun` then asks that endpoint a real question.
+Curio ships no provider of its own and the tour's account starts with no
+configuration, so this is load-bearing rather than decorative.
 
 The endpoint and model default to the `LLM_*` constants at the top of the
 module. **The key is not a constant** — put it in `.curio/tour-provider.json`
@@ -852,7 +866,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
-| `agents` | AI Settings from both of its entry points, all four provider tabs, Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
+| `agents` | AI Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
 | `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
 
 ### What it produces
@@ -913,6 +927,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with** — `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch now fails with that sentence rather than a bare `401`. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
+| `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

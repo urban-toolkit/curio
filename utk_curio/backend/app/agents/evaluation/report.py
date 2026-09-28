@@ -243,6 +243,13 @@ class RunReport:
             f"- Fixtures attempted: {len({a.fixture_id for a in self.attempts})}"
             f" ({len(self.attempts)} attempts)",
         ]
+        cache_read = sum(a.usage.get("cacheReadTokens", 0) for a in self.attempts)
+        cache_write = sum(a.usage.get("cacheWriteTokens", 0) for a in self.attempts)
+        if cache_read or cache_write:
+            lines.append(
+                f"- Cached input: {cache_read} tokens read, {cache_write} written "
+                "(counted in the input tokens)"
+            )
         unreviewed = sum(1 for a in self.attempts if a.review_status != "approved")
         if unreviewed:
             lines.append(

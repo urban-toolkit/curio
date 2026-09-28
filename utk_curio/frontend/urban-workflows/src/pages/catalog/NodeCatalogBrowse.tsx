@@ -100,8 +100,13 @@ export const NodeCatalogBrowse: React.FC = () => {
         return;
     }
   };
+  // The card's own row while it is listed, then the unfiltered lists, as the
+  // Agent page does: the modal outlives a filter change.
   const detailPkg = detailDirName
-    ? (filtered.find((p) => p.dirName === detailDirName) ?? null)
+    ? (filtered.find((p) => p.dirName === detailDirName) ??
+        installedByDir.get(detailDirName) ??
+        catalogByDir.get(detailDirName) ??
+        null)
     : null;
 
   return (

@@ -16,6 +16,16 @@ export function clearToken(): void {
   Cookies.remove(TOKEN_KEY);
 }
 
+/**
+ * Whether a failed request says the session is over. The server answers a dead
+ * session (no token, an unknown or expired one, a deleted account) with 401
+ * and nothing else. An aborted request, a network failure or a server error
+ * says nothing about the session.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 401;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {}
@@ -57,10 +67,6 @@ export interface UserData {
   profile_image: string | null;
   type: string | null;
   is_guest: boolean;
-  has_llm_api_key: boolean;
-  llm_api_type: string | null;
-  llm_base_url: string | null;
-  llm_model: string | null;
   /** Whether a HuggingFace token is stored. The token itself never leaves the
    * server; this is what AI Settings shows instead. */
   has_huggingface_token?: boolean;
@@ -126,10 +132,6 @@ export const authApi = {
     name?: string;
     email?: string;
     type?: string;
-    llm_api_type?: string;
-    llm_base_url?: string;
-    llm_api_key?: string;
-    llm_model?: string;
     huggingface_token?: string;
     socrata_app_token?: string;
   }): Promise<UserData> {
