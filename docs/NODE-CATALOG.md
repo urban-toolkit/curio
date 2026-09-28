@@ -66,6 +66,14 @@ curio.builtin/data-loading@1
 ai.urbanlab.uhvi/uhvi-load@1
 ```
 
+### Data Loading nodes and API keys
+
+A Data Loading node that calls a key-gated API reaches the key by name, never
+as a literal: `api_key = curio_secret("<name>")`, resolved by the server at
+run time from the keys saved under **AI Settings → Connection keys** (see
+`docs/USAGE.md`). Like `curio_dataset_path("<id>")`, the name is what travels
+with the dataflow; the value is handed to the sandbox for the run only.
+
 ---
 
 ## 2. Surfaces and workflows

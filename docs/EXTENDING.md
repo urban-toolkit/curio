@@ -27,7 +27,7 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 - `inputPorts` + `outputPorts`: port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`): what editor surface to mount
 - `behavior`: string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
-- `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it
+- `engine` (`python` | `javascript`): if the node runs user code, which sandbox executes it. Together with `hasCode` and the absence of `backendHandler`, this is what tells the agents' Solve that the kind is executable — verified in the sandbox rather than written and labeled *no code to run* (DEC-076)
 
 The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook*; there is no monolithic switch-case anywhere.
 

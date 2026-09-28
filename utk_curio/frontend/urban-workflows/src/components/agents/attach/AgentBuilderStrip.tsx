@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../api/agentsApi";
+import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { BUILDER_TEMPLATES } from "./builderTemplates";
@@ -18,7 +20,23 @@ const PHASE_RANK: Record<string, number> = {
   simulating: 2, // dev/67-5: per-node create/solve in progress
   applied: 2,
   solving: 2,
+  interrupted: 2, // dev/115: the server stopped mid-solve — Retry continues
   ready: 3,
+};
+
+/** dev/115: what a live pill state means, in words (never colour alone). */
+const STATUS_LABEL: Record<string, string> = {
+  solving: "solving",
+  generating: "generating…",
+  verifying: "verifying — running in the sandbox…",
+  fixing: "fixing — the run failed, correcting…",
+  verified: "solved ✓ verified",
+  written: "written — no code to run; renders in the browser or its own service",
+  solved: "solved",
+  failed: "failed",
+  skipped: "skipped",
+  pending: "pending",
+  proposed: "review pending",
 };
 
 /**
@@ -38,6 +56,33 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/106: the live batch's per-node failure reasons (nodeId → text) —
    * rendered ONCE per distinct reason under the pills, never per node. */
   solveErrors?: Record<string, string>;
+  /** dev/116: the live batch's per-node remedies — rendered ONCE per host.
+   * dev/126: a `dataset-selection` remedy is rendered per NODE instead (each
+   * one opens a different chat). */
+  solveRemedies?: Record<string, AgentRemedy>;
+  /** dev/126: open a node's Dataset Finder chat (the awaiting-selection
+   * remedy's action). Omitted → the reason line stands alone. */
+  onOpenChat?: (attachmentId: string) => void;
+  /** dev/131: what the running session is blocked on, per node — the live
+   * `solve_pass`/`solve_waiting` summary. A node whose `kind` is
+   * "dataset-selection" is waiting for the USER. */
+  solveWaiting?: Array<{
+    nodeId: string;
+    kind: string;
+    reason?: string;
+    attachmentId?: string | null;
+  }>;
+  /** dev/131: how the last session ended — complete | stopped | budget | blocked. */
+  solveEndedBy?: string | null;
+  /** dev/131: the session's pass number while it runs. */
+  solvePass?: number | null;
+  /** dev/131: resolve ONE node through its own agent (the per-node Solve).
+   *  Omitted → the pills carry no action. */
+  onSolveNode?: (nodeId: string) => Promise<unknown>;
+  /** dev/118: the live batch's current wave — "solving wave 2 of 3 — 4 nodes". */
+  solveWave?: AgentSolveWave;
+  /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
+  solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
    * revert to pending. Omitted → no Cancel control. */
   onCancelSolve?: () => Promise<void>;
@@ -58,6 +103,14 @@ export const AgentBuilderStrip: React.FC<{
   onSolve,
   solveProgress,
   solveErrors,
+  solveRemedies,
+  onOpenChat,
+  solveWaiting,
+  solveEndedBy,
+  solvePass,
+  onSolveNode,
+  solveWave,
+  solveNotices,
   onCancelSolve,
   onComposePrompt,
   onApplyProposal,
@@ -71,6 +124,7 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
+  const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -87,8 +141,9 @@ export const AgentBuilderStrip: React.FC<{
   // dev/83: the shared running-status line (dot + elapsed + fraction) replaces
   // the bare "solving…" note — one status language with the reply meta lines.
   // One fixed label per batch kind; the fraction counts terminal node states.
+  const liveJob = attachment.liveJob?.status === "running" ? attachment.liveJob : null;
   const activeBatchLabel =
-    solving || phase === "solving"
+    solving || phase === "solving" || liveJob?.kind === "solve-batch"
       ? "Solving"
       : simBusy === "auto"
         ? "Building"
@@ -96,9 +151,15 @@ export const AgentBuilderStrip: React.FC<{
           ? "Stepping"
           : null;
   const batchDone = entries.filter(
-    ([, s]) => s === "solved" || s === "failed" || s === "skipped",
+    ([, s]) => s === "solved" || s === "verified" || s === "written" || s === "failed" || s === "skipped",
   ).length;
-  const batchDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
+  const nodesDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
+  // dev/118: the wave in words when the batch runs in waves.
+  const waveDetail =
+    solveWave && solveWave.of > 1
+      ? `wave ${solveWave.wave} of ${solveWave.of} — ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
+      : null;
+  const batchDetail = [waveDetail, nodesDetail].filter(Boolean).join(" · ") || undefined;
   // Elapsed is strip-local observation time: builderSession persists no batch
   // start timestamp, so a panel reopened mid-run shows time since this strip
   // observed the batch (the dev/80 client-measured posture — nothing
@@ -165,6 +226,16 @@ export const AgentBuilderStrip: React.FC<{
       : null;
   // One line per DISTINCT reason (six identical node failures → one line).
   const solveReasons = Array.from(new Set(Object.values(solveErrors ?? {}).filter(Boolean)));
+  const solveNoticeLines = Array.from(new Set(Object.values(solveNotices ?? {}).filter(Boolean)));
+  // dev/116: one action per host, whatever the number of nodes that need it.
+  // dev/126: one button per node awaiting a selection, deduplicated by the
+  // chat it opens (two nodes never share a Dataset Finder attachment).
+  const selectionRemedies = Object.entries(solveRemedies ?? {}).filter(
+    ([, r]) => r?.kind === "dataset-selection" && r.attachmentId,
+  );
+  const remedies = Object.values(solveRemedies ?? {}).filter(
+    (r, i, all) => r && r.host && all.findIndex((o) => o.kind === r.kind && o.host === r.host) === i,
+  );
 
   const simulate = async (mode: "step" | "auto") => {
     if (!onSimulate || simBusy) return;
@@ -185,6 +256,21 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // dev/131: "users should have the ability to resolve each node
+  // individually" — the node's OWN agent runs the same verified loop.
+  const solveOne = async (nodeId: string) => {
+    if (!onSolveNode || nodeSolving) return;
+    setNodeSolving(nodeId);
+    setError(null);
+    try {
+      await onSolveNode(nodeId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Solving that node failed");
+    } finally {
+      setNodeSolving(null);
+    }
+  };
+
   const review = async (
     fn?: (proposalId: string) => Promise<unknown>,
     proposalId: string | undefined = planReview?.proposalId,
@@ -201,6 +287,13 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // dev/131: a node waiting for the USER (a dataset selection) cannot be
+  // helped by pressing Solve — the owner's instruction: "while depending on
+  // user's input, the solve button should be deactivated".
+  const userBlocked = (solveWaiting ?? []).filter((w) => w.kind === "dataset-selection");
+  const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
+  const everyUnresolvedNeedsUser =
+    unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
   const solveDisabledReason =
     phase === "plan_review"
       ? "Apply or dismiss the plan review first"
@@ -208,7 +301,14 @@ export const AgentBuilderStrip: React.FC<{
         ? "Apply a plan first"
         : unresolved === 0
           ? "No pending nodes"
-          : null;
+          : everyUnresolvedNeedsUser
+            ? `Waiting for you: ${
+                userBlocked.length === 1
+                  ? "confirm a dataset source"
+                  : `confirm a dataset source for ${userBlocked.length} nodes`
+              }`
+            : null;
+  const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
@@ -251,20 +351,107 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {entries.length > 0 ? (
         <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
-          {entries.map(([nodeId, status]) => (
-            <li key={nodeId} className={styles.nodeRun}>
-              <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
-              <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
-                {status}
-              </span>
-            </li>
-          ))}
+          {entries.map(([nodeId, status]) => {
+            const needsUser = userBlockedIds.has(nodeId);
+            const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
+            return (
+              <li
+                key={nodeId}
+                className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}
+              >
+                <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
+                <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
+                  {STATUS_LABEL[status] ?? status}
+                </span>
+                {/* dev/131: "the nodes that depend on user inputs should be
+                    better visualized" — the pill says whose turn it is. */}
+                {needsUser ? (
+                  <span className={styles.needsYou} title={waiting?.reason ?? undefined}>
+                    needs you
+                  </span>
+                ) : null}
+                {waiting && waiting.kind === "upstream" ? (
+                  <span className={styles.waitingUpstream} title={waiting.reason ?? undefined}>
+                    waiting upstream
+                  </span>
+                ) : null}
+                {onSolveNode && (status === "pending" || status === "failed") ? (
+                  <button
+                    type="button"
+                    className={styles.nodeSolve}
+                    aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
+                    title={
+                      needsUser
+                        ? "This node is waiting for you to confirm a source — open its Dataset Finder first"
+                        : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
+                    }
+                    disabled={needsUser || solveRunning || nodeSolving === nodeId}
+                    onClick={() => void solveOne(nodeId)}
+                  >
+                    {nodeSolving === nodeId ? "Solving…" : "Solve"}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {solveRunning && (solvePass ?? 0) > 0 ? (
+        <div className={styles.hint} aria-live="polite">
+          {`Managing the dataflow — pass ${solvePass}`}
+          {unresolved ? ` · ${unresolved} node${unresolved === 1 ? "" : "s"} left` : ""}
+          {userBlocked.length
+            ? ` · waiting for you on ${userBlocked.length} node${
+                userBlocked.length === 1 ? "" : "s"
+              }`
+            : ""}
+        </div>
+      ) : null}
+      {!solveRunning && solveEndedBy ? (
+        <div className={styles.hint} role="status">
+          {solveEndedBy === "complete"
+            ? "Finished — nothing left to do."
+            : solveEndedBy === "stopped"
+              ? `Stopped by you${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+              : solveEndedBy === "budget"
+                ? `Out of time for this session${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+                : solveEndedBy === "blocked"
+                  ? "Stopped — a specialist must be installed first."
+                  : ""}
+        </div>
       ) : null}
       {solveReasons.length ? (
         <div className={styles.error} aria-live="polite">
           {solveReasons.map((r) => (
             <div key={r}>{r}</div>
+          ))}
+        </div>
+      ) : null}
+      {solveNoticeLines.length ? (
+        <div className={styles.hint} role="note" aria-label="Solve notices">
+          {solveNoticeLines.map((n) => (
+            <div key={n}>{n}</div>
+          ))}
+        </div>
+      ) : null}
+      {remedies.length ? (
+        <div className={styles.actions} role="group" aria-label="Missing connection keys">
+          {remedies.map((r) => (
+            <AddKeyAction key={`${r.kind}:${r.host}`} remedy={r} />
+          ))}
+        </div>
+      ) : null}
+      {selectionRemedies.length && onOpenChat ? (
+        <div className={styles.actions} role="group" aria-label="Nodes awaiting a dataset selection">
+          {selectionRemedies.map(([nodeId, r]) => (
+            <OpenDatasetFinderAction
+              key={r.attachmentId}
+              remedy={r}
+              onOpenChat={onOpenChat}
+              // One awaiting node needs no disambiguation; several do, and the
+              // short node id is what the pills above already show.
+              nodeLabel={selectionRemedies.length > 1 ? nodeId.slice(0, 8) : undefined}
+            />
           ))}
         </div>
       ) : null}
@@ -363,24 +550,35 @@ export const AgentBuilderStrip: React.FC<{
         <button
           type="button"
           className={styles.solve}
-          disabled={solving || phase === "solving" || Boolean(solveDisabledReason)}
-          title={solveDisabledReason ?? undefined}
+          disabled={solveRunning || Boolean(solveDisabledReason)}
+          title={
+            solveDisabledReason ??
+            (phase === "interrupted"
+              ? "A new execution linked to the interrupted one — nothing is replayed"
+              : "Data-loading nodes run in the sandbox and are fixed before their code is written")
+          }
           onClick={() => void solve(failed.length && !pending.length ? failed : undefined)}
         >
-          {solving || phase === "solving"
+          {solveRunning
             ? "Solving…"
-            : failed.length && !pending.length
-              ? `Retry ${failed.length} failed`
-              : "Solve"}
+            : phase === "interrupted"
+              ? `Retry ${unresolved} interrupted`
+              : failed.length && !pending.length
+                ? `Retry ${failed.length} failed`
+                : "Solve"}
         </button>
-        {onCancelSolve && (solving || phase === "solving") ? (
+        {onCancelSolve && solveRunning ? (
           <button
             type="button"
             className={styles.run}
             disabled={cancelling}
+            title="Ends the session after the current node finishes — a running fetch cannot be aborted. Everything already written stays."
             onClick={() => void cancel()}
           >
-            {cancelling ? "Cancelling…" : "Cancel"}
+            {/* dev/131: the control ends a SESSION that keeps managing the
+                dataflow, so it is Stop rather than Cancel — and everything
+                already written stays. */}
+            {cancelling ? "Stopping…" : "Stop"}
           </button>
         ) : null}
         <button
@@ -395,6 +593,16 @@ export const AgentBuilderStrip: React.FC<{
       </div>
       {solveDisabledReason && phase !== "ready" ? (
         <div className={styles.hint}>{solveDisabledReason}</div>
+      ) : null}
+      {solveRunning ? (
+        // dev/115 (DEC-021 slice): the batch is a background job.
+        <div className={styles.hint}>Solve keeps running if you close this panel.</div>
+      ) : null}
+      {phase === "interrupted" ? (
+        <div className={styles.hint} role="status">
+          Solve was interrupted — the server stopped while it was running. Finished nodes kept
+          their content; nothing was replayed. Retry continues from what is still pending.
+        </div>
       ) : null}
       {simulationActivity ? (
         <div className={styles.hint} aria-live="polite">{simulationActivity}</div>

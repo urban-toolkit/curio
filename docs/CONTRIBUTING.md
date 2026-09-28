@@ -21,6 +21,7 @@ This guide is for students getting their first taste of open-source work and for
   * [TL;DR](#tldr)
   * [One-Time Setup](#one-time-setup)
   * [Backend and Sandbox Tests](#backend-and-sandbox-tests)
+  * [Agent Reconstruction Tests](#agent-reconstruction-tests)
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
@@ -265,6 +266,80 @@ Writing a contract test that can fail for a reason outside our control puts a
 third party in the critical path of every PR, which is the problem the guard
 exists to solve. Skip generously; a contract test that skips has cost nothing,
 and its skip reason is printed under `pytest -v`.
+
+### Agent Reconstruction Tests
+
+Separate from the suites above, these ask whether a *model* can rebuild one of
+the shipped example dataflows from a plain-language prompt. Every example has a
+reviewed prompt fixture under `docs/examples/prompts/`; the deterministic tiers
+run offline in seconds and need no stack:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_canonical.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_scoring.py \
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+
+python -m utk_curio.tools.agent_eval list      # the fixtures and their splits
+```
+
+Editing an example fails these tests on purpose: a fixture pins the example's
+digest, so someone has to re-read the prompt and the expected graph before the
+pin moves. The browser tier is opt-in with the other example-dependent tests
+(`--with-examples`), and a live-model evaluation needs two opt-ins and writes a
+report rather than passing or failing:
+
+```bash
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
+```
+
+See [AGENT-CATALOG.md](AGENT-CATALOG.md#7-measuring-the-agents-against-the-shipped-examples)
+for what the score means and what it deliberately does not do.
+
+The same fixtures drive **Model training** (AI Settings → Model training, memo
+`dev/122`). Its whole lane — the capability probe, the training set, consent,
+the job, the evaluation gate, activation and rollback — runs offline against
+the scripted provider, so none of these tests costs money or waits on a
+fine-tune:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
+       utk_curio/backend/tests/test_agents/test_training_dataset.py \
+       utk_curio/backend/tests/test_agents/test_training_routes.py \
+       utk_curio/backend/tests/test_agents/test_training_gate.py
+```
+
+A real fine-tune is owner-run: it costs money, takes hours, and needs an
+endpoint that offers the feature.
+
+**Saving a project** goes through a guard (memo `dev/124`): every write of a
+spec bumps a counter at the one chokepoint that writes it, a client sends the
+revision it last synced with as `baseRevision`, and a save whose basis is stale
+**and** which would delete a node, an edge or a node's code that exists on disk
+is refused with 409. A caller that sends no basis is not checked, which is why
+scripts and tests keep working unchanged. If you add a path that writes a
+project spec, you get the counter for free; if you add a client that saves one,
+send the basis.
+
+```bash
+pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
+       utk_curio/backend/tests/test_projects/test_routes.py
+```
+
+**Evaluation mode** (AI Settings → Evaluation mode, memo `dev/123`) runs an
+example through the real lifecycle with the configured model. Its whole
+orchestration — the isolated project, the required-closure install, the narrow
+automated approval, the phases, the record — is covered offline against the
+scripted provider:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_evaluation_service.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_policy.py
+```
+
+Real-provider evaluations are user-triggered from the panel and never part of
+default CI.
 
 ### Frontend Unit Tests
 

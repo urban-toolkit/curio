@@ -1,0 +1,85 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "11-autark-pbf-loading",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/11-autark-pbf-loading.json",
+    "sha256": "f1ed0bc3d273f888191d2cc264c195b2a0f9f1c03860ddd745d474518da3e736",
+    "walkthrough": "docs/examples/11-autark-pbf-loading.md"
+  },
+  "prompt": "Show me the OSM layer stack for Lower Manhattan straight from a local extract, parsed in the browser. The file is in this checkout at docs/examples/data/lower_mnt.osm.pbf. Load buildings, roads, water, parks and the surface from it with Autark, then render a thematic map with a brushable histogram beside it.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/lower_mnt.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/lower_mnt.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "The smallest curated example: two grammar nodes, nothing to execute in the sandbox."
+}

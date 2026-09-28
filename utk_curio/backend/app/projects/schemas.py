@@ -53,6 +53,10 @@ class ProjectUpdate:
     name: Optional[str] = None
     description: Optional[str] = None
     thumbnail_accent: Optional[str] = None
+    #: The spec write counter this client last synced with (memo dev/124).
+    #: ``None`` means "no opinion" and is never checked, which is how scripts,
+    #: tests and internal callers keep working unchanged.
+    base_revision: Optional[int] = None
 
     def __post_init__(self):
         if self.thumbnail_accent and self.thumbnail_accent not in VALID_ACCENTS:

@@ -81,6 +81,12 @@ const mockAutkDbGetLayerTables = jest.fn(
   (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
 );
 const mockAutkDbSpatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+// Overridable per test for the same reason: dev/136 reads the feature count
+// off what the fallback loaded, so a test about a SUCCESSFUL fallback has to
+// give it something to have loaded.
+const mockAutkDbGetLayer = jest.fn(
+  (..._a: unknown[]) => Promise.resolve({ type: 'FeatureCollection', features: [] as any[] }),
+);
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
@@ -90,7 +96,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     loadJson: jest.fn().mockResolvedValue(undefined),
     spatialQuery: (...a: any[]) => mockAutkDbSpatialQuery(...a),
     getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
-    getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
+    getLayer: (...a: any[]) => mockAutkDbGetLayer(...a),
   })),
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
 }), { virtual: true });
@@ -946,6 +952,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_roads', type: 'roads' },
       ]);
+      // The fallback succeeded, so its layers hold features; without this the
+      // dev/136 empty-render gate reports this successful load as an error.
+      mockAutkDbGetLayer.mockResolvedValue({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry: null }],
+      });
 
       const setOutput = jest.fn();
       const outputCallback = jest.fn();
@@ -971,6 +983,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       mockAutkDbGetLayerTables.mockReset();
       mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayer.mockResolvedValue({ type: 'FeatureCollection', features: [] });
     });
 
     test('data-only node: if persisting the fallback fails too, the Data Pool still gets the wrapper inline (#248)', async () => {

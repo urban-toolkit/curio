@@ -74,3 +74,22 @@ describe("AgentAvatarBadge", () => {
     expect(onDetach).toHaveBeenCalled();
   });
 });
+
+describe("AgentAvatarBadge — dev/115 the running dot", () => {
+  it("shows a labeled running dot only while a background job is live", () => {
+    const { rerender } = render(
+      <AgentAvatarBadge
+        attachment={attachment({ liveJob: { executionId: "e1", kind: "solve-batch", status: "running", startedAt: 1 } })}
+        active={false} onOpen={jest.fn()} onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Chat is solving in the background" })).toBeInTheDocument();
+    rerender(
+      <AgentAvatarBadge
+        attachment={attachment({ liveJob: { executionId: "e1", kind: "solve-batch", status: "done", startedAt: 1 } })}
+        active={false} onOpen={jest.fn()} onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+});

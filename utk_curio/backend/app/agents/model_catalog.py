@@ -136,3 +136,150 @@ def remembered_models(
     ]
     seen_at = entry.get("seenAt")
     return models, seen_at if isinstance(seen_at, str) else None
+
+
+# ---------------------------------------------------------------------------
+# Fine-tuning capability, and models Curio caused to exist (memo dev/122)
+# ---------------------------------------------------------------------------
+#
+# Two additions, in two files, for one reason each.
+#
+# The capability probe is recorded here because it is the same KIND of fact as
+# a model listing — something an endpoint said about itself — and it earns the
+# same treatment: recorded on every successful ask, replayed with the date it
+# was true when a fresh ask is impossible, and never presented as the present
+# tense.
+#
+# A TRAINED model is a different kind of fact: not a recording of what an
+# endpoint reported, but a model this install caused to exist. It therefore
+# lives in a sibling file rather than inside the suggestions this module's
+# docstring promises are "only ever a recording of what an endpoint said about
+# itself". Mixing them would blur the doctrine that makes the replay
+# trustworthy.
+
+_CAPABILITY_FILENAME = "fine-tuning-capability.json"
+_TRAINED_FILENAME = "trained-models.json"
+
+#: A recording older than this is still shown, still labelled with its date —
+#: this only decides when the panel offers to re-ask.
+CAPABILITY_STALE_AFTER_HOURS = 24
+
+
+def _sidecar_path(user_key: str, filename: str) -> Path:
+    return _users_base() / _user_key_segment(user_key) / filename
+
+
+def _load_sidecar(user_key: str, filename: str, section: str) -> dict:
+    try:
+        raw = json.loads(_sidecar_path(user_key, filename).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        log.warning("Corrupt %s for %s - treating as empty", filename, user_key)
+        return {}
+    entries = raw.get(section)
+    return entries if isinstance(entries, dict) else {}
+
+
+def _write_sidecar(user_key: str, filename: str, section: str, entries: dict) -> None:
+    try:
+        p = _sidecar_path(user_key, filename)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps({"version": _SCHEMA_VERSION, section: entries}, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, p)
+    except OSError as exc:
+        log.warning("Could not record %s for %s: %s", filename, user_key, exc)
+
+
+def remember_capability(
+    user_key: str, api_type: str, base_url: str, capability: dict
+) -> None:
+    """Record what an endpoint said about fine-tuning. Never raises."""
+    if not isinstance(capability, dict):
+        return
+    entries = _load_sidecar(user_key, _CAPABILITY_FILENAME, "providers")
+    entries[provider_key(api_type, base_url)] = {
+        "supported": bool(capability.get("supported")),
+        "reason": str(capability.get("reason") or ""),
+        "baseModels": [
+            str(m) for m in (capability.get("baseModels") or []) if str(m).strip()
+        ][:_MAX_REMEMBERED],
+        "surface": str(capability.get("surface") or ""),
+        "seenAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    _write_sidecar(user_key, _CAPABILITY_FILENAME, "providers", entries)
+
+
+def remembered_capability(
+    user_key: str, api_type: str, base_url: str = ""
+) -> tuple[dict | None, str | None]:
+    """``(capability, seen_at_iso)`` for this endpoint, or ``(None, None)``."""
+    entry = _load_sidecar(user_key, _CAPABILITY_FILENAME, "providers").get(
+        provider_key(api_type, base_url)
+    )
+    if not isinstance(entry, dict):
+        return None, None
+    seen_at = entry.get("seenAt")
+    return (
+        {
+            "supported": bool(entry.get("supported")),
+            "reason": str(entry.get("reason") or ""),
+            "baseModels": list(entry.get("baseModels") or []),
+            "surface": str(entry.get("surface") or ""),
+        },
+        seen_at if isinstance(seen_at, str) else None,
+    )
+
+
+def remember_trained_model(
+    user_key: str,
+    api_type: str,
+    base_url: str,
+    *,
+    model: str,
+    job_id: str,
+    dataset_sha256: str,
+    base_model: str = "",
+) -> None:
+    """Record a model this install trained. Never raises.
+
+    Labelled with its provenance and its date for the same reason a replayed
+    listing is: an id shown without what produced it and when is a recording
+    presented as the present tense.
+    """
+    if not (model or "").strip():
+        return
+    entries = _load_sidecar(user_key, _TRAINED_FILENAME, "providers")
+    key = provider_key(api_type, base_url)
+    rows = [
+        row for row in (entries.get(key) or [])
+        if isinstance(row, dict) and row.get("model") != model
+    ]
+    rows.append({
+        "model": str(model),
+        "origin": "trained-in-curio",
+        "jobId": str(job_id),
+        "baseModel": str(base_model or ""),
+        "datasetSha256": str(dataset_sha256 or ""),
+        "trainedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    })
+    entries[key] = rows[-_MAX_REMEMBERED:]
+    _write_sidecar(user_key, _TRAINED_FILENAME, "providers", entries)
+
+
+def trained_models(user_key: str, api_type: str, base_url: str = "") -> list:
+    """Every model this install trained against this endpoint, newest last.
+
+    A suggestion like any other: nothing rejects a model for being absent from
+    here, and the Model field stays free text.
+    """
+    rows = _load_sidecar(user_key, _TRAINED_FILENAME, "providers").get(
+        provider_key(api_type, base_url)
+    )
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict) and row.get("model")]

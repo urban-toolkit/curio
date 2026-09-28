@@ -93,6 +93,18 @@ class TestPush:
         assert testing_provider.pending() == 1
         assert testing_provider.run_scripted_completion([]) == "keep me"
 
+    def test_by_intent_routes_a_delegated_call(self, client):
+        resp = client.post(SCRIPT_URL, json={"replies": ["plan"], "byIntent": {"load_labels": "LOAD"}})
+        assert resp.status_code == 200
+        delegated = [{"role": "user", "content": '[delegated task]\n{"intent": "write load_labels"}'}]
+        assert testing_provider.run_scripted_completion(delegated) == "LOAD"
+        assert testing_provider.run_scripted_completion([]) == "plan"
+
+    def test_a_malformed_by_intent_is_refused(self, client):
+        resp = client.post(SCRIPT_URL, json={"replies": [], "byIntent": {"k": 7}})
+        assert resp.status_code == 400
+        assert "byIntent" in resp.get_json()["error"]
+
 
 class TestRead:
     def test_captured_prompts_come_back(self, client):

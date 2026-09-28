@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import provider_config
+from utk_curio.backend.app.agents import agent_jobs, provider_config
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -34,3 +34,35 @@ def _default_provider(monkeypatch):
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "test-model")
     monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "test-key")
+
+
+@pytest.fixture(autouse=True)
+def _pinned_repair_budget(monkeypatch):
+    """dev/127: pin the repair loop to the historical THREE attempts.
+
+    Every test written before dev/127 scripts a fixed number of provider
+    replies and asserts on "three attempts" — the cap that existed when it was
+    written. dev/127 raises the DEFAULT to five corrections and adds a
+    wall-clock budget, which would silently change what those scripts mean (a
+    fourth round reads a reply nobody wrote). Pinning it here keeps each of
+    those tests about its own subject; the new budget has its own tests, which
+    delete this variable and assert the shipped default instead.
+    """
+    monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "3")
+    # dev/131: Solve became a SESSION that keeps making passes until the user
+    # stops it or fifteen minutes pass. Every test written before it asserts on
+    # ONE pass, and a session that waits for a user who is not there would hang
+    # the suite — so the session budget is one second and its inter-pass wait is
+    # one second here. dev/131's own tests set both explicitly.
+    monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "1")
+    monkeypatch.setenv("CURIO_SOLVE_SESSION_WAIT", "1")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_agent_jobs():
+    """dev/115: the detached-job registry is process state — every test starts
+    with none and leaves none behind (a leaked live job would hit the
+    per-attachment guard or the per-user cap in an unrelated test)."""
+    agent_jobs.reset_registry()
+    yield
+    agent_jobs.reset_registry()

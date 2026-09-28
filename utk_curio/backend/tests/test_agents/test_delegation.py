@@ -32,6 +32,7 @@ def _delegate_tail(capability="node.content.generate", inputs='{"intent": "sum c
 
 NB = "agent.node-builder@1.0.0"
 NCB = "agent.node-content-builder@1.0.0"
+DF = "agent.dataset-finder@1.0.0"
 
 
 def _project(client, token):
@@ -88,13 +89,25 @@ class TestRequiredClosure:
 
     DFB = "agent.dataflow-builder@1.0.0"
 
-    def test_dataflow_builder_closure_is_the_content_builder(self, client, user_and_token, tmp_curio):
+    def test_dataflow_builder_closure_is_the_three_server_invoked_agents(
+        self, client, user_and_token, tmp_curio
+    ):
+        # dev/126: the closure is walked in declaration order, root first, and
+        # the Dataset Finder ↔ Node Builder delegation cycle is traversed once
+        # (the Dataset Finder requires nothing, so nothing recurses).
         user, _ = user_and_token
         coords, missing = delegation.required_closure(
             _user_dir_key(user), builtin.get_builtin_manifest(self.DFB)
         )
-        assert coords == [NCB]
+        assert coords == [NCB, DF, NB]
         assert missing == []
+
+    def test_node_builder_closure_is_the_dataset_finder(self, client, user_and_token, tmp_curio):
+        user, _ = user_and_token
+        coords, missing = delegation.required_closure(
+            _user_dir_key(user), builtin.get_builtin_manifest(NB)
+        )
+        assert (coords, missing) == ([DF], [])
 
     def test_leaf_has_empty_closure(self, client, user_and_token, tmp_curio):
         user, _ = user_and_token
@@ -125,10 +138,16 @@ class TestRequiredClosure:
         fake_ncb = dataclasses.replace(ncb, delegates_to=["agent.node-builder"], requires_agents=["agent.node-builder"])
         nb = builtin.get_builtin_manifest(NB)
         fake_nb = dataclasses.replace(nb, delegates_to=["agent.node-content-builder"], requires_agents=["agent.node-content-builder"])
-        table = {"agent.node-content-builder": (NCB, fake_ncb), "agent.node-builder": (NB, fake_nb)}
+        df = builtin.get_builtin_manifest(DF)
+        table = {
+            "agent.node-content-builder": (NCB, fake_ncb),
+            "agent.node-builder": (NB, fake_nb),
+            "agent.dataset-finder": (DF, df),
+        }
         monkeypatch.setattr(delegation, "find_visible", lambda key, aid: table.get(aid, (None, None)))
         coords, missing = delegation.required_closure(_user_dir_key(user), builtin.get_builtin_manifest(self.DFB))
-        assert coords == [NCB, NB]
+        # Declaration order, each id visited once despite the pretend cycle.
+        assert coords == [NCB, DF, NB]
         assert missing == []
 
     def test_required_by_names_installed_dependents(self, client, user_and_token, tmp_curio):

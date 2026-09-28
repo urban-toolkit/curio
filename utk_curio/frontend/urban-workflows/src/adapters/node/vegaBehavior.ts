@@ -5,6 +5,7 @@ import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useToastContext } from '../../providers/ToastProvider';
 import { fetchPreviewData } from '../../services/api';
+import { renderOutcome } from '../../utils/renderOutcome';
 import { hasIncomingEdge } from '../../utils/nodeEmptyState';
 import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
 import { activeGeometryName } from '../../utils/parsing';
@@ -92,7 +93,23 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const applyGrammar = async (spec: string) => {
     try {
-      await handleCompileGrammar(spec);
+      const counts = await handleCompileGrammar(spec);
+      // dev/136: compiling is not drawing. A schema-valid spec over zero rows
+      // renders its axes and nothing else, and a spec whose encoded field is
+      // entirely null renders an empty panel — both used to land here as
+      // `success`, so the node showed a green Done over a blank chart and
+      // every agent reading the journal was told the node was fine.
+      const outcome = renderOutcome(counts ?? {});
+      if (outcome.empty) {
+        nodeState.setOutput({
+          code: 'error', content: outcome.message, outputType: '',
+          // dev/136: the harness reads this rather than the prose — the
+          // cause rides the kind, because the fix differs per cause.
+          kind: `empty-render:${outcome.cause}`,
+        } as any);
+        showToast(outcome.message, 'error');
+        return;
+      }
       nodeState.setOutput({ code: 'success', content: '', outputType: '' });
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });

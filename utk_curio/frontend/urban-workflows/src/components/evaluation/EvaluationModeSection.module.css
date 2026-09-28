@@ -1,0 +1,109 @@
+/* dev/123 — Settings → Evaluation mode. Tokens only; the field/button
+   vocabulary is ../modal-content.module.css. */
+.section {
+    margin-top: 12px;
+    border-top: 1px solid var(--curio-border);
+    padding-top: 12px;
+}
+
+.summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-md);
+}
+
+.intro {
+    margin: 6px 0 10px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.blocked {
+    margin: 6px 0;
+    color: var(--curio-warning-text);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.who {
+    margin: 0 0 10px;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.source {
+    color: var(--curio-text-muted);
+}
+
+.prompt {
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--curio-border);
+    border-radius: 4px;
+    background: var(--curio-surface-muted, transparent);
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.meta {
+    margin: 0 0 8px;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+}
+
+.review {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+}
+
+.phase {
+    margin: 8px 0;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-sm);
+}
+
+.report {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--curio-border);
+    border-radius: 4px;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary);
+    line-height: 1.5;
+}
+
+.total {
+    font-weight: 600;
+    color: var(--curio-text-primary);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--curio-font-size-sm);
+    margin: 6px 0;
+}
+
+.table th,
+.table td {
+    text-align: left;
+    padding: 2px 6px 2px 0;
+    color: var(--curio-text-secondary);
+}
+
+.categories {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+}

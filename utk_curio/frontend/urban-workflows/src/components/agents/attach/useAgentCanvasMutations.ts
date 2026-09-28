@@ -42,6 +42,35 @@ const CENTER_ANIMATION_MS = 400;
  * catches re-fired events before the store has synced, and the live-graph
  * check catches replays across remounts.
  */
+/** dev/112: ONE materialization of an applied spec edge for the live canvas —
+ * parity with loadTrill's `add_edge` (useCode): a Trill `Interaction` edge is
+ * bidirectional on `in/out` handles with arrows both ends; a data edge keeps
+ * the explicit handles the apply assigned (merge slots, dev/67-3). Both bridge
+ * paths (bulk plan, per-edge connect) go through here. */
+function appliedEdgeToCanvasEdge(edge: {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  type?: string;
+}) {
+  const interaction = edge.type === "Interaction";
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: interaction ? "in/out" : edge.sourceHandle ?? "out",
+    targetHandle: interaction ? "in/out" : edge.targetHandle ?? "in",
+    type: interaction ? EdgeType.BIDIRECTIONAL_EDGE : EdgeType.UNIDIRECTIONAL_EDGE,
+    markerEnd: { type: "arrow" },
+    ...(interaction ? { markerStart: { type: "arrow" } } : {}),
+    // Parity with loadTrill's add_edge (dev/58): the edge components read
+    // display flags off `data` — it must always exist.
+    data: {},
+  };
+}
+
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const { applyNodeContent, onEdgesChange, applyReviewedRemovals } = useFlowContext();
@@ -80,16 +109,7 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          item: {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle ?? "out",
-            targetHandle: edge.targetHandle ?? "in",
-            type: EdgeType.UNIDIRECTIONAL_EDGE,
-            markerEnd: { type: "arrow" },
-            data: {},
-          } as never,
+          item: appliedEdgeToCanvasEdge(edge) as never,
         })),
       );
       return;
@@ -119,21 +139,9 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          item: {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            // dev/67-3: the apply assigns real handles (merge slots in_N) —
-            // pass them through; hardcoding "in" left merge slots unfilled
-            // until a reload healed them.
-            sourceHandle: edge.sourceHandle ?? "out",
-            targetHandle: edge.targetHandle ?? "in",
-            type: EdgeType.UNIDIRECTIONAL_EDGE,
-            markerEnd: { type: "arrow" },
-            // Parity with loadTrill's add_edge (dev/58): the edge components
-            // read display flags off `data` — it must always exist.
-            data: {},
-          } as never,
+          // dev/67-3: the apply assigns real handles (merge slots in_N) —
+          // passed through; dev/112: interaction edges become bidirectional.
+          item: appliedEdgeToCanvasEdge(edge) as never,
         })),
       );
       window.setTimeout(

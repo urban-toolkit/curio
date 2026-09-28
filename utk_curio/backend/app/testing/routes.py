@@ -384,6 +384,9 @@ def agent_script_push():
       * ``replies`` - list of reply strings, consumed in order, one per
         provider call. A multi-round run (a toolRequest and its follow-up)
         needs one entry per round.
+      * ``byIntent`` - optional ``{substring: reply}``. A delegated call whose
+        ``intent`` contains a key gets that reply instead of the next queued
+        one (see ``testing_provider.route_by_intent``).
       * ``reset`` - drop anything queued and captured first. Defaults to true,
         which is what a test almost always wants: a leftover reply from a
         previous test would be consumed by this one and the failure would point
@@ -400,9 +403,16 @@ def agent_script_push():
         replies = []
     if not isinstance(replies, list) or not all(isinstance(r, str) for r in replies):
         return jsonify({"error": "'replies' must be a list of strings"}), 400
+    by_intent = body.get("byIntent") or {}
+    if not isinstance(by_intent, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in by_intent.items()
+    ):
+        return jsonify({"error": "'byIntent' must map strings to strings"}), 400
     if body.get("reset", True):
         testing_provider.reset()
     testing_provider.push_replies(*replies)
+    if by_intent:
+        testing_provider.route_by_intent(by_intent)
     return jsonify({"pending": testing_provider.pending()}), 200
 
 

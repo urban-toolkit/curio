@@ -168,3 +168,40 @@ class TestDetachAllForCoord:
 
         assert [r["attachmentId"] for r in removed] == ["a1"]
         assert spec["dataflow"]["agentAttachments"] == ["not-a-dict"]
+
+
+class TestNodeTargetMatches:
+    """dev/126: the ONE reading of compatibleTargets[].requires, shared by the
+    drawer's attach and the plan apply's automatic attach."""
+
+    class _Target:
+        def __init__(self, kind, requires=()):
+            self.kind = kind
+            self.requires = list(requires)
+
+    class _Manifest:
+        def __init__(self, targets):
+            self.compatible_targets = targets
+
+    def test_suffix_is_canonical(self):
+        assert attachments.canonical_node_suffix("pkg/data-loading") == "data-loading"
+        assert attachments.canonical_node_suffix("pkg/data-loading@2") == "data-loading"
+        assert attachments.canonical_node_suffix("DATA_LOADING") == "data-loading"
+        assert attachments.canonical_node_suffix(None) == ""
+
+    def test_requires_restricts_the_node(self):
+        m = self._Manifest([self._Target("node", ["data-loading"])])
+        assert attachments.node_target_matches(m, "curio.builtin/data-loading")
+        assert attachments.node_target_matches(m, "curio.builtin/data-loading@2")
+        assert attachments.node_target_matches(m, "DATA_LOADING")
+        assert not attachments.node_target_matches(m, "curio.builtin/vis-vega")
+
+    def test_empty_requires_accepts_any_node(self):
+        m = self._Manifest([self._Target("node")])
+        assert attachments.node_target_matches(m, "curio.builtin/vis-vega")
+        assert attachments.node_target_matches(m, "")
+
+    def test_no_node_target_accepts_none(self):
+        m = self._Manifest([self._Target("canvas")])
+        assert not attachments.node_target_matches(m, "curio.builtin/data-loading")
+        assert not attachments.node_target_matches(None, "curio.builtin/data-loading")

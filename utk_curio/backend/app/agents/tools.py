@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass
 from typing import Iterable
 
+from utk_curio.backend.app.agents import plan_topology
 from utk_curio.backend.app.agents.manifest import ToolRequirement
 
 _EFFECTS = ("read", "mutate")
@@ -132,7 +133,10 @@ REGISTRY: dict[str, ToolContract] = {
             '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
             "Returns dataset rows with id, name, format, origin, installed "
             "state, and description — catalog-lane candidates must come from "
-            "these results only."
+            "these results only. Rows whose data file is resolved also carry "
+            "`path` (the absolute file a node may open) and `loader` (the "
+            "loader code for that path): the ONLY local paths generated node "
+            "content may reference (dev/114)."
         ),
     ),
     # Data Lake Catalog - consumer: agent.dataset-finder. Three contracts, not
@@ -224,14 +228,20 @@ REGISTRY: dict[str, ToolContract] = {
         contract_version="1",
         effect="mutate",
         description=(
-            "Propose an ADDITIVE plan of connected new nodes, by ending a "
-            "reply with a dataflowPlan block (not a toolRequest): "
+            "Propose a reviewed plan that changes the dataflow graph, by ending "
+            "a reply with a dataflowPlan block (not a toolRequest): "
             '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
             '"nodeType": "<packageId>/<templateId>", "title": "...", '
-            '"intent": "..."}], "edges": [{"from": "n1", "to": "n2"}]}}. '
-            "nodeType must come from the Available node templates list. The "
-            "user reviews the whole plan; nothing is added without approval, "
-            "and existing nodes are never touched."
+            '"intent": "..."}], "edges": [{"from": "n1", "to": "<ref or existing '
+            'node id>", "kind": "data"|"interaction"}], "removeNodes": ["<existing '
+            'node id>"], "removeEdges": ["<existing edge id>"]}}. A plan may add '
+            "nodes, add connections (edge-only plans are valid), and/or remove — "
+            "each part optional. kind defaults to data; an interaction edge is the "
+            "feedback link between a visualization and a data-pool node. Data "
+            "edges must keep the graph acyclic — a plan that closes a cycle is "
+            "refused with the loop named. nodeType must come from the Available "
+            "node templates list. The user reviews the whole plan (removals "
+            "listed by name); nothing changes without approval."
         ),
     ),
     # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
@@ -419,16 +429,29 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     )
     rows = []
     for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
-        rows.append(
-            {
-                "id": item.get("id"),
-                "name": item.get("title"),
-                "format": item.get("format"),
-                "origin": item.get("origin"),
-                "installed": bool(item.get("installed")),
-                "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
-            }
-        )
+        row = {
+            "id": item.get("id"),
+            "name": item.get("title"),
+            "format": item.get("format"),
+            "origin": item.get("origin"),
+            "installed": bool(item.get("installed")),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+        }
+        # dev/114 (DEC-072): the resolved data path — the listing already
+        # confined it to the allowed read roots (#143 chokepoint) — and the
+        # domain's ONE loader recipe for it. These are the only local paths
+        # generated node content may open; the grounding gate checks against
+        # the same listing, so a row here is grounded by construction.
+        path = item.get("path")
+        if isinstance(path, str) and path.strip():
+            row["path"] = path
+            snippet = item.get("loaderSnippet")
+            if not (isinstance(snippet, dict) and isinstance(snippet.get("code"), str)):
+                from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+                snippet = loader_snippet(item.get("format"), path)
+            row["loader"] = snippet.get("code")
+        rows.append(row)
     return rows
 
 
@@ -507,6 +530,15 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
         for key in ("sourceHandle", "targetHandle"):
             if edge.get(key) is not None:
                 row[key] = edge.get(key)
+        # dev/125 §3.6: the edge KIND, in the plan grammar's own vocabulary and
+        # with its byte-absent default (present only when "interaction"). The
+        # instruction tells the builder to re-read the graph and confirm the
+        # topology before claiming a repair; without this the projection could
+        # not show that the feedback edge it just asked for is in fact an
+        # interaction edge, so the read-back was not executable — the same
+        # DEC-063 defect the plan grammar had, one layer up.
+        if plan_topology.is_interaction_edge(edge):
+            row["kind"] = "interaction"
         edges.append(row)
     projection = {
         "name": dataflow.get("name"),
@@ -708,12 +740,22 @@ def execute_read_tool(
             node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
             if node is None:
                 return "error", f"node {node_id!r} not found in the saved spec"
+            # dev/137: two origins describe two different things about one node
+            # — what its CODE did and what its RENDER drew. The run leads when
+            # there is one; a grammar node has only its render; and a code node
+            # that also rendered carries both, because a run that passed can
+            # still have drawn nothing (dev/136).
             record = runtime_journal.read_record(user_key, project_id, node_id)
-            if record is None:
+            render = runtime_journal.read_render_record(user_key, project_id, node_id)
+            if record is None and render is None:
                 return "ok", json.dumps(
                     {"nodeId": node_id, "status": "never-executed"}, ensure_ascii=False
                 )
-            record = dict(record)
+            record = dict(record or render or {})
+            if record is not None and render is not None and (
+                runtime_journal.read_record(user_key, project_id, node_id) is not None
+            ):
+                record["render"] = render
             executed_sha = record.get("executedCodeSha256")
             current_sha = runtime_journal.normalized_code_sha256(str(node.get("content") or ""))
             # Best-effort staleness signal: the run predates the current content.

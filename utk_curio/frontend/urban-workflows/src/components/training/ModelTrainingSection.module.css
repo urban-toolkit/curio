@@ -1,0 +1,82 @@
+/* dev/122 — Settings → Model training. Tokens only; the field/button
+   vocabulary is ../modal-content.module.css. */
+.section {
+    margin-top: 12px;
+    border-top: 1px solid var(--curio-border);
+    padding-top: 12px;
+}
+
+.summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-md);
+}
+
+.intro {
+    margin: 6px 0 10px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+/* The Unavailable state: one sentence, no controls. */
+.unavailable {
+    margin: 6px 0 4px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.seen {
+    margin: 0;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+}
+
+.consent {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 10px 0;
+    color: var(--curio-text-primary);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.note {
+    margin: 4px 0 10px;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}
+
+.status {
+    margin: 8px 0;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-primary);
+}
+
+.excluded {
+    margin: 6px 0 10px;
+    padding-left: 18px;
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-sm);
+}
+
+.gate {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--curio-border);
+    border-radius: 4px;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary);
+    line-height: 1.5;
+}
+
+.warning {
+    margin: 8px 0;
+    color: var(--curio-warning-text);
+    font-size: var(--curio-font-size-sm);
+    line-height: 1.5;
+}

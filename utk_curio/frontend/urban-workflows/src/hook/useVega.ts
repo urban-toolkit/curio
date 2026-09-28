@@ -6,7 +6,9 @@ import { formatDate, mapTypes } from "../utils/formatters";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing } from "../utils/vegaSpecSizing";
+import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
+import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { NODE_EMPTY_COPY, resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -159,6 +161,35 @@ export const useVega = ({
     return map;
   };
 
+  // dev/136: how many marks the view actually DREW. The same walk already
+  // visits every scene item for the tupleid map; counting the leaf items whose
+  // mark is a real mark type is what tells an empty plot from a drawn one, and
+  // an empty plot was reported as `success` until now. Text and rule marks
+  // count: an annotation-only chart is not an empty chart.
+  const countDrawnMarks = (view: any): number | undefined => {
+    let drawn = 0;
+    let sawScenegraph = false;
+    const MARKROLES = new Set([
+      'symbol', 'rect', 'line', 'area', 'path', 'arc', 'text', 'rule', 'shape',
+      'image', 'trail',
+    ]);
+    const traverse = (node: any) => {
+      if (!node) return;
+      if (typeof node.marktype === 'string' && MARKROLES.has(node.marktype)) {
+        drawn += Array.isArray(node.items) ? node.items.length : 0;
+      }
+      if (Array.isArray(node.items)) {
+        for (const item of node.items) traverse(item);
+      }
+    };
+    try {
+      traverse(view.scenegraph().root);
+      sawScenegraph = true;
+    } catch (_) {
+      return undefined;   // could not count: no claim is made (dev/136)
+    }
+    return sawScenegraph ? drawn : undefined;
+  };
   const processData = async () => {
     // hot reload visualizations with new incoming data
     if (currentView == null) {
@@ -245,10 +276,10 @@ export const useVega = ({
 
   const { workflowNameRef } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
-  const handleCompileGrammar = async (spec: string) => {
+  const handleCompileGrammar = async (spec: string): Promise<RenderCounts> => {
     let startTime = formatDate(new Date());
 
-    await compileGrammar(JSON.parse(spec));
+    const counts = await compileGrammar(JSON.parse(spec));
 
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
@@ -269,6 +300,9 @@ export const useVega = ({
       code
     );
 
+    // dev/136: the counts travel to the behavior, which decides whether this
+    // was a render or an empty panel under a green badge.
+    return counts;
   };
 
   const compileGrammar = async (specObj: any) => {
@@ -280,13 +314,19 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.values;
     lastValuesRef.current = values;
+    const rowsIn = Array.isArray(values) ? values.length : undefined;
+    // dev/137: judged over the fields the input carries; see vegaUsableRows.
+    const { usableRows, usableFields } = usableCounts(values, specObj);
 
     if (prepared.emptyReason != null) {
       // Nothing was injected and there is nothing sensible to draw. Compiling
       // anyway would replace the explanation with a blank canvas -- a geoshape
       // with no shape encoding still builds a projection, fits it to the raw
       // row array and renders NaN paths, silently.
-      return;
+      //
+      // dev/136: still counts, and `drawn: 0` is the truth -- the badge must
+      // not read green over the explanation this just put on the node.
+      return { rowsIn, drawn: 0, usableRows, usableFields };
     }
 
     specObj["data"] = { values: values, name: "data" };
@@ -356,7 +396,10 @@ export const useVega = ({
       });
     }
 
-    view.runAsync().then(() => {
+    // dev/136: the same chain, with its result kept — the marks can only be
+    // counted once the first render has finished, and the caller needs that
+    // count to tell a drawn chart from an empty one.
+    const rendered: Promise<number | undefined> = view.runAsync().then(() => {
       const container = document.getElementById("vega" + data.nodeId);
       const parentContainer = container?.parentElement;
       if (parentContainer) {
@@ -372,7 +415,8 @@ export const useVega = ({
       const map = buildVgsidMap(view);
       if (map.size > 0) vgsidToIndexRef.current = map;
       applyDirectSelection(view);
-    });
+      return countDrawnMarks(view);
+    }).catch(() => undefined);   // could not count: no claim (dev/136)
 
     setCurrentView(view);
 
@@ -488,6 +532,11 @@ export const useVega = ({
 
     // replicating input to the output
     data.outputCallback(data.nodeId, data.input);
+
+    // dev/136: what this render actually amounted to. Awaited last, so the
+    // listeners above are attached exactly when they were before.
+    // dev/137: plus what the DATA held in the fields this document plots.
+    return { rowsIn, drawn: await rendered, usableRows, usableFields };
   };
 
 

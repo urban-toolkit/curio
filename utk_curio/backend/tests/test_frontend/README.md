@@ -272,6 +272,8 @@ Chromium can drive a stack running on the host:
 #    The token has to be knowable: curio.py start otherwise mints a random one
 #    the container cannot recover, and sandbox calls come back 401.
 #    The three hosts default to loopback, which a container cannot reach.
+#    Leave CURIO_DEV unset: it serves the frontend through webpack-dev-server,
+#    which answers "Invalid Host header" to host.docker.internal.
 export CURIO_SANDBOX_TOKEN=local-mint-token
 CURIO_TESTING=1 python curio.py start --deploy --with-examples \
   --backend-host 0.0.0.0 --sandbox-host 0.0.0.0 --frontend-host 0.0.0.0
@@ -281,6 +283,9 @@ CURIO_TESTING=1 python curio.py start --deploy --with-examples \
 #    magic and does not otherwise resolve, which is the whole point here.
 #    The harness composes its URLs from ONE host plus three ports; there is no
 #    base-url variable.
+#    The suite's network guard (tests/netguard.py) refuses sockets to anything
+#    but loopback and CURIO_TEST_NET_ALLOW. host.docker.internal resolves to a
+#    gateway address, so the container allows every address it resolves to.
 docker run --rm --ipc=host \
   --add-host=host.docker.internal:host-gateway \
   -e CURIO_E2E_USE_EXISTING=1 \
@@ -290,7 +295,8 @@ docker run --rm --ipc=host \
   -e CURIO_E2E_SANDBOX_PORT=2000 \
   -e CURIO_SANDBOX_TOKEN="$CURIO_SANDBOX_TOKEN" \
   -v "$PWD:/w" -w /w mcr.microsoft.com/playwright/python:<tag> \
-  bash -c 'pip install -r requirements.txt \
+  bash -c 'export CURIO_TEST_NET_ALLOW="$(getent ahosts host.docker.internal | cut -d" " -f1 | sort -u | paste -sd, -)" \
+           && pip install -r requirements.txt \
            && python -m playwright install chromium \
            && pytest <the scene> --mint-baselines'
 ```

@@ -474,6 +474,49 @@ def update_attachment(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/dataset-selection",
+    methods=["POST"],
+)
+@require_auth
+def record_dataset_selection(project_id: str, attachment_id: str):
+    """dev/126: record the confirmed dataset selection for this node.
+
+    ``{"picks": [{"lane": "catalog"|"external", "key": "<datasetId>|<url>"}]}``
+    — identifiers only, resolved server-side against the candidates the runtime
+    itself proposed in this attachment's session; anything else is a 422. The
+    node's next Solve reads the record instead of asking the model what the
+    user picked.
+    """
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    if "picks" not in body:
+        return _error("body must include 'picks'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        # dev/132: a confirmed fetchable source is delegated to the node's own
+        # builder right here, so the config is resolved with the selection. A
+        # user with no provider still records the selection (the delegation
+        # says why it did not start).
+        try:
+            config = resolve_provider_config(g.user)
+        except ProviderConfigError:
+            config = None
+        payload = agents_services.record_dataset_selection(
+            _user_dir_key(g.user), project_id, attachment_id, body.get("picks"),
+            config=config,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/session", methods=["GET"]
 )
 @require_auth
@@ -653,11 +696,15 @@ def solve_attachment(project_id: str, attachment_id: str):
         isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
     ):
         return _error("'nodeIds' must be a list of node id strings when present")
+    verify = body.get("verify", True)
+    if not isinstance(verify, bool):
+        return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         payload = agents_services.solve_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids
+            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -675,7 +722,10 @@ def solve_attachment(project_id: str, attachment_id: str):
 def solve_attachment_stream(project_id: str, attachment_id: str):
     """The Solve batch as Server-Sent Events (dev/63, the DEC-021 user
     slice): ``solve_started`` → ``node_started``/``node_result`` per target →
-    ``done`` (the blocking payload + ``cancelled``/``notAttempted``).
+    ``done`` (the blocking payload + ``cancelled``/``notAttempted``). dev/115:
+    a verified data-loading node also streams ``node_round`` /
+    ``node_executed`` / ``node_verdict`` while its code runs in the sandbox;
+    ``verify: false`` in the body keeps the legacy unexecuted write.
     Validation errors (409/404/…) return normal JSON statuses before any
     streaming starts; the persisted session stays the single truth."""
     from utk_curio.backend.app.agents.provider_config import (
@@ -692,12 +742,15 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
     mode = body.get("mode", "write")
     if mode not in ("write", "propose"):
         return _error("'mode' must be 'write' or 'propose' when present")
+    verify = body.get("verify", True)
+    if not isinstance(verify, bool):
+        return _error("'verify' must be a boolean when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         events = agents_services.solve_attachment_stream(
             _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
-            mode=mode,
+            mode=mode, verify=verify,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -809,6 +862,85 @@ def run_node(project_id: str, attachment_id: str):
         return _svc_error(exc)
 
     def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/solve-node", methods=["POST"]
+)
+@require_auth
+def solve_node(project_id: str, attachment_id: str):
+    """dev/115 (DEC-073, Amendment A2): the per-node Solve — the user's
+    explicit ask to run, fix, and re-run ONE node's code from the node's own
+    agent. Body: ``{"nodeId": "<node id>"}``. Round 0 executes the current
+    content; corrections run the shared loop; a node that had content lands
+    as an already-executed content review, an empty one is written on PASS.
+    Detached: the response subscribes to the job (replay + tail); closing it
+    does not stop the run — ``GET …/jobs/stream`` re-attaches."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    node_id = body.get("nodeId")
+    if not isinstance(node_id, str) or not node_id:
+        return _error("'nodeId' is required")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.solve_node_stream(
+            _user_dir_key(g.user), project_id, attachment_id, config, node_id=node_id,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/jobs/stream", methods=["GET"]
+)
+@require_auth
+def attach_job_stream(project_id: str, attachment_id: str):
+    """dev/115 (DEC-021 single-process slice): re-attach to the attachment's
+    background job — the running Solve batch or per-node Solve, or the most
+    recent finished one still within the replay window. Replays every event
+    so far, then tails live ones; 404 when there is nothing to attach to."""
+    from utk_curio.backend.app.agents import agent_jobs
+
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    job = agent_jobs.latest_job(_user_dir_key(g.user), attachment_id)
+    if job is None or job.project_id != project_id:
+        return _error("no background job for this attachment", 404)
+    events = agent_jobs.subscribe(job)
+
+    def _sse():
+        yield f"event: job\ndata: {json.dumps(job.to_payload())}\n\n"
         for kind, payload in events:
             data = {"error": payload} if kind == "error" else payload
             yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
@@ -972,6 +1104,300 @@ def stream_attachment(project_id: str, attachment_id: str):
             else:  # execution / content / tool_* / done carry typed dict payloads
                 data = payload
             yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model training (memo dev/122, ``DEC-078``)
+# ---------------------------------------------------------------------------
+#
+# Eight routes, and one shape borrowed from ``provider-models`` on purpose: a
+# capability is ASKED of the endpoint and recorded, and a replay is labelled
+# with the date it was true. There is no provider→capability table here or
+# anywhere else.
+#
+# There is no streaming route and no job worker. A fine-tune belongs to the
+# provider; these routes read what it says.
+
+
+def _training_error(exc) -> tuple:
+    return _error(exc.message, getattr(exc, "status", 400))
+
+
+@agents_bp.route("/training/capability", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_capability():
+    """Can this account's endpoint fine-tune, and if not, why not.
+
+    ``?refresh=0`` serves the recording instead of asking again, so opening the
+    panel twice in a minute does not re-probe. A recording always carries the
+    date it was true.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    user_key = _user_dir_key(g.user)
+    refresh = (request.args.get("refresh") or "1").strip() not in ("0", "false", "no")
+    try:
+        return jsonify(
+            training_service.capability(g.user, user_key, refresh=refresh)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/dataset/preview", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_dataset_preview():
+    """What would be sent: rows, bytes, fixtures, licences, destination host.
+
+    POST because it is an action with a body (the split), and because its
+    answer carries the digest a later start must echo.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    body = request.get_json(silent=True) or {}
+    split = str(body.get("split") or "train")
+    try:
+        return jsonify(training_service.preview(g.user, split=split)), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_start_job():
+    """Consent, upload, submit. The consent record is written first."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    body = request.get_json(silent=True) or {}
+    price = body.get("pricePerMTokenTrained")
+    try:
+        return jsonify(training_service.start(
+            g.user,
+            _user_dir_key(g.user),
+            base_model=str(body.get("baseModel") or ""),
+            rows_digest=str(body.get("rowsDigest") or ""),
+            confirmed=bool(body.get("confirmed")),
+            split=str(body.get("split") or "train"),
+            price_per_mtoken=[float(price)] if isinstance(price, (int, float)) else None,
+        )), 201
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_list_jobs():
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    return jsonify(training_service.listing(_user_dir_key(g.user))), 200
+
+
+@agents_bp.route("/training/jobs/<job_id>", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def training_job_status(job_id: str):
+    """The endpoint's current word on a job, with the time it was read."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.status(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/cancel", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_cancel_job(job_id: str):
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.cancel(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/activate", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_activate(job_id: str):
+    """Point the account at a trained model — refused without an evaluation.
+
+    The four refusals live in ``training/gate.py``; this route only carries
+    them. Curio does not decide that a trained model is better: it refuses to
+    let you activate one you have not evaluated on data it never trained on.
+    """
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.activate(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+@agents_bp.route("/training/jobs/<job_id>/rollback", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def training_rollback(job_id: str):
+    """Put the account back on the model it had before this activation."""
+    from utk_curio.backend.app.agents.training import service as training_service
+
+    try:
+        return jsonify(
+            training_service.rollback(g.user, _user_dir_key(g.user), job_id)
+        ), 200
+    except training_service.TrainingServiceError as exc:
+        return _training_error(exc)
+
+
+# ---------------------------------------------------------------------------
+# Evaluation mode (memo dev/123, ``DEC-079``)
+# ---------------------------------------------------------------------------
+#
+# An evaluation is a product action: the panel calls these, the service does
+# the work through the product's own entry points, and the reference dataflow
+# never leaves the server. There is no route that returns an expected graph.
+
+
+def _evaluation_error(exc) -> tuple:
+    return _error(exc.message, getattr(exc, "status", 400))
+
+
+@agents_bp.route("/evaluation/readiness", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def evaluation_readiness():
+    """Whether an evaluation can run, and which model would answer.
+
+    Reports the SOURCE as well as the answer, because a model configured by the
+    deployment's own start flags is as real as one typed into AI Settings — a
+    panel that only read the user row would tell an operator who passed
+    ``--llm-model`` that they had configured nothing.
+    """
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    return jsonify(evaluation_service.readiness(g.user)), 200
+
+
+@agents_bp.route("/evaluation/fixtures", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def evaluation_fixtures():
+    """The prompts a person can choose from, with their review state."""
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    return jsonify(evaluation_service.list_fixtures()), 200
+
+
+@agents_bp.route("/evaluation/fixtures/<fixture_id>/review", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def evaluation_review_fixture(fixture_id: str):
+    """Record a prompt review from the panel.
+
+    A prompt is drafted by a model and approved by a person; before this route
+    the only way to record that was to hand-edit JSON, which produced a
+    mistyped status the schema rejected. A review that can be mistyped belongs
+    in the interface.
+    """
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(evaluation_service.set_review(
+            fixture_id, status=str(body.get("status") or ""), user=g.user
+        )), 200
+    except evaluation_service.EvaluationServiceError as exc:
+        return _evaluation_error(exc)
+
+
+@agents_bp.route("/evaluation/runs", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def evaluation_start_run():
+    """Start a run: an isolated project, the normal install/attach, the
+    account's own model, the normal lifecycle."""
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(evaluation_service.start(
+            g.user, _user_dir_key(g.user), str(body.get("fixtureId") or "")
+        )), 201
+    except evaluation_service.EvaluationServiceError as exc:
+        return _evaluation_error(exc)
+
+
+@agents_bp.route("/evaluation/runs", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def evaluation_list_runs():
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    return jsonify(evaluation_service.listing(_user_dir_key(g.user))), 200
+
+
+@agents_bp.route("/evaluation/runs/<run_id>", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def evaluation_run_status(run_id: str):
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    try:
+        return jsonify(evaluation_service.status(_user_dir_key(g.user), run_id)), 200
+    except evaluation_service.EvaluationServiceError as exc:
+        return _evaluation_error(exc)
+
+
+@agents_bp.route("/evaluation/runs/<run_id>/cancel", methods=["POST"])
+@require_auth
+@_map_agent_errors
+def evaluation_cancel_run(run_id: str):
+    from utk_curio.backend.app.agents.evaluation import service as evaluation_service
+
+    try:
+        return jsonify(evaluation_service.cancel(_user_dir_key(g.user), run_id)), 200
+    except evaluation_service.EvaluationServiceError as exc:
+        return _evaluation_error(exc)
+
+
+@agents_bp.route("/evaluation/runs/<run_id>/stream", methods=["GET"])
+@require_auth
+@_map_agent_errors
+def evaluation_run_stream(run_id: str):
+    """Re-attach to a running evaluation's phases.
+
+    The ``jobs/stream`` shape (dev/115): the job's log replays first, then live
+    events tail until it finishes, so a reload rejoins a run in progress rather
+    than losing it. A finished run replays and ends.
+    """
+    from utk_curio.backend.app.agents import agent_jobs
+
+    user_key = _user_dir_key(g.user)
+    job = agent_jobs.latest_job(user_key, run_id)
+    if job is None:
+        return _error("no evaluation job to attach to", 404)
+
+    def _sse():
+        yield f"event: job\ndata: {json.dumps(job.to_payload())}\n\n"
+        for kind, payload in agent_jobs.subscribe(job):
+            yield f"event: {kind}\ndata: {json.dumps(payload)}\n\n"
 
     return Response(
         stream_with_context(_sse()),
