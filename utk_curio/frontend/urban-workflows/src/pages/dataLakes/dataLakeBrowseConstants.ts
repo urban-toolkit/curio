@@ -14,7 +14,7 @@ import {
  * drive the counts, and a provider with no sources simply reads zero.
  */
 export const PROVIDER_FILTERS: { value: LakeProviderType; label: string }[] = (
-  ["socrata", "ckan", "arcgis", "wfs", "direct"] as LakeProviderType[]
+  ["socrata", "ckan", "arcgis", "wfs", "direct", "folder", "s3", "huggingface"] as LakeProviderType[]
 ).map((value) => ({ value, label: LAKE_PROVIDER_LABEL[value] }));
 
 export const AUTH_FILTERS: { value: LakeAuthMode; label: string }[] = (

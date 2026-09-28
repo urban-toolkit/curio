@@ -79,7 +79,7 @@ curio/
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
-├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
+├── datalakes/                      # The Data Lake Catalog: one manifest per portal or storage source this install can reach
 ├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite

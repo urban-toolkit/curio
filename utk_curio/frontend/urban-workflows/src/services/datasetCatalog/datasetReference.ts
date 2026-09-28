@@ -40,19 +40,22 @@ export interface DatasetReference {
  * copied always matches what the palette would have written.
  */
 export function datasetReference(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri">,
+  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
 ): DatasetReference {
   const location = String(dataset.path || dataset.uri || "");
   const id = String(dataset.id ?? "");
+  // A collection is read with `curio_collection`, which adds a readable path
+  // for each of its files; its data file alone is only the index.
+  const call = dataset.format === "collection" ? "curio_collection" : "curio_dataset_path";
   const code = SAFE_DATASET_ID_RE.test(id)
-    ? `curio_dataset_path(${JSON.stringify(id)})`
+    ? `${call}(${JSON.stringify(id)})`
     : JSON.stringify(location);
   return { code, location };
 }
 
 /** Just the string a copy control puts on the clipboard. */
 export function datasetReferenceCode(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri">,
+  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
 ): string {
   return datasetReference(dataset).code;
 }

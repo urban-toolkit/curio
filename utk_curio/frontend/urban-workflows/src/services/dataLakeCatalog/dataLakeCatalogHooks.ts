@@ -8,6 +8,7 @@ import {
   writeLakeCatalogCache,
 } from "./dataLakeCatalogCache";
 import type {
+  LakeAcquireBody,
   LakeAcquireJob,
   LakeAcquireStart,
   LakeCatalogQuery,
@@ -146,9 +147,10 @@ export function useLakeSearch(
 
     const controller = new AbortController();
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
 
-    const timer = setTimeout(() => {
+    const run = (polls: number) => {
       const request = sourceDir
         ? dataLakeCatalogApi.searchSource(
             sourceDir,
@@ -165,18 +167,26 @@ export function useLakeSearch(
           setData(res);
           setError(null);
           setSearched(true);
+          setLoading(false);
+          // A storage source on its first scan answers "scanning": asked
+          // again, quietly, until its rows are in, so they join the results
+          // without a new query.
+          const scanning = !sourceDir && res.sources.some((leg) => leg.status === "scanning");
+          if (scanning && polls < MAX_SEARCH_SCAN_POLLS) {
+            timer = setTimeout(() => run(polls + 1), SCAN_POLL_MS);
+          }
         })
         .catch((err: Error) => {
+          if (cancelled) return;
+          setLoading(false);
           // An abort is the expected outcome of the next keystroke, not a
           // failure to report.
-          if (cancelled || err.name === "AbortError") return;
+          if (err.name === "AbortError") return;
           setError(err.message || "That search could not be run.");
           setSearched(true);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
         });
-    }, SEARCH_DEBOUNCE_MS);
+    };
+    timer = setTimeout(() => run(0), SEARCH_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
@@ -186,6 +196,80 @@ export function useLakeSearch(
   }, [sourceDir, q, format, provider, limit]);
 
   return { data, loading, error, searched };
+}
+
+
+// ── Storage listings ───────────────────────────────────────────────────────
+
+/** How often a listing is asked again while its source is being scanned. */
+const SCAN_POLL_MS = 1000;
+/** How many times a federated search asks again for a source being scanned. */
+const MAX_SEARCH_SCAN_POLLS = 30;
+/** A storage search is answered from memory, so it only waits out typing. */
+const STORAGE_DEBOUNCE_MS = 150;
+
+export interface UseStorageListingResult extends UseLakeSearchResult {
+  /** True while the source is being scanned, first or on Rescan. */
+  scanning: boolean;
+  /** Walk the source again, for files added since its last scan. */
+  rescan: () => void;
+}
+
+/**
+ * A storage source's rows: its declared resources as its last scan found them.
+ *
+ * A scan runs in the background on first use, so the first answer can be a
+ * leg that says `scanning`; the listing then asks again until the scan ends.
+ */
+export function useStorageListing(sourceDir: string | undefined, q: string): UseStorageListingResult {
+  const [data, setData] = useState<LakeSearchResponse>(EMPTY_SEARCH);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [rescanNonce, setRescanNonce] = useState(0);
+  const lastRescan = useRef(0);
+
+  useEffect(() => {
+    if (!sourceDir) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const rescan = rescanNonce !== lastRescan.current;
+    lastRescan.current = rescanNonce;
+    setLoading(true);
+
+    const ask = (withRescan: boolean) => {
+      dataLakeCatalogApi
+        .searchSource(sourceDir, { q: q.trim(), rescan: withRescan }, controller.signal)
+        .then((res) => {
+          if (cancelled) return;
+          const still = res.sources.some((leg) => leg.status === "scanning");
+          setScanning(still);
+          setData(res);
+          setError(null);
+          setSearched(true);
+          if (still) timer = setTimeout(() => ask(false), SCAN_POLL_MS);
+          else setLoading(false);
+        })
+        .catch((err: Error) => {
+          if (cancelled || err.name === "AbortError") return;
+          setError(err.message || "That source could not be listed.");
+          setSearched(true);
+          setScanning(false);
+          setLoading(false);
+        });
+    };
+    timer = setTimeout(() => ask(rescan), rescan ? 0 : STORAGE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sourceDir, q, rescanNonce]);
+
+  const rescan = useCallback(() => setRescanNonce((n) => n + 1), []);
+  return { data, loading, error, searched, scanning, rescan };
 }
 
 
@@ -199,11 +283,7 @@ const POLL_MAX_MS = 3000;
 export interface UseLakeAcquireResult {
   /** Jobs in flight or recently finished, keyed `<sourceId>:<resourceId>`. */
   jobs: Record<string, LakeAcquireJob>;
-  start: (
-    dirName: string,
-    resourceId: string,
-    opts?: { format?: string; title?: string; refresh?: boolean }
-  ) => Promise<LakeAcquireStart>;
+  start: (dirName: string, resourceId: string, opts?: LakeAcquireBody) => Promise<LakeAcquireStart>;
   cancel: (dirName: string, resourceId: string) => void;
   dismiss: (dirName: string, resourceId: string) => void;
 }
@@ -277,24 +357,45 @@ function follow(key: string, jobId: string, delay: number): void {
  * Start a download, or learn at once that the account already holds it, and
  * call `onSettled` with the job's terminal state either way: `completed`
  * (with the dataset, also when it was already held), `failed`, `refused` or
- * `cancelled`. A request that fails to start rejects instead.
+ * `cancelled`. A request refused before any job exists settles as a `failed`
+ * job on the row.
  */
 export async function startLakeAcquire(
   dirName: string,
   resourceId: string,
-  opts: { format?: string; title?: string; refresh?: boolean } = {},
+  opts: LakeAcquireBody = {},
   onSettled?: (job: LakeAcquireJob) => void,
 ): Promise<LakeAcquireStart> {
   const key = acquireKey(dirName, resourceId);
   if (onSettled) (acquisitions.settled[key] ??= []).push(onSettled);
+  // One job per row: its progress, its result and its Cancel are keyed by the
+  // row, so a second start while one runs is the one already running.
+  const current = acquisitions.jobs[key];
+  if (current && !isTerminal(current.status)) return current;
   let started: LakeAcquireStart;
   try {
     started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
   } catch (err) {
-    if (onSettled) {
-      acquisitions.settled[key] = (acquisitions.settled[key] ?? []).filter((c) => c !== onSettled);
-    }
-    throw err;
+    // Refused before any job existed (too many downloads running, a
+    // narrowing the source cannot satisfy): said on the row, as a job that
+    // failed is.
+    const refused: LakeAcquireJob = {
+      jobId: "",
+      status: "failed",
+      bytesRead: 0,
+      totalBytes: null,
+      stageMessage: "Failed",
+      error: (err as Error)?.message || "That could not be started.",
+      datasetId: null,
+      dataset: null,
+      alreadyPresent: false,
+      unchanged: false,
+      sourceId: dirName,
+      resourceId,
+    };
+    publish(key, refused);
+    settle(key, refused);
+    return refused;
   }
   if (started.jobId) {
     publish(key, started as LakeAcquireJob);
@@ -353,7 +454,7 @@ export function useLakeAcquire(
   }, []);
 
   const start = useCallback(
-    (dirName: string, resourceId: string, opts = {}) =>
+    (dirName: string, resourceId: string, opts: LakeAcquireBody = {}) =>
       startLakeAcquire(dirName, resourceId, opts, (job) => {
         if (job.status === "completed") done.current?.(job);
       }),

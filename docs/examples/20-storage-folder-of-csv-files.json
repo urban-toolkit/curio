@@ -1,0 +1,139 @@
+{
+  "dataflow": {
+    "name": "Storage: a folder of CSV files",
+    "description": "One CSV file per sensor and day, combined into one table when added, joined to a stations file.",
+    "task": "Chart three sensors' readings over time, and map each station by its mean.",
+    "timestamp": 0,
+    "provenance_id": "storage-folder-of-csv-files",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-air-quality",
+        "dirName": "data.curio.storage-air-quality@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      },
+      {
+        "datasetId": "data.curio.storage-stations",
+        "dirName": "data.curio.storage-stations@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "aq-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 430,
+        "content": "import pandas as pd\nimport geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.curio.storage-air-quality\")\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)\n\nreturn df\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the readings, combined from nine CSV files.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aq-line",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 474,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"PM2.5 over time, one line per sensor.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"timestamp\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\",\n      \"scale\": {\n        \"type\": \"utc\"\n      }\n    },\n    \"y\": {\n      \"field\": \"pm25\",\n      \"type\": \"quantitative\",\n      \"title\": \"PM2.5\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart PM2.5 over time per sensor.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "stations-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "import pandas as pd\n\ndataset_path = curio_dataset_path(\"data.curio.storage-stations\")\ndf = pd.read_csv(dataset_path)\n\nreturn df\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load where each sensor stands.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aq-merge",
+        "type": "curio.builtin/merge-flow",
+        "x": 882,
+        "y": 214,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Hand the readings and the stations to one node.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aq-join",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 129,
+        "content": "readings, stations = arg[0], arg[1]\n\nmeans = readings.groupby(\"sensor\", as_index=False)[\"pm25\"].mean()\nreturn stations.merge(means, on=\"sensor\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average each sensor and join it to its station.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aq-map",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 129,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each station, sized by its mean PM2.5.\",\n  \"mark\": {\n    \"type\": \"circle\",\n    \"opacity\": 0.8\n  },\n  \"encoding\": {\n    \"longitude\": {\n      \"field\": \"lon\",\n      \"type\": \"quantitative\"\n    },\n    \"latitude\": {\n      \"field\": \"lat\",\n      \"type\": \"quantitative\"\n    },\n    \"size\": {\n      \"field\": \"pm25\",\n      \"type\": \"quantitative\",\n      \"title\": \"Mean PM2.5\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"pm25\",\n        \"type\": \"quantitative\",\n        \"format\": \".1f\"\n      }\n    ]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the stations by their mean.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-aq-loaderout-aq-linein",
+        "source": "aq-loader",
+        "target": "aq-line"
+      },
+      {
+        "id": "reactflow__edge-aq-loaderout-aq-mergein_0",
+        "source": "aq-loader",
+        "sourceHandle": "out",
+        "target": "aq-merge",
+        "targetHandle": "in_0"
+      },
+      {
+        "id": "reactflow__edge-stations-loaderout-aq-mergein_1",
+        "source": "stations-loader",
+        "sourceHandle": "out",
+        "target": "aq-merge",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-aq-mergeout-aq-joinin",
+        "source": "aq-merge",
+        "target": "aq-join"
+      },
+      {
+        "id": "reactflow__edge-aq-joinout-aq-mapin",
+        "source": "aq-join",
+        "target": "aq-map"
+      }
+    ]
+  }
+}

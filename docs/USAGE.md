@@ -250,7 +250,7 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-Below the configurations, **Save tokens** stores a HuggingFace token (used only for gated models in the Street Vision node) and a Socrata app token for the Data Lake Catalog.
+Below the configurations, **Save tokens** stores a HuggingFace token (for gated models in the Street Vision node, and for Hugging Face sources in the Data Lake Catalog) and a Socrata app token for the Data Lake Catalog.
 
 ### Connection keys
 
@@ -525,7 +525,7 @@ console output is not restored: no saved dataset carries it.
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twelve datasets in the committed catalog at `<repo_root>/datasets/`.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twenty datasets in the committed catalog at `<repo_root>/datasets/`.
 
 Three surfaces manage datasets:
 
@@ -547,11 +547,11 @@ For the full guide, covering the storage layers, the action matrix, computed dat
 
 ## Data Lake Catalog
 
-The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download.
+The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are.
 
-Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog. They ship with the deployment; users cannot import one.
+Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/datalakes/` for your own. Users cannot import one from the app.
 
-For the full guide, covering searching, downloading, API tokens, and the Dataset Finder, see [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
+For the full guide, covering searching, downloading, storage sources, collections, API tokens, and the Dataset Finder, see [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
 
 ## Agent Catalog
 

@@ -130,6 +130,9 @@ It checks the column names it knows first, in this order:
 | `thumbnail` | a URL or a `data:` URI |
 | `overlay_url` | a URL or a `data:` URI |
 
+When a frame carries both `image_url` and `thumbnail`, as a collection's rows
+do, the cards show the `thumbnail`.
+
 If a frame carries none of those, it falls back to reading the values: a column
 whose cells are `data:` URIs, URLs ending in an image extension, or paths under
 `/api/` is treated as images too. So a column you named something else still

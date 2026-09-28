@@ -45,6 +45,12 @@ export function DataLakeSourceCard({
   const { auth, capabilities } = source;
   const tags = [...source.tags].slice(0, 3);
   const formats = capabilities.formats.map((f) => f.toUpperCase()).join(" · ");
+  // A storage source declares its resources, so the card can count them.
+  const resources = source.resources?.length ?? 0;
+  const metaLeft =
+    source.kind === "storage"
+      ? `${resources} ${resources === 1 ? "resource" : "resources"} · ${formats}`
+      : formats;
 
   return (
     <article
@@ -119,7 +125,7 @@ export function DataLakeSourceCard({
       </div>
 
       <div className={styles.cardMeta}>
-        <span className={styles.metaLeft}>{formats || "No formats declared"}</span>
+        <span className={styles.metaLeft}>{metaLeft || "No formats declared"}</span>
         <span className={styles.metaRight}>{source.sourceId}</span>
       </div>
 

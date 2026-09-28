@@ -338,7 +338,7 @@ class TestTheShippedCorpus:
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 17, [p.name for p in curated]
+        assert len(curated) == 23, [p.name for p in curated]
         assert len(legacy) == 21, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
@@ -386,10 +386,11 @@ class TestTheShippedCorpus:
             "Regression",
         }
 
-    def test_example_ten_is_the_only_one_whose_templates_need_a_package(self):
+    def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from example 10, whose templates themselves live in a package."""
+        from examples 10, 18, 21 and 22, whose templates themselves live in a
+        package (``curio.streetvision@1`` and ``curio.media@1``)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -399,7 +400,12 @@ class TestTheShippedCorpus:
             )
             if foreign:
                 needs_package_templates[path.stem] = foreign
-        assert list(needs_package_templates) == ["10-street-vision-cv-analysis"]
+        assert list(needs_package_templates) == [
+            "10-street-vision-cv-analysis",
+            "18-storage-orthorectified-imagery",
+            "21-storage-photos-and-videos",
+            "22-storage-audio-recordings",
+        ]
         assert declared_dependencies(
             json.loads(
                 (REPO_ROOT / "docs/examples/09-heterogeneous-data-linked-views.json").read_text()

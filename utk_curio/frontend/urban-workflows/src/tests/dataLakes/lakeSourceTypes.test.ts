@@ -34,6 +34,8 @@ function source(over: Partial<LakeSourceRow> = {}): LakeSourceRow {
       formats: ['csv'],
       maxDownloadBytes: 1024,
     },
+    kind: 'portal',
+    resources: [],
     createdAt: null,
     updatedAt: null,
     ...over,

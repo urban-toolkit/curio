@@ -26,6 +26,10 @@ from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
 CATALOG = catalog_datasets()
 IDS = [dataset.dataset_id for dataset in CATALOG]
 
+#: Formats with no single file to download: a bundle is several parts, and a
+#: collection's files stay in its lake source.
+NOT_EXPORTABLE = ("bundle", "collection")
+
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
@@ -38,7 +42,7 @@ def test_every_committed_format_has_a_download_extension():
             dataset.manifest.format
             for dataset in CATALOG
             if dataset.manifest.format not in FORMAT_TO_EXTENSION
-            and dataset.manifest.format != "bundle"
+            and dataset.manifest.format not in NOT_EXPORTABLE
         }
     )
     assert not missing, (
@@ -64,6 +68,10 @@ def test_a_hub_dataset_downloads_with_the_right_filename(
     resp = client.get(
         f"/api/datasets/{dataset.dataset_id}/download", headers=_auth(token)
     )
+    if dataset.manifest.format in NOT_EXPORTABLE:
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+        assert "cannot be exported" in resp.get_json()["error"]
+        return
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert resp.data, f"{dataset.dataset_id} downloaded zero bytes"
 

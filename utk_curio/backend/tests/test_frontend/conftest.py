@@ -127,6 +127,14 @@ WORKFLOW_FILES = [
     "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
     "docs/examples/16-simple-view-tables-and-images.json",
     "docs/examples/17-autark-geodataframe-maps.json",
+    # The storage examples read collections and tables added from the example
+    # storage source, committed to datasets/ and resolved like any other.
+    "docs/examples/18-storage-orthorectified-imagery.json",
+    "docs/examples/19-storage-video-frames.json",
+    "docs/examples/20-storage-folder-of-csv-files.json",
+    "docs/examples/21-storage-photos-and-videos.json",
+    "docs/examples/22-storage-audio-recordings.json",
+    "docs/examples/23-storage-folder-of-different-files.json",
 ]
 
 

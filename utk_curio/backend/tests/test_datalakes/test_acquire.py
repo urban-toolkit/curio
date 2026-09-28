@@ -222,6 +222,16 @@ class TestFailuresAreTheUsersAnswer:
         assert job["status"] == "failed"
         assert "declares" in job["error"]
 
+    def test_a_tif_that_is_not_a_tiff_is_refused(self, client, auth, failing):
+        """Its URL and its content type both say TIFF, and its bytes are CSV text."""
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, "lake.test.fail@1", "https://portal.test/not-a-tiff.tif")
+            .get_json()["jobId"],
+        )
+        assert job["status"] == "failed"
+        assert "is not a TIFF file" in job["error"]
+
     def test_an_unreachable_portal_fails_the_job_not_the_request(self, client, auth, failing):
         res = acquire(client, auth, "lake.test.fail@1", "https://portal.test/timeout.csv")
         assert res.status_code == 202, "starting the job must still succeed"
@@ -358,3 +368,28 @@ class TestOneDatasetWhicheverPathCameFirst:
         assert fetched["contentSha256"] == hashlib.sha256(CRIMES_CSV.read_bytes()).hexdigest()
         assert by_hand["contentSha256"] == hashlib.sha256(other).hexdigest()
         assert by_hand["manual"] is True and "manual" not in fetched
+
+
+class TestTheDownloadNeverPassesThroughMemory:
+    def test_the_temp_file_is_moved_not_read(self, client, auth, live, monkeypatch):
+        """The staged download is handed to the Data Catalog as a file.
+
+        Reading it back into memory is what capped a download at the size of a
+        comfortable allocation.
+        """
+        from pathlib import Path
+
+        original = Path.read_bytes
+
+        def guarded(self):
+            if self.name.endswith(".part"):
+                raise AssertionError(f"{self} was read into memory")
+            return original(self)
+
+        monkeypatch.setattr(Path, "read_bytes", guarded)
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        assert job["status"] == "completed", job
+        assert job["dataset"]["rowCount"] == 2

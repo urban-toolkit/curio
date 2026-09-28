@@ -3376,6 +3376,13 @@ def _mint_datalake_acquire(
         )
     if not manifest.capabilities.download:
         return "refused", f"{manifest.name} does not offer downloads", None
+    if manifest.is_storage:
+        return (
+            "refused",
+            f"{manifest.name} is a storage source; add its resources from its "
+            "page in the Data Lake Catalog",
+            None,
+        )
 
     held = service._acquire.already_held(manifest, resource_id, fmt)
     if held is not None:
@@ -6610,11 +6617,18 @@ def _run_node_events(
 
     from utk_curio.backend.app.execution import runner
 
+    from utk_curio.backend.app.datalakes.application.exec_collections import (
+        resolve_spec_collections,
+    )
+
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     try:
         yield "run_started", {"nodeId": node_id, "executionId": execution_id}
         progress_queue: _queue.Queue = _queue.Queue()
+        # Resolved here, in the request context the stream carries, before
+        # the worker thread starts.
+        collections, media_dir = resolve_spec_collections(spec, user_key)
 
         def _run():
             try:
@@ -6622,6 +6636,7 @@ def _run_node_events(
                     user_key, project_id, spec, node_id,
                     candidate_content=None,
                     exec_fn=exec_fn,
+                    collections=collections, media_dir=media_dir,
                     as_validation=False,  # a REAL run, journaled as one
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
@@ -10476,6 +10491,10 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
 
 def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
+    # A storage source (a folder, a bucket, a dataset repository) is added from
+    # the Data Lake page, never offered to agents.
+    if (source or {}).get("kind") == "storage":
+        return False
     capabilities = (source or {}).get("capabilities") or {}
     if not capabilities.get("download"):
         return False

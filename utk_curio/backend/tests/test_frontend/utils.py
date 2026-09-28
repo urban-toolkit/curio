@@ -608,20 +608,28 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     the sandbox's injected resolver already raises a clear per-id error, and
     the assertion below still names an id the catalog does not have.
     """
-    if "curio_dataset_path" not in code:
-        return {}
+    return _catalog_resolution(code)["paths"]
 
+
+def _catalog_resolution(code: str, username: str | None = None) -> dict:
+    """``{"paths", "collections", "mediaDir"}`` for *code*, as the backend
+    resolves them for ``/processPythonCode``, as *username* when given; see
+    ``_catalog_dataset_paths``.
+
+    Asked for every node, not only one that names a dataset: ``mediaDir`` is
+    where a node downstream of a collection writes the files it derives.
+    """
     url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
-    payload = json.dumps({"code": code}).encode("utf-8")
+    body = {"code": code, **({"username": username} if username else {})}
+    payload = json.dumps(body).encode("utf-8")
     req = Request(
         url, data=payload,
         headers={"Content-Type": "application/json"}, method="POST",
     )
     try:
         with urlopen(req, timeout=15) as resp:  # noqa: S310
-            resolved = (json.loads(resp.read().decode("utf-8")) or {}).get(
-                "paths"
-            ) or {}
+            answer = json.loads(resp.read().decode("utf-8")) or {}
+            resolved = answer.get("paths") or {}
     except HTTPError as exc:
         raise AssertionError(
             f"POST {url} answered {exc.code}. The stack must expose the testing "
@@ -643,11 +651,20 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
         f"catalog could not resolve (it resolved: {sorted(resolved)}). Note the "
         f"call takes the bare manifest id with no '@major'."
     )
-    return resolved
+    return {
+        "paths": resolved,
+        "collections": answer.get("collections") or {},
+        "mediaDir": answer.get("mediaDir"),
+    }
 
 
-def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
+def execute_workflow_programmatically(
+    spec, seed: int = 42, username: str | None = None
+) -> dict[str, str]:
     """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
+
+    *username* is the account the browser run signs in as, so datasets and the
+    files nodes derive from them resolve the same way in both runs.
 
     Routes all execution through the sandbox's /exec endpoint so the sandbox's
     persistent DuckDB connection remains the sole writer throughout the test.
@@ -691,6 +708,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         resolved = resolve_widget_placeholders(node.content)
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
+        resolution = _catalog_resolution(indented_code, username)
 
         resp = _req.post(
             f'{sandbox_url}/exec',
@@ -704,7 +722,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 "dataType": data_type,
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
-                "dataset_paths": _catalog_dataset_paths(indented_code),
+                "dataset_paths": resolution["paths"],
+                "collections": resolution["collections"],
+                "media_dir": resolution["mediaDir"],
             },
             headers=sandbox_auth_header(),
             timeout=120,

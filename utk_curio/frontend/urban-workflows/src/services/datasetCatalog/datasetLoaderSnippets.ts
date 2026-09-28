@@ -24,7 +24,7 @@ const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
 
 /**
  * Every dataset id a piece of node code references through
- * ``curio_dataset_path("<id>")``.
+ * ``curio_dataset_path("<id>")`` or ``curio_collection("<id>")``.
  *
  * The reader half of the contract the generators above write, kept beside them
  * so the grammar has one home. Both quote styles are accepted because users
@@ -47,7 +47,9 @@ export function datasetIdsInCode(code: unknown): string[] {
   //
   // The  backreference is load-bearing: it requires the closing quote to
   // match the opening one, so `curio_dataset_path("x')` is not a reference.
-  const re = /curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
+  // `curio_collection("<id>")` reads a collection's index the same way, so it
+  // references the dataset just as much (`DATASET_PATH_CALL_RE` matches both).
+  const re = /curio_(?:dataset_path|collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
   for (const match of code.matchAll(re)) {
     const id = match[2];
     if (seen.has(id)) continue;
@@ -212,6 +214,28 @@ function snippetForFormat(
       returnVariable: "src",
     };
   }
+  if (format === "collection") {
+    // A collection's data file is its index: one row per file. The sandbox
+    // resolves `curio_collection` to that index plus a readable path for every
+    // file, wherever this execution runs.
+    const safeId = safeDatasetId(datasetId);
+    if (safeId) {
+      return {
+        language: "python",
+        imports: [],
+        pathVariable: null,
+        code: `collection = curio_collection(${JSON.stringify(safeId)})`,
+        returnVariable: "collection",
+      };
+    }
+    return {
+      language: "python",
+      imports: ["import pandas as pd"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\ncollection = pd.read_parquet(dataset_path)`,
+      returnVariable: "collection",
+    };
+  }
   if (format === "bundle") {
     // A bundle is a multi-output (tuple / `outputs`) node result, stored as
     // `data/bundle.json` + `data/parts/*` under the dataset dir. Rebuild each
@@ -288,9 +312,10 @@ export function mergeDatasetLoaderCode(currentCode: string | undefined, dataset:
     "groupLayers" in dataset && dataset.groupLayers && dataset.groupLayers.length > 0
       ? dataset.groupLayers
       : null;
+  const call = dataset.format === "collection" ? "curio_collection" : "curio_dataset_path";
   const idCalls = (groupLayers ? groupLayers.map((layer) => safeDatasetId(layer.id)) : [safeDatasetId(idOf(dataset))])
     .filter((id): id is string => Boolean(id))
-    .map((id) => `curio_dataset_path(${JSON.stringify(id)})`);
+    .map((id) => `${call}(${JSON.stringify(id)})`);
   const alreadyApplied =
     (idCalls.length > 0 && idCalls.every((call) => trimmed.includes(call))) ||
     (dataset.path ? trimmed.includes(dataset.path) : false);

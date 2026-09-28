@@ -2,13 +2,13 @@
 
 The Data Catalog is where Curio's **datasets** live: files shipped with your deployment, files you import from your machine, and the outputs your own dataflows compute.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the open data portals you download datasets from.
+Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
 
 This guide is in seven parts, plus operator notes:
 
 - [1. What is the Data Catalog?](#1-what-is-the-data-catalog): datasets, what ships, origins, ids, and the four storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage datasets, the action matrix, and walkthroughs.
-- [3. Using a dataset in a dataflow](#3-using-a-dataset-in-a-dataflow): drag and drop, generated loader code, and linkage badges.
+- [3. Using a dataset in a dataflow](#3-using-a-dataset-in-a-dataflow): drag and drop, generated loader code, collections, and linkage badges.
 - [4. Computed datasets (node outputs)](#4-computed-datasets-node-outputs): the save-output toggle, lineage, and bundles.
 - [5. Previews, schema, and export](#5-previews-schema-and-export): what each format supports.
 - [6. Importing, publishing, and sharing](#6-importing-publishing-and-sharing): supported formats, OSM PBF and GeoPackage, publish, unpublish, and delete.
@@ -39,7 +39,7 @@ data.urbanlab.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twelve datasets ship in the shared catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), and one under `data.projectsidewalk.*` (Chicago accessibility labels).
+Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
 
 ### Origins
 
@@ -48,7 +48,7 @@ Every dataset carries an `origin`, which the browse filters and provenance chips
 | Origin | Meaning |
 |---|---|
 | `hub` | Published into the shared catalog and browsable by every user on this install. |
-| `imported` | A file you uploaded from your machine, or downloaded from the [Data Lake Catalog](DATA-LAKE-CATALOG.md). |
+| `imported` | A file you uploaded from your machine, or a dataset downloaded or added from the [Data Lake Catalog](DATA-LAKE-CATALOG.md). |
 | `computed` | The output of a node in one of your dataflows, saved when it ran. |
 
 The UI groups `hub` and `imported` under one **Imported** label, leaving **Computed** as the distinction to filter on.
@@ -141,12 +141,34 @@ The generated Python depends on the format:
 | `geotiff` | `rasterio.open(dataset_path)` → `src` |
 | `bundle` | Rebuilds every part and returns a tuple → `bundle` |
 | OSM group | A `layers` dict of per-layer GeoParquet reads |
+| `collection` | `curio_collection("<datasetId>")` → `collection` |
 
-The generated code names the dataset with `curio_dataset_path("<datasetId>")` instead of a file path, so it keeps working when the dataflow is shared or moved.
+The generated code names the dataset with `curio_dataset_path("<datasetId>")`, or `curio_collection("<datasetId>")` for a collection, instead of a file path, so it keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the same call, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
 A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
+
+### Collections
+
+A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Data Lake Catalog](DATA-LAKE-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
+
+| Column | Holds |
+|---|---|
+| `file_id`, `relpath`, `name`, `ext`, `bytes` | Which file the row is. |
+| `kind` | `image`, `frame`, `video`, `audio`, or `raster`. |
+| The path fields | One column per field of the source's path template, such as `year`, `sensor` or `sequence`. |
+| `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
+| `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
+| Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. Frames come in sequence and frame order. |
+| Videos | `duration_s`, `fps`, `codec`, `width`, `height`. |
+| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`. |
+| Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
+| `probe_error` | Why a file could not be read, on a row that is kept anyway. |
+
+Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card. The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
+
+A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
 
 ---
 
@@ -217,8 +239,9 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `bundle`, OSM group | One tab per part or layer. |
 | `geotiff` | Not previewable: *"Raster preview is not available in the catalog yet. Use the map canvas."* |
 | `shp` | Not previewable. |
+| `collection` | The index, one row per file, below a strip of its first files. |
 
-**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles and OSM groups cannot be exported.
+**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles, OSM groups and collections cannot be exported.
 
 ---
 
@@ -239,9 +262,17 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
+A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIFF file, so it cannot be imported as a GeoTIFF."* A GeoTIFF downloaded from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) is checked the same way.
+
 ### Text imports are stored as UTF-8
 
-`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails.
+`csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails:
+
+- A file that is UTF-8 up to a byte that is not is refused, and the message names that byte. Re-save it as UTF-8.
+- A file whose accented letters each stand alone between plain ones, like `São Paulo`, is read one byte per character: as Windows-1252, unless its words point to another encoding.
+- A byte order mark at the start of a file read in another encoding is dropped.
+
+Downloads and files added from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) are stored the same way.
 
 ### Multi-layer imports: OSM PBF and GeoPackage
 
@@ -262,7 +293,9 @@ For a bundle, **Publish** copies the whole `data/` tree, not just the index.
 
 **Unpublish** removes the shared listing only. Copies already added to dataflows keep working, and the confirmation says so.
 
-**Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog.
+**Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog. Deleting a collection deletes its index, thumbnails and cached files, never the files in its source.
+
+A collection cannot be published: its files are in its lake source, not in the Data Catalog.
 
 Only the dataset's publisher may unpublish or delete it.
 
@@ -277,7 +310,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `id` | Yes | Dataset id (see [Dataset ids](#dataset-ids)). |
 | `name` | Yes | Display title. |
 | `version` | Yes | Free-form version string (e.g. `"1.0.0"`), independent of `compatibility.major`. |
-| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`. (`osm` and `gpkg` are group cards, never written to a manifest.) |
+| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`, `collection`. (`osm` and `gpkg` are group cards, never written to a manifest.) |
 | `dataFile` | Yes | Path to the data within the dataset folder, e.g. `data/chicago.geojson`. |
 | `sourceEncoding` | | For text formats, the encoding the upload was decoded from before it was stored as UTF-8. `"utf-8"` when nothing had to change. |
 | `compatibility.major` | | Integer major version; defaults to `1`. Together with `id` it forms the folder name. |
@@ -288,7 +321,8 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
-| `lakeSource` | | Where a Data Lake download came from: the portal (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
+| `lakeSource` | | Where a Data Lake download came from: the source (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
+| `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind`, the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. |

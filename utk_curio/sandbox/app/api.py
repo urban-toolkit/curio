@@ -560,6 +560,18 @@ def exec():
     # callable in both execution modes; never an env var, never staged, never
     # logged.
     secrets = shape_secrets(request.json.get('secrets'))
+    # {datasetId: {root|objects, kind}} for the code's curio_collection("<id>")
+    # calls, and the user's media directory for the files a node derives.
+    # Resolved and containment-checked by the backend, like dataset_paths.
+    collections = request.json.get('collections') or {}
+    if not isinstance(collections, dict):
+        collections = {}
+    collections = {
+        str(key): {k: str(v) for k, v in value.items() if k in ('root', 'objects', 'kind') and v}
+        for key, value in list(collections.items())[:32]
+        if isinstance(value, dict)
+    }
+    media_dir = request.json.get('media_dir') or None
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -574,13 +586,13 @@ def exec():
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
-            secrets=secrets,
+            secrets=secrets, collections=collections, media_dir=media_dir,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths, secrets=secrets,
+            dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
         )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)

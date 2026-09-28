@@ -108,3 +108,37 @@ def test_every_shipped_manifest_validates_against_the_schema(schema):
         assert not errors, f"{path.name}: " + "; ".join(
             f"{'.'.join(str(p) for p in e.path)}: {e.message}" for e in errors
         )
+
+
+def test_the_resource_kinds_match(schema):
+    kinds = schema["properties"]["resources"]["items"]["properties"]["kind"]["enum"]
+    assert kinds == sorted(M.RESOURCE_KINDS)
+
+
+def test_the_table_formats_match(schema):
+    formats = schema["properties"]["resources"]["items"]["properties"]["format"]["enum"]
+    assert formats == sorted(M.TABLE_FORMATS)
+
+
+def test_the_resource_id_pattern_matches(schema):
+    pattern = schema["properties"]["resources"]["items"]["properties"]["id"]["pattern"]
+    assert pattern == M._RESOURCE_ID_RE.pattern
+
+
+def test_the_file_ceiling_matches(schema):
+    assert schema["properties"]["limits"]["properties"]["maxFiles"]["maximum"] == M.DEFAULT_MAX_FILES
+
+
+def test_a_storage_source_is_required_to_declare_resources(schema):
+    jsonschema = pytest.importorskip("jsonschema")
+    from utk_curio.backend.tests.test_datalakes.conftest import a_storage_manifest
+
+    validator = jsonschema.Draft202012Validator(schema)
+    raw = a_storage_manifest("/srv/x", [
+        {"id": "a", "name": "A", "kind": "table", "format": "csv", "path": "a.csv"}
+    ])
+    assert not list(validator.iter_errors(raw))
+    raw.pop("resources")
+    assert list(validator.iter_errors(raw))
+    with pytest.raises(M.ManifestError):
+        M._parse_manifest(raw, where="manifest.json")

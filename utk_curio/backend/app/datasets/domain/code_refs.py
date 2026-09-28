@@ -27,8 +27,15 @@ import re
 #: generators only ever emit ids this scan can find. Single or double quotes are
 #: accepted because users edit the generated code, and the backreference means a
 #: mismatched pair is not a reference at all.
+#: ``curio_collection("<id>")`` is the same kind of reference: a collection's
+#: loader reads its index, which is the dataset's data file.
 DATASET_PATH_CALL_RE = re.compile(
-    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+    r"""(?:curio_dataset_path|curio_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+
+#: Only the collection calls, for the ids whose files a node will read.
+COLLECTION_CALL_RE = re.compile(
+    r"""curio_collection\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
 )
 
 #: Bound the work against pathological or generated code. Shared with the
@@ -47,7 +54,9 @@ def dataset_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[s
     can see, which is the same limitation the execution resolver has always had
     and is why the result is used to *add* usage, never to deny it.
     """
-    if not isinstance(code, str) or "curio_dataset_path" not in code:
+    if not isinstance(code, str) or (
+        "curio_dataset_path" not in code and "curio_collection" not in code
+    ):
         return []
     ids: list[str] = []
     for match in DATASET_PATH_CALL_RE.finditer(code):
@@ -78,3 +87,16 @@ def node_code(node: object) -> str:
         return ""
     content = node.get("content")
     return content if isinstance(content, str) else ""
+
+
+def collection_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[str]:
+    """Collection ids referenced by literal ``curio_collection`` calls."""
+    if not isinstance(code, str) or "curio_collection" not in code:
+        return []
+    ids: list[str] = []
+    for match in COLLECTION_CALL_RE.finditer(code):
+        if match.group(2) not in ids:
+            ids.append(match.group(2))
+        if len(ids) >= limit:
+            break
+    return ids

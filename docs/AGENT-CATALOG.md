@@ -2,7 +2,7 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the open data portals you download datasets from.
+Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
 
 This guide is in seven parts, plus operator notes:
 
@@ -187,7 +187,7 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 
 **Add configuration** opens the editor, and **Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key), **Make default** and **Remove**; an account holds up to 32. The **Default** badge marks your default, **Chosen for** lists the agents chosen to run on a configuration, and **Trained** marks one made from a model trained in Curio (see [Model training](#model-training)). The **Deployment default** row is the operator's own configuration: read-only, shown when the operator configured one, and the one that answers while you have no default of your own. Its **Make default**, or removing your own default, goes back to it.
 
-Below the configurations, AI Settings also holds two tokens that are not for agents. The **HuggingFace token** unlocks *gated* models in the Street Vision node; public models need none. The **Socrata app token** is sent to Socrata portals by the Data Lake Catalog; see [DATA-LAKE-CATALOG.md part 5](DATA-LAKE-CATALOG.md#5-api-tokens).
+Below the configurations, AI Settings also holds two tokens that are not for agents. The **HuggingFace token** unlocks *gated* models in the Street Vision node, and Hugging Face sources in the Data Lake Catalog send it too; public models need none. The **Socrata app token** is sent to Socrata portals by the Data Lake Catalog; see [DATA-LAKE-CATALOG.md part 5](DATA-LAKE-CATALOG.md#5-api-tokens).
 
 ### Agent models
 

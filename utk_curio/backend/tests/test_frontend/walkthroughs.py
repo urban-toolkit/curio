@@ -1698,6 +1698,13 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
                 "Chips here used to take a colour from the format or category.")
         page.goto(f"{ctx.frontend}{route}")
         page.wait_for_load_state("domcontentloaded")
+        if kind == "Node":
+            # The page lists the newest package first, and the capture is the
+            # first card's chips, so a newly shipped package would change the
+            # frame. One named package keeps it the same card every time.
+            page.locator(card_sel).first.wait_for(state="visible", timeout=30000)
+            page.get_by_placeholder("Search packages…").fill("Custom UI")
+            expect(page.locator(card_sel)).to_have_count(1, timeout=10000)
 
         card = page.locator(card_sel).first
         card.wait_for(state="visible", timeout=30000)

@@ -213,10 +213,86 @@ class CatalogMutations:
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
+        return self._finish_imported(result, fmt, feature_count_override=feature_count_override)
+
+    def _install_imported_path(
+        self,
+        source_path: Path,
+        filename: str,
+        fmt: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+        lake_source: dict[str, Any] | None = None,
+        description: str | None = None,
+        row_count: int | None = None,
+        feature_count: int | None = None,
+        collection: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Install a file already on disk, without reading it into memory.
+
+        The same answer as :meth:`_install_imported_bytes` for the same file:
+        text formats are stored as UTF-8 (streamed rather than decoded whole),
+        counts are filled in, and the returned item is identical. *source_path*
+        is consumed.
+        """
+        from utk_curio.backend.app.datasets.install.installer import (
+            InstallerError,
+            install_imported_path,
+        )
+        from utk_curio.backend.app.datasets.infrastructure.text_encoding import (
+            transcode_file_to_utf8,
+        )
+
+        user_key = self._paths._user_key()
+        source_path = Path(source_path)
+        source_encoding: str | None = None
+        staged = source_path
+        if fmt in TEXT_FORMATS:
+            staged = source_path.with_name(source_path.name + ".utf8")
+            try:
+                source_encoding = transcode_file_to_utf8(source_path, staged, what=filename)
+            except TextDecodeError as exc:
+                staged.unlink(missing_ok=True)
+                raise DatasetCatalogError(str(exc)) from exc
+            source_path.unlink(missing_ok=True)
+        try:
+            result = install_imported_path(
+                user_key,
+                staged,
+                filename,
+                fmt,
+                title=title,
+                source_updated_at=source_updated_at,
+                source_encoding=source_encoding,
+                lake_source=lake_source,
+                description=description,
+                collection=collection,
+            )
+        except InstallerError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+        finally:
+            staged.unlink(missing_ok=True)
+        return self._finish_imported(
+            result, fmt, feature_count_override=feature_count, row_count_override=row_count
+        )
+
+    def _finish_imported(
+        self,
+        result,
+        fmt: str,
+        *,
+        feature_count_override: int | None = None,
+        row_count_override: int | None = None,
+    ) -> dict[str, Any]:
+        """Counts, sidecar and catalog item for a freshly installed import."""
+        from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
         # Compute row/feature counts and patch the manifest if they were missing.
         data_path = result.dest / result.manifest.data_file
         row_count, feature_count = count_file(data_path, fmt)
+        if row_count is None and row_count_override is not None:
+            row_count = row_count_override
         # count_file doesn't parse parquet; use a caller-supplied count if given.
         if feature_count is None and feature_count_override is not None:
             feature_count = feature_count_override
@@ -375,6 +451,12 @@ class CatalogMutations:
         self._assert_can_manage_shared_catalog("publish")
 
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
+        if item.get("format") == "collection":
+            raise DatasetCatalogError(
+                "A collection cannot be published: its files are in its Data Lake source, "
+                "not in the Data Catalog.",
+                400,
+            )
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
@@ -1252,6 +1334,16 @@ class CatalogMutations:
                     )
 
                     index_repo.safe_forget(user_key, dataset_root.name)
+
+        if deleted_any:
+            # A collection's thumbnails, cached bucket files and derived
+            # frames; never the files in its source.
+            from utk_curio.backend.app.datalakes.infrastructure.media_dirs import forget_media
+
+            try:
+                forget_media(user_key, dataset_id)
+            except Exception:  # noqa: BLE001 - the dataset itself is gone
+                logger.warning("Could not remove media made from %s", dataset_id, exc_info=True)
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(

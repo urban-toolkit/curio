@@ -472,7 +472,7 @@ def _make_curio_dataset_path(dataset_paths):
 
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
-                 dataset_paths=None, secrets=None):
+                 dataset_paths=None, secrets=None, collections=None, media_dir=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -483,6 +483,9 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     dataset_paths: {datasetId: absolutePath} for the code's
                 curio_dataset_path("<id>") calls, resolved (auth-scoped and
                 containment-checked) by the backend.
+
+    collections, media_dir: where each curio_collection("<id>") collection's
+                files are, and where a node may write the files it derives.
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
@@ -523,6 +526,12 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
                 # dev/116: connection keys, reachable only through this callable.
                 ns['curio_secret'] = make_curio_secret(secrets)
+
+                from utk_curio.sandbox.util.collections import make_collection_helpers
+
+                ns.update(make_collection_helpers(
+                    ns['curio_dataset_path'], collections, media_dir
+                ))
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a

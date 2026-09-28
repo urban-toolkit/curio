@@ -764,6 +764,9 @@ def loaded_workflow(
     )
     request.cls.spec = spec
     request.cls.page = workflow_page
+    # The ground-truth run resolves datasets as this user too, so the files a
+    # node derives land where the browser's run puts them.
+    request.cls.username = username
     yield
     os.unlink(seeded_tmp.name)
     if os.environ.get("CURIO_PAUSE_AFTER"):

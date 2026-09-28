@@ -64,6 +64,8 @@ const source = (over: Partial<LakeSourceRow> = {}): LakeSourceRow => ({
     search: true, describe: true, download: true,
     formats: ['csv'], maxDownloadBytes: 67108864,
   },
+  kind: 'portal',
+  resources: [],
   createdAt: null,
   updatedAt: null,
   ...over,

@@ -7,8 +7,45 @@
  * deliberate - it is how a credential cannot leak into a response.
  */
 
-/** Matches `PROVIDER_TYPES` in `datalakes/domain/manifest.py`. */
-export type LakeProviderType = "socrata" | "ckan" | "arcgis" | "wfs" | "direct";
+/** Matches `PROVIDER_TYPES` in `datalakes/domain/manifest.py`: the portal
+ *  types, then the storage types. */
+export type LakeProviderType =
+  | "socrata"
+  | "ckan"
+  | "arcgis"
+  | "wfs"
+  | "direct"
+  | "folder"
+  | "s3"
+  | "huggingface";
+
+/** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
+export const STORAGE_PROVIDER_TYPES: readonly LakeProviderType[] = ["folder", "s3", "huggingface"];
+
+/** A `portal` is searched for its datasets; a `storage` source declares them. */
+export type LakeSourceKind = "portal" | "storage";
+
+/** Matches `RESOURCE_KINDS`. `table` is copied; every other kind is a
+ *  collection, referenced where its files are. */
+export type LakeResourceKind =
+  | "table"
+  | "rasters"
+  | "frames"
+  | "images"
+  | "videos"
+  | "media"
+  | "audio";
+
+/** Matches `KIND_LABEL` in `datalakes/application/scan.py`. */
+export const LAKE_RESOURCE_KIND_LABEL: Record<LakeResourceKind, string> = {
+  table: "Table",
+  rasters: "Rasters",
+  frames: "Frames",
+  images: "Images",
+  videos: "Videos",
+  media: "Photos and videos",
+  audio: "Audio",
+};
 
 /** Matches `AUTH_MODES`. */
 export type LakeAuthMode = "public" | "optional-token" | "required-token";
@@ -27,12 +64,19 @@ export const LAKE_ACQUIRABLE_FORMATS = [
 ] as const;
 export type LakeAcquirableFormat = (typeof LAKE_ACQUIRABLE_FORMATS)[number];
 
+/** What a source's rows add as: a portal's formats, and a storage source's
+ *  table formats and `collection`. */
+export type LakeSourceFormat = LakeAcquirableFormat | "shp" | "gpkg" | "pbf" | "collection";
+
 export const LAKE_PROVIDER_LABEL: Record<LakeProviderType, string> = {
   socrata: "Socrata",
   ckan: "CKAN",
   arcgis: "ArcGIS",
   wfs: "OGC WFS",
   direct: "Direct URL",
+  folder: "Folder",
+  s3: "S3 bucket",
+  huggingface: "Hugging Face",
 };
 
 export const LAKE_AUTH_LABEL: Record<LakeAuthMode, string> = {
@@ -57,8 +101,24 @@ export interface LakeSourceCapabilities {
   search: boolean;
   describe: boolean;
   download: boolean;
-  formats: LakeAcquirableFormat[];
+  formats: LakeSourceFormat[];
   maxDownloadBytes: number;
+}
+
+/** One resource a storage manifest declares, before any scan. */
+export interface LakeDeclaredResource {
+  resourceId: string;
+  name: string;
+  description: string;
+  kind: LakeResourceKind;
+  /** What lands in the Data Catalog: a table's file format, or `collection`. */
+  format: string;
+  /** A table's file format; null for a collection. */
+  fileFormat: string | null;
+  path: string;
+  datasets: string;
+  splitBy: string[];
+  fields: { name: string; type: string }[];
 }
 
 export interface LakeSourceRow {
@@ -79,6 +139,9 @@ export interface LakeSourceRow {
   baseUrl: string;
   auth: LakeSourceAuth;
   capabilities: LakeSourceCapabilities;
+  kind: LakeSourceKind;
+  /** A storage source's declared resources; empty for a portal. */
+  resources: LakeDeclaredResource[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -97,6 +160,21 @@ export interface LakeCatalogQuery {
   q?: string;
   provider?: LakeProviderType | "";
   auth?: LakeAuthMode | "";
+}
+
+export function isStorageSource(source: Pick<LakeSourceRow, "kind">): boolean {
+  return source.kind === "storage";
+}
+
+/** The declared resource a storage row belongs to. A row's id is the
+ *  resource's, or `<resource>@<field>=<value>` for one split value, or
+ *  `<resource>/<relpath>` for one file. */
+export function declaredResourceFor(
+  source: Pick<LakeSourceRow, "resources">,
+  resourceId: string,
+): LakeDeclaredResource | undefined {
+  const head = resourceId.split(/[@/]/, 1)[0];
+  return (source.resources ?? []).find((r) => r.resourceId === head);
 }
 
 /** A source you can actually search. Narrower than `capabilities.search`
@@ -128,7 +206,8 @@ export type LakeLegStatus =
   | "refused"
   | "rate-limited"
   | "unsupported"
-  | "needs-token";
+  | "needs-token"
+  | "scanning";
 
 export interface LakeSearchLeg {
   sourceId: string;
@@ -138,6 +217,17 @@ export interface LakeSearchLeg {
   count?: number;
 }
 
+/** What a storage row's files took for one path field: every value when
+ *  there are few, the range otherwise. */
+export interface LakeFieldValues {
+  name: string;
+  type: string;
+  distinct: number;
+  values?: string[];
+  min?: string;
+  max?: string;
+}
+
 export interface LakeResourceRow {
   sourceId: string;
   sourceName: string;
@@ -145,7 +235,9 @@ export interface LakeResourceRow {
   name: string;
   description: string;
   publisher: string;
-  formats: LakeAcquirableFormat[];
+  /** A portal's downloadable formats, or what a storage row adds as
+   *  (`collection`, `parquet`, `csv`...). */
+  formats: string[];
   updatedAt: string | null;
   landingUrl: string | null;
   sizeHint: number | null;
@@ -153,6 +245,12 @@ export interface LakeResourceRow {
   /** Set when this account already downloaded this resource, so the row links
    *  to the dataset instead of offering a second copy. */
   alreadyHeldDatasetId: string | null;
+  /** Storage rows only, null for a portal's. */
+  kind?: LakeResourceKind | null;
+  fileCount?: number | null;
+  fieldValues?: LakeFieldValues[];
+  /** Relpaths of the row's first files, whose thumbnails the row shows. */
+  samples?: string[];
 }
 
 export interface LakeResourceField {
@@ -174,6 +272,52 @@ export interface LakeSearchResponse {
   nextCursor: string | null;
   totalHint: number | null;
   truncated: boolean;
+  /** Storage sources: files under the source that no resource declares. */
+  unmatched?: number;
+  scannedAt?: string | null;
+}
+
+/** One file of a storage row, from its Files list. */
+export interface LakeStorageFile {
+  /** Its position in the row, which its thumbnail is addressed by. */
+  index: number;
+  relpath: string;
+  size: number;
+  updatedAt: string | null;
+  values: Record<string, string>;
+}
+
+export interface LakeStorageFilesPage {
+  files: LakeStorageFile[];
+  total: number;
+  offset: number;
+  /** True for a collection row, whose files have thumbnails. */
+  previews: boolean;
+}
+
+/** How a storage row is narrowed when it is added: the values to keep per
+ *  field, or an inclusive range. */
+export type LakeFieldFilter = string[] | { min: string; max: string };
+
+export interface LakeAcquireBody {
+  format?: string;
+  title?: string;
+  refresh?: boolean;
+  filters?: Record<string, LakeFieldFilter>;
+  files?: string[];
+}
+
+/** Where a collection's files are, from `GET /collections/<id>`. */
+export interface LakeCollectionStatus {
+  datasetId: string;
+  provider: LakeProviderType;
+  /** A folder on this machine: every file is readable as it is. */
+  local: boolean;
+  fileCount: number;
+  totalBytes: number;
+  cachedFiles: number;
+  cachedBytes: number;
+  samples: { fileId: string; name: string; kind: string }[];
 }
 
 export interface LakeSearchQuery {
@@ -189,7 +333,16 @@ export interface LakeSearchQuery {
  *  and not the "this source has nothing to browse" that a link-only source
  *  reports every single time and which is not news. */
 export function notableLegs(legs: LakeSearchLeg[]): LakeSearchLeg[] {
-  return legs.filter((leg) => leg.status !== "ok" && leg.status !== "unsupported");
+  return legs.filter(
+    (leg) => leg.status !== "ok" && leg.status !== "unsupported" && leg.status !== "scanning"
+  );
+}
+
+function namesOf(legs: LakeSearchLeg[], nameOf: (sourceId: string) => string): string {
+  const names = legs.map((leg) => nameOf(leg.sourceId) || leg.sourceId);
+  return names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** One line naming the portals that did not answer. Null when all did. */
@@ -199,12 +352,21 @@ export function partialFailureMessage(
 ): string | null {
   const notable = notableLegs(legs);
   if (notable.length === 0) return null;
-  const names = notable.map((leg) => nameOf(leg.sourceId) || leg.sourceId);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `${list} did not answer. Showing what the other portals returned.`;
+  return `${namesOf(notable, nameOf)} did not answer. Showing what the other portals returned.`;
+}
+
+/** One line naming the storage sources still being scanned, whose rows join
+ *  the results when they are. Null when none is. */
+export function scanningMessage(
+  legs: LakeSearchLeg[],
+  nameOf: (sourceId: string) => string
+): string | null {
+  const scanning = legs.filter((leg) => leg.status === "scanning");
+  if (scanning.length === 0) return null;
+  const names = namesOf(scanning, nameOf);
+  return scanning.length === 1
+    ? `${names} is still being scanned; its rows appear here when it is done.`
+    : `${names} are still being scanned; their rows appear here when they are done.`;
 }
 
 
@@ -244,6 +406,9 @@ export interface LakeAcquireJob {
   unchanged: boolean;
   sourceId: string;
   resourceId: string;
+  /** Files done and in all, when the work is counted in files. */
+  itemsDone?: number;
+  itemsTotal?: number | null;
 }
 
 /** What `POST .../acquire` answers: either a job to poll, or the dataset you
@@ -253,14 +418,27 @@ export interface LakeAcquireStart extends Partial<LakeAcquireJob> {
   alreadyPresent?: boolean;
 }
 
-/** 0..1, or null when the total is unknown. */
+/** 0..1, or null when the total is unknown. Files when the job counts
+ *  files, bytes otherwise. */
 export function jobProgress(job: LakeAcquireJob): number | null {
+  if (job.itemsTotal && job.itemsTotal > 0) {
+    return Math.min(1, (job.itemsDone ?? 0) / job.itemsTotal);
+  }
   if (!job.totalBytes || job.totalBytes <= 0) return null;
   return Math.min(1, job.bytesRead / job.totalBytes);
+}
+
+/** The progress label: files done, bytes read, or the stage. */
+export function jobProgressLabel(job: LakeAcquireJob): string {
+  if (job.itemsTotal && job.itemsTotal > 0) {
+    return `${(job.itemsDone ?? 0).toLocaleString()} of ${job.itemsTotal.toLocaleString()} files`;
+  }
+  return job.bytesRead > 0 ? formatBytes(job.bytesRead) : job.stageMessage;
 }
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }

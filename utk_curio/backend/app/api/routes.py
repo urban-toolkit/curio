@@ -369,6 +369,9 @@ def get_file_preview():
 # execution path cannot drift: a dataset referenced only in code used to be
 # resolvable here and invisible to the catalog's usage helper (#250). The names
 # stay re-exported because tests and callers import them from this module.
+from utk_curio.backend.app.datalakes.application.exec_collections import (  # noqa: E402
+    resolve_exec_collections,
+)
 from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
     DATASET_PATH_CALL_RE as _DATASET_PATH_CALL_RE,
     MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
@@ -395,6 +398,11 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
         return {}
+
+
+def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, str | None]:
+    """:func:`resolve_exec_collections` as the signed-in user (``g.user``)."""
+    return resolve_exec_collections(code, user_key, user=getattr(g, "user", None))
 
 
 def _resolve_exec_secrets(code: str) -> dict:
@@ -466,6 +474,7 @@ def process_python_code():
     # this route knows it: the sandbox has no notion of who is logged in, and
     # the in-process path ignores it entirely.
     exec_user_key = _exec_user_key()
+    collections, media_dir = _resolve_exec_collections(code, exec_user_key)
     exec_secrets = _resolve_exec_secrets(code)
     t1 = _time.perf_counter()
     # The gauge wraps only the sandbox round trip, which is where a node
@@ -484,6 +493,8 @@ def process_python_code():
                 "save_dataset": bool(save_output_dataset),
                 "dataset_paths": dataset_paths,
                 "user_key": exec_user_key,
+                "collections": collections,
+                "media_dir": media_dir,
                 # dev/116: present only when the code names a saved key — the
                 # request body is otherwise byte-identical to before.
                 **({"secrets": exec_secrets} if exec_secrets else {}),

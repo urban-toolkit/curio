@@ -338,6 +338,8 @@ def build_exec_request(
     limits=None,
     wall_timeout=None,
     secrets=None,
+    collections=None,
+    media_dir=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -374,6 +376,8 @@ def build_exec_request(
         "overlay_dir": str(overlay_dir) if overlay_dir else None,
         "input": input_spec,
         "dataset_paths": dict(dataset_paths or {}),
+        "collections": dict(collections or {}),
+        "media_dir": str(media_dir) if media_dir else None,
         "session_imports": list(session_imports or []),
         "limits": dict(limits or {}),
         "wall_timeout": wall_timeout,

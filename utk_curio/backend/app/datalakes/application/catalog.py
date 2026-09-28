@@ -7,6 +7,7 @@ all. Listing what this deployment connects to is a filesystem question.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable
 
 from utk_curio.backend.app.datalakes.domain.errors import SourceNotFound
@@ -47,11 +48,13 @@ class LakeCatalog:
         for path in storage.list_lake_sources():
             try:
                 manifest = load_source_manifest_from_dir(path)
-            except (ManifestError, ValueError):
+            except (ManifestError, ValueError) as exc:
+                storage.report_skipped(path, str(exc))
                 continue
             if manifest.dir_name != path.name:
+                storage.report_skipped(path, f"its folder must be named {manifest.dir_name}")
                 continue
-            out.append(manifest)
+            out.append(replace(manifest, origin=storage.origin_of(path)))
         return out
 
     def get_manifest(self, dir_name: str) -> LakeSourceManifest:
@@ -65,7 +68,7 @@ class LakeCatalog:
             manifest = load_source_manifest_from_dir(path)
         except ManifestError as exc:
             raise SourceNotFound(f"data lake source {dir_name!r} is unreadable: {exc}") from exc
-        return manifest
+        return replace(manifest, origin=storage.origin_of(path))
 
     # ── presenting ─────────────────────────────────────────────────────────
 

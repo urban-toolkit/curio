@@ -163,6 +163,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 Only needed for <strong>gated</strong> models in the Street
                 Vision node, which you unlock by accepting each model's licence
                 on your own HuggingFace account. Public models need no token.
+                Hugging Face sources in the Data Lake Catalog send it too.
               </span>
               <a
                 href="https://huggingface.co/settings/tokens"
