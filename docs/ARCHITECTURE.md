@@ -30,6 +30,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Provenance Tracking](#provenance-tracking)
 * [The Trill Dataflow Format](#the-trill-dataflow-format)
 * [Generated Contracts](#generated-contracts)
+  * [The Autark Schema](#the-autark-schema)
 * [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
@@ -390,6 +391,8 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 ```
 
 When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
+
+The name `upstream` is defined once, as `AUTK_UPSTREAM_LAYER` in `contracts.py`; the behavior hook imports the generated copy, and the preamble states it (see [Generated Contracts](#generated-contracts)).
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
@@ -770,15 +773,27 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
 - **Source module.** [`utk_curio/backend/app/agents/contracts.py`](../utk_curio/backend/app/agents/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and it has no dependencies beyond the standard library. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
 - **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
 - **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
-- **Outputs.** Committed to the repository, each starting with a header that names the generator and the source module. TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated.
+- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`default_preamble.template.txt`), whose `{{...}}` fields are the generated parts.
 
   | Output | Contract |
   |---|---|
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
+  | `utk_curio/llm-prompts/default_preamble.txt` | The shared agent preamble: the `curio.builtin/autk-grammar` rows, read from the built-in manifest, and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
 
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 
 To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
+
+### The Autark Schema
+
+The Autark grammar is defined upstream: autk-grammar generates a JSON Schema from its TypeScript types and publishes it with each release. [`schemas/autk-grammar.v1.json`](../utk_curio/backend/app/agents/schemas/autk-grammar.v1.json) is a byte-for-byte copy of the released file, beside the module that reads it so an installed wheel carries it, and `autk-grammar.v1.source.json` records the release and the file's digest. [`scripts/sync_autk_schema.py`](../scripts/sync_autk_schema.py) vendors a release; `test_autk_schema_vendored.py` checks the copy against its record offline, and the weekly `autk-schema` workflow re-fetches the release and fails on a difference.
+
+Everything Curio says about Autark documents is read from that file:
+
+- **Validation.** `document_validation.validate_autk_grammar` validates a document against the schema, choosing the validator by the schema's draft. An error inside a field that takes one object or a list of them is explained by the branch that fits the value, and a missing field is named with its description from the schema. One rule sits on top, because no schema form states it: the document must load, compute or draw something, and a map must list a layer. Without `jsonschema` or the schema file, a document is *unchecked*, never invalid.
+- **Refusal text.** `contracts.render_autk_shape` renders the schema as one line naming the families and what each requires, for the refusal a reply that is not a document gets.
+- **Preamble.** `contracts.render_autk_region` renders the preamble's section on Autark documents: the data source types and what each requires, the compute fields, the map and plot requirements and the closed enums.
 
 ---
 
@@ -1083,6 +1098,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
 | `backend/app/agents/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
+| `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
+| `backend/app/agents/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
 | `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
 | `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
 | `backend/app/agents/builtin.py` | The 21 built-in agents, as a data-driven roster |

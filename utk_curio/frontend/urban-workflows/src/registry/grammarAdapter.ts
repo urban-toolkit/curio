@@ -11,9 +11,6 @@
 export interface GrammarAdapter {
   grammarId: string;
 
-  /** Validate a grammar specification before rendering. */
-  validate(spec: unknown): boolean;
-
   /** Compile and render a grammar spec into the given container. */
   render(
     container: HTMLElement,
