@@ -141,7 +141,7 @@ While a download or an add runs, its row shows a progress bar and **Cancel**. Th
 - **Two at a time.** Each account runs at most two downloads, adds and **Cache files** at once.
 - **A restart loses it.** A download still running when the server restarts is lost, and its row says so. Start it again.
 - **Downloading again.** A row marked **In your Data Catalog** has already been downloaded in that format. Its button is **View dataset**, and nothing is fetched again. The same resource in another format is a separate download and a separate dataset.
-- **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers.
+- **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
 - **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
 

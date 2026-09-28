@@ -48,7 +48,7 @@ def failing_source(lake_root):
     write_source(lake_root, "lake.test.fail@1", a_manifest(
         id="lake.test.fail", name="Failure Cases",
         provider={"type": "direct", "baseUrl": ""},
-        capabilities={"search": False, "formats": ["csv", "geojson", "json"]}))
+        capabilities={"search": False, "formats": ["csv", "geojson", "json", "geotiff"]}))
     return lake_root
 
 

@@ -69,6 +69,8 @@ class TestTheLadderInOrder:
             (b"PAR1\x00\x00", "parquet"),
             (b"II*\x00rest", "geotiff"),
             (b"MM\x00*rest", "geotiff"),
+            (b"II+\x00rest", "geotiff"),
+            (b"MM\x00+rest", "geotiff"),
             (b'{"type": "FeatureCollection", "features": []}', "geojson"),
             (b'  \n{"type":"Feature","geometry":{}}', "geojson"),
             (b'{"results": [1,2,3]}', "json"),

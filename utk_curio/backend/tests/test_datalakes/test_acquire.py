@@ -222,6 +222,16 @@ class TestFailuresAreTheUsersAnswer:
         assert job["status"] == "failed"
         assert "declares" in job["error"]
 
+    def test_a_tif_that_is_not_a_tiff_is_refused(self, client, auth, failing):
+        """Its URL and its content type both say TIFF, and its bytes are CSV text."""
+        job = wait_for(
+            client, auth,
+            acquire(client, auth, "lake.test.fail@1", "https://portal.test/not-a-tiff.tif")
+            .get_json()["jobId"],
+        )
+        assert job["status"] == "failed"
+        assert "is not a TIFF file" in job["error"]
+
     def test_an_unreachable_portal_fails_the_job_not_the_request(self, client, auth, failing):
         res = acquire(client, auth, "lake.test.fail@1", "https://portal.test/timeout.csv")
         assert res.status_code == 202, "starting the job must still succeed"

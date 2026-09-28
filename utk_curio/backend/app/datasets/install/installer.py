@@ -18,6 +18,7 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     write_manifest,
 )
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
+from utk_curio.backend.app.datasets.domain.constants import TIFF_SIGNATURES
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
 
@@ -510,6 +511,23 @@ def install_imported_path(
     )
 
 
+def _check_content(data_path: Path, fmt: str, safe_filename: str) -> None:
+    """Refuse an import whose bytes are not the format it is stored as.
+
+    An upload's format comes from its name, and a download's from its URL and
+    headers, so a ``geotiff`` is checked for a TIFF's first bytes. The loader
+    opens it with rasterio, which reads whatever format the bytes are.
+    """
+    if fmt != "geotiff":
+        return
+    with open(data_path, "rb") as fh:
+        head = fh.read(4)
+    if head not in TIFF_SIGNATURES:
+        raise InstallerError(
+            f"{safe_filename} is not a TIFF file, so it cannot be imported as a GeoTIFF."
+        )
+
+
 def _install_imported(
     user_key: str,
     place_data,
@@ -544,6 +562,7 @@ def _install_imported(
     data_path = dest / "data" / safe_filename
     try:
         place_data(data_path)
+        _check_content(data_path, fmt, safe_filename)
     except Exception:
         shutil.rmtree(dest, ignore_errors=True)
         raise

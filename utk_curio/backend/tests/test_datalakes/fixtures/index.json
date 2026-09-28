@@ -405,6 +405,13 @@
     "headers": {},
     "status": 200
   },
+  "https://portal.test/not-a-tiff.tif": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Type": "image/tiff"
+    },
+    "status": 200
+  },
   "https://portal.test/oversized.csv": {
     "error": "too-large"
   },

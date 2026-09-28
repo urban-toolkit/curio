@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.datasets.domain.constants import TIFF_SIGNATURES
+
 #: How long a probe may spend on one container before it is given up on.
 AV_TIMEOUT_SECONDS = 20
 
@@ -42,7 +44,7 @@ def sniff(head: bytes) -> str | None:
         return "audio/aiff"
     if head.startswith(b"BM"):
         return "image/bmp"
-    if head[:4] in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
+    if head[:4] in TIFF_SIGNATURES:
         return "image/tiff"
     if head[4:8] == b"ftyp":
         brand = head[8:12]

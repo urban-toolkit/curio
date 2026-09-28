@@ -14,6 +14,10 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
+# The first four bytes of a TIFF, little- and big-endian, then of a BigTIFF.
+# A ``geotiff`` dataset is one of these whatever its name says.
+TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+
 # Formats whose bytes are text, and which every reader downstream therefore
 # assumes are UTF-8: the row counter, the preview, and the generated loader
 # snippet. Uploads in these formats are transcoded to UTF-8 on the way in

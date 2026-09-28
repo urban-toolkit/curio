@@ -23,7 +23,7 @@ from urllib.parse import unquote, urlparse
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
 from utk_curio.backend.app.datalakes.domain.errors import UnsupportedFormatError
 from utk_curio.backend.app.datalakes.domain.manifest import LAKE_ACQUIRABLE_FORMATS
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, TIFF_SIGNATURES
 
 #: Refused before a body is read. Nothing is unpacked in v1: unpacking a remote
 #: archive is the decompression-bomb surface, and it deserves its own design
@@ -62,7 +62,6 @@ CONTENT_TYPE_FORMATS = {
 SNIFF_BYTES = 512
 
 _PARQUET_MAGIC = b"PAR1"
-_TIFF_MAGIC = (b"II*\x00", b"MM\x00*")
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -127,7 +126,7 @@ def _sniff(head: bytes) -> str | None:
         return None
     if head.startswith(_PARQUET_MAGIC):
         return "parquet"
-    if any(head.startswith(magic) for magic in _TIFF_MAGIC):
+    if head[:4] in TIFF_SIGNATURES:
         return "geotiff"
     stripped = head.lstrip()
     if stripped[:1] in (b"{", b"["):

@@ -262,6 +262,8 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
+A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIFF file, so it cannot be imported as a GeoTIFF."* A GeoTIFF downloaded from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) is checked the same way.
+
 ### Text imports are stored as UTF-8
 
 `csv`, `json` and `geojson` uploads are stored as UTF-8, and the encoding they came from is recorded in the manifest as `sourceEncoding`. Curio tries UTF-8 first and only guesses the encoding when that fails:
