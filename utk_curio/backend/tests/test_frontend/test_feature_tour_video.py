@@ -59,6 +59,7 @@ to a remote model, so it is also the one most likely to be the scene that broke.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -364,7 +365,8 @@ def _play_all(
     ctx: Ctx, *, timeout_ms: int = 240000,
     settle: list[tuple[str, str]] | None = None,
 ) -> None:
-    """Press the rail's Run-all button and wait for every node to settle.
+    """Press the rail's Run-all button and wait for every node to settle, or
+    only for the (node id, node type) pairs in *settle*.
 
     The button sits at the foot of the left rail, under three catalog dropdowns,
     and the rail does not scroll. If the frame is ever too short for all of it,
@@ -387,8 +389,9 @@ def _play_all(
         )
         tour.click(button, dispatch=True, hold=400)
     if settle:
-        # Only these (node id, node type) pairs: Merge Flow nodes never report a
-        # run status, so a dataflow that has them never satisfies the check below.
+        # A Merge Flow node's status stays "idle" after it runs: it hands its
+        # inputs on without an output of its own, so a dataflow that has one
+        # never satisfies the every-node check below.
         for node_id, node_type in settle:
             wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
         page.wait_for_timeout(1500)
@@ -1694,21 +1697,24 @@ def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     """Drag a node by its header, *dx* and *dy* in canvas units, with the mouse.
 
     Not ``setNodes``: see utils, a store write is pushed back on the next render.
-    The pointer goes across, then up or down, so it can be routed around a map:
-    a map that the pressed pointer passes over pans with it.
+
+    Across first, then up or down, a few pixels at a time. Autark pans a map on
+    any move of a pressed pointer over its canvas, even one that was not
+    pressed there (autk-map's ``pointerMove``), and a big step lets the pointer
+    run ahead of the node it drags: a straight drag of the heat scene's scatter
+    plot up past the map's corner panned the map.
     """
     zoom = page.evaluate("() => window.__curio_reactFlow.getViewport().zoom")
     box = node_locator(page, node_id).bounding_box()
-    x, y = box["x"] + box["width"] / 2, box["y"] + 12 * zoom
+    x, y = box["x"] + box["width"] / 2, box["y"] + 15 * zoom
     page.mouse.move(x, y)
     page.mouse.down()
-    steps = 10
-    for i in range(1, steps + 1):
-        page.mouse.move(x + dx * zoom * i / steps, y)
-        page.wait_for_timeout(30)
-    for i in range(1, steps + 1):
-        page.mouse.move(x + dx * zoom, y + dy * zoom * i / steps)
-        page.wait_for_timeout(30)
+    for leg_x, leg_y in ((dx * zoom, 0.0), (0.0, dy * zoom)):
+        steps = max(1, math.ceil(max(abs(leg_x), abs(leg_y)) / 6))
+        for i in range(1, steps + 1):
+            page.mouse.move(x + leg_x * i / steps, y + leg_y * i / steps)
+            page.wait_for_timeout(20)
+        x, y = x + leg_x, y + leg_y
     page.mouse.up()
     page.wait_for_timeout(600)
 
@@ -1738,12 +1744,16 @@ def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> N
 
 
 def scene_heat(ctx: Ctx) -> None:
-    """The Milan heat example, run end to end, for the guide's home page."""
+    """The Milan heat example, run end to end, for the guide's home page.
+
+    Only when CURIO_TOUR_SCENES names it: the still is taken at a larger
+    viewport than the video's, which would show as a jump in the full tour.
+    """
     page, tour = ctx.page, ctx.tour
-    tour.chapter(
-        "15", "Heat exposure in Milan",
-        "A thermal raster, a weather feed and census tracts, in linked views.",
-    )
+    wanted = os.environ.get("CURIO_TOUR_SCENES") or ""
+    if "heat" not in {name.strip() for name in wanted.split(",")}:
+        _log("[tour] heat runs only when CURIO_TOUR_SCENES names it; skipped")
+        return
     _new_dataflow_from_menu(ctx)
     _load_example(ctx, EXAMPLE_HEAT, expected_nodes=_example_node_count(EXAMPLE_HEAT))
     tour.hush()
@@ -1756,8 +1766,9 @@ def scene_heat(ctx: Ctx) -> None:
     page.set_viewport_size(STILL_SIZE)
     page.wait_for_timeout(1500)
     # The dataflow ends in a column of views. Moving the scatter plot beside the
-    # map makes a block that fills a wide frame: the gt_65 projection and its
-    # box plot above, the map and the scatter plot below.
+    # map makes a block that fills a wide frame: the gt_65 projection (the Data
+    # Transformation in the map's column) and its box plot above, the map and
+    # the scatter plot below.
     at = _node_positions(page)
     scatter, boxplot = sorted(charts, key=lambda i: at[i][0])
     projection = next(
@@ -2197,6 +2208,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("provenance", scene_provenance),
     ("interaction", scene_interaction),
     ("autark", scene_autark),
+    # Only when CURIO_TOUR_SCENES names it; see scene_heat.
     ("heat", scene_heat),
     # Late, because it opens a dataflow of its own and the scenes before it
     # build on the one they share.
