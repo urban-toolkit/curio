@@ -10,6 +10,7 @@ import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
 import { backendUrl } from '../../utils/backendUrl';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
+import { withLoadableFirstFeature } from './autkUpstreamGeometry';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
@@ -150,18 +151,34 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         if (data.input) {
             try {
                 const layers = await resolveUpstreamLayers(data.input);
-                if (layers.length > 0) {
-                    upstreamSources = layers.map(({ name, fc, layerType }) => ({
-                        type: 'geojson', geojsonObject: fc, outputTableName: name,
+                // A frame whose first rows have no geometry (a collection's
+                // video, or a photo without a position) still loads, every
+                // row in its place; one with no geometry at all has nothing
+                // to map, and is dropped the way an empty layer is below.
+                const loadable = layers.flatMap(({ name, fc, layerType }) => {
+                    // An empty layer goes on as it is: the check below drops it.
+                    if ((fc.features?.length ?? 0) === 0) return [{ name, fc, geojson: fc, layerType }];
+                    const geojson = withLoadableFirstFeature(fc);
+                    if (geojson === null) {
+                        console.warn(
+                            `[autk-grammar] upstream layer ${name} has no row with a geometry; there is nothing of it to map`,
+                        );
+                        return [];
+                    }
+                    return [{ name, fc, geojson, layerType }];
+                });
+                if (loadable.length > 0) {
+                    upstreamSources = loadable.map(({ name, fc, geojson, layerType }) => ({
+                        type: 'geojson', geojsonObject: geojson, outputTableName: name,
                         coordinateFormat: detectCoordinateFormat(fc),
                         // Preserve the autk-db layer type so relation-built layers
                         // (water/parks/buildings) re-load with the right processing.
                         ...(layerType ? { layerType } : {}),
                     }));
-                    if (!layers.some((l) => l.name === 'upstream')) {
-                        const { fc } = layers[0];
+                    if (!loadable.some((l) => l.name === 'upstream')) {
+                        const { fc, geojson } = loadable[0];
                         upstreamSources.unshift({
-                            type: 'geojson', geojsonObject: fc, outputTableName: 'upstream',
+                            type: 'geojson', geojsonObject: geojson, outputTableName: 'upstream',
                             coordinateFormat: detectCoordinateFormat(fc),
                         });
                     }
