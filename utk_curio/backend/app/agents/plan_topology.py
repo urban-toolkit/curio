@@ -45,6 +45,17 @@ def interaction_roles(templates: dict) -> tuple[frozenset[str], frozenset[str]]:
     return frozenset(capable - visualizations), visualizations
 
 
+def interaction_highlighters(templates: dict) -> frozenset[str]:
+    """The visualizations that highlight the rows another visualization, linked
+    to them directly by an interaction edge with no pool between, selects: the
+    roster's grammar charts (category ``vis_grammar``). A selection crosses a
+    direct edge both ways, so one such end is enough."""
+    _, visualizations = interaction_roles(templates)
+    return frozenset(
+        tid for tid in visualizations if templates[tid].get("category") == "vis_grammar"
+    )
+
+
 def strip_type_version(node_type: object) -> str:
     """``curio.builtin/merge-flow@1`` → ``curio.builtin/merge-flow``."""
     return node_type.split("@", 1)[0] if isinstance(node_type, str) else ""
@@ -198,10 +209,12 @@ def format_cycle(path: list[str], label_of) -> str:
 def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> list[str]:
     """Corrective errors for plan edges of kind ``interaction`` that do not join
     a visualization to a pool (``interaction_roles``, from the *templates*
-    roster).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
+    roster), or two visualizations of which one highlights
+    (``interaction_highlighters``).  ``type_of_endpoint(endpoint) -> str | None`` returns the (possibly
     versioned) template id of a plan ref or existing node id; an unknown
     template fails open: no fabricated refusal."""
     pools, visualizations = interaction_roles(templates)
+    highlighters = interaction_highlighters(templates)
     pool_names = " or ".join(sorted(template_suffix(t) for t in pools)) or "pool"
     errors: list[str] = []
     for i, edge in enumerate(plan.get("edges", []) or []):
@@ -212,12 +225,15 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict) -> li
             continue
         if (src in pools and dst in visualizations) or (dst in pools and src in visualizations):
             continue
+        if src in visualizations and dst in visualizations and {src, dst} & highlighters:
+            continue
         offender = edge["to"] if dst not in pools | visualizations else edge["from"]
         offender_sfx = template_suffix(dst if offender == edge["to"] else src)
         errors.append(
             f"edges[{i}]: an interaction edge connects a visualization "
             f"({', '.join(sorted(template_suffix(t) for t in visualizations))}) to a "
-            f"{pool_names} node; {offender!r} is {offender_sfx or 'untyped'}; use a data "
-            f"edge, or target the {pool_names}"
+            f"{pool_names} node, or to a visualization that highlights what it receives "
+            f"({', '.join(sorted(template_suffix(t) for t in highlighters))}); {offender!r} is "
+            f"{offender_sfx or 'untyped'}: use a data edge, or target the {pool_names}"
         )
     return errors

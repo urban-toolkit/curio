@@ -25,6 +25,7 @@ import {
     readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
+import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -106,6 +107,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // one could not read from its input: the pre-run notice reads these.
     const hasRunRef = useRef(false);
     const runningRef = useRef(false);
+    const pendingSpecRef = useRef<string | null>(null);
     const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
     // The notice the body should show now, kept so a container that mounts
     // later (the editor remounting its output pane) gets it too.
@@ -596,6 +598,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 if (data.outputCallback) {
                     data.outputCallback(data.nodeId, data.input ?? null);
                 }
+                // A selection still active from before this draw lights up
+                // the new map too, as a Vega chart re-applies its own.
+                syncHighlightsNow();
                 // A partial drop still drew something; say what it lost rather
                 // than leaving the console as the only record. It rides as the
                 // success output, since a render node's body is its map.
@@ -751,7 +756,14 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
      */
-    const applyGrammar = async (specString: string) => {
+    const applyGrammar = async (specString: string): Promise<void> => {
+        if (runningRef.current) {
+            // A run is under way (a redraw on new input, or a Play): run once
+            // more when it ends, with the latest document, rather than two runs
+            // racing for the same canvas.
+            pendingSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+            return;
+        }
         lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
         hasRunRef.current = true;
         runningRef.current = true;
@@ -782,6 +794,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         } finally {
             runningRef.current = false;
         }
+        const next = pendingSpecRef.current;
+        pendingSpecRef.current = null;
+        if (next != null) await applyGrammar(next);
     };
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
@@ -802,67 +817,105 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
     };
 
-    // Curio → grammar: the Data Pool marks each feature with interacted:'1'/'0'
-    // after resolving interactions, then sends updated data via outputCallback.
-    // When data.input changes here, read those flags and apply highlights so
-    // the grammar map/plot stays in sync with whatever the Data Pool resolved.
+    // Curio → grammar: which rows to highlight, from two places. A Data Pool
+    // marks each feature interacted:'1'/'0' and re-emits its rows, so the input
+    // carries the flags. A chart joined to this one by a direct interaction edge
+    // sends its selection as `data.interactions`, matched against this node's
+    // own rows the way the pool matches (utils/selectionMatch). A row is
+    // highlighted when either says so; nothing is redrawn for it.
     //
-    // Multi-layer wrappers carry interacted flags on whichever layer the source
-    // brush/pick was for; the others have all-zero flags. Read each layer's flags
-    // independently and dispatch the highlight per layer name so a roads-only
-    // brush only lights up roads even when surface/parks/water are riding along.
-    useEffect(() => {
+    // Per layer: a multi-layer wrapper carries flags on the layer the brush was
+    // for, and an Autark pick names its layer, so a roads-only brush lights up
+    // roads alone. A selection that names no layer (a Vega chart's) lands on the
+    // first, as the Data Pool does.
+    const syncHighlights = async () => {
         const grammar = grammarRef.current;
         const spec    = specRef.current;
-        if (!grammar || !spec || !data.input) return;
+        const current = dataRef.current;
+        if (!grammar || !spec || !current.input) return;
 
-        (async () => {
-            const layers = autkSourcesFrom(await readInput(data.input), spec).sources;
-            if (layers.length === 0) return;
+        const layers = autkSourcesFrom(await readInput(current.input), spec).sources;
+        if (layers.length === 0) return;
 
-            // Input rows per layer; each target turns them into its own positions.
-            const indicesByLayer = new Map<string, number[]>();
-            for (const { outputTableName: name, geojsonObject: fc } of layers) {
-                const sel = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
-                    if (f.properties?.interacted === '1') acc.push(i);
-                    return acc;
-                }, []);
-                indicesByLayer.set(name, sel);
-            }
-            const positions = (name: string, from: 'map' | 'load') =>
-                tablePositions(indicesByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
+        const incoming: IncomingSelection[] = Array.isArray((current as any).interactions)
+            ? (current as any).interactions
+            : [];
+        const direct = new Map<string, IncomingSelection[]>();
+        for (const selection of incoming) {
+            const named = (selection as any)?.details?.autk_selection?.layerRef;
+            const target = layers.some((l) => l.outputTableName === named) ? named : layers[0].outputTableName;
+            direct.set(target, [...(direct.get(target) ?? []), selection]);
+        }
 
-            const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
-            const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
+        // Input rows per layer; each target turns them into its own positions.
+        const rowsByLayer = new Map<string, number[]>();
+        for (const { outputTableName: name, geojsonObject: fc } of layers) {
+            const flagged = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
+                if (f.properties?.interacted === '1') acc.push(i);
+                return acc;
+            }, []);
+            const selected = direct.has(name) ? matchSelections(direct.get(name)!, featureRows(fc)) : [];
+            rowsByLayer.set(name, [...new Set([...flagged, ...selected])]);
+        }
+        const positions = (name: string, from: 'map' | 'load') =>
+            tablePositions(rowsByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
 
-            for (const mapSpec of maps) {
-                for (const lr of mapSpec.layerRefs) {
-                    const sel = positions(lr.dataRef, 'map');
-                    sel.length === 0
-                        ? grammar.clearHighlightOnMap?.(lr.dataRef)
-                        : grammar.highlightOnMap?.(lr.dataRef, sel);
-                }
-            }
-            for (const plotSpec of plots) {
-                const sel = positions(plotSpec.dataRef, 'load');
+        const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
+        const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
+
+        for (const mapSpec of maps) {
+            for (const lr of mapSpec.layerRefs) {
+                const sel = positions(lr.dataRef, 'map');
                 sel.length === 0
-                    ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
-                    : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+                    ? grammar.clearHighlightOnMap?.(lr.dataRef)
+                    : grammar.highlightOnMap?.(lr.dataRef, sel);
             }
-        })().catch((err) => {
+        }
+        for (const plotSpec of plots) {
+            const sel = positions(plotSpec.dataRef, 'load');
+            sel.length === 0
+                ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
+                : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+        }
+    };
+    const syncHighlightsNow = () => {
+        syncHighlights().catch((err) => {
             // Same reason as GrammarEditor's: an escaped rejection here
             // surfaces as the dev-server overlay rather than as a node error.
             console.error("[autk-grammar] interaction sync failed:", err);
         });
-    }, [data.input]);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(syncHighlightsNow, [data.input, (data as any).interactions]);
+
+    // A starter document chosen from the arriving input, the way every grammar
+    // node fills an empty editor (hook/useStarterSpec): once, only into an
+    // empty editor, only after an input has arrived, never over a document
+    // written in from outside. A bundle is read the way the run reads it, so
+    // it downloads once; a single frame needs only its preview.
+    const starterSpec = useStarterSpec({
+        input: data.input,
+        buffer: nodeState.code,
+        written: data.defaultCode,
+        read: (input) => {
+            const type = (input as any)?.dataType;
+            return type === 'list' || type === 'dict' || type === 'outputs'
+                ? readInput(input)
+                : readAutkInput(input, { preview: true });
+        },
+        choose: autkStarterText,
+    });
 
     // The states before anything is drawn: nothing connected, an upstream that
     // has not run or failed, an input this node cannot read, an empty editor, a
     // document not run yet. Written into the container the map draws into, the
     // way the Vega-Lite node writes into its own (utils/writeEmptyState), so no
     // React state changes while someone types. A document that draws only what
-    // it loads itself has nothing to say about an input.
-    const liveCode = nodeState.code;
+    // it loads itself has nothing to say about an input. The editor counts as
+    // holding the starter once one is chosen, as the Vega-Lite node counts it.
+    const liveCode = isEmptySpecBuffer(nodeState.code) && starterSpec !== undefined
+        ? starterSpec
+        : nodeState.code;
     const liveKind = classifyAutkSpecString(liveCode);
     const hasSpec = !isEmptySpecBuffer(liveCode);
     const needsInput = (() => {
@@ -1055,24 +1108,6 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
-
-    // A starter document chosen from the arriving input, the way every grammar
-    // node fills an empty editor (hook/useStarterSpec): once, only into an
-    // empty editor, only after an input has arrived, never over a document
-    // written in from outside. A bundle is read the way the run reads it, so
-    // it downloads once; a single frame needs only its preview.
-    const starterSpec = useStarterSpec({
-        input: data.input,
-        buffer: nodeState.code,
-        written: data.defaultCode,
-        read: (input) => {
-            const type = (input as any)?.dataType;
-            return type === 'list' || type === 'dict' || type === 'outputs'
-                ? readInput(input)
-                : readAutkInput(input, { preview: true });
-        },
-        choose: autkStarterText,
-    });
 
     return {
         applyGrammar,

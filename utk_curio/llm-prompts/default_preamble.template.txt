@@ -209,7 +209,7 @@ Visualizations can be connected to a Data Pool with an edge of type: "Interactio
 } 
 ```
 
-Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool: the receiving visualization marks its own rows in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
+Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool, when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
 
 Nodes that can have interaction connection edge:
 

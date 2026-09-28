@@ -457,6 +457,8 @@ The receiving chart styles the marked rows through its spec, for example `"color
 
 A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+
 
 ## Autark node
 
@@ -491,6 +493,14 @@ connect a node, run the node feeding this one, the node feeding this one
 failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
+
+A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
+chart does: when a project opens with its input restored, and when the node
+feeding it runs again. It does not redraw while it is being wired up or while
+a run is going, and a selection only highlights it (see
+[Linking charts](#linking-charts)). A data or compute step runs only when you
+press play or run the dataflow. Without WebGPU nothing is drawn on its own;
+pressing play says why.
 
 ### The starter document
 

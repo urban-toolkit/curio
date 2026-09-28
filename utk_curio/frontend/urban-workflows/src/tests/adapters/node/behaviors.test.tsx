@@ -788,6 +788,57 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // The counts behind the empty-render verdict ride as data. Where they
     // cannot be counted there is no verdict and no invented zero; where a node's
     // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('selections and redraws, by the rules a Vega chart follows', () => {
+      const point = (x: number) => ({ type: 'Point', coordinates: [x, x] });
+      const INPUT = {
+        dataType: 'geodataframe',
+        data: { type: 'FeatureCollection', features: [0, 1, 2].map((i) => ({ type: 'Feature', geometry: point(i), properties: { i } })) },
+      };
+      const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
+      const grammarMock = () => jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+
+      test('a selection across a direct interaction edge highlights the matching feature, without a redraw', async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(MAP); });
+        const constructed = grammarMock().AutkGrammar.mock.calls.length;
+
+        const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
+        await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
+
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('upstream', [1]));
+        expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const result = await callBehavior(useAutkGrammarBehavior, base as any);
+        const latest = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream', opacity: 0.5 }] } });
+        const before = grammarMock().AutkGrammar.mock.results.length;
+
+        await act(async () => {
+          const first = result.current.applyGrammar!(MAP);
+          await result.current.applyGrammar!(MAP);
+          await result.current.applyGrammar!(latest);
+          await first;
+        });
+
+        const runs = grammarMock().AutkGrammar.mock.results.slice(before).map((r: any) => r.value.run.mock.calls[0]?.[0]);
+        // Two runs, one after the other: the one under way, then the latest ask.
+        expect(runs).toHaveLength(2);
+        expect(runs[1].map.layerRefs[0].opacity).toBe(0.5);
+      });
+    });
+
     describe('what an Autark node says before it draws, as a Vega chart does', () => {
       const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
       const body = async (code: string, data: any = {}) => {
