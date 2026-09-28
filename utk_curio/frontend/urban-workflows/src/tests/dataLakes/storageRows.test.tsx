@@ -6,8 +6,8 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { DataLakeResourceRow } from '../../pages/dataLakes/DataLakeResourceRow';
-import { filtersOf, narrowableFields } from '../../pages/dataLakes/DataLakeAddDialog';
-import type { LakeResourceRow } from '../../services/dataLakeCatalog';
+import { filtersOf, narrowableFields, rangeProblem } from '../../pages/dataLakes/DataLakeAddDialog';
+import type { LakeAcquireJob, LakeResourceRow } from '../../services/dataLakeCatalog';
 
 jest.mock('../../utils/authApi', () => ({
   apiFetch: jest.fn(),
@@ -108,9 +108,50 @@ describe('a storage row', () => {
     fireEvent.click(screen.getByLabelText('Pick orthos/2023/tile_0002.tif'));
     fireEvent.click(screen.getByRole('button', { name: 'Add 1 picked file' }));
     expect(onAdd).toHaveBeenCalledWith(expect.anything(), {
-      title: 'Drone orthoimagery (1 files)',
+      title: 'Drone orthoimagery (1 file)',
       files: ['orthos/2023/tile_0002.tif'],
     });
+  });
+
+  test('a row already in the Data Catalog can be added again, as its files are now', () => {
+    const onAdd = jest.fn();
+    render(
+      <DataLakeResourceRow
+        resource={row({ alreadyHeldDatasetId: 'imported.xabc@1' })}
+        storage={{ dirName: 'lake.x@1', onAdd }}
+        onViewDataset={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add again' }));
+    expect(onAdd).toHaveBeenCalledWith(expect.anything(), { title: 'Drone orthoimagery', refresh: true });
+  });
+
+  test('adding part of a row leaves the whole row to add', () => {
+    render(
+      <DataLakeResourceRow
+        resource={row()}
+        storage={{ dirName: 'lake.x@1', onAdd: jest.fn() }}
+        onViewDataset={jest.fn()}
+        job={job({ status: 'completed', datasetId: 'imported.xpart@1', dataset: { lakeSource: { narrowed: true } } })}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Add to Data Catalog' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View dataset' })).toBeNull();
+  });
+
+  test('a job on the row closes its Files list, whose Add would start a second one', async () => {
+    apiFetch.mockResolvedValue({ files: [], total: 0, offset: 0, previews: false });
+    const storage = { dirName: 'lake.x@1', onAdd: jest.fn() };
+    const { rerender } = render(<DataLakeResourceRow resource={row()} storage={storage} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Files' }));
+    });
+    await waitFor(() => expect(screen.getByText('No files.')).toBeInTheDocument());
+    rerender(<DataLakeResourceRow resource={row()} storage={storage} job={job({ status: 'running' })} />);
+    expect(screen.queryByText('No files.')).toBeNull();
+    rerender(<DataLakeResourceRow resource={row()} storage={storage} job={job({ status: 'failed', error: 'x' })} />);
+    expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('a per-file row has no Files list', () => {
@@ -130,6 +171,24 @@ describe('a storage row', () => {
     expect(screen.queryByRole('button', { name: 'Files' })).toBeNull();
   });
 });
+
+function job(over: Partial<LakeAcquireJob> = {}): LakeAcquireJob {
+  return {
+    jobId: 'j1',
+    status: 'running',
+    bytesRead: 0,
+    totalBytes: null,
+    stageMessage: 'Indexing…',
+    error: null,
+    datasetId: null,
+    dataset: null,
+    alreadyPresent: false,
+    unchanged: false,
+    sourceId: 'lake.x@1',
+    resourceId: 'orthos',
+    ...over,
+  };
+}
 
 describe('narrowing', () => {
   const fields = row().fieldValues!;
@@ -155,5 +214,39 @@ describe('narrowing', () => {
     expect(filtersOf(ranged, { day: { kind: 'range', min: '2024-06-01', max: '2025-02-04' } })).toEqual({
       day: { min: '2024-06-01', max: '2025-02-04' },
     });
+  });
+});
+
+describe('a range to narrow by', () => {
+  const year = { name: 'year', type: 'int', distinct: 30, min: '1990', max: '2024' };
+  const day = { name: 'day', type: 'date', distinct: 400, min: '2024-01-01', max: '2025-02-04' };
+
+  test('holds values, in order', () => {
+    expect(rangeProblem(year, '2000', '2010')).toBeNull();
+    expect(rangeProblem(day, '2024-06-01', '2024-06-30')).toBeNull();
+  });
+
+  test('is refused with a reason when it cannot hold a value', () => {
+    expect(rangeProblem(year, '2010', '2000')).toBe('year starts after it ends.');
+    expect(rangeProblem(year, '20x0', '2010')).toBe('year takes whole numbers.');
+    expect(rangeProblem(day, '2024-06-01', '')).toBe('day needs both ends of its range.');
+    expect(rangeProblem(day, '06/01/2024', '2024-06-30')).toBe('day takes dates like 2024-05-01.');
+  });
+
+  test('a backwards range keeps the dialog open and says why', () => {
+    const onAdd = jest.fn();
+    render(
+      <DataLakeResourceRow
+        resource={row({ fieldValues: [{ ...year }] })}
+        storage={{ dirName: 'lake.x@1', onAdd }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Data Catalog' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('year from'), { target: { value: '2020' } });
+    fireEvent.change(within(dialog).getByLabelText('year to'), { target: { value: '2001' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add to Data Catalog' }));
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(within(dialog).getByText('year starts after it ends.')).toBeInTheDocument();
   });
 });

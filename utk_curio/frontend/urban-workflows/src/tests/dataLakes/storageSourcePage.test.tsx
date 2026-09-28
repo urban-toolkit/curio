@@ -15,8 +15,9 @@ jest.mock('../../utils/authApi', () => ({
   apiFetch: jest.fn(),
   getToken: jest.fn(() => 'token'),
 }));
+const mockShowToast = jest.fn();
 jest.mock('../../providers/ToastProvider', () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 // The details modal pulls in the chart stack; this page only opens it.
 jest.mock('../../components/datasets/catalog/DatasetDetailModal', () => ({
@@ -93,8 +94,19 @@ function renderPage() {
 
 beforeEach(() => {
   apiFetch.mockReset();
+  mockShowToast.mockReset();
   jest.useFakeTimers();
 });
+
+async function settlePage() {
+  // The source loads first; the listing is asked once its debounce passes.
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(200);
+  });
+}
 afterEach(() => jest.useRealTimers());
 
 test('a scan in progress is followed until its rows arrive', async () => {
@@ -143,4 +155,63 @@ test('Rescan asks for a new scan', async () => {
     ),
   );
   expect(screen.queryByText(/match no resource/)).toBeNull();
+});
+
+test('a scan that failed says why, and not that the source is empty', async () => {
+  const detail = 'Example storage: its folder is not available on this machine';
+  apiFetch.mockImplementation((path: string) =>
+    Promise.resolve(
+      path.includes('/search')
+        ? listing('failed', { sources: [{ sourceId: source.sourceId, status: 'failed', detail }], unmatched: 0 })
+        : source,
+    ),
+  );
+  renderPage();
+  await settlePage();
+  expect(screen.getByText(detail)).toBeInTheDocument();
+  expect(screen.queryByText(/No files in Example storage match/)).toBeNull();
+});
+
+test('an add the server refuses is said on its row', async () => {
+  apiFetch.mockImplementation((path: string) => {
+    if (path.includes('/acquire')) {
+      return Promise.reject(new Error('you already have 2 downloads running - wait for one to finish'));
+    }
+    return Promise.resolve(path.includes('/search') ? listing('ok', { unmatched: 0 }) : source);
+  });
+  renderPage();
+  await settlePage();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Data Catalog' }));
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByRole('alert')).toHaveTextContent('you already have 2 downloads running');
+});
+
+test('adding a row again whose files did not change says so', async () => {
+  const held = { ...row, alreadyHeldDatasetId: 'imported.xabc@1' };
+  apiFetch.mockImplementation((path: string, opts?: RequestInit) => {
+    if (path.includes('/acquire')) {
+      expect(JSON.parse(String(opts?.body))).toEqual({ title: 'Air quality readings', refresh: true });
+      return Promise.resolve({ jobId: 'j1', status: 'queued' });
+    }
+    if (path.startsWith('/api/datalakes/jobs/')) {
+      return Promise.resolve({
+        jobId: 'j1', status: 'completed', alreadyPresent: true, unchanged: true,
+        datasetId: 'imported.xabc@1', dataset: { title: 'Air quality readings' },
+      });
+    }
+    return Promise.resolve(path.includes('/search') ? listing('ok', { unmatched: 0, resources: [held] }) : source);
+  });
+  renderPage();
+  await settlePage();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Add again' }));
+    await jest.advanceTimersByTimeAsync(2000);
+  });
+  expect(mockShowToast).toHaveBeenCalledWith(
+    'Nothing has changed in Air quality readings since it was added.',
+    'info',
+    expect.anything(),
+  );
 });

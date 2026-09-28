@@ -188,8 +188,12 @@ export interface DatasetCollection {
   provider: string;
   resourceId: string;
   resource: string;
+  /** The resource's name in its manifest. */
+  resourceName?: string;
   path: string;
   fields: string[];
+  /** The values each path field took, or its range when it took many. */
+  fieldValues?: DatasetCollectionField[];
   /** Files per kind: `image`, `video`, `frame`, `audio` or `raster`. */
   counts: Record<string, number>;
   fileCount: number;
@@ -204,6 +208,20 @@ export interface DatasetCollection {
   fps?: number;
   sequences?: number;
   totalSeconds?: number;
+  /** The rasters' own CRS, as EPSG codes or names. */
+  crs?: string[];
+  /** West, south, east and north of every footprint or position, in EPSG:4326. */
+  bounds?: [number, number, number, number];
+}
+
+/** One path field of a collection and what it covers. */
+export interface DatasetCollectionField {
+  name: string;
+  type: string;
+  distinct: number;
+  values?: string[];
+  min?: string;
+  max?: string;
 }
 
 export interface DatasetCatalogItem {

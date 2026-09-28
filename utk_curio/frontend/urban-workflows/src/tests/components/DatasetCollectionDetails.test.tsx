@@ -125,8 +125,78 @@ describe("a collection's details", () => {
     await renderPanel(item());
     expect((global as any).fetch).toHaveBeenCalledWith(
       `http://backend.test/api/datasets/imported.xc1%401/media/${"a".repeat(16)}?variant=thumb`,
-      { headers: { Authorization: "Bearer tok" } },
+      { headers: { Authorization: "Bearer tok" }, signal: expect.any(AbortSignal) },
     );
+  });
+
+  it("names its resource and says what its fields, CRS and footprints cover", async () => {
+    apiFetch.mockResolvedValue(status({ local: true, provider: "folder" }));
+    await renderPanel(
+      item({
+        collection: {
+          ...block,
+          kind: "rasters",
+          resource: "orthos",
+          resourceName: "Drone orthoimagery",
+          fields: ["year", "tile"],
+          fieldValues: [
+            { name: "year", type: "int", distinct: 2, values: ["2023", "2024"] },
+            { name: "tile", type: "str", distinct: 400, min: "tile_0001", max: "tile_0400" },
+          ],
+          crs: ["EPSG:32616"],
+          bounds: [-87.631543, 41.881246, -87.631156, 41.881392],
+        },
+      }),
+    );
+    expect(screen.getByText(/· Drone orthoimagery/)).toBeInTheDocument();
+    expect(screen.getByText("year 2023, 2024 · tile tile_0001 to tile_0400")).toBeInTheDocument();
+    expect(screen.getByText("EPSG:32616")).toBeInTheDocument();
+    expect(screen.getByText("41.8812, -87.6315 to 41.8814, -87.6312")).toBeInTheDocument();
+  });
+
+  it("stops following its Cache files job once the panel is closed", async () => {
+    jest.useFakeTimers();
+    try {
+      // The poll in flight when the panel closes answers after it has.
+      let answer: (job: unknown) => void = () => {};
+      apiFetch.mockImplementation((path: string, opts?: RequestInit) => {
+        if (path.endsWith("/cache") && opts?.method === "POST") {
+          return Promise.resolve({ jobId: "j1", status: "queued", itemsDone: 0, itemsTotal: 2 });
+        }
+        if (path.startsWith("/api/datalakes/jobs/")) {
+          return new Promise((resolve) => {
+            answer = resolve;
+          });
+        }
+        return Promise.resolve(status());
+      });
+      let view: ReturnType<typeof render> | undefined;
+      await act(async () => {
+        view = render(
+          <MemoryRouter>
+            <DatasetDetailPanel dataset={item()} dataflowId={null} />
+          </MemoryRouter>,
+        );
+      });
+      await act(async () => {
+        screen.getByRole("button", { name: "Cache files" }).click();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      const polls = () => apiFetch.mock.calls.filter(([path]) => String(path).startsWith("/api/datalakes/jobs/")).length;
+      expect(polls()).toBe(1);
+      view!.unmount();
+      await act(async () => {
+        answer({ jobId: "j1", status: "running", itemsDone: 1, itemsTotal: 2 });
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(10000);
+      });
+      expect(polls()).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("offers Cache files for a bucket's files and follows the job", async () => {

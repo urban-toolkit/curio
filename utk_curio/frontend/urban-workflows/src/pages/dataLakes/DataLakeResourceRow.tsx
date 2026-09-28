@@ -82,9 +82,14 @@ export function DataLakeResourceRow({
   const [filesOpen, setFilesOpen] = React.useState(false);
   const held = Boolean(resource.alreadyHeldDatasetId);
   const running = job != null && (job.status === "queued" || job.status === "running");
-  const finished = job?.status === "completed";
+  // Part of a row, added from the Add dialog or the Files list, is not the
+  // row: the row stays offered whole.
+  const narrowedJob = Boolean(
+    (job?.dataset as { lakeSource?: { narrowed?: boolean } } | null | undefined)?.lakeSource?.narrowed,
+  );
+  const finished = job?.status === "completed" && !narrowedJob;
   const failed = job != null && (job.status === "failed" || job.status === "refused");
-  const landedAt = job?.datasetId ?? resource.alreadyHeldDatasetId;
+  const landedAt = (finished ? job?.datasetId : null) ?? resource.alreadyHeldDatasetId;
   const kind = resource.kind ?? null;
   const splitBy = storage?.declared?.splitBy ?? [];
   const perFile = storage?.declared?.datasets === "per-file";
@@ -96,6 +101,12 @@ export function DataLakeResourceRow({
     if (narrowableFields(resource, splitBy).length > 0) setAdding(true);
     else storage.onAdd(resource, { title: resource.name });
   };
+
+  // A job on the row closes its Files list: the list's own Add would start a
+  // second one.
+  React.useEffect(() => {
+    if (running) setFilesOpen(false);
+  }, [running]);
 
   return (
     <article className={styles.row} data-lake-resource={resource.resourceId}>
@@ -133,7 +144,7 @@ export function DataLakeResourceRow({
           ) : null}
         </div>
         {samples.length > 0 && storage ? (
-          <div className={styles.samples} aria-label={`Files in ${resource.name}`}>
+          <div className={styles.samples} role="group" aria-label={`Files in ${resource.name}`}>
             {samples.map((relpath, index) => (
               <SampleThumb
                 key={relpath}
@@ -175,13 +186,25 @@ export function DataLakeResourceRow({
               </select>
             ) : null}
             {(finished || held) && landedAt && onViewDataset ? (
-              <button
-                type="button"
-                className={styles.viewDataset}
-                onClick={() => onViewDataset(landedAt)}
-              >
-                View dataset
-              </button>
+              <>
+                {storage ? (
+                  <button
+                    type="button"
+                    className={styles.filesToggle}
+                    title="Add the row again, as its files are now"
+                    onClick={() => storage.onAdd(resource, { title: resource.name, refresh: true })}
+                  >
+                    Add again
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.viewDataset}
+                  onClick={() => onViewDataset(landedAt)}
+                >
+                  View dataset
+                </button>
+              </>
             ) : storage ? (
               <button
                 type="button"
@@ -213,7 +236,7 @@ export function DataLakeResourceRow({
           onAddFiles={(files) => {
             setFilesOpen(false);
             storage.onAdd(resource, {
-              title: `${resource.name} (${files.length.toLocaleString()} files)`,
+              title: `${resource.name} (${files.length.toLocaleString()} ${files.length === 1 ? "file" : "files"})`,
               files,
             });
           }}

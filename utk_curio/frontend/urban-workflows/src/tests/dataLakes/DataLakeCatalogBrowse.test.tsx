@@ -307,6 +307,27 @@ describe('DataLakeCatalogBrowse: federated search mode', () => {
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
+  test('a storage source still being scanned is said to be, not to have failed', async () => {
+    routeApi({
+      '/catalog': response([
+        source(),
+        source({ sourceId: 'lake.curio.example-storage', dirName: 'lake.curio.example-storage@1', name: 'Example storage' }),
+      ]),
+      '/api/datalakes/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [
+          { sourceId: 'lake.a.portal', status: 'ok' },
+          { sourceId: 'lake.curio.example-storage', status: 'scanning' },
+        ],
+      }),
+    });
+    renderPage('/catalog/lakes?q=bike');
+    expect(
+      await screen.findByText('Example storage is still being scanned; its rows appear here when it is done.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
   test('no matches anywhere says so', async () => {
     routeApi({
       '/catalog': response([source()]),

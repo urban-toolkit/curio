@@ -156,6 +156,13 @@ const pagerStyle: CSS.Properties = {
   color: '#64748b',
 };
 
+/** What makes a frame a different one: how many rows, and which comes first. */
+function frameKey(rows: Record<string, unknown>[]): string {
+  const head = rows[0] ?? {};
+  const id = head.file_id ?? head.path ?? head.image_url ?? head.thumbnail ?? '';
+  return `${rows.length}:${String(id)}`;
+}
+
 export default function ImageCardGrid({
   nodeId,
   rows,
@@ -165,11 +172,13 @@ export default function ImageCardGrid({
 }: ImageCardGridProps) {
   const [page, setPage] = useState(0);
   const [playing, setPlaying] = useState<number | null>(null);
-  // A new frame starts on its first page.
+  // A new frame starts on its first page. A selection written back onto the
+  // same rows is not a new frame, so the page and the player stay.
+  const frame = frameKey(rows);
   useEffect(() => {
     setPage(0);
     setPlaying(null);
-  }, [rows]);
+  }, [frame]);
 
   const captionColumns = (row: Record<string, unknown>) =>
     Object.keys(row).filter((c) => !imageColumns.includes(c) && c !== 'interacted');

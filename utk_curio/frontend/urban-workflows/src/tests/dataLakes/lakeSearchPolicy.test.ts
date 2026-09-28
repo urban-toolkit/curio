@@ -1,6 +1,7 @@
 import {
   notableLegs,
   partialFailureMessage,
+  scanningMessage,
   type LakeSearchLeg,
 } from '../../services/dataLakeCatalog';
 
@@ -26,6 +27,27 @@ describe('which legs are worth telling the user about', () => {
       expect(notableLegs([leg('a', 'ok'), leg('b', status)])).toHaveLength(1);
     }
   );
+
+  test('a storage source being scanned did not fail to answer', () => {
+    expect(notableLegs([leg('a', 'ok'), leg('s', 'scanning')])).toEqual([]);
+  });
+});
+
+describe('scanningMessage', () => {
+  const nameOf = (id: string) => ({ s: 'Example storage', t: 'Survey archive' }[id] ?? '');
+
+  test('is null when no source is being scanned', () => {
+    expect(scanningMessage([leg('s', 'ok'), leg('b', 'failed')], nameOf)).toBeNull();
+  });
+
+  test('says which sources are still being scanned', () => {
+    expect(scanningMessage([leg('s', 'scanning')], nameOf)).toBe(
+      'Example storage is still being scanned; its rows appear here when it is done.',
+    );
+    expect(scanningMessage([leg('s', 'scanning'), leg('t', 'scanning')], nameOf)).toBe(
+      'Example storage and Survey archive are still being scanned; their rows appear here when they are done.',
+    );
+  });
 });
 
 describe('partialFailureMessage', () => {

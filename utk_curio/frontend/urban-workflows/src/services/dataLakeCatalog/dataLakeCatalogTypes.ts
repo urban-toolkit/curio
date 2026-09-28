@@ -64,6 +64,10 @@ export const LAKE_ACQUIRABLE_FORMATS = [
 ] as const;
 export type LakeAcquirableFormat = (typeof LAKE_ACQUIRABLE_FORMATS)[number];
 
+/** What a source's rows add as: a portal's formats, and a storage source's
+ *  table formats and `collection`. */
+export type LakeSourceFormat = LakeAcquirableFormat | "shp" | "gpkg" | "pbf" | "collection";
+
 export const LAKE_PROVIDER_LABEL: Record<LakeProviderType, string> = {
   socrata: "Socrata",
   ckan: "CKAN",
@@ -97,7 +101,7 @@ export interface LakeSourceCapabilities {
   search: boolean;
   describe: boolean;
   download: boolean;
-  formats: LakeAcquirableFormat[];
+  formats: LakeSourceFormat[];
   maxDownloadBytes: number;
 }
 
@@ -329,7 +333,16 @@ export interface LakeSearchQuery {
  *  and not the "this source has nothing to browse" that a link-only source
  *  reports every single time and which is not news. */
 export function notableLegs(legs: LakeSearchLeg[]): LakeSearchLeg[] {
-  return legs.filter((leg) => leg.status !== "ok" && leg.status !== "unsupported");
+  return legs.filter(
+    (leg) => leg.status !== "ok" && leg.status !== "unsupported" && leg.status !== "scanning"
+  );
+}
+
+function namesOf(legs: LakeSearchLeg[], nameOf: (sourceId: string) => string): string {
+  const names = legs.map((leg) => nameOf(leg.sourceId) || leg.sourceId);
+  return names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /** One line naming the portals that did not answer. Null when all did. */
@@ -339,12 +352,21 @@ export function partialFailureMessage(
 ): string | null {
   const notable = notableLegs(legs);
   if (notable.length === 0) return null;
-  const names = notable.map((leg) => nameOf(leg.sourceId) || leg.sourceId);
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `${list} did not answer. Showing what the other portals returned.`;
+  return `${namesOf(notable, nameOf)} did not answer. Showing what the other portals returned.`;
+}
+
+/** One line naming the storage sources still being scanned, whose rows join
+ *  the results when they are. Null when none is. */
+export function scanningMessage(
+  legs: LakeSearchLeg[],
+  nameOf: (sourceId: string) => string
+): string | null {
+  const scanning = legs.filter((leg) => leg.status === "scanning");
+  if (scanning.length === 0) return null;
+  const names = namesOf(scanning, nameOf);
+  return scanning.length === 1
+    ? `${names} is still being scanned; its rows appear here when it is done.`
+    : `${names} are still being scanned; their rows appear here when they are done.`;
 }
 
 

@@ -14,14 +14,19 @@ export function useAuthedObjectUrl(path: string | null): { url: string | null; f
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    setUrl(null);
+    setFailed(false);
     if (!path) return;
     let revoked: string | null = null;
     let cancelled = false;
-    setUrl(null);
-    setFailed(false);
+    // A page of thumbnails left before they arrive is abandoned, so its
+    // requests stop holding the browser's few connections to the server
+    // while the next page asks for its own.
+    const controller = new AbortController();
     const token = getToken();
     fetch(`${backendUrl()}${path}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
     })
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((blob) => {
@@ -36,6 +41,7 @@ export function useAuthedObjectUrl(path: string | null): { url: string | null; f
     // leaks a blob for the lifetime of the document.
     return () => {
       cancelled = true;
+      controller.abort();
       if (revoked) URL.revokeObjectURL(revoked);
     };
   }, [path]);

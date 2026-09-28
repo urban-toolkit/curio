@@ -39,6 +39,26 @@ function initialChoice(field: LakeFieldValues): Choice {
   return { kind: "range", min: field.min ?? "", max: field.max ?? "" };
 }
 
+/** What is wrong with a range, in words, or null when it selects files. */
+export function rangeProblem(field: LakeFieldValues, min: string, max: string): string | null {
+  const low = min.trim();
+  const high = max.trim();
+  if (!low || !high) return `${field.name} needs both ends of its range.`;
+  if (field.type === "int") {
+    if (!/^-?\d+$/.test(low) || !/^-?\d+$/.test(high)) return `${field.name} takes whole numbers.`;
+    return Number(low) > Number(high) ? `${field.name} starts after it ends.` : null;
+  }
+  if (field.type === "date") {
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if (!day.test(low) || !day.test(high)) return `${field.name} takes dates like 2024-05-01.`;
+  } else if (field.type === "datetime") {
+    if (Number.isNaN(Date.parse(low)) || Number.isNaN(Date.parse(high))) {
+      return `${field.name} takes times like 2024-05-01T06:00:00.`;
+    }
+  }
+  return low > high ? `${field.name} starts after it ends.` : null;
+}
+
 /** The filters the choices amount to, leaving out every field kept whole. */
 export function filtersOf(
   fields: LakeFieldValues[],
@@ -67,6 +87,13 @@ export function DataLakeAddDialog({ resource, splitBy, onAdd, onCancel }: DataLa
   const [title, setTitle] = React.useState(resource.name);
 
   const empty = Object.values(choices).some((c) => c.kind === "values" && c.kept.size === 0);
+  const problem =
+    fields
+      .map((field) => {
+        const choice = choices[field.name];
+        return choice?.kind === "range" ? rangeProblem(field, choice.min, choice.max) : null;
+      })
+      .find(Boolean) ?? null;
   const filters = filtersOf(fields, choices);
   const narrowed = Object.keys(filters).length > 0;
 
@@ -141,6 +168,7 @@ export function DataLakeAddDialog({ resource, splitBy, onAdd, onCancel }: DataLa
         );
       })}
       {empty ? <p className={styles.warning}>Keep at least one value of every field.</p> : null}
+      {problem ? <p className={styles.warning}>{problem}</p> : null}
     </div>
   );
 
@@ -151,8 +179,9 @@ export function DataLakeAddDialog({ resource, splitBy, onAdd, onCancel }: DataLa
       confirmLabel="Add to Data Catalog"
       onCancel={onCancel}
       onConfirm={() => {
-        // A field with nothing kept selects no file; the warning says so.
-        if (empty) return;
+        // A field with nothing kept, or a range that cannot hold a value,
+        // selects no file; the warning says so.
+        if (empty || problem) return;
         onAdd({ title: title.trim() || resource.name, ...(narrowed ? { filters } : {}) });
       }}
     />

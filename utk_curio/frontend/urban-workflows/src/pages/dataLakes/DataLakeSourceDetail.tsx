@@ -76,6 +76,14 @@ export const DataLakeSourceDetail: React.FC = () => {
     // Reported like an import into the Data Catalog, which is what it is.
     if (job.datasetId) {
       const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      if (job.alreadyPresent && job.unchanged) {
+        showToast(
+          `Nothing has changed in ${title} since it was added.`,
+          "info",
+          viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
+        );
+        return;
+      }
       showToast(
         `${storage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
         "success",
@@ -260,7 +268,10 @@ export const DataLakeSourceDetail: React.FC = () => {
             ))}
           </div>
 
-          {!search.loading && search.searched && search.data.resources.length === 0 ? (
+          {!search.loading &&
+          search.searched &&
+          search.data.resources.length === 0 &&
+          !(storage && (leg?.status === "failed" || listing.scanning)) ? (
             <div className={styles.empty}>
               {storage
                 ? q

@@ -50,6 +50,25 @@ function durationLabel(seconds: number): string {
   return `${(seconds / 3600).toFixed(1)} h`;
 }
 
+/** What each path field covers: its values, or its range when it has many. */
+function fieldsLabel(block: DatasetCollection): string {
+  if (!block.fieldValues?.length) return block.fields.join(", ");
+  return block.fieldValues
+    .map((field) => {
+      if (field.values) {
+        const shown = field.values.slice(0, 4).join(", ");
+        return `${field.name} ${shown}${field.values.length > 4 ? " and more" : ""}`;
+      }
+      return `${field.name} ${field.min} to ${field.max}`;
+    })
+    .join(" · ");
+}
+
+function boundsLabel([west, south, east, north]: [number, number, number, number]): string {
+  const at = (lat: number, lon: number) => `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  return `${at(south, west)} to ${at(north, east)}`;
+}
+
 function narrowedLabel(block: DatasetCollection): string | null {
   const parts = Object.entries(block.narrowedBy ?? {}).map(([name, kept]) =>
     Array.isArray(kept) ? `${name} ${kept.join(", ")}` : `${name} ${kept.min} to ${kept.max}`,
@@ -66,24 +85,34 @@ export function useCollectionStatus(datasetId: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<LakeAcquireJob | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The collection this panel shows now. An answer for another one, or for a
+  // closed panel, is dropped, and never schedules another poll.
+  const current = useRef<string | undefined>(datasetId);
 
   const load = useCallback(() => {
     if (!datasetId) return;
     dataLakeCatalogApi
       .getCollection(datasetId)
       .then((s) => {
+        if (current.current !== datasetId) return;
         setStatus(s);
         setError(null);
       })
-      .catch((err: Error) => setError(err.message || "Could not read this collection."));
+      .catch((err: Error) => {
+        if (current.current === datasetId) setError(err.message || "Could not read this collection.");
+      });
   }, [datasetId]);
 
   useEffect(() => {
+    current.current = datasetId;
     setStatus(null);
     setJob(null);
     load();
-    return () => clearTimeout(timer.current);
-  }, [load]);
+    return () => {
+      current.current = undefined;
+      clearTimeout(timer.current);
+    };
+  }, [datasetId, load]);
 
   const follow = useCallback(
     (jobId: string) => {
@@ -91,14 +120,17 @@ export function useCollectionStatus(datasetId: string | undefined) {
         dataLakeCatalogApi
           .getJob(jobId)
           .then((next) => {
+            if (current.current !== datasetId) return;
             setJob(next);
             if (isTerminal(next.status)) load();
             else follow(jobId);
           })
-          .catch((err: Error) => setError(err.message || "Lost track of that job."));
+          .catch((err: Error) => {
+            if (current.current === datasetId) setError(err.message || "Lost track of that job.");
+          });
       }, POLL_MS);
     },
-    [load],
+    [datasetId, load],
   );
 
   const cacheFiles = useCallback(() => {
@@ -106,10 +138,13 @@ export function useCollectionStatus(datasetId: string | undefined) {
     dataLakeCatalogApi
       .cacheCollection(datasetId)
       .then((started) => {
+        if (current.current !== datasetId) return;
         setJob(started);
         follow(started.jobId);
       })
-      .catch((err: Error) => setError(err.message || "Could not cache these files."));
+      .catch((err: Error) => {
+        if (current.current === datasetId) setError(err.message || "Could not cache these files.");
+      });
   }, [datasetId, follow]);
 
   return { status, error, job, cacheFiles };
@@ -137,7 +172,7 @@ const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string }> 
 export const CollectionStrip: React.FC<{ status: LakeCollectionStatus | null }> = ({ status }) => {
   if (!status || status.samples.length === 0) return null;
   return (
-    <div className={stripStyles.strip} aria-label="Files in this collection">
+    <div className={stripStyles.strip} role="group" aria-label="Files in this collection">
       {status.samples.map((sample) => (
         <StripThumb
           key={sample.fileId}
@@ -184,7 +219,7 @@ export const CollectionInfoSection: React.FC<{
             >
               {block.sourceName}
             </DetailLink>{" "}
-            · {block.resource}
+            · {block.resourceName || block.resource}
           </dd>
         </div>
         {split ? (
@@ -210,7 +245,7 @@ export const CollectionInfoSection: React.FC<{
         {block.fields.length > 0 ? (
           <div>
             <dt>Path fields</dt>
-            <dd>{block.fields.join(", ")}</dd>
+            <dd>{fieldsLabel(block)}</dd>
           </div>
         ) : null}
         {block.sequences != null ? (
@@ -235,6 +270,18 @@ export const CollectionInfoSection: React.FC<{
           <div>
             <dt>Footprints</dt>
             <dd>{dataset.schema.crs}</dd>
+          </div>
+        ) : null}
+        {block.crs?.length ? (
+          <div>
+            <dt>Raster CRS</dt>
+            <dd>{block.crs.join(", ")}</dd>
+          </div>
+        ) : null}
+        {block.bounds ? (
+          <div>
+            <dt>Coverage</dt>
+            <dd>{boundsLabel(block.bounds)}</dd>
           </div>
         ) : null}
         <div>

@@ -18,6 +18,7 @@ import {
   isStorageSource,
   notifyDatasetCatalogRefresh,
   partialFailureMessage,
+  scanningMessage,
   unsearchableReason,
   useLakeAcquire,
   useLakeCatalog,
@@ -102,6 +103,14 @@ export const DataLakeCatalogBrowse: React.FC = () => {
     // Reported like an import into the Data Catalog, which is what it is.
     if (job.datasetId) {
       const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
+      if (job.alreadyPresent && job.unchanged) {
+        showToast(
+          `Nothing has changed in ${title} since it was added.`,
+          "info",
+          viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
+        );
+        return;
+      }
       const fromStorage = data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s));
       showToast(
         `${fromStorage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
@@ -154,6 +163,10 @@ export const DataLakeCatalogBrowse: React.FC = () => {
         results.data.sources,
         (id) => sourcesById.get(id)?.name ?? ""
       ),
+    [results.data.sources, sourcesById]
+  );
+  const stillScanning = useMemo(
+    () => scanningMessage(results.data.sources, (id) => sourcesById.get(id)?.name ?? ""),
     [results.data.sources, sourcesById]
   );
 
@@ -302,6 +315,11 @@ export const DataLakeCatalogBrowse: React.FC = () => {
         {partialFailure ? (
           <div className={browseStyles.browseBanner} role="status">
             <span>{partialFailure}</span>
+          </div>
+        ) : null}
+        {searching && stillScanning ? (
+          <div className={browseStyles.browseBanner} role="status">
+            <span>{stillScanning}</span>
           </div>
         ) : null}
 

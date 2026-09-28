@@ -147,9 +147,10 @@ export function useLakeSearch(
 
     const controller = new AbortController();
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
 
-    const timer = setTimeout(() => {
+    const run = (polls: number) => {
       const request = sourceDir
         ? dataLakeCatalogApi.searchSource(
             sourceDir,
@@ -166,18 +167,26 @@ export function useLakeSearch(
           setData(res);
           setError(null);
           setSearched(true);
+          setLoading(false);
+          // A storage source on its first scan answers "scanning": asked
+          // again, quietly, until its rows are in, so they join the results
+          // without a new query.
+          const scanning = !sourceDir && res.sources.some((leg) => leg.status === "scanning");
+          if (scanning && polls < MAX_SEARCH_SCAN_POLLS) {
+            timer = setTimeout(() => run(polls + 1), SCAN_POLL_MS);
+          }
         })
         .catch((err: Error) => {
+          if (cancelled) return;
+          setLoading(false);
           // An abort is the expected outcome of the next keystroke, not a
           // failure to report.
-          if (cancelled || err.name === "AbortError") return;
+          if (err.name === "AbortError") return;
           setError(err.message || "That search could not be run.");
           setSearched(true);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
         });
-    }, SEARCH_DEBOUNCE_MS);
+    };
+    timer = setTimeout(() => run(0), SEARCH_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
@@ -194,6 +203,8 @@ export function useLakeSearch(
 
 /** How often a listing is asked again while its source is being scanned. */
 const SCAN_POLL_MS = 1000;
+/** How many times a federated search asks again for a source being scanned. */
+const MAX_SEARCH_SCAN_POLLS = 30;
 /** A storage search is answered from memory, so it only waits out typing. */
 const STORAGE_DEBOUNCE_MS = 150;
 
@@ -301,20 +312,24 @@ export function useLakeAcquire(
   jobsRef.current = jobs;
   const done = useRef(onCompleted);
   done.current = onCompleted;
+  // A poll answered after the page closed must not schedule another.
+  const alive = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
       Object.values(timers.current).forEach(clearTimeout);
       timers.current = {};
-    },
-    []
-  );
+    };
+  }, []);
 
   const poll = useCallback((key: string, jobId: string, delay: number) => {
     timers.current[key] = setTimeout(() => {
       dataLakeCatalogApi
         .getJob(jobId)
         .then((job) => {
+          if (!alive.current) return;
           setJobs((prev) => ({ ...prev, [key]: job }));
           if (isTerminal(job.status)) {
             delete timers.current[key];
@@ -327,6 +342,7 @@ export function useLakeAcquire(
           // The job is gone, or the backend is. Either way, stop: retrying a
           // job we can no longer read is a loop with no exit.
           delete timers.current[key];
+          if (!alive.current) return;
           setJobs((prev) => ({
             ...prev,
             [key]: {
@@ -342,12 +358,38 @@ export function useLakeAcquire(
   const start = useCallback(
     async (dirName: string, resourceId: string, opts = {}) => {
       const key = acquireKey(dirName, resourceId);
-      const started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
-      if (started.jobId) {
-        setJobs((prev) => ({ ...prev, [key]: started as LakeAcquireJob }));
-        poll(key, started.jobId, POLL_START_MS);
+      // One job per row: its progress, its result and its Cancel are keyed by
+      // the row, so a second start while one runs is the one already running.
+      const current = jobsRef.current[key];
+      if (current && !isTerminal(current.status)) return current;
+      try {
+        const started = await dataLakeCatalogApi.acquire(dirName, resourceId, opts);
+        if (started.jobId) {
+          setJobs((prev) => ({ ...prev, [key]: started as LakeAcquireJob }));
+          poll(key, started.jobId, POLL_START_MS);
+        }
+        return started;
+      } catch (err) {
+        // Refused before any job existed (too many downloads running, a
+        // narrowing the source cannot satisfy): said on the row, as a job
+        // that failed is.
+        const refused: LakeAcquireJob = {
+          jobId: "",
+          status: "failed",
+          bytesRead: 0,
+          totalBytes: null,
+          stageMessage: "Failed",
+          error: (err as Error)?.message || "That could not be started.",
+          datasetId: null,
+          dataset: null,
+          alreadyPresent: false,
+          unchanged: false,
+          sourceId: dirName,
+          resourceId,
+        };
+        if (alive.current) setJobs((prev) => ({ ...prev, [key]: refused }));
+        return refused;
       }
-      return started;
     },
     [poll]
   );

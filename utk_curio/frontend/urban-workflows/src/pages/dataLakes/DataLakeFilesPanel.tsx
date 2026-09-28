@@ -69,47 +69,53 @@ export function DataLakeFilesPanel({ dirName, resourceId, onAddFiles }: DataLake
 
   return (
     <div className={styles.panel}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            {onAddFiles ? <th aria-label="Pick" /> : null}
-            {page.previews ? <th aria-label="Preview" /> : null}
-            <th>File</th>
-            {fieldNames.map((name) => (
-              <th key={name}>{name}</th>
-            ))}
-            <th className={styles.size}>Size</th>
-          </tr>
-        </thead>
-        <tbody>
-          {page.files.map((file) => (
-            <tr key={file.relpath}>
-              {onAddFiles ? (
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`Pick ${file.relpath}`}
-                    checked={picked.has(file.relpath)}
-                    onChange={() => toggle(file.relpath)}
-                  />
-                </td>
-              ) : null}
-              {page.previews ? (
-                <td>
-                  <FileThumb dirName={dirName} resourceId={resourceId} index={file.index} />
-                </td>
-              ) : null}
-              <td className={styles.path} title={file.relpath}>
-                {file.relpath}
-              </td>
+      <div className={styles.tableScroll}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              {onAddFiles ? <th aria-label="Pick" /> : null}
+              {page.previews ? <th aria-label="Preview" /> : null}
+              <th>File</th>
               {fieldNames.map((name) => (
-                <td key={name}>{file.values[name]}</td>
+                <th key={name}>{name}</th>
               ))}
-              <td className={styles.size}>{formatBytes(file.size)}</td>
+              <th className={styles.size}>Size</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {page.files.map((file) => (
+              <tr key={file.relpath}>
+                {onAddFiles ? (
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Pick ${file.relpath}`}
+                      checked={picked.has(file.relpath)}
+                      onChange={() => toggle(file.relpath)}
+                    />
+                  </td>
+                ) : null}
+                {page.previews ? (
+                  <td>
+                    <FileThumb dirName={dirName} resourceId={resourceId} index={file.index} />
+                  </td>
+                ) : null}
+                <td>
+                  {/* A block inside the cell: a table cell ignores max-width, so
+                      a long path would widen the table past the panel. */}
+                  <span className={styles.path} title={file.relpath}>
+                    {file.relpath}
+                  </span>
+                </td>
+                {fieldNames.map((name) => (
+                  <td key={name}>{file.values[name]}</td>
+                ))}
+                <td className={styles.size}>{formatBytes(file.size)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className={styles.footer}>
         <span className={styles.note}>
           {page.total === 0

@@ -101,14 +101,18 @@ describe('ImageCardGrid', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://backend.test/api/streetvision/inference/overlay/a.jpg',
-      { headers: { Authorization: 'Bearer tok-123' } },
+      { headers: { Authorization: 'Bearer tok-123' }, signal: expect.any(AbortSignal) },
     );
     await waitFor(() => {
       expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:overlay-1');
     });
 
+    const signal: AbortSignal = fetchMock.mock.calls[0][1].signal;
+    expect(signal.aborted).toBe(false);
     view.unmount();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:overlay-1');
+    // A card no longer shown stops fetching its image.
+    expect(signal.aborted).toBe(true);
   });
 
   it('holds the slot instead of throwing when an authed image fails', async () => {
@@ -144,6 +148,26 @@ describe('ImageCardGrid', () => {
     expect(screen.getAllByRole('img')).toHaveLength(3);
     // Row indices stay absolute, so a selection reaches the right row.
     expect(document.getElementById(`imageBox_content_sv-1_${CARD_PAGE_SIZE}`)).toBeInTheDocument();
+  });
+
+  it('keeps its page when a selection is written back onto the same rows', () => {
+    const many = Array.from({ length: CARD_PAGE_SIZE + 3 }, (_, i) => ({
+      file_id: `f${i}`,
+      image_url: `https://example.test/${i}.png`,
+    }));
+    const { rerender } = render(
+      <ImageCardGrid {...defaultProps} rows={many} interacted={many.map(() => '0')} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getAllByRole('img')).toHaveLength(3);
+    // A linked Data Pool marks the clicked row: a new array, the same frame.
+    const marked = many.map((row, i) => ({ ...row, interacted: i === CARD_PAGE_SIZE ? '1' : '0' }));
+    rerender(<ImageCardGrid {...defaultProps} rows={marked} interacted={marked.map((r) => r.interacted)} />);
+    expect(screen.getAllByRole('img')).toHaveLength(3);
+    // A frame with other rows starts on its first page.
+    const other = many.slice(1);
+    rerender(<ImageCardGrid {...defaultProps} rows={other} interacted={other.map(() => '0')} />);
+    expect(screen.getAllByRole('img')).toHaveLength(CARD_PAGE_SIZE);
   });
 
   it('plays a collection video through a signed link', async () => {

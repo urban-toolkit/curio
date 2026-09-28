@@ -39,7 +39,13 @@
   border-bottom: 0;
 }
 
+/* Many path fields scroll sideways inside the panel, not past it. */
+.tableScroll {
+  overflow-x: auto;
+}
+
 .path {
+  display: block;
   max-width: 320px;
   overflow: hidden;
   white-space: nowrap;
