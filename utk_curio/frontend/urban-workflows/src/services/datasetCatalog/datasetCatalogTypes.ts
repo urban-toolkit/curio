@@ -144,14 +144,24 @@ export interface DatasetLoaderSnippet {
  * it, rather than a fifth origin value.
  */
 export interface DatasetLakeSource {
-  lakeId: string;
-  lakeName: string;
-  resourceId: string;
-  resourceUrl: string;
+  /** The Data Lake source and resource, absent for a file downloaded by hand
+   * from a link no source covers. */
+  lakeId?: string;
+  lakeName?: string;
+  resourceId?: string;
+  resourceUrl?: string;
   finalUrl?: string;
   fetchedAt?: string;
   contentSha256?: string;
+  /** The person downloaded the file and imported it; Curio did not fetch it. */
+  manual?: boolean;
 }
+
+/** Where a file the person downloaded themselves came from, as the import states it. */
+export type DatasetLakeSourceInput = Pick<
+  DatasetLakeSource,
+  "lakeId" | "lakeName" | "resourceId" | "resourceUrl"
+>;
 
 export interface DatasetCatalogItem {
   id: string;

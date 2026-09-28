@@ -34,6 +34,7 @@ from playwright.sync_api import expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
+    MAX_DIFF_RATIO,
     REPO_ROOT,
     accept_confirm_dialog,
     api_json,
@@ -230,7 +231,7 @@ class Walkthrough:
     #: A tight value only means something on a CLIPPED capture, where the
     #: subject fills the frame. On a full page it is raised to
     #: ``FULL_PAGE_DIFF_FLOOR`` -- see ``effective_max_diff_ratio``.
-    max_diff_ratio: float = 0.20
+    max_diff_ratio: float = MAX_DIFF_RATIO
     #: The example dataflow to open the journey on, by filename under
     #: ``docs/examples``. ``None`` means an EMPTY dataflow.
     #:
