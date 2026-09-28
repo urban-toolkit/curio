@@ -102,7 +102,7 @@ describe("compileDataSpecToAutkDbJs", () => {
         // execute_js_code turns exactly this one import into `await import()`.
         const imports = code.match(/^import /gm) ?? [];
         expect(imports).toHaveLength(1);
-        expect(code.startsWith("import * as __autkDbMod from '@urban-toolkit/autk-db';")).toBe(true);
+        expect(code.startsWith("import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';")).toBe(true);
     });
 
     it("inlines the spec and the expected table list", () => {

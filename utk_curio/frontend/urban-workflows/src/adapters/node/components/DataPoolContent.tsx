@@ -195,7 +195,7 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
                 // used to state - that a zero-row dataframe still yields a tab
                 // and so never reaches here - is not true: processDataAsync
                 // filters dataframe/geodataframe layers with no rows out before
-                // tabData is set (added for autk-db 2.1.2 empty layers). So a
+                // tabData is set (autk-db cannot load an empty layer). So a
                 // node that ran and returned an empty table landed here and was
                 // told "This input is not tabular data", which is wrong and
                 // unactionable. The declared dataType still knows better.

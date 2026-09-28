@@ -12,9 +12,7 @@ const DEFAULT_SPEC = JSON.stringify(
         outputTableName: 'osm_surface',
         queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },
         autoLoadLayers: {
-          coordinateFormat: 'EPSG:3395',
           layers: ['surface'],
-          dropOsmTable: true,
         },
       },
     ],

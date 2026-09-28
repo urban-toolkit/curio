@@ -48,10 +48,6 @@ repo (Step 2).
 ## Step 1: Load OSM layers from a PBF (`autk-grammar`, data block)
 
 A grammar node with only a `data` block loads Niterói's surface, parks, water, and roads from the local PBF.
-Layers are emitted in **EPSG:4326** so the downstream join node can re-ingest them via `loadCustomLayer`
-(which assumes WGS84 input) and reproject to a metric CRS for the spatial join. Setting
-`autoLoadLayers.coordinateFormat` to `EPSG:4326` is what keeps that contract (the grammar default is the
-metric `EPSG:3395`).
 
 ```json
 "data": [{
@@ -59,7 +55,7 @@ metric `EPSG:3395`).
   "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf",
   "queryArea": { "geocodeArea": "Rio de Janeiro", "areas": ["Niterói"] },
   "outputTableName": "table_osm",
-  "autoLoadLayers": { "coordinateFormat": "EPSG:4326", "dropOsmTable": true, "layers": ["surface", "parks", "water", "roads"] }
+  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads"] }
 }]
 ```
 
@@ -101,19 +97,18 @@ array, `arg[1]` is the raster row.
 
 ## Step 3: Spatial join LST → roads (`js-computation`, DuckDB)
 
-The join node re-ingests each OSM layer into DuckDB (reprojecting to EPSG:3395), loads the raster with
+The join node re-ingests each OSM layer into DuckDB, loads the raster with
 `loadGeoTiff`, and runs a `NEAR` `spatialQuery` to average each of the 24 bands within 1 km of every road
 segment. A final `rawQuery` reshapes the per-band averages into a single `lst_timeseries` array per road and
 re-emits the layer stack (all in EPSG:3395) for a consistent CRS across surface/parks/water/roads.
 
 ```js
 for (const layer of osmLayers)
-  await db.loadCustomLayer({ geojsonObject: layer.geojson, outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });
-await db.loadGeoTiff({ geotiffArrayBuffer, outputTableName: 'lst', sourceCrs: 'EPSG:4326', coordinateFormat: 'EPSG:3395' });
+  await db.loadGeojson({ geojsonObject: layer.geojson, outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });
+await db.loadGeoTiff({ geotiffArrayBuffer, outputTableName: 'lst', coordinateFormat: 'EPSG:4326' });
 await db.spatialQuery({
-  tableRootName: 'table_osm_roads', tableJoinName: 'lst', spatialPredicate: 'NEAR', nearDistance: 1000,
-  output: { type: 'MODIFY_ROOT' }, joinType: 'LEFT',
-  groupBy: { selectColumns: Array.from({ length: 24 }, (_, i) => ({ tableName: 'lst', column: `band_${i + 1}`, aggregateFn: 'avg', aggregateFnResultColumnName: `band_${i + 1}` })) },
+  tableRootName: 'table_osm_roads', tableJoinName: 'lst', near: { distance: 1000 },
+  groupBy: Array.from({ length: 24 }, (_, i) => ({ column: `band_${i + 1}`, aggregateFn: 'avg' })),
 });
 // … rawQuery packs the 24 band averages into properties.lst_timeseries …
 ```

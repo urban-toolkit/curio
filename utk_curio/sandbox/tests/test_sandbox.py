@@ -32,8 +32,7 @@ _SKIP_NO_AUTK_DB = unittest.skipUnless(
 # suite covers the host-side decision, but only running it in the real Node
 # subprocess proves the GENERATED code parses and behaves there.
 _CONTRACT_CHECK_JS = (
-    "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
-    "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
+    "import {{ AutkDb }} from '@urban-toolkit/autk-db';\n"
     "const __sources = [{{ type: 'geojson', geojsonObject: {{ type: 'FeatureCollection', "
     "features: [{{ type: 'Feature', geometry: {{ type: 'Point', coordinates: [-87.63, 41.88] }}, "
     "properties: {{ name: 'a' }} }}] }}, outputTableName: 'probe_pts' }}];\n"
@@ -44,8 +43,8 @@ _CONTRACT_CHECK_JS = (
     "for (const source of __sources) {{ const {{ type, ...rest }} = source; "
     "if (type === 'geojson') await db.loadGeojson(rest); }}\n"
     "let __tables = [];\n"
-    "try {{ __tables = db.getLayerTables ? db.getLayerTables() : []; }}\n"
-    "catch (e) {{ __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e))); }}\n"
+    "try {{ __tables = db.getLayersMetadata(); }}\n"
+    "catch (e) {{ __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e))); }}\n"
     "const __have = new Set(__tables.map((t) => t.name));\n"
     "const __missing = __expectedTables.filter((n) => !__have.has(n));\n"
     "if (__missing.length > 0) {{\n"
@@ -177,14 +176,8 @@ class TestSandbox(unittest.TestCase):
         _worker_init()
 
         code = (
-            "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
-            # Mirror compileDataSpecToAutkDbJs: the v2.0 frontend build exports
-            # AutkDb, but the older root-level install the sandbox resolves
-            # exports AutkSpatialDb. Accept either so the snippet matches the
-            # real emit and doesn't throw "AutkDb is not a constructor".
-            "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
-            "if (typeof AutkDb !== 'function') throw new Error("
-            "'@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');\n"
+            # Mirrors compileDataSpecToAutkDbJs's import.
+            "import { AutkDb } from '@urban-toolkit/autk-db';\n"
             "const __sources = [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', "
             "features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.63, 41.88] }, "
             "properties: { name: 'a' } }] }, outputTableName: 'probe_pts' }];\n"
@@ -193,7 +186,7 @@ class TestSandbox(unittest.TestCase):
             "for (const source of __sources) { const { type, ...rest } = source; "
             "if (type === 'geojson') await db.loadGeojson(rest); }\n"
             "const out = [];\n"
-            "for (const t of (db.getLayerTables ? db.getLayerTables() : [])) { "
+            "for (const t of db.getLayersMetadata()) { "
             "const geojson = await db.getLayer(t.name); "
             "out.push({ name: t.name, type: t.type ?? 'polygons', geojson }); }\n"
             "return out;"

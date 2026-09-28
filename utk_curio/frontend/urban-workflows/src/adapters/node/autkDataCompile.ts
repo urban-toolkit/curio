@@ -61,10 +61,8 @@ export function requestedLayerTables(dataSources: any[]): string[] {
     for (const source of dataSources ?? []) {
         const { type, ...rest } = (source ?? {}) as any;
         if (type === 'osm') {
-            // Per-layer tables only. `${outputTableName}` and
-            // `${outputTableName}_boundaries` are excluded deliberately:
-            // `autoLoadLayers.dropOsmTable` drops those once the layers have been
-            // split out, so expecting them would fail every spec that sets it.
+            // Per-layer tables only: autk-db drops the raw OSM import tables
+            // once it has extracted the layers.
             const layers = rest?.autoLoadLayers?.layers;
             if (rest?.outputTableName && Array.isArray(layers)) {
                 for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
@@ -87,16 +85,7 @@ export function requestedLayerTables(dataSources: any[]): string[] {
 // in the sandbox's scope). The function returns Array<{name, type, geojson}>,
 // which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
-    return `import * as __autkDbMod from '@urban-toolkit/autk-db';
-// v2.0 frontend builds export AutkDb; the older root-level install of the same
-// version still exports AutkSpatialDb. Accept either so the backend sandbox
-// (which may be on the older shape) does not throw "AutkDb is not a constructor".
-const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
-// Old AutkSpatialDb does NOT export DEFAULT_WORKSPACE_COORDINATE_FORMAT — fall
-// back to the hardcoded workspace CRS so the coordinateFormat injection below
-// still gets a real value when the destructure resolves to undefined.
-const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
-if (typeof AutkDb !== 'function') throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
+    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
 const __sources = ${JSON.stringify(dataSources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
 // place rather than being restated inside this emitted string.
@@ -108,27 +97,15 @@ const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
   const { type, ...rest } = source ?? {};
-  // Old AutkSpatialDb (root-level v2.0.1 install) dereferences
-  // \`autoLoadLayers.coordinateFormat\` unconditionally — the spec must carry it
-  // or loadOsm fails silently inside our try/catch and getLayerTables()
-  // returns an empty list. Inject the workspace default when the spec omits it
-  // so both export-name shapes work.
-  if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
-    rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
-  }
   try {
     if (type === 'osm') await db.loadOsm(rest);
     else if (type === 'geojson') await db.loadGeojson(rest);
     else if (type === 'csv') await db.loadCsv(rest);
     else if (type === 'json') await db.loadJson(rest);
     // In-grammar spatial join between already-loaded tables (sources run in
-    // spec order, so the join must come after the tables it references).
-    // 2.1.2 option shapes: near: { distance } in workspace meters, groupBy
-    // as an array of column specs.
-    else if (type === 'join') {
-      if (typeof db.spatialQuery !== 'function') throw new Error('this autk-db has no spatialQuery');
-      await db.spatialQuery(rest);
-    }
+    // spec order, so the join must come after the tables it references):
+    // near: { distance } in workspace meters, groupBy as an array of column specs.
+    else if (type === 'join') await db.spatialQuery(rest);
     else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
     // Recorded, not discarded: this reason is the only account of WHY a layer is
@@ -140,11 +117,11 @@ for (const source of __sources) {
 }
 let __tables = [];
 try {
-  __tables = db.getLayerTables ? db.getLayerTables() : [];
+  __tables = db.getLayersMetadata();
 } catch (e) {
   // A partially-loaded DB can throw here rather than return [] - treat it as
   // "no usable tables" and let the contract check report it.
-  __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e)));
+  __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
 }
 const __have = new Set(__tables.map((t) => t.name));
 const __missing = __expectedTables.filter((n) => !__have.has(n));
@@ -169,11 +146,11 @@ if (__joinErrors.length > 0) {
   throw new Error('spatial join failed - ' + __joinErrors.join('; '));
 }
 const __epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\\d+)/)?.[1] ?? '3395';
-// Tag each layer with the CRS its coordinates are ACTUALLY in. autk-db 2.0.1
-// projected tables to the workspace CRS (EPSG:3395 meters) at load; 2.1.2
-// keeps them in EPSG:4326 degrees. A wrong tag silently breaks downstream
-// consumers (the map renderer reads degree values as meters near the origin
-// and shows a blank view), so detect by coordinate magnitude per layer.
+// Tag each layer with the CRS its coordinates are ACTUALLY in, detected by
+// coordinate magnitude per layer: a layer autk-db projected to the workspace
+// CRS is in meters, one it was handed in degrees may still be in degrees. A
+// wrong tag silently breaks downstream consumers (the map renderer reads degree
+// values as meters near the origin and shows a blank view).
 const __layerEpsg = (geojson) => {
   const feats = (geojson && geojson.features) || [];
   for (let i = 0; i < Math.min(feats.length, 5); i++) {
@@ -220,10 +197,10 @@ for (const t of __tables) {
     // autk-db's 3D building model (per-part polygons keyed by building_id, each with
     // its own height) is a loadOsm construct that loadGeojson cannot rebuild from a
     // grouped GeometryCollection. Explode each building back into one footprint
-    // feature per part (carrying that part's height) so the downstream
-    // loadGeojson('buildings') re-clusters them by building_id and getLayer re-emits
-    // proper per-part GeometryCollections — letting autk-map extrude each part by its
-    // own height instead of collapsing the whole building into a single box.
+    // feature per part (carrying that part's height), so autk-map extrudes each part
+    // by its own height instead of collapsing the whole building into a single box.
+    // The downstream loadGeojson('buildings') numbers every row as its own building,
+    // so each part also carries, as a property, the building_id it came from.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;
@@ -234,6 +211,7 @@ for (const t of __tables) {
         const gg = g.type === 'GeometryCollection' ? __flattenToMultiPolygon(g) : g;
         if (!gg) return;
         const p = { ...(meta || {}) }; delete p.parts;
+        if (props.building_id != null) p.building_id = props.building_id;
         const h = __buildingHeight(p); if (h != null) p.height = h;
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
