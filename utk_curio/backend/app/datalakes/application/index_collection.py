@@ -124,7 +124,7 @@ def _probe_remote_head(provider, found: MatchedFile, kind: str) -> dict[str, Any
         head = provider.open(found.relpath, byte_range=(0, PROBE_BYTES)).read()
     except DataLakeError as exc:
         return {"probe_error": str(exc)[:200]}
-    suffix = "." + found.relpath.rsplit(".", 1)[-1] if "." in found.relpath else ""
+    suffix = Path(found.relpath).suffix
     with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
         handle.write(head)
         handle.flush()

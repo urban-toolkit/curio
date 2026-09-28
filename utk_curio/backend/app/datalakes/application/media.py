@@ -31,12 +31,22 @@ from utk_curio.backend.app.datalakes.domain.errors import (
     ResourceNotFound,
 )
 from utk_curio.backend.app.datalakes.infrastructure import media_dirs
+from utk_curio.backend.app.datalakes.application.probe import (  # noqa: F401 - sniff is media's API too
+    open_container,
+    open_image,
+    open_raster,
+    sniff,
+)
 
 THUMB_EDGE = 384
 JPEG_QUALITY = 82
 
 #: A remote image is fetched whole to draw its thumbnail, up to this size.
 MAX_REMOTE_THUMB_SOURCE_BYTES = 64 * 1024 * 1024
+
+#: An image larger than this, after JPEG's own downscaling, has no thumbnail:
+#: decoding it would cost more memory than a preview is worth.
+MAX_THUMB_SOURCE_PIXELS = 64_000_000
 
 #: The formats served as ``original``: ones a browser shows or plays.
 BROWSER_TYPES = {
@@ -50,42 +60,6 @@ class MediaUnavailable(DataLakeError):
     """The file exists in the index but cannot be served as asked."""
 
     status = 415
-
-
-def sniff(head: bytes) -> str | None:
-    """The type a file's first bytes say it is, or None."""
-    if head.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if head.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if head[:6] in (b"GIF87a", b"GIF89a"):
-        return "image/gif"
-    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return "image/webp"
-    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
-        return "audio/wav"
-    if head.startswith(b"BM"):
-        return "image/bmp"
-    if head[:4] in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
-        return "image/tiff"
-    if head[4:8] == b"ftyp":
-        brand = head[8:12]
-        if brand in (b"M4A ", b"M4B "):
-            return "audio/mp4"
-        if brand == b"qt  ":
-            return "video/quicktime"
-        return "video/mp4"
-    if head.startswith(b"\x1a\x45\xdf\xa3"):
-        return "video/webm"
-    if head.startswith(b"fLaC"):
-        return "audio/flac"
-    if head.startswith(b"OggS"):
-        return "audio/ogg"
-    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
-        return "audio/mpeg"
-    if head[:12] == b"\x00\x00\x00\x0cjP  \r\n\x87\n":
-        return "image/jp2"
-    return None
 
 
 @dataclass(frozen=True)
@@ -227,9 +201,15 @@ def _render(found: Located, variant: str, target: Path) -> None:
     except Exception as exc:  # noqa: BLE001 - a file that cannot be decoded
         raise MediaUnavailable(f"{found.row.relpath} could not be drawn: {exc}"[:200]) from exc
     image.thumbnail((THUMB_EDGE, THUMB_EDGE))
-    part = target.with_name(target.name + ".part")
-    image.convert("RGB").save(part, "JPEG", quality=JPEG_QUALITY)
-    os.replace(part, target)
+    # A name of its own: two requests can draw the same thumbnail at once.
+    fd, part = tempfile.mkstemp(dir=target.parent, prefix=target.name + ".", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            image.convert("RGB").save(handle, "JPEG", quality=JPEG_QUALITY)
+        os.replace(part, target)
+    except BaseException:
+        Path(part).unlink(missing_ok=True)
+        raise
 
 
 def _source_path(found: Located) -> tuple[Path, bool]:
@@ -256,7 +236,7 @@ def _draw(found: Located, variant: str):
     path, temporary = _source_path(found)
     try:
         if kind in ("image", "frame"):
-            return _image(path)
+            return _image(path, kind)
         if kind == "raster":
             return _raster(path)
         if kind == "video":
@@ -269,21 +249,22 @@ def _draw(found: Located, variant: str):
     raise CapabilityUnsupported(f"no preview for a {kind}")
 
 
-def _image(path: Path):
-    from PIL import Image, ImageOps
+def _image(path: Path, kind: str = "image"):
+    from PIL import ImageOps
 
-    with Image.open(path) as image:
+    with open_image(path, kind) as image:
         image.draft("RGB", (THUMB_EDGE, THUMB_EDGE))
+        if image.width * image.height > MAX_THUMB_SOURCE_PIXELS:
+            raise MediaUnavailable("the image is too large to preview")
         return ImageOps.exif_transpose(image).convert("RGB")
 
 
 def _raster(path: Path):
     import numpy as np
-    import rasterio
     from PIL import Image
     from rasterio.enums import Resampling
 
-    with rasterio.open(path) as src:
+    with open_raster(path) as src:
         scale = max(src.width, src.height) / THUMB_EDGE
         width = max(1, int(src.width / max(scale, 1)))
         height = max(1, int(src.height / max(scale, 1)))
@@ -309,9 +290,7 @@ def _raster(path: Path):
 
 
 def _poster(path: Path):
-    import av
-
-    with av.open(str(path), timeout=20) as container:
+    with open_container(path, "video") as container:
         stream = container.streams.video[0]
         duration = None
         if stream.duration is not None and stream.time_base is not None:
@@ -333,7 +312,7 @@ def _spectrogram(path: Path, *, seconds: float = 60.0):
 
     samples = []
     rate = None
-    with av.open(str(path), timeout=20) as container:
+    with open_container(path, "audio") as container:
         stream = container.streams.audio[0]
         resampler = av.AudioResampler(format="flt", layout="mono", rate=16000)
         rate = 16000

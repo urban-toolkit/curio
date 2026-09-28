@@ -81,7 +81,12 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
 
         def where(row):
             if root:
-                return os.path.join(root, *str(row["relpath"]).split("/"))
+                parts = str(row["relpath"]).split("/")
+                # An index lists files under its root; a row that says
+                # otherwise has no file here.
+                if any(part in ("", ".", "..") for part in parts):
+                    return None
+                return os.path.join(root, *parts)
             if objects:
                 name = f"{row['file_id']}.{row['ext']}" if row["ext"] else row["file_id"]
                 path = os.path.join(objects, name)

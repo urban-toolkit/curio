@@ -57,6 +57,14 @@ class TestTheHelpers(unittest.TestCase):
         self.assertTrue(pd.isna(frame.loc[0, "audio_url"]))
         self.assertEqual(frame.loc[2, "audio_url"], f"/api/datasets/c1/media/{'c' * 16}?variant=original")
 
+    def test_a_row_that_leaves_its_root_has_no_path(self):
+        rows = ROWS + [{"file_id": "d" * 16, "relpath": "../outside.jpg", "name": "outside.jpg",
+                        "ext": "jpg", "kind": "image"}]
+        write_index(self.index, rows)
+        frame = self.helpers({"c1": {"root": "/srv/media"}})["curio_collection"]("c1")
+        outside = frame[frame["file_id"] == "d" * 16].iloc[0]
+        self.assertTrue(pd.isna(outside["path"]))
+
     def test_a_bucket_collection_has_a_path_only_once_cached(self):
         objects = self.tmp / "objects"
         objects.mkdir()
