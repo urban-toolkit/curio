@@ -213,11 +213,19 @@
   height: 30px;
   display: inline-flex;
   align-items: center;
+  border: 0;
+  background: none;
   padding: 0 10px;
+  font-family: inherit;
   font-size: var(--curio-font-size-sm);
   font-weight: 600;
   color: var(--curio-text-primary);
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewDataset:hover {
+  text-decoration: underline;
 }
 
 .failure {

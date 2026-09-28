@@ -1,14 +1,11 @@
 /**
  * Headers that identify the signed-in user to the Street Vision backend.
  *
- * Every route in this package resolves per-account state from the caller:
- * `/models/search` and `/inference/run` resolve the HuggingFace token that
- * unlocks gated models (granted per account, against a licence that account
- * accepted), and `/inference/overlay/<id>`, which whatever displays the
- * results reads, resolves which user's overlay cache to serve. Without this
- * header the backend falls back to the shared guest key, so a signed-in user's
- * own token never takes effect and their overlays are looked up in somebody
- * else's directory.
+ * Every route in this package requires a signed-in caller, and resolves
+ * per-account state from it: `/models/search` and `/inference/run` resolve the
+ * HuggingFace token that unlocks gated models, `/inference/results/<id>`
+ * answers only the account that started the job, and `/inference/overlay/<id>`
+ * reads that account's overlay cache. Every request here sends this header.
  *
  * `getAuthToken` is a getter on `window.curio` rather than a value because this
  * bundle evaluates once at boot, before sign-in.

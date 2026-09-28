@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 
 import logo from "assets/curio-2.png";
-import ConfirmDialog from "../../components/ConfirmDialog";
+import { LEAVE_DASHBOARD, useLeaveGuard } from "../../hook/useLeaveGuard";
 import ShareMenu from "../../components/menus/top/ShareMenu";
 import { UserMenu } from "../../components/login/UserMenu";
 import { useFlowContext, useNodeActionsContext } from "../../providers/FlowProvider";
@@ -34,8 +34,12 @@ export function useCanEditLayout(): boolean {
   );
 }
 
-export const LEAVE_UNSAVED_LAYOUT =
-  "Leaving this dashboard discards the layout changes you have not saved.";
+/** The dashboard's leave guard: the layout is unsaved work only while it is
+ *  unlocked for editing. Shared by the top bar and the empty state. */
+export function useDashboardLeaveGuard() {
+  const { projectDirty, dashboardLocked } = useFlowContext();
+  return useLeaveGuard(projectDirty && !dashboardLocked, LEAVE_DASHBOARD);
+}
 
 /**
  * The dashboard's own top bar.
@@ -63,7 +67,6 @@ export function DashboardTopBar({ id }: { id: string }) {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [pendingLeave, setPendingLeave] = useState<null | (() => void)>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
   // Close the menu on a click anywhere else, as the dataflow bar does.
@@ -78,14 +81,8 @@ export function DashboardTopBar({ id }: { id: string }) {
     return () => document.removeEventListener("click", onClick);
   }, [shareOpen]);
 
-  const leave = (action: () => void) => {
-    // Unsaved tile geometry is real work: warn before dropping it.
-    if (!projectDirty || dashboardLocked) {
-      action();
-      return;
-    }
-    setPendingLeave(() => action);
-  };
+  // Unsaved tile geometry is real work: warn before dropping it.
+  const { leave, dialog: leaveDialog } = useDashboardLeaveGuard();
 
   const saveLayout = async () => {
     setSaving(true);
@@ -161,21 +158,7 @@ export function DashboardTopBar({ id }: { id: string }) {
         <UserMenu />
       </div>
 
-      {pendingLeave ? (
-        <ConfirmDialog
-          title="Discard unsaved layout?"
-          body={LEAVE_UNSAVED_LAYOUT}
-          confirmLabel="Discard and continue"
-          cancelLabel="Stay here"
-          destructive
-          onConfirm={() => {
-            const run = pendingLeave;
-            setPendingLeave(null);
-            run();
-          }}
-          onCancel={() => setPendingLeave(null)}
-        />
-      ) : null}
+      {leaveDialog}
     </>
   );
 }

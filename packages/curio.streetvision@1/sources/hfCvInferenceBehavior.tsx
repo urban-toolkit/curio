@@ -287,7 +287,7 @@ export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
       .then(d => {
         setJobId(d.job_id);
         pollRef.current = setInterval(() => {
-          fetch(`${API_BASE}/inference/results/${d.job_id}`)
+          fetch(`${API_BASE}/inference/results/${d.job_id}`, { headers: authHeaders() })
             .then(r => r.json())
             .then(s => {
               setProcessed(s.processed);

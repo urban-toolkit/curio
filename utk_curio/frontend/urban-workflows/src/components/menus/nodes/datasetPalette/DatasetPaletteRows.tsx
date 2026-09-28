@@ -30,6 +30,8 @@ import { isNodeLinkedToAnyDataset } from "../../../../services/datasetCatalog";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CopyButton } from "../../../CopyButton";
+import { DetailsButton } from "../../../DetailsButton";
+import { useDatasetDetails } from "../../../datasets/catalog/datasetDetailsContext";
 import { datasetReferenceCode } from "../../../../services/datasetCatalog";
 
 
@@ -49,6 +51,7 @@ export const DatasetRow = memo(function DatasetRow({
 
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
+  const { openDatasetDetails } = useDatasetDetails();
 
   const selectOnCanvas = useCallback(
     (e: React.MouseEvent) => {
@@ -116,6 +119,12 @@ export const DatasetRow = memo(function DatasetRow({
           value={datasetReferenceCode(dataset)}
           label="Copy dataset reference"
           className={rowStyles.copyButton}
+        />
+        {/* The way into the dataset's details, as every catalog card offers. */}
+        <DetailsButton
+          label={`View ${datasetDisplayTitle(dataset)} details`}
+          className={rowStyles.detailsButton}
+          onClick={() => openDatasetDetails(dataset.id, { fallbackDataset: dataset })}
         />
       </div>
     </OverlayTrigger>
