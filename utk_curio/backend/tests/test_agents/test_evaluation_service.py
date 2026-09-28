@@ -36,15 +36,20 @@ def _auth(token):
 @pytest.fixture()
 def account(client, user_and_token, tmp_curio):
     user, token = user_and_token
-    response = client.patch(
-        "/api/auth/me",
+    created = client.post(
+        "/api/agents/llm/configs",
         json={
-            "llm_api_type": "testing", "llm_model": "scripted",
-            "llm_api_key": API_KEY, "llm_base_url": "http://scripted.example.com/v1",
+            "label": "Scripted", "apiType": "testing", "model": "scripted",
+            "apiKey": API_KEY, "baseUrl": "http://scripted.example.com/v1",
         },
         headers=_auth(token),
     )
-    assert response.status_code == 200, response.get_json()
+    assert created.status_code == 201, created.get_json()
+    chosen = client.put(
+        "/api/agents/llm/default", json={"configId": created.get_json()["config"]["id"]},
+        headers=_auth(token),
+    )
+    assert chosen.status_code == 200, chosen.get_json()
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     agent_jobs.reset_registry()
@@ -100,7 +105,7 @@ def _script_the_model(monkeypatch, fixture=FIXTURE):
         return "# no content for this node\nreturn None"
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+        "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
     )
     monkeypatch.setattr(
         "utk_curio.backend.app.execution.runner._http_exec",
@@ -136,8 +141,53 @@ class TestReadiness:
         assert payload["configured"] is True
         assert payload["provider"]["model"] == "scripted"
         assert payload["provider"]["baseUrlHost"] == "scripted.example.com"
-        assert payload["source"] == "account"
+        assert payload["provider"]["label"] == "Scripted"
+        assert payload["source"] == "default"
+        # One configuration answers the Builder and every agent it requires.
+        (row,) = payload["configurations"]
+        assert {k: row[k] for k in payload["provider"]} == payload["provider"]
+        assert row["agents"] == [
+            "Dataflow Builder", "Node Content Builder", "Dataset Finder", "Node Builder",
+        ]
         assert API_KEY not in json.dumps(payload)
+
+    def test_it_lists_each_configuration_with_the_agents_on_it(self, client, account):
+        other = client.post(
+            "/api/agents/llm/configs",
+            json={"label": "Content", "apiType": "testing", "model": "content-model",
+                  "baseUrl": "http://content.example.com/v1"},
+            headers=_auth(account["token"]),
+        ).get_json()["config"]
+        client.put("/api/agents/llm/assignments", json={"agent.node-content-builder": other["id"]},
+                   headers=_auth(account["token"]))
+        payload = client.get(
+            "/api/agents/evaluation/readiness", headers=_auth(account["token"])
+        ).get_json()
+        assert payload["provider"]["model"] == "scripted"
+        by_model = {row["model"]: row["agents"] for row in payload["configurations"]}
+        assert by_model == {
+            "scripted": ["Dataflow Builder", "Dataset Finder", "Node Builder"],
+            "content-model": ["Node Content Builder"],
+        }
+
+    def test_the_report_prints_a_line_per_configuration(self):
+        from utk_curio.backend.app.agents.evaluation import chat, records as records_mod
+
+        record = records_mod.EvaluationRecord(
+            run_id="r", provider={"model": "scripted", "label": "Scripted"},
+            configurations=[
+                {"model": "scripted", "label": "Scripted", "baseUrlHost": "a.example.com",
+                 "agents": ["Dataflow Builder", "Node Builder"]},
+                {"model": "content-model", "label": "Content", "baseUrlHost": "b.example.com",
+                 "agents": ["Node Content Builder"]},
+            ],
+            usage={"inputTokens": 10, "outputTokens": 5},
+        )
+        fixture = type("F", (), {"fixture_id": "f", "prompt": "p"})()
+        lines = chat.report_lines(record, fixture)
+        assert "Dataflow Builder, Node Builder: model scripted (Scripted) at a.example.com." in lines
+        assert "Node Content Builder: model content-model (Content) at b.example.com." in lines
+        assert "The run took 10 in / 5 out tokens." in lines
 
     def test_a_model_from_the_start_command_counts_as_configured(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -146,17 +196,7 @@ class TestReadiness:
         --llm-model` is as real as one typed into AI Settings, so the panel
         must not tell an operator who passed the flag that they configured
         nothing."""
-        from utk_curio.backend.app.agents import provider_config
-
         user, token = user_and_token
-        for attribute in ("llm_api_type", "llm_base_url", "llm_api_key", "llm_model"):
-            setattr(user, attribute, None)
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-        monkeypatch.setattr(
-            provider_config, "DEFAULT_LLM_BASE_URL", "https://sage200.example.edu/v1"
-        )
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "sk-deployment")
-        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "gemma4")
         from utk_curio.backend import config as backend_config
 
         monkeypatch.setattr(backend_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
@@ -170,23 +210,21 @@ class TestReadiness:
         assert payload["configured"] is True
         assert payload["source"] == "deployment"
         assert payload["provider"]["model"] == "gemma4"
-        assert payload["deployment"]["baseUrlHost"] == "sage200.example.edu"
-        assert payload["deployment"]["hasApiKey"] is True
+        assert payload["provider"]["baseUrlHost"] == "sage200.example.edu"
+        assert payload["provider"]["label"] == "Deployment default"
         assert "sk-deployment" not in json.dumps(payload)
 
     def test_an_unconfigured_account_is_blocked_with_an_actionable_reason(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config as backend_config
 
         user, _token = user_and_token
-        for attribute in ("llm_api_type", "llm_base_url", "llm_api_key", "llm_model"):
-            setattr(user, attribute, None)
         for name in (
             "DEFAULT_LLM_API_TYPE", "DEFAULT_LLM_BASE_URL",
             "DEFAULT_LLM_API_KEY", "DEFAULT_LLM_MODEL",
         ):
-            monkeypatch.setattr(provider_config, name, "")
+            monkeypatch.setattr(backend_config, name, "")
         payload = evaluation_service.readiness(user)
         assert payload["configured"] is False
         assert payload["source"] == "none"
@@ -446,7 +484,7 @@ class TestTheRun:
             )
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
         )
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
@@ -472,7 +510,7 @@ class TestTheRun:
             return "I cannot build that with the templates available."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _prose
+            "utk_curio.backend.app.agents.services.run_chat_turn", _prose
         )
         record = _run(client, account)
         assert record.phase == "done"
@@ -490,7 +528,7 @@ class TestTheRun:
             raise RuntimeError("the endpoint went away")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _boom
+            "utk_curio.backend.app.agents.services.run_chat_turn", _boom
         )
         record = _run(client, account)
         assert record.phase in ("failed", "done")
@@ -528,7 +566,7 @@ class TestTheRun:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _slow
+            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -567,14 +605,14 @@ class TestTheRun:
     def test_an_unconfigured_account_cannot_start_a_run(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.agents import provider_config
+        from utk_curio.backend import config as backend_config
 
         user, token = user_and_token
         for name in (
             "DEFAULT_LLM_API_TYPE", "DEFAULT_LLM_BASE_URL",
             "DEFAULT_LLM_API_KEY", "DEFAULT_LLM_MODEL",
         ):
-            monkeypatch.setattr(provider_config, name, "")
+            monkeypatch.setattr(backend_config, name, "")
         response = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
             headers=_auth(token),
@@ -737,7 +775,7 @@ class TestTheTranscriptCarriesTheEvaluation:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", _slow
+            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -916,3 +954,22 @@ class TestTheRunsGraphSurvivesAClientSave:
         emptied = self._put(client, account, created["id"], [])
         assert emptied.status_code == 200, emptied.get_json()
         assert self._nodes(client, account, created["id"]) == []
+
+
+class TestCachedInputInTheReport:
+    def test_the_cli_report_says_how_much_input_was_cached(self):
+        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheReadTokens": 80}))
+        report.add(AttemptRecord(fixture_id="g", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheWriteTokens": 90}))
+        assert "- Cached input: 80 tokens read, 90 written (counted in the input tokens)" in report.as_markdown()
+
+    def test_a_provider_that_reports_no_cache_adds_no_line(self):
+        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f"))
+        assert "Cached input" not in report.as_markdown()

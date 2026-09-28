@@ -50,8 +50,16 @@ def overlays_dir(user_key: str) -> str:
 def overlay_path(user_key: str, image_id: str) -> Optional[str]:
     """The on-disk path to one of *this user's* overlay PNGs, or None.
 
-    A miss now also covers "it belongs to somebody else", which is the point.
+    A miss also covers "it belongs to somebody else", which is the point, and
+    an id that would resolve outside this user's overlay directory.
     """
+    from pathlib import Path
+
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    root = overlays_dir(user_key)
     stem = os.path.splitext(image_id)[0]
-    path = os.path.join(overlays_dir(user_key), f"{stem}_overlay.png")
-    return path if os.path.exists(path) else None
+    path = os.path.join(root, f"{stem}_overlay.png")
+    if not is_within(Path(path), Path(root)):
+        return None
+    return path if os.path.isfile(path) else None

@@ -16,17 +16,9 @@ const BACKEND_URL = backendUrl();
  * Import (account) and Install (project) are separate commands; neither chains.
  */
 
-/** The deployment-wide provider default, with no secret in it. */
-export interface ProviderDefault {
-  apiType: string | null;
-  baseUrl: string | null;
-  model: string | null;
-  hasApiKey: boolean;
-}
-
 /** One agent card as returned by the backend (camelCase). */
 export interface AgentCard {
-  id: string; // e.g. "agent.node-explainer"
+  id: string; // e.g. "agent.my-helper"
   version: string;
   dirName: string; // "<id>@<version>"
   name: string;
@@ -46,6 +38,39 @@ export interface AgentCard {
   /** dev/106: server-resolved hard dependencies (``requiresAgents``) — what an
    * Install adds alongside this agent. ``[]`` for every leaf agent. */
   requiresAgents: AgentRequirement[];
+  /** Whether the agent is a catalog card. Every listing shows cards only; an
+   * internal built-in runs as a delegate and is never listed or attached. */
+  inCatalog?: boolean;
+}
+
+/** An agent, and optionally one of its capabilities, that reads a catalog
+ * setting. A null capability means every run of the agent. */
+export interface CatalogSettingReader {
+  agentId: string;
+  agentName: string;
+  capability: string | null;
+  /** An internal agent: it runs only as a delegate, never as a card. */
+  internal: boolean;
+}
+
+/** One catalog setting: a value the user owns, such as the keyword types. */
+export interface CatalogSetting {
+  key: string;
+  label: string;
+  description: string;
+  /** JSON Schema of the value. */
+  schema: Record<string, unknown>;
+  default: unknown;
+  value: unknown;
+  isDefault: boolean;
+  readBy: CatalogSettingReader[];
+}
+
+export interface CatalogSettingsResponse {
+  settings: CatalogSetting[];
+  /** False for an account that may not change them, with the reason. */
+  editable: boolean;
+  reason: string | null;
 }
 
 /** One direct hard dependency of an agent (dev/106). */
@@ -184,10 +209,7 @@ export interface AgentBuilderSession {
   /** dev/67-9: ref → its validated content proposal. dev/72 homes the
    * proposal on the node's own agent — the object shape carries where it
    * lives; legacy string values mean builder-homed. */
-  nodeProposals?: Record<
-    string,
-    string | { proposalId: string; attachmentId?: string | null }
-  >;
+  nodeProposals?: Record<string, string | { proposalId: string; attachmentId?: string | null }>;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -209,6 +231,8 @@ export interface AgentExecution {
     intentEdited?: boolean;
     provider?: string;
     model?: string;
+    /** The LLM configuration that answered: never its key. */
+    llm?: { configId: string | null; label: string; baseUrlHost: string; source: string };
     policy?: Record<string, number | null>;
   };
   usage: AgentUsage | null;
@@ -241,14 +265,7 @@ export interface AgentCardPart {
  * bounded and scheme-allowlisted server-side, sanitized again at render. */
 export interface AgentDatasetCandidateRow {
   name: string;
-  sourceType:
-    | "api"
-    | "endpoint"
-    | "portal"
-    | "catalog"
-    | "document"
-    | "database"
-    | "lake";
+  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database" | "lake";
   url?: string;
   provider?: string;
   format?: string;
@@ -275,9 +292,16 @@ export interface AgentDatasetCandidateRow {
   sourceId?: string;
   resourceId?: string;
   /** Whether Curio can actually download this row. **Set by the runtime**
-   *  against the real source roster, never by the model: it may name a source,
-   *  it may not claim the run can act on one. */
+   *  against the real source roster and the probe, never by the model: it may
+   *  name a source, it may not claim the run can act on one. A row Curio
+   *  downloads offers only that, never the portal steps. */
   acquirable?: boolean;
+  /** A confirmed pick Curio downloaded, or is downloading: where it came from. */
+  lakeSource?: { sourceId?: string; resourceId?: string };
+  /** A confirmed pick whose download is still running. */
+  acquiring?: { jobId: string };
+  /** Why a confirmed row's download failed. */
+  acquireError?: string;
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {
@@ -311,6 +335,9 @@ export interface AgentDelegationPart {
   attachmentId: string | null;
   status: "ok" | "failed" | string;
   summary: string;
+  /** What the delegated agent ran on, which may not be the parent's. */
+  model?: string;
+  llmLabel?: string;
 }
 
 /** dev/114: one grounded source reference on a proposal. */
@@ -337,7 +364,9 @@ export interface AgentSourceRef {
  *  dev/126 adds `dataset-selection`: the node's source is with the user —
  *  its Dataset Finder holds candidates awaiting a selection. */
 export interface AgentRemedy {
-  kind: "connection-key" | "use-connection-key" | "dataset-selection" | string;
+  kind: "connection-key" | "use-connection-key" | "dataset-selection" | "llm-config" | string;
+  /** llm-config: the agent no LLM configuration answers. */
+  agentId?: string | null;
   host?: string;
   /** connection-key: a name the settings form can suggest. */
   suggestedName?: string;
@@ -372,13 +401,27 @@ export interface AgentDatasetSelection {
       | "manual-download"
       | "no-builder"
       | "skipped"
+      | "acquiring"
+      | "acquire-failed"
       | string;
     reason?: string;
     attachmentId?: string;
     nodeId?: string;
     executionId?: string;
     sources?: string[];
+    jobIds?: string[];
   };
+  /** The Data Lake downloads the confirmation started, one per acquirable row. */
+  acquisitions?: {
+    name?: string;
+    sourceId: string;
+    resourceId: string;
+    status: "acquired" | "acquiring" | "failed" | string;
+    datasetId?: string;
+    jobId?: string;
+    error?: string;
+    alreadyPresent?: boolean;
+  }[];
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -388,12 +431,7 @@ export interface AgentProposalSource {
   refs: AgentSourceRef[];
 }
 
-export type AgentProposalStatus =
-  | "pending"
-  | "applied"
-  | "dismissed"
-  | "superseded"
-  | "stale";
+export type AgentProposalStatus = "pending" | "applied" | "dismissed" | "superseded" | "stale";
 
 /**
  * A review-before-apply proposal (memo dev/41): runtime-minted when a granted
@@ -414,7 +452,12 @@ export interface AgentProposalPart {
    * not a pin: the roster's answer to whether the sandbox can run a
    * node.create's kind — the card never keeps its own list.
    */
-  pins: { [key: string]: string | boolean | undefined; nodeType?: string; dirName?: string; executable?: boolean };
+  pins: {
+    [key: string]: string | boolean | undefined;
+    nodeType?: string;
+    dirName?: string;
+    executable?: boolean;
+  };
   status: AgentProposalStatus;
   /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
   justification?: string;
@@ -431,10 +474,20 @@ export interface AgentProposalPart {
   draft?: {
     mode: string;
     target: string;
-    files: { added: string[]; modified: string[]; addedTotal: number;
-             modifiedTotal: number; preservedTotal: number };
-    templates: { added: string[]; modified: string[]; addedTotal: number;
-                 modifiedTotal: number; preservedTotal: number };
+    files: {
+      added: string[];
+      modified: string[];
+      addedTotal: number;
+      modifiedTotal: number;
+      preservedTotal: number;
+    };
+    templates: {
+      added: string[];
+      modified: string[];
+      addedTotal: number;
+      modifiedTotal: number;
+      preservedTotal: number;
+    };
     dependencies?: {
       /** dev/97: where the python deps will live — "overlay" (isolated,
        * backend handlers only), "both" (plus the shared interpreter for
@@ -612,7 +665,10 @@ export interface AgentPlanNodeApplyResult {
     type?: string; // dev/112
   }>;
   /** dev/71: the sweep's per-edge outcomes (index-keyed; refusals named). */
-  edgeResults?: Record<string, { status: string; reason?: string; fromLabel?: string; toLabel?: string }>;
+  edgeResults?: Record<
+    string,
+    { status: string; reason?: string; fromLabel?: string; toLabel?: string }
+  >;
   edgeStates?: Record<string, string>;
   /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
   attachedAgentId?: string | null;
@@ -796,6 +852,8 @@ export interface AgentSessionTurn {
   ts?: string;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
+  /** A client-side error turn's remedy (the refusal's own), never persisted. */
+  remedy?: AgentRemedy;
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
@@ -826,7 +884,7 @@ async function postSseStream(
   onFrame: (event: string, payload: Record<string, unknown>) => void,
   signal?: AbortSignal,
   /** dev/115: the jobs re-attach stream is a GET (no body). */
-  method: "POST" | "GET" = "POST",
+  method: "POST" | "GET" = "POST"
 ): Promise<void> {
   const token = getToken();
   const headers: Record<string, string> = {};
@@ -839,7 +897,7 @@ async function postSseStream(
     signal,
   });
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({} as Record<string, unknown>));
+    const errBody = await res.json().catch(() => ({}) as Record<string, unknown>);
     const err = new Error((errBody as { error?: string }).error || `HTTP ${res.status}`);
     (err as Error & { status?: number; body?: unknown }).status = res.status;
     (err as Error & { status?: number; body?: unknown }).body = errBody;
@@ -885,43 +943,17 @@ export const agentsApi = {
     return apiFetch(`/api/agents/catalog${q}`);
   },
 
-  /** What a user inherits when they configure no provider of their own.
-   *
-   * The launcher's --llm-provider / --llm-base-url / --llm-model write exactly
-   * these, so AI Settings can present the deployment's choice as the inherited
-   * value rather than inventing a placeholder. The key is a boolean only. */
-  providerDefault(): Promise<ProviderDefault> {
-    return apiFetch("/api/agents/provider-default");
+  /** Every catalog setting with this account's value and who reads it. */
+  catalogSettings(): Promise<CatalogSettingsResponse> {
+    return apiFetch("/api/agents/settings");
   },
 
-  /** The models an OpenAI-compatible endpoint reports it serves.
-   *
-   * POSTed rather than GET because AI Settings calls it mid-edit: the user has
-   * typed a base URL and a key but not saved them yet, and a GET could only
-   * list models for the previous configuration. Anything omitted falls back to
-   * the account's saved provider server-side, so an already-configured user can
-   * refresh without retyping their key.
-   *
-   * Hybrid since #241, with both halves coming from the API. `source` is
-   * `"live"` when the endpoint answered just now, or `"remembered"` when it
-   * could not and Curio is replaying what it last reported - `rememberedAt`
-   * says when that was, and `warning` why the live call did not happen.
-   * `listable` means the endpoint itself answered; kept for older callers. */
-  providerModels(input?: {
-    apiType?: string;
-    baseUrl?: string;
-    apiKey?: string;
-  }): Promise<{
-    models: string[];
-    listable: boolean;
-    source?: "live" | "remembered";
-    remembered?: string[];
-    rememberedAt?: string | null;
-    warning?: string | null;
-  }> {
-    return apiFetch("/api/agents/provider-models", {
-      method: "POST",
-      body: JSON.stringify(input || {}),
+  /** Change settings by key; null restores a setting's default. Nothing is
+   * saved unless every value is valid. */
+  updateCatalogSettings(changes: Record<string, unknown | null>): Promise<CatalogSettingsResponse> {
+    return apiFetch("/api/agents/settings", {
+      method: "PUT",
+      body: JSON.stringify(changes),
     });
   },
 
@@ -948,7 +980,7 @@ export const agentsApi = {
    */
   uploadImport(
     manifest: Record<string, unknown>,
-    prompts: Record<string, string>,
+    prompts: Record<string, string>
   ): Promise<AgentCard> {
     return apiFetch("/api/agents/imports/upload", {
       method: "POST",
@@ -978,10 +1010,9 @@ export const agentsApi = {
 
   /** Remove a definition from a project's lockfile. */
   uninstallFromProject(projectId: string, coord: string): Promise<{ agents: string[] }> {
-    return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/${coordParam(coord)}`,
-      { method: "DELETE" },
-    );
+    return apiFetch(`/api/agents/projects/${encodeURIComponent(projectId)}/${coordParam(coord)}`, {
+      method: "DELETE",
+    });
   },
 
   /** Publish an owned, imported definition to the Agent Catalog (imported-only). */
@@ -1006,7 +1037,7 @@ export const agentsApi = {
    * Returns the exact shape `uploadImport` consumes, so the two round-trip.
    */
   readDefinition(
-    coord: string,
+    coord: string
   ): Promise<{ manifest: Record<string, unknown>; prompts: Record<string, string> }> {
     return apiFetch(`/api/agents/definitions/${coordParam(coord)}`);
   },
@@ -1027,11 +1058,11 @@ export const agentsApi = {
   /** Detach a private instance. */
   detachAttachment(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; detached: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
@@ -1039,11 +1070,11 @@ export const agentsApi = {
   updateAttachmentIntent(
     projectId: string,
     attachmentId: string,
-    intent: string | null,
+    intent: string | null
   ): Promise<AgentAttachment> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "PATCH", body: JSON.stringify({ intent }) },
+      { method: "PATCH", body: JSON.stringify({ intent }) }
     );
   },
 
@@ -1052,11 +1083,11 @@ export const agentsApi = {
   updateAttachmentTitle(
     projectId: string,
     attachmentId: string,
-    title: string,
+    title: string
   ): Promise<AgentAttachment> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { method: "PATCH", body: JSON.stringify({ title }) },
+      { method: "PATCH", body: JSON.stringify({ title }) }
     );
   },
 
@@ -1065,11 +1096,11 @@ export const agentsApi = {
   applyProposal(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
+    proposalId: string
   ): Promise<AgentApplyResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 
@@ -1080,11 +1111,11 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     proposalId: string,
-    ref: string,
+    ref: string
   ): Promise<AgentPlanNodeApplyResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
-      { method: "POST", body: JSON.stringify({ ref }) },
+      { method: "POST", body: JSON.stringify({ ref }) }
     );
   },
 
@@ -1094,11 +1125,11 @@ export const agentsApi = {
   recordDatasetSelection(
     projectId: string,
     attachmentId: string,
-    picks: AgentDatasetPick[],
+    picks: AgentDatasetPick[]
   ): Promise<AgentDatasetSelection> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/dataset-selection`,
-      { method: "POST", body: JSON.stringify({ picks }) },
+      { method: "POST", body: JSON.stringify({ picks }) }
     );
   },
 
@@ -1109,11 +1140,11 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     proposalId: string,
-    indices?: number[],
+    indices?: number[]
   ): Promise<AgentPlanEdgesResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-edges`,
-      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) },
+      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) }
     );
   },
 
@@ -1124,11 +1155,16 @@ export const agentsApi = {
     attachmentId: string,
     proposalId: string,
     ref: string,
-    goal: string,
-  ): Promise<{ proposalId: string; ref: string; goal: string; editedGoals: Record<string, string> }> {
+    goal: string
+  ): Promise<{
+    proposalId: string;
+    ref: string;
+    goal: string;
+    editedGoals: Record<string, string>;
+  }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/plan-goals`,
-      { method: "PATCH", body: JSON.stringify({ ref, goal }) },
+      { method: "PATCH", body: JSON.stringify({ ref, goal }) }
     );
   },
 
@@ -1136,18 +1172,18 @@ export const agentsApi = {
   dismissProposal(
     projectId: string,
     attachmentId: string,
-    proposalId: string,
+    proposalId: string
   ): Promise<{ attachmentId: string; proposalId: string; status: AgentProposalStatus }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
   /** The attachment's persisted chat transcript (its session history). */
   getSession(projectId: string, attachmentId: string): Promise<AgentSession> {
     return apiFetch(
-      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`
     );
   },
 
@@ -1155,7 +1191,7 @@ export const agentsApi = {
   clearSession(projectId: string, attachmentId: string): Promise<AgentSession> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
-      { method: "DELETE" },
+      { method: "DELETE" }
     );
   },
 
@@ -1165,7 +1201,7 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null,
+    context?: string | null
   ): Promise<{
     attachmentId: string;
     coord: string;
@@ -1180,7 +1216,7 @@ export const agentsApi = {
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
-      { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) },
+      { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) }
     );
   },
 
@@ -1206,7 +1242,7 @@ export const agentsApi = {
      * arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
-    context?: string | null,
+    context?: string | null
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -1258,7 +1294,7 @@ export const agentsApi = {
           durationMs = payload.durationMs;
           content = payload.content ?? content;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
-      },
+      }
     );
     if (reply === null) throw new Error("stream ended without a reply");
     return { reply, executionId, usage, durationMs, content };
@@ -1280,7 +1316,7 @@ export const agentsApi = {
     signal?: AbortSignal,
     /** dev/67-6: "propose" mints reviewed content proposals instead of
      * writing — the Simulation Mode solve stage. Default: classic write. */
-    mode?: "write" | "propose",
+    mode?: "write" | "propose"
   ): Promise<AgentSolveResult> {
     let result: AgentSolveResult | null = null;
     await postSseStream(
@@ -1292,7 +1328,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "solve failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("solve stream ended without a result");
     return result;
@@ -1311,7 +1347,7 @@ export const agentsApi = {
     attachmentId: string,
     mode: "step" | "auto",
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1323,7 +1359,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "simulation failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("simulation ended without a result");
     return result;
@@ -1340,7 +1376,7 @@ export const agentsApi = {
     attachmentId: string,
     target: { ref?: string; nodeId?: string },
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1352,7 +1388,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "the run failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("the run ended without a result");
     return result;
@@ -1361,11 +1397,11 @@ export const agentsApi = {
   /** Cancel a running simulation (dev/67-9): stops at the next boundary. */
   cancelSimulate(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/simulate/cancel`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 
@@ -1382,7 +1418,7 @@ export const agentsApi = {
     attachmentId: string,
     target: { ref?: string; nodeId?: string },
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1394,7 +1430,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "validation failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("validation ended without a result");
     return result;
@@ -1413,7 +1449,7 @@ export const agentsApi = {
     attachmentId: string,
     nodeId: string,
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown>> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1425,7 +1461,7 @@ export const agentsApi = {
           throw new Error((payload as { error?: string }).error || "solve failed");
         else onEvent(event, payload);
       },
-      signal,
+      signal
     );
     if (result === null) throw new Error("solve-node ended without a result");
     return result;
@@ -1442,7 +1478,7 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     onEvent: (name: string, payload: Record<string, unknown>) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<Record<string, unknown> | null> {
     let result: Record<string, unknown> | null = null;
     await postSseStream(
@@ -1455,7 +1491,7 @@ export const agentsApi = {
         else onEvent(event, payload);
       },
       signal,
-      "GET",
+      "GET"
     );
     return result;
   },
@@ -1465,11 +1501,11 @@ export const agentsApi = {
    * undispatched targets revert to pending. 409 when nothing is running. */
   cancelSolve(
     projectId: string,
-    attachmentId: string,
+    attachmentId: string
   ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/cancel`,
-      { method: "POST" },
+      { method: "POST" }
     );
   },
 };

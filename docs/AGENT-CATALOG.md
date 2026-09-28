@@ -16,10 +16,10 @@ This guide is in seven parts, plus operator notes:
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, and walkthroughs.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): authoring your own definitions.
-- [5. The provider](#5-the-provider): which model answers, and where it is set.
+- [5. LLM configurations](#5-llm-configurations): which model answers, and where it is set.
 - [6. Writing your own agent](#6-writing-your-own-agent): the manifest contract and capabilities.
 - [7. Measuring the agents against the shipped examples](#7-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, what that measurement may not do, and how to train a model on those examples.
-- [Operator notes](#operator-notes): the provider requirement and launcher flags.
+- [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
 ---
 
@@ -31,7 +31,7 @@ An **agent** in Curio is a small self-contained folder, shaped like a node
 package, identified by a reverse-domain id and a version:
 
 ```
-<agentId>@<version>     e.g.   agent.node-explainer@1.0.0
+<agentId>@<version>     e.g.   agent.chat-agent@1.0.0
                                agent.dataflow-builder@1.0.0
 ```
 
@@ -39,9 +39,9 @@ The folder holds a `manifest.json` (the contract) and the prompt assets the
 manifest references by digest:
 
 ```
-agent.node-explainer@1.0.0/
+agent.chat-agent@1.0.0/
   manifest.json
-  prompts/single_box_explanation_prompt.txt
+  prompts/chat_prompt.txt
 ```
 
 Agent ids always begin with **`agent.`**, which keeps them distinct from node
@@ -50,10 +50,25 @@ package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids
 [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json); see
 [part 6](#6-writing-your-own-agent) for the field table.
 
-**Twenty-one agents ship with Curio**, declared in
-[`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py) and
-materialized into each user's store on first use. They cover the five categories
-below.
+**Thirteen agents ship with Curio**, declared in
+[`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py). Ten of
+them are the catalog: **Chat**, **Dataflow Builder**, **Dataset Finder**,
+**Node Builder**, **Node Content Builder**, **Node Researcher**, **Package
+Builder**, **Package Recommendation**, **Researcher** and **Connection
+Builder**. Each of them can change your project, or produces or reads
+something Curio acts on rather than just displays, or is the only agent for a
+kind of target (the Connection Builder, for connections). Chat is the one
+agent for conversation: it explains a node or the whole dataflow, diagnoses
+errors, and helps you define what to build.
+
+The other three work only on behalf of those ten: the **Dataflow Planner**
+plans, refreshes and checks a dataflow's tasks and extracts and binds the
+keywords that describe it, the **Dataflow Reader** explains a whole dataflow and
+suggests its next steps, and the **Generated Content Evaluator** checks
+generated node content against its goal. They are never listed, added or
+attached, and a catalog agent can delegate to one without it being added to the
+dataflow. A catalog agent is materialized into
+your store on first use. The ten cover the five categories below.
 
 ### Categories
 
@@ -95,6 +110,7 @@ after an **Add to dataflow**, a **Remove from dataflow**, or an **Attach**:
 |---|---|---|
 | **Definition store**, the immutable agent itself | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` + `prompts/`) | Seeded from the built-ins; **Import agent** adds one; **Publish** copies one to the shared catalog. |
 | **My imports** (account) | `.curio/users/<user-key>/imported-agents.json` | **Import agent** adds a coordinate; removing an import drops it. The analogue of `default-packages.json`. |
+| **Catalog settings** (account) | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **In dataflow** (per-dataflow lockfile) | `spec.trill.json` then `dataflow.agents[]` | **Add to dataflow** adds an entry for the open dataflow; **Remove from dataflow** removes it. |
 | **Attachments**, a private agent instance bound to a target | `spec.trill.json` then `dataflow.agentAttachments` | **Attach** (dragging an agent onto a node or the canvas) creates one; **Detach** deletes it and its transcript. |
 | **Usage ledger** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends a reserve and settle pair. Append-only, not user-editable, and not surfaced in the interface. |
@@ -179,6 +195,22 @@ listed on `/catalog/agents` alongside the built-in and published agents, where
 **Publish** offers it to everyone on the install. Adding it to a dataflow and
 publishing it are separate actions.
 
+### Catalog settings
+
+Some values agents work with are yours to decide rather than Curio's. They are
+**catalog settings**: open **Settings** on the `/catalog/agents` page to edit
+them. They belong to your account, so one edit applies in every project.
+
+| Setting | What it holds | Read by |
+|---|---|---|
+| **Keyword types** | The types a keyword in a dataflow's description can take, each with a description and examples. | The Dataflow Planner, when it extracts the keywords of a description, binds them to nodes and edges, and refreshes a dataflow's task. |
+
+Each setting lists the agents that read it. **Restore default** returns a
+setting to the value Curio ships, and only settings you changed are stored. A
+run receives the settings its agent declares after its instruction, as data
+rather than instructions. A guest on a hosted instance can read the settings
+but not change them, because every guest shares one account.
+
 ---
 
 ## 3. Using an agent in a dataflow
@@ -207,6 +239,11 @@ either.
 Not every agent accepts every target: an agent declares which kinds it is
 compatible with, and its category implies a default. A `canvas` agent dropped on
 a node is refused.
+
+Chat reads the dataflow as it is on screen with every message, unsaved edits
+included, and when it is attached to a node, that node's content, what feeds it
+and its last run. That makes each message larger than a bare question: it
+carries a summary of the whole dataflow.
 
 Each attachment carries its own chat transcript, its own **intent** (the editable
 first instruction, defaulting to the definition's own prompt), and its own
@@ -333,9 +370,19 @@ from the same probe — never from the model's prose:
 
 | The row's access | What the card offers |
 |---|---|
-| **fetchable** — the data URL answered with data (JSON, GeoJSON, CSV, an archive) | Confirming it starts this node's own builder on it immediately. There is no prompt to compose: the loader is written, verified and lands as the ordinary reviewed content, and the card says the builder is writing it now. |
-| **manual-download** — the data URL answered with a *page*, or gated it (401/403/451) | The card carries the portal's download steps (its URL, the page as it actually answered, the file format, the row's stated requirement) and an **Import dataset** button — the same Data Catalog import as the drawer footer and the catalog page. After the import, that dataset becomes the node's source and the builder starts on it, by id. |
+| **fetchable**: the data URL answered with data Curio does not download itself (an XML API, or a plain http link) | Confirming it starts this node's own builder on it immediately. There is no prompt to compose: the loader is written, verified and lands as the ordinary reviewed content, and the card says the builder is writing it now. |
+| **manual-download**: the data URL answered with a *page*, gated it (401/403/451), or served an archive, which you unpack before importing | The card carries the portal's download steps (its URL, the page as it actually answered, the file format, the row's stated requirement) and an **Import dataset** button, the same Data Catalog import as the drawer footer and the catalog page. After the import, that dataset becomes the node's source and the builder starts on it, by id. The imported file records the row's link as where it came from, and a file you already hold is not registered twice. |
 | **unknown** — nothing was probed, the policy refused the URL, or the answer was neither | The row says so, and nothing upgrades it silently. |
+
+A row marked **Downloadable** is one Curio fetches itself: a Data Lake source
+that offers downloads, or a plain https link to a file the probe read as a
+format the Data Lake stores. Its **Download** button runs the same download as
+the Data Lake Catalog page, with progress on the button, and keeps going if you
+close the chat; the dataset it lands becomes the node's source. Confirming the
+row does the same: a small file lands before the confirmation answers and the
+builder starts on it, and a larger one keeps the node waiting until the next
+Solve finds it landed. A downloadable row offers only that: no portal steps and
+no fetch code.
 
 The steps are the portal's, not Curio's invention: when a page title is all the
 portal gave, the step says the portal describes the click path. Automating the
@@ -608,8 +655,8 @@ declines in one line and the node's failure ends with a concrete remedy —
 host filled in; save the key and Solve again.
 
 What this is not: encryption at rest. The store is a 0600 file under the
-user's own directory (unreadable by isolated node code), the same posture as
-the LLM key today; an encrypted store remains the deployment-tier remainder.
+user's own directory (unreadable by isolated node code), as the keys of LLM
+configurations are.
 A published dataflow carries key *names*, so whoever installs it saves their
 own key under the same name. The shared guest account, when authentication is
 off, shares one key store with every other guest, and the section says so.
@@ -675,29 +722,102 @@ that has already added the agent.
 
 ---
 
-## 5. The provider
+## 5. LLM configurations
 
-Every agent, on every dataflow, is answered by one model. Which one is an
-account-level setting, edited in **AI Settings** from the header.
+Every agent, on every dataflow, answers with an **LLM configuration**: the one
+chosen for it in **AI Settings**, else your default. Configurations belong to
+your account and are edited in AI Settings from the header. A configuration is:
 
 | Field | What it is |
 |---|---|
-| Provider | OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. |
-| Base URL | Only for a custom endpoint: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | **One per account**, held against the provider you saved it under. The saved-key markers and *Remove saved key* appear only on that provider's tab; on any other tab the field is empty and required, and saving there replaces the stored key rather than adding a second one. Leave blank to keep it while you are on its own tab. |
-| Model | Which model answers. **Fetch models** asks the endpoint above what it serves and turns this into a dropdown; when it cannot be asked, Curio replays what that endpoint last reported. Leave blank to inherit the deployment's. |
-| HuggingFace token | Not for agents: it unlocks *gated* models in the Street Vision node. It sits here because it is the same kind of setting, a model credential you hold per account. Public models need none. |
+| Label | Your name for it, unique in your account. |
+| Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers its endpoint. |
+| Base URL | Only for Custom: Ollama, LM Studio, vLLM, Groq, Azure. |
+| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
+| Model | Which model answers. **Fetch models** suggests what the endpoint serves. |
+
+Each row offers **Edit**, **Duplicate** (the copy keeps the key, copied on the
+server), **Make default** and **Remove**; an account holds up to 32. The
+**Deployment default** row is the operator's own configuration: read-only, and
+the one that answers while you have no default of your own. Removing your
+default goes back to it.
+
+The HuggingFace token below the configurations is not for agents: it unlocks
+*gated* models in the Street Vision node. Public models need none.
+
+### Agent models
+
+**Agent models**, below the configurations, lists the ten catalog cards plus
+your imported and published agents, each with a select: **Default** (your
+default configuration), any of your configurations, or the Deployment default.
+A change is saved at once. Which configuration answers a run:
+
+| Run | Configuration |
+|---|---|
+| An agent you attach (chat, Solve, Simulation, the per-node Solve, Evaluation mode) | Its choice, else your default, else the Deployment default |
+| An agent another agent calls | Its choice, else its caller's |
+| An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
+| A guest on a `--deploy` instance | The guest configuration, for every agent |
+
+A choice that names nothing, such as a removed configuration or a Deployment
+default the operator withdrew, refuses the run with **Open AI Settings** on that
+agent's row; it never falls back to another configuration. Removing a
+configuration sends the agents chosen for it back to the default, and its
+confirmation names them.
+
+A Solve of the Dataflow Builder runs on the Builder's configuration, and writes
+each node's content through Node Content Builder and each source through
+Dataset Finder, each on its own choice. It checks both before it starts, so a
+broken choice refuses the Solve once rather than failing every node. A choice
+changed while a Solve runs reaches the delegates it starts afterwards. After a
+dataset selection, the node is built on its builder's configuration, not the
+Dataset Finder's.
+
+The choice is per account, for every version of the agent and every project. A
+shared project carries none, so it runs on the configurations of whoever runs
+it. An agent's details show what it runs on, with **Change in AI Settings**; a
+reply's status line says, on hover, which configuration and model answered it;
+and a delegated task in the chat names what the delegate ran on.
+
+### How an agent calls its tools
+
+An agent's tools (reading the dataflow, proposing a node or a plan, handing a
+task to another agent) are called one of two ways, depending on the
+configuration it runs on:
+
+| Configuration | How the model calls a tool |
+|---|---|
+| OpenAI, Anthropic, Gemini, and a Custom endpoint whose model calls tools | Natively, the way that provider defines tool calls, one per reply |
+| A Custom endpoint whose model does not, and a model trained in Curio | With a request block at the end of its reply |
+
+For a Custom endpoint, Curio asks once per model, the first time an agent with
+tools runs on it: one short request offering one tool, billed like any other
+and kept in the usage record. The answer is remembered for your account. When
+an endpoint refuses the tools a run offers, the run carries on with request
+blocks; on a Custom endpoint the model is then remembered that way.
+
+Either way an agent has the same tools, every change still waits for your
+review, and the chat shows the same reply.
+
+When Node Content Builder writes an Autark document on OpenAI or Anthropic,
+the model's reply is held to the Autark schema, so it is always a document
+the schema accepts. The document is still checked against the full schema
+and the renderer's requirements before it is written to the node, and a
+refused one is corrected as before. Gemini and Custom endpoints write it as
+free text. When an endpoint refuses the schema, the request is sent again
+without it.
 
 ### Choosing the model
 
-The **Fetch models** button under the Model field asks the configured endpoint
-what it serves, using the base URL and key currently *on screen* rather than the
-saved ones, so you can choose a model for an endpoint you have not saved yet.
-What comes back becomes a dropdown.
+The **Fetch models** button under the Model field asks the endpoint what it
+serves, using the provider, base URL and key currently *on screen*, so you can
+choose a model for an endpoint you have not saved yet. While you edit a saved
+configuration, a blank key box asks with its saved key, as long as the endpoint
+on screen is still the configuration's own. What comes back is offered as
+suggestions in the Model box.
 
-It is a convenience, not a gate. A model you saved earlier stays selected and is
-marked *(not listed)* if the endpoint stops offering it, and the field is free
-text until you press the button. Two sources fill the dropdown:
+It is a convenience, not a gate: the field stays free text. Two sources fill
+the suggestions:
 
 | Source | What it is |
 |---|---|
@@ -707,16 +827,14 @@ text until you press the button. Two sources fill the dropdown:
 Suggestions are never an allowlist: a model you type by hand is always accepted.
 A replay is labelled with the date it was true.
 
-A brand-new account with no key has nothing to suggest, and the panel says so;
-the deployment's own configured model still shows as the placeholder. Curio does
-not send a placeholder key, so with no key the replay answers immediately.
+A brand-new account with no key has nothing to suggest, and the editor says so.
+Curio does not send a placeholder key, so with no key the replay answers
+immediately.
 
-Whoever runs the Curio install can set a default for all four with
-`curio.py start` flags (see [Operator notes](#operator-notes)). Those flags and
-this panel write the same account-wide setting, so AI Settings shows the
-deployment's choice as the inherited value and you override it only by typing
-something else. Leave a field blank and you stay on the deployment default,
-including when the operator later changes it.
+Whoever runs the Curio install can set a Deployment default with
+`curio.py start` flags (see [Operator notes](#operator-notes)). It is not
+stored in your account, so when the operator changes it, the Deployment default
+row changes with it.
 
 **Curio does not meter, cap, or bill agent runs.** There is no quota screen and
 no spend limit: the tokens are billed to whoever's key is in use. No run is ever
@@ -728,8 +846,9 @@ constant, the same for every run.
 
 Curio keeps a local record of what ran, in an append-only per-day file under
 `.curio/users/<key>/agents/ledger/`, written from the token counts each provider
-returns on the completion itself. No usage or billing API is called and no USD
-figure is computed.
+returns on the completion itself. The input count includes cached input, and
+the cached tokens read and written are recorded too when the provider reports
+them. No usage or billing API is called and no USD figure is computed.
 
 ---
 
@@ -749,8 +868,8 @@ A minimal, complete manifest:
 ```json
 {
   "$schema": "../../docs/schemas/agent-package.v1.json",
-  "id": "agent.node-explainer",
-  "name": "Node Explainer",
+  "id": "agent.my-helper",
+  "name": "My Helper",
   "category": "node",
   "version": "1.0.0",
   "purpose": "Explain what a node or its output does.",
@@ -761,13 +880,13 @@ A minimal, complete manifest:
   ],
   "prompts": {
     "system": { "path": "prompts/default_preamble.txt", "sha256": "<sha256>", "variables": [] },
-    "instruction": { "path": "prompts/single_box_explanation.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
+    "instruction": { "path": "prompts/explain_node.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
   },
   "compatibleTargets": [{ "kind": "node", "requires": ["code-or-output"] }],
   "inputs": { "reads": ["nodeContext"], "requiredConfig": [] },
   "outputs": ["explanation"],
   "runtime": { "execution": "foreground", "reviewPolicy": "report-only" },
-  "provenance": { "publisher": "curio", "license": "MIT", "trust": "built-in" }
+  "provenance": { "publisher": "you", "license": "MIT", "trust": "imported" }
 }
 ```
 
@@ -777,16 +896,16 @@ A minimal, complete manifest:
 | `version` | Yes | Semver-style version string. |
 | `name` | Yes | Human-readable name shown in the catalog. |
 | `category` | Yes | One of `data`, `node`, `canvas`, `package`, `evaluate`. See [Categories](#categories). |
-| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the semantic contracts this agent implements. |
+| `capabilities` | Yes | Non-empty list of `{ id, contractVersion }`: the semantic contracts this agent implements. A capability that also names an `instruction` is a mode; see [Modes](#modes). |
 | `provenance` | Yes | `{ publisher, license?, trust? }`; `trust` is one of `built-in`, `global`, `imported`. |
 | `purpose`, `roles` | | One-line description and display roles. |
-| `delegatesTo` | | Other `agent.` ids this agent may call. A preferred implementation only: it grants nothing and never adds or imports anything. |
+| `delegatesTo` | | Other `agent.` ids this agent may call, in preference order. An entry `{ "id", "capabilities": [...] }` delegates only those capabilities of that agent. A preferred implementation only: it grants nothing and never adds or imports anything. |
 | `requiresAgents` | | A subset of `delegatesTo`: the agents this one is not functional without. See [Required agents](#required-agents). |
 | `prompts` | | Prompt assets by package-relative `path` + `sha256` + declared `variables`. Absolute paths and `..` escapes are rejected. |
 | `compatibleTargets` | | Where the agent can attach: `{ kind: node\|canvas\|connection, requires: [...] }`. |
-| `inputs`, `outputs` | | Context the agent reads, config it requires, and the named outputs it produces. |
+| `inputs`, `outputs` | | Context the agent reads (`inputs.reads`), the [catalog settings](#catalog-settings) every run of it receives (`inputs.requiredConfig`), and the named outputs it produces. |
 | `runtime` | | `execution` (`foreground` or `background`) and `reviewPolicy` (`report-only` or `review-before-apply`). |
-| `providerRequirements` | | Provider *capability* requirements such as `structured-output`. Credentials are never in a manifest. |
+| `providerRequirements` | | Provider *capability* requirements such as `structured-output`, a preference: an agent runs on the configuration chosen for it whatever these say. Credentials and configurations are never in a manifest. |
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
 
@@ -811,6 +930,38 @@ a capability id must not contain a prompt filename, a path separator, an
 underscore, or `.txt`: `node.explain` is valid, `single_box_explanation_prompt`
 and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced
 without changing the contract.
+
+### Modes
+
+A capability can run an instruction of its own. Add the prompt under `prompts`
+and name its key as the capability's `instruction`:
+
+```json
+"capabilities": [
+  { "id": "node.explain", "contractVersion": "1" },
+  { "id": "node.output.interpret", "contractVersion": "1",
+    "instruction": "interpret", "reads": ["nodeContext"], "requiredConfig": ["keywordTypes"] }
+],
+"prompts": {
+  "system": { "path": "prompts/default_preamble.txt" },
+  "instruction": { "path": "prompts/explain_node.txt" },
+  "interpret": { "path": "prompts/interpret_output.txt" }
+}
+```
+
+When another agent delegates `node.output.interpret`, the run uses
+`prompts/interpret_output.txt` in place of the `instruction` prompt, and
+receives the [catalog settings](#catalog-settings) named in that capability's
+`requiredConfig` as well as those in `inputs.requiredConfig`. An attached run,
+and a delegated run of a capability without an `instruction` of its own, uses
+the `instruction` prompt. A setting key Curio does not define is skipped.
+
+A definition that declares `node.content.generate` may also declare an
+`autk-grammar` prompt. A run that writes an Autark document on a provider
+that takes a reply schema uses it in place of the capability's instruction,
+and holds the reply to the Autark schema; see
+[How an agent calls its tools](#how-an-agent-calls-its-tools). Without that
+prompt, its runs are never held to the schema.
 
 Once written, import the package through the drawer's **Import agent** button
 ([part 4](#4-importing-publishing-and-sharing)).
@@ -861,14 +1012,13 @@ Three things the harness will not do:
 
 ### Evaluation mode
 
-The place to ask it is **AI Settings → Evaluation mode**, because that is where
-the model is chosen. Pick an example, read the prompt that will be sent, and
-run it.
+The place to ask it is **AI Settings → Evaluation mode**, beside your LLM
+configurations. Pick an example, read the prompt that will be sent, and run it.
 
 What happens is the ordinary product, not a test harness: the run creates a
 **project of its own** (yours is untouched), installs and attaches the Dataflow
 Builder through the normal install flow with the agents it requires, sends the
-prompt through the normal runtime with **your** configured model, applies the
+prompt through the normal runtime on the configuration **your** Dataflow Builder runs on, applies the
 plan through the same endpoint the Apply button uses, and solves. Then the
 dataflow it built is compared with the saved example — server-side, so the
 reference never reaches the model. The panel names each step while it happens
@@ -897,9 +1047,11 @@ a save that would delete a node, a connection or a node's code that the browser
 never saw is refused, and says what would be lost and to reload (memo
 `dev/124`). Editing is otherwise yours to do.
 
-A model configured by the launcher counts: if the deployment was started with
-`--llm-provider`, `--llm-base-url` and `--llm-model`, the panel says so and runs
-against it. With nothing configured anywhere it says so and offers no Run.
+The panel names the model and the configuration that will answer: the Builder's
+choice, else your default, else the Deployment default, and it says which. When
+the agents the Builder requires run on other configurations, it lists each one
+with its agents, and so does the report. With nothing configured anywhere it
+says so and offers no Run.
 
 **Approving a prompt happens here too.** Each prompt was drafted by a model and
 needs a person's approval before it can be exported; the panel that shows you
@@ -920,8 +1072,8 @@ python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
 
 A run started from the panel is recorded per account under
-`.curio/users/<key>/agents/evaluation/`, with the fixture, the provider and
-model, the prompt and agent digests, the generated project id, the phases it
+`.curio/users/<key>/agents/evaluation/`, with the fixture, the configuration,
+provider and model, the prompt and agent digests, the generated project id, the phases it
 went through, its latency and token usage, the comparison and the score — and
 never a key. The command-line runner writes its own report to
 `.curio/eval/<runId>/` as `report.json` (the machine record: provider,
@@ -940,14 +1092,19 @@ dataflows, in **AI Settings → Model training** (memo `dev/122`).
 **It tells you first whether your endpoint can do this at all.** Nobody
 maintains a list of which providers support fine-tuning — that list would drift
 the moment one shipped or retired the feature, exactly as a list of model ids
-would. Curio asks the endpoint you configured. So the section reads
+would. Curio asks the endpoint of the configuration you train on. So the section reads
 *Unavailable* with a different sentence for each real reason: an Anthropic key
 (its API publishes Messages, Batches, Token Counting, Models, Files and Skills,
 and no tuning endpoint), a local Ollama or LM Studio (chat routes only), or a
-key without the scope to list tuning jobs — which says the endpoint may still
+key without the scope to list tuning jobs, which says the endpoint may still
 support tuning, because the fix there is a different key. When the endpoint
 cannot be asked at all, the last answer it gave is replayed with the date it
 was true.
+
+**Training runs only on a configuration that holds your own API key.** **Train
+on** lists those, starting with the one the Dataflow Builder runs on; a This
+Curio install configuration is never offered, and a guest on a `--deploy`
+instance cannot train.
 
 **What gets sent, and what does not.** Only fixtures that are on the `train`
 split *and* approved by a person. Each row is one training example: the system
@@ -960,9 +1117,11 @@ the contract did, so the same rule now includes them.) Every row is scrubbed and
 still resembling a credential stops the upload rather than being sent redacted.
 
 Before anything moves you see the row count, the byte count, the examples by
-name, their licences, and the **host** it would go to — the endpoint you
-configured, never a third party Curio chose. A row carries the prompt, the
-expected graph shape and the plan text, all authored in this repository, plus
+name, their licences, and the **host** it would go to: the endpoint of the
+configuration you train on, never a third party Curio chose. Start sends back
+the host you were shown, and a set that would go elsewhere is refused. A row
+carries the prompt, the expected graph shape and the plan text, all authored in
+this repository, plus
 dataset and package **identifiers**: no dataset row, column, geometry or file
 is included, which is why the datasets' own licences are not implicated.
 Consent is a tick plus the digest of that exact set, and it is recorded before
@@ -982,14 +1141,20 @@ Curio deciding for you. The rule is narrower and enforceable — an evaluation o
 fixture digests still match the corpus. Four refusals, each naming what to fix.
 The scores come from the same deterministic comparator as everything else in
 part 7, so no model and no agent is anywhere in the approval path, and a
-candidate never judges itself. Switching over records the model you were using,
-so going back is one click.
+candidate never judges itself. Switching over adds an LLM configuration with
+the trained model, marked **Trained**, and chooses it for the Dataflow Builder,
+whose prompts built the training set. The Builder's previous choice is
+recorded, so going back is one click, until you change that choice by hand.
 
 ```bash
 export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run \
     --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
 ```
+
+`--model` runs on a temporary copy of the Dataflow Builder's configuration with
+that model, chosen for the Builder for the run, and puts its choice back
+afterwards.
 
 Two honest limits. The training data is Curio's own examples, so this teaches
 the *shape* of a Curio dataflow, not your domain — training on your own
@@ -1001,15 +1166,16 @@ for you.
 
 ## Operator notes
 
-### An unconfigured install has no provider
+### An unconfigured install has no Deployment default
 
-Curio ships with **no default LLM endpoint**. An unconfigured install reaches a
-clear "no provider configured" error, and every agent surface that is blocked
-for want of one links to **AI Settings**.
+Curio ships with **no default LLM endpoint**. On an unconfigured install, a user
+with no LLM configuration of their own gets a clear "no LLM configuration
+answers" error, and every agent surface that is blocked for want of one links to
+**AI Settings**.
 
-So an operator must configure a provider, or each user must configure their own
-in AI Settings, before any agent will run. Guests can use AI only if the
-deployment ships a guest key, and AI Settings says so.
+So an operator sets a Deployment default, or each user adds a configuration in
+AI Settings, before any agent will run. Guests on a `--deploy` instance can use
+AI only if the deployment sets a guest configuration, and AI Settings says so.
 
 ### Launcher flags
 
@@ -1019,24 +1185,23 @@ Agent configuration follows Curio's convention: an operator knob is a documented
 
 | Flag | Sets | Effect |
 |---|---|---|
-| `--llm-provider` | `CURIO_DEFAULT_LLM_API_TYPE` | The default provider kind. |
-| `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The default endpoint. |
-| `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The default model. |
-| `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The gate on guest AI. No key, no guest access. |
-| `--huggingface-token` | `CURIO_DEFAULT_HUGGINGFACE_TOKEN` | Fallback HuggingFace token for the Street Vision node's gated models. Each user can set their own in AI Settings, which wins over this. Not an agent setting, but it lives in the same panel. |
+| `--llm-provider` | `CURIO_DEFAULT_LLM_API_TYPE` | The provider kind of the deployment's endpoint. |
+| `--llm-base-url` | `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. With it or a key set, users are offered **This Curio install**. |
+| `--llm-model` | `CURIO_DEFAULT_LLM_MODEL` | The Deployment default's model. Without one there is no Deployment default. |
+| `--guest-llm-api-key` | `GUEST_LLM_API_KEY` | The guest configuration's key. With neither it nor `CURIO_DEFAULT_LLM_API_KEY`, guests get no AI. |
 | `--agent-search-url` | `CURIO_SEARCH_URL` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API. Point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked web results. |
 
 A flag writes its variable only when passed, so a value already set in the
 environment is not cleared by a start that omits it. That matters here more than
-for a boolean knob: an empty `CURIO_DEFAULT_LLM_MODEL` means "no provider" and
-would disable every AI surface.
+for a boolean knob: an empty `CURIO_DEFAULT_LLM_MODEL` means no Deployment
+default, and no AI for a user without a configuration of their own.
 
 ### Variables with no flag, on purpose
 
 | Variable | Why there is no flag |
 |---|---|
 | `CURIO_DEFAULT_LLM_API_KEY` (or `AICONN_API_KEY`) | A key passed as an argument is visible in the process list to every user on the host. Set it in the environment. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | Guests inherit the default provider and only the key gates access. These are an escape hatch for the rare split-provider deployment. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | The guest configuration takes the deployment's provider, endpoint and model; these override them for guests only. A guest configuration needs a key and a model. |
 
 ### There is no publish gate for agents
 

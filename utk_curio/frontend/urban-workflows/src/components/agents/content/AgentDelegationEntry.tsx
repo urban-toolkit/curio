@@ -54,6 +54,11 @@ export const AgentDelegationEntry: React.FC<{
       <div className={styles.head}>
         <span className={styles.title}>{part.capability}</span>
         <span className={styles.name}>{part.name}</span>
+        {part.model ? (
+          <span className={styles.model}>
+            {part.llmLabel ? `${part.llmLabel} (${part.model})` : part.model}
+          </span>
+        ) : null}
         <span className={`${styles.status} ${failed ? styles.statusFailed : styles.statusOk}`}>
           {failed ? "failed" : "ok"}
         </span>

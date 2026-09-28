@@ -108,3 +108,16 @@ describe("AgentRunStatusLine (dev/80 baseline + dev/83 batch props)", () => {
     expect(errored.container.textContent).not.toContain("Solving");
   });
 });
+
+describe("AgentRunStatusLine: what answered the reply", () => {
+  it("names the configuration and model on hover, beside the token breakdown", () => {
+    render(
+      <AgentRunStatusLine
+        display={{ kind: "done", durationMs: 1200, usage: { inputTokens: 10, outputTokens: 5 }, answeredBy: "Work (gpt-4o-mini)" }}
+      />,
+    );
+    const text = screen.getByText(/Finished in/);
+    expect(text.getAttribute("title")).toBe("10 in / 5 out, as the provider reported\nanswered by Work (gpt-4o-mini)");
+  });
+});
+

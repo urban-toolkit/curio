@@ -214,7 +214,7 @@ def test_gallery_pages(gallery, owner, app_frontend, current_server, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("page-catalog-agents", str(exc))
 
-    # Dataset detail page. Navigated by id read from the catalog API rather
+    # A dataset link. Navigated by id read from the catalog API rather
     # than by clicking a card's "View details": the id is what the route keys
     # on, and asking the backend for it keeps the capture working whatever the
     # running catalog happens to contain.
@@ -228,10 +228,10 @@ def test_gallery_pages(gallery, owner, app_frontend, current_server, page):
             raise AssertionError("dataset catalog is empty")
         dataset_id = items[0]["id"]
         page.goto(base + "/catalog/data/" + quote(dataset_id, safe=""))
-        # No locator assertion here on purpose. Every other capture has a
-        # landmark worth waiting on; this route renders its own "Dataset not
-        # found." state, and a capture of that is more useful to a reviewer than
-        # a MISS line that says only "expected to be visible".
+        # The Data Catalog page with that dataset's details open. No locator
+        # assertion on purpose: a bad id renders "Dataset not found." in the
+        # modal, and a capture of that is more useful to a reviewer than a MISS
+        # line that says only "expected to be visible".
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1500)
         gallery.shot("page-catalog-data-detail")
@@ -356,9 +356,9 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # AI Settings, which now carries the agent spend limits on its second tab.
-    # Captured from the projects page because that is where its header button
-    # lives; the canvas reaches the same modal through the drawer's cog.
+    # AI Settings, captured from the projects page because that is where its
+    # header button lives; the canvas reaches the same modal through the
+    # drawer's cog.
     try:
         page.goto(app_frontend.base_url + "/projects")
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
@@ -368,9 +368,6 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         expect(
             page.get_by_role("heading", name="AI Settings", level=2)
         ).to_be_visible(timeout=15000)
-        # One panel, no tabs: AI Settings sets the provider and nothing else.
-        # It briefly carried an "Agent limits" tab, captured here as a second
-        # surface, until the run and spend caps came out.
         gallery.shot("modal-ai-settings")
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-ai-settings", str(exc))

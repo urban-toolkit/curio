@@ -3,6 +3,8 @@ import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
 import { agentsApi } from "../../../api/agentsApi";
 import type { AgentCard } from "../../../api/agentsApi";
+import { llmConfigsApi } from "../../../api/llmConfigsApi";
+import { requestAgentModel } from "../../connectionKeys/connectionKeysRequest";
 import { triggerBlobDownload } from "../../../utils/triggerBlobDownload";
 import styles from "./AgentDetailModal.module.css";
 
@@ -40,6 +42,31 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
   // the Prompts heading - nowhere near the button, and without the server's
   // reason (#275).
   const [exportError, setExportError] = useState<string | null>(null);
+  // What this agent runs on, read-only here: the choice is made in AI
+  // Settings. `choosable` is false for a guest on a hosted Curio.
+  const [model, setModel] = useState<{ text: string; choosable: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setModel(null);
+    llmConfigsApi
+      .listing()
+      .then((listing) => {
+        if (cancelled) return;
+        const row = (listing.agents ?? []).find((r) => r.id === agent.id);
+        const answers = row?.answers ?? listing.active;
+        setModel({
+          text: answers.source ? `${answers.label} · ${answers.model}` : answers.error ?? "none",
+          choosable: Boolean(row) && listing.editable,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setModel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +118,32 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
     ["Attaches to", agent.hooks.length ? agent.hooks.join(", ") : "—"],
     ["In all projects", agent.imported ? "Yes" : "No"],
     ["In the catalog", agent.published ? "Published" : "Not published"],
+    [
+      "Model",
+      model ? (
+        <>
+          {model.text}
+          {model.choosable ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                className={styles.inlineLink}
+                onClick={() => {
+                  // Close first: AI Settings opens as its own modal.
+                  onClose();
+                  requestAgentModel(agent.id);
+                }}
+              >
+                Change in AI Settings
+              </button>
+            </>
+          ) : null}
+        </>
+      ) : (
+        "…"
+      ),
+    ],
   ];
 
   return (

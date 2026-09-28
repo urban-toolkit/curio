@@ -19,6 +19,9 @@ as declared, and this file pins that distinction.
 """
 from __future__ import annotations
 
+import pytest
+
+from .utils import MAX_DIFF_RATIO, save_workflow_test_screenshot
 from .walkthroughs import FULL_PAGE_DIFF_FLOOR, WALKTHROUGHS, Walkthrough
 
 
@@ -94,3 +97,31 @@ class TestTheRegistry:
         # Measured worst case was 7.66% (project-drawer-offers-delete). A floor
         # at less than ~1.5x that is not headroom; far above it is not a budget.
         assert 0.12 <= FULL_PAGE_DIFF_FLOOR <= 0.20
+
+
+class TestTheCeiling:
+    """No comparison may let more than ``MAX_DIFF_RATIO`` of its pixels differ.
+
+    A map is often under a fifth of its frame, so a looser budget passes a
+    frame whose map is missing. The example dataflows with an Autark node used
+    to be compared at 35%.
+    """
+
+    def test_no_scene_is_compared_looser_than_the_ceiling(self):
+        loose = {
+            w.slug: w.effective_max_diff_ratio
+            for w in WALKTHROUGHS
+            if w.effective_max_diff_ratio > MAX_DIFF_RATIO
+        }
+        assert loose == {}
+
+    def test_the_floor_sits_under_the_ceiling(self):
+        # Otherwise flooring a full-page scene would lift it past the ceiling.
+        assert FULL_PAGE_DIFF_FLOOR <= MAX_DIFF_RATIO
+
+    def test_a_scene_that_declares_no_budget_gets_the_ceiling(self):
+        assert _scene().effective_max_diff_ratio == MAX_DIFF_RATIO
+
+    def test_a_comparison_asking_for_more_is_refused_before_it_touches_the_page(self):
+        with pytest.raises(ValueError, match="ceiling"):
+            save_workflow_test_screenshot(None, "x.json", test_name="t", max_diff_ratio=0.35)

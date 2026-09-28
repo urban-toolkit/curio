@@ -49,6 +49,29 @@ class TestTopLevelShape:
         assert all(isinstance(b["count"], int) for b in buckets)
 
 
+class TestTheDeploymentLlm:
+    """``llmProviderConfigured`` says whether there is a Deployment default: the
+    deployment's endpoint with a model, read at call time."""
+
+    def _flag(self, client, monkeypatch, **values):
+        from utk_curio.backend import config
+
+        for name, value in {"DEFAULT_LLM_BASE_URL": "", "DEFAULT_LLM_API_KEY": "",
+                            "DEFAULT_LLM_MODEL": "", **values}.items():
+            monkeypatch.setattr(config, name, value)
+        return client.get("/api/monitor").get_json()["deployment"]["llmProviderConfigured"]
+
+    def test_an_endpoint_with_a_model_is_configured(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1",
+                          DEFAULT_LLM_MODEL="m") is True
+
+    def test_an_endpoint_without_a_model_is_not(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1") is False
+
+    def test_nothing_set_is_not(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch) is False
+
+
 class TestSandboxSection:
     def test_an_unreachable_sandbox_nulls_every_field(self, client):
         sandbox = client.get("/api/monitor").get_json()["execution"]["sandbox"]

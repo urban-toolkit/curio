@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import modal from "../modal-content.module.css";
 import styles from "./ConnectionKeysSection.module.css";
 import { connectionKeysApi, type ConnectionKeyRef } from "../../api/connectionKeysApi";
-import { suggestName, type ConnectionKeysFocus } from "./connectionKeysRequest";
+import { suggestName, type KeyFocus } from "./connectionKeysRequest";
 
 type DeliveryKind = "code" | "query" | "header";
 
@@ -42,7 +42,7 @@ function formatUsed(ts: number | null): string {
  * used) — never values.
  */
 export const ConnectionKeysSection: React.FC<{
-  focus?: ConnectionKeysFocus | null;
+  focus?: KeyFocus | null;
   /** The shared guest account: keys are shared by everyone on this instance. */
   sharedGuest?: boolean;
 }> = ({ focus = null, sharedGuest = false }) => {

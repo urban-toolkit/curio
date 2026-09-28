@@ -154,7 +154,7 @@ class TestWriting:
             __import__("pathlib").Path(export_mod.__file__).read_text(encoding="utf-8")
         )
         for forbidden in (
-            "run_chat_completion", "urllib", "requests", "fine_tun", "openai",
+            "run_chat_completion", "run_chat_turn", "urllib", "requests", "fine_tun", "openai",
         ):
             assert forbidden not in source, forbidden
 
@@ -178,8 +178,9 @@ class TestLiveRunnerRefusals:
     def test_an_account_with_no_provider_is_refused_before_any_project(self):
         class _Client(live_mod.HttpClient):
             def json(self, path, *, method="GET", payload=None):
-                assert path == "/api/auth/me", f"it asked for {path} first"
-                return {}
+                assert path == "/api/agents/llm", f"it asked for {path} first"
+                return {"configs": [], "default": None,
+                        "active": {"source": None, "error": "No LLM configuration answers this run."}}
 
         run = live_mod.LiveRun(
             client=_Client(base_url="http://x", token="t"),
@@ -193,16 +194,14 @@ class TestLiveRunnerRefusals:
     def test_the_provider_record_keeps_the_host_and_never_a_key(self):
         class _Client(live_mod.HttpClient):
             def json(self, path, *, method="GET", payload=None):
-                # The real shape: users/schemas.py answers in snake_case and
-                # never returns the key at all. The first cut of this fake used
-                # camelCase, which let the live runner ship with a provider
-                # record that would have been empty against the real backend
-                # (found by dev/122).
+                # The real shape of GET /api/agents/llm: what answers a run
+                # now, with its host and never a key.
                 return {
-                    "llm_api_type": "openai_compatible",
-                    "llm_base_url": "http://192.168.1.9:11434/v1",
-                    "llm_model": "gemma-4",
-                    "has_llm_api_key": True,
+                    "active": {
+                        "source": "default", "configId": "llm-000000000001",
+                        "label": "Ollama", "model": "gemma-4",
+                        "apiType": "openai_compatible", "baseUrlHost": "192.168.1.9:11434",
+                    },
                 }
 
         run = live_mod.LiveRun(

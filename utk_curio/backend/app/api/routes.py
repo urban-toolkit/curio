@@ -198,6 +198,12 @@ def serve_launch_cwd_file(filename: str):
     run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
 
     safe_join blocks path-traversal payloads from escaping CURIO_LAUNCH_CWD.
+
+    The route is unauthenticated, and the launch directory also holds Curio's
+    own state: the SQLite database (sessions and every stored token), the
+    per-user stores under ``.curio/``, the dataset hub, and ``.env``. None of
+    that is data a node reads by relative path, so :func:`_is_private_path`
+    refuses it with the same 404 a missing file gets.
     """
     from flask import send_from_directory
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
@@ -205,14 +211,70 @@ def serve_launch_cwd_file(filename: str):
     launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
     # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf).
     # Use validate=False (like /get) so the containment guard alone runs: real data
-    # filenames routinely contain spaces or leading '.'/'_'/'-' that the per-segment
+    # filenames routinely contain spaces or leading '_'/'-' that the per-segment
     # charset would reject, and is_within already prevents escaping CURIO_LAUNCH_CWD.
     parts = [p for p in filename.split('/') if p]
     try:
-        safe_join(launch_cwd, *parts, validate=False)
+        resolved = safe_join(launch_cwd, *parts, validate=False)
     except PathTraversalError:
         abort(403)
+    if _is_private_path(parts, resolved):
+        abort(404)
     return send_from_directory(launch_cwd, filename)
+
+
+def _private_roots():
+    """Directories under the launch directory that ``/file/`` never serves."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.common.user_storage import curio_root
+    from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
+
+    roots = [Path(current_app.instance_path), curio_root(), catalog_root()]
+    for env in ("CURIO_STATE_DIR", "CURIO_SHARED_DATA"):
+        value = os.environ.get(env)
+        if value:
+            roots.append(Path(value))
+    return roots
+
+
+def _database_files():
+    """The SQLite database file and its journal siblings, when SQLite is used."""
+    from pathlib import Path
+
+    from utk_curio.backend.extensions import db
+
+    try:
+        url = db.engine.url
+    except Exception:
+        return []
+    if not str(url.drivername).startswith("sqlite") or not url.database:
+        return []
+    base = Path(url.database)
+    return [base.with_name(base.name + suffix) for suffix in ("", "-wal", "-shm", "-journal")]
+
+
+def _is_private_path(parts, resolved) -> bool:
+    """True when *resolved* is Curio's own state rather than user data.
+
+    Hidden segments (``.env``, ``.curio``, ``.git``) are refused outright;
+    everything else is refused when it sits inside one of Curio's stores.
+    """
+    from pathlib import Path
+
+    from utk_curio.backend.app.common.safe_paths import is_within
+
+    if any(part.startswith('.') for part in parts):
+        return True
+    target = Path(resolved)
+    for root in _private_roots():
+        if root.exists() and is_within(target, root):
+            return True
+    try:
+        real = target.resolve()
+    except OSError:
+        return True
+    return any(real == f.resolve() for f in _database_files() if f.exists())
 
 @bp.route('/get', methods=['GET'])
 @require_auth

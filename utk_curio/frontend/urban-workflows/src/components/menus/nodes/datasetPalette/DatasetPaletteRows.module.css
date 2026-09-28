@@ -245,3 +245,9 @@
     align-self: center;
     margin-left: auto;
 }
+
+.detailsButton {
+    flex-shrink: 0;
+    align-self: center;
+    margin-left: 4px;
+}

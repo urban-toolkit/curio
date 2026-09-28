@@ -122,6 +122,10 @@ interleaving them past page one would repeat and drop rows.
 The query lives in the URL in both places, so a search is linkable and survives
 a reload.
 
+A source card's **View details** shows its endpoint, licence, formats, download
+limit and token requirements without leaving the page. Right-click a card for
+the same actions.
+
 ### Partial failure is a result, not an error
 
 A federated search asks several third parties at once, and sometimes one of
@@ -161,7 +165,8 @@ free inside a fan-out.
 Downloading fetches the bytes server-side and hands them to the same import
 path a file upload uses, so the result is an **ordinary Data Catalog dataset**
 with a manifest, preview, schema and `curio_dataset_path()` loader. Nothing
-downstream needs to know it came from a portal.
+downstream needs to know it came from a portal. Once a resource is in your Data
+Catalog, its row offers **View dataset**, which opens the dataset's details.
 
 The catalog does **not** install it into a dataflow or create a node. Adding a
 dataset to a dataflow is the Data Catalog's existing job, it works the same
@@ -191,6 +196,11 @@ The `lakeSource` block on a downloaded dataset records which portal resource it
 came from, so the second click on Download answers from what you hold and
 **contacts the portal not at all**. The same resource in two formats is two
 datasets: holding the CSV is not holding the GeoJSON.
+
+A file you downloaded yourself and imported from a Dataset Finder row carries a
+`lakeSource` too, marked as downloaded by hand, with the link it came from and
+a digest of its bytes. A download and a hand import of the same bytes are one
+dataset, whichever arrived first.
 
 `refresh` forces a fetch. If the bytes hash the same, no second dataset is
 created - the download was paid for, a duplicate would not be. If they differ,
@@ -222,9 +232,12 @@ and anything it cannot identify is an honest error rather than a guess.
   `Content-Length` over the bound is refused before a body byte is read, and
   the stream is capped again while writing so a lying or absent length cannot
   get past it.
-- **Archives are refused**, by content type and by extension. Nothing is
-  unpacked: that is the decompression-bomb surface and it deserves its own
-  design rather than arriving as a side effect of a download.
+- **Archives are refused**, by content type and by extension, using the list
+  in [`formats.py`](../utk_curio/backend/app/datalakes/domain/formats.py).
+  Nothing is unpacked: that is the decompression-bomb surface and it deserves
+  its own design rather than arriving as a side effect of a download. The
+  Dataset Finder reads the same list, so it offers an archive as a manual
+  download, never as data.
 - Remote filenames are sanitised, and the dataset *directory* is minted as
   `imported.x<uuid>` by the importer - which no remote input can influence at
   all, and is the reason a hostile `Content-Disposition` cannot reach the
@@ -260,11 +273,11 @@ today: the portals answer without one, but a token raises the caller's rate
 limit sharply.
 
 **A token is a per-person entitlement, so it lives on your account**, exactly
-as your LLM provider key does. One shared secret would mean everyone on an
-install spending the same allowance and being throttled together.
+as the keys of your LLM configurations do. One shared secret would mean everyone
+on an install spending the same allowance and being throttled together.
 
-Set it in **AI Settings**, from the button in the top bar, beside the LLM
-provider key. Blank means keep what is saved; there is an explicit *Remove
+Set it in **AI Settings**, from the button in the top bar, below your LLM
+configurations. Blank means keep what is saved; there is an explicit *Remove
 saved token* for clearing one.
 
 **Guests are refused out loud** - a 403, the way the LLM key refuses them -
@@ -383,12 +396,30 @@ for it. It just stops being the only answer.
 
 A candidate row may carry a `sourceId` and `resourceId` copied from a
 `datalake.search` result. Whether Curio can actually download it is decided
-**server-side**, against the real roster and the run's own grants - the model
-may name a source, it may not claim the run can act on one. Any `acquirable`
-the model sets is stripped before the check.
+**server-side**: a connector source must be in the roster and offer downloads,
+and a Direct URL row must be an https link the probe read as a format the
+source stores, with the link itself as its `resourceId`. The model may name a
+source; it may not claim Curio can act on one, and any `acquirable` it sets is
+stripped before the check. Confirming a downloadable row on the card downloads
+it with your own sign-in; an agent's download proposal still needs the
+`datalake.acquire` grant.
+
+A row that names only an https link is tried as a **Direct URL** row: the
+server adds the coordinate, and keeps it only when the row qualifies, so a
+plain link to a file is downloaded rather than handed to Node Builder.
 
 This is the same discipline the catalog lane already has, where a row without a
 `datasetId` from `catalog.search` is dropped.
+
+On the card, a catalog row offers **View details**, and an external row the
+runtime vouched for offers **View on the portal ↗**. Neither selects the row.
+
+### One download, whoever starts it
+
+The card's **Download** is this catalog's own download: the same endpoint, the
+same job, followed after the chat closes, and the resource shows one download
+on the card and on this catalog's page. The dataset it lands becomes the node's
+source. An agent's approved `datalake.acquire` proposal runs the same download.
 
 ### What a fan-out costs
 
