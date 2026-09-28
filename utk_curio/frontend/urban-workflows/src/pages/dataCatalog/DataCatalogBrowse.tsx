@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { packagesApi } from "../../api/packagesApi";
 import {
   DATASET_FORMAT_LABEL,
@@ -19,12 +20,15 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { DataCatalogBrowseCard } from "./DataCatalogBrowseCard";
 import { DataCatalogBrowseDrawer } from "./DataCatalogBrowseDrawer";
-import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
+import {
+  useDatasetDetails,
+  viewDatasetDetailsToast,
+} from "../../components/datasets/catalog/datasetDetailsContext";
 import {
   FORMAT_FILTERS,
   ORIGIN_FILTERS,
   quickFormatFilters,
-} from "./dataHubBrowseConstants";
+} from "./dataCatalogBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
@@ -42,7 +46,20 @@ export const DataCatalogBrowse: React.FC = () => {
   const [format, setFormat] = useState<DatasetFormat | "">("");
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
-  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  // `/catalog/data/<id>` is this page with that dataset's details open, so a
+  // link to a dataset lands where every "View details" does.
+  const { datasetId: linkedDatasetId } = useParams<{ datasetId?: string }>();
+  const navigate = useNavigate();
+  const { openDatasetDetails } = useDatasetDetails();
+  useEffect(() => {
+    if (!linkedDatasetId) return;
+    openDatasetDetails(decodeURIComponent(linkedDatasetId), {
+      // Back to the plain page, so a reload does not reopen what was closed.
+      onClose: () => navigate("/catalog/data", { replace: true }),
+    });
+    // `navigate` is not a reason to reopen: only a different link is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedDatasetId, openDatasetDetails]);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
   const [defaultsBusyId, setDefaultsBusyId] = useState<string | null>(null);
@@ -65,6 +82,7 @@ export const DataCatalogBrowse: React.FC = () => {
   const { importing: importingDataset, importFile: onImportDataset } = useDatasetImport({
     importDataset: catalog.importDataset,
     showToast,
+    openDatasetDetails,
   });
 
   useEffect(() => {
@@ -95,10 +113,11 @@ export const DataCatalogBrowse: React.FC = () => {
     }
     return catalog.items[0] ?? null;
   }, [catalog.items, selectedId]);
-  const detailDataset = useMemo(
-    () => (detailDatasetId ? catalog.items.find((item) => item.id === detailDatasetId) ?? null : null),
-    [catalog.items, detailDatasetId],
-  );
+  const viewDetails = (dataset: DatasetCatalogItem) =>
+    openDatasetDetails(dataset.id, {
+      fallbackDataset: dataset,
+      inAllProjects: defaults.has(dataset.id),
+    });
 
   const catalogFacetDatasetTotal = useMemo(
     () => Object.values(catalog.facets.format).reduce((sum, n) => sum + n, 0),
@@ -160,6 +179,10 @@ export const DataCatalogBrowse: React.FC = () => {
             ? `${dataset.title} will be added to new projects.`
             : `Added ${dataset.title} to ${n} project${n === 1 ? "" : "s"}, and to new ones.`,
           "success",
+          viewDatasetDetailsToast(openDatasetDetails, dataset.id, {
+            fallbackDataset: dataset,
+            inAllProjects: true,
+          }),
         );
       } catch (err) {
         showToast(`Couldn't add ${dataset.title} to all projects`, "error");
@@ -167,7 +190,7 @@ export const DataCatalogBrowse: React.FC = () => {
         setDefaultsBusyId(null);
       }
     },
-    [catalog.reload, showToast],
+    [catalog.reload, showToast, openDatasetDetails],
   );
 
   const handleRemoveFromAllProjects = useCallback(
@@ -178,14 +201,21 @@ export const DataCatalogBrowse: React.FC = () => {
         setDefaults(new Set(resp.datasets));
         notifyDatasetCatalogRefresh();
         await catalog.reload();
-        showToast(`Removed ${dataset.title} from all projects.`, "success");
+        showToast(
+          `Removed ${dataset.title} from all projects.`,
+          "success",
+          viewDatasetDetailsToast(openDatasetDetails, dataset.id, {
+            fallbackDataset: dataset,
+            inAllProjects: false,
+          }),
+        );
       } catch (err) {
         showToast(`Couldn't remove ${dataset.title} from all projects`, "error");
       } finally {
         setDefaultsBusyId(null);
       }
     },
-    [catalog.reload, showToast],
+    [catalog.reload, showToast, openDatasetDetails],
   );
 
   const runDatasetAction = (id: CatalogCardActionId, dataset: DatasetCatalogItem) => {
@@ -197,7 +227,7 @@ export const DataCatalogBrowse: React.FC = () => {
         void handleRemoveFromAllProjects(dataset);
         return;
       case "view-details":
-        setDetailDatasetId(dataset.id);
+        viewDetails(dataset);
         return;
       // A dataset is never offered the package catalog's update.
       case "update-all-projects":
@@ -214,14 +244,18 @@ export const DataCatalogBrowse: React.FC = () => {
         });
         notifyDatasetCatalogRefresh();
         await catalog.reload();
-        showToast(`Unpublished ${dataset.title}.`, "success");
+        showToast(
+          `Unpublished ${dataset.title}.`,
+          "success",
+          viewDatasetDetailsToast(openDatasetDetails, dataset.id, { fallbackDataset: dataset }),
+        );
       } catch (err) {
         showToast(`Couldn't unpublish ${dataset.title}`, "error");
       } finally {
         setPublishingId(null);
       }
     },
-    [catalog.reload, projectId, showToast],
+    [catalog.reload, projectId, showToast, openDatasetDetails],
   );
 
   const handlePublish = useCallback(
@@ -233,14 +267,18 @@ export const DataCatalogBrowse: React.FC = () => {
         });
         notifyDatasetCatalogRefresh();
         await catalog.reload();
-        showToast(`Published ${dataset.title}.`, "success");
+        showToast(
+          `Published ${dataset.title}.`,
+          "success",
+          viewDatasetDetailsToast(openDatasetDetails, dataset.id, { fallbackDataset: dataset }),
+        );
       } catch (err) {
         showToast(`Couldn't publish ${dataset.title}`, "error");
       } finally {
         setPublishingId(null);
       }
     },
-    [catalog.reload, projectId, showToast],
+    [catalog.reload, projectId, showToast, openDatasetDetails],
   );
 
   return (
@@ -435,7 +473,7 @@ export const DataCatalogBrowse: React.FC = () => {
               dataset={dataset}
               selected={drawerDataset?.id === dataset.id}
               onSelect={() => setSelectedId(dataset.id)}
-              onViewDetails={() => setDetailDatasetId(dataset.id)}
+              onViewDetails={() => viewDetails(dataset)}
               inAllProjects={defaults.has(dataset.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -460,7 +498,7 @@ export const DataCatalogBrowse: React.FC = () => {
         onAddToAllProjects={handleAddToAllProjects}
         onRemoveFromAllProjects={handleRemoveFromAllProjects}
         onClose={() => setSelectedId(null)}
-        onViewDetails={(dataset) => setDetailDatasetId(dataset.id)}
+        onViewDetails={viewDetails}
         onLayoutChange={setDrawerSlotOpen}
       />
 
@@ -477,13 +515,6 @@ export const DataCatalogBrowse: React.FC = () => {
         />
       ) : null}
 
-      {detailDatasetId ? (
-        <DatasetDetailModal
-          datasetId={detailDatasetId}
-          fallbackDataset={detailDataset}
-          onClose={() => setDetailDatasetId(null)}
-        />
-      ) : null}
     </div>
   );
 };
