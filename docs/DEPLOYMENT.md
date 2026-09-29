@@ -22,7 +22,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 
 ## 1. Configure the stack
 
-This step lays down the source tree and two configuration files: `/srv/curio/.env` tells Docker which ports to use, and `/srv/curio/docker-compose.site.yml` tells Curio where the public site lives.
+This step lays down the source tree and `/srv/curio/docker-compose.site.yml`, the file that holds this site's settings.
 
 Clone and create the data directories:
 
@@ -30,14 +30,6 @@ Clone and create the data directories:
 git clone https://github.com/urban-toolkit/curio.git /srv/curio
 cd /srv/curio
 mkdir -p instance .curio datasets
-```
-
-Create `/srv/curio/.env`:
-
-```bash
-CURIO_CONTAINER_NAME=curio
-CURIO_PORT_5002=5002
-CURIO_PORT_8080=8080
 ```
 
 Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2.
@@ -111,8 +103,8 @@ install**: a configuration of their own that runs on the deployment's endpoint
 with its key and a model they choose. The key never reaches a browser.
 
 Put the variables in `utk_curio/backend/.env`, which is copied into the image
-(rebuild after changing it), or in the container's `environment:` through a
-Compose override. `/srv/curio/.env` above is read by Docker Compose only.
+(rebuild after changing it), or in the container's `environment:` in
+`docker-compose.site.yml`.
 
 Each user's configurations, keys included, are kept in
 `.curio/users/<user>/llm-configs.json`, a 0600 file in a 0700 directory. The
@@ -283,11 +275,20 @@ A second checkout running on different ports under a different path lets you tes
 | | Stable | Dev |
 |---|---|---|
 | Path on server | `/srv/curio` | `/srv/curio-dev` |
-| Container | `curio` | `curio-dev` |
+| Compose project | `curio` | `curio-dev` |
 | Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
-Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, and a `docker-compose.site.yml` with `--backend-url https://lab-name.your-uni.edu/curio-dev/api` and `--base-path /curio-dev`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
+Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also moves the stack to host ports of its own (`!override` needs Docker Compose 2.24.4 or newer):
+
+```yaml
+services:
+  curio:
+    ports: !override ["5012:5002", "8090:8080"]
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev"]
+```
+
+Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
 
 ```bash
 cd /srv/curio-dev
@@ -419,7 +420,7 @@ flooding it cannot push real errors out of the log.
 - **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
 - **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket, but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
-- `.env` and `docker-compose.site.yml` are gitignored, but verify with `git status` after creating them.
+- `docker-compose.site.yml` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
   `datalakes/` ships with the image and holds no user data, so it needs none;
   your own sources are in `.curio/datalakes/`, and a folder source's files are

@@ -15,20 +15,9 @@ name: Deploy
 #        git clone https://github.com/<you>/curio.git /srv/curio        # stable
 #        git clone https://github.com/<you>/curio.git /srv/curio-dev   # test
 #
-#      And a per-checkout .env so the two stacks don't collide on
-#      container names or ports:
-#
-#        # /srv/curio/.env  (stable — keeps the original ports)
-#        CURIO_CONTAINER_NAME=curio
-#        CURIO_PORT_2000=2000
-#        CURIO_PORT_5002=5002
-#        CURIO_PORT_8080=8080
-#
-#        # /srv/curio-dev/.env
-#        CURIO_CONTAINER_NAME=curio-dev
-#        CURIO_PORT_2000=2010
-#        CURIO_PORT_5002=5012
-#        CURIO_PORT_8080=8090
+#      Each job writes its checkout's docker-compose.site.yml (container
+#      name, host ports and curio.py arguments), so the two stacks do not
+#      collide: stable publishes 5002/8080, dev 5012/8090.
 #
 #   6. Self-hosted GPU CI runner (for .github/workflows/docker-compose.yml,
 #      which runs ONLY on this box — the WebGPU compute examples 06/07 need
@@ -147,16 +136,29 @@ jobs:
           git checkout --detach "origin/$ref" 2>/dev/null \
             || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
-          # This stack's own curio.py arguments (docker-compose.deploy.yml).
-          printf 'services:\n  curio:\n    command: ["--backend-url", "%s"]\n' \
-            https://curio-dev.urbantk.org/api > docker-compose.site.yml
+          # The site file replaces the published ports with `!override`, which
+          # Docker Compose reads from 2.24.4 on. Checked before the running
+          # stack is touched.
+          compose_version="$(docker compose version --short)"
+          if [ "$(printf '%s\n' 2.24.4 "$compose_version" | sort -V | head -n1)" != 2.24.4 ]; then
+            echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
+            exit 1
+          fi
+          # This stack's container name, host ports and curio.py arguments
+          # (docker-compose.deploy.yml).
+          cat > docker-compose.site.yml <<'SITE'
+          services:
+            curio:
+              container_name: curio-dev
+              ports: !override ["5012:5002", "8090:8080"]
+              command: ["--backend-url", "https://curio-dev.urbantk.org/api"]
+          SITE
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
-          set -a; [ -f .env ] && . ./.env; set +a
           docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
           # A container from an earlier convention / manual run keeps itself alive
           # via restart:unless-stopped and can hold the published ports, so a
           # freshly built image never actually serves. Force-remove it by name.
-          docker rm -f "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
+          docker rm -f curio-dev 2>/dev/null || true
           docker run --rm -v "$PWD:/work" -w /work alpine rm -rf .curio
           mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
@@ -175,8 +177,8 @@ jobs:
           echo "=== waiting for health ==="
           deadline=$((SECONDS + 420))
           while true; do
-            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
-            state="$(docker inspect -f '{{.State.Status}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || echo missing)"
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' curio-dev 2>/dev/null || echo missing)"
+            state="$(docker inspect -f '{{.State.Status}}' curio-dev 2>/dev/null || echo missing)"
             if [ "$health" = "healthy" ]; then
               echo "healthy"
               break
@@ -237,7 +239,7 @@ jobs:
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
           echo "=== serving container ==="
-          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' "${CURIO_CONTAINER_NAME:-curio-dev}" 2>/dev/null || true
+          docker inspect -f 'name={{.Name}} image={{.Config.Image}} imageId={{.Image}} created={{.Created}} restart={{.HostConfig.RestartPolicy.Name}}' curio-dev 2>/dev/null || true
           EOF
 
   deploy-stable:

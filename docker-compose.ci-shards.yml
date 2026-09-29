@@ -7,8 +7,7 @@
 # 5002+k / 2000+k. `docker compose exec` cannot publish ports, so they are
 # declared here at create time -- declaring more than a run uses costs nothing, so seven pairs
 # (up to 8 workers) are declared; raise CURIO_E2E_PARALLEL, not this file.
-# Compose APPENDS `ports` across overlays, so the base file's 5002/8080 and
-# docker-compose.ci.yml's sandbox publish survive.
+# Compose APPENDS these to docker-compose.ci.yml's `ports`.
 #
 # Loopback only, for the same reason docker-compose.ci.yml gives for the base
 # sandbox: these execute arbitrary code and only the host-side pytest needs
@@ -21,17 +20,17 @@
 services:
   curio:
     ports:
-      - "127.0.0.1:${CURIO_PORT_5003:-5023}:5003"   # shard 1 backend
-      - "127.0.0.1:${CURIO_PORT_2001:-2021}:2001"   # shard 1 sandbox
-      - "127.0.0.1:${CURIO_PORT_5004:-5024}:5004"   # shard 2 backend
-      - "127.0.0.1:${CURIO_PORT_2002:-2022}:2002"   # shard 2 sandbox
-      - "127.0.0.1:${CURIO_PORT_5005:-5025}:5005"   # shard 3 backend
-      - "127.0.0.1:${CURIO_PORT_2003:-2023}:2003"   # shard 3 sandbox
-      - "127.0.0.1:${CURIO_PORT_5006:-5026}:5006"   # shard 4 backend
-      - "127.0.0.1:${CURIO_PORT_2004:-2024}:2004"   # shard 4 sandbox
-      - "127.0.0.1:${CURIO_PORT_5007:-5027}:5007"   # shard 5 backend
-      - "127.0.0.1:${CURIO_PORT_2005:-2025}:2005"   # shard 5 sandbox
-      - "127.0.0.1:${CURIO_PORT_5008:-5028}:5008"   # shard 6 backend
-      - "127.0.0.1:${CURIO_PORT_2006:-2026}:2006"   # shard 6 sandbox
-      - "127.0.0.1:${CURIO_PORT_5009:-5029}:5009"   # shard 7 backend
-      - "127.0.0.1:${CURIO_PORT_2007:-2027}:2007"   # shard 7 sandbox
+      - "127.0.0.1:${CURIO_E2E_SHARD1_BACKEND_PORT:-5023}:5003"
+      - "127.0.0.1:${CURIO_E2E_SHARD1_SANDBOX_PORT:-2021}:2001"
+      - "127.0.0.1:${CURIO_E2E_SHARD2_BACKEND_PORT:-5024}:5004"
+      - "127.0.0.1:${CURIO_E2E_SHARD2_SANDBOX_PORT:-2022}:2002"
+      - "127.0.0.1:${CURIO_E2E_SHARD3_BACKEND_PORT:-5025}:5005"
+      - "127.0.0.1:${CURIO_E2E_SHARD3_SANDBOX_PORT:-2023}:2003"
+      - "127.0.0.1:${CURIO_E2E_SHARD4_BACKEND_PORT:-5026}:5006"
+      - "127.0.0.1:${CURIO_E2E_SHARD4_SANDBOX_PORT:-2024}:2004"
+      - "127.0.0.1:${CURIO_E2E_SHARD5_BACKEND_PORT:-5027}:5007"
+      - "127.0.0.1:${CURIO_E2E_SHARD5_SANDBOX_PORT:-2025}:2005"
+      - "127.0.0.1:${CURIO_E2E_SHARD6_BACKEND_PORT:-5028}:5008"
+      - "127.0.0.1:${CURIO_E2E_SHARD6_SANDBOX_PORT:-2026}:2006"
+      - "127.0.0.1:${CURIO_E2E_SHARD7_BACKEND_PORT:-5029}:5009"
+      - "127.0.0.1:${CURIO_E2E_SHARD7_SANDBOX_PORT:-2027}:2007"

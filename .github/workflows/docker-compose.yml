@@ -179,13 +179,9 @@ jobs:
       # report page built at the end of this job.
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
       # Isolation from prod on the same host: distinct compose project
-      # (-p curio-ci below) + remapped host ports so the CI stack never
-      # collides with prod `curio` (2000/5002/8080) or `curio-dev`
-      # (2010/5012/8090). docker-compose.yml honors these env vars.
-      CURIO_CONTAINER_NAME: curio-ci
-      CURIO_PORT_2000: "2020"
-      CURIO_PORT_5002: "5022"
-      CURIO_PORT_8080: "8100"
+      # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
+      # docker-compose.ci.yml publishes) so the CI stack never collides with
+      # prod `curio` (5002/8080) or `curio-dev` (5012/8090).
       # Extra e2e shards (docker-compose.ci-shards.yml publishes pairs for up
       # to 8 workers): shard k's backend is container 5002+k on host 5022+k,
       # its sandbox container 2000+k on host 2020+k -- the arithmetic
@@ -690,10 +686,6 @@ jobs:
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
       # A fourth port triple: prod is 2000/5002/8080, curio-dev 2010/5012/8090,
       # the in-process CI stack 2020/5022/8100.
-      CURIO_CONTAINER_NAME: curio-ci-iso
-      CURIO_PORT_2000: "2030"
-      CURIO_PORT_5002: "5032"
-      CURIO_PORT_8080: "8110"
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5032"
@@ -939,10 +931,9 @@ jobs:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-exec-user.yml
       # A fifth port triple: prod 2000/5002/8080, curio-dev 2010/5012/8090,
       # the in-process CI stack 2020/5022/8100, the isolated one 2030/5032/8110.
-      CURIO_CONTAINER_NAME: curio-ci-exec-user
-      CURIO_PORT_2000: "2040"
-      CURIO_PORT_5002: "5042"
-      CURIO_PORT_8080: "8120"
+      CURIO_E2E_BACKEND_PORT: "5042"
+      CURIO_E2E_SANDBOX_PORT: "2040"
+      CURIO_E2E_FRONTEND_PORT: "8120"
       CURIO_E2E_BACKEND_URL: "http://localhost:5042"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       # Read by utk_curio/sandbox/tests/live/test_exec_user_boundary.py. The
@@ -1113,10 +1104,6 @@ jobs:
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
       # A sixth port triple; see the overlay's header for the other five.
-      CURIO_CONTAINER_NAME: curio-ci-stress
-      CURIO_PORT_2000: "2070"
-      CURIO_PORT_5002: "5072"
-      CURIO_PORT_8080: "8150"
       CURIO_E2E_BACKEND_URL: "http://localhost:5072"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       # Read by the e2e fixtures when CURIO_E2E_USE_EXISTING is set, so the
