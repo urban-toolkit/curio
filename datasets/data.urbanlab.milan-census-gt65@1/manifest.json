@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "format": "geojson",
   "description": "Milan census tract polygons trimmed to the gt_65 column (resident population over 65), the exposure denominator for a heat vulnerability analysis.",
-  "publisher": "Urban Analytics Lab",
   "license": "ISTAT open data",
   "tags": [
     "census",

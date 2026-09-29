@@ -96,7 +96,7 @@ class Dataset:
         source: str,
         data_file: str,
         description: str,
-        publisher: str,
+        publisher: str | None = None,
         source_label: str,
         license: str,
         tags: list[str],
@@ -241,7 +241,6 @@ DATASETS: list[Dataset] = [
             "float16-quantized so the file fits in the repo; UTCI precision "
             "(about 0.06 C in this range) is unaffected."
         ),
-        publisher="Urban Analytics Lab",
         source_label="Curio tutorial data",
         license="Research use",
         tags=["raster", "milan", "thermal", "mrt", "geotiff"],
@@ -261,7 +260,6 @@ DATASETS: list[Dataset] = [
             "inputs to a UTCI calculation. Re-saved comma-delimited from the "
             "original semicolon-delimited export."
         ),
-        publisher="Urban Analytics Lab",
         source_label="ERA5 (Copernicus)",
         license="Copernicus licence",
         tags=["weather", "era5", "milan", "csv"],
@@ -279,7 +277,6 @@ DATASETS: list[Dataset] = [
             "(resident population over 65), the exposure denominator for a "
             "heat vulnerability analysis."
         ),
-        publisher="Urban Analytics Lab",
         source_label="ISTAT",
         license="ISTAT open data",
         tags=["census", "milan", "demographics", "geojson"],
@@ -294,7 +291,7 @@ def _write_manifest(dataset: Dataset, *, row_count, feature_count) -> None:
         version="1.0.0",
         format=dataset.fmt,
         description=dataset.description,
-        publisher=dataset.publisher,
+        publisher=dataset.publisher or "",
         license=dataset.license,
         tags=list(dataset.tags),
         data_file=dataset.data_file,
@@ -308,6 +305,9 @@ def _write_manifest(dataset: Dataset, *, row_count, feature_count) -> None:
         source_label=dataset.source_label,
     )
     payload = build_manifest_dict(manifest)
+    # A dataset without a publisher leaves the key out; the catalog then reads its default.
+    if not dataset.publisher:
+        payload.pop("publisher", None)
     (dataset.root / "manifest.json").write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )

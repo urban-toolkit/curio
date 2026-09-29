@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "format": "geotiff",
   "description": "Mean radiant temperature raster for Milan on 2022-07-22 at noon, the thermal input to a UTCI heat-exposure calculation. Pre-downsampled by a factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about 0.06 C in this range) is unaffected.",
-  "publisher": "Urban Analytics Lab",
   "license": "Research use",
   "tags": [
     "raster",

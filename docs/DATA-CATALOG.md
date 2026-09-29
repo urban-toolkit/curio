@@ -39,7 +39,7 @@ data.urbanlab.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`, grouped by the owner of the data: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
+Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
 
 ### Origins
 
