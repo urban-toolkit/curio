@@ -5,7 +5,7 @@ import {
   type CatalogSetting,
   type CatalogSettingReader,
   type CatalogSettingsResponse,
-} from "../../../api/agentsApi";
+} from "../../../services/agents";
 import styles from "./AgentCatalogSettingsModal.module.css";
 
 /**

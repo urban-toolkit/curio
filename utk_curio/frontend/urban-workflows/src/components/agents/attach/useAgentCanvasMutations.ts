@@ -7,7 +7,7 @@ import {
   AgentCanvasMutation,
   AgentCreatedNode,
   subscribeAgentCanvasMutations,
-} from "../../../utils/agentCanvasEvents";
+} from "../../../services/agents";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import {
   getCurrentProjectPackages,

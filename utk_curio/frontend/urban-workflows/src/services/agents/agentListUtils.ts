@@ -1,5 +1,5 @@
-import type { AgentCard } from "../../../api/agentsApi";
-import { SortMode } from "../../../services/packages";
+import type { AgentCard } from "./types";
+import type { SortMode } from "../packages/types";
 
 /**
  * Free-text match for the Agent Catalog search bar ("Search agents, publishers,

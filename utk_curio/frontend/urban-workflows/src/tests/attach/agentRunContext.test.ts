@@ -6,8 +6,7 @@ jest.mock("../../registry/nodeRegistry", () => ({
 }));
 
 import { TrillGenerator } from "../../TrillGenerator";
-import { composeAgentRunContext } from "../../components/agents/attach/agentRunContext";
-import type { AgentAttachment } from "../../api/agentsApi";
+import { composeAgentRunContext, type AgentAttachment } from "../../services/agents";
 
 /**
  * Grounded-context composer parity tests (memo dev/44): the Node Content

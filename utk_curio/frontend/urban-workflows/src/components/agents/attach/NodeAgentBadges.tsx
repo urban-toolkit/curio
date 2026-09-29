@@ -1,5 +1,5 @@
 import React from "react";
-import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
+import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
 import styles from "./NodeAgentBadges.module.css";
 

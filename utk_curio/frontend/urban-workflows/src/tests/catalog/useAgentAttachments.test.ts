@@ -1,6 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     listAttachments: jest.fn(),
     attach: jest.fn(),
@@ -9,9 +9,7 @@ jest.mock("../../api/agentsApi", () => ({
   },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
-import { useAgentAttachments } from "../../components/agents/attach/useAgentAttachments";
-import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentCatalogEvents";
+import { agentsApi, useAgentAttachments, AGENT_DOCK_REFRESH_EVENT } from "../../services/agents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 

@@ -7,8 +7,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 import { AgentBuilderStrip } from "../../components/agents/attach/AgentBuilderStrip";
-import { BUILDER_TEMPLATES } from "../../components/agents/attach/builderTemplates";
-import type { AgentAttachment } from "../../api/agentsApi";
+import { BUILDER_TEMPLATES, type AgentAttachment } from "../../services/agents";
 
 const attachment = (session: AgentAttachment["builderSession"]): AgentAttachment =>
   ({

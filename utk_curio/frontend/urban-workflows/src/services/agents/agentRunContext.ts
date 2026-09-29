@@ -1,10 +1,10 @@
-import { TrillGenerator } from "../../../TrillGenerator";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import { TrillGenerator } from "../../TrillGenerator";
+import type { AgentAttachment } from "./types";
 import {
   storeOutputFor,
   summarizeNodeInput,
   summarizeNodeOutput,
-} from "../../../utils/nodeRuntimeSummary";
+} from "../../utils/nodeRuntimeSummary";
 
 /**
  * The live-canvas grounded-context composer (memo dev/44).

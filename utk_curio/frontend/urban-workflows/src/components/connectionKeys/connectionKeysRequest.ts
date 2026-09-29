@@ -1,4 +1,4 @@
-import type { AgentRemedy } from "../../api/agentsApi";
+import type { AgentRemedy } from "../../services/agents";
 
 /**
  * dev/116: "Add key for <host>" is offered from three cards (the Solve strip,

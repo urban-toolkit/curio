@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { formatElapsed, LABEL_ROTATE_SECONDS, PROCESSING_LABELS } from "./agentRunStatus";
+import { formatElapsed, LABEL_ROTATE_SECONDS, PROCESSING_LABELS } from "../../../services/agents";
 
 /**
  * One 1 s ticker driving the live run indicator (memo dev/80): the elapsed

@@ -12,16 +12,12 @@ jest.mock("../../providers/AgentCatalogDrawerProvider", () => ({
     isAgentCatalogDrawerOpen: false,
   }),
 }));
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { listProjectAgents: jest.fn() },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi, AGENT_CATALOG_REFRESH_EVENT, AGENT_DRAG_MIME } from "../../services/agents";
 import { AgentsPaletteDropdown } from "../../components/menus/nodes/agentsPalette/AgentsPaletteDropdown";
-import {
-  AGENT_CATALOG_REFRESH_EVENT,
-  AGENT_DRAG_MIME,
-} from "../../utils/agentCatalogEvents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 

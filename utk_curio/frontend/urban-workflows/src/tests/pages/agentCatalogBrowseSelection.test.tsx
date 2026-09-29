@@ -42,7 +42,7 @@ const CARDS = [
   },
 ];
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ items: CARDS, agents: CARDS, facets: null })),
     listImports: jest.fn(() => Promise.resolve({ agents: [] })),

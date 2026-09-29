@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import styles from "./AgentBuilderStrip.module.css";
-import type { AgentRemedy } from "../../../api/agentsApi";
+import type { AgentRemedy } from "../../../services/agents";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { stoppedByPhrase } from "../content/AgentSolveAttemptsCard";

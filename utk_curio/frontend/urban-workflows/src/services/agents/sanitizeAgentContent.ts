@@ -8,7 +8,7 @@
  * `undefined`, which makes react-markdown drop the URL entirely.
  */
 
-import { basePath } from "../../../utils/basePath";
+import { basePath } from "../../utils/basePath";
 
 const ALLOWED_SCHEMES = ["http:", "https:", "mailto:"];
 

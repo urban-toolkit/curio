@@ -88,7 +88,7 @@ jest.mock('../../registry/packageRegistryBootstrap', () => ({
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
 import ProvenanceProvider from '../../providers/ProvenanceProvider';
 import { useAgentCanvasMutations } from '../../components/agents/attach/useAgentCanvasMutations';
-import { notifyAgentCanvasMutation } from '../../utils/agentCanvasEvents';
+import { notifyAgentCanvasMutation } from '../../services/agents';
 
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;

@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import ModalShell from "../../ModalShell";
-import { agentsApi } from "../../../api/agentsApi";
-import { buildUploadPayload, type NamedText } from "./buildUploadPayload";
+import { agentsApi, buildUploadPayload, type NamedText } from "../../../services/agents";
 import styles from "./AgentImportModal.module.css";
 
 /**

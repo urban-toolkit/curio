@@ -1,4 +1,4 @@
-import type { AgentSessionTurn, AgentUsage } from "../../../api/agentsApi";
+import type { AgentSessionTurn, AgentUsage } from "./types";
 
 /**
  * Live per-attachment run state (memo dev/80), owned by

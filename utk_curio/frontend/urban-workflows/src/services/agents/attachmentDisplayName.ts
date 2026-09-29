@@ -1,4 +1,4 @@
-import type { AgentAttachment } from "../../../api/agentsApi";
+import type { AgentAttachment } from "./types";
 
 /** Longest accepted conversation title — mirrors the backend cap (memo dev/25). */
 export const TITLE_MAX_CHARS = 40;

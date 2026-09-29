@@ -5,8 +5,8 @@ import {
   sessionTokenTotals,
   turnStatusDisplay,
   answeredBy,
-} from "../../components/agents/attach/agentRunStatus";
-import type { AgentSessionTurn } from "../../api/agentsApi";
+  type AgentSessionTurn,
+} from "../../services/agents";
 
 describe("formatElapsed", () => {
   it("formats m:ss with unbounded minutes", () => {

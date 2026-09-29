@@ -170,7 +170,8 @@ describe("add/remove toasts are shared across all three catalogs (#198)", () => 
     ["data", "components/datasets/catalog/useDatasetCatalogDrawer.ts"],
     // dev/143 F4: the node drawer's actions live in THE catalog hook.
     ["node", "services/packages/usePackageCatalog.ts"],
-    ["agent", "components/agents/catalog/useAgentCatalogDrawer.ts"],
+    // dev/142 F3: the agent drawer's actions live in THE catalog hook.
+    ["agent", "services/agents/useAgentCatalog.ts"],
   ];
 
   test.each(SOURCES)("the %s catalog toasts both an add and a remove", (_kind, file) => {

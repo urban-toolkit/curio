@@ -17,7 +17,7 @@
  */
 import React, { useState } from "react";
 
-import type { AgentCard } from "../../api/agentsApi";
+import type { AgentCard } from "../../services/agents";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import type { SortMode } from "../../services/packages";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";

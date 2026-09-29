@@ -18,7 +18,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
-import type { AgentAttachment, AgentSessionTurn } from "../../api/agentsApi";
+import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",

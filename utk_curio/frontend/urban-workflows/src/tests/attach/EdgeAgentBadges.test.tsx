@@ -10,7 +10,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 const mockCtx = jest.fn();
-jest.mock("../../components/agents/attach/AgentAttachmentsProvider", () => ({
+jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
 
@@ -21,7 +21,7 @@ jest.mock("reactflow", () => ({
 }));
 
 import { EdgeAgentBadges } from "../../components/agents/attach/EdgeAgentBadges";
-import { EDGE_AGENT_BADGES_ATTR } from "../../utils/agentCatalogEvents";
+import { EDGE_AGENT_BADGES_ATTR } from "../../services/agents";
 
 function attachment(over: Partial<any> = {}): any {
   return {

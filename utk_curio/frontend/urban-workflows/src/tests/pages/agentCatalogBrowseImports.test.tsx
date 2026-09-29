@@ -48,7 +48,7 @@ const MINE = {
   provenance: { publisher: "me", trust: "imported" },
 };
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(),
     listImports: jest.fn(),
@@ -63,7 +63,7 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents/agentsApi";
 import { useAgentCatalogBrowse } from "../../pages/agents/useAgentCatalogBrowse";
 
 const mockCatalog = agentsApi.catalog as jest.Mock;

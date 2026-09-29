@@ -51,7 +51,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 const mockCtx = jest.fn();
-jest.mock("../../components/agents/attach/AgentAttachmentsProvider", () => ({
+jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
 

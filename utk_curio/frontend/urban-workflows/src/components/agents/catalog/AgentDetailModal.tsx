@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
-import { agentsApi } from "../../../api/agentsApi";
-import type { AgentCard } from "../../../api/agentsApi";
+import { agentsApi, type AgentCard } from "../../../services/agents";
 import { llmConfigsApi } from "../../../api/llmConfigsApi";
 import { requestAgentModel } from "../../connectionKeys/connectionKeysRequest";
 import { triggerBlobDownload } from "../../../services/packages";

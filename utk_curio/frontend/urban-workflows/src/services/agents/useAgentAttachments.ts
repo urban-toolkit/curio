@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { agentsApi, type AgentAttachment, type AgentTarget } from "../../../api/agentsApi";
-import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "../../../utils/agentCatalogEvents";
+import { agentsApi } from "./agentsApi";
+import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "./agentEvents";
+import type { AgentAttachment, AgentContentPart, AgentTarget, AgentUsage } from "./types";
 
 /**
  * Self-contained hook for a project's agent attachments: the dock reads them,
@@ -21,10 +22,10 @@ export interface AgentAttachmentsState {
   ) => Promise<{
     reply: string;
     executionId?: string;
-    usage?: import("../../../api/agentsApi").AgentUsage | null;
+    usage?: AgentUsage | null;
     /** The run's wall-clock duration (memo dev/80); absent on old servers. */
     durationMs?: number;
-    content?: import("../../../api/agentsApi").AgentContentPart[];
+    content?: AgentContentPart[];
   }>;
 }
 

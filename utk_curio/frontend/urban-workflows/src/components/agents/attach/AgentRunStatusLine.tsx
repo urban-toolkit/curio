@@ -1,8 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
-import type { RunStatusDisplay } from "./agentRunStatus";
-import { formatDuration, formatTokenCount } from "./agentRunStatus";
+import { formatDuration, formatTokenCount, type RunStatusDisplay } from "../../../services/agents";
 import { useRunTicker } from "./useRunTicker";
 import styles from "./AgentRunStatusLine.module.css";
 

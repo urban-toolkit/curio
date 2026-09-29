@@ -1,12 +1,15 @@
 /**
- * Apply→canvas bridge events (memo dev/48 §3.3) — the typed mirror of
- * ``agentCatalogEvents.ts`` for agent-applied graph mutations.
+ * The three window events the agent surfaces speak through (memo dev/142, F1 —
+ * formerly `utils/agentCanvasEvents.ts` and half of `utils/agentCatalogEvents.ts`).
  *
- * The apply endpoint mutates the SAVED spec; these events carry the applied
- * mutation to the LIVE React Flow canvas in the same user action, so the next
- * canvas save re-posts the same state instead of silently clobbering it (the
- * dev/41 `node.content.write` clobber fix rides the same bridge). The apply
- * response is the only payload source — the bridge never re-derives it.
+ * Apply→canvas bridge events (memo dev/48 §3.3): the apply endpoint mutates the
+ * SAVED spec; these carry the applied mutation to the LIVE React Flow canvas in
+ * the same user action, so the next canvas save re-posts the same state instead
+ * of silently clobbering it (the dev/41 `node.content.write` clobber fix rides
+ * the same bridge). The apply response is the only payload source — the bridge
+ * never re-derives it. The catalog and dock refresh signals mirror the dataset
+ * catalog's refresh-event convention: dispatched after an install/uninstall or
+ * attach/detach so the palette and the dock re-read without a page reload.
  */
 
 export type AgentCreatedNode = {
@@ -111,4 +114,28 @@ export function subscribeAgentCanvasMutations(
   };
   window.addEventListener(AGENT_CANVAS_MUTATION_EVENT, handler);
   return () => window.removeEventListener(AGENT_CANVAS_MUTATION_EVENT, handler);
+}
+
+/**
+ * Lightweight refresh signal for the AGENTS tools-panel palette, mirroring the
+ * dataset catalog's refresh-event convention. The catalog drawer dispatches this
+ * after an install/uninstall so the palette re-reads the project lockfile without
+ * a page reload; the palette subscribes.
+ */
+export const AGENT_CATALOG_REFRESH_EVENT = "curio:agent-catalog-refresh";
+
+export function notifyAgentCatalogRefresh(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AGENT_CATALOG_REFRESH_EVENT));
+  }
+}
+
+/** Refresh signal for the attachment dock, dispatched after attach/detach so the
+ * dock re-reads the project's attachments without a reload. */
+export const AGENT_DOCK_REFRESH_EVENT = "curio:agent-dock-refresh";
+
+export function notifyAgentDockRefresh(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AGENT_DOCK_REFRESH_EVENT));
+  }
 }

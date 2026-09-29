@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { AgentDatasetCandidatesCard, composeConfirmationPrompt } from '../../components/agents/content/AgentDatasetCandidatesCard';
-import type { AgentDatasetCandidateRow } from '../../api/agentsApi';
+import type { AgentDatasetCandidateRow } from '../../services/agents';
 import { dataLakeCatalogApi } from '../../services/dataLakeCatalog/dataLakeCatalogApi';
 import { resetLakeAcquisitions } from '../../services/dataLakeCatalog/dataLakeCatalogHooks';
 

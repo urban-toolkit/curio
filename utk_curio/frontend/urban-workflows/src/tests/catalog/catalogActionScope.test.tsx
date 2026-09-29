@@ -180,7 +180,7 @@ describe("the account-level agent import has one name", () => {
 
 // ── 5. The agent import picker accumulates ───────────────────────────────────
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { uploadImport: jest.fn() },
 }));
 
@@ -558,7 +558,7 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain(
       "curio-agent.json",
     );
-    expect(read("components/agents/catalog/buildUploadPayload.ts")).toContain(
+    expect(read("services/agents/buildUploadPayload.ts")).toContain(
       "curio-agent.json",
     );
   });
@@ -584,8 +584,12 @@ describe("the agent drawer stopped speaking about the account", () => {
     // and its row button was the only thing in the product that wrote a
     // built-in into that list - which is how "Dataflow builder" and
     // "Connection builder" came to report themselves as the user's own imports.
+    // dev/142 F3: the scope set lives in THE catalog hook; the drawer aliases it.
+    expect(read("services/agents/useAgentCatalog.ts")).toContain(
+      'export type AgentCatalogScope = "browse" | "installed";',
+    );
     const hook = read("components/agents/catalog/useAgentCatalogDrawer.ts");
-    expect(hook).toContain('export type AgentScope = "browse" | "installed";');
+    expect(hook).toContain("export type AgentScope = AgentCatalogScope;");
     // Not "never calls listImports": it does, as the no-project fallback for
     // the "In project" scope, because a dataflow has no project until its first
     // save and the scope would otherwise render empty. What must not come back
@@ -777,7 +781,7 @@ describe("a catalog's palette and its drawer describe the same dataflow", () => 
   test("the agents palette and drawer share the same no-project fallback", () => {
     for (const rel of [
       "components/menus/nodes/agentsPalette/AgentsPaletteDropdown.tsx",
-      "components/agents/catalog/useAgentCatalogDrawer.ts",
+      "services/agents/useAgentCatalog.ts", // dev/142 F3: the drawer lists through it
     ]) {
       expect(read(rel)).toContain("agentsApi.listImports()");
     }
@@ -810,9 +814,10 @@ describe("all three drawers put a count on their In project tab", () => {
   test("the agent count does not wait for its own tab to be opened", () => {
     // Counting only the VISIBLE scope would read 0 until you clicked the tab
     // the number describes.
-    expect(read("components/agents/catalog/useAgentCatalogDrawer.ts")).toContain(
-      'fetchScope("installed")',
-    );
+    // dev/142 F3: the drawer hands THE catalog hook both scopes, and that hook
+    // fetches every inactive scope once up front.
+    expect(read("components/agents/catalog/useAgentCatalogDrawer.ts")).toContain("scopes: ALL_SCOPES");
+    expect(read("services/agents/useAgentCatalog.ts")).toContain("for (const scope of scopes)");
   });
 });
 

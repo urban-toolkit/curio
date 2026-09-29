@@ -23,7 +23,7 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
 jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { readDefinition: jest.fn(() => new Promise(() => {})) },
 }));
 jest.mock("../../services/packages/packagesApi", () => ({

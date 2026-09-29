@@ -2,7 +2,7 @@ import React from "react";
 import type {
   AgentSolveAttemptRow,
   AgentSolveAttemptsPart,
-} from "../../../api/agentsApi";
+} from "../../../services/agents";
 import { AgentCodeBlock } from "./AgentCodeBlock";
 import styles from "./AgentSolveAttemptsCard.module.css";
 

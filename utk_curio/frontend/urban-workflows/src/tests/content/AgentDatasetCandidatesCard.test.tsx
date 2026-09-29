@@ -6,7 +6,7 @@ import {
   composeConfirmationPrompt,
   rowProvenance,
 } from "../../components/agents/content/AgentDatasetCandidatesCard";
-import type { AgentDatasetCandidatesPart } from "../../api/agentsApi";
+import type { AgentDatasetCandidatesPart } from "../../services/agents";
 import { DatasetDetailsContext } from "../../components/datasets/catalog/datasetDetailsContext";
 
 const PART: AgentDatasetCandidatesPart = {

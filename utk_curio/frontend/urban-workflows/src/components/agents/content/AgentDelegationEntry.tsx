@@ -1,7 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentDelegationPart } from "../../../api/agentsApi";
+import type { AgentDelegationPart } from "../../../services/agents";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "./AgentDelegationEntry.module.css";
 

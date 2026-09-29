@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(),
     listImports: jest.fn(),
@@ -21,7 +21,7 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents";
 import { AgentCatalogDrawer } from "../../components/agents/catalog/AgentCatalogDrawer";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;

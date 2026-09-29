@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
-import type { AgentCard } from "../../../api/agentsApi";
+import {
+  matchesAgentSearch,
+  sortAgentCards,
+  installLabel,
+  installTitle,
+  type AgentCard,
+} from "../../../services/agents";
 
 /**
  * Loaded on demand. A static import would pull AI Settings' whole module
@@ -24,7 +30,6 @@ import {
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
-import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
 import ConfirmDialog from "../../ConfirmDialog";
 
