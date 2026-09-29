@@ -6,6 +6,7 @@ import time
 import shutil
 import textwrap
 from pathlib import Path
+from contextlib import contextmanager
 from io import BytesIO
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
@@ -817,6 +818,52 @@ def _wait_for_reactflow_ready(
     page.evaluate("delete window.__curio_vp_samples")
 
 
+# Each Autark map canvas gets its own pixels as a CSS background for the length
+# of one capture. On the GPU runner no Chrome screenshot includes a hardware
+# WebGPU canvas (#427): the maps draw, and every frame showed them blank. A CSS
+# background is painted by the page's own compositor, which the screenshot does
+# capture, and it sits under the canvas and the map's overlays. Where the
+# screenshot does include the canvas (a Mac), the opaque map covers it, so the
+# frame is unchanged.
+_PAINT_MAP_CANVASES_JS = """async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    let painted = 0;
+    for (const c of document.querySelectorAll('canvas[id^="autk-grammar-map-"]')) {
+        let url;
+        try { url = c.toDataURL('image/png'); } catch (e) { continue; }
+        c.dataset.curioCaptureBackground = JSON.stringify(
+            [c.style.backgroundImage, c.style.backgroundSize, c.style.backgroundRepeat]);
+        c.style.backgroundImage = `url("${url}")`;
+        c.style.backgroundSize = '100% 100%';
+        c.style.backgroundRepeat = 'no-repeat';
+        painted += 1;
+    }
+    if (painted) await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return painted;
+}"""
+
+_UNPAINT_MAP_CANVASES_JS = """() => {
+    for (const c of document.querySelectorAll('canvas[data-curio-capture-background]')) {
+        const [image, size, repeat] = JSON.parse(c.dataset.curioCaptureBackground);
+        c.style.backgroundImage = image;
+        c.style.backgroundSize = size;
+        c.style.backgroundRepeat = repeat;
+        delete c.dataset.curioCaptureBackground;
+    }
+}"""
+
+
+@contextmanager
+def _map_canvases_painted(page: Page):
+    """Autark map canvases carry their own pixels as a background while inside."""
+    painted = page.evaluate(_PAINT_MAP_CANVASES_JS)
+    try:
+        yield painted
+    finally:
+        if painted:
+            page.evaluate(_UNPAINT_MAP_CANVASES_JS)
+
+
 def _capture_full_page(page: Page):
     """Return a Pillow RGB image of the full scrollable page.
 
@@ -826,7 +873,8 @@ def _capture_full_page(page: Page):
     from PIL import Image
 
     page.evaluate("window.scrollTo(0, 0)")
-    raw = page.screenshot(full_page=True)
+    with _map_canvases_painted(page):
+        raw = page.screenshot(full_page=True)
     return Image.open(BytesIO(raw)).convert("RGB")
 
 
@@ -843,7 +891,8 @@ def _capture_element(page: Page, selector: str):
 
     locator = page.locator(selector)
     locator.wait_for(state="visible", timeout=15000)
-    raw = locator.screenshot()
+    with _map_canvases_painted(page):
+        raw = locator.screenshot()
     return Image.open(BytesIO(raw)).convert("RGB")
 
 
