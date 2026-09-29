@@ -87,7 +87,7 @@ The first view stacks violations by camera within each year so individual offend
   "config": {"bar": {"continuousBandSize": 18}},
   "mark": {"type": "bar"},
   "encoding": {
-    "x": {"field": "Year", "type": "quantitative", "title": "Year"},
+    "x": {"field": "Year", "type": "quantitative", "title": "Year", "axis": {"format": "d"}},
     "y": {
       "aggregate": "sum",
       "field": "total_violations",
@@ -120,7 +120,7 @@ The second view sums across the same five cameras to show the year-over-year tre
   ],
   "mark": {"type": "line", "point": true},
   "encoding": {
-    "x": {"field": "Year", "type": "quantitative", "title": "Year"},
+    "x": {"field": "Year", "type": "quantitative", "title": "Year", "axis": {"format": "d"}},
     "y": {"field": "total", "type": "quantitative", "title": "Total Violations"}
   }
 }
