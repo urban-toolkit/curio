@@ -243,3 +243,77 @@ describe('playNodesUpTo — stale ancestors', () => {
     expect(triggerExecOf('A')).toBe(1);
   });
 });
+
+/**
+ * A node that emits through applyNewOutput and never writes a success of its
+ * own on node.data.output, as Merge Flow and the Data Pool do.
+ */
+function emitterNode(id: string, type: string) {
+  return {
+    id,
+    type,
+    position: { x: 0, y: 0 },
+    data: { nodeId: id, nodeType: type, input: { path: 'a-1', dataType: 'dataframe' }, output: { code: '', content: '' } },
+  } as any;
+}
+
+describe('playNodesUpTo — Merge Flow and Data Pool (#479)', () => {
+  const kinds = [
+    ['a Merge Flow', 'curio.builtin/merge-flow'],
+    ['a Data Pool', 'curio.builtin/data-pool'],
+  ];
+
+  async function seedChain(type: string) {
+    renderFlow();
+    await flush();
+    await seed([ranNode('A', 'return 1'), emitterNode('M', type), ranNode('B', 'return arg')], [
+      ['A', 'M'],
+      ['M', 'B'],
+    ]);
+  }
+
+  async function emit(nodeId: string, path: string) {
+    await act(async () => {
+      api.applyNewOutput({ nodeId, output: { path, dataType: 'dataframe' } } as any);
+    });
+    await flush();
+  }
+
+  async function play(target: string) {
+    await act(async () => {
+      api.playNodesUpTo(target);
+    });
+    await flush();
+  }
+
+  test.each(kinds)('%s that emitted for the input it still has is not run again', async (_label, type) => {
+    await seedChain(type);
+    await emit('M', 'm-1');
+
+    await play('B');
+
+    // It used to count as never having succeeded, so every Play below it re-ran
+    // it and handed the nodes after it a new input.
+    expect(triggerExecOf('M')).toBe(0);
+    expect(triggerExecOf('B')).toBe(1);
+  });
+
+  test.each(kinds)('%s runs again once a new input has reached it', async (_label, type) => {
+    await seedChain(type);
+    await emit('M', 'm-1');
+    await emit('A', 'a-2'); // A ran again since, and delivered to M
+
+    await play('B');
+
+    expect(triggerExecOf('M')).toBe(1);
+    expect(triggerExecOf('B')).toBe(0);
+  });
+
+  test.each(kinds)('%s that never emitted runs', async (_label, type) => {
+    await seedChain(type);
+
+    await play('B');
+
+    expect(triggerExecOf('M')).toBe(1);
+  });
+});

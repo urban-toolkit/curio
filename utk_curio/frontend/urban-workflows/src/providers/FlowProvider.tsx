@@ -379,6 +379,11 @@ const FlowProvider = ({
     // in the ref, so every play control stayed enabled and a click during (or
     // after a wedged) run silently did nothing (#271).
     const [isRunActive, setIsRunActive] = useState(false);
+    // The input each node had when it last emitted through applyNewOutput. Merge
+    // Flow and the Data Pool never record a success on node.data.output, so
+    // this is how playNodesUpTo tells they are current (#479): their input is
+    // still the object they emitted for. Every delivery builds a new one.
+    const emittedForInputRef = useRef(new Map<string, unknown>());
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
@@ -1240,7 +1245,15 @@ const FlowProvider = ({
             for (const nodeId of level) {
                 const node = currentNodes.find(n => n.id === nodeId);
                 if (!node) continue;
-                const neverSucceeded = node.data.output?.code !== "success";
+                // A success on node.data.output, or, for the kinds that never
+                // write one there, an emission for the input the node still
+                // has. A node whose last run failed always runs again.
+                const outputCode = node.data.output?.code;
+                const emittedForInput = emittedForInputRef.current;
+                const emittedCurrent =
+                    emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
+                const neverSucceeded =
+                    outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
                 const codeChanged =
                     node.data.executedCode !== undefined &&
                     node.data.executedCode !== node.data.code;
@@ -1276,6 +1289,10 @@ const FlowProvider = ({
         propagateDownstreamInputs(newOutput.nodeId, newOutput.output, undefined, {
             selectionEcho: newOutput.selectionEcho,
         });
+        emittedForInputRef.current.set(
+            newOutput.nodeId,
+            reactFlow.getNode(newOutput.nodeId)?.data?.input,
+        );
 
         setOutputs((opts: any) => {
             let added = false;
