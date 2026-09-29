@@ -81,7 +81,7 @@ def _build(root, stamp: str | None):
     (root / "dist").mkdir(exist_ok=True)
     (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
     if stamp is not None:
-        (root / "dist" / ".curio-backend-url").write_text(stamp, encoding="utf-8")
+        (root / "dist" / main.BUILD_STAMP).write_text(stamp, encoding="utf-8")
 
 
 def test_no_source_means_no_build(monkeypatch, tmp_path):
@@ -96,42 +96,37 @@ def test_fresh_checkout_builds(checkout):
 
 
 def test_current_build_is_reused(checkout):
-    _build(checkout, "production\n\n")
+    _build(checkout, "production\n")
     assert main._build_stamp_reason() is None
     assert main._frontend_needs_build() is False
 
 
-def test_old_single_line_stamp_rebuilds(checkout):
-    """The pre-existing format, which only a development build ever wrote.
+def test_unrecorded_mode_rebuilds(checkout):
+    """A build with no mode on record may be a 28 MB development bundle.
 
-    This is the upgrade case: a checkout that predates the production build
-    carries a 28 MB development bundle and would otherwise keep serving it
-    forever, because nothing about it looks out of date.
+    Nothing else about it looks out of date, so it would otherwise be served
+    forever.
     """
-    _build(checkout, "")  # what an unset BACKEND_URL used to write
+    _build(checkout, "")
     assert "mode" in main._build_stamp_reason()
     assert main._frontend_needs_build() is True
 
 
 def test_development_bundle_rebuilds(checkout):
-    _build(checkout, "development\n\n")
+    _build(checkout, "development\n")
     assert main._build_stamp_reason() == "built in development mode, need production"
 
 
-def test_backend_url_change_still_rebuilds(checkout, monkeypatch):
-    """BACKEND_URL is baked into the bundle, so --backend-port must rebuild.
-
-    This check used to live where only --dev reached it. Now that the default
-    serves dist/, a port change with no rebuild would leave the UI calling the
-    previous backend, which another Curio may well own.
-    """
-    _build(checkout, "production\nhttp://127.0.0.1:5002\n")
+def test_a_new_backend_address_reuses_the_build(checkout, monkeypatch):
+    """The frontend server writes the backend address into the page, so a build
+    serves any address and --backend-port or --backend-url need no rebuild."""
+    _build(checkout, "production\n")
     monkeypatch.setenv("BACKEND_URL", "http://127.0.0.1:5002")
     assert main._build_stamp_reason() is None
 
-    monkeypatch.setenv("BACKEND_URL", "http://127.0.0.1:5999")
-    assert "built for http://127.0.0.1:5002" in main._build_stamp_reason()
-    assert main._frontend_needs_build() is True
+    monkeypatch.setenv("BACKEND_URL", "https://curio.example.org/app/api")
+    assert main._build_stamp_reason() is None
+    assert main._frontend_needs_build() is False
 
 
 def test_mode_is_read_from_the_build_script(checkout):

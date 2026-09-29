@@ -15,6 +15,7 @@ import platform
 import logging
 import shutil
 
+from html import escape as html_escape
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -183,32 +184,22 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
-    # The frontend bundle's DEFAULT backend address is baked in at BUILD time
-    # (webpack substitutes ``process.env.BACKEND_URL`` through dotenv-webpack).
-    # Derive it from the same --backend-host/--backend-port the backend itself
-    # is started with, so the two cannot disagree. It is only the default:
-    # ``src/utils/backendUrl.ts`` prefers ``window.__CURIO_BACKEND_URL__`` when
-    # the page sets it, which is how one build serves several backends (the
-    # parallel e2e harness injects it per browser context).
-    #
-    # This used to come only from a hand-maintained
-    # ``frontend/urban-workflows/.env``, which meant every port change was two
-    # edits and a rebuild, and forgetting either produced a UI that silently
-    # talked to whichever OTHER Curio owned the default port. dotenv-webpack is
-    # configured with ``systemvars: true``, and a real environment variable wins
-    # over the file, so setting it here is enough. An explicit BACKEND_URL from
-    # the caller still wins over both.
+    # The address the browser reaches the backend at: --backend-url, or the
+    # same --backend-host/--backend-port the backend itself is started with, so
+    # the two cannot disagree. The frontend server writes it into the page
+    # (run_spa_static_server), and the webpack dev server compiles it in
+    # (dotenv-webpack, ``systemvars: true``, reads this variable).
     #
     # 127.0.0.1 is normalized to localhost because the browser's origin is
     # localhost by default, and the two are distinct origins to CORS.
     browser_host = "localhost" if backend_host in ("127.0.0.1", "0.0.0.0") else backend_host
-    os.environ.setdefault("BACKEND_URL", f"http://{browser_host}:{backend_port}")
+    os.environ["BACKEND_URL"] = backend_url or f"http://{browser_host}:{backend_port}"
     # Shared secret proving to the sandbox that a caller is this backend. The
     # sandbox runs arbitrary user code, so its /exec, /execJs, /get and
     # /install routes require it (utk_curio/sandbox/app/auth.py). Minted per
@@ -439,7 +430,15 @@ def base_path_arg(value: str) -> str:
     return path
 
 
-def run_spa_static_server(directory: str, port: int, base_path: str = "") -> None:
+def backend_url_arg(value: str) -> str:
+    """``--backend-url``: an http(s) URL or a path on the page's host, with no trailing slash."""
+    url = value.strip().rstrip("/")
+    if not re.fullmatch(r"(https?://[A-Za-z0-9.-]+(:\d+)?)?(/[A-Za-z0-9._~%-]+)*", url) or not url:
+        raise argparse.ArgumentTypeError(f"not an http(s) URL or a /path: {value!r}")
+    return url
+
+
+def run_spa_static_server(directory: str, port: int, base_path: str = "", backend_url: str = "") -> None:
     """Serve a built SPA with index.html fallback for deep links.
 
     ``python -m http.server`` returns 404 for routes like ``/auth/signup`` or
@@ -447,26 +446,30 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "") -> Non
     is a client-side router, so non-asset GETs should fall back to
     ``index.html`` instead.
 
-    *base_path* is the prefix the app is served under (``--base-path``), such
-    as ``/app``. index.html then goes out with its ``<base>`` pointing there;
-    the bundle loads its assets relative to it and the router reads its
-    basename from it, so one build serves any prefix. A request that still
-    carries the prefix, because no proxy in front strips it, is served too.
+    The page is written for the instance serving it, so one build serves any:
+    *base_path* (``--base-path``, such as ``/app``) becomes its ``<base>``,
+    which the bundle loads its assets relative to and the router reads its
+    basename from, and *backend_url* (``--backend-url``) goes into a
+    ``<meta name="curio-backend-url">`` that ``backendUrl.ts`` reads. A request
+    that still carries the prefix, because no proxy in front strips it, is
+    served too.
     """
 
     dist_dir = os.path.abspath(directory)
     index_file = os.path.join(dist_dir, "index.html")
     base_tag = f'<base href="{base_path}/">'
+    backend_tag = f'<meta name="curio-backend-url" content="{html_escape(backend_url)}">' if backend_url else ""
 
     def index_html() -> bytes:
         with open(index_file, encoding="utf-8") as fh:
             html = fh.read()
-        if base_path:
-            html, found = re.subn(r"<base\b[^>]*>", base_tag, html, count=1)
+        if base_path or backend_tag:
+            tags = base_tag + backend_tag
+            html, found = re.subn(r"<base\b[^>]*>", tags, html, count=1)
             if not found:
-                html, found = re.subn(r"<head\b[^>]*>", lambda m: m.group(0) + base_tag, html, count=1)
+                html, found = re.subn(r"<head\b[^>]*>", lambda m: m.group(0) + tags, html, count=1)
             if not found:
-                html = base_tag + html
+                html = tags + html
         return html.encode("utf-8")
 
     class SpaStaticHandler(SimpleHTTPRequestHandler):
@@ -702,12 +705,7 @@ def check_install_build(dir, force_rebuild=False):
             # leave a stamp claiming the bundle matches.
             _write_build_stamp(abs_dir)
     else:
-        log_info(
-            f"[Frontend] dist is current for "
-            f"{os.environ.get('BACKEND_URL', '') or 'the .env default'}. "
-            f"Skipping npm run build.",
-            COLOR_FRONTEND, 0,
-        )
+        log_info("[Frontend] dist is current. Skipping npm run build.", COLOR_FRONTEND, 0)
 
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
@@ -740,42 +738,32 @@ def _frontend_build_mode(root: str = "") -> str:
     return found.group(1) if found else "unknown"
 
 
+BUILD_STAMP = ".curio-build"
+
+
 def _build_stamp_reason(root: str = "") -> str | None:
     """Why the built frontend cannot be reused, or None when it can.
 
-    ``BACKEND_URL`` is substituted into the bundle at BUILD time, so an existing
-    build is only reusable if it was built for the backend we are about to
-    start. Without this, changing --backend-port reused the old bundle and the
-    UI kept calling the previous port -- which, when another Curio owns it,
-    means a session quietly driving someone else's backend. The webpack mode is
-    stamped beside it: every checkout built before the move to a production
-    build carries a development bundle, three times the size, and nothing else
-    would ever notice.
+    The build knows nothing of the instance it serves: the frontend server
+    writes the backend address and the base path into the page. What the stamp
+    records is the webpack mode. Every checkout built before the move to a
+    production build carries a development bundle, three times the size, and
+    nothing else would ever notice.
     """
     dist = os.path.join(root or _frontend_dir(), "dist")
     if not _frontend_is_built(root):
         return "dist directory not found"
 
-    wanted_url = os.environ.get("BACKEND_URL", "")
     wanted_mode = _frontend_build_mode(root)
-    built_mode = built_url = None
+    built_mode = None
     try:
-        with open(os.path.join(dist, ".curio-backend-url"), encoding="utf-8") as fh:
-            # Two lines: mode, then URL. A one-line stamp is the old format,
-            # which only a development-mode build ever wrote, so it rebuilds.
-            lines = fh.read().splitlines()
-        if len(lines) >= 2:
-            built_mode, built_url = lines[0].strip(), lines[1].strip()
+        with open(os.path.join(dist, BUILD_STAMP), encoding="utf-8") as fh:
+            built_mode = fh.read().strip() or None
     except OSError:
         pass
 
     if built_mode != wanted_mode:
         return f"built in {built_mode or 'an unrecorded'} mode, need {wanted_mode}"
-    if built_url != wanted_url:
-        return (
-            f"built for {built_url or 'an unrecorded backend'}, "
-            f"need {wanted_url or 'the .env default'}"
-        )
     return None
 
 
@@ -783,8 +771,8 @@ def _write_build_stamp(root: str = "") -> None:
     dist = os.path.join(root or _frontend_dir(), "dist")
     try:
         os.makedirs(dist, exist_ok=True)
-        with open(os.path.join(dist, ".curio-backend-url"), "w", encoding="utf-8") as fh:
-            fh.write(f"{_frontend_build_mode(root)}\n{os.environ.get('BACKEND_URL', '')}\n")
+        with open(os.path.join(dist, BUILD_STAMP), "w", encoding="utf-8") as fh:
+            fh.write(f"{_frontend_build_mode(root)}\n")
     except OSError as exc:
         log_info(
             f"[Frontend] Could not record what the build was made for ({exc}); "
@@ -885,7 +873,8 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                     "-c",
                     (
                         "from utk_curio.main import run_spa_static_server; "
-                        f"run_spa_static_server('dist', {port}, {base_path!r})"
+                        f"run_spa_static_server('dist', {port}, {base_path!r}, "
+                        f"{os.environ.get('BACKEND_URL', '')!r})"
                     ),
                 ],
                 stdout=subprocess.PIPE,
@@ -1697,6 +1686,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--backend-url", type=backend_url_arg, default=None, metavar="URL",
+        help=(
+            "Address the browser reaches the backend at, such as "
+            "https://example.org/app/api behind a reverse proxy (default: "
+            "http://<backend-host>:<backend-port>)."
+        ),
+    )
+    parser.add_argument(
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
@@ -1894,6 +1891,7 @@ def main():
         llm_model=args.llm_model,
         guest_llm_api_key=args.guest_llm_api_key,
         agent_search_url=args.agent_search_url,
+        backend_url=args.backend_url,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither

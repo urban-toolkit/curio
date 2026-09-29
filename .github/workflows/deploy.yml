@@ -147,8 +147,10 @@ jobs:
           git checkout --detach "origin/$ref" 2>/dev/null \
             || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
-          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
-          export BACKEND_URL=https://curio-dev.urbantk.org/api
+          # This stack's own curio.py arguments (docker-compose.deploy.yml).
+          printf 'services:\n  curio:\n    command: ["--backend-url", "%s"]\n' \
+            https://curio-dev.urbantk.org/api > docker-compose.site.yml
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
           set -a; [ -f .env ] && . ./.env; set +a
           docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
           # A container from an earlier convention / manual run keeps itself alive

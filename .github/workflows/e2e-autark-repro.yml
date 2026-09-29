@@ -60,7 +60,7 @@ jobs:
       CURIO_PORT_5009: "5069"
       CURIO_PORT_2007: "2067"
       CURIO_E2E_PARALLEL: "6"
-      BACKEND_URL: "http://localhost:5062"
+      CURIO_E2E_BACKEND_URL: "http://localhost:5062"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5062"
       CURIO_E2E_SANDBOX_PORT: "2060"

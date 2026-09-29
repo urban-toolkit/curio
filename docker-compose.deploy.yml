@@ -40,7 +40,10 @@ services:
       # other process on the host that reads them -- a backup job, an operator
       # shell as a non-root user -- loses access. Check that before deploying.
       CURIO_ISOLATION: "fork"
-    command:
+    # The site's own arguments, such as --backend-url and --base-path, go in
+    # docker-compose.site.yml as the service's `command`, which Compose appends
+    # to this entrypoint (DEPLOYMENT.md).
+    entrypoint:
       - python
       - curio.py
       - start
@@ -59,7 +62,3 @@ services:
       # same container.
       - --sandbox-port
       - "2000"
-      # The URL path the proxy serves the app under, CURIO_BASE_PATH in .env
-      # (such as /curio). The default, /, is the root of the host.
-      - --base-path
-      - "${CURIO_BASE_PATH:-/}"

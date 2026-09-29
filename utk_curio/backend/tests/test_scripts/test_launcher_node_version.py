@@ -130,7 +130,7 @@ def test_leftover_build_dir_does_not_suppress_the_build(tmp_path, fake_npm):
     """A stale ``build/`` must never stand in for a missing ``dist/``.
 
     ``build_dir`` used to fall back to ``build`` whenever ``dist`` was absent.
-    Since this function writes the ``.curio-backend-url`` stamp into
+    Since this function writes the build stamp into
     ``build_dir`` while webpack writes ``dist``, a first build left an otherwise
     empty ``build/`` holding a matching stamp -- and from then on, deleting
     ``dist`` (the documented first step before an e2e run) made the launcher
@@ -138,7 +138,7 @@ def test_leftover_build_dir_does_not_suppress_the_build(tmp_path, fake_npm):
     serving a directory that was not there.
     """
     _tree(tmp_path, str(NODE_MAJOR))
-    (tmp_path / "build" / ".curio-backend-url").write_text("", encoding="utf-8")
+    (tmp_path / "build" / main.BUILD_STAMP).write_text("", encoding="utf-8")
     assert not (tmp_path / "dist").exists()
 
     main.check_install_build(str(tmp_path))

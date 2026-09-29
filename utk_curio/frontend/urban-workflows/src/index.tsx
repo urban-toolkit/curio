@@ -88,6 +88,7 @@ import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
 import { basePath } from "./utils/basePath";
+import { backendUrl } from "./utils/backendUrl";
 import MonitorPage from "./pages/monitor/MonitorPage";
 import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
@@ -246,6 +247,10 @@ listenForPeerDatasetCatalogRefresh();
 // Installed before the first render so a crash during mount is reported too.
 // The reporter caps itself and never throws; see clientErrorReporter.ts.
 installClientErrorReporter();
+
+// DuckDB's worker starts from a blob and cannot see this page; autk-db hands
+// it this absolute address (webpack/autkDbDuckdbAssets.js).
+(globalThis as any).__curioBackendUrl = new URL(backendUrl() || "/", window.location.href).href;
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

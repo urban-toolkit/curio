@@ -63,10 +63,11 @@ curio setup                  # install deps and exit
 |---|---|---|
 | `--dev` | off | Serve the frontend from the webpack dev server, with hot reload and a development bundle. Use it when you are editing frontend source |
 | `--base-path PATH` | the root | The URL path the web app is served under, such as `/app` behind a reverse proxy. Applies to the built bundle, so not with `--dev`. See [DEPLOYMENT.md](DEPLOYMENT.md) |
+| `--backend-url URL` | `http://<backend-host>:<backend-port>` | The address the browser reaches the backend at, such as `https://example.org/app/api` behind a reverse proxy |
 
 Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
 
-`curio.py start` builds the frontend when there is no build to serve, when the existing build is a development build, or when it was made for a different `--backend-port`. The first build on a fresh clone takes a few minutes. Source edits do not trigger a build, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
+`curio.py start` builds the frontend when there is no build to serve, or when the existing build is a development build. The first build on a fresh clone takes a few minutes. Source edits do not trigger a build, so use `--dev` while working on the frontend, or `--force-rebuild` to force one.
 
 Curio needs Node.js 26 and refuses to start on an earlier version, naming the one to install. Switching to another Node major reinstalls `node_modules/` on the next start; the frontend build is kept unless one of the rules above calls for a new one.
 

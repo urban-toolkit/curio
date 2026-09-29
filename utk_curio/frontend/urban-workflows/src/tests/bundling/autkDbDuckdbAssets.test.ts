@@ -39,6 +39,25 @@ describe("autk-db's DuckDB files, as webpack sees them", () => {
         expect(region).not.toMatch(new RegExp(`"\\./duckdb-[\\w.-]+",\\s*${copied}\\s*\\)`));
     });
 
+    it("hands the worker the backend address the page resolved", () => {
+        // The worker starts from a blob that only runs importScripts, so the
+        // blob is where the page's address reaches duckdbExtensionMirror.js.
+        const template = region.match(/new Blob\(\[(`[^`]*`)\]/)![1];
+        const g = globalThis as any;
+        g.__curioBackendUrl = "https://curio.example.org/app/api";
+        const e = { mainWorker: "https://curio.example.org/app/worker.js" };
+        try {
+            // eslint-disable-next-line no-new-func
+            const blob = new Function("e", `return ${template};`)(e);
+            expect(blob).toBe(
+                'self.__curioBackendUrl = "https://curio.example.org/app/api";' +
+                'importScripts("https://curio.example.org/app/worker.js");',
+            );
+        } finally {
+            delete g.__curioBackendUrl;
+        }
+    });
+
     it("changes nothing outside DuckDB's file selection", () => {
         const before = source.replace(/\/\/#region src\/duckdb-browser\.ts[\s\S]*?\/\/#endregion/, "");
         const after = out.replace(/\/\/#region src\/duckdb-browser\.ts[\s\S]*?\/\/#endregion/, "");
@@ -52,5 +71,9 @@ describe("a build it does not recognise", () => {
         expect(() => rewriteDuckdbAssetUrls(
             "//#region src/duckdb-browser.ts\nfunction S() { return {}; }\n//#endregion\n",
         )).toThrow(/no longer copied/);
+        expect(() => rewriteDuckdbAssetUrls(
+            "//#region src/duckdb-browser.ts\nlet e = import.meta.url;\n" +
+            'const w = new URL("./duckdb-eh.wasm", e);\n//#endregion\n',
+        )).toThrow(/no importScripts blob/);
     });
 });

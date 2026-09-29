@@ -54,7 +54,7 @@ jobs:
       CURIO_PORT_8080: "8130"
       # Same build arg as test-gpu-isolated, so the image comes from its cache.
       # Nothing here talks to the frontend.
-      BACKEND_URL: "http://localhost:5032"
+      CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       ITERATIONS: ${{ inputs.iterations || '300' }}
       NODE_SHAPE: ${{ inputs.node || 'string' }}

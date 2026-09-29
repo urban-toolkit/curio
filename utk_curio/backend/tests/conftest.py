@@ -523,11 +523,6 @@ def session_app():
     # unchanged. They are overridable because two checkouts of this repo cannot
     # otherwise run their suites at the same time -- the second one's servers
     # collide with the first one's on every port.
-    #
-    # BACKEND_PORT must agree with the frontend's ``BACKEND_URL``, which
-    # dotenv-webpack bakes into the bundle at BUILD time: changing it means
-    # editing ``utk_curio/frontend/urban-workflows/.env`` and rebuilding, not
-    # just exporting a variable.
     backend_port = int(os.environ.get("BACKEND_PORT") or 5002)
     application.config.update(
         {

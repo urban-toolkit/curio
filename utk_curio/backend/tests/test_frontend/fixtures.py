@@ -236,7 +236,7 @@ def repo_root():
 @pytest.fixture(scope="session")
 def curio_servers(session_app, request):
     """Start all Curio servers (backend, sandbox, frontend) together via curio start.
-    Backend port must match frontend's BACKEND_URL (default 5002 from .env) so the app can reach the API.
+    curio start gets --backend-url for the backend it starts, so the app reaches that API.
     Set CURIO_E2E_USE_EXISTING=1 to use already-running servers (e.g. in CI with docker compose).
     """
     if os.environ.get("CURIO_E2E_USE_EXISTING"):
@@ -263,7 +263,6 @@ def curio_servers(session_app, request):
     # leaves this unset, so hot-reload still applies there.
     env["FLASK_USE_RELOADER"] = "0"
     env["PORT"] = str(frontend_port)
-    env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["DONT_REWRITE_URLS"] = "false"
     env["CURIO_NO_OPEN"] = "1"
     # Ensure the backend child uses the dedicated test DB (session fixture in
@@ -391,6 +390,7 @@ def curio_servers(session_app, request):
         [
             "python", "curio.py", "start",
             "--backend-port", str(backend_port),
+            "--backend-url", f"http://127.0.0.1:{backend_port}",
             "--sandbox-port", str(sandbox_port),
             # Passed explicitly, like the other two. Without it ``curio.py
             # start`` falls back to its own default of 8080 - and

@@ -6,9 +6,6 @@ This guide deploys Curio under a `/curio` path prefix on a hostname you already 
 
 Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
-> [!IMPORTANT]
-> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` baked in at build time. Changing the public URL means rebuilding the image, there is no runtime override.
-
 ## Contents
 
 - [1. Configure the stack](#1-configure-the-stack)
@@ -25,7 +22,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 
 ## 1. Configure the stack
 
-This step lays down the source tree and the configuration file that tells Docker which ports to use and where the public site will live. Everything Curio runs in production is driven from `/srv/curio/.env`, so getting this right up front saves a rebuild later.
+This step lays down the source tree and two configuration files: `/srv/curio/.env` tells Docker which ports to use, and `/srv/curio/docker-compose.site.yml` tells Curio where the public site lives.
 
 Clone and create the data directories:
 
@@ -41,13 +38,14 @@ Create `/srv/curio/.env`:
 CURIO_CONTAINER_NAME=curio
 CURIO_PORT_5002=5002
 CURIO_PORT_8080=8080
+```
 
-# URL path the app is served under. Must match the Caddy path in step 2.
-CURIO_BASE_PATH=/curio
+Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2.
 
-# Public URL the bundle uses to reach the backend.
-# No trailing slash, frontend code does `${BACKEND_URL}/live` etc.
-BACKEND_URL=https://lab-name.your-uni.edu/curio/api
+```yaml
+services:
+  curio:
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio"]
 ```
 
 The three directories you created, `instance/`, `datasets/` and `.curio/`, are bind-mounted into the container and persist across recreates:
@@ -218,7 +216,7 @@ sudo systemctl reload caddy
 
 ## 3. Build and run
 
-This is where the frontend bundle gets compiled with `BACKEND_URL` baked in. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
+This is where the frontend bundle gets compiled. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
 
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts
@@ -227,13 +225,13 @@ This is where the frontend bundle gets compiled with `BACKEND_URL` baked in. The
 > **anyone who can reach the URL gets straight in with no login**. The
 > [`docker-compose.deploy.yml`](../docker-compose.deploy.yml) overlay is what adds
 > `--deploy` (auth + projects on), `--no-allow-publish` (locks the author-only
-> catalog mutators), `--base-path` from `CURIO_BASE_PATH`, and
-> `restart: unless-stopped`. Exporting `COMPOSE_FILE` once
+> catalog mutators), and `restart: unless-stopped`, and `docker-compose.site.yml`
+> adds the site's own arguments. Exporting `COMPOSE_FILE` once
 > per shell applies it to every later `docker compose` command.
 
 ```bash
 cd /srv/curio
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
 docker compose build
 docker compose up -d
 ```
@@ -255,11 +253,11 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 
 ## Updating
 
-Pulling new code is straightforward, but the `--no-cache` flag is important: Docker's layer cache occasionally fails to invalidate the npm-build step when build args change, which silently produces a frontend bundle still pointing at the old URL. Forcing a clean build is slower but guarantees correctness.
+Pull the new code, then rebuild and recreate:
 
 ```bash
 cd /srv/curio
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
 git pull
 docker compose build --no-cache
 docker compose up -d --force-recreate
@@ -289,11 +287,11 @@ A second checkout running on different ports under a different path lets you tes
 | Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
-Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, `CURIO_BASE_PATH=/curio-dev`, and `BACKEND_URL=https://lab-name.your-uni.edu/curio-dev/api`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
+Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, and a `docker-compose.site.yml` with `--backend-url https://lab-name.your-uni.edu/curio-dev/api` and `--base-path /curio-dev`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
 
 ```bash
 cd /srv/curio-dev
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
 docker compose -p curio-dev build
 docker compose -p curio-dev up -d --force-recreate
 ```
@@ -304,11 +302,11 @@ The `-p curio-dev` flag isolates this stack's Compose project so it doesn't conf
 
 The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) for push-to-deploy via Tailscale, so the GitHub Actions runner can reach your server without exposing public SSH. This is overkill for a one-person deployment but useful when multiple people merge to `main` and you want each merge automatically reflected on the dev stack.
 
-To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `BACKEND_URL` exports in the workflow file.
+To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `--backend-url` addresses the workflow writes into each stack's `docker-compose.site.yml`.
 
 Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → Deploy → Run workflow.
 
-`deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref, export the two-file `COMPOSE_FILE`, and rebuild with `--no-cache --force-recreate`.
+`deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
 
 ## Cutting a release
 
@@ -391,11 +389,10 @@ flooding it cannot push real errors out of the log.
 | Symptom | Likely cause |
 |---|---|
 | Caddy: `permission denied` on key | `caddy` user can't read the private key. Fix perms (see Path B above). |
-| `Loading failed for the <script> .../bundle.js` | `CURIO_BASE_PATH` in `.env` does not match the Caddy path. Fix it and run `docker compose up -d --force-recreate`. |
+| `Loading failed for the <script> .../bundle.js` | `--base-path` in `docker-compose.site.yml` does not match the Caddy path. Fix it and run `docker compose up -d --force-recreate`. |
 | `SSL_ERROR_INTERNAL_ERROR_ALERT` | Caddy has no cert for that hostname. Check the Caddyfile block exists, DNS resolves, and (Path A) port 80 is reachable from the public internet. |
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
-| Mixed-content errors in browser console | Bundle has an HTTP `BACKEND_URL` baked in. Update `.env`, rebuild with `--no-cache`. |
-| Bundle still references old URL after deploy | Cached npm-build layer. Run `docker compose build --no-cache`. |
+| Mixed-content errors in browser console | `--backend-url` in `docker-compose.site.yml` is an `http://` address. Use the `https://` one and run `docker compose up -d --force-recreate`. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 
@@ -422,7 +419,7 @@ flooding it cannot push real errors out of the log.
 - **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
 - **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, and cannot open a socket, but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
-- `.env` is gitignored, but verify with `git status` after creating it.
+- `.env` and `docker-compose.site.yml` are gitignored, but verify with `git status` after creating them.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
   `datalakes/` ships with the image and holds no user data, so it needs none;
   your own sources are in `.curio/datalakes/`, and a folder source's files are

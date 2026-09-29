@@ -5,16 +5,31 @@ const w = window as any;
 describe('backendUrl()', () => {
     const originalEnv = process.env.BACKEND_URL;
 
+    function serve(url: string) {
+        const meta = document.createElement('meta');
+        meta.setAttribute('name', 'curio-backend-url');
+        meta.setAttribute('content', url);
+        document.head.appendChild(meta);
+    }
+
     afterEach(() => {
         delete w.__CURIO_BACKEND_URL__;
+        document.querySelectorAll('meta[name="curio-backend-url"]').forEach((el) => el.remove());
         if (originalEnv === undefined) delete process.env.BACKEND_URL;
         else process.env.BACKEND_URL = originalEnv;
     });
 
     test('prefers the runtime value injected on window', () => {
         process.env.BACKEND_URL = 'http://baked:5002';
+        serve('https://served.example.org/app/api');
         w.__CURIO_BACKEND_URL__ = 'http://injected:5203';
         expect(backendUrl()).toBe('http://injected:5203');
+    });
+
+    test('then the address the frontend server wrote into the page', () => {
+        process.env.BACKEND_URL = 'http://baked:5002';
+        serve('https://served.example.org/app/api');
+        expect(backendUrl()).toBe('https://served.example.org/app/api');
     });
 
     test('falls back to the build-time env var when nothing is injected', () => {

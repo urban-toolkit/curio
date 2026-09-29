@@ -28,7 +28,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.main import base_path_arg, run_spa_static_server
+from utk_curio.main import backend_url_arg, base_path_arg, run_spa_static_server
 
 INDEX_BODY = "<!doctype html><title>curio</title><div id=root></div>"
 ASSET_BODY = "console.log('real bundle');"
@@ -37,7 +37,7 @@ HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 ANY_ACCEPT = "*/*"
 
 
-def _start(dist, base_path: str = "") -> str:
+def _start(dist, base_path: str = "", backend_url: str = "") -> str:
     """A real server on an ephemeral port, in a daemon thread; returns its URL."""
     # Bind :0 first so the port is known before the server thread starts, and
     # the test never races a fixed port another run might hold.
@@ -46,7 +46,7 @@ def _start(dist, base_path: str = "") -> str:
     probe.server_close()
 
     thread = threading.Thread(
-        target=run_spa_static_server, args=(str(dist), port, base_path), daemon=True
+        target=run_spa_static_server, args=(str(dist), port, base_path, backend_url), daemon=True
     )
     thread.start()
 
@@ -187,3 +187,51 @@ def test_base_path_arg_normalizes(value, expected):
 def test_base_path_arg_refuses_what_is_not_a_path_prefix(value):
     with pytest.raises(argparse.ArgumentTypeError):
         base_path_arg(value)
+
+
+BACKEND_META = '<meta name="curio-backend-url" content="https://curio.example.org/app/api">'
+
+
+@pytest.fixture(scope="module")
+def hosted_server(tmp_path_factory):
+    """``--base-path /app --backend-url https://curio.example.org/app/api``."""
+    dist = tmp_path_factory.mktemp("dist-hosted")
+    (dist / "index.html").write_text(BUILT_INDEX, encoding="utf-8")
+    (dist / "bundle.js").write_text(ASSET_BODY, encoding="utf-8")
+    return _start(dist, "/app", "https://curio.example.org/app/api")
+
+
+@pytest.mark.parametrize("path", ["/app/", "/app/projects", "/projects"])
+def test_the_page_names_the_backend_it_was_started_with(hosted_server, path):
+    status, body = _get(hosted_server, path)
+    assert status == 200
+    assert body == BUILT_INDEX.replace('<base href="/">', '<base href="/app/">' + BACKEND_META)
+
+
+def test_at_the_root_the_page_still_names_its_backend(tmp_path):
+    (tmp_path / "index.html").write_text(BUILT_INDEX, encoding="utf-8")
+    url = _start(tmp_path, "", "http://localhost:5102")
+    status, body = _get(url, "/catalog/nodes")
+    assert status == 200
+    assert '<base href="/"><meta name="curio-backend-url" content="http://localhost:5102">' in body
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://curio.urbantk.org/app/api/", "https://curio.urbantk.org/app/api"),
+        ("http://localhost:5002", "http://localhost:5002"),
+        ("/app/api", "/app/api"),
+    ],
+)
+def test_backend_url_arg_normalizes(value, expected):
+    assert backend_url_arg(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "/", "ftp://example.org", "https://example.org/a b", 'https://example.org/"x', "https://example.org/?q=1", "javascript:alert(1)"],
+)
+def test_backend_url_arg_refuses_what_is_not_an_address(value):
+    with pytest.raises(argparse.ArgumentTypeError):
+        backend_url_arg(value)

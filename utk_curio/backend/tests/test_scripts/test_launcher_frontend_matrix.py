@@ -4,8 +4,7 @@ The rule these pin: on a supported Node anything stale is refreshed, and only
 an out-of-date Node refuses to start. The three states interact, so the cases
 that matter are the products, not the axes:
 
-* ``dist/`` is missing, current, or stale (built in the wrong webpack mode, or
-  for a different BACKEND_URL; both read the same stamp).
+* ``dist/`` is missing, current, or stale (built in the wrong webpack mode).
 * ``node_modules/`` is absent, installed by this Node major, or by another.
 * the launcher is invoked plain, with ``--dev``, or with ``--force-rebuild``.
 
@@ -40,7 +39,7 @@ def _make(root, dist, tree, *, source=True):
         (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
         (root / "dist" / "bundle.js").write_text("the bundle", encoding="utf-8")
         mode = "production" if dist == "current" else "development"
-        (root / "dist" / ".curio-backend-url").write_text(f"{mode}\n\n", encoding="utf-8")
+        (root / "dist" / main.BUILD_STAMP).write_text(f"{mode}\n", encoding="utf-8")
     if tree != "absent":
         (root / "node_modules").mkdir(exist_ok=True)
         major = NODE_MAJOR if tree == "this major" else OTHER_MAJOR
@@ -173,14 +172,14 @@ def test_force_rebuild_drops_everything(frontend, monkeypatch, dist, tree):
 def test_the_upgrade_case_end_to_end(frontend, monkeypatch):
     """Node 24 checkout, upgraded: one plain start leaves everything correct.
 
-    The bundle predates the production build (old one-line stamp) and the tree
-    predates the upgrade, so both are stale for different reasons and both are
-    repaired in the right order: reinstall, then rebuild.
+    The bundle has no mode on record and the tree predates the upgrade, so both
+    are stale for different reasons and both are repaired in the right order:
+    reinstall, then rebuild.
     """
     _make(frontend, "current", "other major")
-    (frontend / "dist" / ".curio-backend-url").write_text("", encoding="utf-8")
+    (frontend / "dist" / main.BUILD_STAMP).write_text("", encoding="utf-8")
 
-    assert main._frontend_needs_build() is True   # one-line stamp is stale
+    assert main._frontend_needs_build() is True   # an unrecorded mode is stale
     assert main._frontend_tree_is_stale() is True
 
     ran = _build_run(monkeypatch, frontend)

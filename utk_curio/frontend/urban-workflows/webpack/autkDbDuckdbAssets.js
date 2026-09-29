@@ -14,6 +14,11 @@
  * did: webpack emits the four files as assets served by this instance, and
  * duckdb's worker still passes through duckdbExtensionMirror.js (#318).
  *
+ * The worker starts from a blob that only runs `importScripts`, so it cannot
+ * see the page. The loader also puts the backend address the page resolved
+ * (`globalThis.__curioBackendUrl`, set by index.tsx) into that blob, which is
+ * where duckdbExtensionMirror.js reads it.
+ *
  * It fails the build, rather than a map at run time, when autk-db's code no
  * longer has the shape it rewrites.
  */
@@ -36,11 +41,19 @@ function rewriteDuckdbAssetUrls(source) {
     "g",
   );
   const files = new Set();
-  const rewritten = region[0].replace(asset, (_, file) => {
+  let rewritten = region[0].replace(asset, (_, file) => {
     files.add(file);
     return `new URL(${file}, import.meta.url)`;
   });
   if (files.size === 0) fail("no DuckDB asset URL to rewrite");
+  const blob = /`importScripts\(\$\{JSON\.stringify\((\w+)\.mainWorker\)\}\);`/;
+  if (!blob.test(rewritten)) fail("no importScripts blob for DuckDB's worker");
+  rewritten = rewritten.replace(
+    blob,
+    (_, bundle) =>
+      "`self.__curioBackendUrl = ${JSON.stringify(String(globalThis.__curioBackendUrl || \"\"))};" +
+      `importScripts(\${JSON.stringify(${bundle}.mainWorker)});\``,
+  );
   return source.replace(region[0], rewritten);
 }
 

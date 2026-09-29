@@ -3,8 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        BACKEND_URL: ${BACKEND_URL:-http://localhost:5002}
     container_name: ${CURIO_CONTAINER_NAME:-curio}
     tty: true
     stdin_open: true

@@ -33,6 +33,8 @@ site/
 coverage/
 
 curio_docker_log.txt
+# A deployment's own curio.py arguments (docker-compose.deploy.yml).
+docker-compose.site.yml
 test_file.txt
 
 /data/

@@ -502,12 +502,11 @@ class TestVariablesThatStayEnvOnly:
 
 
 def test_backend_url_follows_the_backend_port():
-    """The bundle must be built for the backend this launch actually starts.
+    """The page must name the backend this launch actually starts.
 
-    ``BACKEND_URL`` is substituted into the frontend at BUILD time. It used to
-    come only from a hand-maintained ``frontend/urban-workflows/.env``, so
-    ``--backend-port`` alone moved the server without moving the UI's idea of
-    where it is -- and the UI then called whatever Curio owned the old port.
+    ``--backend-port`` alone moves the server; without this the UI's idea of
+    where it is stayed behind, and the UI then called whatever Curio owned the
+    old port.
     """
     set_environment_variables(**{**BASE, "backend_port": 5102})
 
@@ -534,15 +533,17 @@ def test_a_real_host_is_kept():
     assert os.environ["BACKEND_URL"] == "http://curio.example.org:5002"
 
 
-def test_an_explicit_backend_url_wins(monkeypatch):
-    """An operator terminating TLS or proxying needs the last word.
+def test_backend_url_argument_wins():
+    """An operator terminating TLS or proxying needs the last word (--backend-url)."""
+    set_environment_variables(**{**BASE, "backend_port": 5102, "backend_url": "https://curio.example.org/app/api"})
+    assert os.environ["BACKEND_URL"] == "https://curio.example.org/app/api"
 
-    Everything else here is derived, so this is the one escape hatch -- hence
-    ``setdefault`` rather than an unconditional write, unlike its neighbours.
-    """
-    monkeypatch.setenv("BACKEND_URL", "https://curio.example.org")
+
+def test_an_inherited_backend_url_is_not_an_input(monkeypatch):
+    """The address is curio.py's to decide: from --backend-url, or derived."""
+    monkeypatch.setenv("BACKEND_URL", "https://someone-else.example.org")
     set_environment_variables(**{**BASE, "backend_port": 5102})
-    assert os.environ["BACKEND_URL"] == "https://curio.example.org"
+    assert os.environ["BACKEND_URL"] == "http://localhost:5102"
 
 
 class TestExecMemoryFloor:

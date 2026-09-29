@@ -97,6 +97,22 @@ describe("the redirect itself", () => {
     expect(attempts).toEqual([other]);
   });
 
+  it("follows the backend the page handed the worker", () => {
+    // autkDbDuckdbAssets.js sets this in the worker's blob, from the page.
+    (self as any).__curioBackendUrl = "https://curio.example.org/app/api/";
+    try {
+      const served = "https://curio.example.org/app/api/file/vendor/duckdb-extensions/v1.5.1/wasm_eh/spatial.duckdb_extension.wasm";
+      const { FakeXHR, attempts } = runPrelude({ [served]: 200 });
+      const xhr = new FakeXHR();
+      xhr.open("GET", CDN_URL);
+      xhr.send();
+
+      expect(attempts).toEqual([served]);
+    } finally {
+      delete (self as any).__curioBackendUrl;
+    }
+  });
+
   it("does not retry a request that succeeded", () => {
     const { FakeXHR, attempts } = runPrelude({ [MIRROR_URL]: 200 });
     const xhr = new FakeXHR();

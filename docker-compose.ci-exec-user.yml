@@ -72,6 +72,8 @@ services:
       - 0.0.0.0
       - --backend-port
       - "5002"
+      - --backend-url
+      - "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
       # Published above, so unlike the deploy overlay the sandbox has to listen
       # on more than loopback-inside-the-container.
       - --sandbox-host
