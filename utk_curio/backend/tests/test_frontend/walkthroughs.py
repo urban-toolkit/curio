@@ -1205,7 +1205,7 @@ def examples_are_seeded_for_a_new_account(ctx: Ctx) -> None:
     for title in EXAMPLE_TITLES:
         ctx.focus(page.get_by_text(title, exact=True).first, hold=900)
 
-    ctx.say("Eleven example dataflows, owned by this account",
+    ctx.say("The example dataflows, owned by this account",
             "Not the guest's copies - this account's own, ready to open.")
     ctx.capture("examples-gallery")
 
@@ -1610,6 +1610,11 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     # The body lives in the editor's Output pane; before a run the grammar
     # tab is the active one, so open the pane the way a user would.
     node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
+    # The click leaves the tab hovered and focused, and its "Output" tooltip
+    # would sit in every capture after it.
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.mouse.move(5, 5)
+    expect(page.get_by_role("tooltip")).to_have_count(0, timeout=5000)
     # It loads its own data, so it is "not run" (not waiting on an upstream).
     before = node.locator('[data-curio-node-empty="not-run"]')
     before.first.wait_for(state="visible", timeout=15000)

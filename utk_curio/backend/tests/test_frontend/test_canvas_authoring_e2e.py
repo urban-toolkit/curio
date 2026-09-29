@@ -37,6 +37,7 @@ from .utils import (
     REPO_ROOT,
     api_json,
     canvas_node_type,
+    close_tools_palette,
     connect_nodes,
     drag_to_canvas,
     open_tools_palette,
@@ -202,6 +203,7 @@ def test_build_and_run_dataflow_from_scratch(
 
     # 2. LOADER NODE, by dragging the dataset onto the pane.
     loader_id = drag_to_canvas(page, dataset_row, at=POS_LOADER)
+    close_tools_palette(page, "datasets")
     assert _unversioned(canvas_node_type(page, loader_id)) == LOADER_TYPE, (
         "dropping a dataset must take the dataset branch of handleDrop and "
         "create a Data Loading node"

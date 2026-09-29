@@ -331,6 +331,9 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     own_card.click()
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
+    # Publish sits below the fold of the drawer's own scroll box, which the
+    # full-page capture does not scroll.
+    publish.scroll_into_view_if_needed()
 
     save_workflow_test_screenshot(
         page, "publish-offered-for-own-dataset",

@@ -53,6 +53,7 @@ from .utils import (
     activate_header_icon,
     api_json,
     click_package_summary_action,
+    close_tools_palette,
     connect_nodes,
     drag_to_canvas,
     open_tools_palette,
@@ -484,6 +485,7 @@ def test_save_export_import_and_run_package_nodes(
     expect(head_row).to_have_count(1, timeout=20000)
     first_id = drag_to_canvas(page, head_row, at=POS_FIRST)
     second_id = drag_to_canvas(page, head_row, at=POS_SECOND)
+    close_tools_palette(page, "packages")
 
     connect_nodes(page, new_loader, first_id)
     connect_nodes(page, first_id, second_id)
