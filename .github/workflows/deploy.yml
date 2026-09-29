@@ -145,13 +145,14 @@ jobs:
             exit 1
           fi
           # This stack's container name, host ports and curio.py arguments
-          # (docker-compose.deploy.yml).
+          # (docker-compose.deploy.yml). The backend is /api on whichever host
+          # serves the page, so the stack needs no hostname of its own.
           cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
               container_name: curio-dev
               ports: !override ["5012:5002", "8090:8080"]
-              command: ["--backend-url", "https://curio-dev.urbantk.org/api"]
+              command: ["--backend-url", "/api"]
           SITE
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
           docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
