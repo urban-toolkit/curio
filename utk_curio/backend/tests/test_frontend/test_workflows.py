@@ -27,6 +27,7 @@ from .utils import (
     read_node_error_text,
     wait_for_node_done,
     wait_for_node_settled,
+    wait_for_run_guard_released,
 )
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
@@ -374,6 +375,9 @@ class TestWorkflowCanvas:
                     f"Node {node.id} ({node.type}): expected an empty-render "
                     f"verdict, got {status!r}: {detail}"
                 )
+                wait_for_run_guard_released(
+                    self.page, timeout_ms=node_execution_timeout_ms("AUTK_GRAMMAR")
+                )
                 continue
 
             # Wait for success, or fail with the node's own error text. A
@@ -388,6 +392,13 @@ class TestWorkflowCanvas:
                 if node.type == "AUTK_GRAMMAR":
                     self._capture_autk_error(node, node_el)
                 raise
+            # Play also re-ran this node's stale ancestors, and a node that
+            # already showed Done settles before that run reaches it. Wait for
+            # the run itself, so the next node and the checks after this loop
+            # see the chain finished.
+            wait_for_run_guard_released(
+                self.page, timeout_ms=node_execution_timeout_ms("AUTK_GRAMMAR")
+            )
 
             # verify the inline output area shows a Jupyter-style counter.
             # Grammar nodes (VIS_VEGA / AUTK_GRAMMAR) render their result via a

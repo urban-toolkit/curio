@@ -2871,6 +2871,28 @@ def run_all_and_wait(page, *, timeout_ms: int = 180000) -> dict:
     return wait_for_run_all_to_end(page, timeout_ms=timeout_ms)
 
 
+def wait_for_run_guard_released(page, *, timeout_ms: int) -> None:
+    """Block until no run holds the run guard.
+
+    Playing one node runs its stale ancestors too (``playNodesUpTo``), and it
+    takes the same guard as Run All (``isRunActive``, mirrored on the Run All
+    button as ``data-run-active``). The played node can report Done before that
+    run ends: an Autark map that already drew from its input stays Done while
+    the ancestors it waits on re-run. Waiting on the guard waits for the whole
+    run the click started.
+    """
+    try:
+        page.wait_for_function(
+            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r});"
+            " return !b || b.getAttribute('data-run-active') !== 'true'; }",
+            timeout=timeout_ms,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the run a node's Play started did not end within {timeout_ms} ms"
+        ) from None
+
+
 # ---------------------------------------------------------------------------
 # Holding a run open on purpose
 # ---------------------------------------------------------------------------
