@@ -24,13 +24,18 @@ jest.mock('../../../providers/ProvenanceProvider', () => ({
 // (hook/useGrammarInputState); settable per test, reset in afterEach.
 let mockFlowEdges: any[] = [];
 let mockNodeExecStatus: Record<string, string> = {};
+const mockSignalNodeExecDone = jest.fn();
 jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({
     workflowNameRef: { current: 'test-workflow' },
     edges: mockFlowEdges,
     nodeExecStatus: mockNodeExecStatus,
+    signalNodeExecDone: mockSignalNodeExecDone,
   }),
 }));
+
+// jsdom has no URL.createObjectURL; the export tests only need to know it was asked.
+jest.mock('../../../utils/triggerBlobDownload', () => ({ triggerBlobDownload: jest.fn() }));
 
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
@@ -267,6 +272,45 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         input: { path: 'p', dataType: 'dataframe' },
       });
       expect(exportButtonLabel(result)).toContain('data_export.csv');
+    });
+
+    // #513: it used to set a success output on mount and on every input, so
+    // the header read "Done" (and the runtime journal recorded a success)
+    // before anything had run, connected or not.
+    test.each([
+      ['unconnected', ''],
+      ['connected', { path: 'p', dataType: 'dataframe' }],
+    ])('says nothing ran until it runs (%s)', async (_label, input) => {
+      const setOutput = jest.fn();
+      await callBehavior(useDataExportBehavior, { input: input as any }, { setOutput });
+      expect(setOutput).not.toHaveBeenCalled();
+    });
+
+    test('a play with nothing connected settles the node and releases the run', async () => {
+      mockSignalNodeExecDone.mockClear();
+      const setOutput = jest.fn();
+      const result = await callBehavior(useDataExportBehavior, { input: '' }, { setOutput });
+
+      await act(async () => { await result.current.sendCodeOverride!(''); });
+
+      expect(setOutput).toHaveBeenCalledWith({ code: '', content: '' });
+      expect(mockSignalNodeExecDone).toHaveBeenCalledWith('node-1');
+    });
+
+    test('a download reports what it wrote and releases the run', async () => {
+      mockSignalNodeExecDone.mockClear();
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useDataExportBehavior, { input: { path: 'p', dataType: 'dataframe' } }, { setOutput },
+      );
+
+      await act(async () => { await result.current.sendCodeOverride!(''); });
+
+      expect(setOutput.mock.calls.map(([o]) => o.code)).toEqual(['exec', 'success']);
+      expect(setOutput).toHaveBeenLastCalledWith(
+        expect.objectContaining({ content: 'Downloaded data_export.csv' }),
+      );
+      expect(mockSignalNodeExecDone).toHaveBeenCalledWith('node-1');
     });
   });
 
