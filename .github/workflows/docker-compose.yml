@@ -85,6 +85,18 @@ on:
         description: 'Also run the multi-user stress job (~30 min on the GPU runner)'
         type: boolean
         default: false
+      # A re-mint run: e2e only, and every screenshot whose screen changed is
+      # written over its baseline. Review the frames on the run's
+      # curio-ci-report.html, then commit its reminted-baselines artifact.
+      # This is the only way baselines are made (see the test_frontend README).
+      remint:
+        description: 'Re-mint the screenshot baselines (e2e only; artifact reminted-baselines)'
+        type: boolean
+        default: false
+      remint_filter:
+        description: 'With remint: a pytest -k expression to re-mint only some tests (empty for all)'
+        type: string
+        default: ''
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
@@ -116,8 +128,11 @@ permissions:
 #      to true to save queue time and that stops being true: a cancelled job can
 #      skip its `if: always()` teardown and strand a compose project that the
 #      next run then trips over.
+#
+# A re-mint dispatch gets a group of its own, so it and the branch's ordinary
+# run never evict each other while pending.
 concurrency:
-  group: utk-ci-${{ github.ref }}
+  group: utk-ci-${{ github.ref }}${{ inputs.remint && '-remint' || '' }}
   cancel-in-progress: false
 
 jobs:
@@ -178,6 +193,12 @@ jobs:
       # and difference images (tests/test_frontend/comparisons.py), for the CI
       # report page built at the end of this job.
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      # "1" on a re-mint dispatch, which runs the e2e suite alone with
+      # --remint-baselines; the filter narrows it with -k. Read by the steps
+      # below from the environment, never spliced into a script: the filter is
+      # free text from the dispatch form.
+      CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+      CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
       # docker-compose.ci.yml publishes) so the CI stack never collides with
@@ -374,14 +395,17 @@ jobs:
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
 
       # Both write JUnit for the CI report page onto the .curio bind mount,
-      # where the host reads it at the end of the job.
+      # where the host reads it at the end of the job. A re-mint skips them,
+      # like every other suite but e2e: it is there for the frames.
       - name: 🧪 Run backend unit tests
+        if: env.CURIO_REMINT != '1'
         run: |
           docker compose -p curio-ci exec -T \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/backend.xml curio \
             bash scripts/test.sh --backend-only --use-existing
 
       - name: 🧪 Run sandbox unit tests
+        if: env.CURIO_REMINT != '1'
         run: |
           docker compose -p curio-ci exec -T \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/sandbox.xml curio \
@@ -481,10 +505,48 @@ jobs:
           # JUnit for the CI report page. Absolute, since test.sh changes
           # directory before it runs pytest.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+        shell: bash
         run: |
+          set -euo pipefail
+          # pytest splits PYTEST_ADDOPTS the way a shell would, so the filter
+          # goes in quoted.
+          if [ "${CURIO_REMINT:-}" = 1 ]; then
+            PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+            fi
+            export PYTEST_ADDOPTS
+            echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
+          fi
           bash scripts/test.sh --e2e-only --use-existing \
             --parallel "$CURIO_E2E_PARALLEL" \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
+
+      # What a re-mint wrote into this checkout: the baselines whose screen
+      # changed, and any it minted. Exactly those files, flat, for review on the
+      # report page and then a commit. The *_actual.png a failure leaves behind
+      # is gitignored, so --exclude-standard keeps it out.
+      - name: 📦 Collect the re-minted baselines
+        if: always() && env.CURIO_REMINT == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reminted-baselines
+          git ls-files --modified --others --exclude-standard \
+            -- docs/examples/dataflows/expected_outputs \
+            | { grep -E '\.png$' || true; } > reminted-list.txt
+          while IFS= read -r f; do cp "$f" reminted-baselines/; done < reminted-list.txt
+          echo "$(wc -l < reminted-list.txt) baselines re-minted"
+
+      - name: 📤 Upload the re-minted baselines
+        if: always() && env.CURIO_REMINT == '1'
+        uses: actions/upload-artifact@v6
+        with:
+          name: reminted-baselines
+          path: reminted-baselines/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: 📊 Install Allure CLI
         if: always()
@@ -521,7 +583,7 @@ jobs:
       - name: Jest frontend unit tests
         # Builds its own frontend_builder image and never touches the running
         # stack, so this stands on its own no matter what happened above.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.CURIO_REMINT != '1' }}
         run: |
           docker build --target frontend_builder -t curio-frontend-test .
           # --json feeds the CI report page; the console output is unchanged.
@@ -538,7 +600,7 @@ jobs:
         # that step is `if: !cancelled()`: if it is ever skipped or reordered, a
         # bare docker run would fail with "image not found" instead of a type
         # error. It is a layer-cache hit.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.CURIO_REMINT != '1' }}
         # bash, for pipefail: the tee below must not hide tsc's exit status.
         shell: bash
         run: |
@@ -670,9 +732,11 @@ jobs:
   test-gpu-isolated:
     needs: test-gpu
     # Even if the in-process suite failed, this one's result is independent
-    # information and worth having -- unless the run was cancelled.
+    # information and worth having -- unless the run was cancelled. A re-mint
+    # run is for the screenshots, which this job does not take.
     if: >-
       !cancelled() &&
+      !inputs.remint &&
       github.event_name != 'schedule' &&
       github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
@@ -918,8 +982,10 @@ jobs:
     # skipped just because an earlier suite was red, since a permissions
     # regression is exactly the kind of thing that also breaks other jobs.
     # Serialized behind them because all three share the runner's workspace.
+    # Not in a re-mint run, which is for the screenshots.
     if: >-
       !cancelled() &&
+      !inputs.remint &&
       github.event_name != 'schedule' &&
       github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
@@ -1095,7 +1161,7 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && inputs.stress) ||
+       (github.event_name == 'workflow_dispatch' && inputs.stress && !inputs.remint) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]

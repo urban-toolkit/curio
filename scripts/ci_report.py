@@ -63,18 +63,22 @@ TRACE_KEEP = 6000  # characters kept from each end of a long trace
 MAX_LISTED = 200  # failures listed per suite
 STATUS_RANK = {"passed": 0, "xfailed": 1, "skipped": 2, "error": 3, "failed": 4}
 
+# "reminted" and "unchanged" come only from a --remint-baselines run: the first
+# replaced its baseline, the second kept it.
 COMPARISON_GROUP = {
     "failed": "over", "capture-error": "capture", "missing": "missing",
     "passed": "within", "minted": "within",
+    "reminted": "reminted", "unchanged": "unchanged",
 }
 COMPARISON_LABEL = {
     "failed": "Over budget", "capture-error": "Capture failed",
     "missing": "No baseline", "passed": "Within budget", "minted": "Minted",
+    "reminted": "Re-minted", "unchanged": "Unchanged",
 }
-GROUP_ORDER = ("over", "capture", "missing", "within")
+GROUP_ORDER = ("reminted", "over", "capture", "missing", "within", "unchanged")
 GROUP_LABEL = {
-    "over": "Over budget", "capture": "Capture failed",
-    "missing": "No baseline", "within": "Within budget",
+    "reminted": "Re-minted", "over": "Over budget", "capture": "Capture failed",
+    "missing": "No baseline", "within": "Within budget", "unchanged": "Unchanged",
 }
 
 
@@ -329,9 +333,12 @@ def read_comparisons(root):
 
 
 def _comparison_order(record):
-    budget = record.get("max_diff_ratio") or 0
-    closeness = (record.get("ratio") or 0) / budget if budget else 0
     group = COMPARISON_GROUP.get(record.get("status"), "within")
+    if group in ("reminted", "unchanged"):
+        closeness = record.get("ratio") or 0  # biggest change first
+    else:
+        budget = record.get("max_diff_ratio") or 0
+        closeness = (record.get("ratio") or 0) / budget if budget else 0
     return GROUP_ORDER.index(group), -closeness, record.get("baseline") or ""
 
 
@@ -470,6 +477,8 @@ def build(args, environ=os.environ):
     ordered = [case.screenshot for suite in report.suites for case in suite.cases if case.screenshot]
     ordered += list(shots.values())
     for record in report.comparisons:
+        if record.get("status") == "unchanged":
+            continue  # listed without images: a re-mint kept these baselines
         ordered += [record["images"][kind] for kind in ("expected", "created", "diff")
                     if kind in record["images"]]
     encoded = guarded("images", lambda: encode_images(ordered, args.workers), {})
@@ -754,20 +763,58 @@ def render_comparisons(report):
     if not records:
         return ('<section id="comparisons"><h2>Screenshot comparisons</h2><p class="muted">'
                 "No comparisons were recorded.</p></section>")
-    counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in records)
+    shown = [r for r in records if r.get("status") != "unchanged"]
+    kept = [r for r in records if r.get("status") == "unchanged"]
+    counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in shown)
     chips = [f'<button type="button" class="chip" data-group="all" aria-pressed="true">All '
-             f'<span class="num">{len(records)}</span></button>']
+             f'<span class="num">{len(shown)}</span></button>']
     chips += [f'<button type="button" class="chip {g}" data-group="{g}" aria-pressed="false">'
               f'{GROUP_LABEL[g]} <span class="num">{counts[g]}</span></button>'
               for g in GROUP_ORDER if counts[g]]
+    volatile = ('<span class="swatch volatile"></span> different, inside text a run writes '
+                'fresh every time (not counted by a re-mint) '
+                if any(r.get("volatile_pixels") for r in records) else "")
     legend = ('<p class="legend"><span class="swatch counted"></span> counted against the budget '
               '<span class="swatch within"></span> different, but within the per-channel tolerance '
-              '<span class="swatch same"></span> the same (expected image, faded)</p>')
+              f'{volatile}<span class="swatch same"></span> the same (expected image, faded)</p>')
     tools = (f'<div class="tools">{"".join(chips)}<input id="cmp-search" type="search" '
              'placeholder="Filter by baseline or test" aria-label="Filter comparisons"></div>')
-    cards = "".join(render_comparison(report, r) for r in records)
-    return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{tools}{legend}'
-            f'<div class="cards">{cards}</div></section>')
+    intro = render_remint_intro(records) if counts["reminted"] or kept else ""
+    cards = "".join(render_comparison(report, r) for r in shown)
+    return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{intro}{tools}{legend}'
+            f'<div class="cards">{cards}</div>{render_unchanged(kept)}</section>')
+
+
+def _remint_floor(records):
+    return next((r["remint_min_ratio"] for r in records if r.get("remint_min_ratio") is not None), None)
+
+
+def render_remint_intro(records):
+    reminted = sum(1 for r in records if r.get("status") == "reminted")
+    kept = sum(1 for r in records if r.get("status") == "unchanged")
+    floor = _remint_floor(records)
+    rule = (f"more than {percent(floor)} of its pixels changed" if floor is not None
+            else "its pixels changed")
+    return (f'<p class="note">A re-mint run: {reminted} baselines were replaced by what this run '
+            f"captured and {kept} were kept. A baseline is replaced when {rule}, not counting "
+            "text a run writes fresh every time (file names, ids, dates, times and the app "
+            "version). Each re-minted card shows the baseline it replaced; the replacements are "
+            "in this run's <code>reminted-baselines</code> artifact.</p>")
+
+
+def render_unchanged(records):
+    if not records:
+        return ""
+    rows = "".join(
+        f"<tr><td><code>{esc(r.get('baseline') or '?')}</code></td>"
+        f'<td class="num">{percent(r.get("ratio"))}</td>'
+        f'<td class="num">{percent(r.get("remint_ratio"))}</td></tr>'
+        for r in sorted(records, key=lambda r: -(r.get("remint_ratio") or 0)))
+    return (f'<details class="unchanged" id="unchanged"><summary>{len(records)} baselines '
+            "kept as committed</summary><div class=\"table-wrap\"><table><thead><tr>"
+            '<th>Baseline</th><th class="num">Pixels changed</th>'
+            '<th class="num">Not counting volatile text</th></tr></thead>'
+            f"<tbody>{rows}</tbody></table></div></details>")
 
 
 def render_comparison(report, record):
@@ -784,8 +831,25 @@ def render_comparison(report, record):
     test_bits = f'<span class="test-id">{esc(test)}</span>' if test else ""
     if record.get("test_status") in ("failed", "error"):
         test_bits += " " + badge("failed", "test failed")
+    captions = (("expected", "Expected"), ("created", "Created"), ("diff", "Difference"))
 
-    if ratio is not None and budget:
+    if status == "reminted":
+        captions = (("expected", "Committed baseline"), ("created", "Re-minted"),
+                    ("diff", "Difference"))
+        recapture = record.get("recapture_ratio")
+        floor = record.get("remint_min_ratio") or 0
+        verdict = (f"<strong>{percent(ratio)}</strong> of pixels changed from the committed "
+                   f"baseline by more than {esc(threshold)} per channel, "
+                   f"<strong>{percent(record.get('remint_ratio'))}</strong> not counting "
+                   "volatile text.")
+        if recapture is not None:
+            verdict += f" A second capture right after moved {percent(recapture)}."
+            if recapture > floor:
+                head.append(badge("capture", "moved on recapture"))
+        if ratio is not None and budget and ratio > budget:
+            head.append(badge("over", "over the budget until committed"))
+        meter = ""
+    elif ratio is not None and budget:
         verdict = (f"<strong>{percent(ratio)}</strong> of pixels differ by more than {esc(threshold)} "
                    f"per channel; budget <strong>{percent(budget)}</strong>.")
         share = min(ratio / budget, 1.0)
@@ -812,7 +876,7 @@ def render_comparison(report, record):
     error = f'<pre class="message">{esc(record["error"])}</pre>' if record.get("error") else ""
 
     figures = []
-    for kind, caption in (("expected", "Expected"), ("created", "Created"), ("diff", "Difference")):
+    for kind, caption in captions:
         path = record["images"].get(kind)
         uri = report.images.get(path) if path else None
         full = f"{caption}: {baseline}"
@@ -864,9 +928,11 @@ def render_summary(report):
         else:
             lines.append(f"| {cell(suite.label)} | {word} | | | | |")
     counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in report.comparisons)
+    remint = (f" Re-mint: {counts['reminted']} baselines replaced, {counts['unchanged']} kept."
+              if counts["reminted"] or counts["unchanged"] else "")
     lines += ["", f"Screenshot comparisons: {len(report.comparisons)} recorded, "
               f"{counts['over']} over budget, {counts['missing']} without a baseline, "
-              f"{counts['capture']} capture failures."]
+              f"{counts['capture']} capture failures.{remint}"]
     return "\n".join(lines) + "\n"
 
 
@@ -900,7 +966,8 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.passed,.badge.success,.badge.within{color:var(--pass)}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
-.badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed{color:var(--skip)}
+.badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
+.badge.reminted{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}
@@ -924,6 +991,8 @@ border-radius:6px;background:var(--panel);color:var(--text)}
 .legend{color:var(--muted);font-size:12px;display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center}
 .swatch{display:inline-block;width:12px;height:12px;border:1px solid var(--line);vertical-align:-2px}
 .swatch.counted{background:#ff0000}.swatch.within{background:#ffbe3c}.swatch.same{background:#d9d9d9}
+.swatch.volatile{background:#4682ff}
+details.unchanged{margin:14px 0}
 .cards{display:flex;flex-direction:column;gap:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
 content-visibility:auto;contain-intrinsic-size:auto 520px}

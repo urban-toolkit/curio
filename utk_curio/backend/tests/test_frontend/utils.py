@@ -8,6 +8,7 @@ import textwrap
 from pathlib import Path
 from contextlib import contextmanager
 from io import BytesIO
+from typing import NamedTuple
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
@@ -1101,6 +1102,127 @@ def dismiss_toasts(
 #: recorded in the command.
 MINT_BASELINES = False
 
+#: Whether this run re-mints: every capture is compared with its committed
+#: baseline, and one whose screen changed is written over it (a missing one is
+#: minted). Off unless ``--remint-baselines`` was passed. The CI report page
+#: shows each re-minted frame next to the baseline it replaced.
+REMINT_BASELINES = False
+
+#: How to ask for baselines, in every message that needs one.
+REMINT_HOW = (
+    "To make baselines, run `gh workflow run docker-compose.yml --ref <branch> "
+    "-f remint=true`, review the frames on that run's curio-ci-report.html, "
+    "then commit its reminted-baselines artifact."
+)
+
+
+def allow_baseline_writes(*, mint: bool, remint: bool, environ=os.environ) -> None:
+    """Turn on ``--mint-baselines`` / ``--remint-baselines``, on CI only.
+
+    A baseline is what CI renders. A capture from any other machine differs in
+    text antialiasing, fonts and scrollbars, and would then fail on CI or hide
+    a change there.
+    """
+    global MINT_BASELINES, REMINT_BASELINES
+    if not (mint or remint):
+        return
+    if environ.get("GITHUB_ACTIONS") != "true":
+        flag = "--remint-baselines" if remint else "--mint-baselines"
+        raise pytest.UsageError(f"{flag} runs on CI only. {REMINT_HOW}")
+    MINT_BASELINES = bool(mint)
+    REMINT_BASELINES = bool(remint)
+
+
+#: A re-mint leaves a baseline alone when at most this share of its pixels
+#: changed, not counting the volatile text below. The rest of the difference
+#: between two CI runs of one commit is a few dozen pixels (a focused editor's
+#: line numbers, a resize grip), well under this.
+REMINT_MIN_RATIO = 0.0005
+
+#: Text a run writes fresh every time, so it differs from any baseline even
+#: when the screen is the same: artifact file names (epoch milliseconds and a
+#: random suffix), uuids and bare uuid hex, the short proposal id, a package
+#: id's random segment, dates and times of day, and the app version in the
+#: corner, which moves with every commit to main. A re-mint does not count
+#: differences inside it; ordinary comparisons still do.
+VOLATILE_TEXT = (
+    r"\b\d{13}_[0-9a-f]{8}\b",
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    r"\b[0-9a-f]{32}\b",
+    r"(?<=proposal )[0-9a-f]{8}\b",
+    r"(?<=\.)(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{8,10}(?=@\d)",
+    r"\b\d{1,2}/\d{1,2}/\d{4}\b",
+    r"\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b",
+    r"^\s*\d+\.\d+\.\d+[\w.+-]*\s*$",
+)
+
+# The client boxes of every VOLATILE_TEXT match, relative to *root* (the
+# captured element) or to the top-left of the page.
+_VOLATILE_BOXES_BODY = """
+    const origin = root ? root.getBoundingClientRect() : {left: 0, top: 0};
+    const res = patterns.map((p) => new RegExp(p, 'g'));
+    const boxes = [];
+    const walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.nodeValue || '';
+        if (!text.trim()) continue;
+        for (const re of res) {
+            re.lastIndex = 0;
+            for (let m = re.exec(text); m; m = re.exec(text)) {
+                if (!m[0]) { re.lastIndex += 1; continue; }
+                const range = document.createRange();
+                range.setStart(node, m.index);
+                range.setEnd(node, m.index + m[0].length);
+                for (const r of range.getClientRects()) {
+                    if (r.width > 0 && r.height > 0) {
+                        boxes.push([r.left - origin.left, r.top - origin.top,
+                                    r.right - origin.left, r.bottom - origin.top]);
+                    }
+                }
+            }
+        }
+    }
+    return {boxes, scale: window.devicePixelRatio || 1};
+"""
+_VOLATILE_BOXES_PAGE_JS = (
+    "(patterns) => { window.scrollTo(0, 0); const root = null;" + _VOLATILE_BOXES_BODY + "}"
+)
+_VOLATILE_BOXES_ELEMENT_JS = "(root, patterns) => {" + _VOLATILE_BOXES_BODY + "}"
+
+
+def _volatile_boxes(page, clip_selector: str | None) -> list:
+    """Pixel boxes of the volatile text in what is about to be captured.
+
+    Never raises: with no boxes a re-mint just counts every difference.
+    """
+    try:
+        if clip_selector is None:
+            found = page.evaluate(_VOLATILE_BOXES_PAGE_JS, list(VOLATILE_TEXT))
+        else:
+            # A missing element is the capture's failure to report, not this one's.
+            found = page.locator(clip_selector).first.evaluate(
+                _VOLATILE_BOXES_ELEMENT_JS, list(VOLATILE_TEXT), timeout=5000)
+        scale = float(found.get("scale") or 1)
+        return [tuple(v * scale for v in box) for box in found.get("boxes") or []]
+    except Exception:  # noqa: BLE001 - best effort, like the webfont wait
+        return []
+
+
+def _box_mask(boxes, shape):
+    """A boolean image of *shape* that is true inside *boxes*, one pixel padded."""
+    import math
+
+    import numpy as np
+
+    mask = np.zeros(shape, dtype=bool)
+    height, width = shape
+    for x0, y0, x1, y1 in boxes:
+        left, top = max(0, int(x0) - 1), max(0, int(y0) - 1)
+        right, bottom = min(width, math.ceil(x1) + 1), min(height, math.ceil(y1) + 1)
+        if right > left and bottom > top:
+            mask[top:bottom, left:right] = True
+    return mask
+
 #: The app's first font is Rubik, fetched from Google Fonts at runtime
 #: (src/index.html). Everything after it in the stack is a system fallback, so
 #: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
@@ -1216,6 +1338,124 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
         ) from None
 
 
+class _Comparison(NamedTuple):
+    actual_cmp: object
+    expected_cmp: object
+    diff: object
+    arr: object
+    counted: object
+    mismatched: int
+    total: int
+    ratio: float
+
+
+def _compare_images(actual_img, expected_img, pixel_threshold: int) -> _Comparison:
+    """Count the pixels where *actual_img* and *expected_img* differ by more than
+    *pixel_threshold* in any channel, both resized to the larger of their sizes.
+    """
+    from PIL import Image, ImageChops
+    import numpy as np
+
+    target_w = max(actual_img.width, expected_img.width)
+    target_h = max(actual_img.height, expected_img.height)
+    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
+    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
+
+    diff = ImageChops.difference(actual_cmp, expected_cmp)
+    arr = np.asarray(diff)
+    total = int(arr.shape[0] * arr.shape[1])
+    counted = (arr > pixel_threshold).any(axis=2)
+    mismatched = int(counted.sum())
+    ratio = mismatched / total if total else 0.0
+    return _Comparison(actual_cmp, expected_cmp, diff, arr, counted, mismatched, total, ratio)
+
+
+def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
+            max_diff_ratio, record_args) -> None:
+    """Write a fresh capture over its baseline when the screen changed.
+
+    Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
+    volatile text. Otherwise the baseline stays as committed and the record says
+    ``unchanged``. A re-minted frame is recorded next to the baseline it
+    replaced, for the CI report page, and captured a second time: when that
+    capture differs from the first by more than the budget the screen had not
+    settled, so the old baseline is put back and the test fails.
+
+    The old-versus-new difference never fails the test: showing what changed is
+    what a re-mint is for.
+    """
+    from PIL import Image
+
+    name = os.path.basename(expected_path)
+    with open(expected_path, "rb") as handle:
+        old_bytes = handle.read()
+    old_img = Image.open(BytesIO(old_bytes)).convert("RGB")
+    boxes = _volatile_boxes(page, clip_selector)
+    try:
+        new_img = capture()
+    except Exception as exc:
+        comparisons.record(
+            "capture-error", expected=old_img,
+            error=f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
+
+    cmp = _compare_images(new_img, old_img, pixel_threshold)
+    volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == old_img.size else None
+    changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
+    remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
+    evidence = dict(
+        expected=old_img, created=new_img, expected_cmp=cmp.expected_cmp,
+        arr=cmp.arr, counted=cmp.counted, volatile=volatile,
+        mismatched=cmp.mismatched, total=cmp.total, ratio=cmp.ratio,
+        remint_ratio=remint_ratio, remint_min_ratio=REMINT_MIN_RATIO,
+    )
+    if remint_ratio <= REMINT_MIN_RATIO:
+        comparisons.record("unchanged", **evidence, **record_args)
+        return
+
+    try:
+        _assert_mintable(new_img, expected_path, page)
+    except AssertionError as exc:
+        comparisons.record("capture-error", error=str(exc), **evidence, **record_args)
+        raise
+    new_img.save(expected_path)
+    try:
+        again = capture()
+    except Exception as exc:
+        with open(expected_path, "wb") as handle:
+            handle.write(old_bytes)
+        comparisons.record(
+            "capture-error", expected=old_img, created=new_img,
+            error=f"second capture failed, baseline left as committed: "
+                  f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
+    settle = _compare_images(again, new_img, pixel_threshold)
+    if settle.ratio > max_diff_ratio:
+        with open(expected_path, "wb") as handle:
+            handle.write(old_bytes)
+        comparisons.record(
+            "failed", expected=new_img, created=again,
+            expected_cmp=settle.expected_cmp, arr=settle.arr,
+            counted=settle.counted, mismatched=settle.mismatched,
+            total=settle.total, ratio=settle.ratio,
+            error="the screen was still changing: a second capture right "
+                  "after the re-mint differs from it, so the baseline was left "
+                  "as committed", **record_args,
+        )
+        raise AssertionError(
+            f"not re-minting {name}: a second capture right after differs from "
+            f"the first by {settle.ratio:.2%}, over the {max_diff_ratio:.2%} "
+            "budget, so the screen had not settled. The baseline is left as "
+            "committed."
+        )
+    comparisons.record(
+        "reminted", expected_bytes=old_bytes, recapture_ratio=settle.ratio,
+        **evidence, **record_args,
+    )
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -1244,8 +1484,11 @@ def save_workflow_test_screenshot(
     report page (see comparisons.py).
 
     If the file does **not** exist the run FAILS. Creating a baseline is a
-    deliberate act, ``pytest --mint-baselines``, because whatever the app renders
-    that day becomes the definition of correct for every run afterwards.
+    deliberate act, a CI run dispatched with ``remint=true`` (``--mint-baselines``
+    and ``--remint-baselines`` refuse to run anywhere else), because whatever
+    the app renders that day becomes the definition of correct for every run
+    afterwards. Under ``--remint-baselines`` an existing baseline is compared
+    and, when its screen changed, rewritten (see :func:`_remint`).
 
     It used to mint implicitly, which meant a first run always passed. Two ways
     that bites, both seen: a baseline captured against a broken build enshrines
@@ -1292,8 +1535,7 @@ def save_workflow_test_screenshot(
             f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
             "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
         )
-    from PIL import Image, ImageChops, ImageEnhance
-    import numpy as np
+    from PIL import Image, ImageEnhance
 
     stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
@@ -1330,13 +1572,11 @@ def save_workflow_test_screenshot(
 
     minted_now = False
     if not os.path.isfile(expected_path):
-        if not MINT_BASELINES:
+        if not (MINT_BASELINES or REMINT_BASELINES):
             message = (
-                f"no baseline at {expected_path}. Run with --mint-baselines to "
-                "create it, on a build you trust and a machine whose rendering "
-                "matches CI's, then look at the PNG before committing it. A "
-                "baseline is the definition of correct for every later run, so "
-                "it is not something a test run should produce as a side effect."
+                f"no baseline at {expected_path}. {REMINT_HOW} A baseline is "
+                "the definition of correct for every later run, so it is not "
+                "something a test run should produce as a side effect."
             )
             comparisons.record_missing(_capture, **record_args)
             raise AssertionError(message)
@@ -1344,6 +1584,13 @@ def save_workflow_test_screenshot(
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
         minted_now = True
+    elif REMINT_BASELINES:
+        _remint(
+            page, expected_path, _capture, clip_selector=clip_selector,
+            pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio,
+            record_args=record_args,
+        )
+        return expected_path
 
     expected_img = Image.open(expected_path).convert("RGB")
     try:
@@ -1355,23 +1602,15 @@ def save_workflow_test_screenshot(
         )
         raise
 
-    target_w = max(actual_img.width, expected_img.width)
-    target_h = max(actual_img.height, expected_img.height)
-    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
-    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
-
-    diff = ImageChops.difference(actual_cmp, expected_cmp)
-    arr = np.asarray(diff)
-    total = int(arr.shape[0] * arr.shape[1])
-    counted = (arr > pixel_threshold).any(axis=2)
-    mismatched = int(counted.sum())
-    ratio = mismatched / total if total else 0.0
+    cmp = _compare_images(actual_img, expected_img, pixel_threshold)
+    actual_cmp, expected_cmp, diff = cmp.actual_cmp, cmp.expected_cmp, cmp.diff
+    mismatched, total, ratio = cmp.mismatched, cmp.total, cmp.ratio
     failed = ratio > max_diff_ratio
 
     comparisons.record(
         "failed" if failed else "minted" if minted_now else "passed",
         expected=expected_img, created=actual_img, expected_cmp=expected_cmp,
-        arr=arr, counted=counted, mismatched=mismatched, total=total,
+        arr=cmp.arr, counted=cmp.counted, mismatched=mismatched, total=total,
         ratio=ratio, **record_args,
     )
 

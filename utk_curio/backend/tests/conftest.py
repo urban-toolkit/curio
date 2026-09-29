@@ -405,10 +405,20 @@ def pytest_addoption(parser):
         default=False,
         help=(
             "write a screenshot baseline where none exists, instead of failing. "
-            "Creating one is a deliberate act: whatever the app renders that day "
-            "becomes the definition of correct, so it has to be a build you "
-            "trust, on a machine whose rendering matches CI's, and you have to "
-            "look at the PNG before committing it"
+            "CI only (GITHUB_ACTIONS=true): whatever the app renders becomes the "
+            "definition of correct, and only CI renders what CI compares"
+        ),
+    )
+    parser.addoption(
+        "--remint-baselines",
+        action="store_true",
+        dest="remint_baselines",
+        default=False,
+        help=(
+            "compare every screenshot with its committed baseline and write the "
+            "ones whose screen changed over it; a missing one is minted. CI "
+            "only: dispatch the Full stack build with remint=true and review "
+            "the frames on its CI report page"
         ),
     )
 
@@ -446,12 +456,14 @@ def pytest_configure(config):
         "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
     )
     netguard.install()
-    # Imported only when the flag is passed, so an ordinary run never pays for
-    # (or is broken by) importing the e2e helper module.
-    if getattr(config.option, "mint_baselines", False):
+    # Imported only when a flag is passed, so an ordinary run never pays for
+    # (or is broken by) importing the e2e helper module. Refused off CI.
+    mint = getattr(config.option, "mint_baselines", False)
+    remint = getattr(config.option, "remint_baselines", False)
+    if mint or remint:
         from utk_curio.backend.tests.test_frontend import utils as e2e_utils
 
-        e2e_utils.MINT_BASELINES = True
+        e2e_utils.allow_baseline_writes(mint=mint, remint=remint)
 
     excluded = []
     if not config.option.longrun:

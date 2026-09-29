@@ -7,10 +7,11 @@ changes a screen fails here rather than in someone's next round of user testing.
 
 Generating a baseline
 ---------------------
-A missing baseline fails the run. ``--mint-baselines`` writes it: generate
-deliberately, on CI, against a build whose behaviour you have already checked by
-hand, and look at the PNG before committing it -- a baseline captured against a
-broken build enshrines the bug as expected output.
+A missing baseline fails the run. A CI run dispatched with ``remint=true``
+writes it (see the README's *Screenshot baselines*): dispatch it against a build
+whose behaviour you have already checked by hand, and look at the frame on the
+run's report page before committing it -- a baseline captured against a broken
+build enshrines the bug as expected output.
 
 Run::
 

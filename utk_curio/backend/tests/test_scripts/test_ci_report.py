@@ -105,7 +105,7 @@ def _png(path, color=(255, 255, 255), size=(8, 6)):
 
 
 def _comparison(root, folder, *, status, ratio, budget=0.2, nodeid="tests/x.py::test_y",
-                images=("expected", "created", "diff"), baseline=None):
+                images=("expected", "created", "diff"), baseline=None, **extra):
     out = root / folder
     out.mkdir(parents=True)
     for kind in images:
@@ -117,6 +117,7 @@ def _comparison(root, folder, *, status, ratio, budget=0.2, nodeid="tests/x.py::
         "max_delta": 200, "expected_size": [8, 6], "created_size": [8, 6], "compared_size": [8, 6],
         "capture": "full page", "error": None,
         "images": {kind: f"{kind}.png" for kind in images},
+        **extra,
     }
     (out / "record.json").write_text(json.dumps(record), encoding="utf-8")
 
@@ -242,6 +243,56 @@ def test_the_summary_table(tmp_path):
     assert "| End-to-end tests | failed | 1 | 1 | 1 | 2 |" in summary
     assert "| TypeScript typecheck | failed | | 2 errors | | |" in summary
     assert "Screenshot comparisons: 4 recorded, 1 over budget, 1 without a baseline" in summary
+
+
+def _card(page, baseline):
+    at = page.index(f"<h3>{baseline}</h3>")
+    return page[page.rindex("<article", 0, at):page.index("</article>", at)]
+
+
+def _remint_page(tmp_path):
+    compare = tmp_path / "compare"
+    floor = {"remint_min_ratio": 0.0005}
+    _comparison(compare, "r_small", status="reminted", ratio=0.02, remint_ratio=0.02,
+                recapture_ratio=0.0, volatile_pixels=0, **floor)
+    _comparison(compare, "r_big", status="reminted", ratio=0.3, remint_ratio=0.25,
+                recapture_ratio=0.0, volatile_pixels=3, **floor)
+    _comparison(compare, "r_moved", status="reminted", ratio=0.05, remint_ratio=0.05,
+                recapture_ratio=0.004, volatile_pixels=0, **floor)
+    _comparison(compare, "u_kept", status="unchanged", ratio=0.001, remint_ratio=0.0002,
+                volatile_pixels=2, **floor)
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out),
+                           "--summary", str(summary)]) == 0
+    return out.read_text(encoding="utf-8"), summary.read_text(encoding="utf-8")
+
+
+def test_a_remint_run_shows_what_replaced_each_baseline_biggest_change_first(tmp_path):
+    page, summary = _remint_page(tmp_path)
+    order = [page.index(f"<h3>screenshot_{name}.png</h3>") for name in ("r_big", "r_moved", "r_small")]
+    assert order == sorted(order)
+    assert "A re-mint run: 3 baselines were replaced by what this run captured and 1 were kept" in page
+    assert "more than 0.05% of its pixels changed" in page
+    assert "<figcaption>Committed baseline</figcaption>" in page
+    assert "<figcaption>Re-minted</figcaption>" in page
+    # The re-mint never fails the page; the budget and recapture facts are flags.
+    assert ci_report.overall(ci_report.build(ci_report.parse_args([
+        "--comparisons", str(tmp_path / "compare"), "--out", "x"]))) == "passed"
+    assert "over the budget until committed" in _card(page, "screenshot_r_big.png")
+    assert "over the budget" not in _card(page, "screenshot_r_small.png")
+    assert "moved on recapture" in _card(page, "screenshot_r_moved.png")
+    assert "moved on recapture" not in _card(page, "screenshot_r_small.png")
+    assert "swatch volatile" in page
+    assert summary.rstrip().endswith("Re-mint: 3 baselines replaced, 1 kept.")
+
+
+def test_a_kept_baseline_is_listed_without_its_images(tmp_path):
+    page, _ = _remint_page(tmp_path)
+    kept = page[page.index('id="unchanged"'):]
+    assert "1 baselines kept as committed" in kept
+    assert "screenshot_u_kept.png" in kept and "0.02%" in kept
+    assert "<h3>screenshot_u_kept.png</h3>" not in page
+    assert page.count('src="data:image/') == 3 * 3  # the three re-minted trios only
 
 
 def test_the_image_budget_leaves_images_out_instead_of_growing_the_page(tmp_path):

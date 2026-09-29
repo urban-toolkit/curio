@@ -46,6 +46,7 @@ def dirs(tmp_path, monkeypatch):
     expected.mkdir()
     monkeypatch.setattr(e2e_utils, "WORKFLOW_SCREENSHOT_EXPECTED_DIR", str(expected))
     monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
+    monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
     monkeypatch.setenv(comparisons.DIR_ENV, str(compare))
     monkeypatch.setattr(comparisons, "current_nodeid", NODEID)
     return expected, compare
@@ -128,7 +129,7 @@ def test_the_backdrop_is_the_expected_image_faded():
 
 def test_a_missing_baseline_records_what_would_have_been_minted(dirs, monkeypatch):
     expected, compare = dirs
-    with pytest.raises(AssertionError, match="--mint-baselines"):
+    with pytest.raises(AssertionError, match="remint=true"):
         _save(monkeypatch, lambda page: _white(paint=3))
 
     [(folder, record)] = _records(compare)
@@ -163,6 +164,69 @@ def test_a_minted_baseline_is_recorded_as_minted(dirs, monkeypatch):
 
     [(_, record)] = _records(compare)
     assert record["status"] == "minted"
+
+
+def _remint_on(monkeypatch, *captures):
+    monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+    monkeypatch.setattr(e2e_utils, "_wait_for_webfont", lambda page: True)
+    taken = list(captures)
+    return lambda page: taken.pop(0)
+
+
+def test_a_reminted_baseline_is_recorded_with_the_one_it_replaced(dirs, monkeypatch):
+    expected, compare = dirs
+    baseline = _baseline(expected, _white(paint=1))
+    old_bytes = baseline.read_bytes()
+    new = _white(paint=30)
+    _save(monkeypatch, _remint_on(monkeypatch, new, new.copy()))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "reminted"
+    # Old against new, which is what the review looks at: 29 pixels changed.
+    assert (record["mismatched"], record["ratio"]) == (29, 0.29)
+    assert (record["remint_ratio"], record["recapture_ratio"]) == (0.29, 0.0)
+    assert record["remint_min_ratio"] == e2e_utils.REMINT_MIN_RATIO
+    assert record["volatile_pixels"] == 0
+    # The baseline as it was, byte for byte, although the file now holds the new one.
+    assert (folder / "expected.png").read_bytes() == old_bytes
+    assert baseline.read_bytes() != old_bytes
+    assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+
+
+def test_a_kept_baseline_is_recorded_as_unchanged(dirs, monkeypatch):
+    expected, compare = dirs
+    baseline = _baseline(expected, _white(paint=1))
+    before = baseline.read_bytes()
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=1)))
+
+    [(_, record)] = _records(compare)
+    assert record["status"] == "unchanged"
+    assert (record["ratio"], record["remint_ratio"]) == (0.0, 0.0)
+    assert "recapture_ratio" not in record
+    assert baseline.read_bytes() == before
+
+
+def test_volatile_text_is_drawn_blue_and_not_counted_by_a_remint(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected, _white())
+    # The first row changed, all of it inside a volatile text box.
+    monkeypatch.setattr(e2e_utils, "_volatile_boxes", lambda page, clip: [(0, 0, 10, 0.5)])
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=10)))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "unchanged"
+    assert (record["mismatched"], record["volatile_pixels"], record["remint_ratio"]) == (10, 10, 0.0)
+    diff = Image.open(folder / "diff.png").convert("RGB")
+    assert diff.getpixel((0, 0)) == comparisons.VOLATILE
+    assert diff.getpixel((5, 5)) == (255, 255, 255)
+
+
+def test_an_ordinary_comparison_records_no_remint_fields(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected)
+    _save(monkeypatch, lambda page: _white(paint=1))
+    [(_, record)] = _records(compare)
+    assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels"} & set(record)
 
 
 def test_nothing_is_recorded_when_it_is_off(dirs, monkeypatch):
