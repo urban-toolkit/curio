@@ -450,10 +450,15 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
 
     ctx.say("One version per node, then one per connection",
             "Zoom in on the newest.")
-    zoom_in = dialog.get_by_role("button", name="zoom in")
-    for _ in range(3):
-        ctx.click(zoom_in, hold=260)
-    versions.last.scroll_into_view_if_needed()
+    # Wheel-zoom with the pointer on the newest version, so React Flow zooms
+    # around it and it stays in view. The zoom buttons zoom around the centre,
+    # and a DOM scroll afterwards moves React Flow's wrapper, not the graph.
+    box = versions.last.bounding_box()
+    assert box, "the newest provenance version has no layout box"
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    for _ in range(6):
+        page.mouse.wheel(0, -200)
+        ctx.beat(120)
     ctx.beat(900)
 
     # The load-bearing check. DataflowThumbnail draws one <line> per edge and two
@@ -564,6 +569,16 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     ctx.say("Revert by clicking a version",
             "The canvas becomes exactly what that version holds.")
 
+    def capture_canvas(label: str, *, reopen: bool = True) -> None:
+        # The modal covers the canvas each frame is about, so close it for the
+        # shot and open it again for the next click. The chosen version stays
+        # selected when it reopens.
+        ctx.click(page.get_by_role("button", name="Close").last)
+        dialog.wait_for(state="hidden", timeout=20000)
+        ctx.capture(label)
+        if reopen:
+            open_provenance(ctx)
+
     for index in targets:
         version = versions.nth(index)
         expected = version_graph(version)
@@ -581,7 +596,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             f"nodes and {actual['edges']} connections on the canvas, but that "
             f"version holds {expected['nodes']} and {expected['edges']}"
         )
-        ctx.capture(f"reverted-to-v{index + 1:02d}")
+        capture_canvas(f"reverted-to-v{index + 1:02d}")
 
     ctx.say(f"Stepped back through {len(targets)} versions",
             "Each one put its own graph on the canvas.")
@@ -598,9 +613,8 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         "the dev-server error overlay has taken the whole screen"
     )
 
-    ctx.capture("returned-to-newest")
+    capture_canvas("returned-to-newest", reopen=False)
 
-    ctx.click(page.get_by_role("button", name="Close").last)
     page.wait_for_selector(".react-flow__node", timeout=20000)
     ctx.beat(800)
     ctx.say("And forward again",
@@ -741,6 +755,8 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     accept_confirm_dialog(
         ctx.page, title=re.compile(r"^Add "), button="Add to project"
     )
+    # The confirm button sat over a card, which would stay hovered.
+    page.mouse.move(0, 400)
 
     installed = dialog.get_by_role("button", name="Remove from project").first
     installed.wait_for(state="visible", timeout=30000)
@@ -837,6 +853,8 @@ def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
     ctx.say("Remove it", "The dataflow is saved first, then the agent comes out.")
     ctx.click(remove)
     accept_confirm_dialog(page, title=re.compile(r"^Remove "), button="Remove")
+    # The confirm button sat over a card, which would stay hovered.
+    page.mouse.move(0, 400)
 
     # The save really happened, and the card flipped to the other branch.
     page.wait_for_url(lambda url: "/dataflow/new" not in url, timeout=30000)
@@ -1023,8 +1041,9 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
 
     ctx.say("The Agent Catalog", "The same question, and it discloses more.")
     agent_drawer = open_agent_drawer(ctx)
+    # An agent that requires others, so the dialog has dependencies to name.
     agent_add = agent_drawer.get_by_role(
-        "button", name=re.compile(r"^Add to project")
+        "button", name=re.compile(r"^Add to project \(\+\d+ required\)")
     ).first
     agent_add.wait_for(state="visible", timeout=20000)
     ctx.click(agent_add)
@@ -2669,14 +2688,16 @@ def column_filter_reads_a_dataframe(ctx: Ctx) -> None:
     page.keyboard.press("Escape")
 
     ctx.say("A node that outputs a frame", "Three rows, one numeric column.")
-    loading = drag_to_canvas(page, page.locator("#step-loading"), at=(220, 200))
+    # A node is 525 px wide at zoom 1: these two drops leave room for the wire
+    # between them and keep the filter inside the 1280 px viewport.
+    loading = drag_to_canvas(page, page.locator("#step-loading"), at=(170, 200))
     set_node_code(page, loading, COLUMN_FILTER_CODE)
 
     ctx.say("And the Column Filter beside it")
     open_tools_palette(page, "packages")
     row = page.locator(f'#packages-palette [data-pkg-palette-coords~="{EXAMPLE_UI_PKG}"]')
     expect(row).to_have_count(1, timeout=30000)
-    filter_node = drag_to_canvas(page, row, at=(760, 220))
+    filter_node = drag_to_canvas(page, row, at=(740, 220))
     close_tools_palette(page, "packages")
 
     node = node_locator(page, filter_node)

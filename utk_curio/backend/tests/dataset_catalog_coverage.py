@@ -185,7 +185,13 @@ _GEOJSON_VEGA_SPEC = json.dumps(
         "description": "Per-feature bounding-box width of the loaded geometry.",
         "mark": "bar",
         "encoding": {
-            "x": {"field": "feature", "type": "nominal", "axis": {"title": "Feature"}},
+            # One category per feature, so per-feature labels and ticks would
+            # draw as a solid band.
+            "x": {
+                "field": "feature",
+                "type": "nominal",
+                "axis": {"title": "Feature", "labels": False, "ticks": False},
+            },
             "y": {
                 "field": "width",
                 "type": "quantitative",

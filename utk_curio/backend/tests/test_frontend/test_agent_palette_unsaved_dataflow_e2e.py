@@ -138,6 +138,7 @@ def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
         # A brand-new dataflow has no nodes, so the default wait for a
         # `.react-flow__node` would time out on an empty canvas.
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # And the rail's own count agrees with the row it is showing - a palette

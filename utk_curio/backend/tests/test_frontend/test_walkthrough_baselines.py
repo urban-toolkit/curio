@@ -57,7 +57,7 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
         backend_url=current_server,
         name="Walkthrough",
         username=f"walk_{walk.slug.replace(chr(45), chr(95))[:24]}",
-        project_name=walk.title[:40],
+        project_name=walk.title,
         project_spec=load_example_spec(walk.example) if walk.example else None,
     )
     require_owner_view(page)

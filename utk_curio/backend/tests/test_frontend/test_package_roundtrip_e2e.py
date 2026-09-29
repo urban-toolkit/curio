@@ -61,6 +61,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     save_workflow_test_screenshot,
+    set_canvas_zoom,
     set_node_code,
     require_owner_view,
     stub_login_and_enter_workflow,
@@ -101,6 +102,12 @@ CARD = 'article:not([role="status"])'
 POS_LOADER = (40, 30)
 POS_FIRST = (660, 30)
 POS_SECOND = (40, 390)
+
+# The consumer's chain is three nodes in a row, so both edges run forward and
+# are drawn in full. Three nodes fit side by side at this zoom (the layout of
+# test_dataset_catalog_datasets_e2e.py).
+THREE_NODE_ZOOM = 0.55
+POS_TRIPLE = ((190, 140), (550, 140), (910, 140))
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +482,8 @@ def test_save_export_import_and_run_package_nodes(
     # code it was saved with. Dragged twice and chained, so the assertion covers
     # both "a package node runs" and "one feeds another".
     consumer_row = _add_dataset_and_get_palette_row(page)
-    new_loader = drag_to_canvas(page, consumer_row, at=POS_LOADER)
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    new_loader = drag_to_canvas(page, consumer_row, at=POS_TRIPLE[0])
 
     open_tools_palette(page, "packages")
     anchor = _package_anchor(page, dir_name)
@@ -483,8 +491,10 @@ def test_save_export_import_and_run_package_nodes(
     _expand_package(anchor)
     head_row = _template_row(anchor, HEAD_LABEL)
     expect(head_row).to_have_count(1, timeout=20000)
-    first_id = drag_to_canvas(page, head_row, at=POS_FIRST)
-    second_id = drag_to_canvas(page, head_row, at=POS_SECOND)
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    first_id = drag_to_canvas(page, head_row, at=POS_TRIPLE[1])
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    second_id = drag_to_canvas(page, head_row, at=POS_TRIPLE[2])
     close_tools_palette(page, "packages")
 
     connect_nodes(page, new_loader, first_id)

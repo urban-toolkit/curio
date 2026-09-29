@@ -68,6 +68,18 @@ OWN_DATASET_CODE = (
 )
 
 
+def _show_drawer_name_and_actions(drawer) -> None:
+    """Scroll the details drawer so its dataset name sits at the top.
+
+    Publish renders below the fold of the drawer's own scroll box, which the
+    full-page capture does not scroll. With the name block at the top, the
+    name and the action buttons are both in the frame.
+    """
+    drawer.locator("h2").first.evaluate(
+        "el => el.parentElement.scrollIntoView({block: 'start'})"
+    )
+
+
 def _modal(page, name):
     """The ConfirmDialog, by accessible name.
 
@@ -331,9 +343,7 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     own_card.click()
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
-    # Publish sits below the fold of the drawer's own scroll box, which the
-    # full-page capture does not scroll.
-    publish.scroll_into_view_if_needed()
+    _show_drawer_name_and_actions(drawer)
 
     save_workflow_test_screenshot(
         page, "publish-offered-for-own-dataset",
@@ -415,6 +425,7 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
         page, "upload-delete-confirm",
         test_name="test_uploading_a_file_then_deleting_it_warns_about_every_dataflow",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # Cancelling leaves it alone.
@@ -494,9 +505,7 @@ def test_the_catalog_pages_use_one_button_vocabulary(
         f"Publish is not the dark action fill: {fill}. Black is an action, "
         f"white with a border is destructive, and Publish is an action."
     )
-    # Publish sits below the fold of the drawer's own scroll box, which the
-    # full-page capture does not scroll.
-    publish.first.scroll_into_view_if_needed()
+    _show_drawer_name_and_actions(drawer)
 
     save_workflow_test_screenshot(
         page, "catalog-page-button-vocabulary",

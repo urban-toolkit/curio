@@ -1082,8 +1082,12 @@ def dismiss_toasts(
                 timeout=quiet_ms,
             )
         except PlaywrightTimeoutError:
-            return dismissed
+            break
 
+    # A close click leaves the pointer where the toast was, often over a card
+    # or button whose hover style would then sit in the capture.
+    if dismissed:
+        page.mouse.move(0, 400)
     return dismissed
 
 
