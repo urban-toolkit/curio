@@ -1099,9 +1099,8 @@ def _ensure_root_node_modules(project_root: str) -> None:
     # it's idempotent and fast when the lockfile is already satisfied, and it
     # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
     # on the autk-db directory merely *existing* (the previous behavior) skipped
-    # the update and left the sandbox on a stale version whose API differs —
-    # e.g. 2.0.1 exports AutkSpatialDb and lacks loadGeojson, while 2.1.2 exports
-    # AutkDb — silently breaking server-side data loading.
+    # the update and left the sandbox on a stale version whose API differs,
+    # silently breaking server-side data loading.
     log_info(
         "[Sandbox] Ensuring root node_modules (@urban-toolkit/autk-db) at "
         f"{project_root}...",

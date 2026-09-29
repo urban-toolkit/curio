@@ -16,7 +16,9 @@ import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
+import { snapSourceToGrid } from '../../utils/geoPrecision';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
+import { runComputeChecked } from './autkComputeScopes';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
@@ -340,9 +342,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                         layers = await loadSpecLayers({ data: resolvedForFrontend });
                     }
-                    // coordinateFormat must reflect the coordinates as loaded:
-                    // autk-db 2.0.1 projected to EPSG:3395 at load, 2.1.2 keeps
-                    // EPSG:4326 — the layers carry a crs stamp set by the loader,
+                    // coordinateFormat must reflect the coordinates as loaded
+                    // (autk-db returns layers in the workspace CRS, EPSG:3395
+                    // meters): the layers carry a crs stamp set by the loader,
                     // which detectCoordinateFormat reads (falling back to the
                     // coordinate-magnitude heuristic).
                     const backendAsSources = layers.map((l) => ({
@@ -382,17 +384,16 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         if (refused || unusable.has(ref)) tableRows.set(ref, { rows: 0, own: false });
                     }
                 }
-                // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection,
-                // where 2.0.1 created an empty table that refs could still resolve
-                // against. Two consequences for sparse data (e.g. a PBF area with no
-                // parks, or a join that empties a layer):
+                // autk-db's loadGeojson throws on an empty FeatureCollection. Two
+                // consequences for sparse data (e.g. a PBF area with no parks, or a
+                // join that empties a layer):
                 //   1. an empty geojson source must be dropped before grammar.run,
                 //   2. a map/plot ref to a table that is empty — or that an upstream
                 //      node already dropped, so it never arrives here — dangles and
                 //      fails grammar.run with "Table <name> not found".
                 // Drop empty sources, then keep only refs that point at a table this
-                // node can actually create. Net effect mirrors 2.0.1: layers with
-                // data render; empty/absent ones contribute nothing. Each drop is
+                // node can actually create: layers with data render; empty/absent
+                // ones contribute nothing. Each drop is
                 // logged, since a silently stripped layer otherwise reads as a
                 // blank map. A collection that cannot be counted cannot be loaded
                 // either, so it is dropped too; its count above stays unknown.
@@ -408,7 +409,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         (s: any) => !emptySources.includes(s),
                     );
                 }
-                spec = { ...spec, data: dataSectionSources };
+                // On a 1 cm grid, so autk-db's second clip of these already
+                // clipped layers holds (see utils/geoPrecision).
+                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
@@ -666,11 +669,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         type: u.layerType ?? 'polygons',
                         geojson: u.fc,
                     }));
-                    // Drop empty layers (autk-db 2.1.2 throws on an empty
+                    // Drop empty layers (autk-db throws on an empty
                     // FeatureCollection, and an empty layer would surface as a
-                    // blank tab in the downstream Data Pool). Mirrors 2.0.1's
-                    // empty-table tolerance; the compute below then only runs on
-                    // layers that have features.
+                    // blank tab in the downstream Data Pool); the compute below
+                    // then only runs on layers that have features.
                     const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
@@ -1283,7 +1285,7 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 // empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
 // a per-layer failure propagate, so a throw partway leaves the earlier tables
 // registered and the later ones absent. Both loaders below used to publish
-// whatever `getLayerTables()` happened to hold, which surfaces downstream as an
+// whatever `getLayersMetadata()` happened to hold, which surfaces downstream as an
 // opaque "Table <last layer> not found" from a node two hops away, with the node
 // that actually failed showing "Done" (#248).
 //
@@ -1491,10 +1493,11 @@ function deriveBuildingHeight(props: any): number | null {
 // its own height, which `getLayer` exports as a GeometryCollection with a parallel
 // `properties.parts` metadata array — is a `loadOsm` construct that `loadGeojson`
 // cannot rebuild from the grouped GeometryCollection. Splitting each building back
-// into its individual part footprints (each carrying that part's height) lets the
-// downstream `loadGeojson('buildings')` re-cluster them by `building_id` and have
-// `getLayer` re-emit proper per-part GeometryCollections, so autk-map extrudes each
-// part by its own height instead of collapsing the whole building into one box.
+// into its individual part footprints (each carrying that part's height) lets
+// autk-map extrude each part by its own height instead of collapsing the whole
+// building into one box. The downstream `loadGeojson('buildings')` numbers every
+// row as its own building, so each part also carries, as a property, the
+// `building_id` it came from.
 function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
@@ -1507,6 +1510,7 @@ function explodeBuildingParts(features: any[]): any[] {
             if (!gg) return;
             const p = { ...(meta ?? {}) };
             delete p.parts;
+            if (props.building_id != null) p.building_id = props.building_id;
             const h = deriveBuildingHeight(p);
             if (h != null) p.height = h;
             out.push({ type: 'Feature', geometry: gg, properties: p });
@@ -1525,19 +1529,11 @@ function explodeBuildingParts(features: any[]): any[] {
 // (The grammar engine itself never exposes the loaded DB — createEngine returns
 // no `context` — so we drive the same AutkDb the grammar uses internally.)
 async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
-    const mod: any = await import('@urban-toolkit/autk-db');
-    // Accept both the v2.0 frontend export (AutkDb) and the older root-level
-    // install (AutkSpatialDb). Same dual-name handling as the backend sandbox JS.
-    const AutkDbCtor = mod.AutkDb || mod.AutkSpatialDb;
-    if (typeof AutkDbCtor !== 'function') {
-        throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
-    }
-    // Old AutkSpatialDb does not export this; fall back to the workspace default.
-    const DEFAULT_WORKSPACE_COORDINATE_FORMAT = mod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
+    const { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } = await import('@urban-toolkit/autk-db');
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
     // another instance rather than a failed node (#318).
     const db: any = await withExtensionRetry(async () => {
-        const instance: any = new AutkDbCtor();
+        const instance: any = new AutkDb();
         await instance.init();
         return instance;
     });
@@ -1548,11 +1544,6 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const joinErrors: string[] = [];
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
-        // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
-        // unconditionally — inject the default when the spec omits it.
-        if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
-            rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
-        }
         try {
             if (type === 'osm') await db.loadOsm(rest);
             else if (type === 'geojson') await db.loadGeojson(rest);
@@ -1561,10 +1552,7 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             // In-grammar spatial join between already-loaded tables (sources
             // run in spec order, so the join must come after the tables it
             // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
-            else if (type === 'join') {
-                if (typeof db.spatialQuery !== 'function') throw new Error('this autk-db has no spatialQuery');
-                await db.spatialQuery(rest);
-            }
+            else if (type === 'join') await db.spatialQuery(rest);
             else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
             // Record + skip a source that fails to load; others may still
@@ -1576,21 +1564,19 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
         }
     }
     // Tag each layer with the CRS its coordinates are ACTUALLY in, so a
-    // downstream grammar node injects it with the right coordinateFormat.
-    // autk-db 2.0.1's getLayer() returned geometry projected to the workspace
-    // CRS (EPSG:3395 meters); 2.1.2 keeps it in EPSG:4326 degrees. Assuming
-    // the workspace CRS (the old behavior here) makes the renderer read
-    // degree values as meters near the origin — a silently blank map — so
-    // detect by coordinate magnitude. Strip any pre-existing crs field first:
-    // detectCoordinateFormat trusts it over the heuristic.
+    // downstream grammar node injects it with the right coordinateFormat,
+    // detected by coordinate magnitude: a wrong tag makes the renderer read
+    // degree values as meters near the origin, a silently blank map. Strip any
+    // pre-existing crs field first: detectCoordinateFormat trusts it over the
+    // heuristic.
     let tables: Array<{ name: string; type?: string }> = [];
     try {
-        tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
+        tables = db.getLayersMetadata() as Array<{ name: string; type?: string }>;
     } catch (e) {
         // A partially-loaded DB can throw here (rather than return []). Treat it
         // as "no usable tables" and let the empty-result guard below report it,
         // instead of letting an opaque TypeError escape the loader.
-        loadErrors.push(`getLayerTables: ${(e as any)?.message ?? String(e)}`);
+        loadErrors.push(`getLayersMetadata: ${(e as any)?.message ?? String(e)}`);
     }
     const layers = await Promise.all(
         tables.map(async (t) => {
@@ -1602,8 +1588,8 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
                 const type = (t.type as string) ?? 'polygons';
                 // Buildings: explode the grouped GeometryCollection into one footprint
                 // feature per part (each with its own height) and KEEP type 'buildings',
-                // so the downstream loadGeojson('buildings') re-clusters them and autk-map
-                // extrudes each part by its real height. See explodeBuildingParts.
+                // so autk-map extrudes each part by its real height. See
+                // explodeBuildingParts.
                 if (type === 'buildings' && Array.isArray(geojson?.features)) {
                     geojson.features = explodeBuildingParts(geojson.features);
                 }
@@ -1746,227 +1732,17 @@ function layersToPoolWrapper(
     };
 }
 
-// Normalize an attribute path used by `compute.attributes` into a dot-path
-// `ComputeGpgpu` can resolve via `valueAtPath(feature, path)`. The grammar
-// engine accepts bare property names like `"height"` and auto-prefixes them;
-// `ComputeGpgpu` does not — it reads paths directly off the raw Feature,
-// where `height` would be undefined but `properties.height` resolves. So
-// prepend `properties.` for everything except paths the engine already
-// understands as feature-root (`geometry.*` and explicit `properties.*`).
-function normalizeAttrPath(p: string): string {
-    if (typeof p !== 'string') return p;
-    if (p === 'geometry' || p === 'properties') return p;
-    if (p.startsWith('geometry.') || p.startsWith('properties.')) return p;
-    return `properties.${p}`;
-}
-
-// Read a value out of a feature using a dot-path — same semantics autk-compute
-// uses for its `variableMapping` attributes. Kept local rather than re-imported
-// from autk-core because the grammar runtime here has no other dependency on it.
-function valueAtPath(item: any, path: string): any {
-    return path.split('.').reduce<any>((acc, key) => {
-        if (acc == null || typeof acc !== 'object') return undefined;
-        return acc[key];
-    }, item);
-}
-
-// Resolve `fromFeature` directives in a `compute.uniforms` / `compute.uniformMatrices`
-// config against the upstream layer array. Each entry in the config can be:
-//   - a plain value (passed through unchanged)
-//   - an object with a `fromFeature: { layer, index?, iterate?, path }` directive,
-//     optionally carrying a `cols` field (signalling a matrix uniform) and/or a
-//     `default` to fall back to when the path can't be resolved.
-//
-// `iterateIndex`, when defined, overrides the directive's own `index` for entries
-// that opt into iteration via `iterate: 'all'`. This is how the per-feature
-// iteration loop below drives the same spec over N source features.
-function resolveFromFeatures(
-    config: Record<string, any> | undefined,
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
-    iterateIndex?: number,
-): Record<string, any> | undefined {
-    if (!config) return config;
-    const out: Record<string, any> = {};
-    for (const [key, val] of Object.entries(config)) {
-        if (val && typeof val === 'object' && (val as any).fromFeature) {
-            const ff = (val as any).fromFeature;
-            const layer = layers.find((l) => l.name === ff.layer);
-            const idx = iterateIndex !== undefined && ff.iterate === 'all'
-                ? iterateIndex
-                : (ff.index ?? 0);
-            const feature = layer?.geojson?.features?.[idx];
-            const resolved = feature ? valueAtPath(feature, ff.path) : undefined;
-            const hasCols = 'cols' in (val as any);
-            if (resolved === undefined || resolved === null) {
-                if ('default' in (val as any)) {
-                    const def = (val as any).default;
-                    out[key] = hasCols ? { ...(val as any), data: def, fromFeature: undefined } : def;
-                }
-                // No default → drop the entry; ComputeGpgpu will surface the error.
-                continue;
-            }
-            const { fromFeature: _ff, default: _def, ...rest } = (val as any);
-            out[key] = hasCols ? { ...rest, data: resolved } : resolved;
-        } else {
-            out[key] = val;
-        }
-    }
-    return out;
-}
-
-// Walk the spec and return the iterate-source layer name + mode, or null when
-// no entry opts into per-feature iteration. Two modes are supported:
-//   - 'all'     → run the shader once per source feature and accumulate output
-//                 columns (sum over features). Slow but trivial WGSL.
-//   - 'batched' → pack every source feature's values into uniform arrays and
-//                 run the shader exactly once; the WGSL loops over features
-//                 inside. Fast and lets the shader express per-hour union /
-//                 complement semantics across features.
-// All iterating entries must share the same source layer; the first one wins
-// (a tensor product over independent sources isn't a use case we need here).
-function findIterateSource(
-    ...configs: Array<Record<string, any> | undefined>
-): { mode: 'all' | 'batched'; layer: string } | null {
-    for (const cfg of configs) {
-        if (!cfg) continue;
-        for (const v of Object.values(cfg)) {
-            const ff = v && typeof v === 'object' ? (v as any).fromFeature : undefined;
-            if (ff && (ff.iterate === 'all' || ff.iterate === 'batched')) {
-                return { mode: ff.iterate, layer: ff.layer };
-            }
-        }
-    }
-    return null;
-}
-
-// Hard cap on batched source features. ComputeGpgpu exposes uniformArrays via
-// WebGPU uniform buffers, which DX12 limits to 64 KB. Each matrix entry packs
-// 8 floats per source feature (the AABB's four corners, see below), so 2048
-// features = exactly 64 KB; 2000 × 32 B = 64,000 B keeps a small margin while
-// covering real OSM extracts (e.g. back_bay's 1556 buildings in example 06).
-const MAX_BATCHED_FEATURES = 2000;
-
-// For the `batched` iteration mode, pack every source feature's resolved value
-// into flat typed arrays exposed via ComputeGpgpu.uniformArrays:
-//   - scalar uniforms become a length-N array under their original name
-//   - matrix entries become a length-(8 × N) array under their original name,
-//     holding each source feature's *axis-aligned bounding box* as four corners
-//     [xmin,ymin, xmax,ymin, xmax,ymax, xmin,ymax]. Full polygon outlines blow
-//     past the uniform buffer cap on Chicago-Loop-scale data; the AABB is a
-//     correct conservative envelope (slightly over-estimates the projected
-//     shadow for non-axis-aligned buildings, never under-estimates).
-//   - a `num_features` uniform exposes the loop bound
-// Non-batched entries in the same spec (e.g. `doy: 172`) pass through unchanged.
-function buildBatchedUniforms(
-    uniforms: Record<string, any> | undefined,
-    uniformMatrices: Record<string, any> | undefined,
-    sources: Feature<any, any>[],
-): { uniforms: Record<string, number>; uniformArrays: Record<string, number[]> } {
-    const outUniforms: Record<string, number> = {};
-    const outUniformArrays: Record<string, number[]> = {};
-
-    // Drop source features whose required batched paths can't resolve. A path
-    // is required when any of its batched `fromFeature` directives carries
-    // `required: true` — in 07 the building height is required, so OSM
-    // buildings without a `properties.height` tag don't get a fake default
-    // height that would over-extrude their shadow. The filter runs once,
-    // upfront, so every batched entry sees the same surviving feature list.
-    const requiredPaths: string[] = [];
-    for (const cfg of [uniforms, uniformMatrices]) {
-        if (!cfg) continue;
-        for (const val of Object.values(cfg)) {
-            const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-            if (ff && ff.iterate === 'batched' && ff.required && ff.path) {
-                requiredPaths.push(ff.path);
-            }
-        }
-    }
-    if (requiredPaths.length > 0) {
-        const before = sources.length;
-        sources = sources.filter((f) =>
-            requiredPaths.every((p) => {
-                const v = valueAtPath(f, p);
-                return v !== undefined && v !== null
-                    && !(typeof v === 'number' && !Number.isFinite(v));
-            }),
-        );
-        if (sources.length < before) {
-            console.info(
-                `[autk-grammar] batched compute filtered ${before - sources.length} source` +
-                ` feature(s) missing required path(s): ${requiredPaths.join(', ')}`,
-            );
-        }
-    }
-
-    if (sources.length > MAX_BATCHED_FEATURES) {
-        console.warn(
-            `[autk-grammar] batched compute capped at ${MAX_BATCHED_FEATURES} source features` +
-            ` (got ${sources.length}); excess features ignored.`,
-        );
-        sources = sources.slice(0, MAX_BATCHED_FEATURES);
-    }
-
-    for (const [key, val] of Object.entries(uniforms ?? {})) {
-        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-        if (ff && ff.iterate === 'batched') {
-            const fallback = (val as any).default;
-            const arr: number[] = [];
-            for (const f of sources) {
-                const v = valueAtPath(f, ff.path);
-                const num = Number(v ?? fallback);
-                arr.push(Number.isFinite(num) ? num : 0);
-            }
-            outUniformArrays[key] = arr;
-        } else if (typeof val === 'number') {
-            outUniforms[key] = val;
-        }
-    }
-
-    for (const [key, val] of Object.entries(uniformMatrices ?? {})) {
-        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-        if (ff && ff.iterate === 'batched') {
-            const data: number[] = [];
-            for (const f of sources) {
-                const ring = valueAtPath(f, ff.path);
-                let xmin =  Infinity, ymin =  Infinity;
-                let xmax = -Infinity, ymax = -Infinity;
-                if (Array.isArray(ring)) {
-                    for (const coord of ring) {
-                        if (Array.isArray(coord) && coord.length >= 2) {
-                            const x = Number(coord[0]);
-                            const y = Number(coord[1]);
-                            if (Number.isFinite(x) && Number.isFinite(y)) {
-                                if (x < xmin) xmin = x;
-                                if (y < ymin) ymin = y;
-                                if (x > xmax) xmax = x;
-                                if (y > ymax) ymax = y;
-                            }
-                        }
-                    }
-                }
-                if (!Number.isFinite(xmin)) {
-                    // Degenerate feature — emit a zero-area AABB at (0,0) so the
-                    // shader's loop still runs but contributes nothing.
-                    xmin = 0; ymin = 0; xmax = 0; ymax = 0;
-                }
-                data.push(xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax);
-            }
-            outUniformArrays[key] = data;
-        }
-    }
-
-    outUniforms.num_features = sources.length;
-    return { uniforms: outUniforms, uniformArrays: outUniformArrays };
-}
-
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
 // returning a new array where each block's target layer has been replaced by a
 // FeatureCollection enriched with the WGSL output under `feature.properties.compute.<col>`.
 // This is what makes a compute-only autk-grammar node useful: the grammar engine
 // only runs compute when it's part of a render pipeline (map/plot), so without
 // this helper, a node whose spec contains *only* a `compute` block would pass
-// upstream through unchanged. We instead invoke `ComputeGpgpu` ourselves, which
-// is the same GPGPU runner the grammar engine drives internally.
+// upstream through unchanged.
+//
+// autk-grammar's `runCompute` does the work the grammar defines: `fromFeature`
+// directives, the `all` and `batched` iterations, and the packing of batched
+// features. Curio hands it the dispatch, which checks the GPU accepted the pass.
 //
 // A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
 // chained compute nodes can target different layers, and a no-op block is far
@@ -1980,90 +1756,20 @@ async function applyComputeBlocks(
     failures: string[] = [],
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
-    const { ComputeGpgpu } = await import('@urban-toolkit/autk-compute');
+    const [{ ComputeGpgpu }, { runCompute }] = await Promise.all([
+        import('@urban-toolkit/autk-compute'),
+        import('@urban-toolkit/autk-grammar'),
+    ]);
     let result = layers;
     for (const block of computeBlocks) {
         if (!block || !block.dataRef || !block.wglsFunction) continue;
         const idx = result.findIndex((l) => l.name === block.dataRef);
         if (idx < 0) continue;
-        const variableMapping: Record<string, string> = {};
-        for (const [k, v] of Object.entries(block.attributes ?? {})) {
-            variableMapping[k] = normalizeAttrPath(String(v));
-        }
-        // Accept the wglsFunction as either a single string (existing form) or
-        // an array of lines. The array form keeps the WGSL readable inside the
-        // JSON file — JSON has no multi-line strings, but an array of one-line
-        // strings is just as valid and far easier to author / review than one
-        // long `\n`-escaped blob.
-        const wgslBody: string = Array.isArray(block.wglsFunction)
-            ? block.wglsFunction.join('\n')
-            : String(block.wglsFunction ?? '');
-        const params: any = {
-            collection: result[idx].geojson,
-            variableMapping,
-            wgslBody,
-        };
-        if (block.attributeArrays) params.attributeArrays = block.attributeArrays;
-        if (block.attributeMatrices) params.attributeMatrices = block.attributeMatrices;
-        if (block.uniformArrays) params.uniformArrays = block.uniformArrays;
-        if (block.outputColumnName) params.resultField = block.outputColumnName;
-        if (block.outputColumns) params.outputColumns = block.outputColumns;
         const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
         try {
             const gpgpu = new ComputeGpgpu();
-            // Compute spec iteration modes — see `findIterateSource` for the full
-            // semantics:
-            //   - 'batched' → single dispatch; flat per-feature arrays exposed
-            //                 as uniformArrays; WGSL loops over features.
-            //   - 'all'     → N dispatches, runtime sums output columns.
-            //   - undefined → single dispatch, plain spec (today's behaviour).
-            const iterSource = findIterateSource(block.uniforms, block.uniformMatrices);
-            let augmented: FeatureCollection;
-            if (iterSource?.mode === 'batched') {
-                const iterLayer = result.find((l) => l.name === iterSource.layer);
-                const sources = iterLayer?.geojson?.features ?? [];
-                const { uniforms: uf, uniformArrays: ua } = buildBatchedUniforms(
-                    block.uniforms, block.uniformMatrices, sources as Feature<any, any>[],
-                );
-                params.uniforms = uf;
-                params.uniformArrays = { ...(params.uniformArrays ?? {}), ...ua };
-                // `uniformMatrices` were already absorbed into uniformArrays above.
-                delete params.uniformMatrices;
-                augmented = await gpgpu.run(params);
-            } else if (iterSource?.mode === 'all') {
-                const iterLayer = result.find((l) => l.name === iterSource.layer);
-                const sources = iterLayer?.geojson?.features ?? [];
-                augmented = JSON.parse(JSON.stringify(result[idx].geojson));
-                for (const f of augmented.features) {
-                    const p: any = (f.properties = f.properties ?? {});
-                    const c: any = (p.compute = p.compute ?? {});
-                    for (const col of outCols) c[col] = 0;
-                }
-                for (let i = 0; i < sources.length; i++) {
-                    const stepUniforms = resolveFromFeatures(block.uniforms, result, i);
-                    const stepMatrices = resolveFromFeatures(block.uniformMatrices, result, i);
-                    const stepParams: any = {
-                        ...params,
-                        collection: augmented,
-                    };
-                    if (stepUniforms) stepParams.uniforms = stepUniforms;
-                    if (stepMatrices) stepParams.uniformMatrices = stepMatrices;
-                    const oneShot = await gpgpu.run(stepParams);
-                    for (let j = 0; j < augmented.features.length; j++) {
-                        const dst = (augmented.features[j].properties as any)?.compute;
-                        const src = (oneShot.features[j]?.properties as any)?.compute;
-                        if (!dst || !src) continue;
-                        for (const col of outCols) {
-                            const inc = Number(src[col]);
-                            if (Number.isFinite(inc)) dst[col] += inc;
-                        }
-                    }
-                }
-            } else {
-                if (block.uniforms) params.uniforms = resolveFromFeatures(block.uniforms, result);
-                if (block.uniformMatrices) params.uniformMatrices = resolveFromFeatures(block.uniformMatrices, result);
-                augmented = await gpgpu.run(params);
-            }
+            const tables = new Map(result.map((l) => [l.name, l.geojson]));
+            const augmented = await runCompute(block, tables, (params) => runComputeChecked(gpgpu, params));
             // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
             // to top-level properties so downstream nodes can reference the column by
             // its bare name (e.g. `height_m`) without worrying about whether the nested

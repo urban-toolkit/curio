@@ -119,6 +119,13 @@ module.exports = {
         type: 'asset/resource',
       },
       {
+        // autk-db picks DuckDB's worker and wasm from a copy of
+        // import.meta.url, which webpack cannot follow; this writes the URLs
+        // out so they are emitted as assets. See webpack/autkDbDuckdbAssets.js.
+        test: /[\\/]@urban-toolkit[\\/]autk-db[\\/]dist[\\/]browser\.js$/,
+        use: [require.resolve('./webpack/autkDbDuckdbAssets.js')],
+      },
+      {
         // duckdb's worker downloads DuckDB's spatial extension from
         // extensions.duckdb.org on every fresh database. Curio ships the
         // extension, so the worker is taught to ask this instance for it
