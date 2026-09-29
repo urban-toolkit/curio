@@ -50,32 +50,43 @@ opened.
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Each tile's footprint, coloured by the year it was flown.",
-  "mark": {
-    "type": "geoshape",
-    "stroke": "white",
-    "strokeWidth": 1
-  },
-  "encoding": {
-    "color": {
+  "description": "Each tile's footprint, one panel per year it was flown.",
+  "facet": {
+    "column": {
       "field": "year",
       "type": "nominal",
       "title": "Year"
+    }
+  },
+  "spec": {
+    "width": 200,
+    "height": 200,
+    "mark": {
+      "type": "geoshape",
+      "stroke": "white",
+      "strokeWidth": 1
     },
-    "tooltip": [
-      {
-        "field": "tile",
-        "type": "nominal"
-      },
-      {
+    "encoding": {
+      "color": {
         "field": "year",
-        "type": "nominal"
+        "type": "nominal",
+        "title": "Year"
       },
-      {
-        "field": "crs",
-        "type": "nominal"
-      }
-    ]
+      "tooltip": [
+        {
+          "field": "tile",
+          "type": "nominal"
+        },
+        {
+          "field": "year",
+          "type": "nominal"
+        },
+        {
+          "field": "crs",
+          "type": "nominal"
+        }
+      ]
+    }
   }
 }
 ```
