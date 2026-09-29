@@ -15,6 +15,7 @@ import ContentTable from './components/ContentTable';
 import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 import { toRows } from '../../utils/rowSource';
+import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
   // Was a fourth copy of the same column-major flatten; see utils/rowSource.
@@ -27,7 +28,9 @@ type SimpleVisMode = 'table' | 'image' | 'text';
 export const ALL_IMAGE_COLUMNS = 'all';
 
 function toDisplayString(input: any): string {
-  const value = input?.data !== undefined ? input.data : input;
+  // The payload's own envelope, whatever its type, then the ones the sandbox
+  // puts around each element of a list (#516).
+  const value = unwrapValueEnvelopes(input?.data !== undefined ? input.data : input);
   try {
     return JSON.stringify(value, null, 2);
   } catch {

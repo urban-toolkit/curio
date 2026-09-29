@@ -479,6 +479,20 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
+
+    test('shows a list as its values, not the envelope around each one (#516)', async () => {
+      // JSComputation's `[1, 2, 3].map(x => x * 2)`, as the sandbox returns it.
+      const result = await callBehavior(useSimpleVisBehavior, {
+        input: {
+          dataType: 'list',
+          data: [2, 4, 6].map((n) => ({ data: n, dataType: 'int' })),
+        } as any,
+      });
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const text = container.textContent ?? '';
+      expect(text).toContain('[\n  2,\n  4,\n  6\n]');
+      expect(text).not.toContain('dataType');
+    });
   });
 
   describe('useMergeFlowBehavior', () => {
