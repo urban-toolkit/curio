@@ -162,9 +162,10 @@ class Ctx:
     #: Pins an intermediate state as its own screenshot baseline. Supplied by
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
-    snapshot: Callable[..., None] = lambda label, allow_running=False: None
+    snapshot: Callable[..., None] = lambda label, **kw: None
 
-    def capture(self, label: str, *, allow_running: bool = False) -> None:
+    def capture(self, label: str, *, allow_running: bool = False,
+                fit_reactflow: bool | None = None) -> None:
         """Pin the current screen as a baseline called *label*.
 
         For a journey whose point is a sequence -- reverting through a version
@@ -172,9 +173,11 @@ class Ctx:
         Each step is, so each step gets its own committed PNG.
 
         The capture waits for every node to stop running; *allow_running* is for
-        the frame whose subject is a run in progress.
+        the frame whose subject is a run in progress. *fit_reactflow* overrides
+        the scene's setting for one frame, for a step that leaves the canvas
+        empty.
         """
-        self.snapshot(label, allow_running=allow_running)
+        self.snapshot(label, allow_running=allow_running, fit_reactflow=fit_reactflow)
 
     # Convenience passthroughs so a walkthrough reads as prose.
     def say(self, title: str, sub: str = "", hold: float | None = None) -> None:
@@ -569,13 +572,14 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
     ctx.say("Revert by clicking a version",
             "The canvas becomes exactly what that version holds.")
 
-    def capture_canvas(label: str, *, reopen: bool = True) -> None:
+    def capture_canvas(label: str, *, nodes: int, reopen: bool = True) -> None:
         # The modal covers the canvas each frame is about, so close it for the
         # shot and open it again for the next click. The chosen version stays
-        # selected when it reopens.
+        # selected when it reopens. The first version is empty, and an empty
+        # canvas has nothing to fit.
         ctx.click(page.get_by_role("button", name="Close").last)
         dialog.wait_for(state="hidden", timeout=20000)
-        ctx.capture(label)
+        ctx.capture(label, fit_reactflow=nodes > 0)
         if reopen:
             open_provenance(ctx)
 
@@ -596,7 +600,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             f"nodes and {actual['edges']} connections on the canvas, but that "
             f"version holds {expected['nodes']} and {expected['edges']}"
         )
-        capture_canvas(f"reverted-to-v{index + 1:02d}")
+        capture_canvas(f"reverted-to-v{index + 1:02d}", nodes=expected["nodes"])
 
     ctx.say(f"Stepped back through {len(targets)} versions",
             "Each one put its own graph on the canvas.")
@@ -613,7 +617,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         "the dev-server error overlay has taken the whole screen"
     )
 
-    capture_canvas("returned-to-newest", reopen=False)
+    capture_canvas("returned-to-newest", nodes=saved["nodes"], reopen=False)
 
     page.wait_for_selector(".react-flow__node", timeout=20000)
     ctx.beat(800)

@@ -80,14 +80,15 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     # could see it while the scene was still dying in setup.
     subject_is_a_toast = walk.clip_selector == TOAST_REGION
 
-    def snapshot(label: str, allow_running: bool = False) -> None:
+    def snapshot(label: str, allow_running: bool = False,
+                 fit_reactflow: bool | None = None) -> None:
         """One committed PNG per pinned step of the journey."""
         save_workflow_test_screenshot(
             page,
             walk.stem,
             test_name=label,
             clip_selector=walk.clip_selector,
-            fit_reactflow=walk.fit_reactflow,
+            fit_reactflow=walk.fit_reactflow if fit_reactflow is None else fit_reactflow,
             max_diff_ratio=walk.effective_max_diff_ratio,
             sweep_toasts=not subject_is_a_toast,
             allow_running=allow_running,
