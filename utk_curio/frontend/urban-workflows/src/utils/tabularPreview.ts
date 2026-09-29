@@ -15,6 +15,12 @@ export function rowsFromParseOutput(payload: TabularPreviewPayload): Record<stri
   return toRows(payload as any);
 }
 
+/** How many rows the table a `/get-preview` payload was cut from has, when it says. */
+export function previewTotalRows(payload: unknown): number | undefined {
+  const total = (payload as { totalRows?: unknown } | null)?.totalRows;
+  return typeof total === "number" && Number.isFinite(total) ? total : undefined;
+}
+
 export function visiblePreviewColumns(
   rows: Record<string, unknown>[],
   excludeColumns: string[] = [],

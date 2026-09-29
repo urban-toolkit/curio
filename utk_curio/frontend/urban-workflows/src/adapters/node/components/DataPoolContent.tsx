@@ -3,7 +3,7 @@ import Nav from 'react-bootstrap/Nav';
 import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTable';
 import { fetchPreviewData } from '../../../services/api';
 import { sandboxArtifactId } from '../../../utils/flowOutputRef';
-import { rowsFromParseOutput } from '../../../utils/tabularPreview';
+import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPreview';
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
 
@@ -40,6 +40,8 @@ const ContentComponent = ({
   data: any;
 }) => {
   const [previewTable, setPreviewTable] = useState<any[]>([]);
+  // The server previews the first 100 rows and says how many there are.
+  const [previewTotal, setPreviewTotal] = useState<number | undefined>(undefined);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [usePreview, setUsePreview] = useState(false);
 
@@ -71,6 +73,7 @@ const ContentComponent = ({
               if (cancelled) return;
 
               setPreviewTable(nextPreviewTable);
+              setPreviewTotal(previewTotalRows(previewData));
               // Keep the already-rendered output table when preview returns
               // no rows or resolves after the input has moved on.
               setUsePreview(nextPreviewTable.length > 0);
@@ -92,8 +95,11 @@ const ContentComponent = ({
       };
   }, [data.input]);
 
-  // Use preview data if available, otherwise fall back to outputTable
-  const displayTable = usePreview && previewTable.length > 0 ? previewTable : outputTable;
+  // Use preview data if available, otherwise fall back to outputTable. Either
+  // way the table shows at most 100 rows and says how many there are.
+  const showingPreview = usePreview && previewTable.length > 0;
+  const displayTable = showingPreview ? previewTable : outputTable;
+  const displayTotal = showingPreview ? previewTotal : outputTable?.length;
 
   return (
       <div
@@ -106,6 +112,7 @@ const ContentComponent = ({
       >
           <TabularPreviewTable
               rows={displayTable}
+              totalRows={displayTotal}
               rowKeyPrefix={data.nodeId}
               loading={isLoadingPreview}
               excludeColumns={[]}
