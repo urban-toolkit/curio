@@ -2172,7 +2172,7 @@ def scene_outro(ctx: Ctx) -> None:
     )
     tour.hush()
     tour.chapter(
-        "urbantk.org/curio",
+        "curio.urbantk.org",
         "Curio",
         "Docs, examples and hosted instances at curio.urbantk.org.",
         hold=4200,
