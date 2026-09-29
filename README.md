@@ -7,7 +7,7 @@
 
   <p>
     <a href="https://arxiv.org/abs/2408.06139">Paper</a> ·
-    <a href="https://urbantk.org/curio">Website</a>
+    <a href="https://curio.urbantk.org">Website</a>
   </p>
 
   <p>
@@ -19,8 +19,8 @@
   <p>
     <a href="https://pypi.org/project/utk-curio/"><img alt="PyPI" src="https://img.shields.io/pypi/v/utk-curio?style=for-the-badge&label=PyPI&color=0073b7&prefix=v"/></a>
     <a href="https://github.com/urban-toolkit/curio"><img alt="GitHub" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Furban-toolkit%2Fcurio%2Fmain%2Futk_curio%2F__init__.py&search=__version__%5Cs*%3D%5Cs*%22(.%2B%3F)%22&replace=v%241&style=for-the-badge&label=GitHub&color=24292e"/></a>
-    <a href="https://curio.urbantk.org"><img alt="curio.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fcurio.urbantk.org%2Fapi%2Fversion&query=%24.version&label=curio.urbantk.org&color=2ea44f&cacheSeconds=300&prefix=v"/></a>
-    <a href="https://curio-dev.urbantk.org"><img alt="curio-dev.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fcurio-dev.urbantk.org%2Fapi%2Fversion&query=%24.version&label=curio-dev.urbantk.org&color=8957e5&cacheSeconds=300&prefix=v"/></a>
+    <a href="https://flow.urbantk.org"><img alt="flow.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fflow.urbantk.org%2Fapi%2Fversion&query=%24.version&label=flow.urbantk.org&color=2ea44f&cacheSeconds=300&prefix=v"/></a>
+    <a href="https://dev.urbantk.org"><img alt="dev.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fdev.urbantk.org%2Fapi%2Fversion&query=%24.version&label=dev.urbantk.org&color=8957e5&cacheSeconds=300&prefix=v"/></a>
   </p>
 
   <p>
@@ -32,7 +32,7 @@
   </p>
 </div>
 
-> 🌐 **Hosted instances.** Try Curio in your browser without installing anything. Stable at [**curio.urbantk.org**](https://curio.urbantk.org), and the latest `main` build at [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org). Sign in to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
+> 🌐 **Hosted instances.** Try Curio in your browser without installing anything. Stable at [**flow.urbantk.org**](https://flow.urbantk.org), and the latest `main` build at [**dev.urbantk.org**](https://dev.urbantk.org). Sign in to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
@@ -103,7 +103,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 
 ## Highlights
 
-- 🌐 **Hosted instances.** Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
+- 🌐 **Hosted instances.** Public deployments at [flow.urbantk.org](https://flow.urbantk.org) (stable) and [dev.urbantk.org](https://dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
 - 📦 **Node Catalog.** Every node lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Add ready-made packages from the catalog with one click, save a canvas node directly into a (new or existing) package via **Save as package node**, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Per-package metadata (description, license, README, permissions) is editable from the Tools panel; Python / JS dependencies are detected automatically from each template's source. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on, which gives reproducibility for shared research artefacts. See the [Node Catalog guide](docs/NODE-CATALOG.md).
 - 🗂️ **Data Catalog.** Datasets get the same treatment as nodes: browse and add them to a dataflow, import your own files (CSV, GeoJSON, Parquet, GeoTIFF, Shapefile, or an OSM PBF extract that is split into per-layer datasets), and publish them for everyone on your deployment. Drag a dataset onto the canvas and Curio writes the loader code for you. Every node run can also save its output as a **computed dataset**, with lineage back to the node and dataflow that produced it, so any intermediate result becomes a reusable, previewable input. See the [Data Catalog guide](docs/DATA-CATALOG.md).
 - 🤖 **LLM configurations per user and per agent.** Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint as several named configurations, and choose which one each agent runs on.
