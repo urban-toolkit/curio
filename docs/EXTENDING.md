@@ -494,7 +494,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```bash
    python scripts/regen_integrity.py packages/<publisher>.<name>@<major>
    ```
-   That calls the same `refresh_packageage_integrity` the installer uses, so the
+   That calls the same `refresh_package_integrity` the installer uses, so the
    result is byte-identical to a fresh install's. It also re-validates the
    manifest and tells you if it broke.
 

@@ -1159,9 +1159,9 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 ### Install paths
 
-- **At `curio start`**, the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
+- **At `curio start`**, the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`versions.merge_python_deps`](../utk_curio/backend/app/packages/domain/versions.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
 
-- **At catalog install time** (`/api/packages/projects/<id>/install`), when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
+- **At catalog install time** (`/api/packages/projects/<id>/install`), when the user installs a package from the drawer, [`store_install._ensure_user_store_install`](../utk_curio/backend/app/packages/application/store_install.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
 
 - **At catalog uninstall time**, `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
 
@@ -1309,7 +1309,7 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes.py`, datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -1550,8 +1550,10 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/utils/renderOutcome.ts` | The empty-render decision every browser renderer calls (see [Render Outcomes](#render-outcomes)) |
 | `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
 | `src/ConnectionValidator.ts` | Edge validation logic |
-| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`); `authApi` lives at `src/utils/authApi.ts` |
-| `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
+| `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `evaluationApi`, `trainingApi`); `authApi` lives at `src/utils/authApi.ts`; the packages client moved to `src/services/packages/` (memo dev/143) |
+| `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` — THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe — the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime — the registry consumes the layer, never the reverse |
+| `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport` — the one sideload pathway — and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
+| `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog — a rendering surface over `usePackageCatalog({ kind: "project" })` since dev/143; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
 | `src/components/AiSettingsModal.tsx` | AI Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
@@ -1564,13 +1566,13 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); Werkzeug reloader exclude patterns |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
-| `backend/app/packages/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
-| `backend/app/packages/installer.py` | Catalog-source-dir → archive → user-store copy + integrity hashing |
-| `backend/app/packages/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
-| `backend/app/packages/resolver.py` | `merge_python_deps` (conflict-aware union across packages) |
-| `backend/app/packages/services.py` | Catalog install/uninstall orchestration; calls `pip_runner` on file-copy + prune |
-| `backend/app/packages/routes.py` | `/api/packages/*` endpoints (list, catalog, install, libraries, defaults) |
-| `backend/app/packages/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
+| `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
+| `backend/app/packages/repositories/archive.py` + `application/store_install.py` | The `.curio.zip` format (member safety, integrity hashing) and catalog-source-dir → archive → user-store copy |
+| `backend/app/packages/infrastructure/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
+| `backend/app/packages/domain/versions.py` + `application/resolution.py` | `merge_python_deps` (conflict-aware union across packages) and the package DAG over the store |
+| `backend/app/packages/service.py` | The facade every packages route and every other feature calls (mirrors `datasets/service.py`, `agents/service.py`); re-exports the use cases under `application/` (`store_install`, `project_packages`, `defaults_install`, `prune`, `templates`, `agent_reads`, …) and the cross-feature surface (spec readers, ids, manifest read, store paths, the runtime seams). The B1 shims and the `services.py` / `storage` / `manifest` / `resolver` / `installer` compatibility modules are gone since dev/143 B5; `tests/test_packages/test_layering.py` enforces the layers |
+| `backend/app/packages/routes/` | `/api/packages/*` endpoints by resource (`store`, `catalog`, `factory`, `dependencies`, `projects`, `defaults`, `libraries`, `backend`) under one blueprint and one `_map_package_errors`; the route table is a contract test (`tests/test_packages/route_table.json`) |
+| `backend/app/packages/application/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
 | `backend/app/datasets/service.py` | `DatasetCatalogService`, the façade every dataset route calls |
 | `backend/app/datasets/routes.py` | `/api/datasets/*` and `/api/dataflows/<id>/datasets/*` endpoints |
 | `backend/app/datasets/domain/` | Dataset manifest parsing, catalog items, computed-dataset identity, dedup, provenance |
