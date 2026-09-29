@@ -87,6 +87,7 @@ import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
+import { basePath } from "./utils/basePath";
 import MonitorPage from "./pages/monitor/MonitorPage";
 import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
@@ -137,7 +138,7 @@ const ProjectsRoute: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
+    <BrowserRouter basename={basePath() || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
             <ReactFlowProvider>

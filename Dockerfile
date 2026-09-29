@@ -59,13 +59,9 @@ WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 COPY packages/ /src/packages/
 
-# BACKEND_URL and PUBLIC_PATH are baked into the JS bundle at build time.
-# Passed in via docker compose build args (see docker-compose.yml).
-# PUBLIC_PATH is also exported as ENV so webpack.config.js (which runs in
-# Node before dotenv-webpack populates process.env from .env) can read it.
+# BACKEND_URL is baked into the JS bundle at build time, passed in via docker
+# compose build args (see docker-compose.yml).
 ARG BACKEND_URL
-ARG PUBLIC_PATH
-ENV PUBLIC_PATH=$PUBLIC_PATH
 RUN if [ -n "$BACKEND_URL" ]; then \
       sed -i "s|^BACKEND_URL=.*|BACKEND_URL=$BACKEND_URL|" \
         /src/utk_curio/frontend/urban-workflows/.env; \

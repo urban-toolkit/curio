@@ -1,19 +1,29 @@
 import Cookies from "js-cookie";
 import { backendUrl } from "./backendUrl";
+import { basePath } from "./basePath";
 
 const BACKEND_URL = backendUrl();
-const TOKEN_KEY = "session_token";
+
+// The app's base path names the cookie and scopes it, so two instances on one
+// host (/app and /app-dev) keep separate sign-ins. At the root it is
+// session_token.
+function tokenCookie(): { name: string; path: string } {
+  const base = basePath();
+  return { name: `session_token${base.replace(/\//g, "_")}`, path: base || "/" };
+}
 
 export function getToken(): string | undefined {
-  return Cookies.get(TOKEN_KEY);
+  return Cookies.get(tokenCookie().name);
 }
 
 export function setToken(token: string): void {
-  Cookies.set(TOKEN_KEY, token, { expires: 30 });
+  const { name, path } = tokenCookie();
+  Cookies.set(name, token, { path, expires: 30 });
 }
 
 export function clearToken(): void {
-  Cookies.remove(TOKEN_KEY);
+  const { name, path } = tokenCookie();
+  Cookies.remove(name, { path });
 }
 
 /**

@@ -8,6 +8,8 @@
  * `undefined`, which makes react-markdown drop the URL entirely.
  */
 
+import { basePath } from "../../../utils/basePath";
+
 const ALLOWED_SCHEMES = ["http:", "https:", "mailto:"];
 
 /** react-markdown `urlTransform`: the sanitized URL, or undefined to drop it. */
@@ -22,9 +24,6 @@ export function sanitizeAgentUrl(url: string): string | undefined {
   }
   return ALLOWED_SCHEMES.includes(parsed.protocol) ? url : undefined;
 }
-
-/** The router's base path, as `index.tsx` gives it to `BrowserRouter`. */
-const BASENAME = (process.env.PUBLIC_PATH || "/").replace(/\/$/, "");
 
 /**
  * The in-app path a sanitized agent link points at, or null for an external one.
@@ -45,8 +44,9 @@ export function agentLinkAppPath(href: string): string | null {
   }
   if (parsed.origin !== window.location.origin) return null;
   let path = parsed.pathname;
-  if (BASENAME && (path === BASENAME || path.startsWith(`${BASENAME}/`))) {
-    path = path.slice(BASENAME.length) || "/";
+  const base = basePath();
+  if (base && (path === base || path.startsWith(`${base}/`))) {
+    path = path.slice(base.length) || "/";
   }
   return `${path}${parsed.search}${parsed.hash}`;
 }

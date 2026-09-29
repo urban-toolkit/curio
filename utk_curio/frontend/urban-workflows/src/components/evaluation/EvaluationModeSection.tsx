@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import modal from "../modal-content.module.css";
 import styles from "./EvaluationModeSection.module.css";
+import { basePath } from "../../utils/basePath";
 import {
   PHASE_LABEL,
   evaluationApi,
@@ -364,7 +365,7 @@ export const EvaluationModeSection: React.FC<{ sharedGuest?: boolean }> = ({
             {run.projectId && run.terminal ? (
               <a
                 className={modal.ghostBtn}
-                href={`/dataflow/${run.projectId}`}
+                href={`${basePath()}/dataflow/${run.projectId}`}
                 target="_blank"
                 rel="noreferrer"
                 aria-describedby="evaluation-project-note"

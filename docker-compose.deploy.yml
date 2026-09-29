@@ -59,3 +59,7 @@ services:
       # same container.
       - --sandbox-port
       - "2000"
+      # The URL path the proxy serves the app under, CURIO_BASE_PATH in .env
+      # (such as /curio). The default, /, is the root of the host.
+      - --base-path
+      - "${CURIO_BASE_PATH:-/}"

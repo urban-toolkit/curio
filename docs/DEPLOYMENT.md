@@ -7,7 +7,7 @@ This guide deploys Curio under a `/curio` path prefix on a hostname you already 
 Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
 > [!IMPORTANT]
-> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` and `PUBLIC_PATH` baked in at build time. Changing the public URL or path prefix means rebuilding the image, there is no runtime override.
+> The frontend bundle is built **inside the Docker image** with `BACKEND_URL` baked in at build time. Changing the public URL means rebuilding the image, there is no runtime override.
 
 ## Contents
 
@@ -42,8 +42,8 @@ CURIO_CONTAINER_NAME=curio
 CURIO_PORT_5002=5002
 CURIO_PORT_8080=8080
 
-# URL prefix the bundle expects. Must match the Caddy path in step 2.
-PUBLIC_PATH=/curio/
+# URL path the app is served under. Must match the Caddy path in step 2.
+CURIO_BASE_PATH=/curio
 
 # Public URL the bundle uses to reach the backend.
 # No trailing slash, frontend code does `${BACKEND_URL}/live` etc.
@@ -218,7 +218,7 @@ sudo systemctl reload caddy
 
 ## 3. Build and run
 
-This is where the frontend bundle gets compiled with `BACKEND_URL` and `PUBLIC_PATH` baked in. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
+This is where the frontend bundle gets compiled with `BACKEND_URL` baked in. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
 
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts
@@ -227,7 +227,8 @@ This is where the frontend bundle gets compiled with `BACKEND_URL` and `PUBLIC_P
 > **anyone who can reach the URL gets straight in with no login**. The
 > [`docker-compose.deploy.yml`](../docker-compose.deploy.yml) overlay is what adds
 > `--deploy` (auth + projects on), `--no-allow-publish` (locks the author-only
-> catalog mutators), and `restart: unless-stopped`. Exporting `COMPOSE_FILE` once
+> catalog mutators), `--base-path` from `CURIO_BASE_PATH`, and
+> `restart: unless-stopped`. Exporting `COMPOSE_FILE` once
 > per shell applies it to every later `docker compose` command.
 
 ```bash
@@ -288,7 +289,7 @@ A second checkout running on different ports under a different path lets you tes
 | Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
-Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, `PUBLIC_PATH=/curio-dev/`, and `BACKEND_URL=https://lab-name.your-uni.edu/curio-dev/api`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
+Clone into `/srv/curio-dev`, write a parallel `.env` with `CURIO_PORT_*=2010/5012/8090`, `CURIO_BASE_PATH=/curio-dev`, and `BACKEND_URL=https://lab-name.your-uni.edu/curio-dev/api`. Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
 
 ```bash
 cd /srv/curio-dev
@@ -390,7 +391,7 @@ flooding it cannot push real errors out of the log.
 | Symptom | Likely cause |
 |---|---|
 | Caddy: `permission denied` on key | `caddy` user can't read the private key. Fix perms (see Path B above). |
-| `Loading failed for the <script> .../bundle.js` | Bundle built with wrong `PUBLIC_PATH`. Check `.env`, rebuild with `--no-cache`. |
+| `Loading failed for the <script> .../bundle.js` | `CURIO_BASE_PATH` in `.env` does not match the Caddy path. Fix it and run `docker compose up -d --force-recreate`. |
 | `SSL_ERROR_INTERNAL_ERROR_ALERT` | Caddy has no cert for that hostname. Check the Caddyfile block exists, DNS resolves, and (Path A) port 80 is reachable from the public internet. |
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
 | Mixed-content errors in browser console | Bundle has an HTTP `BACKEND_URL` baked in. Update `.env`, rebuild with `--no-cache`. |

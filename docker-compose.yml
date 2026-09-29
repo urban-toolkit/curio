@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile
       args:
         BACKEND_URL: ${BACKEND_URL:-http://localhost:5002}
-        PUBLIC_PATH: ${PUBLIC_PATH:-/}
     container_name: ${CURIO_CONTAINER_NAME:-curio}
     tty: true
     stdin_open: true

@@ -13,7 +13,10 @@ module.exports = {
   output: {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
-    publicPath: process.env.PUBLIC_PATH || "/",
+    // Assets load relative to the page's <base>, which the frontend server
+    // points at the app's path (curio.py start --base-path), so one build
+    // serves any prefix.
+    publicPath: "auto",
   },
   cache: {
     type: 'filesystem',
@@ -145,7 +148,8 @@ module.exports = {
     }),
     new HtmlWebpackPlugin({
       template: "./src/index.html",
-      favicon: './src/assets/favicon.ico'
+      favicon: './src/assets/favicon.ico',
+      base: "/",
     }),
     new Dotenv({
       path: ".env",

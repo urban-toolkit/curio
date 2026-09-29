@@ -62,6 +62,7 @@ curio setup                  # install deps and exit
 | Flag | Default | Effect |
 |---|---|---|
 | `--dev` | off | Serve the frontend from the webpack dev server, with hot reload and a development bundle. Use it when you are editing frontend source |
+| `--base-path PATH` | the root | The URL path the web app is served under, such as `/app` behind a reverse proxy. Applies to the built bundle, so not with `--dev`. See [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 Without `--dev`, Curio serves the built bundle in `utk_curio/frontend/urban-workflows/dist/`. That bundle is a production webpack build, roughly a third the size of the development one, so the page loads much faster; the trade is that frontend edits need a rebuild to appear. A pip install and the Docker image ship a built `dist/` and never compile anything.
 

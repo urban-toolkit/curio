@@ -428,16 +428,46 @@ def logger():
         output_queue.task_done()
 
 
-def run_spa_static_server(directory: str, port: int) -> None:
+def base_path_arg(value: str) -> str:
+    """``--base-path`` as the frontend uses it: ``""`` for the root, else ``/a/b``."""
+    path = "/" + value.strip().strip("/")
+    if path == "/":
+        return ""
+    segments = path.split("/")[1:]
+    if any(s in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._~-]+", s) for s in segments):
+        raise argparse.ArgumentTypeError(f"not a URL path prefix: {value!r}")
+    return path
+
+
+def run_spa_static_server(directory: str, port: int, base_path: str = "") -> None:
     """Serve a built SPA with index.html fallback for deep links.
 
     ``python -m http.server`` returns 404 for routes like ``/auth/signup`` or
     ``/workflow/<id>`` because those files do not exist on disk. Our frontend
     is a client-side router, so non-asset GETs should fall back to
     ``index.html`` instead.
+
+    *base_path* is the prefix the app is served under (``--base-path``), such
+    as ``/app``. index.html then goes out with its ``<base>`` pointing there;
+    the bundle loads its assets relative to it and the router reads its
+    basename from it, so one build serves any prefix. A request that still
+    carries the prefix, because no proxy in front strips it, is served too.
     """
 
     dist_dir = os.path.abspath(directory)
+    index_file = os.path.join(dist_dir, "index.html")
+    base_tag = f'<base href="{base_path}/">'
+
+    def index_html() -> bytes:
+        with open(index_file, encoding="utf-8") as fh:
+            html = fh.read()
+        if base_path:
+            html, found = re.subn(r"<base\b[^>]*>", base_tag, html, count=1)
+            if not found:
+                html, found = re.subn(r"<head\b[^>]*>", lambda m: m.group(0) + base_tag, html, count=1)
+            if not found:
+                html = base_tag + html
+        return html.encode("utf-8")
 
     class SpaStaticHandler(SimpleHTTPRequestHandler):
         # The 1.0 default closes the socket after every response, so one page
@@ -448,10 +478,15 @@ def run_spa_static_server(directory: str, port: int) -> None:
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=dist_dir, **kwargs)
 
-        def do_GET(self):
-            request_path = self.path.split("?", 1)[0].split("#", 1)[0]
-            candidate = request_path.lstrip("/")
-            fs_path = os.path.join(dist_dir, candidate)
+        def _serves_index(self) -> bool:
+            """Drop the base path from ``self.path``; True when the answer is index.html."""
+            path, sep, query = self.path.partition("?")
+            path = path.split("#", 1)[0]
+            if base_path and (path == base_path or path.startswith(base_path + "/")):
+                path = path[len(base_path):] or "/"
+                self.path = path + sep + query
+            if path in ("", "/", "/index.html"):
+                return True
             # Fall back on what the client asked for, not on whether the path
             # looks like it has a file extension. ``splitext`` reads a dotted
             # dataset id - ``data.utk.acs-neighborhood-profile`` - as the
@@ -460,13 +495,27 @@ def run_spa_static_server(directory: str, port: int) -> None:
             # browser navigation sends ``Accept: text/html``; a missing bundle
             # fetched with ``Accept: */*`` still gets its 404.
             accepts_html = "text/html" in (self.headers.get("Accept") or "")
-            if (
-                request_path not in ("", "/")
-                and not os.path.exists(fs_path)
-                and accepts_html
-            ):
-                self.path = "/index.html"
+            return accepts_html and not os.path.exists(os.path.join(dist_dir, path.lstrip("/")))
+
+        def _send_index(self, with_body: bool) -> None:
+            body = index_html()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            if with_body:
+                self.wfile.write(body)
+
+        def do_GET(self):
+            if self._serves_index():
+                return self._send_index(with_body=True)
             return super().do_GET()
+
+        def do_HEAD(self):
+            if self._serves_index():
+                return self._send_index(with_body=False)
+            return super().do_HEAD()
 
     with ThreadingHTTPServer(("0.0.0.0", port), SpaStaticHandler) as httpd:
         httpd.serve_forever()
@@ -755,7 +804,7 @@ def _frontend_needs_build() -> bool:
     return _build_stamp_reason() is not None
 
 
-def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
+def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False, base_path=""):
     log_info(f"Starting frontend on {host}:{port}...", COLOR_FRONTEND, 0)
 
     _kill_port(int(port))
@@ -836,7 +885,7 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                     "-c",
                     (
                         "from utk_curio.main import run_spa_static_server; "
-                        f"run_spa_static_server('dist', {port})"
+                        f"run_spa_static_server('dist', {port}, {base_path!r})"
                     ),
                 ],
                 stdout=subprocess.PIPE,
@@ -1641,6 +1690,13 @@ def main():
         "--frontend-port", default="8080", help="Port for the frontend server (default: 8080)"
     )
     parser.add_argument(
+        "--base-path", type=base_path_arg, default="", metavar="PATH",
+        help=(
+            "URL path the web app is served under, such as /app behind a "
+            "reverse proxy (default: the root of the host). Not with --dev."
+        ),
+    )
+    parser.add_argument(
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
@@ -1811,6 +1867,8 @@ def main():
         os.environ["CURIO_DEV"] = "1"
     else:
         os.environ.setdefault("CURIO_DEV", "0")
+    if args.base_path and os.environ["CURIO_DEV"] == "1":
+        parser.error("--base-path applies to the built frontend, not to the --dev server")
 
     setup_logging(args.server)
     verbosity = int(args.verbose)
@@ -1880,7 +1938,7 @@ def main():
             processes = [
                 start_backend(args.backend_host, args.backend_port),
                 start_sandbox(args.sandbox_host, args.sandbox_port),
-                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild)
+                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)
             ]
         else:
             if args.server == "backend":
@@ -1888,7 +1946,7 @@ def main():
             elif args.server == "sandbox":
                 processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             elif args.server == "frontend":
-                processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild))
+                processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
 
         # Monitor the threads
         logging_thread = threading.Thread(target=logger, daemon=True)

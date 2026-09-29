@@ -20,6 +20,7 @@ genuinely missing still gets its 404 rather than a stray copy of index.html.
 """
 from __future__ import annotations
 
+import argparse
 import threading
 import urllib.error
 import urllib.request
@@ -27,7 +28,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.main import run_spa_static_server
+from utk_curio.main import base_path_arg, run_spa_static_server
 
 INDEX_BODY = "<!doctype html><title>curio</title><div id=root></div>"
 ASSET_BODY = "console.log('real bundle');"
@@ -36,13 +37,8 @@ HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 ANY_ACCEPT = "*/*"
 
 
-@pytest.fixture(scope="module")
-def spa_server(tmp_path_factory):
-    """A real server on an ephemeral port, serving a two-file dist tree."""
-    dist = tmp_path_factory.mktemp("dist")
-    (dist / "index.html").write_text(INDEX_BODY, encoding="utf-8")
-    (dist / "bundle.js").write_text(ASSET_BODY, encoding="utf-8")
-
+def _start(dist, base_path: str = "") -> str:
+    """A real server on an ephemeral port, in a daemon thread; returns its URL."""
     # Bind :0 first so the port is known before the server thread starts, and
     # the test never races a fixed port another run might hold.
     probe = ThreadingHTTPServer(("127.0.0.1", 0), None.__class__)  # type: ignore[arg-type]
@@ -50,20 +46,27 @@ def spa_server(tmp_path_factory):
     probe.server_close()
 
     thread = threading.Thread(
-        target=run_spa_static_server, args=(str(dist), port), daemon=True
+        target=run_spa_static_server, args=(str(dist), port, base_path), daemon=True
     )
     thread.start()
 
-    base = f"http://127.0.0.1:{port}"
+    url = f"http://127.0.0.1:{port}"
     for _ in range(100):
         try:
-            urllib.request.urlopen(f"{base}/index.html", timeout=1).read()
-            break
+            urllib.request.urlopen(f"{url}/index.html", timeout=1).read()
+            return url
         except OSError:
             threading.Event().wait(0.05)
-    else:
-        pytest.fail("run_spa_static_server never came up")
-    return base
+    pytest.fail("run_spa_static_server never came up")
+
+
+@pytest.fixture(scope="module")
+def spa_server(tmp_path_factory):
+    """The server at the root of the host, serving a two-file dist tree."""
+    dist = tmp_path_factory.mktemp("dist")
+    (dist / "index.html").write_text(INDEX_BODY, encoding="utf-8")
+    (dist / "bundle.js").write_text(ASSET_BODY, encoding="utf-8")
+    return _start(dist)
 
 
 def _get(base: str, path: str, accept: str = HTML_ACCEPT):
@@ -114,3 +117,73 @@ def test_missing_asset_still_404s(spa_server):
     with pytest.raises(urllib.error.HTTPError) as excinfo:
         _get(spa_server, "/does-not-exist.js", accept=ANY_ACCEPT)
     assert excinfo.value.code == 404
+
+
+# The index.html webpack writes: its <base> is "/" and the bundle is relative.
+BUILT_INDEX = (
+    '<!doctype html><html><head><base href="/">'
+    '<script defer="defer" src="bundle.js"></script></head>'
+    "<body><div id=root></div></body></html>"
+)
+UNDER_APP = BUILT_INDEX.replace('<base href="/">', '<base href="/app/">')
+
+
+@pytest.fixture(scope="module")
+def app_server(tmp_path_factory):
+    """The server with ``--base-path /app``."""
+    dist = tmp_path_factory.mktemp("dist-app")
+    (dist / "index.html").write_text(BUILT_INDEX, encoding="utf-8")
+    (dist / "bundle.js").write_text(ASSET_BODY, encoding="utf-8")
+    return _start(dist, "/app")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/app/",
+        "/app",
+        "/app/dataflow/97af666e-e32f-40a0-bc06-021fc3c22acf",
+        "/app/catalog/data/data.utk.chicago-boundary",
+        # What the server sees behind a proxy that strips the prefix.
+        "/",
+        "/dataflow/97af666e-e32f-40a0-bc06-021fc3c22acf",
+    ],
+)
+def test_base_path_points_the_page_at_the_prefix(app_server, path):
+    status, body = _get(app_server, path)
+    assert status == 200
+    assert body == UNDER_APP
+
+
+@pytest.mark.parametrize("path", ["/app/bundle.js", "/bundle.js"])
+def test_base_path_serves_assets_with_or_without_the_prefix(app_server, path):
+    status, body = _get(app_server, path, accept=ANY_ACCEPT)
+    assert status == 200
+    assert body == ASSET_BODY
+
+
+def test_base_path_missing_asset_still_404s(app_server):
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        _get(app_server, "/app/does-not-exist.js", accept=ANY_ACCEPT)
+    assert excinfo.value.code == 404
+
+
+def test_head_reports_the_page_it_would_send(app_server):
+    request = urllib.request.Request(f"{app_server}/app/projects", method="HEAD", headers={"Accept": HTML_ACCEPT})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert response.status == 200
+        assert int(response.headers["Content-Length"]) == len(UNDER_APP.encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("/", ""), ("", ""), ("/app", "/app"), ("/app/", "/app"), ("app", "/app"), ("/lab/curio/", "/lab/curio")],
+)
+def test_base_path_arg_normalizes(value, expected):
+    assert base_path_arg(value) == expected
+
+
+@pytest.mark.parametrize("value", ["/a b", "/../x", '/"x', "/a//b", "/<script>", "/app?x=1"])
+def test_base_path_arg_refuses_what_is_not_a_path_prefix(value):
+    with pytest.raises(argparse.ArgumentTypeError):
+        base_path_arg(value)
