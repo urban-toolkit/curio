@@ -7,7 +7,18 @@
  * pass-through. The rest pin the differences between the two encodings that
  * are invisible until a chart renders wrong.
  */
-import { tableFromArrays, tableToIPC, tableFromIPC } from "apache-arrow";
+import {
+    DateDay,
+    makeData,
+    makeVector,
+    Table,
+    tableFromArrays,
+    tableFromIPC,
+    tableToIPC,
+    TimestampMicrosecond,
+    TimestampNanosecond,
+    TimestampSecond,
+} from "apache-arrow";
 
 import { tableToEnvelope } from "../../services/arrowEnvelope";
 
@@ -131,6 +142,91 @@ describe("tableToEnvelope", () => {
 
         expect(envelope.dataType).toBe("dataframe");
         expect(envelope.filename).toBe("abc");
+    });
+});
+
+describe("tableToEnvelope, dates and timestamps", () => {
+    // The strings the JSON path sends for the same cells, from isoformat() in
+    // sandbox/util/codec.py; test_arrow_artifact_route.py pins that side.
+    // Arrow's own `get` returns epoch milliseconds, which Simple View, the
+    // Data Pool and Vega tooltips printed as a bare number (#523).
+
+    function column(type: any, data: Int32Array | BigInt64Array, valid: boolean[]) {
+        const nullBitmap = new Uint8Array(Math.ceil(valid.length / 8));
+        valid.forEach((ok, i) => {
+            if (ok) nullBitmap[i >> 3] |= 1 << (i & 7);
+        });
+        return makeVector(makeData({
+            type,
+            length: valid.length,
+            nullCount: valid.filter((ok) => !ok).length,
+            nullBitmap,
+            data,
+        } as any));
+    }
+
+    function envelopeOf(columns: Record<string, any>) {
+        return tableToEnvelope(tableFromIPC(tableToIPC(new Table(columns))), HEADERS);
+    }
+
+    it("sends a date as YYYY-MM-DD and a missing one as null", () => {
+        const envelope = envelopeOf({
+            day: column(new DateDay(), Int32Array.from([19844, 0, -1]), [true, false, true]),
+        });
+
+        expect(envelope.data.day).toEqual(["2024-05-01", null, "1969-12-31"]);
+    });
+
+    it("sends a timestamp as isoformat does, and a missing one as NaT", () => {
+        const envelope = envelopeOf({
+            naive: column(
+                new TimestampMicrosecond(),
+                BigInt64Array.from([1714521600000000n, 0n, 1714566645123456n]),
+                [true, false, true],
+            ),
+        });
+
+        expect(envelope.data.naive).toEqual([
+            "2024-05-01T00:00:00", "NaT", "2024-05-01T12:30:45.123456",
+        ]);
+    });
+
+    it("adds the offset for a column with a time zone", () => {
+        // DuckDB stores every zoned column as UTC; a GeoDataFrame keeps its zone.
+        const envelope = envelopeOf({
+            utc: column(
+                new TimestampMicrosecond("UTC"),
+                BigInt64Array.from([1714521600000000n, 1714566645000000n]),
+                [true, true],
+            ),
+            chicago: column(
+                new TimestampSecond("America/Chicago"),
+                BigInt64Array.from([1714539600n, 1705327200n]),
+                [true, true],
+            ),
+        });
+
+        expect(envelope.data.utc).toEqual([
+            "2024-05-01T00:00:00+00:00", "2024-05-01T12:30:45+00:00",
+        ]);
+        expect(envelope.data.chicago).toEqual([
+            "2024-05-01T00:00:00-05:00", "2024-01-15T08:00:00-06:00",
+        ]);
+    });
+
+    it("keeps nanoseconds, and a fraction before 1970", () => {
+        const envelope = envelopeOf({
+            nanos: column(
+                new TimestampNanosecond(),
+                BigInt64Array.from([1714521600000000001n]),
+                [true],
+            ),
+            early: column(new TimestampMicrosecond(), BigInt64Array.from([-500000n]), [true]),
+        });
+
+        expect(envelope.data.nanos).toEqual(["2024-05-01T00:00:00.000000001"]);
+        expect(envelope.data.early).toEqual(["1969-12-31T23:59:59.500000"]);
+        expect(() => JSON.stringify(envelope)).not.toThrow();
     });
 });
 

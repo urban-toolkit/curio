@@ -126,6 +126,43 @@ class SchemaMatchesAcrossDtypesTest(ArrowRouteTestCase):
         self.assertEqual(arrow_schema, json_schema)
 
 
+class TemporalCellsTest(ArrowRouteTestCase):
+    """What the JSON path sends for dates and timestamps, and the Arrow types
+    they arrive as. The canvas's arrowEnvelope.ts turns those types back into
+    exactly these strings (arrowEnvelope.test.ts); a change on either side has
+    to move both, or the two paths show different values for one cell.
+    """
+
+    def test_dates_and_timestamps_are_isoformat_strings(self):
+        import datetime
+
+        import pyarrow as pa
+
+        frame = pd.DataFrame({
+            "day": [datetime.date(2024, 5, 1), None],
+            "naive": pd.to_datetime(["2024-05-01 12:30:45.123456", None], format="ISO8601"),
+            "zoned": pd.to_datetime(["2024-05-01 00:00:00", None], format="ISO8601")
+                       .tz_localize("America/Chicago"),
+            "nanos": pd.to_datetime(["2024-05-01 00:00:00.000000001", None], format="ISO8601"),
+        })
+        art_id = parsers.save_to_duckdb(frame, "node-1")
+
+        data = self.get(art_id, arrow=False).get_json()["data"]
+        self.assertEqual(data["day"], ["2024-05-01", None])
+        # A missing timestamp is the string "NaT", not null.
+        self.assertEqual(data["naive"], ["2024-05-01T12:30:45.123456", "NaT"])
+        # DuckDB keeps a zoned column as UTC.
+        self.assertEqual(data["zoned"], ["2024-05-01T05:00:00+00:00", "NaT"])
+        self.assertEqual(data["nanos"], ["2024-05-01T00:00:00.000000001", "NaT"])
+
+        table = pa.ipc.open_stream(self.get(art_id).data).read_all()
+        self.assertEqual(
+            {field.name: str(field.type) for field in table.schema},
+            {"day": "date32[day]", "naive": "timestamp[us]",
+             "zoned": "timestamp[us, tz=UTC]", "nanos": "timestamp[ns]"},
+        )
+
+
 class GeometryOptInTest(ArrowRouteTestCase):
     def geo_frame(self):
         gpd = __import__("pytest").importorskip("geopandas")
