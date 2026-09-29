@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.datalakes.application.browse import LakeBrowse, _interleave
 from utk_curio.backend.app.datalakes.domain.errors import ProviderError, RateLimited
 from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest

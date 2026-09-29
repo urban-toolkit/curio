@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import services as agent_services
+from utk_curio.backend.app.agents.application import tool_rounds as agent_services
 
 from .test_delegate_draft_mint import (
     _auth,

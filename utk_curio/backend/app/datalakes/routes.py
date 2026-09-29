@@ -15,7 +15,7 @@ from urllib.parse import unquote
 
 from flask import Blueprint, g, jsonify, request, send_file, url_for
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.datalakes.domain.errors import DataLakeError, SourceNotFound
 from utk_curio.backend.app.datalakes.domain.manifest import LakeSourceManifest

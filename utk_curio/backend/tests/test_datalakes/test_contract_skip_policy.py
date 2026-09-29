@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.tests.test_datalakes import test_provider_contracts as contracts
 
 

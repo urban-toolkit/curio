@@ -9,8 +9,9 @@ node with no output of its own in `arg` order.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import services as services_mod
-from utk_curio.backend.app.agents import upstream_schema as us
+from utk_curio.backend.app.agents.application.solve import budgets
+from utk_curio.backend.app.agents.application.solve import session
+from utk_curio.backend.app.agents.domain import upstream_schema as us
 
 BOUNDARIES = {
     "dataType": "geodataframe",
@@ -119,7 +120,7 @@ class TestTheWalkThroughAMerge:
         }
 
     def test_it_looks_through_the_merge_in_arg_order(self):
-        rows = services_mod._upstream_outputs_for(self.SPEC, "a", self._wave_outputs())
+        rows = session._upstream_outputs_for(self.SPEC, "a", self._wave_outputs())
         # dev/118 returned [] here: the merge holds no output of its own.
         assert [r["nodeId"] for r in rows] == ["b", "p"]
         assert [r["argIndex"] for r in rows] == [0, 1]
@@ -132,7 +133,7 @@ class TestTheWalkThroughAMerge:
             asked.append(artifact_id)
             return us.summarize(previews[artifact_id])
 
-        rows = services_mod._upstream_outputs_for(
+        rows = session._upstream_outputs_for(
             self.SPEC, "a", self._wave_outputs(), schema_fn=_schema,
         )
         assert asked == ["art-b", "art-p"]
@@ -143,7 +144,7 @@ class TestTheWalkThroughAMerge:
         assert all("output" not in row for row in rows)
 
     def test_a_schema_that_cannot_be_read_leaves_the_row_without_one(self):
-        rows = services_mod._upstream_outputs_for(
+        rows = session._upstream_outputs_for(
             self.SPEC, "a", self._wave_outputs(),
             schema_fn=lambda _a: (_ for _ in ()).throw(RuntimeError("sandbox down")),
         )
@@ -156,7 +157,7 @@ class TestTheWalkThroughAMerge:
                       {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "D"}],
             "edges": [{"id": "e", "source": "b", "target": "a", "targetHandle": "in"}],
         }}
-        rows = services_mod._upstream_outputs_for(spec, "a", self._wave_outputs())
+        rows = session._upstream_outputs_for(spec, "a", self._wave_outputs())
         assert [r["nodeId"] for r in rows] == ["b"]
         assert "argIndex" not in rows[0]
 
@@ -166,7 +167,7 @@ class TestTheWalkThroughAMerge:
         nodes = [{"id": "src", "type": "curio.builtin/data-loading", "goal": "S"}]
         edges = []
         prev = "src"
-        for i in range(_DEEP := services_mod._UPSTREAM_WALK_MAX_DEPTH + 3):
+        for i in range(_DEEP := budgets._UPSTREAM_WALK_MAX_DEPTH + 3):
             nodes.append({"id": f"m{i}", "type": "curio.builtin/merge-flow", "goal": f"M{i}"})
             edges.append({"id": f"e{i}", "source": prev, "target": f"m{i}",
                           "targetHandle": "in_0"})
@@ -175,13 +176,13 @@ class TestTheWalkThroughAMerge:
         edges.append({"id": "ez", "source": prev, "target": "a", "targetHandle": "in"})
         wave = {"src": {"nodeId": "src", "goal": "S", "outputDataType": "dataframe",
                         "wave": 1, "output": {"path": "art-s"}}}
-        rows = services_mod._upstream_outputs_for(
+        rows = session._upstream_outputs_for(
             {"dataflow": {"nodes": nodes, "edges": edges}}, "a", wave,
         )
         assert rows == []
 
     def test_no_recorded_outputs_is_still_an_empty_list(self):
-        assert services_mod._upstream_outputs_for(self.SPEC, "a", {}) == []
+        assert session._upstream_outputs_for(self.SPEC, "a", {}) == []
 
 
 class TestTheSchemaReachesTheChildOnEveryRound:

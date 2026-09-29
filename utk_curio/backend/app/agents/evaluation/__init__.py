@@ -21,12 +21,12 @@ Nothing here re-implements a production path. Canonical node types come from
 vocabulary (``DEC-062``).
 """
 
-from utk_curio.backend.app.agents.evaluation.attempt import (  # noqa: F401
+from utk_curio.backend.app.agents.evaluation.attempt import (
     UNEXPRESSIBLE_EDGE_KINDS,
     AttemptScore,
     score_attempt,
 )
-from utk_curio.backend.app.agents.evaluation.canonical import (  # noqa: F401
+from utk_curio.backend.app.agents.evaluation.canonical import (
     CanonicalGraph,
     CEdge,
     CNode,
@@ -34,11 +34,11 @@ from utk_curio.backend.app.agents.evaluation.canonical import (  # noqa: F401
     canonical_graph_from_spec,
     role_for_template,
 )
-from utk_curio.backend.app.agents.evaluation.dependencies import (  # noqa: F401
+from utk_curio.backend.app.agents.evaluation.dependencies import (
     declared_dependencies,
     referenced_sources,
 )
-from utk_curio.backend.app.agents.evaluation.fixtures import (  # noqa: F401
+from utk_curio.backend.app.agents.evaluation.fixtures import (
     FIXTURE_SCHEMA_PATH,
     Fixture,
     FixtureError,

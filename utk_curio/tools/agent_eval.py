@@ -35,16 +35,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from utk_curio.backend.app.agents.evaluation import export as export_mod  # noqa: E402
-from utk_curio.backend.app.agents.evaluation import live as live_mod  # noqa: E402
-from utk_curio.backend.app.agents.evaluation.canonical import (  # noqa: E402
-    TemplateFacts,
-)
-from utk_curio.backend.app.agents.evaluation.fixtures import (  # noqa: E402
+from utk_curio.backend.app.agents.evaluation import export as export_mod
+from utk_curio.backend.app.agents.evaluation import live as live_mod
+from utk_curio.backend.app.agents.evaluation.canonical import TemplateFacts
+from utk_curio.backend.app.agents.evaluation.fixtures import (
     fixture_paths,
     load_fixture,
 )
-from utk_curio.backend.app.agents.evaluation.report import (  # noqa: E402
+from utk_curio.backend.app.agents.evaluation.report import (
     RunReport,
     new_run_id,
 )

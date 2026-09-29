@@ -1,7 +1,7 @@
 """Unit tests for ``attachments.prune_orphaned_attachments`` — drop attachments
 whose target node/edge was deleted, keep canvas and still-valid targets."""
 
-from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
+from utk_curio.backend.app.agents.application.attachments import prune_orphaned_attachments
 
 
 def _att(att_id, target):

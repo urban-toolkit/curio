@@ -24,7 +24,10 @@ import pytest
 from utk_curio.backend.app.agents.evaluation import attempt as attempt_mod
 from utk_curio.backend.app.agents.evaluation import oracle
 from utk_curio.backend.app.agents.evaluation.canonical import canonical_graph_from_spec
-from utk_curio.backend.app.agents.evaluation.compare import Universe, compare_graphs
+from utk_curio.backend.app.agents.evaluation.compare import (
+    Universe,
+    compare_graphs,
+)
 from utk_curio.backend.app.agents.evaluation.fixtures import (
     FIXTURE_ROOT,
     fixture_paths,

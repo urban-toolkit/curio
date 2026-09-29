@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import contracts
+from utk_curio.backend.app.agents.domain import contracts
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -87,7 +87,7 @@ class TestTheAutarkRenderers:
     preamble region. Both read the vendored file, never a hand-kept copy."""
 
     def test_the_shape_names_every_family_and_fits_a_refusal_whole(self):
-        from utk_curio.backend.app.agents import document_validation as dv
+        from utk_curio.backend.app.agents.domain import document_validation as dv
 
         schema = contracts.load_autk_schema()
         shape = contracts.render_autk_shape(schema)
@@ -183,7 +183,7 @@ class TestThePreambleVocabulary:
     def test_no_prompt_names_a_node_by_its_legacy_name(self):
         import re
 
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.txt")):
             found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", path.read_text(encoding="utf-8"))

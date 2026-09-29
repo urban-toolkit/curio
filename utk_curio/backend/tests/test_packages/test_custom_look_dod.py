@@ -274,7 +274,7 @@ class TestDodThroughTheResearcher:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -282,7 +282,7 @@ class TestDodThroughTheResearcher:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -331,8 +331,8 @@ class TestWeatherInParisScenario:
 
     def test_recorded_video_scenario(self, client, user_and_token, tmp_curio,
                                      pinned_tools, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -393,7 +393,7 @@ class TestWeatherInParisScenario:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -401,7 +401,7 @@ class TestWeatherInParisScenario:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -517,7 +517,7 @@ class TestCurioNotesRetry:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -525,7 +525,7 @@ class TestCurioNotesRetry:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -603,7 +603,7 @@ class TestReuseFirstNoteCreation:
         script = {"replies": [], "calls": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -613,7 +613,7 @@ class TestReuseFirstNoteCreation:
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         # Turn 1: install the notes package through the reviewed draft.
         script["replies"] = [

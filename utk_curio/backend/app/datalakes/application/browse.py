@@ -18,7 +18,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.datalakes.domain.errors import (
     CapabilityUnsupported,
     CredentialRequired,

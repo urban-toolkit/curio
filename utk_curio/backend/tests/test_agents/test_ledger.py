@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from utk_curio.backend.app.agents import ledger
+from utk_curio.backend.app.agents.repositories import ledger
 
 UKEY = "42"
 

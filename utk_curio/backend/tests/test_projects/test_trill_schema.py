@@ -745,7 +745,7 @@ class TestSchemaMatchesConstants:
             assert bool(schema_re.match(candidate)) == backend_ok, candidate
 
     def test_the_agent_coord_pattern_is_the_storage_grammar(self):
-        from utk_curio.backend.app.agents.storage import AGENT_DIR_RE
+        from utk_curio.backend.app.agents.repositories.storage import AGENT_DIR_RE
 
         assert DEFS["agentCoord"]["pattern"] == AGENT_DIR_RE.pattern, (
             "dataflow.agents entries are agent directory names; the schema must "
@@ -753,7 +753,7 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_target_kinds_match_the_validator(self):
-        from utk_curio.backend.app.agents.attachments import _TARGET_KINDS
+        from utk_curio.backend.app.agents.application.attachments import _TARGET_KINDS
 
         declared = DEFS["agentTarget"]["properties"]["kind"]["enum"]
         assert set(declared) == set(_TARGET_KINDS), (
@@ -762,12 +762,12 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_attachment_title_cap_matches(self):
-        from utk_curio.backend.app.agents.attachments import TITLE_MAX_CHARS
+        from utk_curio.backend.app.agents.application.attachments import TITLE_MAX_CHARS
 
         assert DEFS["agentAttachment"]["properties"]["title"]["maxLength"] == TITLE_MAX_CHARS
 
     def test_every_agent_spec_key_is_declared(self):
-        from utk_curio.backend.app.agents.project_agents import _AGENT_SPEC_KEYS
+        from utk_curio.backend.app.agents.repositories.project_agents import _AGENT_SPEC_KEYS
 
         declared = set(DEFS["dataflowBase"]["properties"])
         missing = set(_AGENT_SPEC_KEYS) - declared

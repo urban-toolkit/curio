@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Iterable, Mapping
+from utk_curio.backend.app.agents.application import source_grounding
 
 #: The fence the plan grammar recognises (``content.py``); fence-agnostic
 #: recovery exists, but the oracle emits the canonical spelling.
@@ -232,7 +233,6 @@ def source_hints_for(
     Computed from the example's own code with the production scanner, so the
     hint names a real read rather than a guess.
     """
-    from utk_curio.backend.app.agents import source_grounding
 
     inner = example.get("dataflow")
     dataflow = inner if isinstance(inner, Mapping) else example
@@ -264,7 +264,6 @@ def synthetic_refs_for(expected: Mapping, *, example: Mapping, origins: Iterable
     grounded only when synthetic data was asked for, so the plan's intent has
     to say so -- see :func:`plan_for`.
     """
-    from utk_curio.backend.app.agents import source_grounding
 
     inner = example.get("dataflow")
     dataflow = inner if isinstance(inner, Mapping) else example

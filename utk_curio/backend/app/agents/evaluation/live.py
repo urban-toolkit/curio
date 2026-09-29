@@ -380,7 +380,7 @@ class LiveRun:
         not be compared with the next one.
         """
         try:
-            from utk_curio.backend.app.agents import builtin
+            from utk_curio.backend.app.agents.domain import builtin
 
             text = builtin.read_instruction_text(DFB_COORD) or ""
         except Exception:

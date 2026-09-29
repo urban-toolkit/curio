@@ -7,8 +7,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import attachments, services
-from utk_curio.backend.app.agents.attachments import AttachmentError, TITLE_MAX_CHARS
+from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import attachment_management
+from utk_curio.backend.app.agents.application.turns import titles
+from utk_curio.backend.app.agents.application.attachments import (
+    AttachmentError,
+    TITLE_MAX_CHARS,
+)
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -44,12 +49,12 @@ def _mock_provider(monkeypatch, reply="ok", title="Dataset Import Help"):
     title_calls = []
 
     def _fake_run(config, messages, **kwargs):
-        if messages and messages[0].get("content") == services.TITLE_PROMPT:
+        if messages and messages[0].get("content") == titles.TITLE_PROMPT:
             title_calls.append((messages, kwargs))
             return title
         return reply
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+    monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
     return title_calls
 
 
@@ -126,24 +131,24 @@ class TestSetTitle:
 
 class TestSanitizeTitle:
     def test_plain_title_passes(self):
-        assert services.sanitize_title("Dataset Import Help") == "Dataset Import Help"
+        assert titles.sanitize_title("Dataset Import Help") == "Dataset Import Help"
 
     def test_quotes_newlines_and_period_stripped(self):
-        assert services.sanitize_title('"Dataset\nImport   Help."\n') == "Dataset Import Help"
-        assert services.sanitize_title("“Smart Quotes Title”") == "Smart Quotes Title"
-        assert services.sanitize_title("`Backtick Title`") == "Backtick Title"
+        assert titles.sanitize_title('"Dataset\nImport   Help."\n') == "Dataset Import Help"
+        assert titles.sanitize_title("“Smart Quotes Title”") == "Smart Quotes Title"
+        assert titles.sanitize_title("`Backtick Title`") == "Backtick Title"
 
     def test_over_cap_truncated(self):
-        out = services.sanitize_title("word " * 30)
+        out = titles.sanitize_title("word " * 30)
         assert out is not None and len(out) <= TITLE_MAX_CHARS
         assert not out.endswith(" ")
 
     def test_empty_and_non_string_rejected(self):
-        assert services.sanitize_title("") is None
-        assert services.sanitize_title('""') is None
-        assert services.sanitize_title("   \n  ") is None
-        assert services.sanitize_title(None) is None
-        assert services.sanitize_title(42) is None
+        assert titles.sanitize_title("") is None
+        assert titles.sanitize_title('""') is None
+        assert titles.sanitize_title("   \n  ") is None
+        assert titles.sanitize_title(None) is None
+        assert titles.sanitize_title(42) is None
 
 
 class TestAutoTitleRoutes:
@@ -161,7 +166,7 @@ class TestAutoTitleRoutes:
         assert len(title_calls) == 1
         messages, kwargs = title_calls[0]
         assert messages[1] == {"role": "user", "content": "help me import a dataset"}
-        assert kwargs.get("max_output_tokens") == services.TITLE_MAX_OUTPUT_TOKENS
+        assert kwargs.get("max_output_tokens") == titles.TITLE_MAX_OUTPUT_TOKENS
         # Persisted, sanitized, and exposed on the listing.
         listed = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
@@ -180,11 +185,11 @@ class TestAutoTitleRoutes:
 
     def test_failed_title_call_leaves_reply_intact_and_title_null(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 raise RuntimeError("title provider down")
             return "the reply"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
         att_id = _attach_builtin(client, token, alice_project)["attachmentId"]
         r = client.post(
@@ -216,7 +221,7 @@ class TestAutoTitleRoutes:
             yield "hi"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         _mock_provider(monkeypatch, title="Stream Title Words")
         _, token = user_and_token
@@ -237,7 +242,7 @@ class TestAutoTitleRoutes:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _flaky
         )
         title_calls = _mock_provider(monkeypatch)
         _, token = user_and_token
@@ -313,12 +318,12 @@ class TestManualTitleRoutes:
         ukey = _user_dir_key(user)
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services.TITLE_PROMPT:
-                services.update_attachment_title(ukey, alice_project, att_id, "Manual Wins")
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
+                attachment_management.update_attachment_title(ukey, alice_project, att_id, "Manual Wins")
                 return "Auto Title"
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q1"}, headers=_auth(token),

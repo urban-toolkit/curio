@@ -149,7 +149,7 @@ class TestSelection:
     def test_the_metadata_bound_is_bigger_than_the_agent_one(self):
         """Portal metadata is not prompt text. GeoSampa's capabilities document
         is 425 KB and a CKAN package_search routinely passes 256 KiB."""
-        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.infrastructure import egress
 
         assert T.MAX_METADATA_BYTES > egress.MAX_BODY_BYTES
         assert T.MAX_METADATA_BYTES == 1024 * 1024

@@ -35,7 +35,7 @@ from flask import Blueprint, jsonify, request
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
-from utk_curio.backend.app.agents import testing_provider
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security

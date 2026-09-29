@@ -16,7 +16,10 @@ import pytest
 
 from utk_curio.backend.app.agents.evaluation import live as live_mod
 from utk_curio.backend.app.agents.evaluation import policy as policy_mod
-from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths, load_fixture
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    fixture_paths,
+    load_fixture,
+)
 
 FIXTURES = [load_fixture(path) for path in fixture_paths()]
 WITH_DATASETS = next(f for f in FIXTURES if f.required["datasets"])

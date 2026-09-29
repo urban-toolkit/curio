@@ -29,7 +29,8 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from utk_curio.backend.app.agents import attachments, sessions
+from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.repositories import sessions
 
 #: Dimension order in the report card — the weighted order of the scorer, so a
 #: reader sees the heaviest categories first.

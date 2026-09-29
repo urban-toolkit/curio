@@ -16,13 +16,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import content, tools, verify
-from utk_curio.backend.app.agents.services import (
-    _egress_cost,
-    _LazyRoster,
-    _mint_row_acquirable,
-    _verify_candidate_parts,
-)
+from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.application import verify
+from utk_curio.backend.app.agents.application.proposals.acquire import _mint_row_acquirable
+from utk_curio.backend.app.agents.application.tool_rounds import _egress_cost
+from utk_curio.backend.app.agents.application.turns.grounding import _verify_candidate_parts
+from utk_curio.backend.app.agents.application.turns.roster import _LazyRoster
 
 
 class TestTheContracts:
@@ -75,7 +75,7 @@ class TestTheEgressBudget:
     def test_the_roster_is_free(self):
         """It reads manifests off disk. Charging it would burn a run's
         allowance on a call that contacts nobody."""
-        from utk_curio.backend.app.agents.services import _EGRESS_TOOLS
+        from utk_curio.backend.app.agents.application.tool_rounds import _EGRESS_TOOLS
 
         assert "datalake.sources" not in _EGRESS_TOOLS
 
@@ -325,7 +325,7 @@ class TestStorageSourcesAreNotOffered:
         assert row.get("acquirable") is None
 
     def test_a_proposal_for_one_is_refused(self, app, shipped_root, monkeypatch):
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.proposals import acquire as services
 
         status, text, card = services._mint_datalake_acquire(
             "1", "p", {}, {"params": {"sourceId": self.EXAMPLE, "resourceId": "noise"}}

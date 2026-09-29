@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents.services import (
+from utk_curio.backend.app.agents.application.proposals.mint import (
     _package_install_miss_hint,
     _resolve_catalog_dir_name,
 )

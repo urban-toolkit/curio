@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import node_context
+from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_agents import test_routes as _tr
@@ -117,7 +117,7 @@ class TestABrowserFailureReachesEveryAgentPath:
     def test_the_agent_tool_reads_it_too(self, client, user_and_token, tmp_curio):
         """`node.runtime.read` is the model-chosen reader — same record, so it
         needed no change at all."""
-        from utk_curio.backend.app.agents import tools
+        from utk_curio.backend.app.agents.application import tools
 
         user, token = user_and_token
         pid = _project_with_a_failing_chart(client, token)

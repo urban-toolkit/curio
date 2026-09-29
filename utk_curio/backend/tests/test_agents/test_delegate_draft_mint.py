@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.services import _extract_draft_params
+from utk_curio.backend.app.agents.application.turns.delegates import _extract_draft_params
 from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
 RESEARCHER = "agent.researcher@1.0.0"
@@ -131,15 +131,16 @@ def _setup(client, token, project_id, monkeypatch, *, parent=RESEARCHER, replies
     calls = []
 
     def _fake_run(config, messages, **kwargs):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
-        if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+        if messages and messages[0].get("content") == titles.TITLE_PROMPT:
             return "Title"
         calls.append(messages)
         return replies[min(len(calls) - 1, len(replies) - 1)]
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
     return att_id, calls
 
 
@@ -354,7 +355,7 @@ class TestAuthoringInputEnrichment:
     delegation chain had ever seen the schema."""
 
     def test_authoring_capabilities_gain_the_contract(self):
-        from utk_curio.backend.app.agents.services import (
+        from utk_curio.backend.app.agents.application.turns.delegates import (
             _BUILD_REQUEST_CONTRACT,
             _enriched_delegate_inputs,
         )
@@ -374,7 +375,7 @@ class TestAuthoringInputEnrichment:
         assert "data.appearance.backgroundColor" in text
 
     def test_model_supplied_contract_is_never_overwritten(self):
-        from utk_curio.backend.app.agents.services import _enriched_delegate_inputs
+        from utk_curio.backend.app.agents.application.turns.delegates import _enriched_delegate_inputs
 
         enriched = _enriched_delegate_inputs(
             "guest", "p1", {}, "node.kind.author",
@@ -382,7 +383,7 @@ class TestAuthoringInputEnrichment:
         assert enriched["buildRequestContract"] == {"custom": True}
 
     def test_ordinary_capabilities_are_untouched(self):
-        from utk_curio.backend.app.agents.services import _enriched_delegate_inputs
+        from utk_curio.backend.app.agents.application.turns.delegates import _enriched_delegate_inputs
 
         enriched = _enriched_delegate_inputs(
             "guest", "p1", {}, "workflow.suggest", {"x": 1})
@@ -469,7 +470,7 @@ class TestFindingsReconciliation:
     ]
 
     def test_notes_extraction_shapes(self):
-        from utk_curio.backend.app.agents.services import _notes_from_delegate_inputs
+        from utk_curio.backend.app.agents.application.turns.delegates import _notes_from_delegate_inputs
 
         rows = _notes_from_delegate_inputs({"notes": self.WEATHER_NOTES})
         assert rows[0]["content"].startswith("73°F")
@@ -652,26 +653,25 @@ class TestDraftCorrectionRounds:
         """Edge case 31/37: a policy or permission verdict is the build
         service's answer, not a typo. Retrying would spend the parent's rounds
         arriving at the same refusal."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
-        assert not services_mod._draft_refusal_is_correctable(
+        assert not delegates._draft_refusal_is_correctable(
             "backend policy blocked: subprocess is not permitted"
         )
-        assert not services_mod._draft_refusal_is_correctable(
+        assert not delegates._draft_refusal_is_correctable(
             "package ai.agent.notes@1 is already installed in this project"
         )
         # A malformed draft or a failed probe is exactly what a model can fix.
-        assert services_mod._draft_refusal_is_correctable(
+        assert delegates._draft_refusal_is_correctable(
             "invalid build request: manifest.templates[0].id is required"
         )
-        assert services_mod._draft_refusal_is_correctable(
+        assert delegates._draft_refusal_is_correctable(
             "the handler probe failed for handler.py"
         )
 
     def test_verbose_extractor_explains_each_failure_shape(self):
-        from utk_curio.backend.app.agents.services import (
-            _extract_draft_params_verbose,
-        )
+        from utk_curio.backend.app.agents.application.turns.delegates import _extract_draft_params_verbose
 
         _, why = _extract_draft_params_verbose("I could not author it.")
         assert "no JSON build request found" in why
@@ -735,10 +735,11 @@ class TestAuthoringDelegateReuseEvidence:
     """
 
     def _evidence(self, client, user, pid):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         key = _ukey(client, user)
-        return key, services_mod._authoring_reuse_evidence(key, pid)
+        return key, delegates._authoring_reuse_evidence(key, pid)
 
     def test_store_package_is_reported_with_its_dir_name_and_templates(
             self, client, user_and_token, tmp_curio):
@@ -781,7 +782,8 @@ class TestAuthoringDelegateReuseEvidence:
 
     def test_authoring_delegate_inputs_carry_the_evidence(
             self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -789,7 +791,7 @@ class TestAuthoringDelegateReuseEvidence:
         _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
                              ["note-surface"])
 
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             key, pid, {}, "node.kind.author", {"look": "post-it"},
         )
         # The dev/90 A8 contract still rides along — this adds, never replaces.
@@ -799,7 +801,8 @@ class TestAuthoringDelegateReuseEvidence:
 
     def test_a_parent_supplied_view_is_never_overwritten(
             self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -807,14 +810,15 @@ class TestAuthoringDelegateReuseEvidence:
         _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
                              ["note-surface"])
 
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             key, pid, {}, "node.kind.author", {"existingPackages": "mine"},
         )
         assert enriched["existingPackages"] == "mine"
 
     def test_non_authoring_capabilities_are_untouched(
             self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -822,7 +826,7 @@ class TestAuthoringDelegateReuseEvidence:
         _write_store_package(key, "curio.notes@1", "curio.notes", "Simple Notes",
                              ["note-surface"])
 
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             key, pid, {}, "node.content.generate", {"nodeType": "x"},
         )
         assert "existingPackages" not in enriched
@@ -832,34 +836,36 @@ class TestAuthoringDelegateReuseEvidence:
         """delegation._frame_inputs bounds NOTHING (only the child's reply is
         capped), so the payload has to bound itself — and a dropped row is
         logged rather than silently vanishing."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         user, token = user_and_token
         pid = _project(client, token)
         key = _ukey(client, user)
-        cap = services_mod._REUSE_EVIDENCE_MAX_PACKAGES
+        cap = delegates._REUSE_EVIDENCE_MAX_PACKAGES
         for i in range(cap + 3):
             _write_store_package(
                 key, f"ai.test.p{i:03d}@1", f"ai.test.p{i:03d}", f"P{i}",
-                [f"t{j}" for j in range(services_mod._REUSE_EVIDENCE_MAX_TEMPLATES + 2)],
-                description="D" * (services_mod._REUSE_EVIDENCE_DESC_CHARS + 50),
+                [f"t{j}" for j in range(delegates._REUSE_EVIDENCE_MAX_TEMPLATES + 2)],
+                description="D" * (delegates._REUSE_EVIDENCE_DESC_CHARS + 50),
             )
 
         with caplog.at_level("WARNING"):
-            evidence = services_mod._authoring_reuse_evidence(key, pid)
+            evidence = delegates._authoring_reuse_evidence(key, pid)
         assert len(evidence["packages"]) == cap
         assert "truncated" in caplog.text
         for row in evidence["packages"]:
-            assert len(row["description"]) <= services_mod._REUSE_EVIDENCE_DESC_CHARS
+            assert len(row["description"]) <= delegates._REUSE_EVIDENCE_DESC_CHARS
             assert len(row.get("templates", [])) <= (
-                services_mod._REUSE_EVIDENCE_MAX_TEMPLATES
+                delegates._REUSE_EVIDENCE_MAX_TEMPLATES
             )
 
     def test_a_broken_registry_degrades_to_no_evidence(
             self, client, user_and_token, tmp_curio, monkeypatch, caplog):
         """Honest absence, and never an exception into the delegation path —
         the same posture nodeContext and verification degrade with."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
         from utk_curio.backend.app.packages.application import project_packages
         from utk_curio.backend.app.packages.application import store_reads
 
@@ -876,10 +882,10 @@ class TestAuthoringDelegateReuseEvidence:
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry down")),
         )
         with caplog.at_level("WARNING"):
-            assert services_mod._authoring_reuse_evidence(key, pid) is None
+            assert delegates._authoring_reuse_evidence(key, pid) is None
         assert "reuse evidence" in caplog.text
         # And the delegation still gets its contract and proceeds.
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             key, pid, {}, "node.kind.author", {"look": "x"},
         )
         assert "existingPackages" not in enriched
@@ -984,7 +990,8 @@ class TestReuseInsteadOfAuthoring:
             self, client, user_and_token, tmp_curio, monkeypatch):
         """Nothing failed, so the dev/93 commit-5 loop must not re-run the
         delegate trying to 'fix' a correct answer."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import titles
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -998,7 +1005,7 @@ class TestReuseInsteadOfAuthoring:
             calls["n"] += 1
             return "ok", "should not be called"
 
-        part, text, outcome = services_mod._mint_package_draft_from_delegate(
+        part, text, outcome = delegates._mint_package_draft_from_delegate(
             key, pid, {"granted": ["package.draft.apply"]}, self._reuse_reply(),
             delegate_inputs={}, redelegate=_never,
         )
@@ -1021,7 +1028,7 @@ class TestReuseInsteadOfAuthoring:
     def test_a_malformed_reuse_claim_is_not_a_reuse_finding(self):
         """Schema-keyed, never a heuristic over prose: model wording must not
         drive control flow."""
-        from utk_curio.backend.app.agents.services import _extract_reuse_finding
+        from utk_curio.backend.app.agents.application.turns.delegates import _extract_reuse_finding
 
         assert _extract_reuse_finding(
             json.dumps({"reuseExisting": {"dirName": "curio.notes@1"}})
@@ -1044,7 +1051,7 @@ def test_package_builder_instruction_is_executable_on_both_paths():
     """A prompt-marker test (the repo's dev/91 pattern): the reuse-first rule
     must name where the evidence comes from on BOTH paths, or it reverts to
     describing a tool-only workflow the delegate cannot run."""
-    from utk_curio.backend.app.agents import builtin
+    from utk_curio.backend.app.agents.domain import builtin
 
     text = builtin.read_prompt_text("agent.package-builder@1.0.0", "instruction")
     assert text
@@ -1060,7 +1067,7 @@ def test_package_builder_instruction_is_executable_on_both_paths():
 
 def test_build_request_contract_teaches_the_reuse_reply():
     """The A8 lesson: nobody emits a protocol they were never shown."""
-    from utk_curio.backend.app.agents.services import _BUILD_REQUEST_CONTRACT
+    from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
 
     taught = json.dumps(_BUILD_REQUEST_CONTRACT)
     assert "insteadOfAuthoring" in _BUILD_REQUEST_CONTRACT

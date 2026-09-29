@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.services import (
+from utk_curio.backend.app.agents.application.proposals.cards import (
     _DRAFT_CARD_MAX_DEP_ROWS,
     _DRAFT_CARD_MAX_FILES,
     _DRAFT_CARD_MAX_FINDINGS,

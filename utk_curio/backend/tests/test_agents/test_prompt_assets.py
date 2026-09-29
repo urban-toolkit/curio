@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -47,7 +47,7 @@ class TestUserOwnedValuesStayOutOfPrompts:
     the Agent Catalog never reach."""
 
     def test_no_prompt_file_carries_a_keyword_type(self):
-        from utk_curio.backend.app.agents import contracts
+        from utk_curio.backend.app.agents.domain import contracts
 
         lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
         for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.txt")):

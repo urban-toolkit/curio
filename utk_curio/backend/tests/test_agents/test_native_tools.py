@@ -17,15 +17,18 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import (
-    chat_capabilities,
-    content,
-    model_catalog,
-    services,
-    testing_provider,
-    tools,
+from utk_curio.backend.app.agents.infrastructure import chat_capabilities
+from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.repositories import model_catalog
+from utk_curio.backend.app.agents.application import tool_rounds
+from utk_curio.backend.app.agents.application.turns import titles
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.infrastructure.providers import (
+    NativeToolsRefused,
+    ProviderConfig,
 )
-from utk_curio.backend.app.agents.providers import NativeToolsRefused, ProviderConfig
 from utk_curio.backend.tests.test_agents import test_routes as _tr
 
 _auth = _tr._auth
@@ -119,13 +122,13 @@ def _run_calls() -> list[list]:
     """The captured message lists of the run's own calls, the title call left out."""
     return [
         messages for messages in testing_provider.captured()
-        if not (messages and messages[0].get("content") == services.TITLE_PROMPT)
+        if not (messages and messages[0].get("content") == titles.TITLE_PROMPT)
     ]
 
 
 def _offered() -> list[dict]:
     return [o for o, messages in zip(testing_provider.offered(), testing_provider.captured())
-            if not (messages and messages[0].get("content") == services.TITLE_PROMPT)]
+            if not (messages and messages[0].get("content") == titles.TITLE_PROMPT)]
 
 
 def _call(name, arguments=None, call_id=None) -> dict:
@@ -302,13 +305,13 @@ class TestANativeCall:
     def test_the_last_round_offers_no_call(self, client, headers, project):
         att = _attach(client, headers, project, CHAT)
         testing_provider.push_replies(
-            *[{"toolCalls": [_call("dataflow.read")]}] * services.MAX_TOOL_ROUNDS, "Enough.",
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, "Enough.",
         )
         body = _run(client, headers, project, att)
         assert body["reply"] == "Enough."
-        assert [o["toolChoice"] for o in _offered()] == ["auto"] * services.MAX_TOOL_ROUNDS + ["none"]
+        assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
         last_result = _run_calls()[-1][-1]
-        assert last_result["content"].endswith(services._FINAL_ROUND_NOTE)
+        assert last_result["content"].endswith(tool_rounds._FINAL_ROUND_NOTE)
 
     def test_a_fenced_block_in_a_native_run_is_answered_in_kind(self, client, headers, project):
         att = _attach(client, headers, project, CHAT)
@@ -451,14 +454,14 @@ class TestTheFallback:
         offered = []
 
         def _fake(config, messages, max_output_tokens=None, usage_out=None, **kwargs):
-            if messages[0].get("content") == services.TITLE_PROMPT:
+            if messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             offered.append(bool(kwargs.get("tools")))
             if kwargs.get("tools"):
                 raise NativeToolsRefused("tools are not supported for this model")
             return "Fenced."
 
-        monkeypatch.setattr(services, "run_chat_turn", _fake)
+        monkeypatch.setattr(providers, "run_chat_turn", _fake)
         att = _attach(client, h, project, CHAT)
         assert _run(client, h, project, att)["reply"] == "Fenced."
         assert offered == [True, False]
@@ -520,7 +523,7 @@ class TestStreaming:
     def test_the_last_round_offers_no_call(self, client, headers, project):
         att = _attach(client, headers, project, CHAT)
         testing_provider.push_replies(
-            *[{"toolCalls": [_call("dataflow.read")]}] * services.MAX_TOOL_ROUNDS, "Enough.",
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, "Enough.",
         )
         _stream(client, headers, project, att)
-        assert [o["toolChoice"] for o in _offered()] == ["auto"] * services.MAX_TOOL_ROUNDS + ["none"]
+        assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]

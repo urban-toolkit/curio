@@ -289,7 +289,7 @@ class InProcessDriver:
         is answering. The responder reads the request it was given -- exactly
         what a model does.
         """
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         calls = self.calls
 
@@ -300,7 +300,7 @@ class InProcessDriver:
             return responder(messages, len(calls) - 1)
 
         self.monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
 
     def fake_sandbox(self, kind_for: Callable | None = None) -> None:

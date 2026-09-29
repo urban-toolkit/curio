@@ -34,8 +34,12 @@ from utk_curio.backend.app.agents.evaluation import records as records_mod
 from utk_curio.backend.app.agents.evaluation import review as review_mod
 from utk_curio.backend.app.agents.evaluation.canonical import TemplateFacts
 from utk_curio.backend.app.agents.evaluation.compare import Universe
-from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths, load_fixture
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    fixture_paths,
+    load_fixture,
+)
 from utk_curio.backend.app.agents.evaluation.report import digest_of
+from utk_curio.backend.app.agents import service as agents_services
 
 DFB_COORD = "agent.dataflow-builder@1.0.0"
 
@@ -78,8 +82,11 @@ def _evaluated_configs(user, user_key: str):
     the agents it requires, each resolved with the Builder as its caller.
     Returns ``(config, rows)``; each row is a provider payload plus the
     ``agents`` that run on it."""
-    from utk_curio.backend.app.agents import builtin
-    from utk_curio.backend.app.agents.provider_config import ProviderConfigError, resolve_llm
+    from utk_curio.backend.app.agents.domain import builtin
+    from utk_curio.backend.app.agents.infrastructure.provider_config import (
+        ProviderConfigError,
+        resolve_llm,
+    )
 
     guest = bool(getattr(user, "is_guest", False))
     manifest = builtin.get_builtin_manifest(DFB_COORD)
@@ -116,7 +123,7 @@ def readiness(user) -> dict:
     AI Settings. ``configurations`` lists every distinct configuration the run
     and the agents it requires use.
     """
-    from utk_curio.backend.app.agents.provider_config import storage_key
+    from utk_curio.backend.app.agents.infrastructure.provider_config import storage_key
 
     try:
         config, rows = _evaluated_configs(user, storage_key(user))
@@ -187,7 +194,7 @@ def _fixture_or_refuse(fixture_id: str):
 
 def start(user, user_key: str, fixture_id: str) -> dict:
     """Validate, create the record, and hand the run to a detached job."""
-    from utk_curio.backend.app.agents import agent_jobs
+    from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
     existing = records_mod.in_flight(user_key)
     if existing is not None:
@@ -352,7 +359,6 @@ def _run_phases(user, user_key: str, run_id: str, fixture, config, *, started_at
 
         # ── prompting ────────────────────────────────────────────────────
         yield _phase("prompting", model=config.model)
-        from utk_curio.backend.app.agents import services as agents_services
 
         turn = agents_services.run_attachment(
             user_key, project_id, attachment_id, fixture.prompt, config,
@@ -549,7 +555,6 @@ def _provision(user, user_key: str, project_id: str, fixture) -> list:
 
 def _install_and_attach(user_key: str, project_id: str) -> tuple:
     """The normal install flow, closure included (``DEC-068``)."""
-    from utk_curio.backend.app.agents import services as agents_services
 
     installed = agents_services.install_in_project(user_key, project_id, DFB_COORD)
     # ``install_in_project`` answers ``{"agents": <the lockfile>, "installed":
@@ -573,7 +578,6 @@ def _review_and_apply(
 ) -> bool:
     """Decide with the shared policy, authorize, then apply through the real
     endpoint. Returns whether a plan was applied."""
-    from utk_curio.backend.app.agents import services as agents_services
     from utk_curio.backend.app.projects import storage as projects_storage
 
     policy = policy_mod.UserPolicy.for_fixture(fixture)
@@ -623,7 +627,6 @@ def _review_and_apply(
 
 def _solve(user_key: str, project_id: str, attachment_id: str, config) -> tuple:
     """The real Solve, verified."""
-    from utk_curio.backend.app.agents import services as agents_services
 
     try:
         result = agents_services.solve_attachment(
@@ -729,7 +732,7 @@ def _roster_digest(user_key: str, project_id: str) -> str:
 
 
 def _instruction_digest() -> str:
-    from utk_curio.backend.app.agents import builtin
+    from utk_curio.backend.app.agents.domain import builtin
 
     try:
         return digest_of([builtin.read_instruction_text(DFB_COORD) or ""])

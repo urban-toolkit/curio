@@ -112,7 +112,7 @@ def create_app(config_class=config_class):
     except Exception:  # noqa: BLE001 - an audit must never stop a boot
         pass
 
-    from utk_curio.backend.app.agents.routes import agents_bp
+    from utk_curio.backend.app.agents.routes.common import agents_bp
     app.register_blueprint(agents_bp)
 
     from utk_curio.backend.app.monitor.routes import monitor_bp

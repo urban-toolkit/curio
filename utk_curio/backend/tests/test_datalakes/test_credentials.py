@@ -240,7 +240,7 @@ class TestNoResponseOrLogCarriesIt:
     def test_an_egress_audit_record_cannot_carry_it(self):
         """Header-only auth is what guarantees this: the audit record holds
         urls and a byte count, and a secret never enters a URL."""
-        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.infrastructure import egress
 
         audit: list = []
         egress.fetch(

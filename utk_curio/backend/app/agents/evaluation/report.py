@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.agents import source_grounding
+from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.evaluation.scoring import Score
 from utk_curio.common.redaction import REDACTED_TEMPLATE, redact
 

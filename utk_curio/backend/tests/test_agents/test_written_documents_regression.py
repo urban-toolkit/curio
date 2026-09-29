@@ -127,7 +127,7 @@ class _Harness:
         script = dict(replies)
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -141,7 +141,7 @@ class _Harness:
             return LOADER
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
         self.exec_payloads: list = []
 

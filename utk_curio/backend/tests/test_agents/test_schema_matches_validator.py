@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents.manifest import CAPABILITY_ID_RE
+from utk_curio.backend.app.agents.domain.manifest import CAPABILITY_ID_RE
 
 SCHEMA = json.loads(
     (Path(__file__).resolve().parents[4] / "docs/schemas/agent-package.v1.json")
@@ -112,7 +112,7 @@ class TestModesAndScopedDelegates:
     def test_every_builtin_manifest_validates_against_the_schema(self):
         from jsonschema import Draft202012Validator
 
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         validator = Draft202012Validator(SCHEMA)
         for spec in builtin.BUILTIN_AGENTS:

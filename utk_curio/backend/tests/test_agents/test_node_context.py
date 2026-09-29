@@ -3,7 +3,7 @@ runtime status, no fabrication."""
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import node_context
+from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.execution import runtime_journal
 
 KEY = "4242"

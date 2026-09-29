@@ -36,7 +36,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.agents import contracts
+from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.evaluation import export as export_mod
 from utk_curio.backend.app.agents.evaluation import oracle
 
@@ -276,7 +276,7 @@ def plan_target_check(reply: str) -> tuple:
     either step is not a training example — it is a lesson in producing
     something the product refuses.
     """
-    from utk_curio.backend.app.agents import content as content_mod
+    from utk_curio.backend.app.agents.domain import content as content_mod
 
     try:
         _stripped, payload = content_mod.extract_plan_attempt(reply)

@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import storage
+from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -83,7 +83,7 @@ class TestUploadImport:
             return "three bullets"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
         _, token = user_and_token
         coord = _upload(client, token).get_json()["dirName"]
@@ -110,7 +110,7 @@ class TestUploadImport:
             headers=_auth(token),
         )
         assert r.status_code == 200, r.get_data(as_text=True)
-        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents.domain import content as content_mod
 
         # dev/39: the runtime-owned structured-tail instruction composes last.
         system = calls[0][0]

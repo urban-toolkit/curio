@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
-from utk_curio.backend.app.agents.storage import user_agents_dir
+from utk_curio.backend.app.agents.repositories.storage import user_agents_dir
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
 RECORD_VERSION = 1
@@ -274,7 +274,7 @@ def reconcile(user_key: str, record: EvaluationRecord) -> EvaluationRecord:
     be running while no job owns it is stale rather than true. Nothing is
     replayed.
     """
-    from utk_curio.backend.app.agents import agent_jobs
+    from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
     if record.terminal:
         return record

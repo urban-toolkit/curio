@@ -14,8 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import llm_configs, testing_provider
-from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths, load_fixture
+from utk_curio.backend.app.agents.infrastructure import llm_configs
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    fixture_paths,
+    load_fixture,
+)
 from utk_curio.backend.app.agents.training import gate as gate_mod
 from utk_curio.backend.app.agents.training import records as records_mod
 from utk_curio.backend.app.agents.training import service as training_service

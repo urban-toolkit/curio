@@ -24,8 +24,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.agents import source_grounding
-from utk_curio.backend.app.agents.evaluation.canonical import Sources, TemplateIndex
+from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.agents.evaluation.canonical import (
+    Sources,
+    TemplateIndex,
+)
 from utk_curio.backend.app.packages.service import canonical_template_id
 from utk_curio.backend.app.packages.service import dir_name_from_node_type
 

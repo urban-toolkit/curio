@@ -1,7 +1,7 @@
 """dev/112 (DEC-070) — the one plan-topology helper: acyclicity over DATA
 edges of the NET graph, and the preamble's interaction-edge rule made
 executable from the roster."""
-from utk_curio.backend.app.agents import plan_topology as pt
+from utk_curio.backend.app.agents.domain import plan_topology as pt
 
 
 def _edge(eid, src, dst, **over):

@@ -32,7 +32,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.datalakes.infrastructure import transport as T
 
 pytestmark = pytest.mark.contract

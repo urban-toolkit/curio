@@ -13,8 +13,11 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import testing_provider
-from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.infrastructure.providers import (
+    ProviderConfig,
+    run_chat_completion,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +165,7 @@ class TestDispatch:
         assert usage == {"inputTokens": 12, "outputTokens": 34}
 
     def test_streaming_yields_the_same_reply(self):
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         testing_provider.push_reply("streamed")
         chunks = list(stream_chat_completion(_config(), [{"role": "user", "content": "hi"}]))
@@ -272,7 +275,7 @@ class TestCapture:
         assert testing_provider.last_messages()[0]["content"] == "preamble here"
 
     def test_streaming_captures_too(self):
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         testing_provider.push_reply("streamed")
         list(stream_chat_completion(_config(), [{"role": "user", "content": "streamy"}]))
@@ -285,7 +288,7 @@ class TestNativeCalls:
     TOOLS = [{"name": "node__read", "description": "", "parameters": {}}]
 
     def test_an_entry_makes_its_calls_under_their_native_names(self):
-        from utk_curio.backend.app.agents.providers import ToolCall
+        from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 
         testing_provider.push_reply({"text": "Reading.", "toolCalls": [
             {"name": "node.read", "arguments": {"nodeId": "n1"}, "id": "c1"},
@@ -325,7 +328,10 @@ class TestNativeCalls:
         assert testing_provider.offered() == []
 
     def test_the_stream_yields_the_text_then_the_calls(self):
-        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
 
         testing_provider.push_reply({"toolCalls": [{"name": "node.read", "id": "c1"}]})
         events = list(stream_chat_turn(_config(), [], tools=self.TOOLS))
@@ -334,7 +340,10 @@ class TestNativeCalls:
         assert list(stream_chat_turn(_config(), [])) == ["plain"]
 
     def test_an_endpoint_error_on_a_call_offering_tools_is_a_refusal_of_them(self):
-        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+        )
 
         testing_provider.push_reply({"error": "no tools here", "status": 422})
         with pytest.raises(NativeToolsRefused):
