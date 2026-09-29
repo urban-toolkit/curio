@@ -11,7 +11,7 @@
 import {
   brokenLibraryClause,
   dependencyFailureNotice,
-} from "../../utils/packageDependencyNotice";
+} from "../../services/packages";
 
 describe("brokenLibraryClause", () => {
   it("names the library AND the reason", () => {

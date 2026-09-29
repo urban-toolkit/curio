@@ -24,12 +24,14 @@ import pytest
 
 from .conftest import write_fake_tool  # noqa: F401  (default_llm_provider is a fixture)
 
-from utk_curio.backend.app.packages import build_jobs, build_promotion, build_staging
-from utk_curio.backend.app.packages.build_extension import installed_package_digest
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_pipeline import run_build
-from utk_curio.backend.app.packages.build_preview import PREVIEW_STATES
-from utk_curio.backend.app.packages.node_appearance import NAMED_COLORS
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
+from utk_curio.backend.app.packages.builder import promotion as build_promotion
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.builder.extension import installed_package_digest
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.pipeline import run_build
+from utk_curio.backend.app.packages.builder.preview import PREVIEW_STATES
+from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
 from utk_curio.backend.tests.test_packages.test_build_compiler import _FAKE_ESBUILD
 from utk_curio.backend.tests.test_packages.test_build_preview import _FAKE_RUNNER
 
@@ -160,7 +162,7 @@ class TestScenarioDrafts:
         assert colors == [NAMED_COLORS["pink"], NAMED_COLORS["lavender"], "#336699"]
 
     def test_invalid_note_color_refuses(self):
-        from utk_curio.backend.app.packages.build_models import BuildRequestError
+        from utk_curio.backend.app.packages.builder.models import BuildRequestError
 
         bad = _postit_scenario([{"templateId": "postit-note", "content": "x",
                                  "appearance": {"backgroundColor": "#777777"}}])
@@ -175,7 +177,7 @@ class TestLookAgnosticPipeline:
         return job.result
 
     def test_postit_scenario_end_to_end(self, tmp_curio, pinned_tools):
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.repositories.store import package_dir
 
         result = self._build_ready(_postit_scenario(_NOTES))
         archive = build_staging.read_artifact("guest", result.artifact_digest)
@@ -564,12 +566,12 @@ class TestReuseFirstNoteCreation:
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
 
-    def test_presentation_template_is_authorable(self, tmp_curio, install_packageage):
-        from utk_curio.backend.app.packages import services as packages_services
+    def test_presentation_template_is_authorable(self, tmp_curio, install_package):
+        from utk_curio.backend.app.packages import service as packages_services
         from utk_curio.backend.app.projects import storage as projects_storage
 
         manifest = _postit_scenario()["manifest"]
-        install_packageage("guest", manifest=manifest, sources={})
+        install_package("guest", manifest=manifest, sources={})
         projects_storage.write_spec("guest", "p-reuse", {
             "dataflow": {"nodes": [], "edges": [],
                          "packages": ["ai.agent.postit@1"]}})

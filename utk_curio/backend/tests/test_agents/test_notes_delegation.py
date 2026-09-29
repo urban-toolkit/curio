@@ -130,7 +130,7 @@ class TestPresentationTemplates:
         return pkg
 
     def test_only_enlisted_presentation_templates_listed(self, tmp_path, monkeypatch):
-        from utk_curio.backend.app.packages.services import presentation_templates
+        from utk_curio.backend.app.packages.application.templates import presentation_templates
 
         self._install(tmp_path, monkeypatch, enlist_project="p1")
         rows = presentation_templates("guest", "p1")
@@ -138,7 +138,7 @@ class TestPresentationTemplates:
                          "description": "a post-it note"}]
 
     def test_installed_but_not_enlisted_is_excluded(self, tmp_path, monkeypatch):
-        from utk_curio.backend.app.packages.services import presentation_templates
+        from utk_curio.backend.app.packages.application.templates import presentation_templates
 
         self._install(tmp_path, monkeypatch)  # no project lockfile entry
         assert presentation_templates("guest", "p-other") == []

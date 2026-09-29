@@ -1,6 +1,6 @@
 import { SupportedType } from "../constants";
-import type { PortDraft, Category, Engine, Editor, TemplateDraft } from "../pages/nodes/factoryDraftModel";
-import { factoryUiMakeId } from "../pages/nodes/factoryDraftModel";
+import type { PortDraft, Category, Engine, Editor, TemplateDraft } from "../services/packages";
+import { factoryUiMakeId } from "../services/packages";
 import type { NodeDescriptor } from "../registry/types";
 import { canvasTemplateLabelFromNode } from "./palettePackageFactoryDraft";
 

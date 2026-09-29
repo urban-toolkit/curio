@@ -738,7 +738,7 @@ _PACKAGES_RESOLVE_MAX_DIRNAMES = 8
 def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
     """Bounded package rows for the dev/84 read tool — a thin wrapper over the
     packages domain's agent overview (`ADR-AG-007`: one truth, owned there)."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     rows = packages_services.agent_catalog_overview(user_key, project_id)
     query = params.get("q")
@@ -756,7 +756,7 @@ def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list
 
 def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
     """The dev/84 identify surface: real resolver output, never invented."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     dir_names = params.get("dirNames")
     if not isinstance(dir_names, list) or not dir_names or not all(

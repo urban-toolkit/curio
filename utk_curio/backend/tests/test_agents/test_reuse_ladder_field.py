@@ -58,9 +58,9 @@ def _install_bare_id():
 
 
 def _write_package(user_key, dir_name, manifest, files=()):
-    from utk_curio.backend.app.packages.storage import user_packageages_dir
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    d = user_packageages_dir(user_key) / dir_name
+    d = user_packages_dir(user_key) / dir_name
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     for rel, text in files:
@@ -108,7 +108,7 @@ def _field_store(user_key, project_id, *, with_notes: bool):
     """Reproduce the live store: postits enlisted in the project; the note
     package present in the store but NOT enlisted (variant A) or absent
     entirely (variant B)."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import project_packages as packages_services
 
     from .test_routes import TestNodeCreate
 
@@ -184,7 +184,7 @@ class TestFieldReplay:
         proceed to the notes — as cards BELOW it, one node at a time — with no
         second message. The install apply queues the A16 sequence and returns
         the ordered ids; applying each (the frontend walk) lands its node."""
-        from utk_curio.backend.app.packages import node_appearance
+        from utk_curio.backend.app.packages.domain import node_appearance
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -243,8 +243,8 @@ class TestFieldReplay:
         landed — white and headed "Note". Now: titles round-trip and the A13
         defaults fill the colors the model omitted (question yellow, answer
         green) on the Researcher's own attachment path."""
-        from utk_curio.backend.app.packages import node_appearance
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.domain import node_appearance
+        from utk_curio.backend.app.packages.application import project_packages as packages_services
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token

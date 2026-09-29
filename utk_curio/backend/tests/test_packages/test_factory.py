@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.factory`."""
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.factory`."""
 
 from __future__ import annotations
 
@@ -9,18 +9,16 @@ from datetime import datetime
 
 import pytest
 
-from utk_curio.backend.app.packages.factory import (
+from utk_curio.backend.app.packages.builder.factory import (
     FactoryError,
-    build_packageage_archive,
+    build_package_archive,
     preserve_unedited_sources,
     _STARTER_CODE_SENTINEL,
 )
-from utk_curio.backend.app.packages.installer import (
-    InstallerError,
-    install_packageage_from_archive,
-    publish_packageage_archive_to_catalog_dir,
-)
-from utk_curio.backend.app.packages.storage import package_dir
+from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+from utk_curio.backend.app.packages.repositories.archive import InstallerError
+from utk_curio.backend.app.packages.repositories.catalog_dir import publish_package_archive_to_catalog_dir
+from utk_curio.backend.app.packages.repositories.store import package_dir
 
 
 def _draft(**overrides):
@@ -62,9 +60,9 @@ def _draft(**overrides):
 
 
 def test_build_produces_installable_archive(tmp_curio):
-    result = build_packageage_archive(_draft())
+    result = build_package_archive(_draft())
     assert result.filename == "ai.test.demo@1-1.2.3.curio.zip"
-    install_result = install_packageage_from_archive("guest", result.archive)
+    install_result = install_package_from_archive("guest", result.archive)
     assert install_result.manifest.package_id == "ai.test.demo"
     assert install_result.manifest.version == "1.2.3"
 
@@ -75,17 +73,17 @@ def test_build_accepts_optional_lineage(tmp_curio):
         "forkedFrom": {"packageId": "ai.upstream.origin", "major": 1},
         "root": {"packageId": "ai.upstream.origin", "major": 1},
     }
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
     assert result.manifest.lineage is not None
     assert result.manifest.lineage.forked_from.package_id == "ai.upstream.origin"
-    install_result = install_packageage_from_archive("guest", result.archive)
+    install_result = install_package_from_archive("guest", result.archive)
     assert install_result.manifest.lineage is not None
     assert install_result.manifest.lineage.root.major == 1
 
 
 def test_build_is_deterministic(tmp_curio):
-    a = build_packageage_archive(_draft()).archive
-    b = build_packageage_archive(_draft()).archive
+    a = build_package_archive(_draft()).archive
+    b = build_package_archive(_draft()).archive
     assert a == b
 
 
@@ -93,35 +91,35 @@ def test_build_rejects_unknown_template_in_sources():
     draft = _draft()
     draft["sources"]["other-template"] = {"filename": "X.py", "code": "pass"}
     with pytest.raises(FactoryError, match="unknown template id"):
-        build_packageage_archive(draft)
+        build_package_archive(draft)
 
 
 def test_build_rejects_bad_filename():
     draft = _draft()
     draft["sources"]["demo-kind"] = {"filename": "../escape.py", "code": "pass"}
     with pytest.raises(FactoryError, match="single safe"):
-        build_packageage_archive(draft)
+        build_package_archive(draft)
 
 
 def test_build_rejects_missing_source():
     draft = _draft()
     draft["sources"]["demo-kind"] = {"filename": "Different.py", "code": "pass"}
     with pytest.raises(FactoryError, match="source references"):
-        build_packageage_archive(draft)
+        build_package_archive(draft)
 
 
 def test_build_rejects_bad_manifest():
     draft = _draft()
     draft["manifest"]["id"] = "not valid"
     with pytest.raises(FactoryError):
-        build_packageage_archive(draft)
+        build_package_archive(draft)
 
 
 def test_build_includes_readme_and_license():
     draft = _draft()
     draft["readme"] = "# Demo\n"
     draft["license_text"] = "MIT"
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
     with zipfile.ZipFile(io.BytesIO(result.archive), "r") as zf:
         names = set(zf.namelist())
     assert "README.md" in names
@@ -175,8 +173,8 @@ def test_preserve_unedited_sources_restores_real_source_for_placeholder_kind(tmp
         "foo-kind": {"filename": "foo-kind.py", "code": distinctive_foo},
         "bar-kind": {"filename": "bar-kind.py", "code": distinctive_bar},
     }
-    built = build_packageage_archive(install_draft)
-    install_packageage_from_archive("guest", built.archive)
+    built = build_package_archive(install_draft)
+    install_package_from_archive("guest", built.archive)
     installed_dir = package_dir("guest", "ai.test.demo@1")
     assert (installed_dir / "sources" / "foo-kind.py").read_text() == distinctive_foo
     assert (installed_dir / "sources" / "bar-kind.py").read_text() == distinctive_bar
@@ -202,7 +200,7 @@ def test_preserve_unedited_sources_noop_for_fresh_install():
 
 
 def test_build_auto_detects_python_dependencies_from_source(tmp_curio):
-    """``build_packageage_archive`` populates ``dependencies.python`` from source imports.
+    """``build_package_archive`` populates ``dependencies.python`` from source imports.
 
     The Node Factory wizard is gone (no UI for manual dep entry), so dependency
     declarations are derived from each template's source file. Test that a draft
@@ -218,28 +216,28 @@ def test_build_auto_detects_python_dependencies_from_source(tmp_curio):
         "def run():\n"
         "    return {}\n"
     )
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
     assert result.manifest.python_deps == {"numpy": "*", "scikit-learn": "*"}
     assert result.manifest.js_deps == {}
 
 
-def test_publish_packageage_archive_to_catalog_dir(tmp_path):
+def test_publish_package_archive_to_catalog_dir(tmp_path):
     root = tmp_path / "catalog"
-    archive = build_packageage_archive(_draft()).archive
+    archive = build_package_archive(_draft()).archive
 
-    result = publish_packageage_archive_to_catalog_dir(archive, root, replace=False)
+    result = publish_package_archive_to_catalog_dir(archive, root, replace=False)
     assert result.manifest.package_id == "ai.test.demo"
     dest = root / result.manifest.dir_name
     assert dest.is_dir()
 
     with pytest.raises(InstallerError, match="already exists"):
-        publish_packageage_archive_to_catalog_dir(archive, root, replace=False)
+        publish_package_archive_to_catalog_dir(archive, root, replace=False)
 
     bumped = _draft()
     bumped["manifest"]["version"] = "2.0.0"
-    archive2 = build_packageage_archive(bumped).archive
+    archive2 = build_package_archive(bumped).archive
 
-    replaced = publish_packageage_archive_to_catalog_dir(archive2, root, replace=True)
+    replaced = publish_package_archive_to_catalog_dir(archive2, root, replace=True)
     assert replaced.replaced_existing is True
     assert replaced.manifest.version == "2.0.0"
 
@@ -250,7 +248,7 @@ def test_publish_packageage_archive_to_catalog_dir(tmp_path):
 
 def test_build_omits_integrity_json(tmp_curio):
     """Hashes describe files as installed, so no archive ever carries them."""
-    result = build_packageage_archive(_draft())
+    result = build_package_archive(_draft())
     with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
         assert "integrity.json" not in set(zf.namelist())
 
@@ -263,7 +261,7 @@ def test_build_stamps_created_at_when_the_draft_omits_it(tmp_curio):
     """
     draft = _draft()
     del draft["manifest"]["createdAt"]
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
 
     with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
         manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
@@ -274,7 +272,7 @@ def test_build_stamps_created_at_when_the_draft_omits_it(tmp_curio):
 
 
 def test_build_leaves_a_pinned_created_at_alone(tmp_curio):
-    result = build_packageage_archive(_draft())
+    result = build_package_archive(_draft())
     with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
         manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
     assert manifest["createdAt"] == "2000-01-01T00:00:00Z"
@@ -284,7 +282,7 @@ def test_build_accepts_license_text_camel_case_alias(tmp_curio):
     """The frontend sends ``licenseText``; the docstring documents ``license_text``."""
     draft = _draft()
     draft["licenseText"] = "MIT-ish, camelCase key"
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
     with zipfile.ZipFile(io.BytesIO(result.archive)) as zf:
         assert zf.read("LICENSE").decode("utf-8") == "MIT-ish, camelCase key"
 
@@ -310,7 +308,7 @@ export default function run() { return cloneDeep({}); }
         }
     }
 
-    result = build_packageage_archive(draft)
+    result = build_package_archive(draft)
     js = result.manifest.js_deps
     # Subpath collapsed to the package, scope retained, node: builtin dropped.
     assert js.get("lodash") == "*", js
@@ -324,8 +322,8 @@ def test_preserve_unedited_sources_ignores_a_real_edit(tmp_curio, make_archive):
     install_draft["sources"] = {
         "demo-kind": {"filename": "demo-kind.py", "code": "ON_DISK = 1"}
     }
-    built = build_packageage_archive(install_draft)
-    install_packageage_from_archive("guest", built.archive)
+    built = build_package_archive(install_draft)
+    install_package_from_archive("guest", built.archive)
     installed_dir = package_dir("guest", "ai.test.demo@1")
 
     edited = _draft()

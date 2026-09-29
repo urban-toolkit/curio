@@ -164,7 +164,7 @@ class TestThePreambleVocabulary:
     def test_an_input_count_is_the_connections_a_node_accepts(self):
         # The declared "[1,n]" of a port is not what the canvas holds: one edge
         # per input socket, and the Merge Flow's slots (maxIncomingEdges).
-        from utk_curio.backend.app.packages.services import input_capacity
+        from utk_curio.backend.app.packages.application.templates import input_capacity
 
         lists = contracts.builtin_lists(_manifest())
         counts = dict(line[2:].split(": ", 1) for line in lists["builtin.input_count"].splitlines())

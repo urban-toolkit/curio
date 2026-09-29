@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_packager` (dev/89 commit 5):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.packager` (dev/89 commit 5):
 deterministic assembly, behaviorScript consistency, installer-path archive
 validation, provenance shape, staging, and reproducibility.
 """
@@ -11,15 +11,18 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages import build_staging
-from utk_curio.backend.app.packages.build_deps import DependencyReport, Finding
-from utk_curio.backend.app.packages.build_extension import plan_create
-from utk_curio.backend.app.packages.build_models import (
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.builder.deps import (
+    DependencyReport,
+    Finding,
+)
+from utk_curio.backend.app.packages.builder.extension import plan_create
+from utk_curio.backend.app.packages.builder.models import (
     parse_build_request,
     parse_build_result,
     request_digest,
 )
-from utk_curio.backend.app.packages.build_packager import (
+from utk_curio.backend.app.packages.builder.packager import (
     BUILDER_VERSION,
     PackagerError,
     assemble_archive,

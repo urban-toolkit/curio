@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_models` (dev/89 commit 2).
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.models` (dev/89 commit 2).
 
 The typed build contract: strict parsing, installer-rule path safety,
 builder-owned file refusals, bounds, and content-addressed request identity.
@@ -11,8 +11,8 @@ import hashlib
 
 import pytest
 
-from utk_curio.backend.app.packages import build_models
-from utk_curio.backend.app.packages.build_models import (
+from utk_curio.backend.app.packages.builder import models as build_models
+from utk_curio.backend.app.packages.builder.models import (
     BuildRequestError,
     PackageBuildResult,
     parse_build_request,

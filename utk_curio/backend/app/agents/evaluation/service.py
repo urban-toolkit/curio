@@ -532,7 +532,7 @@ def _provision(user, user_key: str, project_id: str, fixture) -> list:
     from utk_curio.backend.app.datasets.application.catalog_service import (
         DatasetCatalogService,
     )
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     for dataset_id in fixture.required.get("datasets") or ():
         try:
@@ -673,7 +673,7 @@ def template_index() -> dict:
     the packages domain's own reader so a row here is the row a live run's
     roster carries (``DEC-062``).
     """
-    from utk_curio.backend.app.packages.services import _catalog_manifests
+    from utk_curio.backend.app.packages.application.agent_reads import _catalog_manifests
 
     index: dict = {}
     for manifest in _catalog_manifests().values():
@@ -695,7 +695,7 @@ def _universe(user, user_key: str, project_id: str, fixture) -> Universe:
     from utk_curio.backend.app.datasets.application.catalog_service import (
         DatasetCatalogService,
     )
-    from utk_curio.backend.app.packages.services import available_templates
+    from utk_curio.backend.app.packages.service import available_templates
 
     try:
         roster = {str(row["id"]) for row in available_templates(user_key, project_id)}
@@ -718,7 +718,7 @@ def _universe(user, user_key: str, project_id: str, fixture) -> Universe:
 
 
 def _roster_digest(user_key: str, project_id: str) -> str:
-    from utk_curio.backend.app.packages.services import available_templates
+    from utk_curio.backend.app.packages.service import available_templates
 
     try:
         return digest_of(

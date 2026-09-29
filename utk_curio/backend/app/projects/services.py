@@ -46,7 +46,7 @@ _SINK_NODE_TYPES = frozenset({
 def _is_sink_node_type(node_type) -> bool:
     """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
     form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169)."""
-    from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+    from utk_curio.backend.app.packages.service import unversioned_node_type
 
     return unversioned_node_type(node_type) in _SINK_NODE_TYPES
 
@@ -555,7 +555,7 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
 
 
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
-    from utk_curio.backend.app.packages.services import (
+    from utk_curio.backend.app.packages.service import (
         ensure_user_packages_initialized,
         seed_spec_with_defaults,
     )
@@ -694,12 +694,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # dev/101): the client's mirror of the lockfile could overwrite
             # what a promotion or the drawer had just written. The on-disk
             # effective lockfile (backfill included) is what survives.
-            from utk_curio.backend.app.packages.services import (
-                _installed_majors_by_pkg,
-            )
-            from utk_curio.backend.app.packages.spec_packages import (
-                preserve_project_packages,
-            )
+            from utk_curio.backend.app.packages.application.store_reads import _installed_majors_by_pkg
+            from utk_curio.backend.app.packages.service import preserve_project_packages
             preserve_project_packages(
                 effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
             )
@@ -838,7 +834,7 @@ def _with_effective_packages(spec, ukey: str, project_id: str):
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict) or not isinstance(dataflow.get("packages"), list):
         return spec
-    from utk_curio.backend.app.packages.services import (
+    from utk_curio.backend.app.packages.service import (
         PackageServiceError,
         get_project_lockfile,
     )
@@ -856,9 +852,7 @@ def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
-    from utk_curio.backend.app.packages.services import (
-        ensure_user_packages_initialized,
-    )
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
 
     project = repo.get_for_user(project_id, user.id)
     repo.touch_last_opened(project_id, user.id)

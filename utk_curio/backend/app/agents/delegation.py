@@ -339,7 +339,7 @@ def _document_grammar(user_key: str, project_id: str, inputs: dict) -> str | Non
     template roster's ``grammarId``, else the offline table, else None."""
     from utk_curio.backend.app.agents import document_validation
     from utk_curio.backend.app.execution import workflow_spec
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     node_type = (inputs or {}).get("nodeType") or ((inputs or {}).get("nodeContext") or {}).get("nodeType")
     if not isinstance(node_type, str) or not node_type:

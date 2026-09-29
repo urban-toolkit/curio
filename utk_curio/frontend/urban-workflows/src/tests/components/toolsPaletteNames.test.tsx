@@ -63,7 +63,7 @@ jest.mock("../../registry", () => ({
     subscribeToRegistry: () => () => {},
 }));
 jest.mock("../../registry/packagesClient", () => ({ BUILTIN_PACKAGE_ID: "curio.builtin" }));
-jest.mock("../../api/packagesApi", () => ({ refreshPackageRegistry: jest.fn() }));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({ refreshPackageRegistry: jest.fn() }));
 jest.mock("../../providers/FlowProvider", () => ({
     useFlowContext: () => ({ playAllNodes: jest.fn() }),
 }));

@@ -12,86 +12,17 @@ outside its own package directory; that built-in folder is reserved for built-in
 
 See ``docs/schemas/node-package.v4.json`` for the package manifest schema and
 ``docs/NODE-CATALOG.md`` for the user-facing overview.
+
+Layout (memo dev/143): ``domain/`` (pure rules), ``schemas/`` (wire shapes),
+``repositories/`` (the stores), ``infrastructure/`` (processes, subprocesses,
+locks), ``application/`` (the use cases), ``builder/`` (the Package Builder
+pipeline, a subsystem beside the layers), ``routes/`` (presentation), behind the
+one facade ``service.py``. This root exports only what the app factory boots.
 """
 
-from utk_curio.backend.app.packages.storage import (
-    PackageId,
-    package_dir,
-    list_user_packageages,
-    PACKAGE_DIR_RE,
-    PackageIdError,
-)
-from utk_curio.backend.app.packages.manifest import (
-    PackageManifest,
-    TemplateManifest,
-    PackageLineage,
-    PackageLineageCoord,
-    load_packageage_manifest,
-    ManifestError,
-)
-from utk_curio.backend.app.packages.installer import (
-    InstallerError,
-    InstallResult,
-    export_packageage_archive,
-    install_packageage_from_archive,
-    install_packageage_from_directory,
-    uninstall_packageage,
-)
-from utk_curio.backend.app.packages.factory import (
-    BuildResult,
-    FactoryError,
-    build_packageage_archive,
-)
-from utk_curio.backend.app.packages.resolver import (
-    DepConflict,
-    ResolveResult,
-    ResolverError,
-    lockfile_for_user,
-    merge_python_deps,
-    parse_range,
-    parse_version,
-    resolve_for_project,
+from utk_curio.backend.app.packages.application.seeding import (
+    seed_dev_packages,
 )
 from utk_curio.backend.app.packages.routes import packages_bp
-from utk_curio.backend.app.packages.seed import seed_dev_packageages
-from utk_curio.backend.app.packages.starters import generate_packageage_starters
 
-__all__ = [
-    # storage
-    "PackageId",
-    "PackageIdError",
-    "PACKAGE_DIR_RE",
-    "package_dir",
-    "list_user_packageages",
-    # manifest
-    "PackageManifest",
-    "TemplateManifest",
-    "PackageLineage",
-    "PackageLineageCoord",
-    "ManifestError",
-    "load_packageage_manifest",
-    # installer
-    "InstallerError",
-    "InstallResult",
-    "install_packageage_from_archive",
-    "install_packageage_from_directory",
-    "uninstall_packageage",
-    "export_packageage_archive",
-    # factory
-    "BuildResult",
-    "FactoryError",
-    "build_packageage_archive",
-    # resolver
-    "DepConflict",
-    "ResolveResult",
-    "ResolverError",
-    "lockfile_for_user",
-    "merge_python_deps",
-    "parse_range",
-    "parse_version",
-    "resolve_for_project",
-    # routes + starters + seed
-    "packages_bp",
-    "generate_packageage_starters",
-    "seed_dev_packageages",
-]
+__all__ = ["packages_bp", "seed_dev_packages"]

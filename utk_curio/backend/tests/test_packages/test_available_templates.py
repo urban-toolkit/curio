@@ -11,8 +11,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.storage import user_packageages_dir
+from utk_curio.backend.app.packages.application import store_reads
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import (
+    store_reads,
+    templates,
+)
+from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 from utk_curio.backend.app.projects import services as projects_services
 
 
@@ -53,7 +58,7 @@ def _template(template_id, label, *, editor="code", has_code=None, has_grammar=N
 
 
 def _write_package(user_key, package_id, major, templates, *, broken=False):
-    d = user_packageages_dir(user_key) / f"{package_id}@{major}"
+    d = user_packages_dir(user_key) / f"{package_id}@{major}"
     d.mkdir(parents=True, exist_ok=True)
     if broken:
         (d / "manifest.json").write_text("{not json", encoding="utf-8")
@@ -75,7 +80,7 @@ def _write_package(user_key, package_id, major, templates, *, broken=False):
 
 
 def _lockfile_add(user_key, project_id, dir_name):
-    from utk_curio.backend.app.packages.spec_packages import set_project_packages
+    from utk_curio.backend.app.packages.domain.spec_packages import set_project_packages
     from utk_curio.backend.app.projects import storage as projects_storage
 
     spec = projects_storage.read_spec(user_key, project_id)
@@ -144,7 +149,7 @@ class TestParseCardinality:
     """dev/67-3 (DEC-051) — one parser for the schema's cardinality grammar."""
 
     def test_all_schema_forms(self):
-        from utk_curio.backend.app.packages.manifest import parse_cardinality
+        from utk_curio.backend.app.packages.domain.manifest import parse_cardinality
 
         assert parse_cardinality("1") == (1, 1)
         assert parse_cardinality("2") == (2, 2)
@@ -491,7 +496,7 @@ class TestResolveTemplate:
     ):
         key, pid = self._project(user_and_token, alice_project)
         monkeypatch.setattr(
-            packages_services, "available_templates_report",
+            templates, "available_templates_report",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
         )
         entry, err = packages_services.resolve_template(key, pid, "curio.builtin/data-loading")
@@ -542,13 +547,13 @@ class TestTemplateLandscape:
         key, pid = self._fixture(user_and_token, alice_project)
 
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
 
         def counting(user_key):
             walks["n"] += 1
             return real(user_key)
 
-        monkeypatch.setattr(packages_services, "_store_index", counting)
+        monkeypatch.setattr(store_reads, "_store_index", counting)
 
         packages_services.template_landscape(key, pid)
         assert walks["n"] == 1
@@ -606,9 +611,9 @@ class TestBatchResolution:
     ):
         key, pid = self._project(user_and_token, alice_project)
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
         monkeypatch.setattr(
-            packages_services, "_store_index",
+            store_reads, "_store_index",
             lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
         )
 
@@ -658,7 +663,7 @@ class TestBatchResolution:
     ):
         key, pid = self._project(user_and_token, alice_project)
         monkeypatch.setattr(
-            packages_services, "available_templates_report",
+            templates, "available_templates_report",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
         )
         outcomes = packages_services.resolve_templates(key, pid, ["a", "b", "c"])
@@ -727,6 +732,6 @@ class TestDev119ExecutableFlag:
         # dev/134: the write gate routes on the same snapshot, so a template
         # whose content is a document is told apart from one that holds code.
         assert set(snap["ai.test.exec/js-thing"]) == {"executable", "engine", "contentKind"}
-        monkeypatch.setattr(packages_services, "available_templates",
+        monkeypatch.setattr(templates, "available_templates",
                             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("store down")))
         assert packages_services.roster_templates(key, alice_project) is None  # callers fall back to legacy

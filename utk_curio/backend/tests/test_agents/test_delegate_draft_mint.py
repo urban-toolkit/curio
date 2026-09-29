@@ -14,7 +14,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.agents.services import _extract_draft_params
-from utk_curio.backend.app.packages import build_jobs
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
 RESEARCHER = "agent.researcher@1.0.0"
 PACKAGE_BUILDER = "agent.package-builder@1.0.0"
@@ -697,9 +697,9 @@ def _write_store_package(user_key, dir_name, package_id, name, template_ids,
                          description="Colored note surfaces."):
     """A package in the user's store — one a previous project's Package Builder
     authored, which never enters the committed catalog."""
-    from utk_curio.backend.app.packages.storage import user_packageages_dir
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-    d = user_packageages_dir(user_key) / dir_name
+    d = user_packages_dir(user_key) / dir_name
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps({
         "id": package_id,
@@ -762,7 +762,8 @@ class TestAuthoringDelegateReuseEvidence:
         """Both answers are actionable and they differ: enlisted means "extend
         or reuse it", store-only means "report it, the caller can enlist it".
         Collapsing them would recreate the one-bucket mistake of dev/93 D4."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -771,7 +772,7 @@ class TestAuthoringDelegateReuseEvidence:
                              ["note-surface"])
         _write_store_package(key, "curio.tags@1", "curio.tags", "Tags",
                              ["tag-surface"])
-        packages_services.install_to_project(key, pid, "curio.tags@1")
+        project_packages.install_to_project(key, pid, "curio.tags@1")
 
         _, evidence = self._evidence(client, user, pid)
         rows = {p["dirName"]: p for p in evidence["packages"]}
@@ -859,7 +860,8 @@ class TestAuthoringDelegateReuseEvidence:
         """Honest absence, and never an exception into the delegation path —
         the same posture nodeContext and verification degrade with."""
         from utk_curio.backend.app.agents import services as services_mod
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -870,7 +872,7 @@ class TestAuthoringDelegateReuseEvidence:
         # registry degrades to no evidence") instead of which helper happens
         # to be called.
         monkeypatch.setattr(
-            packages_services, "_store_index",
+            store_reads, "_store_index",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry down")),
         )
         with caplog.at_level("WARNING"):
@@ -953,7 +955,8 @@ class TestReuseInsteadOfAuthoring:
         """The parent's next move differs: an enlisted package is usable now, a
         store-only one needs the reviewed package.install first (dev/93 D4's
         middle rung). The hand-back must say which."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
 
         user, token = user_and_token
         pid = _project(client, token)
@@ -970,7 +973,7 @@ class TestReuseInsteadOfAuthoring:
         assert "duplicate" in handed_back
 
         # Same finding, but the package IS enlisted → use it directly.
-        packages_services.install_to_project(key, pid, "curio.notes@1")
+        project_packages.install_to_project(key, pid, "curio.notes@1")
         att2, calls2 = _setup(client, token, pid, monkeypatch, replies=[
             _delegate_tail(), self._reuse_reply(), "Noted.",
         ])

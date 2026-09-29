@@ -3,7 +3,7 @@ import {
     findForkFamilyRootPaletteGroup,
     paletteGroupCreatedAtMs,
     type PalettePackageRow,
-} from "../../../../utils/forkPackageLineage";
+} from "../../../../services/packages";
 
 export interface PackagePaletteGroup {
     key: string;

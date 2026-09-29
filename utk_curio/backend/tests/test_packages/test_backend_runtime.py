@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.common.user_storage import users_base
-from utk_curio.backend.app.packages import backend_contract as bc
-from utk_curio.backend.app.packages import backend_runtime as rt
-from utk_curio.backend.app.packages.build_workspace import WorkerLimits
+from utk_curio.backend.app.packages.domain import backend_contract as bc
+from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
+from utk_curio.backend.app.packages.infrastructure.workspace import WorkerLimits
 
 USER = "42"  # user keys are guest-or-numeric (storage._user_key_segment)
 PKG = "curio.counter@1"
@@ -358,9 +358,9 @@ class TestPromoteInvokeConsistency:
     rmtree+move window or a files-vs-pin mismatch."""
 
     def test_one_lock_object_shared_by_all_three_consumers(self):
-        from utk_curio.backend.app.packages import build_promotion
-        from utk_curio.backend.app.packages import backend_runtime as rt_mod
-        from utk_curio.backend.app.packages.target_locks import target_lock
+        from utk_curio.backend.app.packages.builder import promotion as build_promotion
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt_mod
+        from utk_curio.backend.app.packages.infrastructure.target_locks import target_lock
 
         lock = target_lock("42", "curio.demo@1")
         assert build_promotion._target_lock("42", "curio.demo@1") is lock
@@ -374,7 +374,7 @@ class TestPromoteInvokeConsistency:
         import shutil
         import threading as th
 
-        from utk_curio.backend.app.packages.target_locks import target_lock
+        from utk_curio.backend.app.packages.infrastructure.target_locks import target_lock
 
         _install_pkg(monkeypatch, tmp_path)
         lock = target_lock(USER, PKG)
@@ -555,7 +555,7 @@ class TestDependencyOverlay:
         return wheel.parent
 
     def test_real_pip_target_overlay_end_to_end(self, monkeypatch, tmp_path):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         _install_pkg(
             monkeypatch, tmp_path,

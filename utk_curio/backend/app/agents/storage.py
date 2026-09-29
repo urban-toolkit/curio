@@ -23,7 +23,10 @@ import re
 from pathlib import Path
 
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within
-from utk_curio.backend.app.packages.storage import _user_key_segment, _users_base
+from utk_curio.backend.app.common.user_storage import (
+    user_key_segment as _user_key_segment,
+    users_base as _users_base,
+)
 
 from utk_curio.backend.app.agents.manifest import (
     AGENT_ID_RE,

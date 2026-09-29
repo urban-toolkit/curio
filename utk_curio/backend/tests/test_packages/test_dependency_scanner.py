@@ -1,10 +1,10 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.dependency_scanner`."""
+"""Tests for :mod:`utk_curio.backend.app.packages.domain.dependency_scanner`."""
 
 from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.dependency_scanner import (
+from utk_curio.backend.app.packages.domain.dependency_scanner import (
     scan_imports_for_filename,
     scan_js_imports,
     scan_python_imports,

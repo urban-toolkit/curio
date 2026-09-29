@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within
-from utk_curio.backend.app.packages.storage import _users_base
+from utk_curio.backend.app.common.user_storage import users_base as _users_base
 
 from utk_curio.backend.app.agents.manifest import AgentManifest, AgentManifestError, load_agent_manifest
 from utk_curio.backend.app.agents.storage import AGENT_DIR_RE

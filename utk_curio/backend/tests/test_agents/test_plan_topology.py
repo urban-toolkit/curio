@@ -160,8 +160,9 @@ class TestInteractionEdgeErrors:
         assert len(pt.interaction_edge_errors(plan, types.get, roster)) == 1
 
     def test_the_roles_come_from_the_built_in_manifest(self):
-        from utk_curio.backend.app.packages import services as packages_services
-        from utk_curio.backend.app.packages.services import _catalog_manifests, _template_entry
+        from utk_curio.backend.app.packages import service as packages_services
+        from utk_curio.backend.app.packages.application.agent_reads import _catalog_manifests
+        from utk_curio.backend.app.packages.application.templates import _template_entry
 
         manifest = _catalog_manifests()["curio.builtin@1"]
         roster = {

@@ -18,7 +18,7 @@ from utk_curio.backend.app.agents.services import (
     _DRAFT_CARD_MAX_FINDINGS,
     _draft_card_payload,
 )
-from utk_curio.backend.app.packages.build_models import (
+from utk_curio.backend.app.packages.builder.models import (
     PackageBuildResult,
     parse_build_request,
 )
@@ -185,7 +185,7 @@ class TestDraftCardOnTheMintedPart:
                                                "packages": []}}, "outputs": [],
         }, headers=routes_auth(token))
         pid = resp.get_json()["id"]
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         helper = TestPackageBuilderTools()

@@ -16,7 +16,7 @@ import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 import { PackageMetaHeader } from "../../components/packages/editing/PackageMetaHeader";
-import { PackagePaletteProvider } from "../../providers/PackagePaletteContext";
+import { PackagePaletteProvider } from "../../providers/packages/PackagePaletteContext";
 import { BUILTIN_PACKAGE_ID } from "../../registry/packageKeys";
 import type { NodeCategory, NodePackageMeta } from "../../registry/types";
 

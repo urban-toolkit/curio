@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages import backend_contract as bc
+from utk_curio.backend.app.packages.domain import backend_contract as bc
 
 PKG = "ai.test.counter@1"
 
@@ -40,8 +40,8 @@ _HANDLER = (
 
 @pytest.fixture()
 def installed_backend_pkg(client, user_and_token, tmp_curio, manifest_dict, make_archive):
-    from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.installer import install_packageage_from_archive
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user, token = user_and_token
@@ -49,7 +49,7 @@ def installed_backend_pkg(client, user_and_token, tmp_curio, manifest_dict, make
         user_key = _user_dir_key(user)
     archive = make_archive(manifest=_backend_manifest(manifest_dict),
                            extra_files={"backend/handler.py": _HANDLER.encode()})
-    install_packageage_from_archive(user_key, archive)
+    install_package_from_archive(user_key, archive)
     backend_runtime.record_entry_pin(user_key, PKG)
     return user_key, token
 
@@ -112,7 +112,7 @@ class TestUninstallSweepsBackendResidue:
     the invocation ledger survives (retention owns its expiry)."""
 
     def test_delete_route_sweeps(self, client, installed_backend_pkg, tmp_curio):
-        from utk_curio.backend.app.packages import backend_runtime as rt
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 
         user_key, token = installed_backend_pkg
         # Populate every backend home: an invocation (data via 'remember'

@@ -54,7 +54,7 @@ def test_pip_skips_it_rather_than_reaching_an_index(client):
     ``install_python_deps`` consults the same metadata pip does, so the fake
     lands in ``skipped`` and no subprocess is spawned at all.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     _post(client, action="install")
     report = pip_runner.install_python_deps({"brokenlib": ""})
@@ -79,7 +79,7 @@ def test_the_probe_answer_is_re_asked_after_a_change(client):
     """The verdict is memoised per (distribution, version), so minting or
     removing the fake has to reopen the question or the next probe answers
     from before it existed."""
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     _post(client, action="install")
     assert pip_runner.import_failures(["brokenlib"])
@@ -141,7 +141,7 @@ def test_it_refuses_a_name_that_already_resolves(client, name):
 
 def test_removing_one_fake_leaves_the_others(client):
     """The API invites naming a distribution, so removal has to honour it."""
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     _post(client, action="install", name="brokenlib")
     _post(client, action="install", name="notrasterio", version="1.3.9")

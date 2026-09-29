@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ModalShell from "../../ModalShell";
-import type { Category, Editor, Engine } from "../../../pages/nodes/factoryDraftModel";
+import type { Category, Editor, Engine } from "../../../services/packages";
 import type { CanvasTemplateConfig } from "../../../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromDescriptor } from "../../../utils/canvasTemplateConfig";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";

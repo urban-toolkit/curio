@@ -90,9 +90,9 @@ def folder_collection(tmp_path):
 
 
 def test_the_manifest_validates_and_names_three_nodes():
-    from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    manifest = load_packageage_manifest(PACKAGE)
+    manifest = load_package_manifest(PACKAGE)
     raw = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
     assert [t["id"] for t in raw["templates"]] == ["video-frames", "split-audio", "mosaic-rasters"]
     assert manifest.python_deps["av"] and manifest.python_deps["rasterio"]

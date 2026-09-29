@@ -154,9 +154,9 @@ def _sideload(current_server: str, token: str) -> dict:
     import json
     import urllib.request
 
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
-    archive = build_packageage_archive(_fixture_draft()).archive
+    archive = build_package_archive(_fixture_draft()).archive
     boundary = "----curioE2EBrokenLibrary"
     crlf = "\r\n"
     head = (
@@ -486,10 +486,10 @@ def test_sideloading_an_archive_reports_its_broken_library(
     early for a package already in the store. So a sideloaded package's
     libraries were nobody's job, and the archive reported a clean 201.
     """
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
     archive = tmp_path / "broken.curio.zip"
-    archive.write_bytes(build_packageage_archive(_fixture_draft()).archive)
+    archive.write_bytes(build_package_archive(_fixture_draft()).archive)
 
     session = _enter_canvas(
         page, app_frontend, current_server,
@@ -583,10 +583,10 @@ def _sideload_through_the_drawer(page, archive_path):
 
 
 def _write_archive(tmp_path, draft) -> "object":
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
     archive = tmp_path / "fixture.curio.zip"
-    archive.write_bytes(build_packageage_archive(draft).archive)
+    archive.write_bytes(build_package_archive(draft).archive)
     return archive
 
 

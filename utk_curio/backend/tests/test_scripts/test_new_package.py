@@ -42,9 +42,9 @@ def test_scaffolds_a_package_that_the_backend_can_load(tmp_path):
 
     # The scaffolder validates through the real loader, so a passing run means
     # the emitted manifest is installable, not merely well-formed JSON.
-    from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    manifest = load_packageage_manifest(root)
+    manifest = load_package_manifest(root)
     assert manifest is not None
 
     raw = json.loads((root / "manifest.json").read_text(encoding="utf-8"))

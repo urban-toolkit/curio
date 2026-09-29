@@ -30,7 +30,7 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
 
-import { packagesApi, triggerBlobDownload } from "../../api/packagesApi";
+import { packagesApi, triggerBlobDownload } from "../../services/packages";
 
 const MODAL_SOURCE = path.resolve(
   __dirname,

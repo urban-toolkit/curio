@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { PackageCard } from "../../components/packages/publishing/PackageCard";
 import type { PackageCardProps } from "../../components/packages/publishing/PackageCard";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 
 /**
  * Which action a package card offers is a pure function of its props, and it had

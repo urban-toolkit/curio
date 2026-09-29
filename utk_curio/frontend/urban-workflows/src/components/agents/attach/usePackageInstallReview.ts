@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import type { PackagePayload, ResolveConflict } from "../../../api/packagesApi";
-import { packagesApi } from "../../../api/packagesApi";
+import type { PackagePayload, ResolveConflict } from "../../../services/packages";
+import { packagesApi, probeInstallConflicts } from "../../../services/packages";
 
 /**
  * The dev/84 apply-time review for `package.install` proposals.
@@ -80,24 +80,13 @@ export function usePackageInstallReview(
       // the candidate, so the conflict report matches what install would hit.
       // The store feed IS that set; the catalog's `installed` flag only covers
       // catalog packages and would miss store-only ones.
+      // Same probe as the drawer's (dev/143 rule 2); a non-conflict failure
+      // propagates into the card's error line.
       const installed = store.packages.map((p) => p.dirName);
-      let conflicts: ResolveConflict[] = [];
-      try {
-        const probe = await packagesApi.resolve([
-          ...installed.filter((d) => d !== dirName),
-          dirName,
-        ]);
-        conflicts = probe.conflicts;
-      } catch (err) {
-        // The resolve route answers a real conflict report with a 409 body.
-        const status = (err as { status?: number }).status;
-        if (status === 409) {
-          conflicts =
-            (err as { body?: { conflicts?: ResolveConflict[] } }).body?.conflicts ?? [];
-        } else {
-          throw err;
-        }
-      }
+      const conflicts = await probeInstallConflicts([
+        ...installed.filter((d) => d !== dirName),
+        dirName,
+      ]);
       setCandidate({ proposalId, pkg, conflicts });
       return new Promise<void>((resolve, reject) => {
         deferredRef.current = { resolve, reject };

@@ -1,4 +1,4 @@
-"""Isolation tests for :mod:`utk_curio.backend.app.packages.build_workspace`
+"""Isolation tests for :mod:`utk_curio.backend.app.packages.infrastructure.workspace`
 (dev/89 commit 3): scrubbed env, read-only inputs, resource/wall/output
 bounds, process-group cancellation, sanitized diagnostics, bounded output
 collection, and workspace destruction.
@@ -15,8 +15,8 @@ from unittest import mock
 
 import pytest
 
-from utk_curio.backend.app.packages import build_workspace
-from utk_curio.backend.app.packages.build_workspace import (
+from utk_curio.backend.app.packages.infrastructure import workspace as build_workspace
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     WorkerLimits,
     WorkspaceError,
     collect_outputs,

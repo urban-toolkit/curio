@@ -169,10 +169,8 @@ def _roster_for(fixtures) -> tuple:
     """
     from utk_curio.backend.app.agents.evaluation.report import digest_of
     from utk_curio.backend.app.agents.services import roster_block
-    from utk_curio.backend.app.packages.services import (
-        _catalog_manifests,
-        _template_entry,
-    )
+    from utk_curio.backend.app.packages.application.agent_reads import _catalog_manifests
+    from utk_curio.backend.app.packages.application.templates import _template_entry
 
     wanted = {"curio.builtin@1"}
     for fixture in fixtures:

@@ -93,7 +93,10 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 
-    from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
+    from utk_curio.backend.app.packages import (
+        packages_bp,
+        seed_dev_packages,
+    )
     app.register_blueprint(packages_bp)
 
     from utk_curio.backend.app.datasets import datasets_bp
@@ -126,7 +129,7 @@ def create_app(config_class=config_class):
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
         try:
-            seeded = seed_dev_packageages(user_key="guest")
+            seeded = seed_dev_packages(user_key="guest")
             if seeded:
                 app.logger.info("Seeded dev node packages: %s", ", ".join(seeded))
         except Exception:  # noqa: BLE001 — never block startup on seeding

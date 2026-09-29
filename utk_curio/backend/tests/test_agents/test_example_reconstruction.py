@@ -385,7 +385,7 @@ class TestProvisionedMode:
                 "package palette and the plan mint both read"
             )
         # The lockfile is the authority (dev/101), and the install wrote it.
-        from utk_curio.backend.app.packages.spec_packages import project_packages
+        from utk_curio.backend.app.packages.domain.spec_packages import project_packages
 
         assert "curio.streetvision@1" in set(
             project_packages(driver.read_spec()) or ()
@@ -427,9 +427,7 @@ class TestResolutionModePackageTemplates:
         assert "Available node templates" in correction
         # And the package IS installed for this account -- the state that makes
         # the reuse ladder's ENLIST rung the right move (dev/93).
-        from utk_curio.backend.app.packages.services import (
-            installed_templates_not_in_project,
-        )
+        from utk_curio.backend.app.packages.application.templates import installed_templates_not_in_project
 
         not_enlisted = {
             row["id"]
@@ -591,7 +589,7 @@ class TestResolutionModePackageDependencies:
         applied = driver.apply(proposal)
         assert applied.get("status") == "applied", applied
         assert "pythermalcomfort" in (applied.get("importErrors") or {}), applied
-        from utk_curio.backend.app.packages.spec_packages import project_packages
+        from utk_curio.backend.app.packages.domain.spec_packages import project_packages
 
         assert "curio.weather@1" in set(project_packages(driver.read_spec()) or ())
 

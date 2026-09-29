@@ -28,7 +28,7 @@ _PROMPT_PATH = (
 
 @pytest.fixture(autouse=True)
 def _fresh_build_jobs():
-    from utk_curio.backend.app.packages import build_jobs
+    from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
     build_jobs.reset_registry()
     yield

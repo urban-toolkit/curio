@@ -98,9 +98,12 @@ def installed(monkeypatch):
         launcher, "install_manifest_dependencies",
         launcher.install_manifest_dependencies,
     )
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages import service as packages_service
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    # The launcher reads the facade (memo dev/143 B5: app code imports public
+    # names from ``packages.service``), so that is the attribute to intercept.
     monkeypatch.setattr(
-        pip_runner, "install_python_deps",
+        packages_service, "install_python_deps",
         lambda merged, on_line=None: calls.append(dict(merged)),
     )
     # The post-install importability check spawns a real interpreter, so stub it
@@ -212,7 +215,7 @@ class TestBrokenInstallIsReported:
     def test_a_dep_that_installs_but_cannot_import_is_warned_about(
         self, launch_cwd, installed, monkeypatch, capsys
     ):
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
         self._package(launch_cwd)
         monkeypatch.setattr(
             pip_runner, "import_failures",
@@ -240,7 +243,7 @@ class TestBrokenInstallIsReported:
     ):
         """Warn, do not exit: the nodes that avoid the library still work, and
         the fix is usually outside pip."""
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
         self._package(launch_cwd)
         monkeypatch.setattr(
             pip_runner, "import_failures",
@@ -253,7 +256,7 @@ class TestBrokenInstallIsReported:
         self, launch_cwd, installed, monkeypatch, capsys
     ):
         """A failed check must not masquerade as a clean bill of health."""
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
         self._package(launch_cwd)
 
         def _boom(deps):
@@ -277,7 +280,7 @@ class TestBrokenInstallIsReported:
         kind of thing nobody attributes to the right commit.
         """
         import threading
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         self._package(launch_cwd)
         entered = threading.Event()
@@ -313,7 +316,7 @@ def in_process(monkeypatch):
 def installed_per_user(monkeypatch):
     """Capture what the launcher would install, and into whose tree."""
     calls: list[tuple[dict, str]] = []
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
     monkeypatch.setattr(
         pip_runner, "install_python_deps_to_target",
         lambda merged, target, on_line=None: calls.append((dict(merged), str(target))),
@@ -376,7 +379,7 @@ def test_one_users_broken_manifest_does_not_stop_the_boot(
 ):
     """Best-effort per user. The failure belongs to whoever installed that
     package; everyone else's instance still comes up."""
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     done: list[str] = []
 

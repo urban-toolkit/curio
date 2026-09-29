@@ -7,6 +7,8 @@ import shutil
 
 import pytest
 
+from utk_curio.backend.app.packages import service as packages_service
+
 from utk_curio.backend.app.agents import builtin, ledger, publications, storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -2748,9 +2750,9 @@ class TestNodeCreate:
     def _write_builtin_package(self, user_key, templates=None):
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-        d = user_packageages_dir(user_key) / "curio.builtin@1"
+        d = user_packages_dir(user_key) / "curio.builtin@1"
         d.mkdir(parents=True, exist_ok=True)
         manifest = {
             "id": "curio.builtin",
@@ -3074,14 +3076,14 @@ class TestNodeCreate:
     def test_apply_after_template_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import shutil
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         att_id, _ = self._setup(client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch)
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # The template's package disappears between mint and apply.
-        shutil.rmtree(user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1")
+        shutil.rmtree(user_packages_dir(_user_dir_key(user)) / "curio.builtin@1")
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
             headers=_auth(token),
@@ -3140,9 +3142,9 @@ class TestReuseLadder:
         e.g. one a previous project's Package Builder authored."""
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-        d = user_packageages_dir(user_key) / dir_name
+        d = user_packages_dir(user_key) / dir_name
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": package_id,
@@ -3215,8 +3217,11 @@ class TestReuseLadder:
             monkeypatch=monkeypatch, replies=["ok"],
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        from utk_curio.backend.app.packages import services as packages_services
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
 
         self._run(client, token, alice_project, att_id)
         system = calls[0][0]["content"]
@@ -3361,12 +3366,15 @@ class TestReuseLadder:
     ):
         """A refusal that cost real work (a broken catalog) is not a parameter
         error — it keeps spending rounds so a dead store can never loop."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         def boom(*_a, **_k):
             raise RuntimeError("store on fire")
 
-        monkeypatch.setattr(packages_services, "agent_catalog_overview", boom)
+        monkeypatch.setattr(packages_service, "agent_catalog_overview", boom)
         user, token = user_and_token
         att_id, calls = self._setup(
             client, user=user, token=token, project_id=alice_project,
@@ -3394,14 +3402,17 @@ class TestReuseLadder:
     ):
         import json as _json
 
-        from utk_curio.backend.app.packages import services as packages_services
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         # A compute-only package, enlisted: authorable=False → not listable.
-        d = user_packageages_dir(key) / "curio.postits@1"
+        d = user_packages_dir(key) / "curio.postits@1"
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": "curio.postits", "version": "1.0.0", "name": "Post-it Notes",
@@ -3418,7 +3429,7 @@ class TestReuseLadder:
         }), encoding="utf-8")
         (d / "sources").mkdir(exist_ok=True)
         (d / "sources" / "default.py").write_text("def main(): return {}\n")
-        packages_services.install_to_project(key, alice_project, "curio.postits@1")
+        project_packages.install_to_project(key, alice_project, "curio.postits@1")
         # And the real note template sits in the store, not enlisted.
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
 
@@ -3435,7 +3446,7 @@ class TestReuseLadder:
 
         # The line is for note-composing runs only: enlist the note package and
         # it disappears; a Dataflow Builder never sees it.
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         att2, calls2 = self._setup(
             client, user=user, token=token, project_id=alice_project,
             monkeypatch=monkeypatch, replies=["ok"],
@@ -3465,8 +3476,11 @@ class TestReuseLadder:
     def test_a13_default_fills_only_an_omitted_color_on_a_note_template(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.packages import node_appearance
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.domain import node_appearance
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3481,7 +3495,7 @@ class TestReuseLadder:
             ],
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         resp = self._run(client, token, alice_project, att_id)
         spec_nodes_before = None  # proposals only; nothing lands without Apply
         proposals = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
@@ -3502,13 +3516,16 @@ class TestReuseLadder:
     def test_a13_default_never_touches_other_agents_or_code_templates(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         # A Researcher creating a CODE node: no default.
         att_id, _ = self._setup(
             client, user=user, token=token, project_id=alice_project,
@@ -3578,13 +3595,13 @@ class TestReuseLadder:
     ):
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         # A store-only CODE package: enlistable, but nothing in it renders a note.
-        d = user_packageages_dir(key) / "curio.tools@1"
+        d = user_packages_dir(key) / "curio.tools@1"
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": "curio.tools", "version": "1.0.0", "name": "Tools", "publisher": "x",
@@ -3655,7 +3672,10 @@ class TestReuseLadder:
         the package, and the template is then a legal node.create nodeType."""
         import json as _json
 
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3674,7 +3694,7 @@ class TestReuseLadder:
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
         assert "curio.notes/note-surface" not in {
-            t["id"] for t in packages_services.available_templates(key, alice_project)
+            t["id"] for t in packages_templates.available_templates(key, alice_project)
         }
 
         resp = self._run(client, token, alice_project, att_id)
@@ -3694,7 +3714,7 @@ class TestReuseLadder:
 
         # Enlisted: the template the agent wanted to reuse is now instantiable.
         assert "curio.notes/note-surface" in {
-            t["id"] for t in packages_services.available_templates(key, alice_project)
+            t["id"] for t in packages_templates.available_templates(key, alice_project)
         }
 
     def test_run_without_the_install_grant_sees_no_enlist_section(
@@ -3791,8 +3811,11 @@ class TestNodeTemplateCreate:
         assert proposal["pins"] == {"templateSlug": "sentiment-scorer"}
 
     def test_apply_registers_template_installs_and_inserts_node(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import services as packages_services
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3808,17 +3831,17 @@ class TestNodeTemplateCreate:
         assert body["createdTemplate"]["id"] == "curio.agent.sentiment-scorer/sentiment-scorer"
         assert body["createdNode"]["type"] == "curio.agent.sentiment-scorer/sentiment-scorer"
         # Both effects landed: store package + project lockfile + spec node.
-        assert (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
-        assert "curio.agent.sentiment-scorer@1" in packages_services.get_project_lockfile(key, alice_project)
+        assert (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
+        assert "curio.agent.sentiment-scorer@1" in project_packages.get_project_lockfile(key, alice_project)
         nodes = TestNodeCreate()._spec_nodes(user, alice_project)
         assert any(n.get("type") == "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
         # Round-trip (dev/48): the created type is instantiable by plain
         # node.create in a later run — it is now an available template.
-        available = {t["id"] for t in packages_services.available_templates(key, alice_project)}
+        available = {t["id"] for t in packages_templates.available_templates(key, alice_project)}
         assert "curio.agent.sentiment-scorer/sentiment-scorer" in available
 
     def test_factory_failure_at_apply_is_transactional_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3827,7 +3850,7 @@ class TestNodeTemplateCreate:
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # A colliding store package appears between mint and apply → the
         # installer's collision handling surfaces verbatim.
-        (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
+        (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
             headers=_auth(token),
@@ -4352,7 +4375,10 @@ class TestSnapshotCostAndCoherence:
 
     def _walks_for_plan_of(self, size, client, user_and_token, tmp_curio,
                            alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         helper = TestDataflowPlanMint()
         user, token = user_and_token
@@ -4366,9 +4392,9 @@ class TestSnapshotCostAndCoherence:
             replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[])],
         )
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
         monkeypatch.setattr(
-            packages_services, "_store_index",
+            store_reads, "_store_index",
             lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -4400,7 +4426,10 @@ class TestSnapshotCostAndCoherence:
         """Both roster sections must describe the same instant: fetched
         separately, a package could appear in one half and be missing from the
         other."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         user, token = user_and_token
         ladder = TestReuseLadder()
@@ -4414,9 +4443,9 @@ class TestSnapshotCostAndCoherence:
         )
 
         landscapes = {"n": 0}
-        real = packages_services.template_landscape
+        real = agent_reads.template_landscape
         monkeypatch.setattr(
-            packages_services, "template_landscape",
+            packages_service, "template_landscape",
             lambda uk, pid: (landscapes.__setitem__("n", landscapes["n"] + 1), real(uk, pid))[1],
         )
         ladder._run(client, token, alice_project, att_id)
@@ -4667,11 +4696,11 @@ class TestDataflowPlanApply:
         agents key on that type, so add one to the installed manifest."""
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         path = (
-            user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
+            user_packages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
         )
         manifest = _json.loads(path.read_text(encoding="utf-8"))
         if not any(t["id"] == "data-loading" for t in manifest["templates"]):
@@ -7720,8 +7749,8 @@ class TestPackageRecommendationTools:
     def _stub_pip(self, monkeypatch):
         # The weather fixture declares real python deps; never shell out to
         # pip inside a test (same posture as test_packages/conftest.py).
-        from utk_curio.backend.app.packages import pip_runner
-        from utk_curio.backend.app.packages.pip_runner import InstallReport
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -7779,7 +7808,7 @@ class TestPackageRecommendationTools:
         )
 
     def _lockfile(self, client, user, project_id):
-        from utk_curio.backend.app.packages.services import get_project_lockfile
+        from utk_curio.backend.app.packages.application.project_packages import get_project_lockfile
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         with client.application.app_context():
@@ -7827,7 +7856,7 @@ class TestPackageRecommendationTools:
         two together. Reported, not refused: the package IS installed and the
         repair is the user's.
         """
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures",
@@ -7862,7 +7891,7 @@ class TestPackageRecommendationTools:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
     ):
         """The success control: a working package must not grow a warning."""
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
         user, token = user_and_token
@@ -7878,7 +7907,7 @@ class TestPackageRecommendationTools:
         assert "importErrors" not in body, body
 
     def test_mint_refuses_builtin_unknown_and_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import install_to_project
+        from utk_curio.backend.app.packages.application.project_packages import install_to_project
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -7917,7 +7946,7 @@ class TestPackageRecommendationTools:
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # A conflict discovered between mint and apply is the drift analogue.
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.services.agent_resolve_report",
+            'utk_curio.backend.app.packages.service.agent_resolve_report',
             lambda uk, dns: {"packages": [], "conflicts": [{"package": "numpy", "ranges": []}]},
         )
         resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
@@ -7929,7 +7958,7 @@ class TestPackageRecommendationTools:
         assert cards[0]["activeProposal"]["status"] == "stale"
 
     def test_apply_package_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import PackageServiceError
+        from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 
         _, token = user_and_token
         att_id, _ = self._setup(
@@ -7942,7 +7971,7 @@ class TestPackageRecommendationTools:
             raise PackageServiceError("unknown package(s): curio.weather@1", 404)
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.services.agent_resolve_report", _gone,
+            'utk_curio.backend.app.packages.service.agent_resolve_report', _gone,
         )
         resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
         assert resp.status_code == 409
@@ -8047,7 +8076,7 @@ class TestPackageBuilderTools:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8055,8 +8084,8 @@ class TestPackageBuilderTools:
 
     def test_mint_and_apply_full_flow(self, client, user_and_token, tmp_curio,
                                       alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import get_project_lockfile
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.application.project_packages import get_project_lockfile
+        from utk_curio.backend.app.packages.repositories.store import package_dir
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -8115,7 +8144,7 @@ class TestPackageBuilderTools:
     def test_apply_refuses_expired_artifact_as_stale(self, client, user_and_token,
                                                      tmp_curio, alice_project,
                                                      monkeypatch):
-        from utk_curio.backend.app.packages import build_staging
+        from utk_curio.backend.app.packages.repositories import staging as build_staging
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -8159,7 +8188,7 @@ class TestPackageBuilderTargetErgonomics:
 
     def test_create_without_target_mints(self, client, user_and_token, tmp_curio,
                                          alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         _, token = user_and_token
@@ -8239,7 +8268,7 @@ class TestBackendDraftEndToEnd:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8247,8 +8276,8 @@ class TestBackendDraftEndToEnd:
 
     def test_full_lane_mint_apply_invoke_tamper(self, client, user_and_token,
                                                 tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import backend_runtime
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.repositories.store import package_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -8316,7 +8345,7 @@ class TestRestartHonestyOnApply:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8324,7 +8353,7 @@ class TestRestartHonestyOnApply:
 
     def _apply_draft_with_pip(self, client, token, alice_project, monkeypatch,
                               *, installed, skipped, import_errors=None):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",

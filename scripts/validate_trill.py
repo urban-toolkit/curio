@@ -45,9 +45,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from jsonschema import Draft202012Validator  # noqa: E402
 
-from utk_curio.backend.app.packages.spec_packages import (  # noqa: E402
-    unversioned_node_type,
-)
+from utk_curio.backend.app.packages.service import unversioned_node_type
 
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "trill.v1.json"
 DEFAULT_MAX_ERRORS = 5

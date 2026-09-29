@@ -1711,7 +1711,7 @@ def _mint_node_template_create(
     custom node type. The runtime cannot judge adequacy — the review card is
     the adequacy gate, so a written justification is mandatory, and a label
     that collides with an available template is refused as reuse territory."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     params = req.get("params") or {}
     justification = params.get("justification")
@@ -1827,7 +1827,7 @@ def _apply_node_template_create(
     (atomic staging; store + project lockfile), then insert the first node.
     Template first, node only on success: a factory failure 409s with the
     verbatim error and nothing is half-registered."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     template = proposal.get("template") or {}
     try:
@@ -2041,7 +2041,7 @@ def _mint_dataflow_plan(
     template (authorable when the plan carries content for it). Pins the
     whole-graph shape digest; the apply endpoint re-checks it. Returns
     ``(status, user_facing_error, proposal_part | None)``."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
@@ -2548,7 +2548,7 @@ def apply_plan_node(
     still available. Creation uses the mint-time position and the (possibly
     edited) goal; the created node joins ``nodeRuns`` as ``pending`` so Solve
     and the 67-6/67-7 stages pick it up."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
@@ -2704,7 +2704,7 @@ def _plan_edge_context(
 ) -> dict:
     """Shared lookups + mutable state for per-edge application (dev/71 —
     ONE validation policy for the connect stage and the progressive sweep)."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     plan = proposal.get("plan") or {}
     dataflow = spec.setdefault("dataflow", {})
@@ -3483,7 +3483,7 @@ def _resolve_catalog_dir_name(dir_name: str, rows: dict[str, dict]) -> tuple[dic
     ``(None, [])`` on a true miss. Pure: no store access, no second parser —
     the template-id form goes through :func:`canonical_template_id`.
     """
-    from utk_curio.backend.app.packages.services import canonical_template_id
+    from utk_curio.backend.app.packages.service import canonical_template_id
 
     row = rows.get(dir_name)
     if row is not None:
@@ -3522,7 +3522,7 @@ def _mint_package_install(
     package through the existing package flow. Built-ins are never proposable
     (always present) and an already-installed package refuses at mint with
     the state — honest chat instead of a dead proposal (dev/16 idempotence)."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     params = req.get("params") or {}
     dir_name = params.get("dirName")
@@ -3669,9 +3669,7 @@ def _draft_card_payload(request, result) -> dict:
         # dev/97: where the python deps will LIVE — the same routing rule
         # promote applies (one core, two adapters — the card can never
         # disagree with the install).
-        from utk_curio.backend.app.packages.backend_runtime import (
-            dep_destinations_raw,
-        )
+        from utk_curio.backend.app.packages.service import dep_destinations_raw
 
         home, _home_reason = dep_destinations_raw(request.manifest or {})
         card["dependencies"] = {
@@ -3735,7 +3733,8 @@ def _mint_package_draft_apply(
     — the artifact itself stays in private staging until Apply promotes the
     exact reviewed digest.
     """
-    from utk_curio.backend.app.packages import build_models, build_pipeline
+    from utk_curio.backend.app.packages.builder import models as build_models
+    from utk_curio.backend.app.packages.builder import pipeline as build_pipeline
 
     params = req.get("params") or {}
     try:
@@ -3897,7 +3896,7 @@ def _apply_dataflow_plan(
     positions, and content by construction."""
     import hashlib
 
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     plan = proposal.get("plan") or {}
     if _graph_shape_digest(spec) != proposal.get("baseGraphDigest"):
@@ -4313,7 +4312,7 @@ def _apply_package_install(
     dialog BEFORE posting this apply; the dialog is the review surface, this
     endpoint is the authority — conflicts and catalog absence are re-checked
     here regardless and are the drift analogue: 409 + ``stale``."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     dir_name = proposal.get("dirName", "")
     try:
@@ -4418,11 +4417,12 @@ def _queue_enlisted_notes(
     a row that fails to mint is SAID in the suffix, never silent."""
     if not notes:
         return [], [], " No notes rode this request — ask the Researcher to create them."
-    from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
-    from utk_curio.backend.app.packages.storage import user_packageages_dir
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import ManifestError
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
     try:
-        manifest = load_packageage_manifest(user_packageages_dir(user_key) / dir_name)
+        manifest = load_package_manifest(user_packages_dir(user_key) / dir_name)
     except (ManifestError, OSError) as exc:
         return [], [], f" Notes skipped: the package manifest is unreadable ({exc})."
     template = next(
@@ -4486,9 +4486,13 @@ def _apply_package_draft(
     compensates through the coordinator's rollback, and the outcome
     (rolled-back vs rollback-failed) rides the stale message honestly.
     """
-    from utk_curio.backend.app.packages import build_promotion
-    from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
-    from utk_curio.backend.app.packages.storage import PackageId, package_dir as _package_dir
+    from utk_curio.backend.app.packages.builder import promotion as build_promotion
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import ManifestError
+    from utk_curio.backend.app.packages.service import (
+        PackageId,
+        package_dir as _package_dir,
+    )
 
     target = str(proposal.get("target") or "")
     artifact_digest = str(proposal.get("artifactDigest") or "")
@@ -4514,7 +4518,7 @@ def _apply_package_draft(
     proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
 
     try:
-        installed_manifest = load_packageage_manifest(_package_dir(user_key, target))
+        installed_manifest = load_package_manifest(_package_dir(user_key, target))
         installed_templates = {t.template_id for t in installed_manifest.templates}
         coord = PackageId.parse_dir(target)
         created_nodes: list[dict] = []
@@ -4794,7 +4798,7 @@ _SOLVE_CANCEL_EVENTS: dict[str, object] = {}
 
 
 def _is_data_loading_node(node: object) -> bool:
-    from utk_curio.backend.app.packages import services as _pkg_services
+    from utk_curio.backend.app.packages import service as _pkg_services
 
     return source_grounding.is_data_loading_type(
         _pkg_services.canonical_template_id((node or {}).get("type") if isinstance(node, dict) else None)
@@ -5136,7 +5140,7 @@ def _solve_events(
         else (_resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
               if verify else {})
     )
-    from utk_curio.backend.app.packages import services as _pkg_services
+    from utk_curio.backend.app.packages import service as _pkg_services
 
     def _is_data_loading(node_obj: dict) -> bool:
         return source_grounding.is_data_loading_type(
@@ -5711,7 +5715,7 @@ def _solve_events(
                         inputs["upstreamOutputs"] = upstream_outputs
                     # dev/114: the seventh DEC-063 application — a data-
                     # loading child is HANDED its grounded sources.
-                    from utk_curio.backend.app.packages import services as _pkg
+                    from utk_curio.backend.app.packages import service as _pkg
 
                     if source_grounding.is_data_loading_type(
                         _pkg.canonical_template_id(node.get("type"))
@@ -6944,7 +6948,7 @@ def _node_is_executable(node_obj: dict | None, templates: dict | None = None) ->
 
 def _roster_templates(user_key: str, project_id: str) -> dict | None:
     """dev/119: the roster snapshot for a project, or None when unreachable."""
-    from utk_curio.backend.app.packages import services as _pkg
+    from utk_curio.backend.app.packages import service as _pkg
 
     return _pkg.roster_templates(user_key, project_id)
 #: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
@@ -8436,7 +8440,7 @@ def _verified_content_rounds(
     import threading
 
     from utk_curio.backend.app.agents import validation
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     run_delegate = delegate_runner or (
         lambda inputs: delegation.run_delegate(
@@ -9667,7 +9671,7 @@ def _prepare_run(
         # instants — a package could appear as "not enlisted" in one and be
         # missing from the other — which is the tear the composite exists to
         # remove.
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages import service as packages_services
 
         try:
             landscape = packages_services.template_landscape(user_key, project_id)
@@ -10196,7 +10200,7 @@ def _mint_node_content_write(
         return "refused", f"node {node_id!r} not found in the saved spec", None
     # dev/114 (DEC-072): the gate, keyed on the EXISTING node's type — the
     # dev/73 runtime review mint inherits it (a refusal is its honest text).
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
     verdict, refusal = _gate_generated_content(
@@ -10248,7 +10252,7 @@ def _available_template(user_key: str, project_id: str, node_type: object) -> tu
     node.create is the caller that needs authored content, so it is the one
     that asks for ``require_authorable``.
     Returns ``(entry | None, error_text)``."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     return packages_services.resolve_template(
         user_key, project_id, node_type, require_authorable=True
@@ -10293,7 +10297,7 @@ def _mint_node_create(
     title = title.strip()[:_NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
-    from utk_curio.backend.app.packages import node_appearance
+    from utk_curio.backend.app.packages.domain import node_appearance
 
     raw_appearance = params.get("appearance")
     if raw_appearance is None and _notes_agent_run(loop_ctx) and entry.get("presentation"):
@@ -10627,7 +10631,7 @@ def _grounding_context(
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
     catalog paths / texts / verified map) replaces the per-mint reads."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     canonical = packages_services.canonical_template_id(node_type) if node_type else ""
     if is_data_loading is None:
@@ -11784,7 +11788,7 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
     reason = f" — {finding['reason']}" if finding.get("reason") else ""
     hint = ""
     try:
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages import service as packages_services
 
         enlisted = dir_name in packages_services.get_project_lockfile(user_key, project_id)
         hint = (
@@ -12368,7 +12372,7 @@ def _authoring_reuse_evidence(user_key: str, project_id: str) -> dict | None:
     Returns None when there is nothing to report (or the registry is
     unreadable) — honest absence, and the delegation proceeds either way.
     """
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     try:
         # ONE snapshot for the whole payload (memo dev/99 R2). This used to
@@ -12470,7 +12474,7 @@ def _enriched_delegate_inputs(
             enriched["searchResults"] = _delegated_search_results(
                 enriched.get("question"))
         if "notesTemplates" not in enriched:
-            from utk_curio.backend.app.packages import services as packages_services
+            from utk_curio.backend.app.packages import service as packages_services
 
             enriched["notesTemplates"] = packages_services.presentation_templates(
                 user_key, project_id)
@@ -12503,7 +12507,7 @@ def _enriched_delegate_inputs(
     # dev/114 — the SEVENTH application: a data-loading node's content child
     # is HANDED its grounded sources (catalog paths, the user's paths, the
     # URLs already verified) instead of guessing a filename.
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     node_type = composed.get("nodeType")
     if "sourceGrounding" not in enriched and source_grounding.is_data_loading_type(

@@ -503,7 +503,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     Returns ``(plan, [])`` on success or ``(None, errors)``."""
     # Local import: this module is otherwise dependency-free (json + re), and
     # the packages domain owns all template knowledge (`ADR-AG-007`).
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages import service as packages_services
 
     errors: list[str] = []
     if not isinstance(raw, dict):

@@ -1,10 +1,10 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: { catalog: jest.fn(), listInstalled: jest.fn(), resolve: jest.fn() },
 }));
 
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages/packagesApi";
 import { usePackageInstallReview } from "../../components/agents/attach/usePackageInstallReview";
 
 const PKG = {

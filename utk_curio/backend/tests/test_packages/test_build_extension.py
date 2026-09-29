@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_extension` (dev/89 commit 2).
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.extension` (dev/89 commit 2).
 
 Extension snapshots (eligibility, digest pinning), the merge planner
 (preserved/modified/added at file and template level, v1 refusals), the
@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages.build_extension import (
+from utk_curio.backend.app.packages.builder.extension import (
     ExtensionError,
     compute_files_digest,
     installed_package_digest,
@@ -21,8 +21,8 @@ from utk_curio.backend.app.packages.build_extension import (
     snapshot_installed_package,
     verify_base_unchanged,
 )
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.storage import package_dir
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.repositories.store import package_dir
 
 
 def _kind(template_id: str, label: str = "Kind") -> dict:
@@ -43,10 +43,10 @@ def _kind(template_id: str, label: str = "Kind") -> dict:
 
 
 @pytest.fixture()
-def installed_demo(install_packageage, manifest_dict):
+def installed_demo(install_package, manifest_dict):
     """An installed two-template package plus its raw manifest dict."""
     manifest = manifest_dict(kinds=[_kind("demo-kind"), _kind("other-kind")])
-    install_packageage(
+    install_package(
         "guest", manifest=manifest,
         sources={
             "demo-kind": {"Default.py": "def run():\n    return {}\n"},
@@ -88,17 +88,17 @@ class TestSnapshot:
         with pytest.raises(ExtensionError, match="not installed"):
             snapshot_installed_package("guest", "ai.test.ghost@1")
 
-    def test_read_only_refused(self, tmp_curio, install_packageage, manifest_dict):
+    def test_read_only_refused(self, tmp_curio, install_package, manifest_dict):
         manifest = manifest_dict(package_id="ai.test.locked")
         manifest["readOnly"] = True
-        install_packageage("guest", manifest=manifest)
+        install_package("guest", manifest=manifest)
         with pytest.raises(ExtensionError, match="read-only"):
             snapshot_installed_package("guest", "ai.test.locked@1")
 
-    def test_builtin_refused(self, tmp_curio, install_packageage, manifest_dict):
-        from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
+    def test_builtin_refused(self, tmp_curio, install_package, manifest_dict):
+        from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
 
-        install_packageage("guest", manifest=manifest_dict(package_id=BUILTIN_PACKAGE_ID))
+        install_package("guest", manifest=manifest_dict(package_id=BUILTIN_PACKAGE_ID))
         with pytest.raises(ExtensionError, match="seeded builtin"):
             snapshot_installed_package("guest", f"{BUILTIN_PACKAGE_ID}@1")
 

@@ -381,7 +381,7 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
     manifest order, keyed by the ``{{builtin.<list>}}`` field each fills. An
     input count is the connections a node accepts (``maxIncomingEdges``), not
     the cardinality a port declares."""
-    from utk_curio.backend.app.packages.services import input_capacity
+    from utk_curio.backend.app.packages.application.templates import input_capacity
 
     package = manifest.get("id", "").split("@")[0]
     rows: dict[str, list[str]] = {

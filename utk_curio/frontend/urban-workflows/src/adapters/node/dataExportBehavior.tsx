@@ -3,7 +3,7 @@ import { useEdges, useReactFlow } from 'reactflow';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { resolveNodeDisplayLabel } from '../../utils/palettePackageFactoryDraft';
-import { triggerBlobDownload } from '../../utils/triggerBlobDownload';
+import { triggerBlobDownload } from '../../services/packages';
 import {
   EXPORT_MIME,
   ExportTarget,

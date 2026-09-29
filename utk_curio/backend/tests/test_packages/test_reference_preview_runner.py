@@ -13,9 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_preview import run_preview, runner_from_env
-from utk_curio.backend.app.packages.build_workspace import (
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.preview import (
+    run_preview,
+    runner_from_env,
+)
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     WorkerLimits,
     create_workspace,
     destroy_workspace,
@@ -226,9 +229,7 @@ class TestSchemaAgreementWithTheFake:
         _ = monkeypatch
         workspace = create_workspace("ref-schema-test")
         try:
-            from utk_curio.backend.app.packages.build_preview import (
-                build_preview_document,
-            )
+            from utk_curio.backend.app.packages.builder.preview import build_preview_document
 
             request = _preview_request()
             preview_dir = workspace.work_dir / "preview"
@@ -243,7 +244,7 @@ class TestSchemaAgreementWithTheFake:
             }], "report": "preview/report.json"}
             (preview_dir / "plan.json").write_text(json.dumps(plan),
                                                    encoding="utf-8")
-            from utk_curio.backend.app.packages.build_workspace import run_worker
+            from utk_curio.backend.app.packages.infrastructure.workspace import run_worker
 
             worker = run_worker(
                 workspace,
@@ -311,9 +312,9 @@ class TestFullPipelineWithRealPreview:
 
     def test_draft_builds_compiles_and_previews_ok(self, wrapper, monkeypatch,
                                                    tmp_curio):
-        from utk_curio.backend.app.packages import build_jobs
-        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
-        from utk_curio.backend.app.packages.build_pipeline import run_build
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+        from utk_curio.backend.app.packages.builder.compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.builder.pipeline import run_build
 
         self._require_toolchain(monkeypatch)
         monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))
@@ -336,9 +337,9 @@ class TestFullPipelineWithRealPreview:
 
     def test_wrong_behavior_key_fails_the_build_at_preview(
             self, wrapper, monkeypatch, tmp_curio):
-        from utk_curio.backend.app.packages import build_jobs
-        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
-        from utk_curio.backend.app.packages.build_pipeline import run_build
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+        from utk_curio.backend.app.packages.builder.compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.builder.pipeline import run_build
 
         self._require_toolchain(monkeypatch)
         monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))
