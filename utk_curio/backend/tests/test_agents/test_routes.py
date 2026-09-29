@@ -2909,8 +2909,9 @@ class TestNodeCreate:
         created = body["createdNode"]
         assert created["type"] == "curio.builtin/computation-analysis"
         assert created["content"] == "print('new')"
-        # Placement: right of the existing extent, on its row.
-        assert created["x"] > 100 and created["y"] == 60.0
+        # Placement: a gutter right of the existing node's right edge (x 100 plus
+        # the default 525 width), on its row, so the two never overlap (#499).
+        assert created["x"] == 100 + 525 + 120 and created["y"] == 60.0
         nodes = self._spec_nodes(user, alice_project)
         assert len(nodes) == 2
         inserted = next(n for n in nodes if n["id"] == created["id"])
@@ -4793,7 +4794,10 @@ class TestDataflowPlanApply:
         analyze = next(n for n in nodes if n.get("goal", "").startswith("Analyze"))
         # Server-minted ids wired through the ref map; topological columns.
         assert edges[0]["source"] == load["id"] and edges[0]["target"] == analyze["id"]
-        assert analyze["x"] == load["x"] + 420
+        # One node's width and a gutter apart, and the first column clear of the
+        # existing node (x 10, default width 525), so nothing overlaps (#410).
+        assert load["x"] == 10 + 525 + 120
+        assert analyze["x"] == load["x"] + 525 + 120
         assert load["content"] == "" and load["goal"] == "Load — load the data"
         # Builder session: applied phase, both nodes pending for Solve.
         session = body["builderSession"]

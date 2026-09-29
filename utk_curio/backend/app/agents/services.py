@@ -2187,9 +2187,9 @@ def _mint_dataflow_plan(
     # exactly where the whole-plan apply would have put them (and both read
     # the same map). Extent from the pre-removal spec — victims may inflate
     # it slightly; a stable layout beats a perfectly tight one.
-    xs = [n.get("x") for n in existing_nodes.values() if isinstance(n.get("x"), (int, float))]
+    right = _right_edge(existing_nodes.values())
     ys = [n.get("y") for n in existing_nodes.values() if isinstance(n.get("y"), (int, float))]
-    layout_base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    layout_base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     layout_base_y = min(ys) if ys else 80.0
     layout_depths = _plan_depths(plan["nodes"], plan["edges"])
     layout_rows: dict[int, int] = {}
@@ -3843,9 +3843,30 @@ def _mint_package_draft_apply(
     )
 
 
+# A node's box as the canvas draws it when the node sets no size of its own
+# (DEFAULT_NODE_WIDTH/HEIGHT, frontend src/constants.ts), and the gutters the
+# shipped examples are laid out with (scripts/tidy_example_layout.py). Steps
+# smaller than the box put every placed node on top of its neighbour (#499,
+# #410).
+_NODE_WIDTH = 525
+_NODE_HEIGHT = 350
+_NODE_H_GUTTER = 120
+_NODE_V_GUTTER = 80
+
+
+def _right_edge(nodes) -> float | None:
+    """The rightmost edge of the placed nodes, each at its own width, or None."""
+    edges = [
+        float(n["x"]) + float(n["width"] if isinstance(n.get("width"), (int, float)) else _NODE_WIDTH)
+        for n in nodes
+        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
+    ]
+    return max(edges) if edges else None
+
+
 # Plan layout (dev/52): topological columns right of the existing extent.
-_PLAN_COLUMN_OFFSET = 420
-_PLAN_ROW_OFFSET = 240
+_PLAN_COLUMN_OFFSET = _NODE_WIDTH + _NODE_H_GUTTER
+_PLAN_ROW_OFFSET = _NODE_HEIGHT + _NODE_V_GUTTER
 
 
 def _plan_depths(nodes: list[dict], edges: list[dict]) -> dict[str, int]:
@@ -3988,9 +4009,9 @@ def _apply_dataflow_plan(
         # Agent attachments on removed nodes die with them, exactly as manual
         # canvas deletion (dev/32).
         attachments.prune_orphaned_attachments(spec)
-    xs = [n.get("x") for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
+    right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
-    base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     base_y = min(ys) if ys else 80.0
     depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
     rows: dict[int, int] = {}
@@ -4651,9 +4672,8 @@ def _apply_project_install(
     }
 
 
-# Placement for server-minted nodes (dev/48): right of the current extent,
-# aligned with the rightmost node's row. Offsets match typical node width.
-_NODE_PLACEMENT_X_OFFSET = 420
+# Placement for server-minted nodes (dev/48): a gutter right of the current
+# extent, aligned with the rightmost node's row.
 _NODE_PLACEMENT_DEFAULT = (80.0, 80.0)
 
 
@@ -4677,14 +4697,11 @@ def _insert_node(
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
-    xs = [
-        (n.get("x"), n.get("y"))
-        for n in nodes
-        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
-    ]
-    if xs:
-        max_x, at_y = max(xs, key=lambda p: p[0])
-        x = float(max_x) + _NODE_PLACEMENT_X_OFFSET
+    placed = [n for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
+    if placed:
+        rightmost = max(placed, key=lambda n: _right_edge([n]))
+        x = _right_edge([rightmost]) + _NODE_H_GUTTER
+        at_y = rightmost.get("y")
         y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
     else:
         x, y = _NODE_PLACEMENT_DEFAULT
