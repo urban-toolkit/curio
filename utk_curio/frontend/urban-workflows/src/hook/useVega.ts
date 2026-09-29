@@ -333,6 +333,11 @@ export const useVega = ({
     const vegaEl = document.getElementById("vega" + data.nodeId);
     const vegaCanvas = vegaEl?.querySelector('canvas') as HTMLCanvasElement | null;
     if (vegaCanvas) {
+      // The canvas is inline, so it sits on a line of text whose descender
+      // space overflows a pane the chart exactly fills, and brings the
+      // scrollbars back. As a block it fits, as autk-plot's SVG does.
+      vegaCanvas.style.display = 'block';
+      vegaCanvas.style.margin = '0 auto';
       const FIXED = '__curio_coord_fixed';
       const PATCH_TYPES = [
         'mousemove', 'mousedown', 'mouseup', 'click',

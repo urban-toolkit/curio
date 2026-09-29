@@ -26,7 +26,7 @@ export function modalStackDepth(): number {
 interface ModalShellProps {
   onClose: () => void;
   children: React.ReactNode;
-  size?: "default" | "large" | "xlarge";
+  size?: "default" | "wide" | "large" | "xlarge";
   /** Stack above canvas dock / catalog overlays (--curio-z-modal). */
   layer?: "default" | "overlay";
   /** Keep the packages palette dock open while this modal is interacted with. */
@@ -109,7 +109,8 @@ export default function ModalShell({
         aria-labelledby={titleId}
         aria-label={titleId ? undefined : label}
         className={`${styles.modal} nowheel nodrag nopan${
-          size === "large" ? ` ${styles.large}` : ""
+          size === "wide" ? ` ${styles.wide}` : ""
+        }${size === "large" ? ` ${styles.large}` : ""
         }${size === "xlarge" ? ` ${styles.xlarge}` : ""}${
           layer === "overlay" ? ` ${styles.modalOverlay}` : ""
         }${size === "xlarge" && layer === "overlay" ? ` ${styles.xlargeOverlay}` : ""}`}

@@ -35,6 +35,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--curio-text-meta);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .inner {

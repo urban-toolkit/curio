@@ -156,8 +156,10 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
         className="mb-3 nowheel"
         // nowrap + overflowX keeps the strip one row tall regardless of table
         // count, so adding tables never steals height from the table below.
+        // overflowY hidden: a tab's -1px bottom margin would otherwise make
+        // the strip scroll vertically by one pixel, with a scrollbar.
         // `nowheel` stops React Flow swallowing the scroll (#156).
-        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto' }}
+        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}
         data-testid="data-pool-tabs"
       >
         {hasData ? (

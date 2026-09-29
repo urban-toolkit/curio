@@ -34,6 +34,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--curio-text-meta);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .preview {
@@ -319,6 +321,11 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 0.8rem;
+}
+
+.planEdgeRow .apply {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .planEdgeNames {

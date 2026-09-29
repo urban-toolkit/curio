@@ -280,7 +280,7 @@ export default function LibraryManagerWindow({
   );
 
   return (
-    <ModalShell onClose={closeModal} titleId="installed-libraries-title">
+    <ModalShell onClose={closeModal} titleId="installed-libraries-title" size="wide">
       <div className={styles.container}>
         <h2 id="installed-libraries-title" className={styles.title}>Installed libraries</h2>
         <p className={styles.subtitle}>

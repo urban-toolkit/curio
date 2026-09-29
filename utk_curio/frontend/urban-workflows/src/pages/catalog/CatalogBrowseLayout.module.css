@@ -869,7 +869,7 @@
   font-weight: 700;
   color: var(--curio-text-primary);
   line-height: 1.25;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .drawerBadgesRow {

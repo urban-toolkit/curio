@@ -188,6 +188,8 @@ describe('DataPoolContent', () => {
     expect(strip).toHaveClass('nowheel');
     expect(strip.style.flexWrap).toBe('nowrap');
     expect(strip.style.overflowX).toBe('auto');
+    // Never a vertical scrollbar on a one-row strip.
+    expect(strip.style.overflowY).toBe('hidden');
     expect(screen.getByText('layer_11')).toBeInTheDocument();
   });
 
