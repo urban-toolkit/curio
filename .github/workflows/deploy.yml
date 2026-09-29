@@ -296,8 +296,10 @@ jobs:
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
-          export BACKEND_URL=https://curio.urbantk.org/api
           set -a; [ -f .env ] && . ./.env; set +a
+          # v0.16.0 bakes its backend address into the bundle. Set after .env so
+          # an older address there cannot win.
+          export BACKEND_URL=https://flow.urbantk.org/api
           docker compose -p curio down --remove-orphans --timeout 30 2>/dev/null || true
           # A container from an earlier convention / manual run keeps itself alive
           # via restart:unless-stopped and can hold the published ports, so a
