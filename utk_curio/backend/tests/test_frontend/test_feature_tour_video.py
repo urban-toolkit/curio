@@ -109,7 +109,7 @@ USER_PASSWORD = "curio-tour-2026"
 # The CSV hub dataset the authoring e2e tests use: three rows, two numeric
 # columns, and a generated loader that only needs pandas - so the "run it" beat
 # is a couple of seconds rather than a geopandas import.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_TITLE = "ACS Neighborhood Profile"
 
 # The only package a tour may install: it declares no python dependencies, so

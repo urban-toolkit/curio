@@ -11,7 +11,7 @@
   "context": null,
   "required": {
     "datasets": [
-      "data.urbanlab.chicago-boundary"
+      "data.utk.chicago-boundary"
     ],
     "packages": [],
     "paths": []
@@ -198,7 +198,7 @@
     ],
     "sources": {
       "datasetIds": [
-        "data.urbanlab.chicago-boundary"
+        "data.utk.chicago-boundary"
       ],
       "paths": [],
       "urls": []
@@ -236,7 +236,7 @@
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
     "sourceLicences": [
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
+        "datasetId": "data.utk.chicago-boundary",
         "licence": "Open Data"
       }
     ]

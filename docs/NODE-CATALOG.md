@@ -24,7 +24,7 @@ Every node Curio knows about belongs to a **package**, identified by a reverse-d
 
 ```
 <packageId>@<major>     e.g.   curio.builtin@1
-                               ai.urbanlab.uhvi@1
+                               ai.utk.uhvi@1
 ```
 
 A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
@@ -34,7 +34,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | Package | What it provides |
 |---|---|
 | `curio.builtin@1` | The 12 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
-| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
+| `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `curio.streetvision@1` | A substantial custom-UI package (Street View fetch plus HuggingFace inference). Not installed by default, read-only, and needs a Google Maps API key plus torch and transformers. Read it for the advanced patterns, not as a starting point. |
 

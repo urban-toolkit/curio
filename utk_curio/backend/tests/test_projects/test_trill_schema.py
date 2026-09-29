@@ -482,9 +482,9 @@ WRITER_SHAPES = {
             {
                 **AGENT_NODE,
                 "metadata": {
-                    "datasetRefs": ["data.urbanlab.acs"],
+                    "datasetRefs": ["data.utk.acs"],
                     "datasetSource": {
-                        "datasetId": "data.urbanlab.acs",
+                        "datasetId": "data.utk.acs",
                         "title": "ACS",
                         "format": "csv",
                         "origin": "imported",
@@ -729,7 +729,7 @@ class TestSchemaMatchesConstants:
         for candidate in (
             "curio.builtin/data-loading",
             "curio.builtin/vis-vega@1",
-            "ai.urbanlab.uhvi/uhvi-load",
+            "ai.utk.uhvi/uhvi-load",
             "a.b.c.d.e.f/thing@0",
         ):
             backend_ok = bool(

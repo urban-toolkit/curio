@@ -77,12 +77,12 @@ CARD = 'article:not([role="status"])'
 # manifest `name` verbatim (spaces and casing) and appends the data file's real
 # suffix, so these are the titles as shown in the catalog.
 GEOJSON = (
-    "data.urbanlab.chicago-community-areas",
+    "data.utk.chicago-community-areas",
     "Chicago Community Areas",
     "Chicago Community Areas.geojson",
 )
 CSV = (
-    "data.urbanlab.acs-neighborhood-profile",
+    "data.utk.acs-neighborhood-profile",
     "ACS Neighborhood Profile",
     "ACS Neighborhood Profile.csv",
 )

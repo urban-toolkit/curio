@@ -46,7 +46,7 @@ const READERS: Record<DatasetFormat, string | null> = {
 
 function snippetFor(format: DatasetFormat) {
   return getDatasetLoaderSnippet({
-    id: "data.urbanlab.example",
+    id: "data.utk.example",
     format,
     path: "/tmp/example-file",
   } as never);
@@ -67,7 +67,7 @@ describe("snippetForFormat", () => {
   it.each(covered)("addresses %s by dataset id, not by path", (format) => {
     const snippet = snippetFor(format);
     const call = format === "collection" ? "curio_collection" : "curio_dataset_path";
-    expect(snippet.code).toContain(`${call}("data.urbanlab.example")`);
+    expect(snippet.code).toContain(`${call}("data.utk.example")`);
     // A machine-specific absolute path in generated code is what the portable
     // id call exists to avoid; it must not appear when an id is available.
     expect(snippet.code).not.toContain("/tmp/example-file");
@@ -117,7 +117,7 @@ describe("snippetForFormat", () => {
     // authoritative one (the Python generator restores parquet's JSON-encoded
     // object columns from the .decode.json sidecar; this TS twin does not).
     const snippet = getDatasetLoaderSnippet({
-      id: "data.urbanlab.example",
+      id: "data.utk.example",
       format: "parquet",
       path: "/tmp/example.parquet",
       loaderSnippet: {

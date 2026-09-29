@@ -49,7 +49,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATASET_ID = "data.urbanlab.chicago-community-areas"
+DATASET_ID = "data.utk.chicago-community-areas"
 DATASET_TITLE = "Chicago Community Areas"
 OTHER_HUB_TITLES = ("Chicago Boundary", "ACS Neighborhood Profile")
 

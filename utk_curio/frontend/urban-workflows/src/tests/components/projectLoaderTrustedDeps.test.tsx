@@ -64,7 +64,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 import { ProjectLoader } from "../../components/ProjectLoader";
 
 const SPEC_WITH_DEPS = {
-  dataflow: { nodes: [], edges: [], packages: ["ai.urbanlab.uhvi@1"] },
+  dataflow: { nodes: [], edges: [], packages: ["ai.utk.uhvi@1"] },
 };
 
 const notFound = () => Object.assign(new Error("not found"), { status: 404 });

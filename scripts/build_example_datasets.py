@@ -228,7 +228,7 @@ DATASETS: list[Dataset] = [
     ),
     Dataset(
         slug="milan-mrt",
-        dataset_id="data.urbanlab.milan-mrt",
+        dataset_id="data.utk.milan-mrt",
         name="Milan Mean Radiant Temperature",
         fmt="geotiff",
         source="09-milan_mrt.tif",
@@ -247,7 +247,7 @@ DATASETS: list[Dataset] = [
     ),
     Dataset(
         slug="milan-era5-weather",
-        dataset_id="data.urbanlab.milan-era5-weather",
+        dataset_id="data.utk.milan-era5-weather",
         name="Milan ERA5 Hourly Weather",
         fmt="csv",
         source="09-milan_weather.csv",
@@ -266,7 +266,7 @@ DATASETS: list[Dataset] = [
     ),
     Dataset(
         slug="milan-census-gt65",
-        dataset_id="data.urbanlab.milan-census-gt65",
+        dataset_id="data.utk.milan-census-gt65",
         name="Milan Census Polygons (over 65)",
         fmt="geojson",
         source="09-milan_census.geojson",

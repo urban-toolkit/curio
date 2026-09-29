@@ -61,7 +61,7 @@ BARS_ID = "sv-bars"
 # row per ZIP and the map a dot in each.
 POINTS_CODE = """import geopandas as gpd
 
-polys = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+polys = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
 pts = polys.representative_point()
 classes = ["road", "sidewalk", "building", "vegetation", "sky", "car"]
 gdf = gpd.GeoDataFrame(
@@ -81,7 +81,7 @@ return gdf
 # Example 10 renames `pri_neigh` to `name`; the ZIP file calls it `zip`.
 POLYGONS_CODE = """import geopandas as gpd
 
-gdf = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+gdf = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
 return gdf.rename(columns={"zip": "name"})
 """
 
@@ -140,8 +140,8 @@ def _spec() -> dict:
             ],
             "datasets": [
                 {
-                    "datasetId": "data.urbanlab.chicago-boundary",
-                    "dirName": "data.urbanlab.chicago-boundary@1",
+                    "datasetId": "data.utk.chicago-boundary",
+                    "dirName": "data.utk.chicago-boundary@1",
                     "origin": "imported",
                     "producerNodeId": None,
                     "consumerNodeIds": [],

@@ -347,7 +347,7 @@ class TestProjDataDir(unittest.TestCase):
     _CENSUS_GJ = os.path.join(
         _REPO_ROOT,
         "datasets",
-        "data.urbanlab.milan-census-gt65@1",
+        "data.utk.milan-census-gt65@1",
         "data",
         "milan-census-gt65.geojson",
     )

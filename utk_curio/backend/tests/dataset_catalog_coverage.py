@@ -69,7 +69,7 @@ class CatalogDataset:
 
         ``save_workflow_test_screenshot`` runs its argument through
         ``os.path.splitext``, so a raw dataset id would be truncated at its
-        last dot - collapsing the two ``data.urbanlab.*`` geojson params onto
+        last dot - collapsing the two ``data.utk.*`` geojson params onto
         one baseline file.
         """
         return "dataset-" + self.manifest.id.replace(".", "-")

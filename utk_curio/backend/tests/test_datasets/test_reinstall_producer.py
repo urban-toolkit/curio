@@ -32,7 +32,7 @@ def test_producer_segment_recovery_uses_node_segment():
     # Namespaced form: only the node segment comes back.
     assert node_segment_from_computed_id("computed.flow-uuid.node-7@1") == "node-7"
     # Not a computed dataset.
-    assert node_segment_from_computed_id("it.urbanlab.example") is None
+    assert node_segment_from_computed_id("it.utk.example") is None
     assert node_segment_from_computed_id(None) is None
 
 

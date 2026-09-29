@@ -15,14 +15,14 @@
     }
   },
   "description": "Loads and aggregates Urban Heat Vulnerability Index (UHVI) raster data and reduces it to per-feature attributes.",
-  "id": "ai.urbanlab.uhvi",
+  "id": "ai.utk.uhvi",
   "license": "MIT",
   "name": "Urban Heat Vulnerability Index",
   "permissions": [
     "filesystem.read",
     "network.fetch"
   ],
-  "publisher": "Urban Analytics Lab",
+  "publisher": "Curio",
   "templates": [
     {
       "category": "data",

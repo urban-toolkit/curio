@@ -17,7 +17,7 @@ Layout (anchored on ``CURIO_LAUNCH_CWD``)::
               LICENSE
 
 The package directory name is ``<packageId>@<major>``. Package ids follow
-reverse-DNS conventions (``ai.urbanlab.uhvi``), so the directory segment
+reverse-DNS conventions (``ai.utk.uhvi``), so the directory segment
 contains characters (``.``, ``@``) that the project-wide
 ``validate_component`` rejects. Package ids therefore have their own validator
 (:data:`PACKAGE_DIR_RE`) and a small ``safe_join``-style helper that still
@@ -39,7 +39,7 @@ from utk_curio.backend.app.common.safe_paths import (
 )
 
 
-# A package directory looks like ``ai.urbanlab.uhvi@2``.
+# A package directory looks like ``ai.utk.uhvi@2``.
 #
 #   - <packageId>: reverse-DNS, lower-case, dot-separated, segments are
 #     ``[a-z][a-z0-9-]{0,62}`` (must start with a letter, allow digits and
@@ -64,7 +64,7 @@ class PackageId:
     """A parsed package canonical identifier.
 
     Canonical form is ``<packageId>/<templateId>@<major>`` (e.g.
-    ``ai.urbanlab.uhvi/uhvi-load@2``). The on-disk package directory uses just
+    ``ai.utk.uhvi/uhvi-load@2``). The on-disk package directory uses just
     ``<packageId>@<major>``.
     """
 

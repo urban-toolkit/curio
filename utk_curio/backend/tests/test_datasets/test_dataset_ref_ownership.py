@@ -222,7 +222,7 @@ def test_section_writer_touches_only_datasets(client, user_and_token):
             "name": "Writer isolation",
             "nodes": [{"id": "n1", "type": "curio.builtin/df-compute", "data": {"x": 1}}],
             "edges": [{"id": "e1", "source": "n1", "target": "n1"}],
-            "agents": [{"agentId": "it.urbanlab/example@1"}],
+            "agents": [{"agentId": "it.utk/example@1"}],
         },
     }
     resp = client.post(

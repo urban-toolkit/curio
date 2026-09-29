@@ -11,7 +11,7 @@ import { IPropagation } from '../providers/FlowProvider';
  * - **Built-ins** keep using `NodeType` enum members (e.g. `NodeType.DATA_LOADING`)
  *   so existing call sites continue to type-check unchanged.
  * - **Package kinds** use a canonical string of the form `<packageId>/<templateId>@<major>`
- *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
+ *   (e.g. `"ai.utk.uhvi/uhvi-load@1"`). This is the string the frontend
  *   registry, saved Trill graphs, and `/processPythonCode` all dispatch on.
  *
  * See ``docs/NODE-CATALOG.md`` for the user-facing overview and

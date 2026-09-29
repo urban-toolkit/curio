@@ -249,7 +249,7 @@ export interface DatasetCatalogItem {
   format: DatasetFormat;
   uri: string;
   path?: string | null;
-  /** Folder name in the dataset store (e.g. ``data.urbanlab.chicago-boundary@1``). Present for catalog (hub) datasets. */
+  /** Folder name in the dataset store (e.g. ``data.utk.chicago-boundary@1``). Present for catalog (hub) datasets. */
   dirName?: string | null;
   sizeBytes?: number | null;
   rowCount?: number | null;
@@ -653,7 +653,7 @@ export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): bool
  *
  * Told apart by the store folder, the same signal the backend's uninstall uses
  * (``_remove_orphaned_imported_store_dir`` keys on ``imported.``): catalog
- * datasets land under their publisher's id (``data.urbanlab.…@1``), uploads
+ * datasets land under their publisher's id (``data.utk.…@1``), uploads
  * under ``imported.…`` and node outputs under ``computed.…``. ``origin`` cannot
  * answer this - installing a catalog dataset flips it from ``hub`` to
  * ``imported``, so an installed catalog row and an upload look identical there.

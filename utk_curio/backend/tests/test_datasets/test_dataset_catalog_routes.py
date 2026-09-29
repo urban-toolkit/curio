@@ -323,7 +323,7 @@ def test_install_hub_dataset_copies_to_user_store(client, user_and_token, tmp_pa
     body = install.get_json()
     assert body["installed"] is True
     assert body["path"]
-    assert "datasets/data.urbanlab.chicago-community-areas@1" in body["path"]
+    assert "datasets/data.utk.chicago-community-areas@1" in body["path"]
 
     user_store = users_base()
     copied = list(user_store.rglob("community-areas.geojson"))

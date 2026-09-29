@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 # The CSV hub dataset: three rows, two numeric columns, and a loader that only
 # needs pandas. The geojson ones would drag geopandas and a geometry parse into
 # what is meant to be a test about the canvas.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_CSV = os.path.join(
     REPO_ROOT, "datasets", f"{DATASET_ID}@1", "data",
     "acs-neighborhood-profile.csv",

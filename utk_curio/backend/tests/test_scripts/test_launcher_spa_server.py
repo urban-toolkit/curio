@@ -7,7 +7,7 @@ how it shipped refusing to serve the very deep links it exists for.
 The bug it now guards: the fallback used to be gated on
 ``not os.path.splitext(candidate)[1]``, i.e. "this path has no file extension".
 Dataset ids are dotted, so ``splitext`` reads
-``/catalog/data/data.urbanlab.acs-neighborhood-profile`` as having the extension
+``/catalog/data/data.utk.acs-neighborhood-profile`` as having the extension
 ``.acs-neighborhood-profile``, the guard went false, and the request 404'd
 instead of reaching the router. The dev server had the same hole through a
 different mechanism (connect-history-api-fallback's dot rule, now disabled in
@@ -76,9 +76,9 @@ def _get(base: str, path: str, accept: str = HTML_ACCEPT):
     "path",
     [
         # The regression: every id in the bundled catalog is dotted.
-        "/catalog/data/data.urbanlab.acs-neighborhood-profile",
+        "/catalog/data/data.utk.acs-neighborhood-profile",
         "/catalog/data/data.cityofchicago.red-light-violations",
-        "/catalog/data/data.urbanlab.chicago-boundary",
+        "/catalog/data/data.utk.chicago-boundary",
         # Undotted routes, which worked before and must keep working.
         "/projects",
         "/catalog/nodes",

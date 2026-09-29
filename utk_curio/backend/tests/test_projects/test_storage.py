@@ -177,7 +177,7 @@ def test_replace_dataflow_datasets_replaces_only_the_section(tmp_curio):
             "name": "keep-me",
             "nodes": [{"id": "n1"}],
             "edges": [],
-            "agents": [{"agentId": "it.urbanlab/example@1"}],
+            "agents": [{"agentId": "it.utk/example@1"}],
             "datasets": [{"datasetId": "computed.a", "publishedToHub": True}],
         },
     })
@@ -189,7 +189,7 @@ def test_replace_dataflow_datasets_replaces_only_the_section(tmp_curio):
     assert on_disk["dataflow"]["datasets"] == refs  # old ref gone, no merge
     assert on_disk["dataflow"]["name"] == "keep-me"
     assert on_disk["dataflow"]["nodes"] == [{"id": "n1"}]
-    assert on_disk["dataflow"]["agents"] == [{"agentId": "it.urbanlab/example@1"}]
+    assert on_disk["dataflow"]["agents"] == [{"agentId": "it.utk/example@1"}]
 
 
 def test_replace_dataflow_datasets_creates_the_section(tmp_curio):

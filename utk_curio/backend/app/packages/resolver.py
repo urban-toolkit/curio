@@ -30,8 +30,8 @@ The lockfile schema is the same shape spike_option_b.md called out::
 
     {
       "installedPackages": [
-        {"id": "ai.urbanlab.uhvi", "major": 1, "version": "1.0.0",
-         "dirName": "ai.urbanlab.uhvi@1"}
+        {"id": "ai.utk.uhvi", "major": 1, "version": "1.0.0",
+         "dirName": "ai.utk.uhvi@1"}
       ],
       "pythonDeps": {"rasterio": "^1.3"},
       "jsDeps": {}

@@ -340,7 +340,7 @@ describe("DatasetDetailPanel lineage", () => {
             { nodeId: "feeder-1", nodeName: "Data Loading", nodeType: "DATA_LOADING" },
           ],
           sourceDatasets: [
-            { datasetId: "data.urbanlab.acs", title: "acs" },
+            { datasetId: "data.utk.acs", title: "acs" },
           ],
           origin: "computed",
           originLabel: "Computed",

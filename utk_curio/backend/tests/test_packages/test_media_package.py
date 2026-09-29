@@ -159,7 +159,7 @@ def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
     # The mosaic's left half: one tile's footprint.
     zone = box(west, south, (west + east) / 2, north)
     zones = gpd.GeoDataFrame({"zone": ["left"]}, geometry=[zone], crs=mosaic.crs)
-    code = (REPO / "packages" / "ai.urbanlab.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
+    code = (REPO / "packages" / "ai.utk.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
     body = "\n".join("    " + line for line in code.splitlines())
     ns: dict = {}
     exec(f"def userCode(arg):\n{body}", ns)  # noqa: S102 - the canvas does exactly this

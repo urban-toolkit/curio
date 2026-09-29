@@ -5,7 +5,7 @@
  * expected to pick a preset from the Templates dropdown before running.
  *
  * Package nodes optionally ship a `source` field in the manifest. Reference package:
- * ``<repo_root>/packages/ai.urbanlab.uhvi@1/manifest.json``.
+ * ``<repo_root>/packages/ai.utk.uhvi@1/manifest.json``.
  *
  * Semantic — "inject once, at instantiation only":
  *
@@ -115,7 +115,7 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
  * package-shipped key, …). Resolving `"code"` yields the built-in no-op
  * `useCodeNodeBehavior`, which knows nothing about package starters — so
  * every package template declaring `behavior: "code"` alongside a `source`
- * (curio.weather, ai.urbanlab.uhvi, and everything the node factory
+ * (curio.weather, ai.utk.uhvi, and everything the node factory
  * scaffolds) used to open with an empty editor.
  *
  * The composed hook runs both: *inner* owns the whole behavior surface, and

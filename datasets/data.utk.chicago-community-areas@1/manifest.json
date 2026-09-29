@@ -8,7 +8,7 @@
   "description": "Boundary geometries for Chicago community areas. Sample extract: 2 of the 77 community areas.",
   "featureCount": 2,
   "format": "geojson",
-  "id": "data.urbanlab.chicago-community-areas",
+  "id": "data.utk.chicago-community-areas",
   "license": "Open Data",
   "name": "Chicago Community Areas",
   "publisher": "Data Catalog",

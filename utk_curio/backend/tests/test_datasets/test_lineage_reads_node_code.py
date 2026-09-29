@@ -44,7 +44,7 @@ def _usage(client, token, dataset_id):
     return resp.get_json()["dataflows"]
 
 
-DATASET = "data.urbanlab.chicago-boundary"
+DATASET = "data.utk.chicago-boundary"
 
 
 def _loader(code: str) -> dict:

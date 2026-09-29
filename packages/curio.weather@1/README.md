@@ -13,9 +13,9 @@ dependencies.
 
 | Canonical id | Category | Label | Purpose |
 |---|---|---|---|
-| `curio.weather/mrt-load` | data | Milan MRT Loader | Open the `data.urbanlab.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset. |
-| `curio.weather/weather-load` | data | ERA5 Milan Weather | Load `data.urbanlab.milan-era5-weather` from the Data Catalog (Td / Wind / RH per hour). |
-| `curio.weather/census-load` | data | Milan Census Polygons | Load `data.urbanlab.milan-census-gt65` from the Data Catalog as a GeoDataFrame. |
+| `curio.weather/mrt-load` | data | Milan MRT Loader | Open the `data.utk.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset. |
+| `curio.weather/weather-load` | data | ERA5 Milan Weather | Load `data.utk.milan-era5-weather` from the Data Catalog (Td / Wind / RH per hour). |
+| `curio.weather/census-load` | data | Milan Census Polygons | Load `data.utk.milan-census-gt65` from the Data Catalog as a GeoDataFrame. |
 | `curio.weather/utci-compute` | computation | UTCI from raster + weather | Per-pixel Universal Thermal Climate Index via `pythermalcomfort`. |
 | `curio.weather/utci-zonal` | computation | UTCI Zonal Mean | `rasterstats.zonal_stats` of the UTCI grid into census polygons. |
 | `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to EPSG:3395; tag as `census`. |

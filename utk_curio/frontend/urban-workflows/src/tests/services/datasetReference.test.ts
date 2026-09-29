@@ -17,11 +17,11 @@ import {
 } from "../../services/datasetCatalog/datasetReference";
 
 const item = (over: Record<string, unknown> = {}) =>
-  ({ id: "data.urbanlab.acs@1", path: "C:/Users/fabio/.curio/data/acs.parquet", ...over }) as never;
+  ({ id: "data.utk.acs@1", path: "C:/Users/fabio/.curio/data/acs.parquet", ...over }) as never;
 
 describe("datasetReference", () => {
   test("hands over the portable call, not the path", () => {
-    expect(datasetReference(item()).code).toBe('curio_dataset_path("data.urbanlab.acs@1")');
+    expect(datasetReference(item()).code).toBe('curio_dataset_path("data.utk.acs@1")');
   });
 
   test("still reports where the bytes are", () => {

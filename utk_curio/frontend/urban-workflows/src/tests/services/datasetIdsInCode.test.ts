@@ -14,8 +14,8 @@ import { nodeLinkedDatasetIds, isNodeLinkedToAnyDataset } from "../../services/d
 
 describe("datasetIdsInCode", () => {
   test("finds a double-quoted call", () => {
-    expect(datasetIdsInCode('df = load(curio_dataset_path("data.urbanlab.acs@1"))')).toEqual([
-      "data.urbanlab.acs@1",
+    expect(datasetIdsInCode('df = load(curio_dataset_path("data.utk.acs@1"))')).toEqual([
+      "data.utk.acs@1",
     ]);
   });
 
@@ -79,9 +79,9 @@ describe("datasetIdsInCode", () => {
 describe("nodeLinkedDatasetIds with code references", () => {
   test("a hand-authored loader counts as using its dataset", () => {
     // The reported case, stated directly: no bindings, just the call.
-    const data = { code: 'df = pd.read_csv(curio_dataset_path("data.urbanlab.acs@1"))' };
-    expect(nodeLinkedDatasetIds(data)).toEqual(["data.urbanlab.acs@1"]);
-    expect(isNodeLinkedToAnyDataset(data, ["data.urbanlab.acs@1"])).toBe(true);
+    const data = { code: 'df = pd.read_csv(curio_dataset_path("data.utk.acs@1"))' };
+    expect(nodeLinkedDatasetIds(data)).toEqual(["data.utk.acs@1"]);
+    expect(isNodeLinkedToAnyDataset(data, ["data.utk.acs@1"])).toBe(true);
   });
 
   test("a palette node's untouched defaultCode counts too", () => {

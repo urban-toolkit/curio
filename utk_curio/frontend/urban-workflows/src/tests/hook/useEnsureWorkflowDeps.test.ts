@@ -95,17 +95,17 @@ describe("useEnsureWorkflowDeps - when it does nothing", () => {
 
 describe("useEnsureWorkflowDeps - the install path", () => {
   it("installs only what the check reported as missing", async () => {
-    mockCheck.mockResolvedValue({ packages: ["ai.urbanlab.uhvi@1"] });
+    mockCheck.mockResolvedValue({ packages: ["ai.utk.uhvi@1"] });
     await ensure({
-      dataflow: { packages: ["curio.weather@1", "ai.urbanlab.uhvi@1"] },
+      dataflow: { packages: ["curio.weather@1", "ai.utk.uhvi@1"] },
     });
     // The declared set is what we ask about; the *needed* subset is what we
     // install. Installing the full declared set would redo satisfied work.
     expect(mockCheck).toHaveBeenCalledWith([
       "curio.weather@1",
-      "ai.urbanlab.uhvi@1",
+      "ai.utk.uhvi@1",
     ]);
-    expect(mockInstall).toHaveBeenCalledWith(["ai.urbanlab.uhvi@1"]);
+    expect(mockInstall).toHaveBeenCalledWith(["ai.utk.uhvi@1"]);
   });
 
   it("warns before installing and confirms after", async () => {

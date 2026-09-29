@@ -36,7 +36,7 @@ anywhere without editing paths.
 
 | Dataset | Id | Format |
 |---|---|---|
-| Chicago Boundary (ZIP polygons) | `data.urbanlab.chicago-boundary` | geojson |
+| Chicago Boundary (ZIP polygons) | `data.utk.chicago-boundary` | geojson |
 
 ## Any coordinate system
 

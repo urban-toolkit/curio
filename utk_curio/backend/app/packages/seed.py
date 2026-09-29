@@ -250,12 +250,10 @@ def _catalog_content_map(src: Path, fixture_mtime: float) -> dict[str, str] | No
     """SHA-256 of every file in the CATALOG copy, computed rather than declared.
 
     Not ``integrity.json``: a package's committed map can disagree with the
-    files committed beside it. ``ai.urbanlab.uhvi@1`` does today — its map
-    quotes a hash for ``sources/uhvi-load.py`` that the file has not had for
-    some time, presumably an edit that never re-ran the integrity refresh.
-    Trusting it would mark every faithful install of that package permanently
-    stale and re-copy it on every pass, which is precisely the per-request
-    destruction memo dev/93 D1 removed.
+    files committed beside it, after an edit that never re-ran the integrity
+    refresh. Trusting it would mark every faithful install of that package
+    permanently stale and re-copy it on every pass, which is precisely the
+    per-request destruction memo dev/93 D1 removed.
     """
     key = (str(src), fixture_mtime)
     cached = _CATALOG_CONTENT.get(key)

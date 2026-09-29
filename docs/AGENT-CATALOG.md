@@ -36,7 +36,7 @@ agent.chat-agent@1.0.0/
   prompts/chat_prompt.txt
 ```
 
-Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.urbanlab.uhvi`) and dataset ids (`data.urbanlab.chicago-boundary`). The version is a full semver string.
+Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.utk.uhvi`) and dataset ids (`data.utk.chicago-boundary`). The version is a full semver string.
 
 ### What ships with Curio
 

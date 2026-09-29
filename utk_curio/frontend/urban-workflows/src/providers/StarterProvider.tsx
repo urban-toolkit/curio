@@ -15,7 +15,7 @@ export interface Starter {
     id: string;
     /**
      * Dispatch key — either a built-in `NodeType` enum value or a package canonical
-     * id `<packageId>/<templateId>@<major>` (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`).
+     * id `<packageId>/<templateId>@<major>` (e.g. `"ai.utk.uhvi/uhvi-load@1"`).
      */
     type: NodeTemplateId;
     name: string;

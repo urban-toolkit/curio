@@ -489,7 +489,7 @@ class TestPackageTools:
         })
 
     def test_catalog_rows_carry_project_install_state_and_builtin_flag(self, tmp_curio):
-        self._write_spec(["curio.builtin@1", "ai.urbanlab.uhvi@1"])
+        self._write_spec(["curio.builtin@1", "ai.utk.uhvi@1"])
         status, text = tools.execute_read_tool(
             "packages.catalog", user_key=self.UKEY, project_id=self.PID,
             target=None, params={},
@@ -498,8 +498,8 @@ class TestPackageTools:
         rows = {r["dirName"]: r for r in json.loads(text)["packages"]}
         assert rows["curio.builtin@1"]["builtin"] is True
         assert rows["curio.builtin@1"]["installed"] is True  # always present
-        assert rows["ai.urbanlab.uhvi@1"]["installed"] is True  # in the lockfile
-        assert rows["ai.urbanlab.uhvi@1"]["builtin"] is False
+        assert rows["ai.utk.uhvi@1"]["installed"] is True  # in the lockfile
+        assert rows["ai.utk.uhvi@1"]["builtin"] is False
         assert rows["curio.weather@1"]["installed"] is False  # not in the lockfile
 
     def test_catalog_q_filter_bounds_the_rows(self, tmp_curio):
@@ -510,16 +510,16 @@ class TestPackageTools:
         )
         assert status == "ok"
         rows = json.loads(text)["packages"]
-        assert [r["dirName"] for r in rows] == ["ai.urbanlab.uhvi@1"]
+        assert [r["dirName"] for r in rows] == ["ai.utk.uhvi@1"]
 
     def test_resolve_reports_real_permissions_and_deps(self, tmp_curio):
         status, text = tools.execute_read_tool(
             "packages.resolve", user_key=self.UKEY, project_id=self.PID,
-            target=None, params={"dirNames": ["ai.urbanlab.uhvi@1"]},
+            target=None, params={"dirNames": ["ai.utk.uhvi@1"]},
         )
         assert status == "ok"
         report = json.loads(text)
-        pkg = next(p for p in report["packages"] if p["dirName"] == "ai.urbanlab.uhvi@1")
+        pkg = next(p for p in report["packages"] if p["dirName"] == "ai.utk.uhvi@1")
         # Grounded in the committed manifest — never invented.
         assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
         assert "geopandas" in pkg["pythonDeps"]

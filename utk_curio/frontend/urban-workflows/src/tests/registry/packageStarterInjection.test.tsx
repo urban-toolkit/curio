@@ -3,7 +3,7 @@
  * that code injected into a freshly-dropped node's editor — even when its
  * manifest names a behavior key that resolves to a registered built-in hook.
  *
- * Every `curio.weather@1` / `ai.urbanlab.uhvi@1` template declares
+ * Every `curio.weather@1` / `ai.utk.uhvi@1` template declares
  * `behavior: "code"` next to `source: "sources/<x>.py"`. Resolving `"code"`
  * through the behavior registry yields the no-op `useCodeNodeBehavior`, which
  * used to win outright over the starter-injecting `usePackageNodeBehavior` —
@@ -65,7 +65,7 @@ const FIXTURE_PACK = {
   major: 1,
   version: '1.0.0',
   name: 'Weather Analysis',
-  publisher: 'Urban Analytics Lab',
+  publisher: 'Curio',
   description: '',
   license: 'MIT',
   permissions: [],

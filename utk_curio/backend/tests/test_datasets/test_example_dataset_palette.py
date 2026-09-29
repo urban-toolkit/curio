@@ -20,7 +20,7 @@ Two different listings are involved, and only one of them is forgiving:
   ``dirName``, ``format`` defaulting to ``csv``, and no counts.
 
 So the failure this guards against is not an error anywhere. It is a palette
-full of rows reading ``data.urbanlab.chicago-boundary@1 / csv / (nothing)``.
+full of rows reading ``data.utk.chicago-boundary@1 / csv / (nothing)``.
 
 Run::
 

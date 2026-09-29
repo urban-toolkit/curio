@@ -1,5 +1,5 @@
 {
-  "id": "data.urbanlab.milan-era5-weather",
+  "id": "data.utk.milan-era5-weather",
   "name": "Milan ERA5 Hourly Weather",
   "version": "1.0.0",
   "format": "csv",

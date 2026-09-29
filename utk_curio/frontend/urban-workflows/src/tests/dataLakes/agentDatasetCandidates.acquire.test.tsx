@@ -29,7 +29,7 @@ const external = (over: Partial<AgentDatasetCandidateRow> = {}): AgentDatasetCan
 const catalogRow = (over: Partial<AgentDatasetCandidateRow> = {}): AgentDatasetCandidateRow => ({
   name: 'Chicago Boundary',
   sourceType: 'catalog',
-  datasetId: 'data.urbanlab.chicago-boundary',
+  datasetId: 'data.utk.chicago-boundary',
   ...over,
 });
 

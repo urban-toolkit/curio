@@ -66,18 +66,18 @@ def _draft():
 # ---------------------------------------------------------------------------
 
 def test_catalog_lists_committed_fixtures(client, user_and_token, tmp_curio):
-    """The catalog stub mirrors the fixture package ``ai.urbanlab.uhvi@1``."""
+    """The catalog stub mirrors the fixture package ``ai.utk.uhvi@1``."""
     _, token = user_and_token
     resp = client.get("/api/packages/catalog", headers=_auth(token))
     assert resp.status_code == 200
     packages = resp.get_json()["packages"]
     ids = {p["packageId"] for p in packages}
-    assert "ai.urbanlab.uhvi" in ids
-    item = next(p for p in packages if p["packageId"] == "ai.urbanlab.uhvi")
+    assert "ai.utk.uhvi" in ids
+    item = next(p for p in packages if p["packageId"] == "ai.utk.uhvi")
     assert item["installed"] is False
-    assert item["dirName"] == "ai.urbanlab.uhvi@1"
+    assert item["dirName"] == "ai.utk.uhvi@1"
     assert item["lineage"] is None
-    assert item["familyKey"] == "ai.urbanlab.uhvi@1"
+    assert item["familyKey"] == "ai.utk.uhvi@1"
     assert isinstance(item["installUpdatedAtMs"], int)
     assert isinstance(item["createdAtMs"], int)
     assert item["channel"] == "stable"
@@ -147,15 +147,15 @@ def test_install_from_catalog_endpoint(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = client.post(
         "/api/packages/catalog/install",
-        data=json.dumps({"dirName": "ai.urbanlab.uhvi@1"}),
+        data=json.dumps({"dirName": "ai.utk.uhvi@1"}),
         headers=_auth(token),
     )
     assert resp.status_code == 201, resp.get_data(as_text=True)
     body = resp.get_json()
-    assert body["package"]["packageId"] == "ai.urbanlab.uhvi"
+    assert body["package"]["packageId"] == "ai.utk.uhvi"
 
     listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
-    assert "ai.urbanlab.uhvi" in {p["packageId"] for p in listing}
+    assert "ai.utk.uhvi" in {p["packageId"] for p in listing}
 
 
 def test_install_from_catalog_rejects_unknown(client, user_and_token, tmp_curio):
@@ -428,7 +428,7 @@ def test_reload_from_catalog_installs_the_packages_declared_deps(
     _, token = user_and_token
     resp = client.post(
         "/api/packages/catalog/install",
-        data=json.dumps({"dirName": "ai.urbanlab.uhvi@1"}),
+        data=json.dumps({"dirName": "ai.utk.uhvi@1"}),
         headers=_auth(token),
     )
     assert resp.status_code == 201, resp.get_data(as_text=True)
@@ -472,7 +472,7 @@ def test_every_file_first_install_reports_a_library_that_cannot_be_imported(
     else:
         resp = client.post(
             "/api/packages/catalog/install",
-            data=json.dumps({"dirName": "ai.urbanlab.uhvi@1"}),
+            data=json.dumps({"dirName": "ai.utk.uhvi@1"}),
             headers=_auth(token),
         )
 
@@ -1075,13 +1075,13 @@ def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
     # Catalog candidate that the user has not installed.
     resp = client.post(
         "/api/packages/resolve",
-        data=json.dumps({"packages": ["ai.urbanlab.uhvi@1"]}),
+        data=json.dumps({"packages": ["ai.utk.uhvi@1"]}),
         headers=_auth(token),
     )
     assert resp.status_code == 200, resp.get_json()
     body = resp.get_json()
     assert body["conflicts"] == []
-    assert body["lockfile"]["installedPackages"][0]["dirName"] == "ai.urbanlab.uhvi@1"
+    assert body["lockfile"]["installedPackages"][0]["dirName"] == "ai.utk.uhvi@1"
     # Catalog manifest's deps came through.
     assert "rasterio" in body["lockfile"]["pythonDeps"]
 
@@ -1115,7 +1115,7 @@ def test_resolve_catalog_fallback_still_reports_conflicts(
     resp = client.post(
         "/api/packages/resolve",
         data=json.dumps({
-            "packages": ["ai.test.rasterio2@1", "ai.urbanlab.uhvi@1"],
+            "packages": ["ai.test.rasterio2@1", "ai.utk.uhvi@1"],
         }),
         headers=_auth(token),
     )
@@ -1130,7 +1130,7 @@ def test_resolve_catalog_candidate_alongside_the_builtin_package(
     """The install probe the UI actually sends: candidate **plus** builtin.
 
     This is the gap that let #154 ship. The test above resolves
-    ``ai.urbanlab.uhvi@1`` on its own, but no real install ever looks like
+    ``ai.utk.uhvi@1`` on its own, but no real install ever looks like
     that - ``useNodeCatalogBrowse.onInstall`` posts every installed package plus
     the candidate, and ``curio.builtin@1`` is force-reseeded for every user, so
     it is always in that list.
@@ -1143,7 +1143,7 @@ def test_resolve_catalog_candidate_alongside_the_builtin_package(
     _, token = user_and_token
     resp = client.post(
         "/api/packages/resolve",
-        data=json.dumps({"packages": ["curio.builtin@1", "ai.urbanlab.uhvi@1"]}),
+        data=json.dumps({"packages": ["curio.builtin@1", "ai.utk.uhvi@1"]}),
         headers=_auth(token),
     )
     assert resp.status_code == 200, resp.get_json()
@@ -1386,7 +1386,7 @@ class TestExportFromTheCatalog:
 
     #: In the shipped catalog, referenced by no example, so no seeder installs
     #: it for a fresh account - the exact package the issue was filed against.
-    CATALOG_ONLY = "ai.urbanlab.uhvi@1"
+    CATALOG_ONLY = "ai.utk.uhvi@1"
 
     def test_catalog_only_package_exports_the_catalog_copy(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
@@ -1397,7 +1397,7 @@ class TestExportFromTheCatalog:
         with zipfile.ZipFile(io.BytesIO(r.data)) as zf:
             names = zf.namelist()
             manifest = json.loads(zf.read("manifest.json"))
-        assert manifest["id"] == "ai.urbanlab.uhvi"
+        assert manifest["id"] == "ai.utk.uhvi"
         assert any(n.startswith("sources/") for n in names), names
         # The installer's own record never travels in an archive.
         assert "integrity.json" not in names

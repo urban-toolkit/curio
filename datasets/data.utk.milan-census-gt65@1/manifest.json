@@ -1,5 +1,5 @@
 {
-  "id": "data.urbanlab.milan-census-gt65",
+  "id": "data.utk.milan-census-gt65",
   "name": "Milan Census Polygons (over 65)",
   "version": "1.0.0",
   "format": "geojson",

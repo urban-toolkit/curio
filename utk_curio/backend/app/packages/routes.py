@@ -1016,7 +1016,7 @@ def factory_install():
 def resolve_deps():
     """Resolve the dep graph for a set of package directory names.
 
-    Body shape: ``{"packages": ["ai.urbanlab.uhvi@1", ...]}``.
+    Body shape: ``{"packages": ["ai.utk.uhvi@1", ...]}``.
 
     * 200 - fully resolved; returns ``{lockfile, conflicts: []}``.
     * 409 - at least one Python (or JS) range conflict across packages;

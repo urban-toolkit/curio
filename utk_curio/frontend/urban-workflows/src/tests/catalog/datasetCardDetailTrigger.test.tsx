@@ -27,12 +27,12 @@ import type { DatasetCatalogItem } from "../../services/datasetCatalog";
  */
 
 const dataset: DatasetCatalogItem = {
-  id: "data.urbanlab.chicago-community-areas",
+  id: "data.utk.chicago-community-areas",
   title: "Chicago Community Areas",
   origin: "hub",
   format: "geojson",
   uri: "data/chicago-community-areas.geojson",
-  dirName: "data.urbanlab.chicago-community-areas@1",
+  dirName: "data.utk.chicago-community-areas@1",
   consumerNodeIds: [],
   updatedAt: "2026-08-25T00:00:00Z",
   tags: ["boundaries"],

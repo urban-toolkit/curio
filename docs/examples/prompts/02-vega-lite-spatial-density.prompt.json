@@ -12,7 +12,7 @@
   "required": {
     "datasets": [
       "data.cityofchicago.green-roofs",
-      "data.urbanlab.chicago-boundary"
+      "data.utk.chicago-boundary"
     ],
     "packages": [],
     "paths": []
@@ -111,7 +111,7 @@
     "sources": {
       "datasetIds": [
         "data.cityofchicago.green-roofs",
-        "data.urbanlab.chicago-boundary"
+        "data.utk.chicago-boundary"
       ],
       "paths": [],
       "urls": []
@@ -177,7 +177,7 @@
         "licence": "Open Data"
       },
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
+        "datasetId": "data.utk.chicago-boundary",
         "licence": "Open Data"
       }
     ],

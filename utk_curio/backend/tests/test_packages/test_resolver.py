@@ -335,7 +335,7 @@ def test_a_caret_zero_x_range_conflicts_with_a_one_x_floor():
     """
     merged, conflicts = merge_python_deps([
         ("curio.builtin@1", {"geopandas": ">=1.1.3"}),
-        ("ai.urbanlab.uhvi@1", {"geopandas": "^0.14"}),
+        ("ai.utk.uhvi@1", {"geopandas": "^0.14"}),
     ])
     assert [c.package for c in conflicts] == ["geopandas"]
     assert "geopandas" not in merged, (
@@ -352,7 +352,7 @@ def test_an_open_ended_floor_below_the_builtin_floor_is_satisfiable():
     """
     merged, conflicts = merge_python_deps([
         ("curio.builtin@1", {"geopandas": ">=1.1.3"}),
-        ("ai.urbanlab.uhvi@1", {"geopandas": ">=0.14"}),
+        ("ai.utk.uhvi@1", {"geopandas": ">=0.14"}),
     ])
     assert conflicts == []
     assert merged["geopandas"] == ">=1.1.3"
@@ -366,7 +366,7 @@ def test_an_empty_range_means_any_version():
     """
     merged, conflicts = merge_python_deps([
         ("curio.builtin@1", {"numpy": ""}),
-        ("ai.urbanlab.uhvi@1", {"numpy": ">=1.26"}),
+        ("ai.utk.uhvi@1", {"numpy": ">=1.26"}),
     ])
     assert conflicts == []
     assert merged["numpy"] == ">=1.26.0"

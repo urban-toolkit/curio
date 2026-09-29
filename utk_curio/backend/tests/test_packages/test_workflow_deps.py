@@ -332,17 +332,17 @@ def test_install_abandons_the_partial_set_on_a_mid_loop_failure(
 
     def _second_fails(uk, dn):
         attempted.append(dn)
-        if dn == "ai.urbanlab.uhvi@1":
+        if dn == "ai.utk.uhvi@1":
             raise packages_services.PackageServiceError("no wheel", 502)
         return packages_services.InstallOutcome(copied=True)
 
     monkeypatch.setattr(packages_services, "install_to_store", _second_fails)
     _, token = user_and_token
-    resp = _install(client, token, ["curio.example-ui@1", "ai.urbanlab.uhvi@1"])
+    resp = _install(client, token, ["curio.example-ui@1", "ai.utk.uhvi@1"])
     assert resp.status_code == 502
-    assert "ai.urbanlab.uhvi@1" in resp.get_json()["error"]
+    assert "ai.utk.uhvi@1" in resp.get_json()["error"]
     # The first one really was installed, but the response says nothing about it.
-    assert attempted == ["curio.example-ui@1", "ai.urbanlab.uhvi@1"]
+    assert attempted == ["curio.example-ui@1", "ai.utk.uhvi@1"]
     assert "installedPackages" not in resp.get_json()
 
 

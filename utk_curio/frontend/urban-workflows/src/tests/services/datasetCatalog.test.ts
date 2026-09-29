@@ -153,7 +153,7 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
 
   test("imported / hub / source datasets show their real title", () => {
     expect(
-      datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.urbanlab.chicago-boundary@1" })),
+      datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.utk.chicago-boundary@1" })),
     ).toBe("Chicago Boundary");
     expect(
       datasetDisplayTitle(makeDataset({ origin: "hub", title: "Census Blocks" })),
@@ -177,8 +177,8 @@ describe("datasetSubtitle (secondary line under the title)", () => {
 
   test("imported / hub datasets show the store folder", () => {
     expect(
-      datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.urbanlab.chicago-boundary@1" })),
-    ).toBe("data.urbanlab.chicago-boundary@1");
+      datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.utk.chicago-boundary@1" })),
+    ).toBe("data.utk.chicago-boundary@1");
   });
 
   test("falls back to the filename (no extension) when dirName would duplicate the title", () => {

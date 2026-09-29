@@ -143,7 +143,7 @@ NOTEBOOK = os.path.join(DATAFLOWS, "test_notebook.ipynb")
 
 #: The dataset the authoring chapters build on: three rows, two numeric columns,
 #: and a generated loader that only needs pandas.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 
 DATAFLOW_GOAL = (
     "Stress every surface: compare income per capita across neighborhoods, "
@@ -192,7 +192,7 @@ VEGA_SPEC = json.dumps(
 PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
-    "ai.urbanlab.uhvi@1": ("rasterio",),
+    "ai.utk.uhvi@1": ("rasterio",),
     "curio.streetvision@1": (
         "torch", "transformers", "ultralytics", "huggingface_hub",
     ),
@@ -1229,7 +1229,7 @@ def chapter_nodes(run: StressRun) -> None:
             search.first.fill("")
             page.wait_for_timeout(800)
 
-    # Install every catalog package for real. curio.weather, ai.urbanlab.uhvi and
+    # Install every catalog package for real. curio.weather, ai.utk.uhvi and
     # curio.streetvision each shell out to pip (rasterio / geopandas / torch), so
     # the response wait is generous by design rather than optimistic.
     installable = [

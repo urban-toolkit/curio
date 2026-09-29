@@ -21,7 +21,7 @@ test asserts.
 
 ``curio.example-ui@1`` is the declared package because it has zero python deps,
 so no pip runs. Never point this at ``curio.weather@1``,
-``ai.urbanlab.uhvi@1`` or ``curio.streetvision@1``: those pull
+``ai.utk.uhvi@1`` or ``curio.streetvision@1``: those pull
 rasterio/geopandas/torch through a synchronous 30-minute-capped pip call, and the
 resulting user-store copy makes every later ``curio start`` re-resolve them.
 

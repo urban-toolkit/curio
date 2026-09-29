@@ -26,7 +26,7 @@ from .utils import (
 
 #: Shipped in packages/, referenced by no example, so no seeder installs it.
 PACKAGE_NAME = "Urban Heat Vulnerability Index"
-PACKAGE_DIR = "ai.urbanlab.uhvi@1"
+PACKAGE_DIR = "ai.utk.uhvi@1"
 
 #: A built-in from the roster; readable without ever being imported.
 AGENT_NAME = "Node Researcher"
@@ -71,7 +71,7 @@ def test_a_catalog_only_package_exports_from_view_details(app_frontend, current_
     with zipfile.ZipFile(download.path()) as zf:
         names = zf.namelist()
         manifest = json.loads(zf.read("manifest.json"))
-    assert manifest["id"] == "ai.urbanlab.uhvi", manifest
+    assert manifest["id"] == "ai.utk.uhvi", manifest
     assert "integrity.json" not in names
     # No error line appeared under the header.
     assert dialog.locator("text=/is not installed|Export failed/i").count() == 0

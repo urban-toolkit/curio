@@ -15,7 +15,7 @@ different mechanism with a different fix (``disableDotRule`` in
 a deployed Curio actually uses and the one nothing exercised end to end.
 
 The bug both fixes address: dataset ids are dotted, so
-``/catalog/data/data.urbanlab.acs-neighborhood-profile`` has a "file extension"
+``/catalog/data/data.utk.acs-neighborhood-profile`` has a "file extension"
 as far as ``os.path.splitext`` is concerned. The old guard read that as a
 request for an asset, skipped the rewrite, and the deployed app answered a bare
 404 to every bookmarked or shared dataset link.
@@ -34,7 +34,7 @@ from .utils import REPO_ROOT
 DIST = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "dist")
 
 #: A dotted id from the committed catalog — the shape that used to 404.
-DOTTED_DATASET = "data.urbanlab.acs-neighborhood-profile"
+DOTTED_DATASET = "data.utk.acs-neighborhood-profile"
 
 #: Any project id: the route only has to reach the app, and the loader's own
 #: failure path is covered by test_dashboard_page_e2e.py.

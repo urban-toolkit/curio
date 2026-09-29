@@ -8,7 +8,7 @@ import {
 describe('unversionedNodeType', () => {
   test('strips a trailing @<major>', () => {
     expect(unversionedNodeType('curio.builtin/vis-vega@1')).toBe('curio.builtin/vis-vega');
-    expect(unversionedNodeType('ai.urbanlab.uhvi/uhvi-load@12')).toBe('ai.urbanlab.uhvi/uhvi-load');
+    expect(unversionedNodeType('ai.utk.uhvi/uhvi-load@12')).toBe('ai.utk.uhvi/uhvi-load');
   });
 
   test('returns non-canonical strings unchanged', () => {

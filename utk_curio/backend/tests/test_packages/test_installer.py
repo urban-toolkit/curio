@@ -241,11 +241,11 @@ def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
 
     # The shipped catalog at the repo root. An assert, not a skip: when the
     # fixture moves, this should fail rather than quietly stop running.
-    fixture = Path(__file__).resolve().parents[4] / "packages" / "ai.urbanlab.uhvi@1"
+    fixture = Path(__file__).resolve().parents[4] / "packages" / "ai.utk.uhvi@1"
     assert fixture.is_dir(), f"missing catalog package {fixture}"
     result = install_packageage_from_directory("guest", fixture)
-    assert result.manifest.package_id == "ai.urbanlab.uhvi"
-    target = package_dir("guest", "ai.urbanlab.uhvi@1")
+    assert result.manifest.package_id == "ai.utk.uhvi"
+    target = package_dir("guest", "ai.utk.uhvi@1")
     manifest = json.loads((target / "manifest.json").read_text())
     loader = next(t for t in manifest["templates"] if t["id"] == "uhvi-load")
     assert (target / loader["source"]).is_file()

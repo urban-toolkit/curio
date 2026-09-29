@@ -68,7 +68,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_ROWS = 3  # rows in the committed CSV fixture
 
 PACKAGE_NAME = "E2E Roundtrip"

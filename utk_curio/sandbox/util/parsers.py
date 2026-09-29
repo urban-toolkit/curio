@@ -183,7 +183,7 @@ def parse_geodataframe(data_value):
 
 def parse_raster(data_value):
     # rasterio is optional — provided by raster-capable packages
-    # (curio.weather, ai.urbanlab.uhvi), not by curio.builtin.
+    # (curio.weather, ai.utk.uhvi), not by curio.builtin.
     import rasterio
     return rasterio.open(data_value)
 

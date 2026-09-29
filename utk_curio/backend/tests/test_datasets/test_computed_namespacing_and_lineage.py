@@ -84,7 +84,7 @@ def test_segment_extraction_round_trips_both_forms():
     assert node_segment_from_computed_id(f"{ns}@1") == "node-5"
     assert dataflow_segment_from_computed_id(f"{ns}@1") == "proj-xyz"
     # Non-computed inputs.
-    assert node_segment_from_computed_id("it.urbanlab.milan") is None
+    assert node_segment_from_computed_id("it.utk.milan") is None
     assert dataflow_segment_from_computed_id(None) is None
 
 

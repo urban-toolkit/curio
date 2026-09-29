@@ -65,7 +65,7 @@
     "sources": {
       "datasetIds": [
         "data.cityofchicago.green-roofs",
-        "data.urbanlab.chicago-boundary"
+        "data.utk.chicago-boundary"
       ],
       "paths": [],
       "urls": []

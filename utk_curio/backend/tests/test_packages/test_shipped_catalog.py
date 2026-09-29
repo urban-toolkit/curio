@@ -84,7 +84,7 @@ def test_declared_sources_and_behavior_bundle_exist(package_root: Path):
 # *uninstallable* - and the install dialog's only advice ("uninstall one of the
 # conflicting packages") cannot be followed.
 #
-# ``ai.urbanlab.uhvi@1`` shipped that way: ``geopandas ^0.14`` against builtin's
+# ``ai.utk.uhvi@1`` shipped that way: ``geopandas ^0.14`` against builtin's
 # ``>=1.1.3``. Generalized here so the next package with a stray upper bound
 # fails in CI instead of in a user's install dialog.
 

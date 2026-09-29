@@ -9,7 +9,7 @@ import {
  * The node-kind registry.
  *
  * Keyed by canonical type string. Versioned ids like
- * `"ai.urbanlab.uhvi/uhvi-load@1"` are stored as-is. A secondary
+ * `"ai.utk.uhvi/uhvi-load@1"` are stored as-is. A secondary
  * **unversioned index** tracks the installed majors per
  * `<packageId>/<templateId>` so a lookup by the unversioned form resolves to
  * the latest installed major — the default referencing convention for

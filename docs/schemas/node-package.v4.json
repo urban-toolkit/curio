@@ -15,7 +15,7 @@
     "id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]$",
-      "description": "Reverse-domain package id, e.g. 'ai.urbanlab.uhvi' or 'curio.builtin'."
+      "description": "Reverse-domain package id, e.g. 'ai.utk.uhvi' or 'curio.builtin'."
     },
     "version": {
       "type": "string",

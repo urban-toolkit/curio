@@ -13,7 +13,7 @@
     "datasets": [
       "data.cityofchicago.green-roofs",
       "data.projectsidewalk.chicago-labels",
-      "data.urbanlab.chicago-boundary"
+      "data.utk.chicago-boundary"
     ],
     "packages": [],
     "paths": []
@@ -161,7 +161,7 @@
       "datasetIds": [
         "data.cityofchicago.green-roofs",
         "data.projectsidewalk.chicago-labels",
-        "data.urbanlab.chicago-boundary"
+        "data.utk.chicago-boundary"
       ],
       "paths": [],
       "urls": []
@@ -208,7 +208,7 @@
         "licence": "Project Sidewalk API terms"
       },
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
+        "datasetId": "data.utk.chicago-boundary",
         "licence": "Open Data"
       }
     ]

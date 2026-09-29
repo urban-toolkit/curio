@@ -21,7 +21,7 @@ addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs
 | Dataset | Id | Format | Size |
 |---|---|---|---|
 | Chicago Green Roofs (rooftop inventory) | `data.cityofchicago.green-roofs` | csv | 359 rows |
-| Chicago Boundary (zip-coded neighborhood polygons) | `data.urbanlab.chicago-boundary` | geojson | 61 features |
+| Chicago Boundary (zip-coded neighborhood polygons) | `data.utk.chicago-boundary` | geojson | 61 features |
 
 Both ship in the committed catalog under `datasets/` and are already added to this dataflow, so they
 appear in the left rail's **Data Catalog** palette when you open it. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
@@ -101,7 +101,7 @@ green_roofs_df = pd.read_csv(green_roofs_path)
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
 
-chicago_path = curio_dataset_path("data.urbanlab.chicago-boundary")
+chicago_path = curio_dataset_path("data.utk.chicago-boundary")
 chicago = gpd.read_file(chicago_path)
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 

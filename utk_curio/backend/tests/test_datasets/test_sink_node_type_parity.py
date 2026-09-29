@@ -21,7 +21,7 @@ from utk_curio.backend.app.projects.services import _SINK_NODE_TYPES, _is_sink_n
 def test_unversioned_node_type_strips_major_suffix():
     assert unversioned_node_type("curio.builtin/vis-vega@1") == "curio.builtin/vis-vega"
     assert unversioned_node_type("curio.builtin/vis-vega") == "curio.builtin/vis-vega"
-    assert unversioned_node_type("ai.urbanlab.uhvi/uhvi-load@12") == "ai.urbanlab.uhvi/uhvi-load"
+    assert unversioned_node_type("ai.utk.uhvi/uhvi-load@12") == "ai.utk.uhvi/uhvi-load"
     # Only a trailing @<major> is stripped; other @s stay.
     assert unversioned_node_type("weird@name") == "weird@name"
     assert unversioned_node_type(None) is None

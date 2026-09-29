@@ -11,9 +11,9 @@
   "context": null,
   "required": {
     "datasets": [
-      "data.urbanlab.milan-census-gt65",
-      "data.urbanlab.milan-era5-weather",
-      "data.urbanlab.milan-mrt"
+      "data.utk.milan-census-gt65",
+      "data.utk.milan-era5-weather",
+      "data.utk.milan-mrt"
     ],
     "packages": [
       "curio.weather@1"
@@ -193,9 +193,9 @@
     ],
     "sources": {
       "datasetIds": [
-        "data.urbanlab.milan-census-gt65",
-        "data.urbanlab.milan-era5-weather",
-        "data.urbanlab.milan-mrt"
+        "data.utk.milan-census-gt65",
+        "data.utk.milan-era5-weather",
+        "data.utk.milan-mrt"
       ],
       "paths": [],
       "urls": []
@@ -277,15 +277,15 @@
     "licence": "MIT (this repository)",
     "sourceLicences": [
       {
-        "datasetId": "data.urbanlab.milan-census-gt65",
+        "datasetId": "data.utk.milan-census-gt65",
         "licence": "ISTAT open data"
       },
       {
-        "datasetId": "data.urbanlab.milan-era5-weather",
+        "datasetId": "data.utk.milan-era5-weather",
         "licence": "Copernicus licence"
       },
       {
-        "datasetId": "data.urbanlab.milan-mrt",
+        "datasetId": "data.utk.milan-mrt",
         "licence": "Research use"
       }
     ],

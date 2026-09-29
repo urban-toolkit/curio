@@ -78,7 +78,7 @@ if TYPE_CHECKING:
 # The CSV hub dataset, for the same reason test_canvas_authoring_e2e.py picks it:
 # its generated loader only needs pandas. Nothing here runs a node, but keeping
 # the two tests on the same dataset keeps the install path identical.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_TITLE = "ACS Neighborhood Profile"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'

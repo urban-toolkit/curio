@@ -80,7 +80,7 @@ def test_seeds_only_builtin_on_first_run(tmp_curio, real_fixtures_root):
     assert seeded, "expected the built-in package to seed"
     installed = _installed_names()
     assert any(name.startswith("curio.builtin@") for name in installed)
-    assert "ai.urbanlab.uhvi@1" not in installed, (
+    assert "ai.utk.uhvi@1" not in installed, (
         "third-party catalog packages must not auto-install"
     )
 
@@ -89,16 +89,16 @@ def test_seed_after_uninstall_of_third_party_remains_no_op(tmp_curio, real_fixtu
     """A third-party package that the user never installed (no auto-seed)
     must continue not to install on subsequent boots."""
     seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    assert "ai.utk.uhvi@1" not in _installed_names()
     # Second seed: still not installed.
     second = seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in second
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    assert "ai.utk.uhvi@1" not in second
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
     # Now uninstall and confirm the tombstone is sticky across restarts.
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
+    uninstall_packageage("guest", "ai.utk.uhvi@1")
     seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
 
 def test_uninstall_without_prior_state_is_still_sticky(tmp_curio, real_fixtures_root):
@@ -107,20 +107,20 @@ def test_uninstall_without_prior_state_is_still_sticky(tmp_curio, real_fixtures_
     (so the seeder never had a chance to adopt the copy). The
     tombstone's fixture_mtime is ``None`` but the seeder still respects
     the uninstall — the user's intent wins over silent re-seeding."""
-    src = real_fixtures_root / "ai.urbanlab.uhvi@1"
+    src = real_fixtures_root / "ai.utk.uhvi@1"
     dest = user_packageages_dir("guest") / src.name
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest)
 
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
-    rec = _state()["ai.urbanlab.uhvi@1"]
+    uninstall_packageage("guest", "ai.utk.uhvi@1")
+    rec = _state()["ai.utk.uhvi@1"]
     assert rec.get("uninstalledAt") is not None
     assert "fixtureMtime" not in rec, (
         "no prior seeded record means we cannot anchor the tombstone"
     )
 
     seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root
     # Forcing a re-seed (uninstall + CURIO_RESEED_PACKAGES) restores a
     # well-formed marker on disk, proving the corrupt file is recoverable
     # without manual intervention.
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
+    uninstall_packageage("guest", "ai.utk.uhvi@1")
     from utk_curio.backend.app.packages import seed as packages_seed
     original = packages_seed.CURIO_RESEED_PACKAGES
     packages_seed.CURIO_RESEED_PACKAGES = True
@@ -222,7 +222,7 @@ def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_example
     assert "curio.weather@1" in installed
     assert any(name.startswith("curio.builtin@") for name in installed)
     # Still an allowlist, not a full-catalog walk.
-    assert "ai.urbanlab.uhvi@1" not in installed
+    assert "ai.utk.uhvi@1" not in installed
 
 
 def test_no_examples_flag_keeps_weather_out(tmp_curio, real_fixtures_root):
@@ -734,7 +734,7 @@ def test_a_stale_installed_package_is_refreshed_from_the_catalog(
     tmp_curio, real_fixtures_root,
 ):
     """The #194 delivery bug, at the unit layer."""
-    dir_name = "ai.urbanlab.uhvi@1"
+    dir_name = "ai.utk.uhvi@1"
     install_packageage_from_directory("guest", real_fixtures_root / dir_name)
     assert dir_name in _installed_names()
 
@@ -774,7 +774,7 @@ def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
     because the obvious implementation (widen the seed plan to the whole
     catalog) would resurrect it.
     """
-    dir_name = "ai.urbanlab.uhvi@1"
+    dir_name = "ai.utk.uhvi@1"
     install_packageage_from_directory("guest", real_fixtures_root / dir_name)
     uninstall_packageage("guest", dir_name)
     assert dir_name not in _installed_names()

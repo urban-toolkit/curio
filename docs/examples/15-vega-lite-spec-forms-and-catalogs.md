@@ -32,7 +32,7 @@ anywhere without editing paths.
 
 | Dataset | Id | Format |
 |---|---|---|
-| Chicago Boundary (ZIP polygons) | `data.urbanlab.chicago-boundary` | geojson |
+| Chicago Boundary (ZIP polygons) | `data.utk.chicago-boundary` | geojson |
 | Chicago Green Roofs | `data.cityofchicago.green-roofs` | csv |
 | Project Sidewalk labels | `data.projectsidewalk.chicago-labels` | parquet |
 

@@ -79,7 +79,7 @@ def test_usage_lists_dataflows_for_computed_dataset_with_downstream(client, user
 def test_usage_lists_dataflow_for_node_bound_dataset(client, user_and_token):
     """A dataset dragged onto a (non-loading) node counts that node as a consumer."""
     _, token = user_and_token
-    dataset_id = "it.urbanlab.example"
+    dataset_id = "it.utk.example"
     flow = _create_project(client, token, "Bound", {
         "dataflow": {
             "name": "Bound",
@@ -102,7 +102,7 @@ def test_usage_excludes_unconnected_data_loading_box(client, user_and_token):
     """Dropping a dataset's Data Loading box (a carrier, not a consumer) lists the
     dataflow but reports 0 consumers until the loader is wired downstream."""
     _, token = user_and_token
-    dataset_id = "it.urbanlab.example"
+    dataset_id = "it.utk.example"
 
     # Loader alone → dataflow uses the dataset, but no downstream consumer.
     flow_alone = _create_project(client, token, "Loader Only", {

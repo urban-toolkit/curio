@@ -44,9 +44,9 @@ addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
-| Milan Mean Radiant Temperature | `data.urbanlab.milan-mrt` | geotiff | 1 band, 4632x4142 |
-| Milan ERA5 Hourly Weather | `data.urbanlab.milan-era5-weather` | csv | 24 rows |
-| Milan Census Polygons (over 65) | `data.urbanlab.milan-census-gt65` | geojson | 6,085 features |
+| Milan Mean Radiant Temperature | `data.utk.milan-mrt` | geotiff | 1 band, 4632x4142 |
+| Milan ERA5 Hourly Weather | `data.utk.milan-era5-weather` | csv | 24 rows |
+| Milan Census Polygons (over 65) | `data.utk.milan-census-gt65` | geojson | 6,085 features |
 
 All three ship in the committed catalog under `datasets/` and are already added to this dataflow.
 
@@ -67,7 +67,7 @@ Read the GeoTIFF directly with `rasterio` and hand the dataset object downstream
 
 ```python
 import rasterio
-dataset_path = curio_dataset_path("data.urbanlab.milan-mrt")
+dataset_path = curio_dataset_path("data.utk.milan-mrt")
 src = rasterio.open(dataset_path)
 return src
 ```
@@ -78,7 +78,7 @@ The hourly ERA5 file gives air temperature (Td), wind speed (Wind), and relative
 
 ```python
 import pandas as pd
-dataset_path = curio_dataset_path("data.urbanlab.milan-era5-weather")
+dataset_path = curio_dataset_path("data.utk.milan-era5-weather")
 sensor = pd.read_csv(dataset_path)
 return sensor
 ```
@@ -148,7 +148,7 @@ A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` co
 
 ```python
 import geopandas as gpd
-dataset_path = curio_dataset_path("data.urbanlab.milan-census-gt65")
+dataset_path = curio_dataset_path("data.utk.milan-census-gt65")
 gdf = gpd.read_file(dataset_path)
 return gdf
 ```

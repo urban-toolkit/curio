@@ -24,7 +24,7 @@ module.exports = {
   devServer: {
     // `disableDotRule` because connect-history-api-fallback otherwise refuses to
     // rewrite any path whose last segment contains a dot, and every dataset id is
-    // dotted (data.urbanlab.acs-neighborhood-profile). Without it a hard load of
+    // dotted (data.utk.acs-neighborhood-profile). Without it a hard load of
     // /catalog/data/<id> falls through to Express and answers "Cannot GET".
     historyApiFallback: { disableDotRule: true },
     client: {

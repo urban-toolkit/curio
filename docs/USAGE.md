@@ -350,7 +350,7 @@ No conversion step is needed:
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+gdf = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
 return gdf
 ```
 
@@ -525,7 +525,7 @@ console output is not restored: no saved dataset carries it.
 
 ## Data Catalog
 
-Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.urbanlab.chicago-boundary@1`). Curio ships twenty datasets in the committed catalog at `<repo_root>/datasets/`.
+Datasets have their own catalog, built on the same model as the Node Catalog: a **dataset** is a folder with a `manifest.json` and its data file, identified as `<datasetId>@<major>` (e.g. `data.utk.chicago-boundary@1`). Curio ships twenty datasets in the committed catalog at `<repo_root>/datasets/`.
 
 Three surfaces manage datasets:
 

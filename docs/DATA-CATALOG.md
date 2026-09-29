@@ -24,7 +24,7 @@ This guide is in seven parts, plus operator notes:
 A **dataset** in Curio is a small self-contained folder, shaped like a node package, identified by a reverse-domain id and a major version:
 
 ```
-<datasetId>@<major>     e.g.   data.urbanlab.chicago-boundary@1
+<datasetId>@<major>     e.g.   data.utk.chicago-boundary@1
                                computed.a1b2c3.node-7@1
                                imported.xf3c91a08b2d4@1
 ```
@@ -32,14 +32,14 @@ A **dataset** in Curio is a small self-contained folder, shaped like a node pack
 The folder holds a `manifest.json` (the contract) and the data itself under `data/`:
 
 ```
-data.urbanlab.chicago-boundary@1/
+data.utk.chicago-boundary@1/
   manifest.json
   data/chicago.geojson
 ```
 
 ### What ships with Curio
 
-Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.urbanlab.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
+Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
 
 ### Origins
 
@@ -59,7 +59,7 @@ Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 c
 
 | Kind | Id form | Note |
 |---|---|---|
-| Shipped | `data.urbanlab.chicago-boundary` | Written by hand in the manifest. |
+| Shipped | `data.utk.chicago-boundary` | Written by hand in the manifest. |
 | Imported | `imported.x<uuid12>` | New for every import: uploading the same bytes twice creates **two** datasets. |
 | Computed | `computed.<dataflowId>.<nodeId>` | One per node per dataflow, so the same node id in two dataflows never collides. |
 | OSM PBF group | `osm.x<uuid8>` | The parent of one import's layers. |

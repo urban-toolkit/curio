@@ -454,7 +454,7 @@ def run_spa_static_server(directory: str, port: int) -> None:
             fs_path = os.path.join(dist_dir, candidate)
             # Fall back on what the client asked for, not on whether the path
             # looks like it has a file extension. ``splitext`` reads a dotted
-            # dataset id - ``data.urbanlab.acs-neighborhood-profile`` - as the
+            # dataset id - ``data.utk.acs-neighborhood-profile`` - as the
             # extension ``.acs-neighborhood-profile``, so an extension test
             # refuses exactly the deep links this fallback exists to serve. A
             # browser navigation sends ``Accept: text/html``; a missing bundle

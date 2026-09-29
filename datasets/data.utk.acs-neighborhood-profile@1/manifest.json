@@ -7,7 +7,7 @@
   "dataFile": "data/acs-neighborhood-profile.csv",
   "description": "Tabular demographic indicators prepared for urban analysis. Sample extract: 3 of the full dataset's rows.",
   "format": "csv",
-  "id": "data.urbanlab.acs-neighborhood-profile",
+  "id": "data.utk.acs-neighborhood-profile",
   "license": "Public domain",
   "name": "ACS Neighborhood Profile",
   "publisher": "Data Catalog",

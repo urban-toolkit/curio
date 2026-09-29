@@ -70,7 +70,7 @@ describe("packageIdFromNodeType", () => {
 describe("packageDisplayName", () => {
   it("turns a package id into something readable", () => {
     expect(packageDisplayName("curio.streetvision")).toBe("Streetvision");
-    expect(packageDisplayName("ai.urbanlab.uhvi")).toBe("Uhvi");
+    expect(packageDisplayName("ai.utk.uhvi")).toBe("Uhvi");
     expect(packageDisplayName("curio.example-ui")).toBe("Example Ui");
   });
 });

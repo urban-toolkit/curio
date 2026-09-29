@@ -188,7 +188,7 @@ def test_seeded_datasets_carry_their_real_metadata():
     ``dirName`` and whose format defaults to ``csv``. After seeding, the store
     manifest is the real one - so this is the difference between a palette row
     reading "Chicago Green Roofs / geojson / 61 features" and one reading
-    "data.urbanlab.chicago-boundary@1 / csv / (nothing)".
+    "data.utk.chicago-boundary@1 / csv / (nothing)".
     """
     seed_example_datasets(USER_KEY)
 

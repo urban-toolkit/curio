@@ -21,11 +21,11 @@
   "permissions": [
     "filesystem.read"
   ],
-  "publisher": "Urban Analytics Lab",
+  "publisher": "Curio",
   "templates": [
     {
       "category": "data",
-      "description": "Open the `data.urbanlab.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset for downstream zonal stats / UTCI computation.",
+      "description": "Open the `data.utk.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset for downstream zonal stats / UTCI computation.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -48,7 +48,7 @@
     },
     {
       "category": "data",
-      "description": "Load the `data.urbanlab.milan-era5-weather` CSV from the Data Catalog (hourly ERA5 Td / Wind / RH per hour 'it') so a downstream UTCI step can pick the matching timestamp.",
+      "description": "Load the `data.utk.milan-era5-weather` CSV from the Data Catalog (hourly ERA5 Td / Wind / RH per hour 'it') so a downstream UTCI step can pick the matching timestamp.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -71,7 +71,7 @@
     },
     {
       "category": "data",
-      "description": "Load the `data.urbanlab.milan-census-gt65` GeoJSON from the Data Catalog (Milan census tracts trimmed to the gt_65 column) as a GeoDataFrame so it can be reprojected and merged with UTCI.",
+      "description": "Load the `data.utk.milan-census-gt65` GeoJSON from the Data Catalog (Milan census tracts trimmed to the gt_65 column) as a GeoDataFrame so it can be reprojected and merged with UTCI.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

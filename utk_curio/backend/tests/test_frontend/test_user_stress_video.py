@@ -134,7 +134,7 @@ DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
 CARD = 'article:not([role="status"])'
 
-GEO_DATASET = "data.urbanlab.chicago-boundary"
+GEO_DATASET = "data.utk.chicago-boundary"
 
 PKG_DIR = "curio.example-ui@1"
 PKG_NAME = "Example: Custom UI Node"

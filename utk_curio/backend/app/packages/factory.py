@@ -8,10 +8,10 @@ A draft looks like::
 
     {
       "manifest": {                  # full manifest schema, validated below
-        "id": "ai.urbanlab.uhvi",
+        "id": "ai.utk.uhvi",
         "version": "1.0.0",
         "name": "UHVI",
-        "publisher": "Urban Lab",
+        "publisher": "Curio",
         "description": "...",
         "license": "MIT",
         "compatibility": { "major": 1, "curioRuntime": ">=0.5.0" },
