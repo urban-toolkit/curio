@@ -126,7 +126,7 @@ Per dataflow route, inside `MainCanvasRoute` in the same file:
 9. `PackagePaletteProvider`
 10. `DatasetPaletteProvider`
 11. `MainCanvas`
-12. `AgentAttachmentsProvider`: the attached agents, mounted in `MainCanvas.tsx`
+12. `AgentAttachmentsProvider` (`src/providers/agents/`): the attached agents, mounted in `MainCanvas.tsx`
     rather than `index.tsx` because it needs React Flow's instance and only
     applies where there is a dataflow to attach agents to
 
@@ -516,7 +516,7 @@ A node the browser renders (Vega-Lite, Autark) can run without an error and stil
 
 A renderer that already knows why nothing was drawn (a `geoshape` over data with no geometry column, for example) passes that sentence as `explanation`, and a `nothing-drawn` message carries it in place of the generic reason. One that knows why its input cannot be drawn (a `DataFrame` with no geometry column, a refused input type) passes `inputProblem`: a `no-input-rows` message carries it, the upstream stays at fault, and a partial note adds it. A count the renderer could not make stays `undefined`, and an uncounted render gets no verdict. The default Autark data path is the common case: the sandbox hands back a DuckDB artifact reference rather than the layers, so a data-only node there lists the tables it loaded without claiming anything about their rows. Autark counts are taken before empty sources are dropped, so an empty table is still known to exist.
 
-The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once and generated for the frontend (see [Generated Contracts](#generated-contracts)).
+The harness reads the cause from the `kind`, never from the message. [`result_shape.py`](../utk_curio/backend/app/agents/domain/result_shape.py) asks `is_document_at_fault`, which reads the same table: a cause at fault turns a valid document's round into a failed round and asks for a correction, `no-input-rows` leaves the document untouched and reports the upstream, and a cause the backend does not recognize is treated as at fault. The prefix, the cause names and the at-fault table are defined once and generated for the frontend (see [Generated Contracts](#generated-contracts)).
 
 ### Running Python Code
 
@@ -817,7 +817,7 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 Some contracts are read on both sides of the stack: by Python and TypeScript, or by the code and a model prompt. Each one is defined once and every other copy is generated from it, so the copies cannot disagree.
 
-- **Source module.** [`utk_curio/backend/app/agents/contracts.py`](../utk_curio/backend/app/agents/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
+- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
 - **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
 - **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
 - **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`default_preamble.template.txt`), whose `{{...}}` fields are the generated parts.
@@ -859,17 +859,17 @@ Every system turn an agent receives is built by one function, `contracts.compose
 
 A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots: it is tool-less and depth-1.
 
-The slots reach the provider apart. `contracts.system_message` puts the joined text in the system message's `content` and the slots beside it, and [`providers.py`](../utk_curio/backend/app/agents/providers.py) maps them per provider: Anthropic receives one text block per slot, with the preamble marked cacheable; Gemini a list of system instructions; an OpenAI-compatible server the one joined system message, since some local chat templates reject several. A system message without slots (the title call) is sent as its text.
+The slots reach the provider apart. `contracts.system_message` puts the joined text in the system message's `content` and the slots beside it, and [`providers.py`](../utk_curio/backend/app/agents/infrastructure/providers.py) maps them per provider: Anthropic receives one text block per slot, with the preamble marked cacheable; Gemini a list of system instructions; an OpenAI-compatible server the one joined system message, since some local chat templates reject several. A system message without slots (the title call) is sent as its text.
 
 A run loop takes a typed turn, `providers.ChatTurn` (text, native tool calls, stop reason), from `run_chat_turn` or `stream_chat_turn`; a bare string is a text turn, which is what a scripted test fake returns. `run_chat_completion` and `stream_chat_completion` are the text-only forms. The services module binds the two turn functions once, and the title call goes through the same seam, so one test fake answers a whole run.
 
 Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation record keep them.
 
-What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. A model trained in Curio stays on the fenced protocol, and the scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
+What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. A model trained in Curio stays on the fenced protocol, and the scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
 
 - **Modes.** A capability that names an `instruction` (a `prompts` key) is a mode. A delegated run of it runs that prompt in place of the agent's `instruction`, and pins that prompt's digest. Two internal agents are built this way: each of the Dataflow Planner's six capabilities and the Dataflow Reader's two keeps its own prompt file (`builtin.BuiltinMode`).
 - **Scoped delegation.** A `delegatesTo` entry may name the capabilities it delegates (`{"id", "capabilities"}`). `delegation.resolve` and the delegation paragraph honour the scope, and the capability fallback never reaches an internal agent, which is reached only through a parent that delegates it.
-- **Catalog settings.** `contracts.CATALOG_SETTINGS` defines each setting once: its key, JSON Schema, shipped default and renderer. [`catalog_settings.py`](../utk_curio/backend/app/agents/catalog_settings.py) stores the values an account changed in `.curio/users/<u>/catalog-settings.json` (the read never raises: a missing, corrupt or invalid value reads as the default) and renders the configuration slot for the keys a run reads, `inputs.requiredConfig` for every run and a delegated capability's own `requiredConfig`. A key no setting defines is skipped with a warning. The slot's digest is pinned as `configurationSha256`.
+- **Catalog settings.** `contracts.CATALOG_SETTINGS` defines each setting once: its key, JSON Schema, shipped default and renderer. [`catalog_settings.py`](../utk_curio/backend/app/agents/repositories/catalog_settings.py) stores the values an account changed in `.curio/users/<u>/catalog-settings.json` (the read never raises: a missing, corrupt or invalid value reads as the default) and renders the configuration slot for the keys a run reads, `inputs.requiredConfig` for every run and a delegated capability's own `requiredConfig`. A key no setting defines is skipped with a warning. The slot's digest is pinned as `configurationSha256`.
 
 **Native tools.** An attached run whose configuration calls tools natively is offered its grants and its delegates as tools (`tools.native_tools`): each contract with the JSON Schema of its params (`ToolContract.parameters`), named by its id with each dot written as two underscores (`dataflow__read`), and one `delegate` tool whose `capability` lists what the agent may delegate. Its system turn carries a line on calling them in place of the tool list and the `toolRequest` syntax, and its delegation paragraph names the `delegate` tool in place of the `delegateRequest` syntax.
 
@@ -879,7 +879,7 @@ What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/bac
 - **The fallback.** An endpoint that answers a request offering tools with a 400 or 422 (`providers.NativeToolsRefused`) gets the same round again on the fenced protocol. `services._RunConversation` keeps the fenced form of every round beside the native one, so the run carries on from where it was. Once that fenced call succeeds, the refusal is recorded for an endpoint the table does not know (`chat_capabilities.record_native_refusal`), and the next run starts fenced.
 - **Records.** The execution record pins `toolProtocol` (`native` or `fenced`) for a run that can call anything, and `nativeToolsRefused` after a fallback. Sessions keep text only, so a conversation moves between protocols and configurations freely. A delegated run is tool-less, so it never changes protocol.
 
-**Reply schemas.** A delegated `node.content.generate` run for a node whose grammar (the template roster's `grammarId`) is `autk-grammar`, by a definition that declares an `autk-grammar` prompt, on a configuration that takes a reply schema, holds the reply to the Autark document's schema ([`reply_schemas.py`](../utk_curio/backend/app/agents/reply_schemas.py)). The run's instruction is that prompt (`new_content_autk_prompt.txt` for Node Content Builder), and the pins record the `replySchema` by name and the prompt's `promptSha256`.
+**Reply schemas.** A delegated `node.content.generate` run for a node whose grammar (the template roster's `grammarId`) is `autk-grammar`, by a definition that declares an `autk-grammar` prompt, on a configuration that takes a reply schema, holds the reply to the Autark document's schema ([`reply_schemas.py`](../utk_curio/backend/app/agents/application/reply_schemas.py)). The run's instruction is that prompt (`new_content_autk_prompt.txt` for Node Content Builder), and the pins record the `replySchema` by name and the prompt's `promptSha256`.
 
 - **The projection.** Both providers take a subset of JSON Schema, so what is sent is projected from the vendored schema when first asked for: objects closed; a map as a list of `{key, value}` entries; an open object, and a reference into a recursive definition (a GeoJSON geometry), as a JSON string; the conditional unions as `anyOf`; a constant as a one-value enum; every other keyword dropped. OpenAI's strict mode also requires every key, so optional ones may be null; Anthropic keeps them optional. Gemini's SDK schema cannot express the document, so Gemini is never sent one, and neither is an endpoint the capability table does not know.
 - **Decoding.** The reply is decoded back into the document (entries into maps, JSON strings into what they encode, nulls removed) before the correction loop sees it. The vendored schema and `document_validation` decide whether it is valid, including for what the projection drops. A test encodes every shipped Autark document into the projection, checks it validates there, and decodes it back.
@@ -891,7 +891,7 @@ What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/bac
 
 An account's LLM configurations live in one owner-only file,
 `.curio/users/<u>/llm-configs.json` (`{version, configs, default, agents}`),
-kept by [`llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py).
+kept by [`llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py).
 `agents` maps an agent id (the coordinate before `@`, so one choice covers
 every version and project) to a configuration id or `"deployment"`. Nothing
 about the choice goes into a project, attachment or manifest.
@@ -908,7 +908,7 @@ key never follows a configuration to another endpoint: an update that changes
 the type, or the URL's scheme, host or port, needs the key again or
 `clearApiKey`.
 
-[`provider_config.resolve_llm`](../utk_curio/backend/app/agents/provider_config.py)
+[`provider_config.resolve_llm`](../utk_curio/backend/app/agents/infrastructure/provider_config.py)
 is the one resolver, and it reads `config.DEFAULT_LLM_*` and `GUEST_LLM_*`
 at call time. It needs only the storage key, so it
 works in job threads:
@@ -1309,7 +1309,7 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes.py`, projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes/` (one module per resource under one blueprint, memo dev/142), projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -1435,7 +1435,7 @@ file that cannot be served as asked (no preview, or not a format Curio serves),
 
 ### Agent Routes
 
-Defined in `backend/app/agents/routes.py` over `backend/app/agents/services.py`; all
+Defined in `backend/app/agents/routes/` (one module per resource) over the `backend/app/agents/service.py` facade; all
 require authentication, and every project endpoint checks ownership (404 when the
 project is not the caller's). See [AGENT-CATALOG.md](AGENT-CATALOG.md) for the
 user-facing model, the manifest contract, and the storage layers.
@@ -1554,6 +1554,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` — THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe — the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime — the registry consumes the layer, never the reverse |
 | `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport` — the one sideload pathway — and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog — a rendering surface over `usePackageCatalog({ kind: "project" })` since dev/143; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
+| `src/services/agents/` | The agents service layer (memo dev/142, re-derived on this branch): `agentsApi` + `agentStream` (the only two agent transports), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
+| `src/providers/agents/` | `AgentAttachmentsProvider` composing `useAgentSession`, `useAgentProposals`, `useAgentSolve`, `useAgentSimulation` and `useAgentNodeRuns`; imported from its barrel, `providers/agents` |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
 | `src/components/AiSettingsModal.tsx` | AI Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
@@ -1583,28 +1585,41 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
-| `backend/app/agents/routes.py` | `/api/agents/*` endpoints (catalog, imports, publications, per-dataflow, attachments, runs) |
-| `backend/app/agents/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
+| `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`, `training`, `evaluation`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
+| `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
-| `backend/app/agents/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
-| `backend/app/agents/services.py` | The facade every agent route calls; owns the `requiresAgents` closure on add and the dependent check on remove |
-| `backend/app/agents/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
-| `backend/app/agents/builtin.py` | The 13 built-in agents, as a data-driven roster. `in_catalog` marks the ten catalog cards; the rest are internal: never listed, installed or attached, and resolved from the roster when delegated to. Two run their capabilities as modes (see [Agent Prompt Composition](#agent-prompt-composition)) |
-| `backend/app/agents/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
-| `backend/app/agents/imports.py` | My imports registry (`imported-agents.json`) |
-| `backend/app/agents/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |
-| `backend/app/agents/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
-| `backend/app/agents/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
-| `backend/app/agents/provider_config.py` | `resolve_llm`, the one LLM resolver, which reads the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
-| `backend/app/agents/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the store reads that carry a key |
+| `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
+| `backend/app/agents/service.py` | The facade every agent route and every other feature calls (mirrors `datasets/service.py`, `packages/service.py`); re-exports the use cases under `application/` (the old `services.py` is gone since dev/142 was re-derived on this branch; `tests/test_agents/test_layering.py` enforces the layering) |
+| `backend/app/agents/application/lifecycle.py` | Import/remove, seed, install with its `requiresAgents` closure, uninstall, publish/unpublish |
+| `backend/app/agents/application/catalog.py` | Catalog reads: facets, cards, definition bundles, the three listings, the choosable agents, the catalog settings listing |
+| `backend/app/agents/application/attachment_management.py` | Attach, detach, intent/title edits, session read/clear |
+| `backend/app/agents/application/proposals/` | Review-before-apply: `mint.py`, `apply.py`, `plans.py`, `store.py`, `cards.py`, and `acquire.py` (the data-lake acquisition) |
+| `backend/app/agents/application/turns/` | One chat turn: `attachment_turn.py`, `prepare.py`, `grounding.py`, `delegates.py`, `roster.py`, `policy.py`, `prompts.py`, `titles.py` |
+| `backend/app/agents/application/solve/` | Solve: `session.py`, `node_solve.py`, `rounds.py`, `budgets.py`, `simulation.py`, `run_node.py`, `validate.py` |
+| `backend/app/agents/application/tool_rounds.py` | The bounded tool loop and the native tool-call machinery (`_RunConversation`) |
+| `backend/app/agents/application/llm_listing.py` | `GET /api/agents/llm`: the account's configurations, the deployment's offer, what answers each agent |
+| `backend/app/agents/infrastructure/llm_configs.py` | The account's LLM configurations (`llm-configs.json`), beside the provider resolver that reads them |
+| `backend/app/agents/repositories/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
+| `backend/app/agents/repositories/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/repositories/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
+| `backend/app/agents/application/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
+| `backend/app/agents/domain/manifest.py` | Parse and validate `manifest.json` into a typed `AgentManifest`; `AGENT_CATEGORIES` |
+| `backend/app/agents/domain/builtin.py` | The 13 built-in agents, as a data-driven roster. `in_catalog` marks the ten catalog cards; the rest are internal: never listed, installed or attached, and resolved from the roster when delegated to. Two run their capabilities as modes (see [Agent Prompt Composition](#agent-prompt-composition)) |
+| `backend/app/agents/repositories/storage.py` | Definition store under `.curio/users/<u>/agents/<coord>/` |
+| `backend/app/agents/repositories/imports.py` | My imports registry (`imported-agents.json`) |
+| `backend/app/agents/repositories/catalog_settings.py` | The account's catalog settings (`catalog-settings.json`) and the configuration slot a run receives |
+| `backend/app/agents/repositories/project_agents.py` | The per-dataflow lockfile in `spec.dataflow.agents` |
+| `backend/app/agents/application/attachments.py` | Attachments in `spec.dataflow.agentAttachments`, plus their sessions |
+| `backend/app/agents/infrastructure/provider_config.py` | `resolve_llm`, the one LLM resolver, which reads the deployment's LLM settings (see [LLM Configurations and Resolution](#llm-configurations-and-resolution)) |
+| `backend/app/agents/infrastructure/llm_configs.py` | The account's LLM configurations (`llm-configs.json`): validation, the default, and the store reads that carry a key |
 | `backend/app/common/owner_only_file.py` | Owner-only JSON files: 0700 directory, 0600 file, atomic write under an exclusive lock. Used by connection keys and LLM configurations |
-| `backend/app/agents/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
-| `backend/app/agents/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
-| `backend/app/agents/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |
-| `backend/app/agents/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, trained and scripted configurations |
-| `backend/app/agents/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible. Derived from the API, never hand-authored; a suggestion, never an allowlist |
-| `backend/app/agents/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives. A reply is text, native tool calls, or an endpoint error |
-| `backend/app/agents/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
+| `backend/app/agents/infrastructure/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
+| `backend/app/agents/application/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
+| `backend/app/agents/application/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |
+| `backend/app/agents/infrastructure/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, trained and scripted configurations |
+| `backend/app/agents/repositories/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible. Derived from the API, never hand-authored; a suggestion, never an allowlist |
+| `backend/app/agents/infrastructure/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives. A reply is text, native tool calls, or an endpoint error |
+| `backend/app/agents/repositories/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 
