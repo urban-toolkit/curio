@@ -403,12 +403,12 @@ def test_package_metadata_survives_export_and_reimport(
 
     # Baseline of the filled form, captured before the click that closes it. The
     # subtitle carries the generated coordinate (curio.canvas.draft.<random>@1 -
-    # v0.1.0), which differs on every run; the suite's default tolerance (20% of
-    # pixels at 30/255 per channel) absorbs a one-line text change comfortably.
-    # Do not tighten it.
+    # v0.1.0), which differs on every run; the suite's default tolerance (10% of
+    # pixels at 30/255 per channel) absorbs that one line.
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_package_metadata_modal_filled",
+        sweep_toasts=True,
     )
 
     # Matched on the method alone, not on the coordinate: packagesApi runs the
@@ -606,6 +606,7 @@ def test_package_metadata_survives_export_and_reimport(
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_package_metadata_after_reimport",
+        sweep_toasts=True,
     )
 
     page.get_by_role("button", name="Cancel", exact=True).click()
@@ -658,6 +659,7 @@ def test_node_settings_configuration_reaches_the_saved_package(
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_node_settings_configured",
+        sweep_toasts=True,
     )
 
     dir_name = _save_as_new_package(page)

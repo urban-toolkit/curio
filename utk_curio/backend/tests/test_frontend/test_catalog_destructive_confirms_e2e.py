@@ -153,6 +153,7 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
         page, "data-remove-confirm",
         test_name="test_removing_a_dataset_from_the_dataflow_asks_first",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # Cancel really cancels: still in the dataflow afterwards.
@@ -335,6 +336,7 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
         page, "publish-offered-for-own-dataset",
         test_name="test_publish_is_offered_only_for_the_users_own_data_and_asks_first",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # 3. And publishing asks first - it is the only deployment-wide write.
@@ -494,4 +496,5 @@ def test_the_catalog_pages_use_one_button_vocabulary(
         page, "catalog-page-button-vocabulary",
         test_name="test_the_catalog_pages_use_one_button_vocabulary",
         fit_reactflow=False,
+        sweep_toasts=True,
     )

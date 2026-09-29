@@ -69,7 +69,6 @@ from .utils import (
     assert_vega_canvas_rendered,
     canvas_node_type,
     connect_nodes,
-    dismiss_toasts,
     drag_to_canvas,
     close_tools_palette,
     open_tools_palette,
@@ -314,13 +313,12 @@ def test_dataset_loads_and_feeds_a_consumer(
     # dataset. The semantic assertions above cover what each node computed;
     # this covers what the result *looks* like - most usefully that the chart
     # drew bars and the edges are actually rendered. Compared at the suite's
-    # default tolerance (20% of pixels, 30/255 per channel), which is what
-    # absorbs the per-run "Saved to file: <timestamp>_<hash>" text. The helper
-    # pins its own fitView first, so the authoring zoom above does not leak
-    # into the capture.
-    dismiss_toasts(page)
+    # default tolerance (10% of pixels, 30/255 per channel). The helper pins
+    # its own fitView first, so the authoring zoom above does not leak into the
+    # capture.
     save_workflow_test_screenshot(
         page,
         dataset.slug,
         test_name="test_dataset_loads_and_feeds_a_consumer",
+        sweep_toasts=True,
     )

@@ -35,10 +35,6 @@ class TestTheFloor:
         assert scene.clip_selector is None
         assert scene.effective_max_diff_ratio == FULL_PAGE_DIFF_FLOOR
 
-    def test_a_looser_full_page_budget_is_left_alone(self):
-        # The floor raises; it never tightens. The 0.20 default stays 0.20.
-        assert _scene(max_diff_ratio=0.20).effective_max_diff_ratio == 0.20
-
     def test_a_clipped_capture_keeps_its_declared_budget(self):
         # Here the subject fills the frame, so a tight budget bites: this is
         # where "a control disappeared" is actually caught.
@@ -93,18 +89,16 @@ class TestTheRegistry:
                 f"wide enough to hide the regression it exists to catch"
             )
 
-    def test_the_floor_is_about_twice_the_measured_cross_platform_cost(self):
-        # Measured worst case was 7.66% (project-drawer-offers-delete). A floor
-        # at less than ~1.5x that is not headroom; far above it is not a budget.
-        assert 0.12 <= FULL_PAGE_DIFF_FLOOR <= 0.20
+    def test_the_floor_clears_the_measured_cross_platform_cost(self):
+        # Measured worst case was 7.66% (project-drawer-offers-delete).
+        assert 0.0766 < FULL_PAGE_DIFF_FLOOR <= MAX_DIFF_RATIO
 
 
 class TestTheCeiling:
     """No comparison may let more than ``MAX_DIFF_RATIO`` of its pixels differ.
 
-    A map is often under a fifth of its frame, so a looser budget passes a
-    frame whose map is missing. The example dataflows with an Autark node used
-    to be compared at 35%.
+    Two CI captures of the same screen differ by at most about 1.3%, so the
+    ceiling leaves room for run-to-run noise and none for a screen that changed.
     """
 
     def test_no_scene_is_compared_looser_than_the_ceiling(self):

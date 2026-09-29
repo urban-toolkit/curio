@@ -7,7 +7,7 @@ directories.
 
 Deliberately *not* ``save_workflow_test_screenshot``: that helper's job is
 baseline diffing against committed PNGs under
-``docs/examples/dataflows/expected_outputs/`` with a 20 % tolerance. Here we want
+``docs/examples/dataflows/expected_outputs/`` with a 10 % tolerance. Here we want
 raw captures with no baseline and no pass/fail, so a review is a review rather
 than a threshold.
 

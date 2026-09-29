@@ -70,7 +70,7 @@ NATIVE_STEM = "agent-native-call"
 
 # The gallery baseline is the chat panel, not the viewport. A full-page capture
 # here was more than half canvas and left rail - nothing about the agent - and a
-# regression inside the panel then had to move 20% of a frame it only occupies
+# regression inside the panel then had to move 10% of a frame it only occupies
 # part of before the comparison would notice.
 CHAT_PANEL_SELECTOR = '[role="dialog"][aria-label^="Chat with"]' 
 

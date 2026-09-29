@@ -60,7 +60,8 @@ def _baseline(expected_dir, img=None):
 def _save(monkeypatch, capture, **kw):
     monkeypatch.setattr(e2e_utils, "_capture_full_page", capture)
     return e2e_utils.save_workflow_test_screenshot(
-        _StubPage(), "scene.json", test_name="step", fit_reactflow=False, **kw
+        _StubPage(), "scene.json", test_name="step", fit_reactflow=False,
+        allow_running=True, **kw
     )
 
 
@@ -81,7 +82,7 @@ def test_a_passing_comparison_is_recorded(dirs, monkeypatch):
     assert record["nodeid"] == NODEID
     assert record["baseline"] == "screenshot_scene_step.png"
     assert (record["mismatched"], record["total"], record["ratio"]) == (1, 100, 0.01)
-    assert (record["pixel_threshold"], record["max_diff_ratio"]) == (30, 0.20)
+    assert (record["pixel_threshold"], record["max_diff_ratio"]) == (30, 0.10)
     assert record["max_delta"] == 255
     assert record["expected_size"] == record["created_size"] == record["compared_size"] == [10, 10]
     assert record["capture"] == "full page"

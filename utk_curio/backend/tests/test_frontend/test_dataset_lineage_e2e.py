@@ -61,7 +61,6 @@ from .utils import (
     api_json,
     canvas_node_type,
     connect_nodes,
-    dismiss_toasts,
     drag_to_canvas,
     open_tools_palette,
     require_project_page,
@@ -330,13 +329,13 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     expect(card.get_by_text("1↓", exact=True)).to_be_visible(timeout=10000)
 
     # Visual baseline for the panel nobody hand-checks otherwise. Compared at the
-    # suite's default tolerance (20% of pixels, 30/255 per channel); the helper
+    # suite's default tolerance (10% of pixels, 30/255 per channel); the helper
     # pins the ReactFlow viewport through JS first, which the open modal does not
-    # block, and writes the baseline on the first run if the file is absent.
-    dismiss_toasts(page)
+    # block.
     save_workflow_test_screenshot(
         page, "dataset-lineage",
         test_name="test_wiring_a_consumer_grows_dataset_lineage",
+        sweep_toasts=True,
     )
 
     _close_details_and_drawer(page)

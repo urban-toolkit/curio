@@ -528,12 +528,11 @@ def test_save_export_import_and_run_package_nodes(
     # assertions above cover what each node computed; this covers what the
     # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
-    # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
-    # per-run "Saved to file: <timestamp>_<hash>" text in each output box.
-    # The helper fitViews first, so baseline and comparison share one viewport,
-    # and it writes the baseline on the first run if the file is absent.
+    # tolerance (10% of pixels, 30/255 per channel). The helper fitViews first,
+    # so baseline and comparison share one viewport.
     save_workflow_test_screenshot(
         page, "package-roundtrip", test_name="test_save_export_import_and_run_package_nodes",
+        sweep_toasts=True,
     )
 
 

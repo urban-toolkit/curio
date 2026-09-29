@@ -214,6 +214,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     save_workflow_test_screenshot(
         page, "workflow-deps-import",
         test_name="test_importing_a_dataflow_installs_its_declared_packages",
+        sweep_toasts=True,
     )
 
     # The point of installing: the package's nodes become usable. The palette

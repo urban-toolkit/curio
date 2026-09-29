@@ -244,18 +244,14 @@ one deliberately:
 pytest ... --mint-baselines
 ```
 
-It used to mint implicitly, which meant the first run of a new test always passed
-and silently established whatever it happened to render. Two ways that bites,
-both seen here: a capture taken against a broken build enshrines the bug as
-expected output, and the suite then defends it; and a capture taken on the wrong
-machine enshrines that machine. The macOS captures of the two #333 scenes looked
-perfect by eye and sat 6.11% and 10.05% from what CI renders, the second past its
-budget, because macOS rasterizes text with grayscale antialiasing while the
-runner uses LCD subpixel.
+A capture taken against a broken build enshrines the bug as expected output, and
+one taken on another machine enshrines that machine: macOS rasterizes text with
+grayscale antialiasing while the runner uses LCD subpixel, which puts a macOS
+capture 6-10% away from what CI renders.
 
 So mint on a build you trust, on a machine whose rendering matches CI's (a Linux
 container is the cheap way - see *Minting on Linux* below), and look at the PNG
-before committing it. Minting also refuses outright if the Rubik webfont did not
+before committing it: every node in it finished, no toast, no stray tooltip. Minting also refuses outright if the Rubik webfont did not
 load or the capture came out blank, because both produce a baseline that is wrong
 in a way no diff percentage explains.
 
@@ -319,13 +315,16 @@ RGB channels disagree, since grayscale AA keeps `R == G == B` and LCD subpixel
 does not. CI and the container both come out around 8-9%; macOS comes out at 0%.
 
 Alternatively, let CI mint: `--mint-baselines` works under xdist too (this module
-is its own xdist group, so there is no write race), which is what `d12cc220` and
-`9f27df5e` did. Commit what the runner produces.
+is its own xdist group, so there is no write race). Commit what the runner
+produces.
 
-The helper calls `_wait_for_reactflow_ready` first, so baseline and comparison
-always share one fitView'd viewport. Comparison allows 20% of pixels to differ by
-more than 30/255 per channel; that budget exists because every executed code node
-renders `Saved to file: <timestamp>_<hash>`, which changes on every run.
+The helper waits until no node on the canvas is running, so a view that draws on
+its own after its input arrives is captured drawn; pass `allow_running=True` only
+for a frame whose subject is a run in progress. It then calls
+`_wait_for_reactflow_ready`, so baseline and comparison always share one
+fitView'd viewport. Comparison allows 10% of pixels (`MAX_DIFF_RATIO`) to differ
+by more than 30/255 per channel. Two CI runs capture the same screen within about
+1.3% of each other.
 
 Pass `fit_reactflow=False` for a page that has no canvas - the projects list, the
 catalog. That fitView step waits on `.react-flow__node`, so it would otherwise
@@ -335,13 +334,13 @@ lives in an inner `overflow-y: auto` container needs two captures, at the top an
 at the bottom, to show anything moved; `test_project_page_scroll_e2e.py` does
 exactly that.
 
-Call `dismiss_toasts(page)` before capturing anything that follows a node run.
+Pass `sweep_toasts=True` when capturing anything that follows a node run.
 Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
 usually is - and a node reaching "Done" does not mean its follow-up work has
 finished: the dataset install-save is debounced 500 ms past it and answers
-seconds later, so any toast it raises lands well after the status flips. A single
-sweep dismisses nothing and the toast still makes the capture; the helper sweeps,
-waits for a quiet window, and sweeps again.
+seconds later, so any toast it raises lands well after the status flips. The
+helper sweeps, waits for a quiet window, and sweeps again, right before the
+shutter.
 
 A *"couldn't be generated"* warning is a **bug**, not routine noise (#180):
 `test_computed_json_output_e2e.py` fails on it. Sweeping is for the ordinary
@@ -373,15 +372,11 @@ and a single end-state shot would show none of them. Capture while the modal is
 still open: `_capture_full_page` uses `full_page=True` and `ModalShell` portals
 into `document.body`, so an open modal is in the shot.
 
-Non-determinism inside a capture is normal and the 20% budget is what absorbs it.
+Non-determinism inside a capture is normal and the 10% budget is what absorbs it.
 The metadata modal, for instance, renders the generated coordinate
-(`curio.canvas.draft.<random>@1`) in its subtitle, which differs on every run. Do
-not tighten the tolerance to chase a crisper diff.
+(`curio.canvas.draft.<random>@1`) in its subtitle, which differs on every run.
 
-Measured run-to-run drift for the three full-canvas baselines
-(`canvas-authoring`, `package-roundtrip`, `library-manager`) is 1.24% (library
-manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
-wide. They were captured with the executable `browser_type_launch_args` resolves
+Baselines are captured with the executable `browser_type_launch_args` resolves
 to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
 so regenerate them on the machine that will police them if that ever diverges.
 
@@ -652,7 +647,7 @@ Three things about those captures are deliberate:
 - **The report-only baseline is clipped to the panel** (`clip_selector` on
   `save_workflow_test_screenshot`). A full-page capture was more than half
   canvas and left rail - nothing about the agent - and worse, it diluted the
-  comparison: a regression inside the panel had to move 20 % of a frame it only
+  comparison: a regression inside the panel had to move 10 % of a frame it only
   partly occupies before the diff would notice.
 - **The mutate baseline closes the chat panel first.** `fitView` spreads nodes
   across the whole viewport while the panel covers its right ~44 %, so the node
@@ -717,7 +712,7 @@ Things worth knowing before adding to these:
   DB is not truncated between its parameters - it logs in once and each
   parameter stubs its own *project*. A reset would invalidate the stub user's
   token while the browser still holds the cookie.
-- Two things inside a capture vary run to run and the 20 % budget absorbs both:
+- Two things inside a capture vary run to run and the 10 % budget absorbs both:
   the run-status line's wall-clock duration, and the session id in the panel
   header. Token counts do not vary (`DEFAULT_USAGE` is fixed), so
   `2 calls x 46 = 92 tokens` is stable for a one-tool-round turn.

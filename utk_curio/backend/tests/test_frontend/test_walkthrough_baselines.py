@@ -7,10 +7,10 @@ changes a screen fails here rather than in someone's next round of user testing.
 
 Generating a baseline
 ---------------------
-``save_workflow_test_screenshot`` writes the baseline when the file is absent,
-so a first run ALWAYS passes. Generate deliberately, against a build whose behaviour
-you have already checked by hand, and look at the PNG before committing it -- a
-baseline captured against a broken build enshrines the bug as expected output.
+A missing baseline fails the run. ``--mint-baselines`` writes it: generate
+deliberately, on CI, against a build whose behaviour you have already checked by
+hand, and look at the PNG before committing it -- a baseline captured against a
+broken build enshrines the bug as expected output.
 
 Run::
 
@@ -80,7 +80,7 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     # could see it while the scene was still dying in setup.
     subject_is_a_toast = walk.clip_selector == TOAST_REGION
 
-    def snapshot(label: str) -> None:
+    def snapshot(label: str, allow_running: bool = False) -> None:
         """One committed PNG per pinned step of the journey."""
         save_workflow_test_screenshot(
             page,
@@ -90,6 +90,7 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
             fit_reactflow=walk.fit_reactflow,
             max_diff_ratio=walk.effective_max_diff_ratio,
             sweep_toasts=not subject_is_a_toast,
+            allow_running=allow_running,
         )
 
     ctx = Ctx(

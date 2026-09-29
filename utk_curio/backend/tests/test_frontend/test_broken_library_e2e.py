@@ -283,19 +283,13 @@ def test_the_libraries_dialog_names_the_library_and_the_reason(
     expect(dialog.get_by_text("✓ Already installed")).to_have_count(0)
     expect(dialog.get_by_text("✓ Installed")).to_have_count(0)
 
-    # The repo default budget rather than a tight one, because the machine that
-    # records this baseline is not the machine that polices it: e2e runs
-    # host-side on the Linux runner (CURIO_E2E_HOST), whose font metrics wrap
-    # the intro copy a line earlier, overflow the library table and add a
-    # horizontal scrollbar - 10% of a crop that is almost entirely text, with
-    # nothing behaving differently. What the dialog SAYS is asserted above, in
-    # the DOM; this capture is here for the layout around it.
+    # What the dialog SAYS is asserted above, in the DOM; this capture is here
+    # for the layout around it.
     save_workflow_test_screenshot(
         page, "broken-library",
         test_name="test_the_libraries_dialog_names_the_library_and_the_reason",
         fit_reactflow=False,
         clip_selector='[role="dialog"]',
-        max_diff_ratio=0.20,
     )
 
 

@@ -67,6 +67,7 @@ def _save(**kw):
         test_name="a-step",
         fit_reactflow=False,
         sweep_toasts=False,
+        allow_running=True,
         **kw,
     )
 
@@ -126,4 +127,29 @@ class TestWithTheFlag:
         with pytest.raises(AssertionError) as exc:
             _save()
         assert e2e_utils.WEBFONT_FAMILY in str(exc.value)
+        assert list(expected_dir.iterdir()) == []
+
+
+class _RunningNodePage:
+    """A page where one node never stops running."""
+
+    def evaluate(self, script, *a, **k):
+        return ["node-still-drawing"] if "data-id" in script else None
+
+    def wait_for_function(self, *a, **k):
+        raise e2e_utils.PlaywrightTimeoutError("still running")
+
+
+class TestARunningNode:
+    def test_it_is_not_captured(self, expected_dir, monkeypatch):
+        # A view below a node that just ran draws on its own after that node's
+        # Done; a capture in that gap would record it mid-draw.
+        monkeypatch.setattr(e2e_utils, "MINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "_capture_full_page", lambda page: _painted())
+        with pytest.raises(AssertionError) as exc:
+            e2e_utils.save_workflow_test_screenshot(
+                _RunningNodePage(), "some-scene.json", test_name="a-step",
+                fit_reactflow=False,
+            )
+        assert "node-still-drawing" in str(exc.value)
         assert list(expected_dir.iterdir()) == []

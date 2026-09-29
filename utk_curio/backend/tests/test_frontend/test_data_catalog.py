@@ -180,7 +180,7 @@ def test_drawer_lists_hub_datasets(
 
     # Visual baseline of the hub listing. Card text includes a relative
     # timestamp, which drifts slowly against a fixed manifest date; the suite's
-    # default tolerance (20% of pixels, 30/255 per channel) absorbs that.
+    # default tolerance (10% of pixels, 30/255 per channel) absorbs that.
     save_workflow_test_screenshot(
         page, "data-catalog-drawer", test_name="test_drawer_lists_hub_datasets",
     )

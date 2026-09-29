@@ -162,16 +162,19 @@ class Ctx:
     #: Pins an intermediate state as its own screenshot baseline. Supplied by
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
-    snapshot: Callable[[str], None] = lambda label: None
+    snapshot: Callable[..., None] = lambda label, allow_running=False: None
 
-    def capture(self, label: str) -> None:
+    def capture(self, label: str, *, allow_running: bool = False) -> None:
         """Pin the current screen as a baseline called *label*.
 
         For a journey whose point is a sequence -- reverting through a version
         history, stepping through a wizard -- the final frame is not the claim.
         Each step is, so each step gets its own committed PNG.
+
+        The capture waits for every node to stop running; *allow_running* is for
+        the frame whose subject is a run in progress.
         """
-        self.snapshot(label)
+        self.snapshot(label, allow_running=allow_running)
 
     # Convenience passthroughs so a walkthrough reads as prose.
     def say(self, title: str, sub: str = "", hold: float | None = None) -> None:
@@ -189,11 +192,11 @@ class Ctx:
 
 #: Smallest diff budget a FULL-PAGE capture is compared at (#333).
 #:
-#: 2x the worst cross-platform cost measured over this file's captures (7.66%),
-#: so a developer on a machine that is not the baseline's does not read a
-#: platform difference as a regression. Clipped captures keep their own,
+#: Above the worst cross-platform cost measured over this file's captures
+#: (7.66%), so a developer on a machine that is not the baseline's does not read
+#: a platform difference as a regression. Clipped captures keep their own,
 #: tighter budgets. See ``Walkthrough.effective_max_diff_ratio``.
-FULL_PAGE_DIFF_FLOOR = 0.15
+FULL_PAGE_DIFF_FLOOR = 0.10
 
 
 @dataclass
@@ -224,7 +227,7 @@ class Walkthrough:
     #: between the framing and the screenshot and the image comes out as the
     #: whole dataflow regardless.
     fit_reactflow: bool = True
-    #: Fraction of pixels allowed to differ. The helper's 0.20 default is blind
+    #: Fraction of pixels allowed to differ. The helper's 0.10 default is blind
     #: to a restored 1.5px border or a button that grew one line, so the small
     #: visual fixes tighten it hard.
     #:
@@ -267,7 +270,7 @@ class Walkthrough:
         Tightening below that floor buys nothing on a full page anyway: 3% of
         1280x720 is 27,600 pixels, and a button is ~3,000. A full-page budget
         cannot see a missing control at ANY setting a cross-platform run could
-        pass; what it catches is a page that changed wholesale, which 15% still
+        pass; what it catches is a page that changed wholesale, which 10% still
         catches. A claim that needs finer resolution needs ``clip_selector``
         (which keeps the subject filling the frame, where a tight budget bites)
         or an assertion in code, which every one of these scenes already has.
@@ -1492,7 +1495,7 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     expect(run_all).to_have_attribute("data-run-active", "true", timeout=15000)
     expect(run_all).to_have_attribute("aria-label", "Cancel run")
     wait_for_held_node_execution(page)
-    ctx.capture("run-in-flight")
+    ctx.capture("run-in-flight", allow_running=True)
     release_node_execution(page)
 
     # The Autark node refuses, and reports it - which is what releases its level.
@@ -1591,10 +1594,7 @@ PBF_EXAMPLE = "11-autark-pbf-loading.json"
          "after, it names the tables it created for the next node.",
     tests=["src/tests/adapters/node/behaviors.test.tsx"],
     example=PBF_EXAMPLE,
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline - here a full frame, 5.5% on CI - so the pin
-    # leaves room for that without waving through a real change.
+    # The claim above is asserted in code; the PNG only documents it.
     max_diff_ratio=0.08,
 )
 def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
@@ -1630,6 +1630,11 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     assert text.startswith("Loaded"), f"expected a 'Loaded N tables' line, got {text!r}"
     assert "table_osm_" in text, f"the summary should name the OSM tables, got {text!r}"
     assert before.count() == 0, "the pre-run hint should give way to the summary"
+    # The map below draws on its own once these tables reach it, after this
+    # node's Done; the frame shows it drawn.
+    map_id = first_node_of_type(PBF_EXAMPLE, "autk-grammar", containing='"map"')
+    wait_for_node_done(page, map_id, node_type="autk-grammar", timeout_ms=180000)
+    assert_autark_map_drawn(page, map_id, timeout=45000)
     ctx.focus(summary.first, hold=1500)
     ctx.say("After, it names what it made",
             "The same tables the next node's map will draw.")
@@ -1896,9 +1901,8 @@ def data_pool_scrolls_sideways(ctx: Ctx) -> None:
 # here is the part only a picture settles -- a control that should not be there,
 # a field cropped mid-word, a body that renders nothing at all.
 #
-# Every one of these tightens ``max_diff_ratio`` well below the 0.20 default:
-# at 0.20 a restyle could remove a button or re-crop a field and still pass,
-# which for these particular claims is the whole thing.
+# Every one of these clips to its subject, so the budget is spent on the
+# control or field the claim is about rather than on surrounding chrome.
 
 
 def _canvas_node(ctx: Ctx, index: int = 0):
@@ -2071,15 +2075,8 @@ def empty_nodes_say_why(ctx: Ctx) -> None:
     clip_selector='[data-curio-modal-shell="true"]',
     fit_reactflow=False,
     # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner's glyph advances differ from the Windows machine that mints
-    # the baseline by enough to wrap the description paragraph one word
-    # earlier, and from that line down every row carries different words: the
-    # same text scored 9.3% on CI (5.4% when the paragraph was shorter), a
-    # rewritten description 10.0%, so the pixel share cannot tell content
-    # from wrapping here anyway. The wrap point moves with the text, so the
-    # pin leaves room for the whole paragraph to differ; a missing or empty
-    # modal still fails by a wide margin.
-    max_diff_ratio=0.15,
+    # baseline is minted on CI, so a rewritten description is what moves it.
+    max_diff_ratio=0.10,
     # The baseline harness waits for ``.react-flow__node`` before handing over
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
     # even when it brings its own node.
@@ -2172,13 +2169,9 @@ def data_export_is_one_button(ctx: Ctx) -> None:
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
     # even when it brings its own node.
     example="01-vega-lite-chained-transforms.json",
-    # The tightest in the batch on purpose: this claim IS the pixels. At the
-    # 0.20 default the text could clip again and the baseline would still pass.
-    # The claim above is asserted in code; the PNG only documents it. The
-    # Linux runner antialiases text differently from the machine that captured
-    # the baseline - here an 8064px toolbar clip that is mostly text, 14.6% on CI - so the pin
-    # leaves room for that without waving through a real change.
-    max_diff_ratio=0.20,
+    # The claim is asserted in code as geometry (scrollWidth against
+    # clientWidth, below); the PNG documents it.
+    max_diff_ratio=0.10,
 )
 def dataflow_goal_is_readable(ctx: Ctx) -> None:
     page = ctx.page
@@ -2236,17 +2229,13 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     ctx.beat(500)
     ctx.capture("goal-filled")
 
-    # The measurement, rather than the pixels (#355). The PNG documents this
-    # scene at a 0.20 diff ratio, which its own note admits is loose enough for
-    # re-clipped text to pass; scrollWidth vs clientWidth is the same claim
-    # stated so a CSS regression cannot slip through a tolerance.
+    # The measurement, rather than the pixels (#355): scrollWidth vs
+    # clientWidth is the same claim stated so a CSS regression cannot slip
+    # through a tolerance.
     #
     # Checked with the placeholder AND with a value, because they crop for
     # different reasons: the placeholder is fixed-length copy, the value is
     # whatever the user typed.
-    # The measurement, rather than the pixels (#355). This scene's PNG sits at a
-    # 0.20 diff ratio, which its own note admits is loose enough for re-clipped
-    # text to pass, so the claim is stated as geometry instead.
     #
     # Two more agents, attached AFTER both captures: the squeeze is the reported
     # condition and one avatar does not squeeze anything, but crowding the dock
@@ -2487,7 +2476,7 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
 def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     """Two captures, clipped to the disk: the subject is one glyph's colour.
 
-    At the suite's default 0.20 an amber disk and a green one are the same
+    At the suite's default 0.10 an amber disk and a green one are the same
     picture, so a single wide shot could document the fix without ever being
     able to police it. The pair is what makes the two states legible in review.
 
@@ -2559,7 +2548,7 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     # before handing over, and an empty dataflow never produces one.
     example=PROVENANCE_EXAMPLE,
     fit_reactflow=False,
-    # A restored 30px gutter is a small number of pixels; the 0.20 default
+    # A restored 30px gutter is a small number of pixels; the 0.10 default
     # would not notice it going away again.
     max_diff_ratio=0.05,
 )
@@ -2742,13 +2731,10 @@ AGENT_CHAT_NODE_NAME = "Crash counts by hour"
     # in this scene therefore has to happen with the chat open.
     clip_selector='[data-curio-chat-header="true"]',
     fit_reactflow=False,
-    # Text on a dark ground, recorded on Windows and policed on the Linux
-    # runner, which antialiases it differently - the sibling #227 clip measured
-    # 14.6% on CI for exactly that, and this crop is almost entirely text. 0.20
-    # is not loose here the way it would be on a full panel: the subject fills
-    # the frame, so a header that went back to a uuid moves far more than a
-    # fifth of it. The claim is asserted in code below either way.
-    max_diff_ratio=0.20,
+    # The subject fills the frame, so a header that went back to a uuid moves
+    # far more than a tenth of it. The claim is asserted in code below either
+    # way.
+    max_diff_ratio=0.10,
 )
 def agent_chat_names_its_node(ctx: Ctx) -> None:
     page = ctx.page

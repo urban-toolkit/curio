@@ -885,7 +885,7 @@ def _capture_element(page: Page, selector: str):
     capture of, say, an agent chat turn is more than half static canvas and
     chrome, which does not just waste the image - it dilutes the comparison,
     since a regression inside the panel is a small fraction of the frame
-    against a 20% budget.
+    against a 10% budget.
     """
     from PIL import Image
 
@@ -1155,10 +1155,46 @@ def _assert_mintable(image, expected_path: str, page) -> None:
         )
 
 
-#: The most any screenshot comparison may let differ. A map is often under a
-#: fifth of its frame, so with a looser budget a frame whose map is missing can
-#: still pass. A comparison may ask for less, never more.
-MAX_DIFF_RATIO = 0.20
+#: The most any screenshot comparison may let differ. Two CI captures of the
+#: same screen differ by at most about 1.3%, so this leaves room for run-to-run
+#: noise and none for a screen that changed. A comparison may ask for less,
+#: never more.
+MAX_DIFF_RATIO = 0.10
+
+#: How long a capture waits for the nodes on the canvas to stop running.
+NODE_SETTLE_TIMEOUT_MS = 180_000
+
+_NO_NODE_RUNNING_JS = """(need) => {
+    const running = document.querySelectorAll(
+        '.react-flow__node [data-curio-node-status="running"]').length;
+    window.__curioIdleSamples = running ? 0 : (window.__curioIdleSamples || 0) + 1;
+    return window.__curioIdleSamples >= need;
+}"""
+
+_RUNNING_NODE_IDS_JS = """() => [...document.querySelectorAll('.react-flow__node')]
+    .filter((n) => n.querySelector('[data-curio-node-status="running"]'))
+    .map((n) => n.getAttribute('data-id'))"""
+
+
+def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEOUT_MS) -> None:
+    """Block until no node on the canvas is running, over three samples in a row.
+
+    A view below a node that just ran draws on its own once the new input
+    reaches it, which is after that node reports Done. A capture taken in that
+    gap records the view mid-draw: a spinner and an empty body. The draw starts
+    a few browser tasks after the upstream node settles, so one idle sample is
+    not enough.
+    """
+    page.evaluate("() => { window.__curioIdleSamples = 0; }")
+    try:
+        page.wait_for_function(_NO_NODE_RUNNING_JS, arg=3, polling=150, timeout=timeout_ms)
+    except PlaywrightTimeoutError:
+        running = page.evaluate(_RUNNING_NODE_IDS_JS)
+        raise AssertionError(
+            f"nodes still running after {timeout_ms} ms, so the capture would "
+            f"show them mid-run: {running}. Pass allow_running=True only when a "
+            "run in progress is what the baseline shows."
+        ) from None
 
 
 def save_workflow_test_screenshot(
@@ -1171,6 +1207,7 @@ def save_workflow_test_screenshot(
     fit_reactflow: bool = True,
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
+    allow_running: bool = False,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1178,7 +1215,7 @@ def save_workflow_test_screenshot(
     compared pixel-by-pixel against it.  Both images are resized to the
     same dimensions before comparison so layout-only size changes don't
     cause false positives.  The assertion fails when more than
-    *max_diff_ratio* (default 20%) of pixels differ by more than
+    *max_diff_ratio* (default 10%) of pixels differ by more than
     *pixel_threshold* (per-channel, 0-255).
 
     On failure the expected, actual, and diff images are attached to the
@@ -1225,6 +1262,10 @@ def save_workflow_test_screenshot(
     earlier captures of the same walkthrough, taken before the run that raised
     them, passed.
 
+    The capture waits until no node on the canvas is running, so a view that
+    draws on its own after its input arrives is photographed drawn, not
+    mid-draw. Pass *allow_running* only when a run in progress is the subject.
+
     Returns the path to the expected screenshot file.
     """
     if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
@@ -1239,6 +1280,9 @@ def save_workflow_test_screenshot(
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
     filename = f"screenshot_{stem}_{test_name}.png"
     expected_path = os.path.join(WORKFLOW_SCREENSHOT_EXPECTED_DIR, filename)
+
+    if not allow_running:
+        _wait_for_no_node_running(page)
 
     # Pin the ReactFlow viewport to a deterministic fitView before any
     # capture, so baselines and subsequent comparisons share the same
