@@ -301,7 +301,7 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
             page.locator(".react-flow__node").first.wait_for(
                 state="visible", timeout=30000
             )
-            page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+            page.get_by_role("button", name="Data menu", exact=True).click(force=True)
             page.get_by_role("button", name=menu_entry, exact=True).click(timeout=15000)
             drawer = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=menu_entry, exact=True)

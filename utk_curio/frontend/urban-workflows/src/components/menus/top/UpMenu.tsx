@@ -446,14 +446,15 @@ export default function UpMenu() {
                 {/* File */}
                 <div className={styles.dropdownWrapper}>
                     <button
-                        className={styles.button}
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="File menu"
                         data-testid="file-menu-btn"
                         onClick={(e) => {
                             e.stopPropagation();
                             toggleMenu("file");
                         }}
                     >
-                        File ⏷
+                        File
                     </button>
                     {activeMenu === "file" && (
                         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>
@@ -515,8 +516,12 @@ export default function UpMenu() {
 
                 {/* View */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("view")}>
-                        View ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="View menu"
+                        onClick={() => toggleMenu("view")}
+                    >
+                        View
                     </button>
                     {activeMenu === "view" && (
                         <div className={styles.dropDownMenu}>
@@ -539,8 +544,12 @@ export default function UpMenu() {
 
                 {/* Data */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("data")}>
-                        Data ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Data menu"
+                        onClick={() => toggleMenu("data")}
+                    >
+                        Data
                     </button>
                     {activeMenu === "data" && (
                         <div className={styles.dropDownMenu}>
@@ -600,10 +609,11 @@ export default function UpMenu() {
                 {/* Provenance */}
                 <div className={styles.dropdownWrapper}>
                     <button
-                        className={styles.button}
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Provenance menu"
                         onClick={() => toggleMenu("provenance")}
                     >
-                        Provenance ⏷
+                        Provenance
                     </button>
                     {activeMenu === "provenance" && (
                         <div className={styles.dropDownMenu}>
@@ -617,8 +627,12 @@ export default function UpMenu() {
 
                 {/* Help */}
                 <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("help")}>
-                        Help ⏷
+                    <button
+                        className={clsx(styles.button, styles.menuCaret)}
+                        aria-label="Help menu"
+                        onClick={() => toggleMenu("help")}
+                    >
+                        Help
                     </button>
                     {activeMenu === "help" && (
                         <div className={styles.dropDownMenu}>

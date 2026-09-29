@@ -122,7 +122,7 @@ def library_teardown(current_server):
 
 
 def _open_library_modal(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Installed libraries", exact=True).click()
     expect(page.get_by_role("heading", name="Installed libraries")).to_be_visible(
         timeout=10000

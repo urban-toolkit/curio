@@ -130,7 +130,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 
 def _open_drawer_from_menu(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     return _drawer(page)
 

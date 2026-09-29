@@ -155,3 +155,12 @@ test("closed, it is just the button", () => {
   expect(screen.getByTestId("share-menu-btn")).toBeTruthy();
   expect(screen.queryByText("Copy dashboard link")).toBeNull();
 });
+
+test("the button is named Share menu, and its arrow is drawn, not written", () => {
+  renderMenu({ open: false });
+
+  const trigger = screen.getByRole("button", { name: "Share menu" });
+  // A written arrow ("⏷") needs a font that has it; without one it is a box.
+  expect(trigger.textContent).toBe("Share");
+  expect(trigger.className).toContain("menuCaret");
+});

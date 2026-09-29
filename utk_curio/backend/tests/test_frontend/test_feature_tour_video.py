@@ -229,9 +229,9 @@ STILL_SIZE = {"width": 1920, "height": 1200}
 def _log(message: str) -> None:
     """Print without letting the console's codec fail the run.
 
-    The menu labels carry ``⏷``, so a Playwright timeout message quoting one
-    lands in a traceback that a cp1252 stdout cannot encode - and the resulting
-    UnicodeEncodeError would replace the real failure.
+    A Playwright timeout message can quote page text that a cp1252 stdout
+    cannot encode, and the resulting UnicodeEncodeError would replace the real
+    failure.
     """
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     # flush: a tour run is long, and redirected stdout would otherwise hold the
@@ -312,8 +312,8 @@ def _reset_zoom(page) -> None:
 
 
 def _menu(page, label: str):
-    """Top-bar dropdown trigger (``File ⏷``, ``View ⏷``, ...)."""
-    return page.get_by_role("button", name=f"{label} ⏷", exact=True)
+    """Top-bar dropdown trigger (``File menu``, ``View menu``, ...)."""
+    return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
 def _load_example(ctx: Ctx, path: str, *, expected_nodes: int) -> None:

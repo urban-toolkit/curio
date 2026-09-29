@@ -319,10 +319,10 @@ def first_node_of_type(example: str, node_type: str, *, containing: str = "") ->
 def top_menu(page, label: str):
     """A top-bar dropdown trigger (``File`` , ``View`` , ``Provenance`` ...).
 
-    The trigger's accessible name carries the caret, which is also what keeps it
-    apart from the same-named row inside the dropdown it opens.
+    The trigger is named ``<label> menu``, which is also what keeps it apart
+    from the same-named row inside the dropdown it opens.
     """
-    return page.get_by_role("button", name=f"{label} ⏷", exact=True)
+    return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
 def open_provenance(ctx: Ctx):

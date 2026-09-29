@@ -87,7 +87,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 There are three places you work with datasets, and they are **not** interchangeable:
 
 - **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
-- **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data ⏷ → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
+- **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
 - **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
 ### Action matrix
@@ -105,7 +105,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 ### Workflows
 
-**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data ⏷ → Data Catalog**. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
+**I want to use a catalog dataset in my dataflow.** Open the dataflow, then **Data → Data Catalog**. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
 **I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`, `.gpkg`). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
 

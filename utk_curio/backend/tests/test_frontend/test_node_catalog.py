@@ -110,7 +110,7 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 def _open_drawer_from_menu(page):
     """Data menu -> Node Catalog."""
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     # "Node Catalog" also labels the palette trigger, whose accessible name
     # includes a count span - exact=True picks out the menu row's own button.
     page.get_by_role("button", name="Node Catalog", exact=True).click()

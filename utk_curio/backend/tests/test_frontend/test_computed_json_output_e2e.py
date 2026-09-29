@@ -447,7 +447,7 @@ def _open_computed_tab(page, dataset_ids) -> None:
     The visual counterpart to the API assertions: nothing else in the suite pins
     that a JSON computed dataset renders as a card at all.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click(force=True)
 
     root = page.locator(DRAWER_ROOT)
