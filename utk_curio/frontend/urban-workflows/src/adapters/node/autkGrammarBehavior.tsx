@@ -17,6 +17,7 @@ import { backendUrl } from '../../utils/backendUrl';
 import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { snapSourceToGrid } from '../../utils/geoPrecision';
+import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { runComputeChecked } from './autkComputeScopes';
 import { withExtensionRetry } from './duckdbExtensionRetry';
@@ -544,6 +545,20 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     return;
                 }
 
+                // A plot the document did not size fills its pane (see
+                // utils/autkPlotSizing), measured now because the node can be
+                // resized while its data loads.
+                const plotPane = targets.plot ? document.getElementById(targets.plot) : null;
+                if (plotPane && spec.plot) {
+                    spec = {
+                        ...spec,
+                        plot: fitPlotToPane(spec.plot, {
+                            width: plotPane.clientWidth,
+                            height: plotPane.clientHeight,
+                        }),
+                    };
+                }
+
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
                 // DuckDB worker that failed to fetch the spatial extension keeps
@@ -553,6 +568,12 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     await g.run(spec);
                     return g;
                 });
+                // autk-plot's SVG is inline, so it sits on a line of text whose
+                // descender space overflows a pane the plot exactly fills, and
+                // brings the scrollbars back. As a block it fits.
+                for (const child of Array.from(plotPane?.children ?? [])) {
+                    if (child.tagName.toLowerCase() === 'svg') (child as SVGElement).style.display = 'block';
+                }
 
                 // Store for interaction effects
                 grammarRef.current = grammar;
