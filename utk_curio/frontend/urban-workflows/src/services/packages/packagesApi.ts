@@ -207,7 +207,9 @@ export const packagesApi = {
 
   /** Standalone + package-derived libraries in one payload.
    *  ``installed`` reports whether a package-declared python dep is actually
-   *  present in the interpreter (null for js — no runtime check). */
+   *  present in the interpreter (null for js: no runtime check).
+   *  ``installAllowed`` is whether adding/removing would be refused for this
+   *  caller on this instance, and ``installDisabledReason`` says why (#309). */
   listLibraries(): Promise<{
     standalone: { python: string[]; js: string[] };
     fromPackages: Array<{
@@ -217,6 +219,8 @@ export const packagesApi = {
       source: string;
       installed?: boolean | null;
     }>;
+    installAllowed?: boolean;
+    installDisabledReason?: string | null;
   }> {
     return apiFetch("/api/packages/libraries");
   },

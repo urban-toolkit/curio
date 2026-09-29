@@ -563,14 +563,16 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     );
   });
 
-  test("the download helper is a leaf, not the package API", () => {
-    // Importing it from `api/packagesApi` dragged the whole node-package
+  test("the download helper comes from the registry-free packages layer", () => {
+    // Importing it from the old `api/packagesApi` dragged the whole node-package
     // registry into any component that only wanted to save bytes to a file,
     // and killed unrelated test suites on a registry mock before their first
-    // assertion.
+    // assertion. Since dev/143 the helper lives in `services/packages`, which
+    // never imports the registry at runtime (tests/packages/servicesBarrel).
     expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain(
-      'from "../../../utils/triggerBlobDownload"',
+      'from "../../../services/packages"',
     );
+    expect(read("components/agents/catalog/AgentDetailModal.tsx")).not.toContain("api/packagesApi");
   });
 });
 

@@ -19,7 +19,7 @@ import React, { useState } from "react";
 
 import type { AgentCard } from "../../api/agentsApi";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
-import type { SortMode } from "../../components/packages/publishing/packageTypes";
+import type { SortMode } from "../../services/packages";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { AgentCatalogBrowseCard } from "./AgentCatalogBrowseCard";
 import { AgentCatalogBrowseDrawer } from "./AgentCatalogBrowseDrawer";

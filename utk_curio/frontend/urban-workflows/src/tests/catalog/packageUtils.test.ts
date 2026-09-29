@@ -1,5 +1,5 @@
-import type { PackagePayload } from "../../api/packagesApi";
-import { matchesSearch } from "../../components/packages/publishing/packageUtils";
+import type { PackagePayload } from "../../services/packages";
+import { matchesSearch } from "../../services/packages";
 
 /**
  * `matchesSearch` is the Node Catalog's search predicate and the convention every

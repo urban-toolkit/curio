@@ -26,7 +26,7 @@ jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: { readDefinition: jest.fn(() => new Promise(() => {})) },
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listInstalled: jest.fn(),
     catalog: jest.fn(),
@@ -52,7 +52,7 @@ import { DatasetDetailsContext } from "../../components/datasets/catalog/dataset
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { packagesApi } = require("../../api/packagesApi") as {
+const { packagesApi } = require("../../services/packages/packagesApi") as {
   packagesApi: { listInstalled: jest.Mock; catalog: jest.Mock };
 };
 

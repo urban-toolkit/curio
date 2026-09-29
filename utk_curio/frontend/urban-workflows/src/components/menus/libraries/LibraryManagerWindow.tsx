@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./LibraryManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
-import { packagesApi } from "../../../api/packagesApi";
+import { packagesApi } from "../../../services/packages";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../../utils/libraryInstall";
 
 /**

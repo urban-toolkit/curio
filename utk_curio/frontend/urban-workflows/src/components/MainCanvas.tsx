@@ -16,7 +16,7 @@ import { computeTranslateExtent } from "../utils/canvasExtent";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
-import { usePackagePalette } from "../providers/PackagePaletteContext";
+import { usePackagePalette } from "../providers/packages/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
 import {
     useDatasetDetails,

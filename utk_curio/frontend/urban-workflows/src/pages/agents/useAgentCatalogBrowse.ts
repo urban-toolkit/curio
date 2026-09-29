@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { agentsApi, type AgentCard, type AgentCatalogFacets } from "../../api/agentsApi";
 import { notifyAgentCatalogRefresh } from "../../utils/agentCatalogEvents";
-import type { SortMode } from "../../components/packages/publishing/packageTypes";
 import {
   matchesAgentSearch,
   sortAgentCards,
 } from "../../components/agents/catalog/agentListUtils";
+import type { SortMode } from "../../services/packages";
 
 /**
  * State behind `/catalog/agents`, the account-scope Agent Catalog.

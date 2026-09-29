@@ -5,7 +5,7 @@ import { agentsApi } from "../../../api/agentsApi";
 import type { AgentCard } from "../../../api/agentsApi";
 import { llmConfigsApi } from "../../../api/llmConfigsApi";
 import { requestAgentModel } from "../../connectionKeys/connectionKeysRequest";
-import { triggerBlobDownload } from "../../../utils/triggerBlobDownload";
+import { triggerBlobDownload } from "../../../services/packages";
 import styles from "./AgentDetailModal.module.css";
 
 export interface AgentDetailModalProps {

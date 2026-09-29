@@ -199,7 +199,7 @@ function CodeEditor({
             // node needs to render, and which does not survive jsdom. A
             // static import here made three unrelated test suites carry a
             // mock for a dependency they never use.
-            const { packagesApi } = await import("../../api/packagesApi");
+            const { packagesApi } = await import("../../services/packages");
             const data = await packagesApi.addLibrary("python", distribution);
             // pip's already-satisfied path returns in microseconds; hold the
             // in-flight state long enough to be seen, without adding any delay

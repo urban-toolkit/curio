@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
-import { packagesApi, refreshPackageRegistry, triggerBlobDownload } from "../../../api/packagesApi";
+import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
+import { packagesApi, triggerBlobDownload, dependencyFailureNotice, withRestartNotice } from "../../../services/packages";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
 import { useStarterContext } from "../../../providers/StarterProvider";
@@ -20,8 +21,6 @@ import {
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeTemplateId } from "../../../registry/types";
-import { dependencyFailureNotice } from "../../../utils/packageDependencyNotice";
-import { withRestartNotice } from "../../../services/packageRestartCopy";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};

@@ -16,7 +16,7 @@ import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
-import { SortMode } from "../../packages/publishing/packageTypes";
+import { SortMode } from "../../../services/packages";
 import {
   agentCategoryIcon,
   agentCategoryKey,

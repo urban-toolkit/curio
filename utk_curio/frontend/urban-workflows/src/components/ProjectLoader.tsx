@@ -9,7 +9,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { useParams, useNavigate } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
-import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
+import { useEnsureWorkflowDeps } from "../providers/packages/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
@@ -19,7 +19,7 @@ import {
   settleProjectLoad,
   setUnsavedDataflow,
 } from "../registry/projectPackagesStore";
-import { packagesApi } from "../api/packagesApi";
+import { packagesApi } from "../services/packages";
 import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
 

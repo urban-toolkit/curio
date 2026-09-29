@@ -7,8 +7,8 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { NodeCatalogDrawer } from "../components/packages/publishing";
-import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
+import { NodeCatalogDrawer } from "../../components/packages/publishing";
+import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 
 type OpenNodeCatalogDrawerOptions = {
   /** Seed the drawer's search box, so a caller can land the user on one
