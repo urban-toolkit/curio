@@ -1141,23 +1141,25 @@ REMINT_MIN_RATIO = 0.0005
 
 #: Text a run writes fresh every time, so it differs from any baseline even
 #: when the screen is the same: artifact file names (epoch milliseconds and a
-#: random suffix), uuids and bare uuid hex, the short proposal id, a package
-#: id's random segment, dates and times of day, and the app version in the
-#: corner, which moves with every commit to main. A re-mint does not count
-#: differences inside it; ordinary comparisons still do.
+#: random suffix), uuids, bare uuid hex and the 8-character short ids, a
+#: package id's random segment, dates and times of day, and the app version in
+#: the corner, which moves with every commit to main. A re-mint does not count
+#: differences inside it, or in the rest of its line, which a token of another
+#: width moves; ordinary comparisons still count everything.
 VOLATILE_TEXT = (
     r"\b\d{13}_[0-9a-f]{8}\b",
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     r"\b[0-9a-f]{32}\b",
-    r"(?<=proposal )[0-9a-f]{8}\b",
+    r"\b(?=[0-9a-f]{0,7}\d)(?=[0-9a-f]{0,7}[a-f])[0-9a-f]{8}\b",
     r"(?<=\.)(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{8,10}(?=@\d)",
     r"\b\d{1,2}/\d{1,2}/\d{4}\b",
     r"\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b",
     r"^\s*\d+\.\d+\.\d+[\w.+-]*\s*$",
 )
 
-# The client boxes of every VOLATILE_TEXT match, relative to *root* (the
-# captured element) or to the top-left of the page.
+# The client boxes of every VOLATILE_TEXT match through the end of its line
+# (or of its text node, when that is wrapped rather than broken), relative to
+# *root* (the captured element) or to the top-left of the page.
 _VOLATILE_BOXES_BODY = """
     const origin = root ? root.getBoundingClientRect() : {left: 0, top: 0};
     const res = patterns.map((p) => new RegExp(p, 'g'));
@@ -1171,8 +1173,9 @@ _VOLATILE_BOXES_BODY = """
             for (let m = re.exec(text); m; m = re.exec(text)) {
                 if (!m[0]) { re.lastIndex += 1; continue; }
                 const range = document.createRange();
+                const lineEnd = text.indexOf('\\n', m.index + m[0].length);
                 range.setStart(node, m.index);
-                range.setEnd(node, m.index + m[0].length);
+                range.setEnd(node, lineEnd === -1 ? text.length : lineEnd);
                 for (const r of range.getClientRects()) {
                     if (r.width > 0 && r.height > 0) {
                         boxes.push([r.left - origin.left, r.top - origin.top,

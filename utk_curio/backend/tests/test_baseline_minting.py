@@ -288,6 +288,7 @@ class TestVolatileText:
         ("node c4217856-b247-449d-b7ff-451e772b02a2", "c4217856-b247-449d-b7ff-451e772b02a2"),
         ("id 3f2a9c1e0b7d4e6f8a9b0c1d2e3f4a5b", "3f2a9c1e0b7d4e6f8a9b0c1d2e3f4a5b"),
         ("proposal 0e4210b6", "0e4210b6"),
+        ("ad6e9e15 pending", "ad6e9e15"),
         ("user.configured.d3dp5whi8@1", "d3dp5whi8"),
         ("v 131 · 9/29/2026", "9/29/2026"),
         ("9/29/2026, 2:59:55 PM", "2:59:55 PM"),
@@ -299,6 +300,7 @@ class TestVolatileText:
     @pytest.mark.parametrize("text", [
         "v0.1.0", "0.16.158 (not isolated)", "Saved to file:", "12:00", "1234",
         "curio.builtin@1", "data.utk.chicago-boundary@1", "Configured Metadata Package",
+        "12345678", "deadbeef", "population 20240501",
     ])
     def test_other_text_is_counted(self, text):
         assert self._found(text) == []
