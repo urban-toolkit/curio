@@ -426,6 +426,10 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     #    requires: they are bottom-right, up to 360px wide, and land exactly
     #    where canvas content usually is.
     dismiss_toasts(page)
+    # Clear the selection the test's own clicks left, the way a user would: a
+    # click on empty canvas.
+    pane = page.locator(".react-flow__pane").bounding_box()
+    page.mouse.click(pane["x"] + pane["width"] / 2, pane["y"] + pane["height"] - 60)
     save_workflow_test_screenshot(
         page,
         "computed-json-output",

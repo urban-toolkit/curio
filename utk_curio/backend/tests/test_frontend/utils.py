@@ -992,6 +992,21 @@ def accept_confirm_dialog(
     return dialog
 
 
+def leave_agent_badge(page: Page) -> None:
+    """Take focus and the pointer off the agent's badge after a chat closes.
+
+    Closing the chat hands focus back to the button that opened it, and the
+    badge shows its name label and detach x while it has focus or hover, so
+    both would otherwise sit in a canvas capture.
+    """
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.mouse.move(0, 400)
+    page.wait_for_function(
+        "() => !document.querySelector('[aria-label^=\"Open chat with\"]:focus')",
+        timeout=5000,
+    )
+
+
 def dismiss_toasts(
     page: Page,
     *,

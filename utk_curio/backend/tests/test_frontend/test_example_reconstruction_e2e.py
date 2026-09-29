@@ -48,6 +48,7 @@ from .utils import (
     canvas_nodes,
     dismiss_toasts,
     install_session_cookie,
+    leave_agent_badge,
     open_tools_palette,
     read_node_code,
     require_project_page,
@@ -365,9 +366,14 @@ class TestReviewCardAndApply:
         assert scored.comparison.templates.extra == ()
         assert scored.comparison.edges.missing == ()
         assert scored.comparison.edges.extra == ()
-        dismiss_toasts(page)
+        # The canvas is the subject, and the chat panel covers the right of it.
+        panel.get_by_role("button", name="Close chat").click()
+        expect(page.locator('[role="dialog"][aria-label^="Chat with"]')).to_have_count(
+            0, timeout=10000
+        )
+        leave_agent_badge(page)
         save_workflow_test_screenshot(
-            page, SCREENSHOT_STEM, test_name="applied_canvas",
+            page, SCREENSHOT_STEM, test_name="applied_canvas", sweep_toasts=True,
         )
 
 
@@ -520,6 +526,9 @@ class TestEvaluationModeRunsFromAiSettings:
         )
         expect(prompt_region).to_be_visible(timeout=20000)
         assert FIXTURE.prompt.split("\n")[0][:40] in (prompt_region.inner_text() or "")
+        # Start the modal body at the section, so the model sentence, the
+        # fixture select and the prompt are in the frame.
+        section.evaluate("el => el.scrollIntoView({block: 'start'})")
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="evaluation_mode_ready",
             fit_reactflow=False,

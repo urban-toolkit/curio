@@ -55,6 +55,7 @@ from .utils import (
     read_node_code,
     dismiss_toasts,
     install_session_cookie,
+    leave_agent_badge,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -73,21 +74,6 @@ NATIVE_STEM = "agent-native-call"
 # regression inside the panel then had to move 10% of a frame it only occupies
 # part of before the comparison would notice.
 CHAT_PANEL_SELECTOR = '[role="dialog"][aria-label^="Chat with"]'
-
-
-def _leave_the_agent_badge(page) -> None:
-    """Take focus and the pointer off the agent's badge after the chat closes.
-
-    Closing the chat hands focus back to the button that opened it, and the
-    badge shows its name label and detach x while it has focus or hover, so
-    both would otherwise sit in a canvas capture.
-    """
-    page.evaluate("document.activeElement && document.activeElement.blur()")
-    page.mouse.move(0, 400)
-    page.wait_for_function(
-        "() => !document.querySelector('[aria-label^=\"Open chat with\"]:focus')",
-        timeout=5000,
-    )
 
 USERNAME = "agentchat"
 USER_NAME = "Agent Chat User"
@@ -381,7 +367,7 @@ class TestAgentChatGallery:
         # agent just created sits behind it.
         panel.get_by_role("button", name="Close chat").click()
         expect(page.locator(CHAT_PANEL_SELECTOR)).to_have_count(0, timeout=10000)
-        _leave_the_agent_badge(page)
+        leave_agent_badge(page)
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name=spec.agent_id,
         )
@@ -643,5 +629,5 @@ class TestNativeToolCall:
         dismiss_toasts(page)
         panel.get_by_role("button", name="Close chat").click()
         expect(page.locator(CHAT_PANEL_SELECTOR)).to_have_count(0, timeout=10000)
-        _leave_the_agent_badge(page)
+        leave_agent_badge(page)
         save_workflow_test_screenshot(page, NATIVE_STEM, test_name="applied")

@@ -273,6 +273,9 @@ def test_export_downloads_the_server_named_file(
         page.get_by_label("Notifications").get_by_text("Could not export dataset.")
     ).to_have_count(0)
 
+    # The click left the pointer on Export, whose hover style would sit in the
+    # capture.
+    page.mouse.move(5, 5)
     save_workflow_test_screenshot(
         page, "dataset-export",
         test_name=f"test_export_downloads_the_server_named_file_{extension.lstrip('.')}",

@@ -494,6 +494,9 @@ def test_the_catalog_pages_use_one_button_vocabulary(
         f"Publish is not the dark action fill: {fill}. Black is an action, "
         f"white with a border is destructive, and Publish is an action."
     )
+    # Publish sits below the fold of the drawer's own scroll box, which the
+    # full-page capture does not scroll.
+    publish.first.scroll_into_view_if_needed()
 
     save_workflow_test_screenshot(
         page, "catalog-page-button-vocabulary",
