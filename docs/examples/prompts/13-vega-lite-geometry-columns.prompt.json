@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/13-vega-lite-geometry-columns.json",
-    "sha256": "ba16c7ca7c07b9556133f9cb693dfb78a18620d8f604316d33f34476df105b11",
+    "sha256": "6083794f4ac5fba70517e5ab618891993996ab176d2f15c320eb0cbebf0d53a8",
     "walkthrough": "docs/examples/13-vega-lite-geometry-columns.md"
   },
   "prompt": "Using the Chicago ZIP boundary polygons from the Data Catalog, show me how a geometry column behaves whatever it is called: one frame whose geometry column has an unusual name, one that carries several geometry columns at once, and one with no geometry at all. Draw each case in its own map or chart so I can compare what the same spec does with each.",

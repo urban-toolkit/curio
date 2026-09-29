@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/12-vega-lite-geodataframe-maps.json",
-    "sha256": "828ff36a534482f90f9ace40ca66f2c89b520a678001d6d8abc258f100760d18",
+    "sha256": "4aeae44b51ba9f5096a4f7576ec3fd2a3e1198e71a069a7f1bf6aadd5d3db2fb",
     "walkthrough": "docs/examples/12-vega-lite-geodataframe-maps.md"
   },
   "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog and draw them as a map straight from the frame, without converting anything first. Then take the centroid of each polygon and show a second map with the polygons and their centre points together, and add an ordinary non-spatial chart off the same table so I can see the attributes beside the geometry.",
