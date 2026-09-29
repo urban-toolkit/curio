@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/14-vega-lite-crs-and-geometry-types.json",
-    "sha256": "d0eabf81fcbfcae58bc11605f93d9497b5e408dc8ae92660013758181f0353b0",
+    "sha256": "ce133bcc8fe836ae6513ced2c18313a5e93feb36960516edf99d7692d8afbfb7",
     "walkthrough": "docs/examples/14-vega-lite-crs-and-geometry-types.md"
   },
-  "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames with the same map spec, so I can confirm the coordinate system and the geometry type do not change what I have to write.",
+  "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames on a map, with the same map spec for every coordinate system, so I can confirm the coordinate system does not change what I have to write, and make sure the lines show up too.",
   "context": null,
   "required": {
     "datasets": [
@@ -241,5 +241,5 @@
       }
     ]
   },
-  "notes": "One spec over eight frames: reprojections and derived geometry types."
+  "notes": "One spec over the reprojected frames; the frame of every geometry type strokes its lines in a second layer."
 }
