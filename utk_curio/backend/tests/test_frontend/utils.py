@@ -1116,14 +1116,23 @@ REMINT_HOW = (
 )
 
 
-def allow_baseline_writes(*, mint: bool, remint: bool, environ=os.environ) -> None:
+#: Baselines a re-mint rewrites whatever it finds, named by a part of their
+#: file names (``--remint-force``): the frames a fix is known to change by
+#: less than REMINT_MIN_RATIO, such as a few words of text.
+REMINT_FORCE: tuple = ()
+
+
+def allow_baseline_writes(*, mint: bool, remint: bool, force=(), environ=os.environ) -> None:
     """Turn on ``--mint-baselines`` / ``--remint-baselines``, on CI only.
 
     A baseline is what CI renders. A capture from any other machine differs in
     text antialiasing, fonts and scrollbars, and would then fail on CI or hide
     a change there.
     """
-    global MINT_BASELINES, REMINT_BASELINES
+    global MINT_BASELINES, REMINT_BASELINES, REMINT_FORCE
+    force = tuple(part for part in force if part)
+    if force and not remint:
+        raise pytest.UsageError("--remint-force only means something with --remint-baselines.")
     if not (mint or remint):
         return
     if environ.get("GITHUB_ACTIONS") != "true":
@@ -1131,12 +1140,15 @@ def allow_baseline_writes(*, mint: bool, remint: bool, environ=os.environ) -> No
         raise pytest.UsageError(f"{flag} runs on CI only. {REMINT_HOW}")
     MINT_BASELINES = bool(mint)
     REMINT_BASELINES = bool(remint)
+    REMINT_FORCE = force
 
 
 #: A re-mint leaves a baseline alone when at most this share of its pixels
-#: changed, not counting the volatile text below. The rest of the difference
-#: between two CI runs of one commit is a few dozen pixels (a focused editor's
-#: line numbers, a resize grip), well under this.
+#: changed, not counting the volatile text below. A fix usually changes far
+#: more; one that changes a few words may not, and names its frames with
+#: ``--remint-force`` instead. Layout that moves between runs (an id wrapping
+#: at another character, a node settling a pixel away) can pass it, so a few
+#: frames are re-minted by every run.
 REMINT_MIN_RATIO = 0.0005
 
 #: Text a run writes fresh every time, so it differs from any baseline even
@@ -1378,8 +1390,8 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
     """Write a fresh capture over its baseline when the screen changed.
 
     Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
-    volatile text. Otherwise the baseline stays as committed and the record says
-    ``unchanged``. A re-minted frame is recorded next to the baseline it
+    volatile text, or the baseline is one REMINT_FORCE names. Otherwise the
+    baseline stays as committed and the record says ``unchanged``. A re-minted frame is recorded next to the baseline it
     replaced, for the CI report page, and captured a second time: when that
     capture differs from the first by more than the budget the screen had not
     settled, so the old baseline is put back and the test fails.
@@ -1407,13 +1419,15 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
     volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == old_img.size else None
     changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
     remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
+    forced = any(part in name for part in REMINT_FORCE)
     evidence = dict(
         expected=old_img, created=new_img, expected_cmp=cmp.expected_cmp,
         arr=cmp.arr, counted=cmp.counted, volatile=volatile,
         mismatched=cmp.mismatched, total=cmp.total, ratio=cmp.ratio,
         remint_ratio=remint_ratio, remint_min_ratio=REMINT_MIN_RATIO,
+        forced=forced,
     )
-    if remint_ratio <= REMINT_MIN_RATIO:
+    if remint_ratio <= REMINT_MIN_RATIO and not forced:
         comparisons.record("unchanged", **evidence, **record_args)
         return
 

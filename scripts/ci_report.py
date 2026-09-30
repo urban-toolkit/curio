@@ -849,11 +849,14 @@ def render_remint_intro(records):
     floor = _remint_floor(records)
     rule = (f"more than {percent(floor)} of its pixels changed" if floor is not None
             else "its pixels changed")
+    forced = sum(1 for r in records if r.get("status") == "reminted" and r.get("forced"))
+    requested = (f" {forced} of them were requested by name, so they were replaced whatever "
+                 "changed." if forced else "")
     return (f'<p class="note">A re-mint run: {reminted} baselines were replaced by what this run '
             f"captured and {kept} were kept. A baseline is replaced when {rule}, not counting "
             "text a run writes fresh every time (file names, ids, dates, times and the app "
-            "version). Each re-minted card shows the baseline it replaced; the replacements are "
-            "in this run's <code>reminted-baselines</code> artifact.</p>")
+            f"version).{requested} Each re-minted card shows the baseline it replaced; the "
+            "replacements are in this run's <code>reminted-baselines</code> artifact.</p>")
 
 
 def render_unchanged(records):
@@ -902,6 +905,8 @@ def render_comparison(report, record):
                 head.append(badge("capture", "moved on recapture"))
         if ratio is not None and budget and ratio > budget:
             head.append(badge("over", "over the budget until committed"))
+        if record.get("forced"):
+            head.append(badge("reminted", "requested"))
         meter = ""
     elif ratio is not None and budget:
         verdict = (f"<strong>{percent(ratio)}</strong> of pixels differ by more than {esc(threshold)} "

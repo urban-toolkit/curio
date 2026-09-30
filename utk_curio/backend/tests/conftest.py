@@ -421,6 +421,16 @@ def pytest_addoption(parser):
             "the frames on its CI report page"
         ),
     )
+    parser.addoption(
+        "--remint-force",
+        dest="remint_force",
+        default="",
+        help=(
+            "with --remint-baselines: comma-separated parts of baseline file "
+            "names to re-mint whatever the comparison finds, for a fix known to "
+            "change them by less than the re-mint's threshold"
+        ),
+    )
 
 
 def pytest_configure(config):
@@ -460,10 +470,11 @@ def pytest_configure(config):
     # (or is broken by) importing the e2e helper module. Refused off CI.
     mint = getattr(config.option, "mint_baselines", False)
     remint = getattr(config.option, "remint_baselines", False)
-    if mint or remint:
+    force = [part.strip() for part in (getattr(config.option, "remint_force", "") or "").split(",")]
+    if mint or remint or any(force):
         from utk_curio.backend.tests.test_frontend import utils as e2e_utils
 
-        e2e_utils.allow_baseline_writes(mint=mint, remint=remint)
+        e2e_utils.allow_baseline_writes(mint=mint, remint=remint, force=force)
 
     excluded = []
     if not config.option.longrun:

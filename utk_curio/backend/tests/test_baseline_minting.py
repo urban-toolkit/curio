@@ -88,6 +88,18 @@ class TestOnlyOnCI:
     def _restore(self, monkeypatch):
         monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
         monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
+
+    def test_force_needs_a_remint(self):
+        with pytest.raises(pytest.UsageError) as exc:
+            e2e_utils.allow_baseline_writes(
+                mint=False, remint=False, force=["19-storage"], environ={"GITHUB_ACTIONS": "true"})
+        assert "--remint-force" in str(exc.value)
+
+    def test_force_is_kept_on_ci(self):
+        e2e_utils.allow_baseline_writes(
+            mint=False, remint=True, force=["19-storage", ""], environ={"GITHUB_ACTIONS": "true"})
+        assert e2e_utils.REMINT_FORCE == ("19-storage",)
 
     @pytest.mark.parametrize("flag", ["mint", "remint"])
     def test_either_flag_is_refused_off_ci(self, flag):
@@ -182,6 +194,7 @@ class TestRemint:
     def _remint_on(self, expected_dir, monkeypatch):
         monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
         monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
         monkeypatch.setattr(e2e_utils, "_wait_for_webfont", lambda page: True)
 
     def _baseline(self, expected_dir, img):
@@ -212,6 +225,26 @@ class TestRemint:
     def test_a_change_below_the_floor_keeps_the_baseline(self, expected_dir, monkeypatch):
         # 1 pixel of 1,600 is 0.0625%; the floor is a share of the frame.
         monkeypatch.setattr(e2e_utils, "REMINT_MIN_RATIO", 0.001)
+        path = self._baseline(expected_dir, _painted_at((1, 1)))
+        before = path.read_bytes()
+        self._captures(monkeypatch, _painted_at((1, 1), (30, 30)))
+        _save()
+        assert path.read_bytes() == before
+
+    def test_a_baseline_named_by_force_is_reminted_however_small_the_change(self, expected_dir, monkeypatch):
+        # A fix that changes a few words of text sits under the floor; the
+        # batch names its frames so the committed baseline shows the fix.
+        monkeypatch.setattr(e2e_utils, "REMINT_MIN_RATIO", 0.001)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ("some-scene",))
+        path = self._baseline(expected_dir, _painted_at((1, 1)))
+        new = _painted_at((1, 1), (30, 30))  # 1 pixel of 1,600, under the floor
+        self._captures(monkeypatch, new, new.copy())
+        _save()
+        assert Image.open(path).convert("RGB").tobytes() == new.tobytes()
+
+    def test_force_names_only_the_baselines_it_matches(self, expected_dir, monkeypatch):
+        monkeypatch.setattr(e2e_utils, "REMINT_MIN_RATIO", 0.001)
+        monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ("another-scene",))
         path = self._baseline(expected_dir, _painted_at((1, 1)))
         before = path.read_bytes()
         self._captures(monkeypatch, _painted_at((1, 1), (30, 30)))

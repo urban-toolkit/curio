@@ -97,6 +97,10 @@ on:
         description: 'With remint: a pytest -k expression to re-mint only some tests (empty for all)'
         type: string
         default: ''
+      remint_force:
+        description: 'With remint: comma-separated parts of baseline names to re-mint however little they changed'
+        type: string
+        default: ''
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
@@ -247,6 +251,7 @@ jobs:
       # free text from the dispatch form.
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+      CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
       # docker-compose.ci.yml publishes) so the CI stack never collides with
@@ -543,6 +548,10 @@ jobs:
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+            fi
+            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FORCE"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
             fi
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"

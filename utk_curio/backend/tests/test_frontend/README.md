@@ -269,6 +269,7 @@ re-mint run of the Full stack build:
 ```
 gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # only some tests: add -f remint_filter='<a pytest -k expression>'
+# frames a fix changes by only a few words: add -f remint_force='<name part>,<name part>'
 ```
 
 That run is the e2e suite alone, under `--remint-baselines`, on `utk` and the
@@ -288,7 +289,10 @@ A screen counts as changed when more than 0.05% of its pixels differ
 (`REMINT_MIN_RATIO`), not counting text a run writes fresh every time (file
 names, ids, dates, times of day and the app version, `VOLATILE_TEXT`) or the
 rest of its line, which such text moves. The report's difference images draw
-those pixels blue. A re-minted frame is captured twice, and
+those pixels blue. A baseline whose name contains a `remint_force` part is
+replaced whatever changed, and its card says it was requested. A few frames
+change a little between any two runs (an id wrapping at another character, a
+node a pixel away), so each re-mint replaces some of them too. A re-minted frame is captured twice, and
 when the two differ by more than the budget the screen had not settled: the
 baseline is left as committed and the test fails. Minting refuses a capture
 whose webfont did not load or that came out blank.

@@ -254,7 +254,7 @@ def _remint_page(tmp_path):
     compare = tmp_path / "compare"
     floor = {"remint_min_ratio": 0.0005}
     _comparison(compare, "r_small", status="reminted", ratio=0.02, remint_ratio=0.02,
-                recapture_ratio=0.0, volatile_pixels=0, **floor)
+                recapture_ratio=0.0, volatile_pixels=0, forced=True, **floor)
     _comparison(compare, "r_big", status="reminted", ratio=0.3, remint_ratio=0.25,
                 recapture_ratio=0.0, volatile_pixels=3, **floor)
     _comparison(compare, "r_moved", status="reminted", ratio=0.05, remint_ratio=0.05,
@@ -283,6 +283,10 @@ def test_a_remint_run_shows_what_replaced_each_baseline_biggest_change_first(tmp
     assert "moved on recapture" in _card(page, "screenshot_r_moved.png")
     assert "moved on recapture" not in _card(page, "screenshot_r_small.png")
     assert "swatch volatile" in page
+    # A frame named by --remint-force says so.
+    assert "requested" in _card(page, "screenshot_r_small.png")
+    assert "requested" not in _card(page, "screenshot_r_big.png")
+    assert "1 of them were requested by name" in page
     assert summary.rstrip().endswith("Re-mint: 3 baselines replaced, 1 kept.")
 
 

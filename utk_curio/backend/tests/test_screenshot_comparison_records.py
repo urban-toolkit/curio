@@ -47,6 +47,7 @@ def dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(e2e_utils, "WORKFLOW_SCREENSHOT_EXPECTED_DIR", str(expected))
     monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
     monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
+    monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
     monkeypatch.setenv(comparisons.DIR_ENV, str(compare))
     monkeypatch.setattr(comparisons, "current_nodeid", NODEID)
     return expected, compare
@@ -191,6 +192,17 @@ def test_a_reminted_baseline_is_recorded_with_the_one_it_replaced(dirs, monkeypa
     assert (folder / "expected.png").read_bytes() == old_bytes
     assert baseline.read_bytes() != old_bytes
     assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+
+
+def test_a_baseline_named_by_force_is_recorded_as_requested(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected, _white(paint=1))
+    monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ("scene_step",))
+    same = _white(paint=1)
+    _save(monkeypatch, _remint_on(monkeypatch, same, same.copy()))
+
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["forced"], record["ratio"]) == ("reminted", True, 0.0)
 
 
 def test_a_kept_baseline_is_recorded_as_unchanged(dirs, monkeypatch):
