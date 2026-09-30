@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build one self-contained HTML page from a CI job's test results.
 
-test-gpu runs five suites and about 240 screenshot comparisons, and the only
+A CI run has a dozen suites and about 240 screenshot comparisons, and the only
 ways to read them were the job log and a zipped Allure site that has to be
 served before it opens. This writes a single HTML file with everything inline,
 images included. Uploaded with ``actions/upload-artifact`` and
@@ -19,6 +19,8 @@ Every input is optional, because a step that never ran leaves no file:
     --failures DIR       an e2e run's CURIO_E2E_FAILURE_DIR, for the screenshot
                          each failed test left behind
     --jobs PATH          GitHub's jobs API response for this run attempt
+    --all-jobs           report on every job in --jobs rather than this one: the
+                         page the run's ci-report job builds from every runner
 
 With Pillow importable every image is transcoded to lossless WebP, identical
 pixel for pixel at about half the size of the PNG; without it the recorded
@@ -136,6 +138,8 @@ class Report:
     images: dict = field(default_factory=dict)  # path -> data URI, or None past the budget
     image_mb: int = 0
     jobs_given: bool = False
+    # Every job of the run, when the page reports on the run rather than one job.
+    all_jobs: list | None = None
     problems: list = field(default_factory=list)
 
 
@@ -362,6 +366,14 @@ def read_job(path, job_name):
             or next((j for j in jobs if j.get("status") == "in_progress"), None))
 
 
+def read_jobs(path):
+    """Every job in a jobs API response, in the order GitHub lists them."""
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return (json.load(handle) or {}).get("jobs") or []
+
+
 def run_meta(environ):
     server = environ.get("GITHUB_SERVER_URL") or "https://github.com"
     repo = environ.get("GITHUB_REPOSITORY") or ""
@@ -446,6 +458,8 @@ def build(args, environ=os.environ):
             return fallback
 
     report.job = guarded("jobs", lambda: read_job(args.jobs, args.job_name or report.meta["job"]), None)
+    if getattr(args, "all_jobs", False):
+        report.all_jobs = guarded("jobs", lambda: read_jobs(args.jobs), None)
     for kind, reader, entries in (("pytest", read_junit, args.junit), ("jest", read_jest, args.jest),
                                   ("tsc", read_tsc, args.tsc)):
         for label, path in entries or []:
@@ -522,8 +536,11 @@ def _iso(value):
 
 
 def overall(report):
-    step_failed = any(s.get("conclusion") == "failure"
-                      for s in (report.job or {}).get("steps") or [])
+    if report.all_jobs is not None:
+        step_failed = any(j.get("conclusion") == "failure" for j in report.all_jobs)
+    else:
+        step_failed = any(s.get("conclusion") == "failure"
+                          for s in (report.job or {}).get("steps") or [])
     if step_failed or any(s.status in ("failed", "unreadable") for s in report.suites):
         return "failed"
     if any(r.get("status") in ("failed", "capture-error", "missing") for r in report.comparisons):
@@ -541,7 +558,9 @@ def render(report):
     elif meta["ref"]:
         title += f": {meta['ref']}"
     sections = [
-        *([("Steps", "steps", render_steps)] if report.jobs_given else []),
+        *([("Jobs" if report.all_jobs is not None else "Steps", "steps",
+            render_jobs if report.all_jobs is not None else render_steps)]
+          if report.jobs_given else []),
         ("Test suites", "suites", render_suites),
         ("Screenshot comparisons", "comparisons", render_comparisons),
     ]
@@ -598,7 +617,8 @@ def render_header(report, title):
     bits.append(esc(meta["generated"]))
     state = overall(report)
     word = {"passed": "Passed", "failed": "Failed", "unclear": "No results"}[state]
-    links = [("Steps", "steps")] if report.jobs_given else []
+    links = ([("Jobs" if report.all_jobs is not None else "Steps", "steps")]
+             if report.jobs_given else [])
     links += [("Test suites", "suites"),
               (f"Screenshot comparisons ({len(report.comparisons)})", "comparisons")]
     nav = " ".join(f'<a href="#{a}">{esc(t)}</a>' for t, a in links)
@@ -640,6 +660,40 @@ def render_steps(report):
              f'<th class="num">Time</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
     open_attr = " open" if failed else ""
     return (f'<section id="steps"><h2>Steps</h2><details class="steps-box"{open_attr}>'
+            f"<summary>{esc(summary)}</summary>{table}</details></section>")
+
+
+def render_jobs(report):
+    """Every job of the run, with the failed steps of the ones that failed."""
+    rows, failed, done = [], 0, 0
+    for job in report.all_jobs or []:
+        if job.get("status") != "completed":
+            continue  # this job, still building the page, and anything queued
+        done += 1
+        conclusion = job.get("conclusion") or "unknown"
+        failed += conclusion == "failure"
+        start, end = _iso(job.get("started_at")), _iso(job.get("completed_at"))
+        took = duration((end - start).total_seconds()) if start and end else ""
+        name = esc(job.get("name") or "")
+        if job.get("html_url"):
+            name = f'<a href="{esc(job["html_url"])}">{name}</a>'
+        broke = [s for s in job.get("steps") or [] if s.get("conclusion") == "failure"]
+        if broke:
+            steps = ", ".join(
+                f'<a href="{esc(job["html_url"])}#step:{int(s["number"])}:1">{esc(s.get("name") or "")}</a>'
+                if job.get("html_url") and s.get("number") is not None else esc(s.get("name") or "")
+                for s in broke)
+            name += f'<div class="muted">failed: {steps}</div>'
+        rows.append(f'<tr class="{esc(conclusion)}"><td>{name}</td>'
+                    f"<td>{badge(conclusion)}</td><td class=\"num\">{esc(took)}</td></tr>")
+    if not done:
+        return ('<section id="steps"><h2>Jobs</h2><p class="muted">No job list: the jobs '
+                "API response for this run was missing or could not be read.</p></section>")
+    summary = f"{failed} of {done} jobs failed" if failed else f"All {done} completed jobs succeeded"
+    table = ('<div class="table-wrap"><table class="steps"><thead><tr><th>Job</th><th>Result</th>'
+             f'<th class="num">Time</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+    open_attr = " open" if failed else ""
+    return (f'<section id="steps"><h2>Jobs</h2><details class="steps-box"{open_attr}>'
             f"<summary>{esc(summary)}</summary>{table}</details></section>")
 
 
@@ -1115,6 +1169,8 @@ def parse_args(argv=None):
     parser.add_argument("--failures", metavar="DIR")
     parser.add_argument("--jobs", metavar="PATH", help="the jobs API response for this run attempt")
     parser.add_argument("--job-name", help="which job in --jobs is this one (default: $GITHUB_JOB)")
+    parser.add_argument("--all-jobs", action="store_true",
+                        help="report on every job in --jobs, not only this one")
     parser.add_argument("--out", required=True, metavar="PATH")
     parser.add_argument("--summary", metavar="PATH", help="also write a Markdown summary here")
     parser.add_argument("--max-image-mb", type=int, default=150,

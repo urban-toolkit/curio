@@ -1,8 +1,8 @@
 """Parent side of isolated execution: stage, dispatch, time out, persist.
 
 The dispatch half needs Linux (AF_UNIX, killpg). It is exercised by
-``sandbox/tests/test_isolation_linux.py``, which runs in the ``test-gpu`` CI
-job and nowhere else.
+``sandbox/tests/test_isolation_linux.py``, which runs in the ``unit`` CI job
+(its sandbox half) and nowhere else.
 
 This module keeps every privilege the child must not have. It owns the DuckDB
 connection, resolves artifacts under session scoping, and decides what a
