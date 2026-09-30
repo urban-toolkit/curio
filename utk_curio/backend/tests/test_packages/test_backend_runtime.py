@@ -25,6 +25,48 @@ from utk_curio.backend.app.packages.build_workspace import WorkerLimits
 USER = "42"  # user keys are guest-or-numeric (storage._user_key_segment)
 PKG = "curio.counter@1"
 
+def _where_it_is_stuck(thread) -> str:
+    """The stack of a thread that did not return, and the children it left.
+
+    The worker's wall clock ends a slow handler at 20 s, so an invocation that
+    is still running at 30 s is blocked somewhere no limit reaches. Its stack
+    says where; a child whose command line is still this pytest never reached
+    exec, which is a fork that deadlocked before its ``preexec_fn`` finished.
+    """
+    import sys
+    import threading
+    import traceback
+
+    lines = ["the invocation did not return; its thread is at:"]
+    frame = sys._current_frames().get(thread.ident)
+    if frame is not None:
+        lines += [line.rstrip() for line in traceback.format_stack(frame)]
+    lines.append("other threads: " + ", ".join(
+        t.name for t in threading.enumerate() if t is not thread))
+    proc = Path("/proc")
+    if proc.is_dir():
+        me = os.getpid()
+        for entry in proc.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
+                if int(fields[1]) != me:
+                    continue
+                cmd = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+                wchan = (entry / "wchan").read_text() if (entry / "wchan").exists() else ""
+                try:
+                    kernel = (entry / "stack").read_text().strip().replace("\n", " | ")
+                except OSError:
+                    kernel = ""
+                lines.append(
+                    f"child {entry.name} state={fields[0]} wchan={wchan} "
+                    f"cmd={cmd[:200]} kernel-stack={kernel[:400]}")
+            except (OSError, IndexError, ValueError):
+                continue
+    return "\n".join(lines)
+
+
 #: Tight limits keep the real-subprocess suite fast; the wall clock only has
 #: to outlive interpreter startup.
 FAST = WorkerLimits(wall_time_seconds=20.0, cpu_seconds=10)
@@ -406,7 +448,7 @@ class TestPromoteInvokeConsistency:
         finally:
             lock.release()
         worker.join(timeout=30)
-        assert not worker.is_alive()
+        assert not worker.is_alive(), _where_it_is_stuck(worker)
         # No transient 404/409 — the invocation read the NEW consistent state.
         assert "err" not in results, results.get("err")
         assert results["out"]["reply"]["ok"] is True
