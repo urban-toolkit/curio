@@ -2234,6 +2234,32 @@ class TestReviewProposals:
         done = events[-1][1]
         assert any(p["type"] == "proposal" for p in done["content"])
 
+    def test_the_card_and_its_result_name_the_node_not_its_id(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # #506: both read "node 'n1'", an id the user sees nowhere else, while
+        # the chat header names the node by its kind.
+        _, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        node = {"id": "n1", "type": "curio.builtin/computation-analysis",
+                "title": "Word counts", "content": "print(1)"}
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [node], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        assert proposal["summary"] == "Replace the content of the Python Computation node · Word counts"
+        assert proposal["pins"]["nodeId"] == "n1"  # the id stays where the apply checks it
+
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        result = self._turns(client, token, alice_project, att_id)[-1]
+        text = json.dumps(result, ensure_ascii=False)
+        assert "Applied: Python Computation node · Word counts content updated." in text
+        assert "node n1" not in text and "(n1)" not in text
+
     def test_apply_executes_the_write_and_logs_a_result_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
