@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import styles from "./LibraryManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { packagesApi } from "../../../api/packagesApi";
@@ -423,7 +425,10 @@ export default function LibraryManagerWindow({
                             disabled={status?.kind === "installing" || status?.kind === "removing"}
                             onClick={() => void handleRemove(r.kind, fullSpec)}
                             title="Remove from your library list"
-                          >Remove</button>
+                            aria-label="Remove"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} />
+                          </button>
                         ) : null}
                       </td>
                     </tr>

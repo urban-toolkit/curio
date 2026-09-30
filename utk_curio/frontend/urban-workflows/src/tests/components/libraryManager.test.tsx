@@ -250,7 +250,7 @@ describe("LibraryManagerWindow - a broken library's controls", () => {
     await screen.findByText(/brokenlib installed, but it cannot be imported/, {}, { timeout: 3000 });
   };
 
-  it("says Remove in words", async () => {
+  it("names Remove, apart from the dismiss", async () => {
     await addBroken();
     const remove = screen.getByRole("button", { name: "Remove" });
     expect(remove).toHaveAttribute("title", "Remove from your library list");
