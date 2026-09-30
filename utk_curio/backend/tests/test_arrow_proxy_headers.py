@@ -17,9 +17,18 @@ from utk_curio.backend.tests._unit_fixtures import TestConfig
 
 
 class ArrowResponse:
+    """The streamed ``requests`` reply the proxy relays (it asks with stream=True)."""
+
     status_code = 200
+    ok = True
     content = b"ARROW1"
     headers = {"Content-Type": ARROW_IPC_MIME, "X-Curio-Kind": "geodataframe"}
+
+    def iter_content(self, chunk_size=1):
+        yield self.content
+
+    def close(self):
+        pass
 
 
 class ArrowProxyHeadersTest(unittest.TestCase):

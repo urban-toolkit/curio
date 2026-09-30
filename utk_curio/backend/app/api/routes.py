@@ -84,6 +84,8 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
 
     if response.status_code == 401:
         print(f"[backend {label}] sandbox rejected the shared secret on {path}", flush=True)
+        # A streamed call holds its pooled connection until the body is read.
+        response.close()
         return jsonify({
             'error': 'sandbox_unauthorized',
             'message': (f'The sandbox rejected the backend on {path}. The two '
@@ -94,6 +96,56 @@ def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs)
         }), 502
 
     return response
+
+
+#: Chunk size for relaying a sandbox reply to the browser.
+RELAY_CHUNK_BYTES = 64 * 1024
+
+
+def _relay_sandbox_reply(resp, *, label, file_name, t0, error_prefix=None):
+    """Pass a sandbox ``/get`` reply to the browser as it arrives (#408).
+
+    The backend only relays artifacts, so it has no reason to hold one. It used
+    to: the JSON path parsed the whole body and encoded it again (a 17 MB
+    GeoJSON body peaked at 120 MB of Python objects here), and the Arrow path
+    read the whole stream before sending a byte. With every output of a run
+    fetched at once, those copies sat on top of the sandbox's own.
+
+    ``resp`` must come from a ``stream=True`` call. ``error_prefix`` set means a
+    non-2xx reply becomes ``"<prefix>: <reason>"`` with a 500, which is what the
+    JSON routes have always answered; unset, the sandbox's status and body pass
+    through, which is what the Arrow client reads (415 means "ask for JSON").
+    """
+    if error_prefix is not None and not resp.ok:
+        try:
+            resp.raise_for_status()
+            message = f'{error_prefix}: HTTP {resp.status_code}'
+        except Exception as e:
+            message = f'{error_prefix}: {str(e)}'
+        finally:
+            resp.close()
+        return message, 500
+
+    forwarded = {k: v for k, v in resp.headers.items() if k.startswith("X-Curio-")}
+
+    def body():
+        sent = 0
+        try:
+            for chunk in resp.iter_content(chunk_size=RELAY_CHUNK_BYTES):
+                if chunk:
+                    sent += len(chunk)
+                    yield chunk
+        finally:
+            resp.close()
+            print(f"[{label}] id={file_name} took={time.perf_counter()-t0:.4f}s "
+                  f"bytes={sent}", flush=True)
+
+    return Response(
+        body(),
+        status=resp.status_code,
+        mimetype=resp.headers.get("Content-Type", "application/octet-stream"),
+        headers=forwarded,
+    )
 
 
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
@@ -304,33 +356,16 @@ def get_file():
             sandbox_kwargs['headers'][GEOMETRY_ACCEPT_HEADER] = accept_geometry
     resp = _sandbox_call(
         'get', '/get',
-        label='/get', timeout=SANDBOX_GET_TIMEOUT,
+        label='/get', timeout=SANDBOX_GET_TIMEOUT, stream=True,
         **sandbox_kwargs,
     )
     if isinstance(resp, tuple):  # transport-level failure (timeout / unreachable)
         return resp
 
     if wants_arrow:
-        forwarded_headers = {
-            k: v for k, v in resp.headers.items()
-            if k.startswith("X-Curio-")
-        }
-        print(f"[/get] arrow id={file_name} took={time.perf_counter()-t0:.4f}s "
-              f"bytes={len(resp.content)}", flush=True)
-        return Response(
-            resp.content,
-            status=resp.status_code,
-            mimetype=resp.headers.get("Content-Type", "application/octet-stream"),
-            headers=forwarded_headers,
-        )
-
-    try:
-        resp.raise_for_status()
-        data = resp.json()
-        print(f"[/get] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
-        return jsonify(data), 200
-    except Exception as e:
-        return f'Error loading artifact: {str(e)}', 500
+        return _relay_sandbox_reply(resp, label='/get arrow', file_name=file_name, t0=t0)
+    return _relay_sandbox_reply(resp, label='/get', file_name=file_name, t0=t0,
+                                error_prefix='Error loading artifact')
 
 
 @bp.route('/get-preview', methods=['GET'])
@@ -351,18 +386,13 @@ def get_file_preview():
     t0 = time.perf_counter()
     resp = _sandbox_call(
         'get', '/get',
-        label='/get-preview', timeout=SANDBOX_PREVIEW_TIMEOUT,
+        label='/get-preview', timeout=SANDBOX_PREVIEW_TIMEOUT, stream=True,
         params={"fileName": file_name, "maxRows": max_rows, "sessionId": session_id},
     )
     if isinstance(resp, tuple):
         return resp
-    try:
-        resp.raise_for_status()
-        data = resp.json()
-        print(f"[/get-preview] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
-        return jsonify(data), 200
-    except Exception as e:
-        return f'Error loading preview: {str(e)}', 500
+    return _relay_sandbox_reply(resp, label='/get-preview', file_name=file_name, t0=t0,
+                                error_prefix='Error loading preview')
 
 
 # The scan moved to datasets/domain/code_refs.py so the lineage path and this

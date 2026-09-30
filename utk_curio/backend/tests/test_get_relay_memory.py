@@ -17,7 +17,6 @@ import tracemalloc
 import unittest
 from unittest import mock
 
-import pytest
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.app.api import routes
@@ -99,30 +98,57 @@ class GetRelayMemoryTest(unittest.TestCase):
             patched.start()
             self.addCleanup(patched.stop)
 
-    def _relay(self):
+    def _relay_peak(self):
+        """Peak Python allocation while the route relays the body.
+
+        The body is consumed a chunk at a time and dropped, as a browser
+        reading the response would: the test client's own buffering (it
+        collects every chunk, then joins them) is not the backend's memory.
+        """
         tracemalloc.start()
         try:
-            response = self.client.get("/get", query_string={"fileName": "a1"})
-            relayed = response.get_data()
+            response = self.client.get("/get", query_string={"fileName": "a1"},
+                                       buffered=False)
+            size = 0
+            for chunk in response.response:
+                size += len(chunk)
+            response.close()
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        return response, relayed, peak
+        return response, size, peak
 
-    @pytest.mark.xfail(strict=True, reason="#408: the JSON path parses and re-encodes the body")
     def test_the_json_path_relays_without_parsing_the_artifact(self):
-        response, relayed, peak = self._relay()
+        response, size, peak = self._relay_peak()
 
         self.assertEqual(response.status_code, 200)
+        # A relay that held even half the artifact would not be relaying it.
         self.assertLess(
-            peak, 2 * len(self.body),
+            peak, len(self.body) / 2,
             f"relaying a {len(self.body) / 1e6:.0f} MB body peaked at "
             f"{peak / 1e6:.0f} MB of Python allocations",
         )
+        # Byte for byte: re-encoding changed the whitespace, and so the size.
+        self.assertEqual(size, len(self.body))
 
     def test_the_relayed_body_is_the_sandbox_body(self):
-        response, relayed, _ = self._relay()
+        response = self.client.get("/get", query_string={"fileName": "a1"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(json.loads(relayed), json.loads(self.body))
+        self.assertEqual(json.loads(response.get_data()), json.loads(self.body))
         self.assertTrue(response.content_type.startswith("application/json"))
+
+    def test_a_sandbox_error_is_still_reported_as_a_load_error(self):
+        failing = FakeSandboxResponse(b'{"error": "KeyError"}')
+        failing.status_code = 404
+        failing.ok = False
+
+        def raise_for_status():
+            raise RuntimeError("404 Client Error: NOT FOUND")
+
+        failing.raise_for_status = raise_for_status
+        with mock.patch.object(routes, "_sandbox_call", lambda *a, **k: failing):
+            response = self.client.get("/get", query_string={"fileName": "a1"})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("Error loading artifact: 404 Client Error", response.get_data(as_text=True))
