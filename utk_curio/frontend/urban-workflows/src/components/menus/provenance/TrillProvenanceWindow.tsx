@@ -179,8 +179,15 @@ function TrillProvenanceGraph({ open }: { open: boolean }) {
             // for; if the chain length itself becomes the problem, the answer is
             // to record fewer versions for a load, not to zoom out further.
             minZoom={0.1}
+            // Open on the selected version, at a zoom its card can be read at,
+            // and let the user pan to the rest. Framing the whole chain put a
+            // 12-version example at about 0.16, 26x18 px a card (#507).
             fitView
-            fitViewOptions={{ padding: 0.25 }}
+            fitViewOptions={{
+                padding: 0.25,
+                maxZoom: 1,
+                ...(selectedId ? { nodes: [{ id: selectedId }] } : {}),
+            }}
             style={{ background: "#e8e8e8" }}
             proOptions={{ hideAttribution: true }}
         >

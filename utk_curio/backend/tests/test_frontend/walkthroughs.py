@@ -373,6 +373,16 @@ def open_provenance(ctx: Ctx):
     return dialog
 
 
+def show_every_version(ctx: Ctx, dialog) -> None:
+    """Frame the whole version chain, the way a user reaches an old version.
+
+    The window opens on the selected version at a readable zoom (#507), so the
+    rest of the chain is off screen until it is panned to or fitted.
+    """
+    ctx.click(dialog.get_by_role("button", name="fit view"))
+    ctx.beat(600)
+
+
 # The provenance modal renders its own React Flow inside a portal on
 # document.body, so a bare `.react-flow__node` count would mix the version graph
 # in with the dataflow behind it. Everything below counts only what is OUTSIDE
@@ -461,7 +471,6 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
     fit_reactflow=False,
 )
 def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
-    page = ctx.page
     spec = load_example_spec(PROVENANCE_EXAMPLE)["dataflow"]
     node_count, edge_count = len(spec["nodes"]), len(spec["edges"])
 
@@ -476,17 +485,7 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
     )
 
     ctx.say("One version per node, then one per connection",
-            "Zoom in on the newest.")
-    # Wheel-zoom with the pointer on the newest version, so React Flow zooms
-    # around it and it stays in view. The zoom buttons zoom around the centre,
-    # and a DOM scroll afterwards moves React Flow's wrapper, not the graph.
-    box = versions.last.bounding_box()
-    assert box, "the newest provenance version has no layout box"
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    for _ in range(6):
-        page.mouse.wheel(0, -200)
-        ctx.beat(120)
-    ctx.beat(900)
+            "The window opens on the newest.")
 
     # The load-bearing check. DataflowThumbnail draws one <line> per edge and two
     # <rect> per node, and SKIPS any edge whose endpoints are missing from the
@@ -608,6 +607,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             open_provenance(ctx)
 
     for index in targets:
+        show_every_version(ctx, dialog)
         version = versions.nth(index)
         expected = version_graph(version)
         ctx.click(version, hold=520)
@@ -630,6 +630,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             "Each one put its own graph on the canvas.")
 
     # Forward to the newest, so the canvas ends where it started.
+    show_every_version(ctx, dialog)
     ctx.click(versions.nth(count - 1), hold=520)
     await_canvas_nodes(page, saved["nodes"])
     restored = canvas_graph(page)
