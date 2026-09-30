@@ -41,6 +41,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    requires_shift_wheel_scroll,
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
     wait_for_node_done,
@@ -122,6 +123,7 @@ def _spec() -> dict:
     }
 
 
+@requires_shift_wheel_scroll
 def test_the_data_summary_scrolls_to_its_last_column(
     app_frontend: "FrontendPage",
     current_server: str,

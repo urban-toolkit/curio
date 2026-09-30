@@ -40,6 +40,7 @@ from .utils import (
     node_locator,
     require_project_page,
     require_user_auth,
+    requires_shift_wheel_scroll,
     run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
@@ -73,6 +74,7 @@ def _viewport_transform(page) -> str:
     )
 
 
+@requires_shift_wheel_scroll
 def test_the_data_pool_scrolls_to_its_last_column(
     app_frontend: "FrontendPage",
     current_server: str,

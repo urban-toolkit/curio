@@ -4,6 +4,7 @@ import json
 import time
 # import zlib
 import shutil
+import sys
 import textwrap
 from pathlib import Path
 from contextlib import contextmanager
@@ -331,6 +332,18 @@ def require_no_project_mode() -> None:
     if not skip_project_page_env():
         pytest.skip("This test requires CURIO_NO_PROJECT=1")
 
+
+# Chromium on macOS does not turn Playwright's Shift+wheel into a horizontal
+# scroll, so the gesture half of the two hscroll tests can never pass there. The
+# overflow styles those tests assert first are fine on a Mac; CI (Linux) runs the
+# whole thing.
+requires_shift_wheel_scroll = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason=(
+        "Shift+wheel is not translated into horizontal scroll by Chromium on "
+        "macOS; this test runs on Linux CI"
+    ),
+)
 
 # Hosts a node's own code is allowed to reach from the browser. The DuckDB-WASM
 # engine behind an Autark node downloads its spatial extension from here on first
