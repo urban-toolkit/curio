@@ -53,9 +53,9 @@ def unprivileged_worker(workspace, monkeypatch):
     would leave the guarantee unexercised in the one environment that runs it
     on every push, so drop privileges instead.
 
-    Wraps the ``preexec_fn`` ``run_worker`` already installs rather than
-    adding a run-as parameter to ``build_workspace`` that no production caller
-    would pass. Same account and the same 0711 traversal as ``isolated_dropped``
+    Adds a ``drop`` to the bounds ``run_worker`` already applies after exec
+    rather than adding a run-as parameter to ``build_workspace`` that no
+    production caller would pass. Same account and the same 0711 traversal as ``isolated_dropped``
     in ``utk_curio/sandbox/tests/test_isolation_linux.py``.
     """
     if os.name != "posix" or os.geteuid() != 0:
@@ -83,15 +83,10 @@ def unprivileged_worker(workspace, monkeypatch):
     original = build_workspace._apply_rlimits
 
     def _dropping(limits):
-        applied, preexec = original(limits)
-
-        def _child() -> None:  # runs in the child, pre-exec
-            preexec()  # rlimits first: after setuid they can only be lowered
-            os.setgroups([])
-            os.setgid(account.pw_gid)
-            os.setuid(account.pw_uid)  # last — nothing can be dropped after
-
-        return applied, _child
+        applied, bounds = original(limits)
+        # bounded_exec sets the rlimits first, then drops: after setuid they
+        # could only be lowered.
+        return applied, {**bounds, "drop": [account.pw_uid, account.pw_gid]}
 
     monkeypatch.setattr(build_workspace, "_apply_rlimits", _dropping)
 
