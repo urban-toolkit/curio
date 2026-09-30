@@ -543,11 +543,14 @@ jobs:
           set -euo pipefail
           # pytest splits PYTEST_ADDOPTS the way a shell would, so the filter
           # goes in quoted.
+          extra=()
           if [ "${CURIO_REMINT:-}" = 1 ]; then
             PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+              # A filter may name only tests the other runner owns.
+              extra+=(--allow-empty)
             fi
             if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FORCE"
@@ -556,7 +559,7 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
-          bash scripts/test.sh --e2e-only --use-existing \
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL" \
             --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
 
@@ -828,11 +831,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          extra=()
           if [ "${CURIO_REMINT:-}" = 1 ]; then
             PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+              # A filter may name only tests the utk runner owns.
+              extra+=(--allow-empty)
             fi
             if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FORCE"
@@ -840,7 +846,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/test.sh --e2e-only --use-existing \
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
             --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
 
       - name: 📦 Collect the re-minted baselines

@@ -1756,9 +1756,15 @@ def frame_nodes(page: Page, node_ids) -> None:
 # test_workflows.INTERACTIONS.
 
 #: How many pixels of the target have to change, by more than 40 in some
-#: channel, for a gesture to count as having reached it. A bar turned red or
-#: one ZIP highlighted on a map is several hundred.
-INTERACTION_MIN_CHANGED_PIXELS = 100
+#: channel, for a gesture to count as having reached it. One bar of 90 turned
+#: red was 63 at 55% zoom (CI run 36791426801); two captures of a node that is
+#: not changing differ by none.
+INTERACTION_MIN_CHANGED_PIXELS = 20
+
+#: The page's size while interaction steps run: room to frame a pair of nodes
+#: at up to 100% zoom. At the suite's 1280x720 a bar chart above a map fitted
+#: at 55%, where one bar is two pixels wide.
+INTERACTION_VIEWPORT = {"width": 1600, "height": 1440}
 
 #: How close to its first capture a target has to come back once the gesture
 #: is undone: the share of pixels over ``CLOSEUP_PIXEL_THRESHOLD``.

@@ -19,6 +19,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from .utils import (
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_RESTORED_RATIO,
+    INTERACTION_VIEWPORT,
     CLOSEUP_PIXEL_THRESHOLD,
     _compare_images,
     _wait_for_no_node_running,
@@ -1031,8 +1032,14 @@ class TestWorkflowCanvas:
         taking the gesture back puts it back as it was.
         """
         self._execute_all_playable_nodes()
-        for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
-            self._interact(step, request.function.__name__)
+        viewport = self.page.viewport_size
+        self.page.set_viewport_size(INTERACTION_VIEWPORT)
+        try:
+            for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
+                self._interact(step, request.function.__name__)
+        finally:
+            if viewport:
+                self.page.set_viewport_size(viewport)
 
     def _assert_drawn(self, node_id: str) -> None:
         node = next(n for n in self.spec.nodes if n.id == node_id)
