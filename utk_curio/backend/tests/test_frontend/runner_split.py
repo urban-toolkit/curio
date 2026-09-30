@@ -28,27 +28,26 @@ Selected with two environment variables, both unset for an ordinary local run
 
 * ``CURIO_E2E_RUNNER`` - ``utk`` keeps only the WebGPU tests, ``desktop``
   only the others;
-* ``CURIO_E2E_PART`` - ``k/n`` keeps the k-th of n shards (1-based) of what
-  is left, balanced by the recorded group durations in ``e2e_durations.json``.
+* ``CURIO_E2E_PART`` - ``k/n`` keeps the k-th of n parts (1-based) of what
+  is left, balanced by the recorded group durations in ``e2e_durations.json``
+  (see ``tests/parts.py``).
 """
 
 from __future__ import annotations
 
 import functools
 import inspect
-import json
 import os
 import re
 from pathlib import Path
+
+from utk_curio.backend.tests import parts
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DURATIONS_FILE = Path(__file__).with_name("e2e_durations.json")
 
 #: What marks a test, a scene or a dataflow as needing WebGPU in the browser.
 WEBGPU_RE = re.compile(r"autk|autark|webgpu|navigator\.gpu", re.IGNORECASE)
-
-#: A group whose duration is unknown (new since the file was recorded).
-DEFAULT_GROUP_SECONDS = 30.0
 
 RUNNERS = ("utk", "desktop")
 
@@ -112,34 +111,9 @@ def group_of(item) -> str:
     return module.__name__.rsplit(".", 1)[-1] if module is not None else item.nodeid
 
 
-def load_durations(path: Path = DURATIONS_FILE) -> dict:
-    try:
-        return {str(k): float(v) for k, v in json.loads(path.read_text()).items()}
-    except (OSError, ValueError):
-        return {}
-
-
-def assign_shards(groups, shards: int, durations: dict) -> dict:
-    """Longest-first onto the least-loaded shard. Deterministic for a given input."""
-    load = [0.0] * shards
-    placed = {}
-    ordered = sorted(set(groups), key=lambda g: (-durations.get(g, DEFAULT_GROUP_SECONDS), g))
-    for group in ordered:
-        target = min(range(shards), key=lambda i: (load[i], i))
-        placed[group] = target
-        load[target] += durations.get(group, DEFAULT_GROUP_SECONDS)
-    return placed
-
-
 def parse_shard(value: str) -> tuple[int, int]:
     """``"k/n"`` -> (k-1, n), 1-based on the outside, 0-based inside."""
-    try:
-        k, n = (int(part) for part in value.split("/", 1))
-    except ValueError:
-        raise ValueError(f"CURIO_E2E_PART must be k/n, got {value!r}") from None
-    if not 1 <= k <= n:
-        raise ValueError(f"CURIO_E2E_PART {value!r}: k must be between 1 and n")
-    return k - 1, n
+    return parts.parse_part(value, "CURIO_E2E_PART")
 
 
 def select(items, runner: str | None, shard: str | None, durations: dict | None = None):
@@ -154,12 +128,11 @@ def select(items, runner: str | None, shard: str | None, durations: dict | None 
         else:
             dropped.append(item)
     if shard:
-        index, count = parse_shard(shard)
-        placed = assign_shards([group_of(i) for i in kept], count,
-                               load_durations() if durations is None else durations)
-        mine = [i for i in kept if placed[group_of(i)] == index]
-        dropped += [i for i in kept if placed[group_of(i)] != index]
-        kept = mine
+        kept, rest = parts.keep_part(
+            kept, shard, group_of,
+            parts.load_durations(DURATIONS_FILE) if durations is None else durations,
+            "CURIO_E2E_PART")
+        dropped += rest
     return kept, dropped
 
 

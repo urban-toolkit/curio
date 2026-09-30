@@ -626,8 +626,11 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
   # The Python unit suites need the image but neither a GPU nor a browser, so
-  # they run here, beside test-gpu, instead of adding nine minutes to it.
+  # they run here, beside test-gpu, instead of adding nine minutes to it. The
+  # backend suite, the longest of them, runs as two balanced parts
+  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json).
   unit:
+    name: unit (${{ matrix.name }})
     needs: build-image
     if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
     runs-on: ubuntu-latest
@@ -638,7 +641,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [backend, sandbox]
+        include:
+          - { name: backend-1, suite: backend, part: "1/2" }
+          - { name: backend-2, suite: backend, part: "2/2" }
+          - { name: sandbox, suite: sandbox, part: "" }
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
@@ -661,21 +667,22 @@ jobs:
 
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
-      - name: 🧪 Run the ${{ matrix.suite }} unit tests
-        # About 8 minutes for the backend. The limit is for a hang, so it fails
-        # here rather than holding the job until its own timeout.
+      - name: 🧪 Run the ${{ matrix.name }} unit tests
+        # About 5 minutes a part. The limit is for a hang, so it fails here
+        # rather than holding the job until its own timeout.
         timeout-minutes: 25
         run: |
           docker compose -p curio-ci exec -T \
-            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.suite }}.xml curio \
+            -e CURIO_UNIT_PART="${{ matrix.part }}" \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}.xml curio \
             bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
 
       - name: 📤 Upload the results for the CI report
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ci-inputs-unit-${{ matrix.suite }}
-          path: .curio/ci-report/${{ matrix.suite }}.xml
+          name: ci-inputs-unit-${{ matrix.name }}
+          path: .curio/ci-report/${{ matrix.name }}.xml
           if-no-files-found: ignore
           retention-days: 7
 
@@ -754,7 +761,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4, 5, 6, 7, 8]
+        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_RUNNER: desktop
@@ -1522,8 +1529,12 @@ jobs:
           curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
             -o ci-report/jobs.json || echo '{}' > ci-report/jobs.json
-          args=(
-            --junit "Backend unit tests=inputs/ci-inputs-unit-backend/backend.xml"
+          args=()
+          for part in inputs/ci-inputs-unit-backend-*/; do
+            k="${part%/}"; k="${k##*-}"
+            args+=(--junit "Backend unit tests, part $k=${part}backend-$k.xml")
+          done
+          args+=(
             --junit "Sandbox unit tests=inputs/ci-inputs-unit-sandbox/sandbox.xml"
             --junit "End-to-end tests, GPU runner=inputs/ci-inputs-test-gpu/e2e.xml"
           )

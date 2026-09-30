@@ -109,7 +109,7 @@ class SelectionTest(unittest.TestCase):
 class NoTestIsLostTest(unittest.TestCase):
     """The real e2e suite: every test on exactly one runner and one shard."""
 
-    SHARDS = 8
+    SHARDS = 10
 
     @staticmethod
     def collect(**env):

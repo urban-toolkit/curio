@@ -13,6 +13,7 @@ E2E — starts against an empty database, and the dev
 import os
 import shutil
 import sys
+from pathlib import Path
 
 _REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -42,6 +43,7 @@ _REPO_ROOT = os.path.abspath(
 # worker's ports and state root before anything below (or any backend import)
 # reads the environment. A no-op in a serial run. See shards.py.
 from .shards import apply_shard_env, seed_package_catalog  # noqa: E402
+from . import parts as suite_parts  # noqa: E402
 apply_shard_env()
 
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
@@ -479,6 +481,38 @@ def pytest_configure(config):
     existing = getattr(config.option, "markexpr", "") or ""
     parts = ([f"({existing})"] if existing else []) + excluded
     setattr(config.option, "markexpr", " and ".join(parts))
+
+
+#: Seconds per backend test file, for balancing CURIO_UNIT_PART. Refresh it
+#: from a run's backend JUnit with scripts/unit_durations.py.
+UNIT_DURATIONS_FILE = Path(__file__).with_name("unit_durations.json")
+
+
+def unit_group_of(item) -> str:
+    """The test file an item is in, dotted from this folder (test_agents.test_routes)."""
+    try:
+        rel = Path(str(item.path)).resolve().relative_to(Path(__file__).resolve().parent)
+    except ValueError:
+        return item.nodeid
+    return ".".join(rel.with_suffix("").parts)
+
+
+def pytest_collection_modifyitems(config, items):
+    """``CURIO_UNIT_PART=k/n`` keeps one balanced part of the backend suite.
+
+    CI runs the backend unit suite as parts on separate ubuntu-latest jobs, one
+    test file never split across two of them (tests/parts.py). Unset, as in any
+    local run, everything runs.
+    """
+    value = (os.environ.get("CURIO_UNIT_PART") or "").strip()
+    if not value:
+        return
+    kept, dropped = suite_parts.keep_part(
+        items, value, unit_group_of,
+        suite_parts.load_durations(UNIT_DURATIONS_FILE), "CURIO_UNIT_PART")
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept
 
 
 @pytest.fixture(scope="session")
