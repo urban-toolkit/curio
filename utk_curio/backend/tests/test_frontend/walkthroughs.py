@@ -1295,7 +1295,10 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
-    node.scroll_into_view_if_needed()
+    # This chart is the top node of a tall dataflow, so at fit zoom its header
+    # sits under the menu bar (#493) and the Pin click lands on the bar. The
+    # capture refits the view, so framing it here changes no frame.
+    frame_node(page, node_id)
     # Not `run_node_and_wait`: that waits for a code node's text pane, which a
     # chart does not have. Wait on the status attribute, then on drawn marks.
     play_node(page, node_id)
@@ -2802,6 +2805,10 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     # React Flow rebuilds the canvas after the reload; the scene needs the node
     # back before it can rename it.
     node.wait_for(state="visible", timeout=45000)
+    # At fit zoom the chart's header sits under the menu bar (#493), where the
+    # rename click would land on the bar. The capture is clipped to the chat
+    # header, so framing the node changes no frame.
+    frame_node(page, node_id)
     ctx.beat(800)
 
     # Rename AFTER the reload. A type label ("Vega-Lite") would appear in the
