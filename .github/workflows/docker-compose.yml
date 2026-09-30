@@ -774,6 +774,7 @@ jobs:
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+      CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5022"
@@ -825,6 +826,10 @@ jobs:
             if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
               printf -v quoted '%q' "$CURIO_REMINT_FILTER"
               PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+            fi
+            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FORCE"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
             fi
             export PYTEST_ADDOPTS
           fi
