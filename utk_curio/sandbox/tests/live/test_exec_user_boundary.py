@@ -2,7 +2,7 @@
 
 Every other isolation test runs its children as **root**, and root ignores mode
 bits. ``test_isolation_linux.py`` builds its own workspace and drops privileges
-by hand; the ``test-gpu-isolated`` CI job boots ``CURIO_ISOLATION=fork`` with no
+by hand; the ``test-isolated`` CI job boots ``CURIO_ISOLATION=fork`` with no
 exec user at all, because setting one hardens ``.curio/data`` and the e2e
 harness writes its ground truth there from the host process. So the filesystem
 half of the boundary -- the part that only exists when the child is an
@@ -23,7 +23,7 @@ cannot reach from the other side of the fork.
 
 It is skipped unless ``CURIO_LIVE_SANDBOX_URL`` names a running sandbox, so it
 is inert during the ordinary unit run (``scripts/test.sh``, which collects this
-whole tree) and only does anything in the ``test-gpu-exec-user`` job.
+whole tree) and only does anything in the ``test-exec-user`` job.
 
 Note the deliberate asymmetry with the unit suites: nothing here reaches into
 the container's filesystem or reads a log. The only channel is the API a node

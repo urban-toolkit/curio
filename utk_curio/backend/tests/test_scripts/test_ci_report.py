@@ -1,6 +1,6 @@
 """The CI report page: one HTML file that has to stand on its own.
 
-``scripts/ci_report.py`` is what test-gpu uploads as ``curio-ci-report.html``.
+``scripts/ci_report.py`` is what the ci-report job uploads as ``curio-ci-report.html``.
 Every input is optional because a step that never ran leaves no file, and the
 page is the first thing read when a run goes red, so a page that fails to build
 on odd input is worse than no page. These build it from synthetic inputs.
@@ -329,3 +329,33 @@ def test_a_failure_folder_is_found_from_its_junit_name():
     folders = [ci_report.failure_folder(n) for n in ci_report.candidate_nodeids(classname, name)]
     # diagnostics.failure_dir names the folder from the real node id.
     assert ci_report.failure_folder(FAILED_ID) in folders
+
+
+RUN_JOBS = {"jobs": [
+    {"name": "test-gpu", "status": "completed", "conclusion": "success",
+     "html_url": "https://github.com/o/r/actions/runs/1/job/2",
+     "started_at": "2026-09-30T12:00:00Z", "completed_at": "2026-09-30T12:08:00Z",
+     "steps": [{"name": "Run e2e tests", "status": "completed", "conclusion": "success",
+                "number": 9}]},
+    {"name": "e2e-desktop (3)", "status": "completed", "conclusion": "failure",
+     "html_url": "https://github.com/o/r/actions/runs/1/job/3",
+     "started_at": "2026-09-30T12:02:00Z", "completed_at": "2026-09-30T12:11:00Z",
+     "steps": [{"name": "Run this part of the e2e tests", "status": "completed",
+                "conclusion": "failure", "number": 7}]},
+    {"name": "ci-report", "status": "in_progress", "steps": []},
+]}
+
+
+def test_a_run_wide_page_lists_every_job_and_what_failed_in_each(tmp_path):
+    (tmp_path / "jobs.json").write_text(json.dumps(RUN_JOBS), encoding="utf-8")
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--jobs", str(tmp_path / "jobs.json"), "--all-jobs",
+                           "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert "<h2>Jobs</h2>" in page
+    assert "1 of 2 jobs failed" in page  # the page's own job is still running
+    assert "e2e-desktop (3)" in page and "Run this part of the e2e tests" in page
+    assert "job/3#step:7:1" in page
+    # A failed job fails the run even with no test suite to say so.
+    assert ci_report.overall(ci_report.build(ci_report.parse_args(
+        ["--jobs", str(tmp_path / "jobs.json"), "--all-jobs", "--out", str(out)]))) == "failed"

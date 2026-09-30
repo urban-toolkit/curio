@@ -1,5 +1,5 @@
 # Compose override for the exec-user CI job
-# (.github/workflows/docker-compose.yml, job `test-gpu-exec-user`).
+# (.github/workflows/docker-compose.yml, job `test-exec-user`).
 #
 # This is the ONLY job that boots the configuration the deploy actually ships:
 # isolation plus the curio-exec account with auth on, the same shape

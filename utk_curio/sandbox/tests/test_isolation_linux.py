@@ -1,9 +1,9 @@
 """The parts of isolation that only exist on Linux: fork, confine, kill.
 
-**Run by the ``test-gpu`` CI job, and by nothing else.** Not by
-``test-gpu-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
+**Run by the sandbox half of the ``unit`` CI job, and by nothing else.** Not by
+``test-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
 runs ``scripts/test.sh --e2e-only`` against it, and not by
-``test-gpu-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
+``test-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
 a running stack: each test builds its own ``IsolationConfig`` and starts its
 own zygote, so the ambient ``CURIO_ISOLATION`` is not consulted and a green run
 of either other job says nothing about this file.

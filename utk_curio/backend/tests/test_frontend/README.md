@@ -38,8 +38,32 @@ runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
 
 Tests are scheduled with `--dist loadgroup`: one group per workflow in
 `test_workflows.py` (its four class-scoped methods share a browser and a login),
-one group per file everywhere else. A missing screenshot baseline **fails** in
-every run; baselines are made on CI -- see *Screenshot baselines*.
+one per scene in `test_walkthrough_baselines.py`, one group per file everywhere
+else. A missing screenshot baseline **fails** in every run; baselines are made
+on CI -- see *Screenshot baselines*.
+
+### Where CI runs each test
+
+CI splits the suite between the self-hosted `utk` runner, the only one with
+hardware WebGPU, and a matrix of `ubuntu-latest` runners
+([`runner_split.py`](runner_split.py)). A test runs on `utk` when its browser
+runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
+walkthrough scene whose example or script drives Autark or the GPU, and any
+other module whose source mentions Autark or WebGPU. Such tests carry the
+`webgpu` marker. A test that needs the sibling backends of `--parallel` is
+marked `needs_parallel` and runs on `utk` too. Everything else runs on
+`ubuntu-latest`. Two variables select a share, and a run with neither runs
+everything:
+
+```bash
+CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
+CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/8 pytest ...                   # one of eight desktop parts
+```
+
+`CURIO_E2E_PART` balances the parts by the group durations in
+`e2e_durations.json`. Refresh it from a run's `allure-report` artifact with
+`python scripts/e2e_durations.py <allure-report dir>`; a group missing from it
+is priced at a default.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
@@ -247,9 +271,10 @@ gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # only some tests: add -f remint_filter='<a pytest -k expression>'
 ```
 
-That run is the e2e suite alone, under `--remint-baselines`: each capture is
-compared with its committed baseline, and when its screen changed the capture
-is written over the baseline; a missing baseline is minted. Then:
+That run is the e2e suite alone, under `--remint-baselines`, on `utk` and the
+`ubuntu-latest` parts alike, each re-minting the baselines it compares: each
+capture is compared with its committed baseline, and when its screen changed
+the capture is written over the baseline; a missing baseline is minted. Then:
 
 1. Open the run's `curio-ci-report.html`. Its **Re-minted** cards show each new
    frame next to the baseline it replaced, biggest change first; the baselines
@@ -341,8 +366,9 @@ With `CURIO_E2E_COMPARE_DIR` set, every comparison, passing or not, also writes 
 folder there: the expected and created images, a difference image (red: pixels
 counted against the budget; amber: different, but within the per-channel
 tolerance), and `record.json` with the tolerance, the budget and the measured
-share. test-gpu sets it and builds `curio-ci-report.html` from it at the end of
-the job; open it from the run's artifact list. The same page from a local run:
+share. Every CI e2e job sets it, and the run's `ci-report` job builds
+`curio-ci-report.html` from all of them; open it from the run's artifact list.
+The same page from a local run:
 
 ```bash
 CURIO_E2E_COMPARE_DIR=$PWD/.curio/compare PYTEST_ADDOPTS=--junitxml=$PWD/.curio/e2e.xml \
