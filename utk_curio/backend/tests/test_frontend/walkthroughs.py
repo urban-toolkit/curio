@@ -2632,7 +2632,10 @@ def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
 
     ctx.say("Scroll to the bottom of the details",
             "This is where the two used to collide.")
-    drawer.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
+    # The body scrolls, not the drawer (#526).
+    drawer.locator('[data-curio-drawer-body="true"]').evaluate(
+        "el => el.scrollTo({ top: el.scrollHeight })"
+    )
     page.wait_for_timeout(600)
 
     badge = page.locator("span[title]").filter(has_text=re.compile("isolated", re.I))
