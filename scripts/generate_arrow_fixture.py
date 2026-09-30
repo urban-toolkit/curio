@@ -11,10 +11,15 @@ utk_curio/backend/tests/test_arrow_fixture.py.
 import base64
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# Importable from any cwd and any PYTHONPATH: the pinning test spawns this script
+# from the repo root, and ``python scripts/generate_arrow_fixture.py`` puts only
+# ``scripts/`` on sys.path.
+sys.path.insert(0, str(REPO_ROOT))
 OUT = (REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src"
        / "tests" / "fixtures" / "arrow-geodataframe.json")
 
