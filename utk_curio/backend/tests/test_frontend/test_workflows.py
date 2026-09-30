@@ -122,7 +122,8 @@ class Interaction:
     *gesture* is ``hover``, the pointer held over a mark of a Vega chart, or
     ``pick``, a double-click on an Autark map (a pick toggles, so a second one
     on the same spot takes it back). The mark is the marked pixel of the
-    source's drawing nearest *at*, given as fractions of that drawing.
+    source's drawing nearest *at*, given as fractions of the part of that
+    drawing in view.
     """
     slug: str
     source: str

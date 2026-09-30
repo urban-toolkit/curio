@@ -1792,11 +1792,15 @@ _DRAWING_KEPT_JS = """(selector) => {
     return !!kept && kept.isConnected && document.querySelector(selector) === kept;
 }"""
 
-# The marked pixel of a canvas nearest a point given as fractions of it, in
-# page coordinates. Marked means opaque and saturated, with its eight
-# neighbours too, so the point is inside a bar or a polygon rather than on an
-# edge, an axis or the background. Read through toDataURL, which a WebGPU map
-# canvas answers as a 2D chart does.
+# A marked pixel of a canvas the page shows, in page coordinates: the one
+# nearest a point given as fractions of the part of the canvas in view. A node
+# can show less of its drawing than the canvas holds (an Autark map's canvas
+# is 400 px tall in a 281 px body), and overlays sit on top of it, so what is in
+# view is asked of elementFromPoint. Marked means opaque and saturated, and so
+# is every pixel around it: 7x7 where the marks are that wide, as a map's
+# polygons are, else 3x3, as a bar is. So the point is inside a bar or a
+# polygon, not on an edge, an axis or the background. Read through toDataURL,
+# which a WebGPU map canvas answers as a 2D chart does.
 _MARK_POINT_JS = """async ({ selector, at }) => {
     const el = document.querySelector(selector);
     if (!el) return null;
@@ -1812,33 +1816,50 @@ _MARK_POINT_JS = """async ({ selector, at }) => {
     const ctx = scratch.getContext('2d');
     ctx.drawImage(img, 0, 0);
     const px = ctx.getImageData(0, 0, w, h).data;
+    const box = el.getBoundingClientRect();
+    const sx = box.width / w, sy = box.height / h;
+    const onPage = (x, y) => [box.left + (x + 0.5) * sx, box.top + (y + 0.5) * sy];
+    const shown = (x, y) => document.elementFromPoint(...onPage(x, y)) === el;
     const marked = (x, y) => {
         const i = (y * w + x) * 4;
         const hi = Math.max(px[i], px[i + 1], px[i + 2]);
         const lo = Math.min(px[i], px[i + 1], px[i + 2]);
         return px[i + 3] >= 250 && hi > 0 && (hi - lo) / hi > 0.3;
     };
-    const inside = (x, y) => {
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) if (!marked(x + dx, y + dy)) return false;
+    const inside = (x, y, r) => {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) if (!marked(x + dx, y + dy)) return false;
         }
         return true;
     };
-    const cx = at[0] * w, cy = at[1] * h;
-    let best = null, bestDistance = Infinity;
-    for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-            const distance = (x - cx) ** 2 + (y - cy) ** 2;
-            if (distance < bestDistance && inside(x, y)) {
-                best = [x, y];
-                bestDistance = distance;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    const step = Math.max(1, Math.round(8 / sx));
+    for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+            if (shown(x, y)) {
+                x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+                x1 = Math.max(x1, x); y1 = Math.max(y1, y);
             }
         }
     }
-    if (!best) return null;
-    const box = el.getBoundingClientRect();
-    return { x: box.left + (best[0] + 0.5) * box.width / w,
-             y: box.top + (best[1] + 0.5) * box.height / h };
+    if (x1 < 0) return null;
+    const cx = x0 + at[0] * (x1 - x0), cy = y0 + at[1] * (y1 - y0);
+    for (const r of [3, 1]) {
+        const found = [];
+        for (let y = Math.max(y0, r); y <= Math.min(y1, h - 1 - r); y++) {
+            for (let x = Math.max(x0, r); x <= Math.min(x1, w - 1 - r); x++) {
+                if (inside(x, y, r)) found.push([(x - cx) ** 2 + (y - cy) ** 2, x, y]);
+            }
+        }
+        found.sort((a, b) => a[0] - b[0]);
+        for (const [, x, y] of found) {
+            if (shown(x, y)) {
+                const [pageX, pageY] = onPage(x, y);
+                return { x: pageX, y: pageY };
+            }
+        }
+    }
+    return null;
 }"""
 
 
@@ -1857,7 +1878,8 @@ def drawing_kept(page: Page, selector: str) -> bool:
 
 
 def mark_point(page: Page, selector: str, at=(0.5, 0.5)) -> dict | None:
-    """``{x, y}`` in the page: the marked pixel of *selector*'s canvas nearest *at*."""
+    """``{x, y}`` in the page: the marked pixel of *selector*'s canvas nearest *at*
+    of the part in view."""
     return page.evaluate(_MARK_POINT_JS, {"selector": selector, "at": list(at)})
 
 
