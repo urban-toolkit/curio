@@ -238,7 +238,24 @@ def test_an_ordinary_comparison_records_no_remint_fields(dirs, monkeypatch):
     _baseline(expected)
     _save(monkeypatch, lambda page: _white(paint=1))
     [(_, record)] = _records(compare)
-    assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels"} & set(record)
+    assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels",
+                "closeup"} & set(record)
+
+
+def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected)
+    _save(monkeypatch, lambda page: _white(paint=1), closeup=True)
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("passed", True)
+
+
+def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
+    _, compare = dirs
+    with pytest.raises(AssertionError, match="remint=true"):
+        _save(monkeypatch, lambda page: _white(paint=1), closeup=True)
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("missing", True)
 
 
 def test_nothing_is_recorded_when_it_is_off(dirs, monkeypatch):

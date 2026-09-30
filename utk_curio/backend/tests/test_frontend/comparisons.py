@@ -83,11 +83,13 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected=None, created=None, expected_cmp=None, arr=None,
            counted=None, mismatched=None, total=None, ratio=None, error=None,
            volatile=None, remint_ratio=None, remint_min_ratio=None,
-           recapture_ratio=None, expected_bytes=None, forced=False, environ=os.environ):
+           recapture_ratio=None, expected_bytes=None, forced=False, closeup=False,
+           environ=os.environ):
     """Write one comparison's folder. Returns its path, or None when off.
 
     *expected_bytes* is the baseline as it was before a re-mint replaced it;
     without it ``expected.png`` is copied from the file at *baseline*.
+    *closeup* marks one node framed on its own (``utils.save_node_closeup``).
     """
     if not enabled(environ):
         return None
@@ -99,7 +101,8 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
             mismatched=mismatched, total=total, ratio=ratio, error=error,
             volatile=volatile, remint_ratio=remint_ratio,
             remint_min_ratio=remint_min_ratio, recapture_ratio=recapture_ratio,
-            expected_bytes=expected_bytes, forced=forced, environ=environ,
+            expected_bytes=expected_bytes, forced=forced, closeup=closeup,
+            environ=environ,
         )
     except Exception as exc:
         print(f"[e2e-compare] could not record {os.path.basename(baseline)}: {exc}")
@@ -107,7 +110,7 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
 
 
 def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
-                   environ=os.environ):
+                   closeup=False, environ=os.environ):
     """Record a comparison that had no baseline, with what would have been minted."""
     if not enabled(environ):
         return None
@@ -119,14 +122,14 @@ def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
     return record(
         "missing", baseline=baseline, pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio, capture=capture, created=created,
-        error=error, environ=environ,
+        error=error, closeup=closeup, environ=environ,
     )
 
 
 def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected, created, expected_cmp, arr, counted, mismatched, total,
            ratio, error, volatile, remint_ratio, remint_min_ratio,
-           recapture_ratio, expected_bytes, forced, environ):
+           recapture_ratio, expected_bytes, forced, closeup, environ):
     test_id = nodeid(environ)
     name = os.path.basename(baseline)
     out_dir = _claim(environ[DIR_ENV], name, test_id)
@@ -174,6 +177,8 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
             data[key] = value
     if forced:
         data["forced"] = True  # named by --remint-force
+    if closeup:
+        data["closeup"] = True
     # Last, and atomically: the report skips a folder without record.json, so
     # a run killed mid-write leaves nothing half-read.
     tmp = os.path.join(out_dir, "record.json.tmp")

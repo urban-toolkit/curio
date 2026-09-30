@@ -290,6 +290,42 @@ def test_a_remint_run_shows_what_replaced_each_baseline_biggest_change_first(tmp
     assert summary.rstrip().endswith("Re-mint: 3 baselines replaced, 1 kept.")
 
 
+def test_a_minted_baseline_has_its_own_group_ahead_of_the_passes(tmp_path):
+    compare = tmp_path / "compare"
+    _comparison(compare, "a_pass", status="passed", ratio=0.0)
+    _comparison(compare, "z_new", status="minted", ratio=0.0)
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out),
+                           "--summary", str(summary)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert page.index("<h3>screenshot_z_new.png</h3>") < page.index("<h3>screenshot_a_pass.png</h3>")
+    card = _card(page, "screenshot_z_new.png")
+    assert 'data-group="minted"' in card
+    assert "<figcaption>New baseline</figcaption>" in card
+    assert "<figcaption>Captured again</figcaption>" in card
+    assert 'data-group="minted" aria-pressed="false">Minted <span class="num">1</span>' in page
+    assert "1 baselines did not exist, so this run wrote them" in page
+    assert "A re-mint run" not in page
+    assert summary.read_text(encoding="utf-8").rstrip().endswith("Minted: 1 new baselines.")
+
+
+def test_close_ups_get_a_badge_and_a_filter_across_the_groups(tmp_path):
+    compare = tmp_path / "compare"
+    _comparison(compare, "full", status="passed", ratio=0.0)
+    _comparison(compare, "near", status="passed", ratio=0.01, closeup=True)
+    _comparison(compare, "new", status="minted", ratio=0.0, closeup=True)
+    out = tmp_path / "report.html"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert 'data-group="closeup" aria-pressed="false">Close-ups <span class="num">2</span>' in page
+    for name in ("near", "new"):
+        card = _card(page, f"screenshot_{name}.png")
+        assert "close-up" in card and 'data-closeup="1"' in card
+    full = _card(page, "screenshot_full.png")
+    assert "close-up" not in full and 'data-closeup=""' in full
+    assert "card.dataset.closeup === '1'" in page
+
+
 def test_a_kept_baseline_is_listed_without_its_images(tmp_path):
     page, _ = _remint_page(tmp_path)
     kept = page[page.index('id="unchanged"'):]

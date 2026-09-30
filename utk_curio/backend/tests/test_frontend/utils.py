@@ -1491,6 +1491,7 @@ def save_workflow_test_screenshot(
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
     allow_running: bool = False,
+    closeup: bool = False,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1552,6 +1553,8 @@ def save_workflow_test_screenshot(
     draws on its own after its input arrives is photographed drawn, not
     mid-draw. Pass *allow_running* only when a run in progress is the subject.
 
+    *closeup* only labels the record, for the CI report's Close-ups filter.
+
     Returns the path to the expected screenshot file.
     """
     if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
@@ -1592,6 +1595,7 @@ def save_workflow_test_screenshot(
         pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio,
         capture=f"element {clip_selector}" if clip_selector is not None else "full page",
+        closeup=closeup,
     )
 
     minted_now = False
@@ -1707,6 +1711,7 @@ def save_node_closeup(
         clip_selector=f'.react-flow__node[data-id="{node_id}"]',
         fit_reactflow=False,
         sweep_toasts=sweep_toasts,
+        closeup=True,
     )
 
 

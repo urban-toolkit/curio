@@ -66,10 +66,11 @@ MAX_LISTED = 200  # failures listed per suite
 STATUS_RANK = {"passed": 0, "xfailed": 1, "skipped": 2, "error": 3, "failed": 4}
 
 # "reminted" and "unchanged" come only from a --remint-baselines run: the first
-# replaced its baseline, the second kept it.
+# replaced its baseline, the second kept it. "minted" is a baseline this run
+# wrote where there was none, so it is new and needs a look like a re-mint.
 COMPARISON_GROUP = {
     "failed": "over", "capture-error": "capture", "missing": "missing",
-    "passed": "within", "minted": "within",
+    "passed": "within", "minted": "minted",
     "reminted": "reminted", "unchanged": "unchanged",
 }
 COMPARISON_LABEL = {
@@ -77,10 +78,11 @@ COMPARISON_LABEL = {
     "missing": "No baseline", "passed": "Within budget", "minted": "Minted",
     "reminted": "Re-minted", "unchanged": "Unchanged",
 }
-GROUP_ORDER = ("reminted", "over", "capture", "missing", "within", "unchanged")
+GROUP_ORDER = ("reminted", "minted", "over", "capture", "missing", "within", "unchanged")
 GROUP_LABEL = {
-    "reminted": "Re-minted", "over": "Over budget", "capture": "Capture failed",
-    "missing": "No baseline", "within": "Within budget", "unchanged": "Unchanged",
+    "reminted": "Re-minted", "minted": "Minted", "over": "Over budget",
+    "capture": "Capture failed", "missing": "No baseline", "within": "Within budget",
+    "unchanged": "Unchanged",
 }
 
 
@@ -825,6 +827,11 @@ def render_comparisons(report):
     chips += [f'<button type="button" class="chip {g}" data-group="{g}" aria-pressed="false">'
               f'{GROUP_LABEL[g]} <span class="num">{counts[g]}</span></button>'
               for g in GROUP_ORDER if counts[g]]
+    # Across the groups: every node framed on its own, whatever became of it.
+    closeups = sum(1 for r in shown if r.get("closeup"))
+    if closeups:
+        chips.append('<button type="button" class="chip closeup" data-group="closeup" '
+                     f'aria-pressed="false">Close-ups <span class="num">{closeups}</span></button>')
     volatile = ('<span class="swatch volatile"></span> different, inside text a run writes '
                 'fresh every time (not counted by a re-mint) '
                 if any(r.get("volatile_pixels") for r in records) else "")
@@ -834,6 +841,8 @@ def render_comparisons(report):
     tools = (f'<div class="tools">{"".join(chips)}<input id="cmp-search" type="search" '
              'placeholder="Filter by baseline or test" aria-label="Filter comparisons"></div>')
     intro = render_remint_intro(records) if counts["reminted"] or kept else ""
+    if counts["minted"]:
+        intro += render_minted_intro(records)
     cards = "".join(render_comparison(report, r) for r in shown)
     return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{intro}{tools}{legend}'
             f'<div class="cards">{cards}</div>{render_unchanged(kept)}</section>')
@@ -857,6 +866,13 @@ def render_remint_intro(records):
             "text a run writes fresh every time (file names, ids, dates, times and the app "
             f"version).{requested} Each re-minted card shows the baseline it replaced; the "
             "replacements are in this run's <code>reminted-baselines</code> artifact.</p>")
+
+
+def render_minted_intro(records):
+    minted = sum(1 for r in records if r.get("status") == "minted")
+    return (f'<p class="note">{minted} baselines did not exist, so this run wrote them from what '
+            "it captured. Each Minted card shows the new baseline; nothing checked it against "
+            "an older one.</p>")
 
 
 def render_unchanged(records):
@@ -884,6 +900,8 @@ def render_comparison(report, record):
     ratio = record.get("ratio")
 
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
+    if record.get("closeup"):
+        head.append(badge("closeup", "close-up"))
     test = XDIST_GROUP.sub("", nodeid)
     test_bits = f'<span class="test-id">{esc(test)}</span>' if test else ""
     if record.get("test_status") in ("failed", "error"):
@@ -907,6 +925,14 @@ def render_comparison(report, record):
             head.append(badge("over", "over the budget until committed"))
         if record.get("forced"):
             head.append(badge("reminted", "requested"))
+        meter = ""
+    elif status == "minted":
+        # The new baseline, and a second capture compared with it.
+        captions = (("expected", "New baseline"), ("created", "Captured again"),
+                    ("diff", "Difference"))
+        verdict = (f"No baseline existed, so this capture became one. A second capture right "
+                   f"after differs from it by <strong>{percent(ratio)}</strong> (more than "
+                   f"{esc(threshold)} per channel); budget <strong>{percent(budget)}</strong>.")
         meter = ""
     elif ratio is not None and budget:
         verdict = (f"<strong>{percent(ratio)}</strong> of pixels differ by more than {esc(threshold)} "
@@ -952,7 +978,8 @@ def render_comparison(report, record):
                            f"<figcaption>{caption}</figcaption></figure>")
     search = f"{baseline} {test}".lower()
     return (f'<article class="card cmp" id="{esc(record.get("anchor") or "")}" '
-            f'data-group="{group}" data-search="{esc(search)}">'
+            f'data-group="{group}" data-closeup="{"1" if record.get("closeup") else ""}" '
+            f'data-search="{esc(search)}">'
             f'<header class="card-head">{"".join(head)}</header>'
             f'<p class="test">{test_bits}</p>'
             f'<p class="verdict"><span>{verdict}</span>{meter}</p>'
@@ -989,6 +1016,8 @@ def render_summary(report):
     counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in report.comparisons)
     remint = (f" Re-mint: {counts['reminted']} baselines replaced, {counts['unchanged']} kept."
               if counts["reminted"] or counts["unchanged"] else "")
+    if counts["minted"]:
+        remint += f" Minted: {counts['minted']} new baselines."
     lines += ["", f"Screenshot comparisons: {len(report.comparisons)} recorded, "
               f"{counts['over']} over budget, {counts['missing']} without a baseline, "
               f"{counts['capture']} capture failures.{remint}"]
@@ -1026,7 +1055,7 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
 .badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
-.badge.reminted{color:var(--accent)}
+.badge.reminted,.badge.minted,.badge.closeup{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}
@@ -1099,8 +1128,9 @@ JS = """
   function filter() {
     const q = ((search && search.value) || '').trim().toLowerCase();
     for (const card of cards) {
-      card.hidden = !((group === 'all' || card.dataset.group === group) &&
-                      (!q || card.dataset.search.includes(q)));
+      const inGroup = group === 'all' || card.dataset.group === group ||
+                      (group === 'closeup' && card.dataset.closeup === '1');
+      card.hidden = !(inGroup && (!q || card.dataset.search.includes(q)));
     }
   }
   for (const chip of chips) {
