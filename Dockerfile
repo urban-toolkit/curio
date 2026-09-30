@@ -26,7 +26,14 @@ COPY package.json package-lock.json ./
 COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
-COPY requirements.txt curio.py ./
+# Before the source, so a code change reuses this layer: pip needs nothing but
+# the requirements file, and reinstalling everything on every commit was most
+# of a build.
+COPY requirements.txt ./
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --prefer-binary --no-cache-dir -r requirements.txt
+
+COPY curio.py ./
 # pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
 # importable package -- the hyphen makes packages.find blind to it) into an
 # sdist and a wheel. tests/test_agents/test_prompt_assets.py asserts against
@@ -48,19 +55,20 @@ COPY utk_curio/ utk_curio/
 # them here every fresh database reaches extensions.duckdb.org.
 COPY vendor/ vendor/
 
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --prefer-binary --no-cache-dir -r requirements.txt
-
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
 FROM node:26-bookworm-slim AS frontend_builder
-WORKDIR /src
+# The dependencies first, from the manifests and the vendored tarballs they
+# point at, so a source change reuses the npm layer and only rebuilds.
+WORKDIR /src/utk_curio/frontend/urban-workflows
+COPY utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json ./
+COPY utk_curio/frontend/urban-workflows/vendor/ vendor/
+RUN npm install
+
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 COPY packages/ /src/packages/
-
-WORKDIR /src/utk_curio/frontend/urban-workflows
-RUN npm install && npm run build
+RUN npm run build
 
 # Record the webpack mode the bundle was built in, in the file curio.py's
 # launcher reads (utk_curio/main.py::_build_stamp_reason). The launcher writes
@@ -70,17 +78,6 @@ RUN npm install && npm run build
 # from package.json the same way _frontend_build_mode does, so the two cannot
 # drift.
 RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-build',(m?m[1]:'unknown')+'\n')"
-
-# Jest runs in this stage too (`docker build --target frontend_builder`, then
-# `npm test`, in .github/workflows/docker-compose.yml), and
-# src/tests/utils/deoverlapExamples.test.ts reads the shipped examples from
-# <repo>/docs/examples. Only the specs, not the PNG baselines beside them, and
-# after the build so an example edit does not invalidate the npm layers.
-COPY docs/examples/*.json /src/docs/examples/
-# importExtensionsMatchBackend.test.ts reads the backend's format list to
-# prove the two agree. Same reason as the examples above: the frontend test
-# image needs the file, not just the frontend source.
-COPY utk_curio/backend/app/datasets/domain/constants.py /src/utk_curio/backend/app/datasets/domain/constants.py
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
