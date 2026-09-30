@@ -7,6 +7,7 @@ import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./AgentReviewCard.module.css";
 import { VerificationChip } from "./verificationChip";
+import { countLabel } from "../../../utils/countLabel";
 
 /** dev/114 (DEC-072): the Source block's kind headline — how the runtime
  * grounded what the proposed code opens or fetches. */
@@ -398,7 +399,7 @@ export const AgentReviewCard: React.FC<{
         // Summary first (dev/52): counts + goal at a glance; the node list
         // scrolls in the preview region below — plans can be large.
         <div className={styles.meta}>
-          {part.plan.nodes.length} nodes · {part.plan.edgeCount} connections — {part.plan.goal}
+          {countLabel(part.plan.nodes.length, "node")} · {countLabel(part.plan.edgeCount, "connection")} · {part.plan.goal}
         </div>
       ) : null}
       {part.tool === "dataflow.plan.write" &&

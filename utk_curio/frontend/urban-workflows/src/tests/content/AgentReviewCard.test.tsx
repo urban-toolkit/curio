@@ -173,7 +173,7 @@ describe("AgentReviewCard — dev/52 dataflow.plan.write kind", () => {
       },
     };
     render(<AgentReviewCard part={plan} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("2 nodes · 1 connections — heat analysis")).toBeInTheDocument();
+    expect(screen.getByText("2 nodes · 1 connection · heat analysis")).toBeInTheDocument();
     expect(screen.getByText(/Load · curio.builtin\/data-loading/)).toBeInTheDocument();
     expect(
       screen.getByText("Applying adds these 2 connected nodes to the canvas — existing work is untouched."),
@@ -1019,7 +1019,7 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
     };
     render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
     expect(screen.queryByRole("button", { name: /Add key/ })).toBeNull();
-    expect(screen.getByText(/A connection key "census" is saved for api.census.gov — Solve again/)).toBeInTheDocument();
+    expect(screen.getByText(/A connection key "census" is saved for api.census.gov. Solve again/)).toBeInTheDocument();
   });
 });
 

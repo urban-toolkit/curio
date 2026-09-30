@@ -27,6 +27,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 import { backendUrl } from "../../utils/backendUrl";
+import { countLabel } from "../../utils/countLabel";
 
 type ViewMode = "grid" | "list";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
@@ -414,10 +415,9 @@ const ProjectsList: React.FC = () => {
               }
               subtitle={selected.slug}
               metaLeft={
-                nodeCount(selected) +
-                " nodes · " +
-                edgeCount(selected) +
-                " connections"
+                countLabel(nodeCount(selected), "node") +
+                " · " +
+                countLabel(edgeCount(selected), "connection")
               }
               metaRight={catalogRelativeTime(selected.updated_at)}
               fresh={catalogIsFresh(selected.updated_at)}

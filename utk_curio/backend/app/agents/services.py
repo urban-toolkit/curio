@@ -2022,15 +2022,20 @@ def _topology_clause(spec: dict) -> str:
     ) + "."
 
 
+def _count(n: int, noun: str) -> str:
+    """``1 node``, ``2 nodes``: a count and its noun, agreeing (#508)."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
 def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
     """dev/112: ``, removed 1 node and 2 connections`` — truthful for edges
     (the old copy counted nodes only, so an edge-only removal read "removed 0
     nodes"). Empty when nothing was removed."""
     parts = []
     if n_nodes:
-        parts.append(f"{n_nodes} node{'s' if n_nodes != 1 else ''}")
+        parts.append(_count(n_nodes, "node"))
     if n_edges:
-        parts.append(f"{n_edges} connection{'s' if n_edges != 1 else ''}")
+        parts.append(_count(n_edges, "connection"))
     return f", {prefix}" + " and ".join(parts) if parts else ""
 
 
@@ -2217,7 +2222,7 @@ def _mint_dataflow_plan(
         }
     proposal_id = uuid.uuid4().hex
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
-    summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
+    summary = f"Apply plan · {_count(n_nodes, 'node')}, {_count(n_edges, 'edge')}"
     if remove_nodes or remove_edges:
         # dev/112: removed connections counted too — the user approved edge
         # removals five times without seeing them named.
@@ -2957,7 +2962,7 @@ def apply_plan_edges(
                 "the plan is fully applied.",
                 "Applied: plan connections",
                 [
-                    f"+{applied_now} connections"
+                    f"+{_count(applied_now, 'connection')}"
                     + (f" · {refused_now} refused" if refused_now else ""),
                     "plan complete",
                     f"proposal {proposal_id[:8]}",
@@ -4143,13 +4148,13 @@ def _apply_dataflow_plan(
     topology = _topology_clause(spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: plan added {len(created_nodes)} nodes and "
-        f"{len(created_edges)} connections{removed_summary}. {topology}",
+        f"Applied: plan added {_count(len(created_nodes), 'node')} and "
+        f"{_count(len(created_edges), 'connection')}{removed_summary}. {topology}",
         "Applied: dataflow plan",
         [
-            f"+{len(created_nodes)} nodes · +{len(created_edges)} connections"
-            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else "")
-            + (f" · −{len(removed_edge_ids)} connections" if removed_edge_ids else ""),
+            f"+{_count(len(created_nodes), 'node')} · +{_count(len(created_edges), 'connection')}"
+            + (f" · −{_count(len(remove_node_set), 'node')}" if remove_node_set else "")
+            + (f" · −{_count(len(removed_edge_ids), 'connection')}" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
             *_attached_agent_lines(*attached_results),
             topology,
@@ -5600,7 +5605,7 @@ def _solve_events(
                         content=[{
                             "type": "card",
                             "kind": "result",
-                            "title": f"Solve: {solved} of {len(targets)} nodes",
+                            "title": f"Solve: {solved} of {_count(len(targets), 'node')}",
                             "lines": lines,
                         }, *attempt_parts, *extra_parts],
                         execution=_execution_record(

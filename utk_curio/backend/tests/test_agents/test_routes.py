@@ -4187,7 +4187,7 @@ class TestDataflowPlanMint:
         body = r.get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "dataflow.plan.write"
-        assert proposal["summary"] == "Apply plan · 2 nodes, 1 edges"
+        assert proposal["summary"] == "Apply plan · 2 nodes, 1 edge"
         assert "baseGraphDigest" in proposal["pins"]
         assert [n["title"] for n in proposal["plan"]["nodes"]] == ["Load", "Analyze"]
         # The raw plan part was consumed by the mint — no duplicate part.
@@ -6283,7 +6283,7 @@ class TestDestructiveReplan:
         proposal = self._proposal(self._run(client, token, alice_project, att_id))
         assert "removeContentSha256" not in proposal["pins"]
         assert "removals" not in proposal["plan"]
-        assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"
+        assert proposal["summary"] == "Apply plan · 1 node, 0 edges"
 
 
 class TestPerNodePlanApply:
@@ -9103,7 +9103,7 @@ class TestPlanTopologyMint:
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch, replies=["Fix.\n" + self._tail(plan)])
         proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
         assert proposal is not None, "an edge-only plan must mint (no filler nodes needed)"
-        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edges"
+        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edge"
         assert proposal["plan"]["edges"] == [{
             "from": "vis", "to": "pool", "kind": "interaction",
             "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
@@ -9233,7 +9233,7 @@ class TestPlanTopologyApply:
         assert all(e["id"] != "e5" for e in edges)
         assert any(e.get("type") == "Interaction" and e["source"] == "vis" and e["target"] == "pool" for e in edges)
         applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
-        assert applied == "Applied: plan added 0 nodes and 1 connections, removed 1 connection. Topology: acyclic."
+        assert applied == "Applied: plan added 0 nodes and 1 connection, removed 1 connection. Topology: acyclic."
 
     def test_applied_turn_reports_a_user_cycle_the_plan_left_alone(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

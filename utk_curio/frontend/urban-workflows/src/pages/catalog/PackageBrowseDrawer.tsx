@@ -17,6 +17,7 @@ import {
 } from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
+import { countLabel } from "../../utils/countLabel";
 
 /** Cap the "Nodes in pack" list; the remainder collapses into a "…and N more" row. */
 const TEMPLATE_PREVIEW_LIMIT = 12;
@@ -105,7 +106,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
         </>
       }
       subtitle={`${pkg.publisher || pkg.packageId} · v${pkg.version}`}
-      metaLeft={`${pkg.templates.length} nodes · ${pkg.packageId}`}
+      metaLeft={`${countLabel(pkg.templates.length, "node")} · ${pkg.packageId}`}
       metaRight={catalogRelativeTime(pkg.createdAtMs)}
       fresh={catalogIsFresh(pkg.createdAtMs)}
       description={pkg.description}
