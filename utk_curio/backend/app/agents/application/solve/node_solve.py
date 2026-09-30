@@ -135,6 +135,83 @@ def _solve_node_events(
         "nodeId": node_id, "executionId": execution_id, "hasContent": had_content,
     }
 
+    kind = workflow_spec.content_kind(str(node.get("type") or ""), templates)
+    # dev/134: a DOCUMENT kind (Vega-Lite, an AUTK grammar) goes through the
+    # SAME loop as code — the runner reports "not executable" and dev/129's
+    # validator decides whether the document is written. The per-node Solve used
+    # to refuse these outright, which left the batch's unguarded write path as
+    # the only way to fill such a node.
+    if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
+        # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
+        # all (a merge, a pool, a simple view, a spatial join) or presentation
+        # content with no validator. No round, no sandbox, no generation —
+        # nothing this loop could verify; say so and change nothing.
+        outcome = _not_executable_outcome(node, label, kind)
+    else:
+        outcome = yield from _run_node_loop(
+            user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
+            execution_id, exec_fn, manifest=manifest, grounding_base=grounding_base,
+            dataset_paths=dataset_paths, catalog_rows=catalog_rows, acting_user=acting_user,
+        )
+    verdict = outcome["verdict"]
+    attempts = outcome["attempts"]
+    rounds = outcome["rounds"]
+    done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
+                  "attempts": attempts, "evidence": outcome["evidence"]}
+    trail_lines = _trail_lines(attempts)
+    text, card_kind, parts = _conclude(
+        user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
+        grounding_base, outcome, done,
+    )
+    card = {
+        "type": "card", "kind": card_kind,
+        "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
+        "lines": trail_lines[:10],
+    }
+    if verdict != "pass" and attempts:
+        # dev/127: the trail itself, with the code each attempt ran — in THIS
+        # chat, durably, not only in the transient row above.
+        trail_part = agents_rounds._solve_attempts_part(
+            spec, node_id, str(node.get("goal") or node_id)[:120],
+            {"attempts": attempts, "rounds": rounds, "verdict": verdict,
+             "stoppedBy": outcome.get("stoppedBy")},
+        )
+        if trail_part is not None:
+            parts.append(trail_part)
+    if isinstance(session_id, str):
+        _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
+                           started, text, card_kind, card, parts, outcome, verdict)
+    yield "done", done
+
+
+def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
+    """dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at all (a merge, a pool,
+    a simple view, a spatial join) or presentation content with no validator. No round, no
+    sandbox, no generation — nothing this loop could verify; say so and change nothing."""
+    reason = (
+        f"{label!r} ({node.get('type')}) is wired, not written — this kind has no "
+        "content to author; it renders or forwards its input"
+        if kind == workflow_spec.CONTENT_KIND_NONE else
+        f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
+        "in the browser or through its own service; Play the dataflow to see it"
+    )
+    outcome = {
+        "verdict": "not-executable",
+        "evidence": {"kind": "not-executable", "detail": reason},
+        "rounds": 0, "candidate": "", "delegations": [],
+        "roundsTrace": [f"not executable — {reason}"], "attempts": [],
+    }
+    return outcome
+
+
+def _run_node_loop(
+    user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
+    execution_id, exec_fn, *, manifest, grounding_base, dataset_paths, catalog_rows, acting_user,
+):
+    """The per-node Solve's rounds: the ONE verified-content loop, started from the node's current
+    content, with the traced delegate runner (the trace lands in this node's own home)."""
+    node_id = node.get("id")
+
     def _traced(delegate_inputs):
         st, tx, ch, _h = agents_delegates._run_delegate_traced(
             user_key, project_id, resolution.coord,
@@ -147,64 +224,39 @@ def _solve_node_events(
         )
         return st, tx, ch
 
-    kind = workflow_spec.content_kind(str(node.get("type") or ""), templates)
-    # dev/134: a DOCUMENT kind (Vega-Lite, an AUTK grammar) goes through the
-    # SAME loop as code — the runner reports "not executable" and dev/129's
-    # validator decides whether the document is written. The per-node Solve used
-    # to refuse these outright, which left the batch's unguarded write path as
-    # the only way to fill such a node.
-    if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
-        # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
-        # all (a merge, a pool, a simple view, a spatial join) or presentation
-        # content with no validator. No round, no sandbox, no generation —
-        # nothing this loop could verify; say so and change nothing.
-        reason = (
-            f"{label!r} ({node.get('type')}) is wired, not written — this kind has no "
-            "content to author; it renders or forwards its input"
-            if kind == workflow_spec.CONTENT_KIND_NONE else
-            f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
-            "in the browser or through its own service; Play the dataflow to see it"
-        )
-        outcome = {
-            "verdict": "not-executable",
-            "evidence": {"kind": "not-executable", "detail": reason},
-            "rounds": 0, "candidate": "", "delegations": [],
-            "roundsTrace": [f"not executable — {reason}"], "attempts": [],
-        }
-    else:
-        outcome = yield from agents_rounds._verified_content_rounds(
-            user_key, project_id,
-            spec=spec, node=node, resolution=resolution, config=config,
-            parent_execution_id=execution_id, parent_coord=coord,
-            attachment_id=attachment_id, exec_fn=exec_fn,
-            grounding_loop_ctx={"granted": [], "manifest": manifest,
-                                "attachment_id": attachment_id, "session_id": session_id},
-            grounding_base=grounding_base,
-            start_from_current=True,
-            delegate_runner=_traced,
-            # dev/132 (closes dev/131 F4): topped up for a dataset that
-            # arrived after this job started — the per-pill Solve and the
-            # Finder's own delegation both come through here.
-            dataset_paths_fn=lambda codes: agents_grounding._session_dataset_paths(
-                project_id, acting_user, dataset_paths, codes
-            ),
-            # dev/133: an empty result is a failed round here too — the
-            # per-node Solve is where the owner presses "solve this node".
-            result_summary_fn=agents_session._artifact_summary_fn(),
-            exec_user_key=user_key,
-            secrets_fn=agents_grounding._exec_secrets_resolver(user_key),
-            resolve_source=agents_grounding._source_resolver(
-                user_key, project_id, coord=coord, attachment_id=attachment_id,
-                execution_id=execution_id, config=config, manifest=manifest,
-                extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
-                catalog_rows=catalog_rows,
-            ),
-        )
-    verdict = outcome["verdict"]
-    attempts = outcome["attempts"]
-    rounds = outcome["rounds"]
-    done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
-                  "attempts": attempts, "evidence": outcome["evidence"]}
+    outcome = yield from agents_rounds._verified_content_rounds(
+        user_key, project_id,
+        spec=spec, node=node, resolution=resolution, config=config,
+        parent_execution_id=execution_id, parent_coord=coord,
+        attachment_id=attachment_id, exec_fn=exec_fn,
+        grounding_loop_ctx={"granted": [], "manifest": manifest,
+                            "attachment_id": attachment_id, "session_id": session_id},
+        grounding_base=grounding_base,
+        start_from_current=True,
+        delegate_runner=_traced,
+        # dev/132 (closes dev/131 F4): topped up for a dataset that
+        # arrived after this job started — the per-pill Solve and the
+        # Finder's own delegation both come through here.
+        dataset_paths_fn=lambda codes: agents_grounding._session_dataset_paths(
+            project_id, acting_user, dataset_paths, codes
+        ),
+        # dev/133: an empty result is a failed round here too — the
+        # per-node Solve is where the owner presses "solve this node".
+        result_summary_fn=agents_session._artifact_summary_fn(),
+        exec_user_key=user_key,
+        secrets_fn=agents_grounding._exec_secrets_resolver(user_key),
+        resolve_source=agents_grounding._source_resolver(
+            user_key, project_id, coord=coord, attachment_id=attachment_id,
+            execution_id=execution_id, config=config, manifest=manifest,
+            extra_texts=(str((spec.get("dataflow") or {}).get("task") or ""),),
+            catalog_rows=catalog_rows,
+        ),
+    )
+    return outcome
+
+
+def _trail_lines(attempts: list) -> list[str]:
+    """One line per attempt (the first eight): round, verdict, kind, and why."""
     trail_lines = []
     for attempt in attempts[:8]:
         why = agents_rounds._attempt_why(attempt, limit=160)
@@ -216,6 +268,36 @@ def _solve_node_events(
         if attempt.get("verdict") != "pass" and attempt.get("endpointEvidence"):
             line += f" · endpoint: {str(attempt['endpointEvidence'])[:200]}"
         trail_lines.append(line)
+    return trail_lines
+
+
+def _write_empty_node(user_key, project_id, node_id, candidate: str) -> bool:
+    """An empty node (a plan placeholder solved from its own agent) is written directly on PASS —
+    parity with the Dataflow Builder's Solve; a node that gained content meanwhile is left alone."""
+    try:
+        fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        target = next(
+            (n for n in (fresh.get("dataflow") or {}).get("nodes") or []
+             if isinstance(n, dict) and n.get("id") == node_id), None,
+        )
+        if target is not None and not str(target.get("content") or "").strip():
+            target["content"] = candidate
+            projects_storage.write_spec(user_key, project_id, fresh)
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
+              grounding_base, outcome: dict, done: dict) -> tuple[str, str, list]:
+    """What the per-node Solve says and shows for its verdict: the text, the card kind and the
+    content parts (the minted review when PASS proposes; the caller adds the attempt trail).
+    Writes the verdict-specific fields (unchanged, written, proposal ids, remedy) into *done*."""
+    node_id = node.get("id")
+    verdict = outcome["verdict"]
+    attempts = outcome["attempts"]
+    rounds = outcome["rounds"]
     unchanged = (
         verdict == "pass" and rounds == 1 and attempts
         and attempts[0].get("source") == "current content"
@@ -228,19 +310,7 @@ def _solve_node_events(
     elif verdict == "pass" and not had_content:
         # An empty node (a plan placeholder solved from its own agent) is
         # written directly on PASS — parity with the Dataflow Builder's Solve.
-        written = False
-        try:
-            fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
-            target = next(
-                (n for n in (fresh.get("dataflow") or {}).get("nodes") or []
-                 if isinstance(n, dict) and n.get("id") == node_id), None,
-            )
-            if target is not None and not str(target.get("content") or "").strip():
-                target["content"] = outcome["candidate"]
-                projects_storage.write_spec(user_key, project_id, fresh)
-                written = True
-        except Exception:
-            written = False
+        written = _write_empty_node(user_key, project_id, node_id, outcome["candidate"])
         done["written"] = written
         text = (
             f"Solved {label!r}: the code ran successfully after {rounds} round"
@@ -330,37 +400,26 @@ def _solve_node_events(
             done["remedy"] = remedy_payload
             text += agents_grounding._source_missing_remedy(remedy_payload).replace(" — ", " ", 1).capitalize() + "."
         card_kind = "error"
-    card = {
-        "type": "card", "kind": card_kind,
-        "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
-        "lines": trail_lines[:10],
-    }
-    if verdict != "pass" and attempts:
-        # dev/127: the trail itself, with the code each attempt ran — in THIS
-        # chat, durably, not only in the transient row above.
-        trail_part = agents_rounds._solve_attempts_part(
-            spec, node_id, str(node.get("goal") or node_id)[:120],
-            {"attempts": attempts, "rounds": rounds, "verdict": verdict,
-             "stoppedBy": outcome.get("stoppedBy")},
+    return text, card_kind, parts
+
+
+def _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
+                       started, text, card_kind, card, parts, outcome, verdict) -> None:
+    """The agent turn that carries the verdict, the card and the parts, with the execution record."""
+    try:
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [sessions.make_turn(
+                "agent", text, error=(card_kind == "error"),
+                content=[card, *parts],
+                execution=agents_policy._execution_record(
+                    execution_id,
+                    {"coord": coord, "provider": getattr(config, "api_type", None),
+                     "model": getattr(config, "model", None), "tools": [], "intentEdited": False},
+                    {}, started, "ok" if verdict in ("pass", "not-executable") else "error",
+                    delegations=[c for c in outcome["delegations"] if c is not None],
+                ),
+            )],
         )
-        if trail_part is not None:
-            parts.append(trail_part)
-    if isinstance(session_id, str):
-        try:
-            sessions.append_turns(
-                user_key, project_id, session_id, attachment_id,
-                [sessions.make_turn(
-                    "agent", text, error=(card_kind == "error"),
-                    content=[card, *parts],
-                    execution=agents_policy._execution_record(
-                        execution_id,
-                        {"coord": coord, "provider": getattr(config, "api_type", None),
-                         "model": getattr(config, "model", None), "tools": [], "intentEdited": False},
-                        {}, started, "ok" if verdict in ("pass", "not-executable") else "error",
-                        delegations=[c for c in outcome["delegations"] if c is not None],
-                    ),
-                )],
-            )
-        except Exception:
-            pass
-    yield "done", done
+    except Exception:
+        pass

@@ -131,18 +131,7 @@ def _validate_events(
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
-    if isinstance(home_session_id, str):
-        try:
-            sessions.append_turns(
-                user_key, project_id, home_session_id, home_attachment_id,
-                [sessions.make_turn(
-                    "user",
-                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
-                    "execute through the dataflow, validate, self-correct.",
-                )],
-            )
-        except Exception:
-            pass
+    _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label)
     try:
         yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
         outcome = yield from agents_rounds._verified_content_rounds(
@@ -174,108 +163,143 @@ def _validate_events(
             "attempts": outcome["attempts"],
         }
         if done["verdict"] in ("pass", "fail", "not-executable") and candidate:
-            # PASS or FAIL, the user decides — the proposal carries the
-            # validation block so the review is informed, never gatekept.
-            # dev/118: NOT-EXECUTABLE (a browser-rendered kind) is proposed
-            # too, labeled — nothing ran, and the block says so.
-            # dev/72: the review lives with the NODE's agent when it exists —
-            # per-node proposals stop contending for the builder's one slot.
-            mint_attachment = home_attachment_id or attachment_id
-            mint_session = home_session_id or session_id
-            p_status, p_error, part = agents_mint._mint_node_content_write(
-                user_key, project_id,
-                {"attachment_id": mint_attachment, "session_id": mint_session},
-                {"tool": "node.content.write",
-                 "params": {"nodeId": node_id, "content": candidate}},
-            )
-            if part is not None:
-                part["validation"] = {
-                    "verdict": done["verdict"],
-                    "rounds": rounds_used,
-                    "evidence": done["evidence"],
-                    # dev/115: the attempt trail — every round's error and
-                    # fix, rendered as a collapsed list on the card.
-                    "attempts": done["attempts"],
-                }
-                done["proposalId"] = part["proposalId"]
-                done["proposalAttachmentId"] = mint_attachment
-                trace_card = {
-                    "type": "card",
-                    "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
-                    "title": f"Solve trace · {done['verdict'].upper()}",
-                    "lines": (
-                        [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
-                        + rounds_trace
-                        + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
-                    )[:10],
-                }
-                if isinstance(mint_session, str):
-                    sessions.append_turns(
-                        user_key, project_id, mint_session, mint_attachment,
-                        [sessions.make_turn(
-                            "agent",
-                            f"Validated content for {label!r}: "
-                            f"{done['verdict'].upper()} after {rounds_used} "
-                            f"round{'s' if rounds_used != 1 else ''} — review below.",
-                            content=[trace_card, part],
-                        )],
-                    )
-                if (
-                    home_attachment_id
-                    and home_attachment_id != attachment_id
-                    and isinstance(session_id, str)
-                ):
-                    # The parent references and LINKS; the story lives at home.
-                    sessions.append_turns(
-                        user_key, project_id, session_id, attachment_id,
-                        [sessions.make_turn(
-                            "agent",
-                            f"Solved {label!r}: {done['verdict'].upper()} after "
-                            f"{rounds_used} round{'s' if rounds_used != 1 else ''} — "
-                            "the trace and content review live in the node's "
-                            "Node Builder.",
-                            content=[content.make_delegation_part(
-                                capability="node.content.generate",
-                                coord="agent.node-builder",
-                                name="Node Builder",
-                                category="node",
-                                attachment_id=home_attachment_id,
-                                status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
-                                summary=f"Solve {label!r}: {done['verdict']} "
-                                f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
-                            )],
-                        )],
-                    )
-            else:
-                done["evidence"] = {
-                    **done["evidence"],
-                    "mintError": (p_error or "")[:300],
-                }
-        # The per-node ledger: validated / failed; infrastructure untouched.
-        fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
-        fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
-        fresh_session = fresh_record.get("builderSession") or {}
-        if ref and isinstance(fresh_session.get("nodeStates"), dict):
-            if done["verdict"] in ("pass", "not-executable"):
-                # dev/118: a browser-rendered kind proceeds like a pass in the
-                # plan's ledger (Simulation Mode auto-approves it); the
-                # proposal's validation block carries the honest label.
-                fresh_session["nodeStates"][ref] = "validated"
-            elif done["verdict"] == "fail":
-                fresh_session["nodeStates"][ref] = "failed"
-        fresh_session.pop("validatingSince", None)
-        fresh_record["builderSession"] = fresh_session
-        projects_storage.write_spec(user_key, project_id, fresh)
-        done["builderSession"] = fresh_session
+            _mint_validated_review(user_key, project_id, attachment_id, session_id,
+                                   home_attachment_id, home_session_id,
+                                   node_id, label, candidate, done, rounds_used, rounds_trace)
+        done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
+        _clear_validating_guard(user_key, project_id, attachment_id)
+
+
+def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label) -> None:
+    """The framing user turn at HOME: the Dataflow Builder delegated this Solve."""
+    if isinstance(home_session_id, str):
         try:
-            cleanup_spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
-            cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
-            cleanup_session = cleanup_record.get("builderSession") or {}
-            if cleanup_session.pop("validatingSince", None) is not None:
-                cleanup_record["builderSession"] = cleanup_session
-                projects_storage.write_spec(user_key, project_id, cleanup_spec)
+            sessions.append_turns(
+                user_key, project_id, home_session_id, home_attachment_id,
+                [sessions.make_turn(
+                    "user",
+                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
+                    "execute through the dataflow, validate, self-correct.",
+                )],
+            )
         except Exception:
             pass
+
+
+def _mint_validated_review(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
+                           node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list) -> None:
+    """PASS or FAIL, the user decides — the proposal carries the validation block so the review is
+    informed, never gatekept (dev/118: NOT-EXECUTABLE is proposed too, labeled; dev/72: the review
+    lives with the NODE's agent when it exists). Writes the proposal ids, or the mint error, into *done*."""
+    # PASS or FAIL, the user decides — the proposal carries the
+    # validation block so the review is informed, never gatekept.
+    # dev/118: NOT-EXECUTABLE (a browser-rendered kind) is proposed
+    # too, labeled — nothing ran, and the block says so.
+    # dev/72: the review lives with the NODE's agent when it exists —
+    # per-node proposals stop contending for the builder's one slot.
+    mint_attachment = home_attachment_id or attachment_id
+    mint_session = home_session_id or session_id
+    p_status, p_error, part = agents_mint._mint_node_content_write(
+        user_key, project_id,
+        {"attachment_id": mint_attachment, "session_id": mint_session},
+        {"tool": "node.content.write",
+         "params": {"nodeId": node_id, "content": candidate}},
+    )
+    if part is not None:
+        part["validation"] = {
+            "verdict": done["verdict"],
+            "rounds": rounds_used,
+            "evidence": done["evidence"],
+            # dev/115: the attempt trail — every round's error and
+            # fix, rendered as a collapsed list on the card.
+            "attempts": done["attempts"],
+        }
+        done["proposalId"] = part["proposalId"]
+        done["proposalAttachmentId"] = mint_attachment
+        trace_card = {
+            "type": "card",
+            "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
+            "title": f"Solve trace · {done['verdict'].upper()}",
+            "lines": (
+                [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
+                + rounds_trace
+                + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
+            )[:10],
+        }
+        if isinstance(mint_session, str):
+            sessions.append_turns(
+                user_key, project_id, mint_session, mint_attachment,
+                [sessions.make_turn(
+                    "agent",
+                    f"Validated content for {label!r}: "
+                    f"{done['verdict'].upper()} after {rounds_used} "
+                    f"round{'s' if rounds_used != 1 else ''} — review below.",
+                    content=[trace_card, part],
+                )],
+            )
+        if (
+            home_attachment_id
+            and home_attachment_id != attachment_id
+            and isinstance(session_id, str)
+        ):
+            # The parent references and LINKS; the story lives at home.
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent",
+                    f"Solved {label!r}: {done['verdict'].upper()} after "
+                    f"{rounds_used} round{'s' if rounds_used != 1 else ''} — "
+                    "the trace and content review live in the node's "
+                    "Node Builder.",
+                    content=[content.make_delegation_part(
+                        capability="node.content.generate",
+                        coord="agent.node-builder",
+                        name="Node Builder",
+                        category="node",
+                        attachment_id=home_attachment_id,
+                        status="ok" if done["verdict"] in ("pass", "not-executable") else "failed",
+                        summary=f"Solve {label!r}: {done['verdict']} "
+                        f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
+                    )],
+                )],
+            )
+    else:
+        done["evidence"] = {
+            **done["evidence"],
+            "mintError": (p_error or "")[:300],
+        }
+
+
+def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:
+    """The per-node ledger: validated / failed; infrastructure untouched. Returns the builder session."""
+    fresh = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
+    fresh_session = fresh_record.get("builderSession") or {}
+    if ref and isinstance(fresh_session.get("nodeStates"), dict):
+        if verdict in ("pass", "not-executable"):
+            # dev/118: a browser-rendered kind proceeds like a pass in the
+            # plan's ledger (Simulation Mode auto-approves it); the
+            # proposal's validation block carries the honest label.
+            fresh_session["nodeStates"][ref] = "validated"
+        elif verdict == "fail":
+            fresh_session["nodeStates"][ref] = "failed"
+    fresh_session.pop("validatingSince", None)
+    fresh_record["builderSession"] = fresh_session
+    projects_storage.write_spec(user_key, project_id, fresh)
+    return fresh_session
+
+
+def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
+    """Disconnect-safe: the in-flight guard never wedges the attachment."""
+    try:
+        cleanup_spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
+        cleanup_session = cleanup_record.get("builderSession") or {}
+        if cleanup_session.pop("validatingSince", None) is not None:
+            cleanup_record["builderSession"] = cleanup_session
+            projects_storage.write_spec(user_key, project_id, cleanup_spec)
+    except Exception:
+        pass
