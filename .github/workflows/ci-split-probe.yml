@@ -1,0 +1,261 @@
+name: CI split probe
+
+# Temporary. Measures what ubuntu-latest can take over from the utk runner
+# before the real split is written into docker-compose.yml: how long the image
+# takes to build there, how long each unit suite runs on 4 vCPU, and whether
+# the isolated job's screenshots hold on a GPU-less runner.
+on:
+  push:
+    branches: ["tmp/ci-split"]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/urban-toolkit/curio-ci:${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🔨 Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha,scope=curio-image
+          cache-to: type=gha,scope=curio-image,mode=max
+
+  unit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [backend, sandbox]
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_BACKEND_URL: "http://localhost:5022"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 📥 Pull the image
+        run: docker pull "$IMAGE" && docker tag "$IMAGE" curio-ci-curio
+      - name: ▶️ Start containers
+        run: docker compose -p curio-ci up -d --no-build
+      - name: 🧪 Wait for services to become healthy
+        run: |
+          timeout 300 bash -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose -p curio-ci ps -q curio)")" = healthy ]; do sleep 2; done'
+      - name: 🧪 Run the unit suite
+        timeout-minutes: 25
+        run: |
+          mkdir -p .curio/ci-report
+          docker compose -p curio-ci exec -T \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.suite }}.xml curio \
+            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: probe-${{ matrix.suite }}-junit
+          path: .curio/ci-report/
+          if-no-files-found: ignore
+
+  jest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: utk_curio/frontend/urban-workflows
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: utk_curio/frontend/urban-workflows/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Jest
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck -- --pretty false
+
+  exec-user:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-exec-user.yml
+      CURIO_E2E_BACKEND_PORT: "5042"
+      CURIO_E2E_SANDBOX_PORT: "2040"
+      CURIO_E2E_FRONTEND_PORT: "8120"
+      CURIO_E2E_BACKEND_URL: "http://localhost:5042"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      CURIO_LIVE_SANDBOX_URL: "http://localhost:2040"
+      CURIO_LIVE_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      CURIO_LIVE_LAUNCH_DIR: /app
+      CURIO_LIVE_EXEC_USER: curio-exec
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker pull "$IMAGE" && docker tag "$IMAGE" curio-ci-exec-user-curio
+      - run: |
+          mkdir -p .curio/data .curio/users/some-other-user .curio/datalakes instance datasets
+          echo "another user's private dataset" > .curio/users/some-other-user/canary.txt
+      - run: docker compose -p curio-ci-exec-user up -d --no-build
+      - run: |
+          timeout 420 bash -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose -p curio-ci-exec-user ps -q curio)")" = healthy ]; do sleep 2; done'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet "pytest==9.0.3"
+      - run: python -m pytest utk_curio/sandbox/tests/live -v -ra
+
+  e2e-desktop:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_RUNNER: desktop
+      CURIO_E2E_SHARD: ${{ matrix.shard }}/8
+      CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/comparisons
+      CURIO_E2E_TRACE: "1"
+      CURIO_E2E_BACKEND_URL: "http://localhost:5022"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker pull "$IMAGE" && docker tag "$IMAGE" curio-ci-curio
+      - run: docker compose -p curio-ci up -d --no-build
+      - run: |
+          timeout 300 bash -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose -p curio-ci ps -q curio)")" = healthy ]; do sleep 2; done'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c || mkdir -p .curio/playwright/expected
+      - name: 📦 Stage the built bundle
+        run: |
+          cid="$(docker compose -p curio-ci ps -q curio | head -n1)"
+          rm -rf utk_curio/frontend/urban-workflows/dist
+          docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" utk_curio/frontend/urban-workflows/dist
+      - name: 🎭 Run this shard of the non-WebGPU e2e tests
+        env:
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/e2e.xml
+        run: bash scripts/test.sh --e2e-only --use-existing
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: probe-e2e-desktop-${{ matrix.shard }}
+          path: |
+            e2e.xml
+            comparisons/
+            e2e-failures/
+          if-no-files-found: ignore
+
+  isolated:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      CURIO_E2E_BACKEND_URL: "http://localhost:5032"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5032"
+      CURIO_E2E_SANDBOX_PORT: "2030"
+      CURIO_E2E_FRONTEND_PORT: "8110"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2030"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/comparisons
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker pull "$IMAGE" && docker tag "$IMAGE" curio-ci-iso-curio
+      - run: docker compose -p curio-ci-iso up -d --no-build
+      - run: |
+          timeout 300 bash -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose -p curio-ci-iso ps -q curio)")" = healthy ]; do sleep 2; done'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c || mkdir -p .curio/playwright/expected
+      - name: 📦 Stage the built bundle
+        run: |
+          cid="$(docker compose -p curio-ci-iso ps -q curio | head -n1)"
+          rm -rf utk_curio/frontend/urban-workflows/dist
+          docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" utk_curio/frontend/urban-workflows/dist
+      - name: 🎭 Run the Python-node workflows against the isolated stack
+        run: bash scripts/test.sh --e2e-only --use-existing --workflows "$ISOLATED_WORKFLOWS"
+      - name: 🔒 Assert the workflows above actually forked
+        run: |
+          curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d); sys.exit(d.get("isolation_active") != "fork")'
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: probe-isolated-comparisons
+          path: |
+            comparisons/
+            e2e-failures/
+          if-no-files-found: ignore
