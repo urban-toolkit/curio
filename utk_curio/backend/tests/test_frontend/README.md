@@ -332,7 +332,12 @@ Two families of baseline live in that folder:
 
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
-  `_browser_log.txt` because autk swallows its errors into React state;
+  `_browser_log.txt` because autk swallows its errors into React state. Every
+  Autark node whose grammar has a `map` or `plot` also gets a
+  `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
+  to 100% zoom (`save_node_closeup`). In the full-page frame a map that drew
+  nothing can stay under the budget; up close it cannot. Walkthrough scenes
+  with a drawn map take one with `ctx.capture_node`;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,

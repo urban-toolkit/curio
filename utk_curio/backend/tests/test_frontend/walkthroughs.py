@@ -163,6 +163,16 @@ class Ctx:
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
     snapshot: Callable[..., None] = lambda label, **kw: None
+    #: Pins one node, up close, as its own baseline. Also a no-op while recording.
+    node_snapshot: Callable[[str, str], None] = lambda label, node_id: None
+
+    def capture_node(self, label: str, node_id: str) -> None:
+        """Pin one node, framed up close, as a baseline called *label*.
+
+        For a node whose drawing is the claim: an Autark map, which in a
+        full-page frame is a thumbnail (see ``utils.save_node_closeup``).
+        """
+        self.node_snapshot(label, node_id)
 
     def capture(self, label: str, *, allow_running: bool = False,
                 fit_reactflow: bool | None = None) -> None:
@@ -1492,6 +1502,7 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.focus(autark, hold=1200)
     ctx.say("Run the dataflow", "With WebGPU back, the whole chain draws.")
     ctx.capture("webgpu-recovered")
+    ctx.capture_node("webgpu-recovered-map", node_id)
     assert not errors, f"an uncaught page error escaped during recovery: {errors}"
 
 
@@ -1695,6 +1706,7 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     ctx.say("After, it names what it made",
             "The same tables the next node's map will draw.")
     ctx.capture("after-run")
+    ctx.capture_node("after-run-map", map_id)
 
 
 # ---------------------------------------------------------------------------

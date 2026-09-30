@@ -16,6 +16,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 # )
 from .utils import (
     _wait_for_reactflow_ready,
+    save_node_closeup,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
     assert_vega_node_empty_state,
@@ -300,6 +301,21 @@ class TestWorkflowCanvas:
     def _expected_empty(self) -> dict:
         """This workflow's ``EXPECTED_EMPTY`` entries, keyed by node id."""
         return EXPECTED_EMPTY.get(os.path.basename(self.spec.filepath), {})
+
+    def _drawing_autark_nodes(self) -> list[NodeSpec]:
+        """The Autark nodes whose grammar draws a map or a plot.
+
+        Read from the spec, not the page, so a node that never created its
+        canvas is still on the list.
+        """
+        drawing = []
+        for node in self.spec.nodes:
+            if node.type != "AUTK_GRAMMAR" or node.id in self._expected_empty():
+                continue
+            grammar = json.loads(node.content or "{}")
+            if "map" in grammar or "plot" in grammar:
+                drawing.append(node)
+        return drawing
 
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
@@ -893,3 +909,15 @@ class TestWorkflowCanvas:
             # text mode: no output tab → nothing further to assert.
 
         self._save_screenshot(request)
+
+        # A map or plot that drew nothing leaves a blank node, which in the
+        # full-page frame above can stay under the budget. Each one is also
+        # compared on its own, up close.
+        for node in self._drawing_autark_nodes():
+            save_node_closeup(
+                self.page,
+                self.spec.filepath,
+                node.id,
+                test_name=f"{request.function.__name__}_closeup_{node.id}",
+                sweep_toasts=bool(self._expected_empty()),
+            )

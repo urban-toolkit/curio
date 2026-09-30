@@ -763,8 +763,12 @@ def _wait_for_reactflow_ready(
     padding: float = 0.2,
     stable_frames: int = 3,
     timeout_ms: int = 10000,
+    node_ids: list[str] | None = None,
+    max_zoom: float | None = None,
 ) -> None:
     """Force ReactFlow into a deterministic viewport before screenshotting.
+
+    With *node_ids* the fit frames only those nodes, at most *max_zoom*.
 
     Without this, ``save_workflow_test_screenshot`` races the app-side
     ``fitView`` call in ``useWorkflowOperations`` (which runs on a
@@ -790,13 +794,16 @@ def _wait_for_reactflow_ready(
     )
 
     page.evaluate(
-        """(padding) => {
+        """({ padding, nodeIds, maxZoom }) => {
             const fit = window.__curio_fitViewWithMenuOffset;
             if (typeof fit === 'function') {
-                fit({ padding, duration: 0, includeHiddenNodes: true });
+                const options = { padding, duration: 0, includeHiddenNodes: true };
+                if (nodeIds) options.nodes = nodeIds.map((id) => ({ id }));
+                if (maxZoom !== null) options.maxZoom = maxZoom;
+                fit(options);
             }
         }""",
-        padding,
+        {"padding": padding, "nodeIds": node_ids, "maxZoom": max_zoom},
     )
 
     page.wait_for_function(
@@ -1666,6 +1673,35 @@ def save_workflow_test_screenshot(
             f"See Allure report attachments for visual diff."
         )
     return expected_path
+
+
+def save_node_closeup(
+    page: Page,
+    workflow_filepath: str,
+    node_id: str,
+    *,
+    test_name: str,
+    sweep_toasts: bool = False,
+) -> str:
+    """Compare one node, framed at up to 100% zoom, against its own baseline.
+
+    For a node whose drawing is the claim: an Autark map or plot. In a
+    full-page frame that node is a thumbnail, so one that drew nothing and
+    left its body blank moves the frame by less than the 10% budget, and the
+    comparison passes. Cropped to the node, the same blank is most of the
+    image.
+
+    Leaves the viewport on the node; a later full-page capture fits it again.
+    """
+    _wait_for_reactflow_ready(page, node_ids=[node_id], max_zoom=1.0, padding=0.05)
+    return save_workflow_test_screenshot(
+        page,
+        workflow_filepath,
+        test_name=test_name,
+        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+        fit_reactflow=False,
+        sweep_toasts=sweep_toasts,
+    )
 
 
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):
