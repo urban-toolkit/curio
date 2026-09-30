@@ -108,6 +108,26 @@ describe('the Vega output mount', () => {
     expect(el.style.height).toBe('100%');
   });
 
+  test('stays clear of the port markers at the edges (#522)', () => {
+    // The markers are 17 px boxes over the node's 5 px padding, so they sat on
+    // the chart's y-axis title. A margin, not padding: vega sizes a
+    // "container" chart from the mount's clientWidth, which counts padding.
+    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
+    const el = mountDiv();
+    expect(el.style.marginLeft).toBe('14px');
+    expect(el.style.marginRight).toBe('14px');
+    expect(el.style.width).toBe('calc(100% - 28px)');
+    expect(el.style.paddingLeft).toBe('');
+  });
+
+  test('insets only the side that has a marker', () => {
+    render(<NodeEditor {...baseProps} inputMarker />);
+    const el = mountDiv();
+    expect(el.style.marginLeft).toBe('14px');
+    expect(el.style.marginRight).toBe('0px');
+    expect(el.style.width).toBe('calc(100% - 14px)');
+  });
+
   test('the pane around it stays clamped, so the node box cannot spill', () => {
     // The Tab.Pane wrapping the mount must remain overflow:hidden — it is what
     // keeps a tall chart inside the node instead of painting over the canvas.
