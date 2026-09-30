@@ -332,6 +332,55 @@ def require_no_project_mode() -> None:
         pytest.skip("This test requires CURIO_NO_PROJECT=1")
 
 
+# Hosts a node's own code is allowed to reach from the browser. The DuckDB-WASM
+# engine behind an Autark node downloads its spatial extension from here on first
+# use, so a workflow that loads an OSM PBF is the one place the suite depends on
+# the network.
+EXTERNAL_FETCH_HOSTS = ("extensions.duckdb.org",)
+
+_EXTERNAL_FETCH_FAILURE = re.compile(
+    r"Failed to load 'https://(" + "|".join(re.escape(h) for h in EXTERNAL_FETCH_HOSTS) + r")[/']"
+)
+
+
+def external_fetch_failure_host(text: str | None) -> str | None:
+    """Return the allow-listed host a node failed to download from, else ``None``.
+
+    Matches the exact browser message for an allow-listed host, not a generic
+    "Failed to load", so an unrelated failure is never classified as a network one.
+    """
+    match = _EXTERNAL_FETCH_FAILURE.search(text or "")
+    return match.group(1) if match else None
+
+
+def external_host_reachable(host: str, *, timeout: float = 5.0) -> bool:
+    """Probe ``host`` now. Deliberately uncached: a stale "reachable" would hide
+    the outage this exists to tell apart from a real failure."""
+    try:
+        with urlopen(Request(f"https://{host}/", method="HEAD"), timeout=timeout):  # noqa: S310
+            return True
+    except HTTPError:
+        return True  # the server answered; only "no answer" is an outage
+    except (URLError, OSError, ValueError):
+        return False
+
+
+def skip_if_external_host_unreachable(failure_text: str | None) -> None:
+    """Skip the current test when a failure was an outage of an external host.
+
+    Acts only when the failure names an allow-listed host AND a fresh probe of it
+    gets no answer. A host that answers leaves the failure to be raised by the
+    caller, so a real regression (wrong extension version, broken loader) is never
+    turned into a skip.
+    """
+    host = external_fetch_failure_host(failure_text)
+    if host is not None and not external_host_reachable(host):
+        pytest.skip(
+            f"{host} is unreachable from this machine; this workflow downloads its "
+            f"DuckDB extension from there. It runs wherever the host is reachable."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Vega-Lite SVG helpers
 # ---------------------------------------------------------------------------
