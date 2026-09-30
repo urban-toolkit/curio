@@ -21,6 +21,10 @@ OUT = (REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src"
 tmp = tempfile.mkdtemp()
 os.environ["CURIO_LAUNCH_CWD"] = tmp
 os.environ["CURIO_SHARED_DATA"] = "./.curio/data/"
+# The route is asked directly, as the sandbox unit suite does (its conftest):
+# an inherited shared secret, which the CI container sets, would turn every
+# request into a 401. The fixture is about the wire shape, not the auth.
+os.environ.pop("CURIO_SANDBOX_TOKEN", None)
 (Path(tmp) / ".curio" / "data").mkdir(parents=True, exist_ok=True)
 
 import geopandas as gpd  # noqa: E402
