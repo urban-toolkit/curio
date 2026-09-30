@@ -14,6 +14,10 @@ The line is drawn from the tests themselves, never from a list someone keeps:
   drives Autark or the browser's GPU;
 * any other e2e module does when its source mentions Autark or WebGPU at all.
 
+One more thing only utk has: the sibling backends of ``--parallel``. A test that
+needs them says so with ``pytest.mark.needs_parallel`` and runs there too;
+anywhere else it would skip, which is a test lost rather than a test passed.
+
 It errs one way on purpose. A test that mentions Autark without needing a GPU
 stays on utk, which costs a little time; a test that needs a GPU and landed on
 a GPU-less runner would skip or fail. A new test is classified the same way,
@@ -85,7 +89,9 @@ def module_needs_webgpu(path: str) -> bool:
 
 
 def item_needs_webgpu(item) -> bool:
-    """The classification above, for one collected pytest item."""
+    """Whether the item belongs on utk: WebGPU, or the parallel stack."""
+    if item.get_closest_marker("needs_parallel") is not None:
+        return True
     module = getattr(item, "module", None)
     name = module.__name__.rsplit(".", 1)[-1] if module is not None else ""
     params = getattr(getattr(item, "callspec", None), "params", {}) or {}

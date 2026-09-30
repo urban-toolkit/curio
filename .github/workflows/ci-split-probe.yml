@@ -76,10 +76,11 @@ jobs:
       - name: 🧪 Run the unit suite
         timeout-minutes: 25
         run: |
-          mkdir -p .curio/ci-report
           docker compose -p curio-ci exec -T \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.suite }}.xml curio \
             bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
+      - if: always()
+        run: docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rX /c || true
       - uses: actions/upload-artifact@v6
         if: always()
         with:

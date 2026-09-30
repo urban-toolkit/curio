@@ -49,6 +49,11 @@ class ClassificationTest(unittest.TestCase):
         self.assertFalse(runner_split.walk_needs_webgpu(
             SimpleNamespace(example="01-vega-lite-chained-transforms.json", run=plain)))
 
+    def test_a_test_that_needs_the_parallel_stack_is_on_utk(self):
+        marked = SimpleNamespace(
+            get_closest_marker=lambda name: object() if name == "needs_parallel" else None)
+        self.assertTrue(runner_split.item_needs_webgpu(marked))
+
     def test_the_shipped_autark_walks_are_on_utk(self):
         from utk_curio.backend.tests.test_frontend.walkthroughs import WALKTHROUGHS
 

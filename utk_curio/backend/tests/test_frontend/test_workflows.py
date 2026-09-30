@@ -15,6 +15,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     # compare_svg_structure,
 # )
 from .utils import (
+    _wait_for_reactflow_ready,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
     assert_vega_node_empty_state,
@@ -446,18 +447,30 @@ class TestWorkflowCanvas:
             f"document.querySelectorAll('.react-flow__node').length >= {self.spec.nodes_count}",
             timeout=15000,
         )
+        # Every box from one frame, after the view has settled. The app fits
+        # the view on a timer after a load, and boxes read one by one could
+        # straddle that fit: the first node measured under the identity
+        # transform, the next after it, which reorders nodes that are in
+        # order. Only a slower machine hit the window (ubuntu-latest did).
+        _wait_for_reactflow_ready(self.page)
+        boxes = self.page.evaluate(
+            """() => [...document.querySelectorAll('.react-flow__node')].map((el) => {
+                const r = el.getBoundingClientRect();
+                return [el.dataset.id, r.x, r.y, r.width, r.height];
+            })"""
+        )
         positions: dict[str, tuple[float, float]] = {}
 
         for node in self.spec.nodes:
-            node_el = self._node_locator(node)
-            assert node_el.count() == 1, (
+            found = [b for b in boxes if b[0] == node.id]
+            assert len(found) == 1, (
                 f"Node {node.id} ({node.type}) not found on canvas"
             )
-            bbox = node_el.bounding_box()
-            assert bbox is not None, (
+            _, x, y, width, height = found[0]
+            assert width > 0 and height > 0, (
                 f"Node {node.id} ({node.type}) has no bounding box (not visible)"
             )
-            positions[node.id] = (bbox["x"], bbox["y"])
+            positions[node.id] = (x, y)
 
         # Verify relative x-ordering: if node A.x < B.x in the spec, then
         # A should also appear to the left of (or at the same x as) B on

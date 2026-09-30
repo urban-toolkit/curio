@@ -256,6 +256,11 @@ def pytest_configure(config):
         "webgpu: the browser runs WebGPU, so CI runs it on the utk GPU runner "
         "(set automatically, see runner_split.py)",
     )
+    config.addinivalue_line(
+        "markers",
+        "needs_parallel: needs the sibling backends of --parallel, which only "
+        "the utk job runs (runner_split.py)",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
