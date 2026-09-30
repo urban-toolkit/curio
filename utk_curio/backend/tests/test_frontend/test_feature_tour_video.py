@@ -74,6 +74,7 @@ from playwright.sync_api import expect
 
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
+    _post_json,
     accept_confirm_dialog,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
@@ -224,6 +225,67 @@ EXAMPLE_HEAT = os.path.join(
 # The heat scene's still is larger than the video frame, so the views stay
 # legible when the guide shows it at half a page wide.
 STILL_SIZE = {"width": 1920, "height": 1200}
+
+# What the catalogs scene shows on the guide's home page: example 17's downtown
+# Chicago chain, a loader, a transformation, an Autark map and a Vega-Lite
+# chart, with agents attached to its nodes, a connection and the canvas.
+EXAMPLE_GEO = os.path.join(
+    REPO_ROOT, "docs", "examples", "17-autark-geodataframe-maps.json",
+)
+GEO_LOADER = "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0"
+GEO_TRANSFORM = "7651188c-d864-5de0-acde-54376c0be3a0"
+GEO_MAP = "82f3f32b-33f8-5ead-abdf-d3fc43edd0cc"
+GEO_CHART = "b5bf05fa-42ff-577f-9b2e-ca62a0e625cc"
+# Where each of the four sits: the loader and the transformation in a row, the
+# map and the chart stacked after them. Connections leave a node's right side
+# and enter the next one's left, so a stacked loader and transformation would
+# be joined by a wire looping under both.
+GEO_LAYOUT = {
+    GEO_LOADER: (0, 260),
+    GEO_TRANSFORM: (640, 260),
+    GEO_MAP: (1280, 0),
+    GEO_CHART: (1280, 520),
+}
+# In the example the Vega-Lite node draws the ZIPs again as a map. Here it is a
+# chart of the same column the Autark map colours by, in the same colours.
+GEO_CHART_SPEC = json.dumps(
+    {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "description": "Each downtown ZIP's area.",
+        "mark": {"type": "bar", "cornerRadiusEnd": 2},
+        "encoding": {
+            "y": {"field": "zip", "type": "nominal", "sort": "-x", "title": "ZIP"},
+            "x": {"field": "area_km2", "type": "quantitative", "title": "Area (km2)"},
+            "color": {
+                "field": "area_km2", "type": "quantitative",
+                "scale": {"scheme": "viridis"}, "legend": None,
+            },
+        },
+    },
+    indent=2,
+)
+GEO_GOAL = "Map and chart the size of downtown Chicago's ZIP codes."
+# Every catalog agent is added, so the rail counts ten; these are the ones
+# attached, each where it works.
+GEO_AGENTS = [
+    "agent.chat-agent@1.0.0", "agent.connection-builder@1.0.0",
+    "agent.dataflow-builder@1.0.0", "agent.dataset-finder@1.0.0",
+    "agent.node-builder@1.0.0", "agent.node-content-builder@1.0.0",
+    "agent.node-researcher@1.0.0", "agent.package-builder@1.0.0",
+    "agent.package-recommendation@1.0.0", "agent.researcher@1.0.0",
+]
+GEO_ATTACH = [
+    ("agent.dataset-finder@1.0.0", {"kind": "node", "targetId": GEO_LOADER}),
+    ("agent.node-builder@1.0.0", {"kind": "node", "targetId": GEO_TRANSFORM}),
+    ("agent.chat-agent@1.0.0", {"kind": "node", "targetId": GEO_MAP}),
+    ("agent.package-recommendation@1.0.0", {"kind": "node", "targetId": GEO_CHART}),
+    (
+        "agent.connection-builder@1.0.0",
+        {"kind": "connection", "targetId": f"reactflow__edge-{GEO_TRANSFORM}out-{GEO_CHART}in"},
+    ),
+    ("agent.dataflow-builder@1.0.0", {"kind": "canvas"}),
+    ("agent.researcher@1.0.0", {"kind": "canvas"}),
+]
 
 
 def _log(message: str) -> None:
@@ -1787,6 +1849,107 @@ def scene_heat(ctx: Ctx) -> None:
     page.wait_for_timeout(1000)
 
 
+def _geo_spec() -> dict:
+    """Example 17 cut to the four nodes the catalogs still shows."""
+    with open(EXAMPLE_GEO, encoding="utf-8") as fh:
+        spec = json.load(fh)
+    flow = spec["dataflow"]
+    flow["nodes"] = [n for n in flow["nodes"] if n["id"] in GEO_LAYOUT]
+    flow["edges"] = [
+        e for e in flow["edges"] if e["source"] in GEO_LAYOUT and e["target"] in GEO_LAYOUT
+    ]
+    for node in flow["nodes"]:
+        node["x"], node["y"] = GEO_LAYOUT[node["id"]]
+        if node["id"] == GEO_CHART:
+            node["content"] = GEO_CHART_SPEC
+    flow["name"] = "Downtown Chicago ZIPs"
+    flow["task"] = GEO_GOAL
+    spec["name"] = flow["name"]
+    return spec
+
+
+def _still_marks(page, name: str) -> None:
+    """Write where the still's nodes and agent badges are, in page pixels, next to
+    ``<name>.png``, so the guide can highlight them."""
+    marks = page.evaluate(
+        """(ids) => {
+            const box = (el) => {
+                if (!el) return null;
+                const b = el.getBoundingClientRect();
+                return { x: b.x, y: b.y, w: b.width, h: b.height };
+            };
+            const named = (b) => b.getAttribute('aria-label') || b.title || '';
+            return {
+                nodes: Object.fromEntries(Object.entries(ids).map(([key, id]) =>
+                    [key, box(document.querySelector(`.react-flow__node[data-id="${id}"]`))])),
+                badges: [...document.querySelectorAll('button')]
+                    .filter((b) => named(b).startsWith('Open chat with '))
+                    .map((b) => ({ agent: named(b).slice('Open chat with '.length), ...box(b) })),
+                edgeBadges: [...document.querySelectorAll('[data-curio-edge-badges]')].map(box),
+                dock: box(document.querySelector('[role="toolbar"][aria-label="Canvas agents"]')),
+                rail: box(document.querySelector('#tools-menu')),
+            };
+        }""",
+        {"load": GEO_LOADER, "transform": GEO_TRANSFORM, "map": GEO_MAP, "chart": GEO_CHART},
+    )
+    stills = os.path.join(out_dir(), "stills")
+    os.makedirs(stills, exist_ok=True)
+    with open(os.path.join(stills, f"{name}.json"), "w", encoding="utf-8") as fh:
+        json.dump(marks, fh, indent=2)
+
+
+def scene_catalogs(ctx: Ctx) -> None:
+    """A small dataflow run end to end with agents attached, for the guide's
+    home page: a loader, a transformation, an Autark map and a Vega-Lite chart.
+
+    Only when CURIO_TOUR_SCENES names it, like scene_heat. The project is seeded
+    rather than loaded, because an attachment is checked against the saved spec
+    and the agents are attached over the API before the page opens it.
+    """
+    page, tour = ctx.page, ctx.tour
+    wanted = os.environ.get("CURIO_TOUR_SCENES") or ""
+    if "catalogs" not in {name.strip() for name in wanted.split(",")}:
+        _log("[tour] catalogs runs only when CURIO_TOUR_SCENES names it; skipped")
+        return
+    spec = _geo_spec()
+    project = _post_json(
+        f"{ctx.backend}/api/testing/stub-project",
+        {"username": USER_LOGIN, "name": spec["name"], "spec": spec},
+    )
+    token = page.evaluate(
+        "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
+    )
+    base = f"{ctx.backend}/api/agents/projects/{project['id']}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    for coord in GEO_AGENTS:
+        installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
+        assert installed.ok, f"installing {coord}: {installed.status} {installed.text()}"
+    for coord, target in GEO_ATTACH:
+        attached = page.request.post(
+            f"{base}/attachments", headers=headers, data={"coord": coord, "target": target},
+        )
+        assert attached.ok, f"attaching {coord}: {attached.status} {attached.text()}"
+
+    page.goto(f"{ctx.frontend}/dataflow/{project['id']}")
+    page.wait_for_load_state("domcontentloaded")
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    page.wait_for_function(
+        "() => document.querySelectorAll('.react-flow__node').length >= 4", timeout=45000,
+    )
+    tour.hush()
+    _play_all(ctx, timeout_ms=300000, settle=[(GEO_MAP, "autk-grammar"), (GEO_CHART, "vis-vega")])
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+    # Clear of the left rail, the dataflow's title and the agent bar above, and
+    # of the version line the guide crops away; the badges hang below the nodes.
+    _frame_nodes(page, list(GEO_LAYOUT), (230, 190, 1870, 1110))
+    tour.beat(2500)
+    _still_marks(page, "catalogs")
+    tour.still("catalogs")
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
 def scene_catalog_pages(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.chapter(
@@ -2205,8 +2368,9 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("provenance", scene_provenance),
     ("interaction", scene_interaction),
     ("autark", scene_autark),
-    # Only when CURIO_TOUR_SCENES names it; see scene_heat.
+    # Only when CURIO_TOUR_SCENES names them; see scene_heat.
     ("heat", scene_heat),
+    ("catalogs", scene_catalogs),
     # Late, because it opens a dataflow of its own and the scenes before it
     # build on the one they share.
     ("quickstart", scene_quickstart),
@@ -2226,7 +2390,8 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
 CANVAS_SCENES = {
     "datacatalog", "build", "saveload", "lineage", "nodecatalog", "libraries",
     "agentcatalog", "agentattach", "agentrun",
-    "linkedviews", "dashboard", "provenance", "interaction", "autark", "heat", "quickstart",
+    "linkedviews", "dashboard", "provenance", "interaction", "autark", "heat", "catalogs",
+    "quickstart",
     "collaboration",
 }
 
