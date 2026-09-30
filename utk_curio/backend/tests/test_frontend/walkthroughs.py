@@ -1351,6 +1351,8 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     ctx.click(page.get_by_test_id("open-dataflow-link"))
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
+    # Back on the canvas the load fit puts the header under the menu bar again.
+    frame_node(page, node_id)
     unpin = node.get_by_role("button", name="Unpin from dashboard")
     unpin.wait_for(state="visible", timeout=15000)
     ctx.click(unpin.first)
