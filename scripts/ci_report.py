@@ -142,6 +142,8 @@ class Report:
     jobs_given: bool = False
     # Every job of the run, when the page reports on the run rather than one job.
     all_jobs: list | None = None
+    # Interaction frames in before/after pairs, see build_pairs.
+    pairs: list = field(default_factory=list)
     problems: list = field(default_factory=list)
 
 
@@ -348,6 +350,88 @@ def _comparison_order(record):
     return GROUP_ORDER.index(group), -closeness, record.get("baseline") or ""
 
 
+# ---------------------------------------------------------------- interaction pairs
+
+#: What "What changed" marks: more than this in some channel, the rule the
+#: interaction steps in test_workflows count a highlight by.
+PAIR_CHANGE_THRESHOLD = 40
+PAIR_ROLES = ("source", "target")
+PAIR_PHASES = ("before", "after")
+PAIR_FADE = 0.2  # as comparisons.FADE: how much of the after frame shows under the red
+
+
+def pair_frame(record):
+    """The image a pair shows for *record*: its baseline as this run leaves it.
+
+    A re-mint wrote this run's capture over the baseline, and a missing
+    baseline has only the capture that would become one. Every other record's
+    baseline is the file as committed, or as a mint just wrote it.
+    """
+    images = record.get("images") or {}
+    if record.get("status") in ("reminted", "missing"):
+        return images.get("created")
+    return images.get("expected") or images.get("created")
+
+
+def build_pairs(records):
+    """Interaction frames by step, one row per node with its before and after record."""
+    steps = {}
+    for record in records:
+        meta = record.get("interaction")
+        if not isinstance(meta, dict):
+            continue
+        key = (meta.get("workflow") or "", meta.get("step") or "")
+        step = steps.setdefault(key, {
+            "workflow": key[0], "step": key[1], "gesture": meta.get("gesture") or "",
+            "source": meta.get("source") or "", "target": meta.get("target") or "",
+            "rows": {},
+        })
+        role = meta.get("role") or ""
+        row = step["rows"].setdefault(role, {"role": role, "node": meta.get("node") or ""})
+        row[meta.get("phase") or ""] = record
+    pairs = []
+    for key in sorted(steps):
+        step = steps[key]
+        rows = [step["rows"][role] for role in PAIR_ROLES if role in step["rows"]]
+        rows += [row for role, row in step["rows"].items() if role not in PAIR_ROLES]
+        pairs.append({**step, "rows": rows})
+    return pairs
+
+
+def change_image(before_path, after_path, threshold=PAIR_CHANGE_THRESHOLD):
+    """The after frame faded, with every pixel that differs from before in red.
+
+    Returns ``(data URI, changed pixels, total pixels)``, or None without Pillow.
+    """
+    try:
+        from PIL import Image, ImageChops, features
+    except Exception:
+        return None
+    with Image.open(before_path) as b, Image.open(after_path) as a:
+        before, after = b.convert("RGB"), a.convert("RGB")
+    size = (max(before.width, after.width), max(before.height, after.height))
+    before, after = before.resize(size), after.resize(size)
+    over = ImageChops.difference(before, after).point(lambda v: 255 if v > threshold else 0)
+    red, green, blue = over.split()
+    mask = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    backdrop = after.convert("L").point(lambda v: int(255 - (255 - v) * PAIR_FADE)).convert("RGB")
+    marked = Image.composite(Image.new("RGB", size, (255, 0, 0)), backdrop, mask)
+    buf = io.BytesIO()
+    webp = bool(features.check("webp"))
+    marked.save(buf, "WEBP" if webp else "PNG", **({"lossless": True} if webp else {}))
+    return (_data_uri("image/webp" if webp else "image/png", buf.getvalue()),
+            mask.histogram()[255], size[0] * size[1])
+
+
+def add_pair_changes(pairs):
+    """Give each row with both frames its before-to-after ``change``."""
+    for pair in pairs:
+        for row in pair["rows"]:
+            frames = [pair_frame(row[p]) if p in row else None for p in PAIR_PHASES]
+            if all(frames):
+                row["change"] = change_image(*frames)
+
+
 def read_failures(root):
     if not root or not os.path.isdir(root):
         return {}
@@ -489,14 +573,20 @@ def build(args, environ=os.environ):
                         case.screenshot = shots.pop(folder)
                         break
     report.stray_screenshots = shots
+    report.pairs = guarded("interaction pairs", lambda: build_pairs(report.comparisons), [])
+    guarded("interaction changes", lambda: add_pair_changes(report.pairs), None)
 
     ordered = [case.screenshot for suite in report.suites for case in suite.cases if case.screenshot]
     ordered += list(shots.values())
+    # A pair shows a kept baseline too, which the comparison cards leave out.
+    ordered += [pair_frame(row[phase]) for pair in report.pairs for row in pair["rows"]
+                for phase in PAIR_PHASES if phase in row and pair_frame(row[phase])]
     for record in report.comparisons:
         if record.get("status") == "unchanged":
             continue  # listed without images: a re-mint kept these baselines
         ordered += [record["images"][kind] for kind in ("expected", "created", "diff")
                     if kind in record["images"]]
+    ordered = list(dict.fromkeys(ordered))
     encoded = guarded("images", lambda: encode_images(ordered, args.workers), {})
     report.images = budget_images(encoded, ordered, args.max_image_mb)
     return report
@@ -564,6 +654,7 @@ def render(report):
             render_jobs if report.all_jobs is not None else render_steps)]
           if report.jobs_given else []),
         ("Test suites", "suites", render_suites),
+        *([("Interaction pairs", "interactions", render_pairs)] if report.pairs else []),
         ("Screenshot comparisons", "comparisons", render_comparisons),
     ]
     body = []
@@ -621,8 +712,10 @@ def render_header(report, title):
     word = {"passed": "Passed", "failed": "Failed", "unclear": "No results"}[state]
     links = ([("Jobs" if report.all_jobs is not None else "Steps", "steps")]
              if report.jobs_given else [])
-    links += [("Test suites", "suites"),
-              (f"Screenshot comparisons ({len(report.comparisons)})", "comparisons")]
+    links += [("Test suites", "suites")]
+    if report.pairs:
+        links.append((f"Interaction pairs ({len(report.pairs)})", "interactions"))
+    links.append((f"Screenshot comparisons ({len(report.comparisons)})", "comparisons"))
     nav = " ".join(f'<a href="#{a}">{esc(t)}</a>' for t, a in links)
     return (f'<header class="top"><div class="title-row"><h1>{esc(title)}</h1>'
             f"{badge(state, word)}</div>"
@@ -814,6 +907,62 @@ def render_tsc(suite):
     return '<p class="muted">No type errors.</p>'
 
 
+def _figure(uri, caption, full):
+    if not uri:
+        return (f'<figure class="empty"><div class="placeholder">{esc(full)}</div>'
+                f"<figcaption>{esc(caption)}</figcaption></figure>")
+    return (f'<figure><button type="button" class="shot" aria-label="Open {esc(caption.lower())} at original size">'
+            f'<img src="{uri}" alt="{esc(full)}" loading="lazy" decoding="async" data-caption="{esc(full)}">'
+            f"</button><figcaption>{esc(caption)}</figcaption></figure>")
+
+
+def render_pairs(report):
+    """Each interaction step's nodes before and after it, for a person to judge."""
+    cards = []
+    for pair in report.pairs:
+        rows = []
+        for row in pair["rows"]:
+            node = row.get("node") or "?"
+            figures, states = [], []
+            for phase in PAIR_PHASES:
+                record = row.get(phase)
+                if record is None:
+                    figures.append(_figure(None, phase.capitalize(), "not captured"))
+                    continue
+                path = pair_frame(record)
+                full = f"{phase.capitalize()}: {record.get('baseline') or node}"
+                figures.append(_figure(report.images.get(path) if path else None,
+                                       phase.capitalize(), full if path else "nothing was captured"))
+                status = record.get("status") or "passed"
+                word = esc(COMPARISON_LABEL.get(status, status).lower())
+                states.append(f'{phase} <a href="#{esc(record.get("anchor") or "")}">{word}</a>'
+                              if status != "unchanged" else f"{phase} {word}")
+            change = row.get("change")
+            if change:
+                uri, changed, total = change
+                caption = f"What changed: {changed:,} pixels ({changed / total:.2%})" if total else "What changed"
+                figures.append(_figure(uri, caption, f"{caption}, {node}"))
+            else:
+                figures.append(_figure(None, "What changed", "needs both frames"))
+            label = {"source": "Source", "target": "Target"}.get(row.get("role"), row.get("role") or "?")
+            rows.append(f'<div class="pair-row"><h4>{esc(label)} <code>{esc(node)}</code>'
+                        f'<span class="muted">{", ".join(states)}</span></h4>'
+                        f'<div class="trio">{"".join(figures)}</div></div>')
+        gesture = pair.get("gesture") or "gesture"
+        cards.append(
+            f'<article class="card pair"><header class="card-head">{badge("interaction", gesture)}'
+            f'<h3>{esc(pair["workflow"])}: {esc(pair["step"])}</h3></header>'
+            f'<p class="test">A {esc(gesture)} on <code>{esc(pair.get("source"))}</code>, '
+            f'which lights up <code>{esc(pair.get("target"))}</code>.</p>{"".join(rows)}</article>')
+    intro = ('<p class="note">Each row is one node of an interaction step, framed together '
+             "with the other node, before and after the gesture. The frames are the baselines "
+             "as this run leaves them, so on a mint or re-mint run they are the new ones. "
+             f"What changed marks in red every pixel that differs by more than {PAIR_CHANGE_THRESHOLD} "
+             "in a channel between the two.</p>")
+    return (f'<section id="interactions"><h2>Interaction pairs</h2>{intro}'
+            f'<div class="cards">{"".join(cards)}</div></section>')
+
+
 def render_comparisons(report):
     records = report.comparisons
     if not records:
@@ -832,6 +981,10 @@ def render_comparisons(report):
     if closeups:
         chips.append('<button type="button" class="chip closeup" data-group="closeup" '
                      f'aria-pressed="false">Close-ups <span class="num">{closeups}</span></button>')
+    interactions = sum(1 for r in shown if r.get("interaction"))
+    if interactions:
+        chips.append('<button type="button" class="chip interaction" data-group="interaction" '
+                     f'aria-pressed="false">Interactions <span class="num">{interactions}</span></button>')
     volatile = ('<span class="swatch volatile"></span> different, inside text a run writes '
                 'fresh every time (not counted by a re-mint) '
                 if any(r.get("volatile_pixels") for r in records) else "")
@@ -902,6 +1055,9 @@ def render_comparison(report, record):
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
     if record.get("closeup"):
         head.append(badge("closeup", "close-up"))
+    meta = record.get("interaction")
+    if isinstance(meta, dict):
+        head.append(badge("interaction", f"{meta.get('step')}, {meta.get('phase')}"))
     test = XDIST_GROUP.sub("", nodeid)
     test_bits = f'<span class="test-id">{esc(test)}</span>' if test else ""
     if record.get("test_status") in ("failed", "error"):
@@ -979,6 +1135,7 @@ def render_comparison(report, record):
     search = f"{baseline} {test}".lower()
     return (f'<article class="card cmp" id="{esc(record.get("anchor") or "")}" '
             f'data-group="{group}" data-closeup="{"1" if record.get("closeup") else ""}" '
+            f'data-interaction="{"1" if record.get("interaction") else ""}" '
             f'data-search="{esc(search)}">'
             f'<header class="card-head">{"".join(head)}</header>'
             f'<p class="test">{test_bits}</p>'
@@ -1018,6 +1175,8 @@ def render_summary(report):
               if counts["reminted"] or counts["unchanged"] else "")
     if counts["minted"]:
         remint += f" Minted: {counts['minted']} new baselines."
+    if report.pairs:
+        remint += f" Interaction pairs: {len(report.pairs)} steps."
     lines += ["", f"Screenshot comparisons: {len(report.comparisons)} recorded, "
               f"{counts['over']} over budget, {counts['missing']} without a baseline, "
               f"{counts['capture']} capture failures.{remint}"]
@@ -1055,7 +1214,7 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
 .badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
-.badge.reminted,.badge.minted,.badge.closeup{color:var(--accent)}
+.badge.reminted,.badge.minted,.badge.closeup,.badge.interaction{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}
@@ -1097,6 +1256,8 @@ border:1px solid var(--line);overflow:hidden;vertical-align:middle}
 .meter-label,.facts{color:var(--muted);font-size:12px}
 .trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
 .trio figure{margin:0;min-width:0}
+.pair-row{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.pair-row h4 .muted{font-weight:400}
 figcaption{font-size:12px;color:var(--muted);margin-top:3px;text-align:center}
 .shot{display:block;width:100%;padding:0;border:1px solid var(--line);background:var(--code);cursor:zoom-in}
 .shot img{display:block;width:100%;height:auto;max-height:70vh;object-fit:contain}
@@ -1129,7 +1290,8 @@ JS = """
     const q = ((search && search.value) || '').trim().toLowerCase();
     for (const card of cards) {
       const inGroup = group === 'all' || card.dataset.group === group ||
-                      (group === 'closeup' && card.dataset.closeup === '1');
+                      (group === 'closeup' && card.dataset.closeup === '1') ||
+                      (group === 'interaction' && card.dataset.interaction === '1');
       card.hidden = !(inGroup && (!q || card.dataset.search.includes(q)));
     }
   }

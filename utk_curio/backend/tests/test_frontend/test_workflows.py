@@ -1,6 +1,8 @@
 import os
 import re
 import json
+from dataclasses import dataclass
+
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -15,7 +17,21 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     # compare_svg_structure,
 # )
 from .utils import (
+    INTERACTION_MIN_CHANGED_PIXELS,
+    INTERACTION_RESTORED_RATIO,
+    CLOSEUP_PIXEL_THRESHOLD,
+    _compare_images,
+    _wait_for_no_node_running,
     _wait_for_reactflow_ready,
+    assert_autark_map_drawn,
+    changed_pixels,
+    drawing_kept,
+    drawing_selector,
+    frame_nodes,
+    keep_drawing,
+    mark_point,
+    park_pointer,
+    save_interaction_frame,
     save_node_closeup,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
@@ -27,11 +43,13 @@ from .utils import (
     node_execution_timeout_ms,
     play_node,
     read_node_error_text,
+    wait_for_node_capture,
     wait_for_node_done,
     wait_for_node_settled,
+    wait_for_node_still,
     wait_for_run_guard_released,
 )
-from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
+from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
 """
 This test file is to test the loading of workflow files in the frontend.
@@ -94,6 +112,84 @@ EXPECTED_EMPTY = {
         "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f": "geometry-unresolved",  # Vega-Lite
     },
 }
+
+
+@dataclass(frozen=True)
+class Interaction:
+    """A gesture on one drawn node, and the node it should light up.
+
+    *gesture* is ``hover``, the pointer held over a mark of a Vega chart, or
+    ``pick``, a double-click on an Autark map (a pick toggles, so a second one
+    on the same spot takes it back). The mark is the marked pixel of the
+    source's drawing nearest *at*, given as fractions of that drawing.
+    """
+    slug: str
+    source: str
+    target: str
+    gesture: str
+    at: tuple = (0.5, 0.5)
+
+
+GESTURES = ("hover", "pick")
+
+VEGA_AUTARK_BARS = "node12"
+VEGA_AUTARK_MAP = "13d263ce-2e82-4e87-bc69-117b06a8a65b"
+
+#: Interactions compared before and after, keyed by workflow, in the order
+#: they run. Each frames its two nodes together, so a hover held on one still
+#: shows while the other is captured. See ``test_node_interaction``.
+INTERACTIONS = {
+    # A bar chart and an Autark map, linked through a Data Pool.
+    "Interaction_Vega_Autark.json": (
+        Interaction("bar-hover", source=VEGA_AUTARK_BARS, target=VEGA_AUTARK_MAP, gesture="hover"),
+        Interaction("map-pick", source=VEGA_AUTARK_MAP, target=VEGA_AUTARK_BARS, gesture="pick"),
+    ),
+}
+
+
+def _linked(spec, a: str, b: str) -> bool:
+    """Whether an Interaction edge joins *a* and *b*, directly or through one Data Pool."""
+    def ends(edge):
+        return {edge["source"], edge["target"]}
+
+    links = [ends(e) for e in spec.edges if e.get("type") == "Interaction"]
+    if {a, b} in links:
+        return True
+    pools = {n.id for n in spec.nodes if n.type == "DATA_POOL"}
+    return any({a, pool} in links and {b, pool} in links for pool in pools)
+
+
+def test_interaction_table_matches_the_dataflows():
+    """Every INTERACTIONS step names two drawing nodes of its dataflow that an
+    Interaction edge links, and a gesture its source can take, so an edited
+    example cannot leave the table pointing at nothing."""
+    from .conftest import WORKFLOW_FILES
+    from .utils import REPO_ROOT
+
+    paths = {os.path.basename(p): os.path.join(REPO_ROOT, p) for p in WORKFLOW_FILES}
+    for workflow, steps in INTERACTIONS.items():
+        assert workflow in paths, f"{workflow} is not in conftest.WORKFLOW_FILES, so it never runs"
+        spec = parse_workflow(paths[workflow])
+        nodes = {n.id: n for n in spec.nodes}
+        for step in steps:
+            where = f"{workflow} {step.slug}"
+            assert step.gesture in GESTURES, f"{where}: unknown gesture {step.gesture!r}"
+            for node_id in (step.source, step.target):
+                assert node_id in nodes, f"{where}: no node {node_id}"
+                assert nodes[node_id].type in ("VIS_VEGA", "AUTK_GRAMMAR"), (
+                    f"{where}: {node_id} is a {nodes[node_id].type}, which draws nothing")
+            assert _linked(spec, step.source, step.target), (
+                f"{where}: no Interaction edge joins {step.source} and {step.target}")
+            source = json.loads(nodes[step.source].content or "{}")
+            if step.gesture == "pick":
+                layers = (source.get("map") or {}).get("layerRefs") or []
+                assert any(layer.get("isPick") for layer in layers), (
+                    f"{where}: {step.source} has no isPick layer to pick")
+            else:
+                ons = [(p.get("select") or {}).get("on") for p in source.get("params") or []
+                       if isinstance(p.get("select"), dict)]
+                assert "pointerover" in ons, (
+                    f"{where}: {step.source} has no selection made on pointerover")
 
 
 class TestWorkflowCanvas:
@@ -921,3 +1017,96 @@ class TestWorkflowCanvas:
                 test_name=f"{request.function.__name__}_closeup_{node.id}",
                 sweep_toasts=bool(self._expected_empty()),
             )
+
+    # -- 5. Interactions ---------------------------------------------------
+
+    @pytest.mark.only_workflows(*INTERACTIONS)
+    def test_node_interaction(self, loaded_workflow, request):
+        """Each INTERACTIONS step lights up its target, and both of its nodes
+        are compared before and after it.
+
+        The frames show how a highlight looks. What the test asserts itself is
+        that there was one: the target's capture changed, it still draws into
+        the element it had (a selection highlights, it never redraws), and
+        taking the gesture back puts it back as it was.
+        """
+        self._execute_all_playable_nodes()
+        for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
+            self._interact(step, request.function.__name__)
+
+    def _assert_drawn(self, node_id: str) -> None:
+        node = next(n for n in self.spec.nodes if n.id == node_id)
+        if node.type == "VIS_VEGA":
+            assert_vega_canvas_rendered(self.page, node_id)
+        elif "map" in json.loads(node.content or "{}"):
+            assert_autark_map_drawn(self.page, node_id)
+
+    def _interact(self, step: Interaction, test_name: str) -> None:
+        page = self.page
+        where = f"{step.slug}: a {step.gesture} on {step.source}"
+
+        def frame(phase: str, role: str) -> None:
+            node_id = step.source if role == "source" else step.target
+            save_interaction_frame(
+                page,
+                self.spec.filepath,
+                node_id,
+                test_name=f"{test_name}_{step.slug}_{phase}_{node_id}",
+                interaction={
+                    "workflow": os.path.basename(self.spec.filepath),
+                    "step": step.slug, "gesture": step.gesture, "phase": phase,
+                    "role": role, "node": node_id,
+                    "source": step.source, "target": step.target,
+                },
+            )
+
+        frame_nodes(page, [step.source, step.target])
+        _wait_for_no_node_running(page)
+        for node_id in (step.source, step.target):
+            self._assert_drawn(node_id)
+        drawing = drawing_selector(page, step.target)
+        assert drawing, f"{where}: its target {step.target} drew nothing"
+        keep_drawing(page, drawing)
+        before = wait_for_node_still(page, step.target)
+        frame("before", "source")
+        frame("before", "target")
+
+        source_drawing = drawing_selector(page, step.source)
+        point = mark_point(page, source_drawing, step.at) if source_drawing else None
+        assert point, f"{where}: no mark near {step.at} of what {step.source} drew"
+        if step.gesture == "hover":
+            page.mouse.move(point["x"], point["y"])
+        else:
+            page.mouse.dblclick(point["x"], point["y"])
+            park_pointer(page)
+
+        after, reached = wait_for_node_capture(
+            page, step.target,
+            lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
+        )
+        assert reached, (
+            f"{where} left {step.target} as it was "
+            f"({changed_pixels(before, after)} pixels changed)"
+        )
+        wait_for_node_still(page, step.target)
+        assert drawing_kept(page, drawing), (
+            f"{where} redrew {step.target} instead of highlighting it"
+        )
+        frame("after", "target")
+        frame("after", "source")
+
+        # Take it back. A pointerover on the chart's background clears a hover
+        # selection (the pointer leaving the canvas would not); a pick on the
+        # same spot takes the pick back.
+        if step.gesture == "hover":
+            box = page.locator(source_drawing).first.bounding_box()
+            page.mouse.move(box["x"] + box["width"] - 2, box["y"] + 2)
+        else:
+            page.mouse.dblclick(point["x"], point["y"])
+        park_pointer(page)
+        _, restored = wait_for_node_capture(
+            page, step.target,
+            lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
+            <= INTERACTION_RESTORED_RATIO,
+        )
+        assert restored, f"taking back {where} left {step.target} highlighted"

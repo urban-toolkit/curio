@@ -199,6 +199,11 @@ def pytest_generate_tests(metafunc):
     """
     if "loaded_workflow" in metafunc.fixturenames:
         files = load_workflow_files_from_folder()
+        # A test for a few workflows only (``only_workflows``) is never
+        # collected for the rest, so selecting it loads nothing it skips.
+        only = metafunc.definition.get_closest_marker("only_workflows")
+        if only is not None:
+            files = [f for f in files if os.path.basename(f) in only.args]
         # Example 10 (street-vision) drives external services — HuggingFace CV
         # inference + street-view APIs via the non-builtin curio.streetvision
         # package — so it can't run offline/deterministically. Skip it at
@@ -260,6 +265,11 @@ def pytest_configure(config):
         "markers",
         "needs_parallel: needs the sibling backends of --parallel, which only "
         "the utk job runs (runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "only_workflows(*basenames): a test_workflows test collected for these "
+        "workflows only",
     )
 
 

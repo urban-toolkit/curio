@@ -239,7 +239,7 @@ def test_an_ordinary_comparison_records_no_remint_fields(dirs, monkeypatch):
     _save(monkeypatch, lambda page: _white(paint=1))
     [(_, record)] = _records(compare)
     assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels",
-                "closeup"} & set(record)
+                "closeup", "interaction"} & set(record)
 
 
 def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
@@ -294,6 +294,52 @@ def test_a_node_close_up_fails_a_blank_that_a_full_page_budget_lets_through(dirs
 
     # The same pair against the full-page budget passes.
     _save(monkeypatch, lambda page: _white())
+
+
+INTERACTION = {"workflow": "scene.json", "step": "bar-hover", "gesture": "hover",
+               "phase": "after", "role": "target", "node": "n1", "source": "n2", "target": "n1"}
+
+
+class _HeldPointerPage(_StubPage):
+    """A page whose pointer must not move: a held hover is the subject."""
+
+    class mouse:  # noqa: N801 - stands in for Page.mouse
+        @staticmethod
+        def move(x, y):
+            raise AssertionError("the pointer moved, which would let go of a hover")
+
+
+def test_an_interaction_frame_keeps_the_pointer_and_the_framing(dirs, monkeypatch):
+    expected, compare = dirs
+    (expected / "screenshot_scene_step.png").parent.mkdir(exist_ok=True)
+    _white().save(expected / "screenshot_scene_step.png")
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: _white())
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    def refit(page, **kw):
+        raise AssertionError("the canvas was refitted under a held pointer")
+
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", refit)
+    monkeypatch.setattr(e2e_utils, "dismiss_toasts", refit)
+    e2e_utils.save_interaction_frame(_HeldPointerPage(), "scene.json", "n1",
+                                     test_name="step", interaction=INTERACTION)
+
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["interaction"]) == ("passed", INTERACTION)
+    assert record["pixel_threshold"] == e2e_utils.CLOSEUP_PIXEL_THRESHOLD
+    assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
+    assert "closeup" not in record
+
+
+def test_a_missing_or_kept_interaction_frame_keeps_its_place_in_the_pair(dirs, monkeypatch):
+    expected, compare = dirs
+    with pytest.raises(AssertionError, match="remint=true"):
+        _save(monkeypatch, lambda page: _white(paint=1), interaction=INTERACTION)
+    _baseline(expected, _white(paint=1))
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=1)), interaction=INTERACTION)
+    records = [record for _, record in _records(compare)]
+    assert sorted(r["status"] for r in records) == ["missing", "unchanged"]
+    assert all(r["interaction"] == INTERACTION for r in records)
 
 
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):

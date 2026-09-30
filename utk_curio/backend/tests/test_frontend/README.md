@@ -338,7 +338,15 @@ Two families of baseline live in that folder:
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
   5 instead of 30, against a 2% budget instead of 10%. In the full-page frame a
   map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
-  take one with `ctx.capture_node`;
+  take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
+  (test_workflows.py) also gets
+  `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
+  frames its two nodes together, captures both, does its gesture (a hover held
+  on a Vega mark, or a double-click pick on an Autark map), and captures both
+  again without moving the pointer (`save_interaction_frame`). The test asserts
+  that the target changed and kept its drawing (a highlight, not a redraw), and
+  that taking the gesture back restores it. The CI report shows these frames as
+  Interaction pairs;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,

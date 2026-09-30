@@ -326,6 +326,56 @@ def test_close_ups_get_a_badge_and_a_filter_across_the_groups(tmp_path):
     assert "card.dataset.closeup === '1'" in page
 
 
+def _interaction(step, phase, role):
+    return {"workflow": "Interaction_Vega_Autark.json", "step": step, "gesture": "hover",
+            "phase": phase, "role": role, "node": f"{role}-node",
+            "source": "source-node", "target": "target-node"}
+
+
+def test_interaction_frames_pair_up_before_and_after_with_what_changed(tmp_path):
+    compare = tmp_path / "compare"
+    for phase in ("before", "after"):
+        for role in ("source", "target"):
+            _comparison(compare, f"hover_{phase}_{role}", status="minted", ratio=0.0,
+                        interaction=_interaction("bar-hover", phase, role))
+    # The target lit up: 12 of its 48 pixels are red after the hover.
+    after = Image.new("RGB", (8, 6), (255, 255, 255))
+    after.paste((255, 0, 0), (0, 0, 4, 3))
+    after.save(compare / "hover_after_target" / "expected.png")
+    # A kept baseline still shows in its pair, which the cards leave out.
+    _comparison(compare, "pick_before_source", status="unchanged", ratio=0.0,
+                interaction=_interaction("map-pick", "before", "source"))
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out),
+                           "--summary", str(summary)]) == 0
+    page = out.read_text(encoding="utf-8")
+
+    assert '<a href="#interactions">Interaction pairs (2)</a>' in page
+    section = page[page.index('<section id="interactions">'):page.index('<section id="comparisons">')]
+    hover = section[section.index("Interaction_Vega_Autark.json: bar-hover"):
+                    section.index("Interaction_Vega_Autark.json: map-pick")]
+    source = hover[hover.index("Source <code>source-node</code>"):hover.index("Target <code>target-node</code>")]
+    target = hover[hover.index("Target <code>target-node</code>"):]
+    assert "What changed: 0 pixels (0.00%)" in source
+    assert "What changed: 12 pixels (25.00%)" in target
+    assert target.count('src="data:image/') == 3
+    pick = section[section.index("Interaction_Vega_Autark.json: map-pick"):]
+    assert pick.count('src="data:image/') == 1 and "not captured" in pick and "needs both frames" in pick
+    assert "before unchanged" in pick
+
+    assert 'data-group="interaction" aria-pressed="false">Interactions <span class="num">4</span>' in page
+    card = _card(page, "screenshot_hover_before_target.png")
+    assert "bar-hover, before" in card and 'data-interaction="1"' in card
+    assert "card.dataset.interaction === '1'" in page
+    assert "Interaction pairs: 2 steps." in summary.read_text(encoding="utf-8")
+
+
+def test_a_run_without_interaction_frames_has_no_pairs_section(tmp_path):
+    page, summary = _build(tmp_path)
+    assert "Interaction pairs" not in page and "Interaction pairs" not in summary
+    assert 'data-interaction=""' in page
+
+
 def test_a_kept_baseline_is_listed_without_its_images(tmp_path):
     page, _ = _remint_page(tmp_path)
     kept = page[page.index('id="unchanged"'):]

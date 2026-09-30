@@ -1492,6 +1492,7 @@ def save_workflow_test_screenshot(
     sweep_toasts: bool = False,
     allow_running: bool = False,
     closeup: bool = False,
+    interaction: dict | None = None,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1553,7 +1554,8 @@ def save_workflow_test_screenshot(
     draws on its own after its input arrives is photographed drawn, not
     mid-draw. Pass *allow_running* only when a run in progress is the subject.
 
-    *closeup* only labels the record, for the CI report's Close-ups filter.
+    *closeup* only labels the record, for the CI report's Close-ups filter, and
+    *interaction* (see :func:`save_interaction_frame`) for its Interaction pairs.
 
     Returns the path to the expected screenshot file.
     """
@@ -1596,6 +1598,7 @@ def save_workflow_test_screenshot(
         max_diff_ratio=max_diff_ratio,
         capture=f"element {clip_selector}" if clip_selector is not None else "full page",
         closeup=closeup,
+        interaction=interaction,
     )
 
     minted_now = False
@@ -1714,13 +1717,7 @@ def save_node_closeup(
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
-    # The pointer is wherever the last click left it, and once the node is
-    # framed that spot can be over its map. Park it in the pane's empty corner.
-    viewport = page.viewport_size or {"width": 1280, "height": 720}
-    page.mouse.move(viewport["width"] - 10, viewport["height"] - 60)
-    # The full-page fit's padding: less lets a tall node's header reach the
-    # dataflow title in the canvas's top-left corner.
-    _wait_for_reactflow_ready(page, node_ids=[node_id], max_zoom=1.0)
+    frame_nodes(page, [node_id])
     return save_workflow_test_screenshot(
         page,
         workflow_filepath,
@@ -1731,6 +1728,193 @@ def save_node_closeup(
         fit_reactflow=False,
         sweep_toasts=sweep_toasts,
         closeup=True,
+    )
+
+
+def park_pointer(page: Page) -> None:
+    """Move the pointer to the pane's empty bottom-right corner.
+
+    The pointer is wherever the last click left it, and once a node is framed
+    that spot can be over its map or its chart.
+    """
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    page.mouse.move(viewport["width"] - 10, viewport["height"] - 60)
+
+
+def frame_nodes(page: Page, node_ids) -> None:
+    """Fit the canvas to *node_ids* at up to 100% zoom, the pointer parked first."""
+    park_pointer(page)
+    # The full-page fit's padding: less lets a tall node's header reach the
+    # dataflow title in the canvas's top-left corner.
+    _wait_for_reactflow_ready(page, node_ids=list(node_ids), max_zoom=1.0)
+
+
+# ---------------------------------------------------------------- interactions
+#
+# A gesture on one drawn node (a hover over a bar, a pick on a map) and the
+# node it should light up, compared before and after. See
+# test_workflows.INTERACTIONS.
+
+#: How many pixels of the target have to change, by more than 40 in some
+#: channel, for a gesture to count as having reached it. A bar turned red or
+#: one ZIP highlighted on a map is several hundred.
+INTERACTION_MIN_CHANGED_PIXELS = 100
+
+#: How close to its first capture a target has to come back once the gesture
+#: is undone: the share of pixels over ``CLOSEUP_PIXEL_THRESHOLD``.
+INTERACTION_RESTORED_RATIO = 0.01
+
+# The element a node draws into: a Vega chart's canvas, an Autark map's canvas,
+# or the box an Autark plot puts its svg in.
+_DRAWING_SELECTOR_JS = """(id) => {
+    for (const selector of ['#vega' + id + ' canvas', '#autk-grammar-map-' + id,
+                            '#autk-grammar-plot-' + id]) {
+        if (document.querySelector(selector)) return selector;
+    }
+    return null;
+}"""
+
+# The drawing now, kept on window so a later check can ask whether it is still
+# the one in the page: a redraw replaces it, a highlight keeps it.
+_KEEP_DRAWING_JS = """(selector) => {
+    const el = document.querySelector(selector);
+    (window.__curioKeptDrawings = window.__curioKeptDrawings || {})[selector] = el;
+    return !!el;
+}"""
+_DRAWING_KEPT_JS = """(selector) => {
+    const kept = (window.__curioKeptDrawings || {})[selector];
+    return !!kept && kept.isConnected && document.querySelector(selector) === kept;
+}"""
+
+# The marked pixel of a canvas nearest a point given as fractions of it, in
+# page coordinates. Marked means opaque and saturated, with its eight
+# neighbours too, so the point is inside a bar or a polygon rather than on an
+# edge, an axis or the background. Read through toDataURL, which a WebGPU map
+# canvas answers as a 2D chart does.
+_MARK_POINT_JS = """async ({ selector, at }) => {
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const img = new Image();
+    img.src = el.toDataURL('image/png');
+    await img.decode();
+    const w = img.width, h = img.height;
+    if (!w || !h) return null;
+    const scratch = document.createElement('canvas');
+    scratch.width = w;
+    scratch.height = h;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const marked = (x, y) => {
+        const i = (y * w + x) * 4;
+        const hi = Math.max(px[i], px[i + 1], px[i + 2]);
+        const lo = Math.min(px[i], px[i + 1], px[i + 2]);
+        return px[i + 3] >= 250 && hi > 0 && (hi - lo) / hi > 0.3;
+    };
+    const inside = (x, y) => {
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) if (!marked(x + dx, y + dy)) return false;
+        }
+        return true;
+    };
+    const cx = at[0] * w, cy = at[1] * h;
+    let best = null, bestDistance = Infinity;
+    for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+            const distance = (x - cx) ** 2 + (y - cy) ** 2;
+            if (distance < bestDistance && inside(x, y)) {
+                best = [x, y];
+                bestDistance = distance;
+            }
+        }
+    }
+    if (!best) return null;
+    const box = el.getBoundingClientRect();
+    return { x: box.left + (best[0] + 0.5) * box.width / w,
+             y: box.top + (best[1] + 0.5) * box.height / h };
+}"""
+
+
+def drawing_selector(page: Page, node_id: str) -> str | None:
+    """The selector of the element *node_id* draws into, or None before it drew."""
+    return page.evaluate(_DRAWING_SELECTOR_JS, node_id)
+
+
+def keep_drawing(page: Page, selector: str) -> None:
+    assert page.evaluate(_KEEP_DRAWING_JS, selector), f"nothing matches {selector}"
+
+
+def drawing_kept(page: Page, selector: str) -> bool:
+    """Whether *selector* still matches the element :func:`keep_drawing` saw."""
+    return bool(page.evaluate(_DRAWING_KEPT_JS, selector))
+
+
+def mark_point(page: Page, selector: str, at=(0.5, 0.5)) -> dict | None:
+    """``{x, y}`` in the page: the marked pixel of *selector*'s canvas nearest *at*."""
+    return page.evaluate(_MARK_POINT_JS, {"selector": selector, "at": list(at)})
+
+
+def capture_node(page: Page, node_id: str):
+    """The node as a frame of it shows it, in memory (maps painted, see #427)."""
+    return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')
+
+
+def changed_pixels(before, after, threshold: int = 40) -> int:
+    """Pixels that differ by more than *threshold* in some channel."""
+    return _compare_images(after, before, threshold).mismatched
+
+
+def wait_for_node_capture(page: Page, node_id: str, done, *, timeout_ms: int = 15000):
+    """Capture *node_id* until ``done(capture)`` holds. Returns ``(capture, held)``."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        capture = capture_node(page, node_id)
+        if done(capture):
+            return capture, True
+        if time.monotonic() >= deadline:
+            return capture, False
+        page.wait_for_timeout(300)
+
+
+def wait_for_node_still(page: Page, node_id: str, *, timeout_ms: int = 10000):
+    """Capture *node_id* until two captures in a row match; returns the last."""
+    previous = [capture_node(page, node_id)]
+
+    def still(capture):
+        same = _compare_images(capture, previous[0], CLOSEUP_PIXEL_THRESHOLD).ratio <= REMINT_MIN_RATIO
+        previous[0] = capture
+        return same
+
+    capture, held = wait_for_node_capture(page, node_id, still, timeout_ms=timeout_ms)
+    assert held, f"node {node_id} was still changing after {timeout_ms} ms"
+    return capture
+
+
+def save_interaction_frame(
+    page: Page,
+    workflow_filepath: str,
+    node_id: str,
+    *,
+    test_name: str,
+    interaction: dict,
+) -> str:
+    """Compare one node of an interaction, as it is framed now, against its baseline.
+
+    Neither refits the canvas nor moves the pointer, and never sweeps toasts
+    (that parks the pointer too): a held hover has to still be held when the
+    shutter fires. Compared at ``CLOSEUP_PIXEL_THRESHOLD``, like a close-up.
+    *interaction* names the frame's place in its pair (step, phase, role,
+    node) for the CI report's Interaction pairs.
+    """
+    return save_workflow_test_screenshot(
+        page,
+        workflow_filepath,
+        test_name=test_name,
+        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+        fit_reactflow=False,
+        interaction=interaction,
     )
 
 
