@@ -39,11 +39,12 @@ def holds_duckdb(view):
             return view(*args, **kwargs)
 
     return wrapper
+from utk_curio.sandbox.util.codec import PARQUET_ROW_GROUP_ROWS
 from utk_curio.sandbox.util.parsers import (
     arrow_frame_schema,
     load_artifact,
-    load_tabular_arrow_from_duckdb,
     load_tabular_preview_from_duckdb,
+    open_tabular_arrow_from_duckdb,
     parseOutput,
 )
 
@@ -59,6 +60,7 @@ ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 ARROW_RESPONSE_HEADERS = (
     "X-Curio-Kind",
     "X-Curio-Filename",
+    "X-Curio-Rows",
     "X-Curio-Schema",
     "X-Curio-Preview",
     "X-Curio-Preview-Rows",
@@ -311,18 +313,57 @@ def get_artifact():
     return jsonify(data)
 
 
+#: Rows per record batch on the Arrow route: what one fetch holds at a time.
+#:
+#: The route used to read the whole table, write the whole IPC stream, and copy
+#: that into ``bytes``: three copies of the artifact per fetch, and the canvas
+#: fetches every output of a run at once. On a four-loader dataflow at 800k
+#: polygons each, serving the outputs added 3.7 GB to the sandbox against 1.8 GB
+#: for computing them (#408). Streamed, a fetch holds about one batch; the
+#: artifacts are written in row groups of the same size (see codec).
+ARROW_STREAM_BATCH_ROWS = PARQUET_ROW_GROUP_ROWS
+
+
+def _arrow_ipc_stream(parquet_file, schema, rows):
+    """Yield an Arrow IPC stream of the first ``rows`` rows, a batch at a time."""
+    import io
+
+    import pyarrow as pa
+
+    sink = io.BytesIO()
+
+    def drain():
+        chunk = sink.getvalue()
+        sink.seek(0)
+        sink.truncate(0)
+        return chunk
+
+    with pa.ipc.new_stream(sink, schema) as writer:
+        yield drain()
+        remaining = rows
+        for batch in parquet_file.iter_batches(batch_size=ARROW_STREAM_BATCH_ROWS):
+            if remaining <= 0:
+                break
+            if batch.num_rows > remaining:
+                batch = batch.slice(0, remaining)
+            writer.write_batch(batch)
+            remaining -= batch.num_rows
+            yield drain()
+    # Closing the writer wrote the end-of-stream marker.
+    yield drain()
+
+
 def _get_artifact_arrow(art_id, session_id, max_rows_param, *, allow_geometry=False):
     """Serve a tabular artifact as an Arrow IPC stream.
 
-    parquet blob -> pyarrow.Table via pyarrow.parquet.read_table (no pandas).
-    Non-tabular kinds -> 415 so clients can fall back to the JSON path.
+    Streamed from the stored parquet a batch at a time (no pandas, and never
+    the whole table in memory). Non-tabular kinds -> 415 so clients can fall
+    back to the JSON path.
     """
     import traceback as _tb
-    import pyarrow as pa
-    import pyarrow.ipc as ipc
     try:
-        table, kind, frame_metadata, encoded_object_columns = (
-            load_tabular_arrow_from_duckdb(
+        parquet_file, kind, frame_metadata, encoded_object_columns = (
+            open_tabular_arrow_from_duckdb(
                 art_id, session_id=session_id, allow_geometry=allow_geometry
             )
         )
@@ -349,37 +390,40 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param, *, allow_geometry=Fa
             'traceback': _tb.format_exc(),
         }), 500
 
+    table_schema = parquet_file.schema_arrow
+    rows = parquet_file.metadata.num_rows
     total_rows = None
     if max_rows_param is not None:
         max_rows = int(max_rows_param)
-        if table.num_rows > max_rows:
-            total_rows = table.num_rows
-            table = table.slice(0, max_rows)
-
-    sink = pa.BufferOutputStream()
-    with ipc.new_stream(sink, table.schema) as writer:
-        writer.write_table(table)
-    body = sink.getvalue().to_pybytes()
+        if rows > max_rows:
+            total_rows = rows
+            rows = max_rows
 
     headers = {
         'X-Curio-Kind': kind,
         'X-Curio-Filename': art_id,
+        # How many rows the stream carries. A stream cut short still decodes
+        # (to fewer rows, and no error), so the client checks it against this.
+        'X-Curio-Rows': str(rows),
     }
     # The dtypes the JSON envelope carries as `schema`. Read from the parquet
     # file's own pandas metadata, so this route still materialises nothing.
-    schema = arrow_frame_schema(table)
+    schema = arrow_frame_schema(table_schema)
     if schema:
         headers['X-Curio-Schema'] = json.dumps(schema)
     if total_rows is not None:
         headers['X-Curio-Preview'] = 'true'
-        headers['X-Curio-Preview-Rows'] = str(min(int(max_rows_param), total_rows))
+        headers['X-Curio-Preview-Rows'] = str(rows)
         headers['X-Curio-Total-Rows'] = str(total_rows)
     if encoded_object_columns:
         headers['X-Curio-Encoded-Object-Columns'] = ','.join(encoded_object_columns)
     if kind == 'geodataframe' and frame_metadata:
         headers['X-Curio-Frame-Metadata'] = json.dumps(frame_metadata)
 
-    return Response(body, mimetype=ARROW_IPC_MIME, headers=headers)
+    return Response(
+        _arrow_ipc_stream(parquet_file, table_schema, rows),
+        mimetype=ARROW_IPC_MIME, headers=headers,
+    )
 
 # Isolation is resolved once, on the first /exec, and cached. Resolving per
 # request would repeat the capability probe and the warning on every node.

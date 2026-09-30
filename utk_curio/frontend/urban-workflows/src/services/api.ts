@@ -54,6 +54,14 @@ async function fetchArtifactAsArrow(url: string, token: string | null | undefine
     if (table.schema.names.length === 0) {
         throw new Error("Arrow response decoded to an empty table");
     }
+    // The sandbox streams the table a batch at a time (#408), so a response
+    // cut short part-way decodes to fewer rows, again without an error. It
+    // says how many rows it sent; a different count is a broken response,
+    // not a smaller artifact.
+    const announced = response.headers.get("X-Curio-Rows");
+    if (announced !== null && table.numRows !== Number(announced)) {
+        throw new Error(`Arrow response ended after ${table.numRows} of ${announced} rows`);
+    }
     return tableToEnvelope(table, headers);
 }
 

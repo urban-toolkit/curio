@@ -39,6 +39,7 @@ CORS_HEADERS = {
         "Content-Disposition",
         "X-Curio-Kind",
         "X-Curio-Filename",
+        "X-Curio-Rows",
         "X-Curio-Schema",
         "X-Curio-Preview",
         "X-Curio-Preview-Rows",

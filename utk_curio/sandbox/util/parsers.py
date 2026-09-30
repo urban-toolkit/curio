@@ -25,6 +25,7 @@ from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_
 # namespace, and test_sandbox_namespace.py pins that).
 from utk_curio.sandbox.util.codec import (
     PARQUET_DECODE_SIDECAR_SUFFIX,
+    PARQUET_ROW_GROUP_ROWS,
     _decode_object_cell_from_parquet,
     _encode_object_cell_for_parquet,
     _is_missing_value,
@@ -538,7 +539,8 @@ def save_to_duckdb(value, node_id=None, session_id=None):
             )
             rel_path = _stored_artifact_rel_path(art_id)
             parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
-            prepared.to_parquet(parquet_path)  # GeoParquet — CRS preserved automatically
+            # GeoParquet: CRS preserved automatically.
+            prepared.to_parquet(parquet_path, row_group_size=PARQUET_ROW_GROUP_ROWS)
             # parquet drops Python-side attributes like ``gdf.metadata`` (set by
             # parse_geodataframe when upstream JSON carried a metadata.name).
             # Grammar visualizers historically depended on this name, so stash it
@@ -731,8 +733,11 @@ def arrow_frame_schema(table):
     PARQUET``, which carries none, so its dtypes are derived from the Arrow
     types instead.
     """
+    # A pyarrow Schema or anything carrying one (a Table): the streamed route
+    # has only the parquet file's schema, and reads no rows to answer this.
+    schema = getattr(table, "schema", table)
     named = {}
-    raw = (table.schema.metadata or {}).get(b"pandas")
+    raw = (schema.metadata or {}).get(b"pandas")
     if raw:
         try:
             named = {
@@ -744,8 +749,8 @@ def arrow_frame_schema(table):
             named = {}
     if not named:
         named = {
-            name: _dtype_name_for(table.schema.field(name).type)
-            for name in table.schema.names
+            name: _dtype_name_for(schema.field(name).type)
+            for name in schema.names
         }
     # Whichever source it came from, every geometry column needs the same
     # correction: GeoParquet stores them as WKB, so pandas metadata calls them
@@ -755,7 +760,7 @@ def arrow_frame_schema(table):
     # All of them, not just the active one: a frame can carry a second
     # geometry column (``gdf["bbox"] = gdf.geometry.envelope``), and it is a
     # geometry in both paths.
-    for column in _geoparquet_geometry_columns(table):
+    for column in _geoparquet_geometry_columns(schema):
         if column in named:
             named[column] = "geometry"
     return named
@@ -763,7 +768,8 @@ def arrow_frame_schema(table):
 
 def _geoparquet_geometry_columns(table):
     """Every geometry column named by GeoParquet metadata, active or not."""
-    raw = (table.schema.metadata or {}).get(b"geo")
+    schema = getattr(table, "schema", table)
+    raw = (schema.metadata or {}).get(b"geo")
     if not raw:
         return ()
     try:
@@ -777,15 +783,16 @@ def _geoparquet_geometry_columns(table):
     return (primary,) if primary else ()
 
 
-def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):
-    """Load a tabular artifact as a pyarrow.Table read directly from its stored
-    parquet payload — no pandas materialization.
+def open_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):
+    """Open a tabular artifact's stored parquet payload, reading no rows.
 
-    Supports kind in ('dataframe', 'geodataframe'). For GeoDataFrames the
-    geometry column is binary WKB (GeoParquet's standard encoding).
+    Supports kind in ('dataframe', 'geodataframe'); for GeoDataFrames the
+    geometry column is binary WKB (GeoParquet's standard encoding). The Arrow
+    route streams from the returned file batch by batch, so a fetch holds one
+    batch at a time rather than the whole table (#408).
 
     Returns:
-        (table, kind, frame_metadata, encoded_object_columns)
+        (parquet_file, kind, frame_metadata, encoded_object_columns)
 
     Raises:
         KeyError: artifact does not exist or belongs to a different session.
@@ -813,14 +820,16 @@ def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=Fa
             # GeoJSON. A client that cannot decode WKB would render nothing
             # and say nothing, so it has to ask for it explicitly
             # (X-Curio-Accept-Geometry: wkb) and gets a 415 otherwise. The
-            # check is before read_table, so the refusal costs nothing.
+            # check comes before the file is opened, so the refusal costs nothing.
             raise ValueError(
                 "Arrow IPC serves geodataframe geometry as WKB; send "
                 "X-Curio-Accept-Geometry: wkb to accept it"
             )
-        table = pq.read_table(_parquet_source(v_str, blob))
+        # pre_buffer off: it reads a whole row group's column chunks ahead,
+        # which is most of what a streamed fetch would otherwise hold.
+        parquet_file = pq.ParquetFile(_parquet_source(v_str, blob), pre_buffer=False)
         frame_metadata, encoded_object_columns = _parse_parquet_meta(v_json)
-        return table, kind, frame_metadata, encoded_object_columns
+        return parquet_file, kind, frame_metadata, encoded_object_columns
     finally:
         try:
             con.close()
@@ -990,7 +999,7 @@ def save_dataset_parquet(output, kind):
             prepared, encoded_object_columns = _prepare_frame_for_parquet(
                 output, geometry_col=active_geometry_name(output)
             )
-            prepared.to_parquet(full_path)
+            prepared.to_parquet(full_path, row_group_size=PARQUET_ROW_GROUP_ROWS)
             meta_json = _serialize_parquet_meta(
                 frame_metadata=getattr(output, 'metadata', None),
                 encoded_object_columns=encoded_object_columns,

@@ -56,7 +56,6 @@ def replay():
     return report
 
 
-@pytest.mark.xfail(strict=True, reason="#408: every concurrent fetch materializes the artifact")
 def test_serving_a_rerun_costs_no_more_than_computing_it(replay):
     assert replay.checks()["serve"] is None, replay.table()
 
