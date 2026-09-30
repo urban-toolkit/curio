@@ -1078,7 +1078,8 @@ class TestWorkflowCanvas:
             page.mouse.move(point["x"], point["y"])
         else:
             page.mouse.dblclick(point["x"], point["y"])
-            park_pointer(page)
+            # A pick stays, so the pair can be framed again, as it was.
+            frame_nodes(page, [step.source, step.target])
 
         after, reached = wait_for_node_capture(
             page, step.target,
@@ -1095,15 +1096,16 @@ class TestWorkflowCanvas:
         frame("after", "target")
         frame("after", "source")
 
-        # Take it back. A pointerover on the chart's background clears a hover
-        # selection (the pointer leaving the canvas would not); a pick on the
-        # same spot takes the pick back.
+        # Take it back. Vega-Lite clears a point selection on a double-click
+        # anywhere in the view, its padding too; the pointer leaving the canvas,
+        # or moving over that padding, keeps it (CI run 36790868222). A pick on
+        # the same spot takes the pick back.
         if step.gesture == "hover":
             box = page.locator(source_drawing).first.bounding_box()
-            page.mouse.move(box["x"] + box["width"] - 2, box["y"] + 2)
+            page.mouse.dblclick(box["x"] + box["width"] - 2, box["y"] + 2)
         else:
             page.mouse.dblclick(point["x"], point["y"])
-        park_pointer(page)
+        frame_nodes(page, [step.source, step.target])
         _, restored = wait_for_node_capture(
             page, step.target,
             lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
