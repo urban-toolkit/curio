@@ -59,3 +59,25 @@ export function applyContainerSizing<T extends Record<string, unknown>>(spec: T)
   }
   return spec;
 }
+
+/**
+ * Reads the mount's size into a container-sized view before it is resized (#496).
+ *
+ * vega-lite turns `"container"` into a `width` / `height` signal that reads
+ * `containerSize()` when the view starts and again only on `window:resize`.
+ * `view.resize()` re-runs autosize with whatever the signal holds, so a
+ * scrollbar that appeared after the first draw, or a node resized by hand,
+ * left the chart at its old width: wider than the pane, legends cut off.
+ *
+ * `containerSize()` is the mount's `clientWidth` / `clientHeight`, so this
+ * sets the same numbers it would.
+ */
+export function refitToContainer(
+  view: { width(value: number): unknown; height(value: number): unknown } | null | undefined,
+  el: { clientWidth: number; clientHeight: number } | null | undefined,
+  spec: Record<string, unknown> | null | undefined,
+): void {
+  if (!view || !el || !spec) return;
+  if (spec.width === "container" && el.clientWidth > 0) view.width(el.clientWidth);
+  if (spec.height === "container" && el.clientHeight > 0) view.height(el.clientHeight);
+}
