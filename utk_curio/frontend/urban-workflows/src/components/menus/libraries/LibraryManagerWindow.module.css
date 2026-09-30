@@ -107,18 +107,29 @@
   font-family: monospace;
 }
 
+/* A labelled button, not a bare ×: the row's other × only dismissed a status,
+   and the two were told apart by colour alone (#518). */
 .removeButton {
   background: none;
-  border: none;
+  border: 1px solid #d4d4d4;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
-  color: #999;
-  line-height: 1;
-  padding: 0 2px;
+  font: inherit;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.4;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
-.removeButton:hover {
-  color: #d00;
+.removeButton:hover:not(:disabled) {
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.removeButton:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .installButton {
@@ -269,6 +280,9 @@
   gap: 4px;
   color: #b91c1c;
   font-size: 11px;
+  /* An auto-layout table shrinks this column to its longest word, which split
+     "Cannot import" over two lines (#519). */
+  white-space: nowrap;
 }
 .statusDismiss {
   border: none;
