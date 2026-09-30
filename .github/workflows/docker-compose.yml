@@ -103,37 +103,38 @@ on:
 permissions:
   contents: read
 
-# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports, so
-# two jobs must never execute at once.
+# Concurrency is set on the two utk jobs, not on the run. The self-hosted
+# runner on `utk` shares one GPU and a fixed set of CI ports, so two of its jobs
+# must never execute at once; the ubuntu-latest jobs each get a fresh VM of
+# their own and share nothing, so they need no group at all. A run-wide group
+# made the whole run wait behind another run on the same ref, ubuntu-latest
+# jobs included, and an eviction threw away all of it rather than the GPU half.
 #
 # Keyed per ref, not repo-wide. A repo-wide group serialises too, but GitHub
-# keeps only ONE run pending per group, so each newly queued run evicted the
-# previously pending one: runs were cancelled having started zero jobs, twice on
-# main itself, which leaves main unverified while still looking untouched. Per
-# ref, a new push still supersedes its own branch's pending run, which is what
-# you want, without discarding anyone else's.
+# keeps only ONE job pending per group, so each newly queued one evicted the
+# previously pending one: main was left unverified while still looking
+# untouched. Per ref, a new push still supersedes its own branch's pending GPU
+# job, which is what you want, without discarding anyone else's.
 #
-# Allowing runs from different refs to be in progress at once is safe here, but
+# Letting utk jobs from different refs be in progress at once is safe here, but
 # it rests on TWO invariants. Break either and the GPU/port contention is back:
 #
 #   1. Exactly ONE registered runner (`utk-gpu`) carries the
 #      [self-hosted, linux, gpu, curio] labels the utk jobs (test-gpu,
 #      test-gpu-stress) ask for, so it runs a single job at a time and GitHub
 #      queues the rest. Two runs interleave their jobs; they never execute
-#      together. The ubuntu-latest jobs each get a fresh VM of their own and
-#      share nothing with it.
-#   2. `cancel-in-progress: false`, so an in-progress run is never cancelled.
-#      Eviction can then only ever kill a run that has started zero jobs, and a
-#      job-less run holds no containers, ports or GPU handle to leak. Flip this
-#      to true to save queue time and that stops being true: a cancelled job can
-#      skip its `if: always()` teardown and strand a compose project that the
-#      next run then trips over.
+#      together.
+#   2. `cancel-in-progress: false`, so an in-progress job is never cancelled.
+#      Eviction can then only ever kill a job that has not started, and such a
+#      job holds no containers, ports or GPU handle to leak. Flip this to true
+#      to save queue time and that stops being true: a cancelled job can skip
+#      its `if: always()` teardown and strand a compose project that the next
+#      job then trips over.
 #
-# A re-mint dispatch gets a group of its own, so it and the branch's ordinary
-# run never evict each other while pending.
-concurrency:
-  group: utk-ci-${{ github.ref }}${{ inputs.remint && '-remint' || '' }}
-  cancel-in-progress: false
+# test-gpu-stress has a group of its own, so it and another run's pending
+# test-gpu never evict each other; the runner serialises them anyway. A
+# re-mint dispatch's test-gpu gets a group of its own too, so it and the
+# branch's ordinary run never evict each other while pending.
 
 jobs:
   # The image every ubuntu-latest job below runs, built once per commit and
@@ -191,6 +192,10 @@ jobs:
     # themselves (utk_curio/backend/tests/test_frontend/runner_split.py).
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 90
+    # The utk queue, per ref (see the note above the jobs).
+    concurrency:
+      group: utk-ci-${{ github.ref }}${{ inputs.remint && '-remint' || '' }}
+      cancel-in-progress: false
 
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
     # `utk`. Run only for push / workflow_dispatch / same-repo PRs. Fork PRs
@@ -1231,6 +1236,9 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 75
+    concurrency:
+      group: utk-ci-stress-${{ github.ref }}
+      cancel-in-progress: false
 
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
