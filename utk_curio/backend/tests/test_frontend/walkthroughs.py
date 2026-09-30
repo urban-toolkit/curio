@@ -2316,15 +2316,21 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
     #    precisely so it would, and it is the only thing naming the field
     #    before anything is typed. 1px of slack for sub-pixel rounding.
+    #    Measured as text: a placeholder is not content, so the input's own
+    #    scrollWidth never grows past it and cannot show the crop (#355).
     goal.fill("")
     goal.blur()
     ctx.beat(200)
     empty = goal.evaluate(
-        "el => ({ scroll: el.scrollWidth, client: el.clientWidth })"
+        "el => { const cs = getComputedStyle(el);"
+        " const pen = document.createElement('canvas').getContext('2d');"
+        " pen.font = cs.font;"
+        " return { text: pen.measureText(el.placeholder).width,"
+        " box: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) }; }"
     )
-    assert empty["scroll"] <= empty["client"] + 1, (
+    assert empty["text"] <= empty["box"] + 1, (
         f"the goal placeholder is cropped with {avatars} agents attached: "
-        f"scrollWidth {empty['scroll']} > clientWidth {empty['client']} "
+        f"its text is {empty['text']:.0f}px in a {empty['box']:.0f}px box "
         "(#227/#355)"
     )
 
