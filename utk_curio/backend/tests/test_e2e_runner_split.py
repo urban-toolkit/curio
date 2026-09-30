@@ -109,7 +109,7 @@ class SelectionTest(unittest.TestCase):
 class NoTestIsLostTest(unittest.TestCase):
     """The real e2e suite: every test on exactly one runner and one shard."""
 
-    SHARDS = 8
+    SHARDS = 10
 
     @staticmethod
     def collect(**env):
@@ -118,7 +118,7 @@ class NoTestIsLostTest(unittest.TestCase):
              "-p", "no:cacheprovider"],
             cwd=REPO / "utk_curio" / "backend", capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": str(REPO),
-                 "CURIO_E2E_RUNNER": "", "CURIO_E2E_PART": "", **env},
+                 "CURIO_E2E_RUNNER": "", "CURIO_E2E_PART": "", "CURIO_UNIT_PART": "", **env},
         )
         ids = [line for line in run.stdout.splitlines() if "::" in line]
         if not ids:

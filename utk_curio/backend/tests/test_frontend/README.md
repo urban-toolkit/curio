@@ -57,7 +57,7 @@ everything:
 
 ```bash
 CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
-CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/8 pytest ...                   # one of eight desktop parts
+CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/10 pytest ...                  # one of ten desktop parts
 ```
 
 `CURIO_E2E_PART` balances the parts by the group durations in
