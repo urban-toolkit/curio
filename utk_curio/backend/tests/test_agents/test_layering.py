@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 import utk_curio.backend.app.agents as agents_pkg
 from utk_curio.backend.tests._support import layering
@@ -70,8 +69,9 @@ def test_the_facade_defines_nothing():
     assert layering.facade_defines_nothing(AGENTS)
 
 
-@pytest.mark.xfail(strict=True, reason="B3 (the decomposition of the Solve, turn and plan loops) is not re-derived on enh/agent-catalog")
 def test_no_application_function_exceeds_150_lines():
+    """B3: the Solve, turn and plan loops are decomposed — SolveBatch, VerifiedRounds,
+    AttachmentTurn and the plan mint/apply steps; no application function is a screenful."""
     assert layering.oversize_functions(AGENTS) == []
 
 

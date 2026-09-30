@@ -53,16 +53,7 @@ def _prepare_run(
     (granted ids + the attachment target). A required manifest tool that
     resolves no grant refuses the run here — validation stage, before
     admission, so it consumes no quota."""
-    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
-    record = agents_spec_reads._record_or_404(spec, attachment_id)
-    coord = record.get("coord", "")
-    # DEC-080 (dev/126): a project whose lockfile predates this agent's
-    # requiresAgents declaration gets it completed HERE — before the messages
-    # are composed, so the run resolves its required delegates instead of
-    # stalling on a reviewed install for one of them.
-    if agents_lifecycle._repair_required_closure(user_key, project_id, coord, attachment_id=attachment_id):
-        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
-        record = agents_spec_reads._record_or_404(spec, attachment_id)
+    spec, record, coord = _resolve_run_target(user_key, project_id, attachment_id)
     manifest = agents_catalog._resolve_definition(user_key, coord)
     requested_tools = manifest.tools if manifest is not None else []
     missing = tools.missing_required(requested_tools)
@@ -86,6 +77,67 @@ def _prepare_run(
     # Grant-less runs keep the T2 tail byte-identical; granted runs get the
     # toolRequest paragraph (memos dev/39/41).
     granted = tools.resolve_grants(requested_tools)
+    runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
+    # Delegation (dev/48, DEC-046): offered only when the manifest names
+    # delegates that resolve to visible definitions — server-resolved, never
+    # the manifest's raw list.
+    entries: list = []
+    if manifest is not None and manifest.delegates_to:
+        entries = delegation.visible_capability_entries(user_key, manifest)
+    native_tools = _native_tools_for(config, user_key, granted, entries)
+
+    fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=False)
+    system = (
+        _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries, native=True)
+        if native_tools else fenced_system
+    )
+    session_id = record.get("sessionId")
+    if not isinstance(session_id, str):
+        session_id = None
+    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
+    messages = _messages(system, prior, run_context, message)
+    wants_title = (
+        not record.get("title")
+        and not record.get("titleEdited")
+        and not any(t.get("role") == "user" for t in prior)
+    )
+    run_policy = agents_policy._run_policy(user_key, project_id, coord, spec, record)
+    pins = _run_pins(coord, manifest, record, config, granted, run_policy, configuration,
+                     protocol=("native" if native_tools else "fenced") if granted or entries else None)
+    loop_ctx = {
+        "granted": granted,
+        "target": record.get("target"),
+        "attachment_id": attachment_id,
+        "session_id": session_id,
+        # Delegation context (dev/48): the parent's identity + manifest for
+        # delegatesTo resolution inside the loop.
+        "coord": coord,
+        "manifest": manifest,
+        # The tool protocol (_RunConversation): the native tools offered, and
+        # the fenced system turn a refusal of them falls back to.
+        "native_tools": native_tools,
+        "fenced_system": fenced_system,
+    }
+    return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+def _resolve_run_target(user_key: str, project_id: str, attachment_id: str) -> tuple[dict, dict, str]:
+    """The spec, the attachment record and its coord — after DEC-080 (dev/126): a project whose
+    lockfile predates this agent's requiresAgents declaration gets it completed HERE, before the
+    messages are composed, so the run resolves its required delegates instead of stalling on a
+    reviewed install for one of them."""
+    spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+    record = agents_spec_reads._record_or_404(spec, attachment_id)
+    coord = record.get("coord", "")
+    if agents_lifecycle._repair_required_closure(user_key, project_id, coord, attachment_id=attachment_id):
+        spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
+        record = agents_spec_reads._record_or_404(spec, attachment_id)
+    return spec, record, coord
+
+
+def _roster_blocks(user_key: str, project_id: str, manifest, granted: list) -> list:
+    """The runtime blocks a run's grants earn: the live template roster (dev/48, dev/52, dev/93)
+    and, for a run that can enlist, what the user owns but this project has not enlisted (dev/93 D4)."""
     runtime_blocks: list[str | None] = []
     # Reuse-first (dev/48; plans too, dev/52): a grant that can put a template
     # on the canvas, into the project, or author a new one carries the live
@@ -132,41 +184,33 @@ def _prepare_run(
             runtime_blocks.append(agents_roster._enlistable_templates_block(
                 project_id, landscape, agents_roster._TEMPLATES_BLOCK_MAX_ENTRIES
             ))
-    # Delegation (dev/48, DEC-046): offered only when the manifest names
-    # delegates that resolve to visible definitions — server-resolved, never
-    # the manifest's raw list.
-    entries: list = []
-    if manifest is not None and manifest.delegates_to:
-        entries = delegation.visible_capability_entries(user_key, manifest)
-    native_tools = _native_tools_for(config, user_key, granted, entries)
+    return runtime_blocks
 
-    def _system(native: bool) -> dict:
-        # The two protocols differ only in how a tool or a delegate is asked for.
-        blocks = list(runtime_blocks)
-        if entries:
-            blocks.append(content.delegation_instruction(entries, native_tools=native))
-        return contracts.system_message(contracts.compose_system(
-            preamble=preamble,
-            instruction=instruction,
-            configuration=configuration,
-            tool_protocol=content.tail_instruction(
-                tools.grant_descriptions(granted), native_tools=native
-            ),
-            runtime=blocks,
-        ))
 
-    fenced_system = _system(False)
-    system = _system(True) if native_tools else fenced_system
-    session_id = record.get("sessionId")
-    if not isinstance(session_id, str):
-        session_id = None
-    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
-    # Ephemeral grounded context (memo dev/44): the client-composed live-canvas
-    # inputs ride ONE provider message per send — recomputed fresh each time
-    # (never stale), never persisted (the transcript stays what the user saw),
-    # never replayed from history. Absent → byte-identical to before.
+def _system_content(preamble, instruction, configuration, granted: list, runtime_blocks: list, entries: list,
+                    *, native: bool) -> dict:
+    """The system message for one protocol — the two differ only in how a tool or a delegate is asked for."""
+    blocks = list(runtime_blocks)
+    if entries:
+        blocks.append(content.delegation_instruction(entries, native_tools=native))
+    return contracts.system_message(contracts.compose_system(
+        preamble=preamble,
+        instruction=instruction,
+        configuration=configuration,
+        tool_protocol=content.tail_instruction(
+            tools.grant_descriptions(granted), native_tools=native
+        ),
+        runtime=blocks,
+    ))
+
+
+def _messages(system: dict, prior: list, run_context: str | None, message: str) -> list[dict]:
+    """The provider messages: the system turn, the bounded session context, the ephemeral grounded
+    context (memo dev/44 — the client-composed live-canvas inputs ride ONE provider message per
+    send, recomputed fresh each time, never persisted, never replayed; absent → byte-identical to
+    before), and the message."""
     context_block = agents_policy._bounded_context(run_context)
-    messages = [
+    return [
         system,
         *sessions.context_messages(prior),
         *(
@@ -176,13 +220,12 @@ def _prepare_run(
         ),
         {"role": "user", "content": message},
     ]
-    wants_title = (
-        not record.get("title")
-        and not record.get("titleEdited")
-        and not any(t.get("role") == "user" for t in prior)
-    )
-    run_policy = agents_policy._run_policy(user_key, project_id, coord, spec, record)
-    pins = {
+
+
+def _run_pins(coord: str, manifest, record: dict, config: ProviderConfig, granted: list, run_policy: dict,
+              configuration, *, protocol: str | None) -> dict:
+    """The DEC-031 reproducibility pins resolved from what actually dispatches (memo dev/37)."""
+    return {
         "coord": coord,
         "promptSha256": agents_prompts._prompt_digest(manifest),
         "intentEdited": bool(record.get("intent")),
@@ -195,23 +238,8 @@ def _prepare_run(
         "policy": run_policy["policy_pins"],
         **agents_prompts._configuration_pin(configuration),
         # How the run asks for a tool or a delegate, when it can ask at all.
-        **({"toolProtocol": "native" if native_tools else "fenced"} if granted or entries else {}),
+        **({"toolProtocol": protocol} if protocol else {}),
     }
-    loop_ctx = {
-        "granted": granted,
-        "target": record.get("target"),
-        "attachment_id": attachment_id,
-        "session_id": session_id,
-        # Delegation context (dev/48): the parent's identity + manifest for
-        # delegatesTo resolution inside the loop.
-        "coord": coord,
-        "manifest": manifest,
-        # The tool protocol (_RunConversation): the native tools offered, and
-        # the fenced system turn a refusal of them falls back to.
-        "native_tools": native_tools,
-        "fenced_system": fenced_system,
-    }
-    return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
 
 def _native_tools_for(

@@ -30,6 +30,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure.providers import (
     ChatTurn,
@@ -206,8 +207,6 @@ def run_delegate(
     ``parentExecutionId`` link — which the caller stores under the parent
     record's ``delegations``. Never raises: a child failure is data.
     """
-    from utk_curio.backend.app.projects import storage as projects_storage
-
     child_id = uuid.uuid4().hex
     started = time.monotonic()
 
@@ -227,67 +226,124 @@ def run_delegate(
     pins: dict = {"coord": coord, "provider": config.api_type, "model": config.model,
                   "llm": provider_config.llm_pin(config)}
     try:
-        manifest = catalog._resolve_definition(user_key, coord)
-        # The capability is the mode: a merged agent runs that capability's
-        # own instruction.
-        instruction = prompts._resolve_instruction_text(user_key, coord, capability=capability)
-        if instruction is None:
-            return (
-                "error",
-                f"delegate {coord} has no instruction prompt available",
-                _record("error", {}, pins),
-            )
-        configuration = (
-            catalog_settings.configuration_for(user_key, manifest.config_keys(capability))
-            if manifest is not None else None
-        )
-        preamble = prompts._resolve_prompt_text(user_key, coord, "system")
-
-        def _system(text: str) -> dict:
-            # Depth-1 structurally: the delegate's own prompts and
-            # configuration, NO tool protocol and no runtime blocks.
-            return contracts.system_message(contracts.compose_system(
-                preamble=preamble, instruction=text, configuration=configuration,
-            ))
-
-        # A document with a schema, on a provider that takes one: the reply is
-        # held to it, under the instruction written for that.
-        reply = _reply_schema(user_key, project_id, manifest, capability, inputs, config)
-        constrained = (
-            prompts._resolve_prompt_text(user_key, coord, reply_schemas.AUTK_PROMPT_KEY)
-            if reply is not None else None
-        )
-        if not constrained:
-            reply = None
-        system = _system(constrained or instruction)
-        spec = projects_storage.read_spec(user_key, project_id)
-        run_policy = policy._run_policy(user_key, project_id, coord, spec or {})
-        admit = dict(run_policy["admit"])
-        # Attribution only: the parent's attachment key, never its limits.
-        admit["attachment_key"] = attachment_id
-        pins = {
-            "coord": coord,
-            "promptSha256": prompts._prompt_digest(manifest, capability=capability),
-            "intentEdited": False,
-            "provider": config.api_type,
-            "model": config.model,
-            "llm": provider_config.llm_pin(config),
-            "tools": [],  # structurally tool-less (DEC-046)
-            "policy": run_policy["policy_pins"],
-            **prompts._configuration_pin(configuration),
-        }
-        if reply is not None:
-            asset = manifest.prompts.get(reply_schemas.AUTK_PROMPT_KEY)
-            pins["promptSha256"] = asset.sha256 if asset is not None else None
-            pins["replySchema"] = reply.name
-        reservation = ledger.reserve(
-            user_key, reservation_id=child_id, llm_config_id=config.config_id, **admit
+        child = _prepare_child(user_key, project_id, coord, capability, inputs, config,
+                               attachment_id=attachment_id, child_id=child_id)
+    except _NoInstruction:
+        return (
+            "error",
+            f"delegate {coord} has no instruction prompt available",
+            _record("error", {}, pins),
         )
     except Exception as exc:  # resolution/policy failure - data, not an error
         return ("error", f"delegate {coord} could not start: {exc}", _record("error", {}, pins))
+    pins = child.pins
 
     usage_sink: dict = {}
     task = {"role": "user", "content": _frame_inputs(parent_coord, capability, inputs)}
+    try:
+        turn = _ask_child(child, task, usage_sink)
+    except Exception as exc:
+        settled = ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="error")
+        return (
+            "error",
+            f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
+            _record("error", usage_sink, pins),
+        )
+    settled = ledger.settle(user_key, child.reservation, usage=usage_sink or None, status="ok")
+    text = child.reply.decode(turn.text) if child.reply is not None else turn.text
+    if len(text) > DELEGATE_RESULT_MAX_CHARS:
+        text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
+    # The child's reply is returned verbatim as data — NEVER parsed for
+    # toolRequest/delegateRequest (depth-1 by construction).
+    return ("ok", text, _record("ok", usage_sink, pins))
+
+
+class _NoInstruction(Exception):
+    """The delegate has no instruction prompt materialized: the one start failure with its own wording."""
+
+
+@dataclass
+class _ChildRun:
+    """What one depth-1 child run resolved before it asked the provider (memo dev/142 B3): the
+    system message builder, the reply schema (if any), the effective policy, its pins and the
+    ledger reservation. ``pins`` and ``reply`` are what the schema-refusal retry rewrites."""
+    config: object
+    manifest: object
+    instruction: str
+    capability: str
+    system_of: object          # (instruction text) -> system message
+    system: dict
+    reply: object              # ReplySchema | None
+    run_policy: dict
+    pins: dict
+    reservation: object
+
+
+def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, inputs: dict, config,
+                   *, attachment_id: str | None, child_id: str) -> _ChildRun:
+    """Resolve the child: its definition and instruction (the capability is the mode: a merged
+    agent runs that capability's own instruction), the reply schema when the document has one
+    and the provider takes it, the effective policy, the DEC-031 pins, and the ledger
+    reservation under the child's own policy. Raises what the caller records as
+    "could not start"; :class:`_NoInstruction` when the prompt is not materialized."""
+    manifest = catalog._resolve_definition(user_key, coord)
+    instruction = prompts._resolve_instruction_text(user_key, coord, capability=capability)
+    if instruction is None:
+        raise _NoInstruction()
+    configuration = (
+        catalog_settings.configuration_for(user_key, manifest.config_keys(capability))
+        if manifest is not None else None
+    )
+    preamble = prompts._resolve_prompt_text(user_key, coord, "system")
+
+    def _system(text: str) -> dict:
+        # Depth-1 structurally: the delegate's own prompts and
+        # configuration, NO tool protocol and no runtime blocks.
+        return contracts.system_message(contracts.compose_system(
+            preamble=preamble, instruction=text, configuration=configuration,
+        ))
+
+    # A document with a schema, on a provider that takes one: the reply is
+    # held to it, under the instruction written for that.
+    reply = _reply_schema(user_key, project_id, manifest, capability, inputs, config)
+    constrained = (
+        prompts._resolve_prompt_text(user_key, coord, reply_schemas.AUTK_PROMPT_KEY)
+        if reply is not None else None
+    )
+    if not constrained:
+        reply = None
+    system = _system(constrained or instruction)
+    spec = projects_storage.read_spec(user_key, project_id)
+    run_policy = policy._run_policy(user_key, project_id, coord, spec or {})
+    admit = dict(run_policy["admit"])
+    # Attribution only: the parent's attachment key, never its limits.
+    admit["attachment_key"] = attachment_id
+    pins = {
+        "coord": coord,
+        "promptSha256": prompts._prompt_digest(manifest, capability=capability),
+        "intentEdited": False,
+        "provider": config.api_type,
+        "model": config.model,
+        "llm": provider_config.llm_pin(config),
+        "tools": [],  # structurally tool-less (DEC-046)
+        "policy": run_policy["policy_pins"],
+        **prompts._configuration_pin(configuration),
+    }
+    if reply is not None:
+        asset = manifest.prompts.get(reply_schemas.AUTK_PROMPT_KEY)
+        pins["promptSha256"] = asset.sha256 if asset is not None else None
+        pins["replySchema"] = reply.name
+    reservation = ledger.reserve(
+        user_key, reservation_id=child_id, llm_config_id=config.config_id, **admit
+    )
+    return _ChildRun(config=config, manifest=manifest, instruction=instruction, capability=capability,
+                     system_of=_system, system=system, reply=reply, run_policy=run_policy,
+                     pins=pins, reservation=reservation)
+
+
+def _ask_child(child: _ChildRun, task: dict, usage_sink: dict) -> ChatTurn:
+    """One provider call for the child — and, when the endpoint takes no reply schema for this
+    model, the same call again, free, under the delegate's own instruction (the pins say so)."""
 
     def _ask(system_message: dict, schema) -> ChatTurn:
         # Through the services-bound provider symbol so the whole run shares
@@ -295,37 +351,20 @@ def run_delegate(
         # is then exactly what it was before reply schemas.
         extra = {"reply_schema": schema.request()} if schema is not None else {}
         return ChatTurn.of(providers.run_chat_turn(
-            config, [system_message, task],
-            max_output_tokens=run_policy["max_output_tokens"],
+            child.config, [system_message, task],
+            max_output_tokens=child.run_policy["max_output_tokens"],
             usage_out=usage_sink, **extra,
         ))
 
     try:
-        try:
-            turn = _ask(system, reply)
-        except ReplySchemaRefused:
-            # The endpoint takes no reply schema for this model: the same
-            # call again, free, under the delegate's own instruction.
-            reply_schemas.note_refused(config)
-            reply = None
-            pins["promptSha256"] = prompts._prompt_digest(manifest, capability=capability)
-            pins.pop("replySchema", None)
-            pins["replySchemaRefused"] = True
-            turn = _ask(_system(instruction), None)
-    except Exception as exc:
-        settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="error")
-        return (
-            "error",
-            f"delegate {coord} failed: {provider_config.redact_error(exc, config)}",
-            _record("error", usage_sink, pins),
-        )
-    settled = ledger.settle(user_key, reservation, usage=usage_sink or None, status="ok")
-    text = reply.decode(turn.text) if reply is not None else turn.text
-    if len(text) > DELEGATE_RESULT_MAX_CHARS:
-        text = text[:DELEGATE_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
-    # The child's reply is returned verbatim as data — NEVER parsed for
-    # toolRequest/delegateRequest (depth-1 by construction).
-    return ("ok", text, _record("ok", usage_sink, pins))
+        return _ask(child.system, child.reply)
+    except ReplySchemaRefused:
+        reply_schemas.note_refused(child.config)
+        child.reply = None
+        child.pins["promptSha256"] = prompts._prompt_digest(child.manifest, capability=child.capability)
+        child.pins.pop("replySchema", None)
+        child.pins["replySchemaRefused"] = True
+        return _ask(child.system_of(child.instruction), None)
 
 
 def _reply_schema(user_key: str, project_id: str, manifest, capability: str, inputs: dict, config):
