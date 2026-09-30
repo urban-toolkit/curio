@@ -13,7 +13,8 @@ name: Rerun memory repro
 # so an older build is measured by the same replay:
 #
 #     gh workflow run rerun-memory-repro.yml -f before_ref=59ff24be
-#     git push origin HEAD:diag/rerun-memory     # before it is on main
+#     gh workflow run rerun-memory-repro.yml -f targets='["this"]' -f variants='["baseline"]'
+#     git push origin HEAD:diag/rerun-memory     # a branch not yet on main
 on:
   workflow_dispatch:
     inputs:
@@ -26,6 +27,12 @@ on:
       cycles:
         description: Re-runs of the whole dataflow
         default: "5"
+      targets:
+        description: 'JSON list of builds: "this" (the dispatched ref) and/or "before"'
+        default: '["this", "before"]'
+      variants:
+        description: JSON list of variants (see _rerun_memory.VARIANTS)
+        default: '["baseline", "gc", "trim", "arena2", "serial", "json"]'
   push:
     branches: ["diag/rerun-memory**"]
 
@@ -43,8 +50,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [this, before]
-        variant: [baseline, gc, trim, arena2, serial, json]
+        target: ${{ fromJSON(inputs.targets || '["this", "before"]') }}
+        variant: ${{ fromJSON(inputs.variants || '["baseline", "gc", "trim", "arena2", "serial", "json"]') }}
     env:
       BEFORE_REF: ${{ inputs.before_ref || '59ff24beb90d172e4375737708f6f85430dee565' }}
       ROWS: ${{ inputs.rows || '200000,800000' }}
