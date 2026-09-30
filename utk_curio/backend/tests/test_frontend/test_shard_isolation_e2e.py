@@ -19,6 +19,10 @@ import pytest
 from utk_curio.backend.tests.shards import shard_count, shard_index, sibling_backend_urls
 from .utils import stub_db_user
 
+# Only the utk job runs sibling shards (--parallel), so this is the one
+# runner where it can do anything but skip (runner_split.py).
+pytestmark = pytest.mark.needs_parallel
+
 
 def _get(url: str, token: str | None = None) -> int:
     req = urllib.request.Request(url)
