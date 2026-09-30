@@ -331,6 +331,30 @@ def top_menu(page, label: str):
     return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
+_ON_TOP_JS = """(el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!hit && (hit === el || el.contains(hit));
+}"""
+
+
+def frame_until_on_top(page, node_id: str, target, *, attempts: int = 6) -> None:
+    """Frame *node_id* until *target*, a control in it, is what a click would hit.
+
+    Example 01's top chart sits under the menu bar at fit zoom (#493). One
+    framing is not enough after a load: the canvas fits itself again once its
+    nodes are measured, which can land after the framing and undo it.
+    """
+    target.wait_for(state="visible", timeout=15000)
+    for _ in range(attempts):
+        frame_node(page, node_id)
+        if target.evaluate(_ON_TOP_JS):
+            return
+    raise AssertionError(
+        f"{target} stayed covered after {attempts} framings of node {node_id}"
+    )
+
+
 def open_provenance(ctx: Ctx):
     """Open the Provenance modal from the top menu and return its dialog.
 
@@ -1295,10 +1319,6 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
-    # This chart is the top node of a tall dataflow, so at fit zoom its header
-    # sits under the menu bar (#493) and the Pin click lands on the bar. The
-    # capture refits the view, so framing it here changes no frame.
-    frame_node(page, node_id)
     # Not `run_node_and_wait`: that waits for a code node's text pane, which a
     # chart does not have. Wait on the status attribute, then on drawn marks.
     play_node(page, node_id)
@@ -1307,7 +1327,10 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
 
     ctx.say("Pin it, and save", "Pinning saves the output behind the chart.")
     pin = node.get_by_role("button", name="Pin to dashboard")
-    pin.wait_for(state="visible", timeout=15000)
+    # This chart is the top node of a tall dataflow, so at fit zoom its header
+    # sits under the menu bar (#493) and the click would land on the bar. The
+    # capture refits the view, so framing it here changes no frame.
+    frame_until_on_top(page, node_id, pin.first)
     ctx.click(pin.first)
     save_from_the_status_icon(ctx)
     project_id = dataflow_id_from_url(page)
@@ -1351,10 +1374,9 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     ctx.click(page.get_by_test_id("open-dataflow-link"))
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
-    # Back on the canvas the load fit puts the header under the menu bar again.
-    frame_node(page, node_id)
     unpin = node.get_by_role("button", name="Unpin from dashboard")
-    unpin.wait_for(state="visible", timeout=15000)
+    # Back on the canvas, the load fit puts the header under the menu bar again.
+    frame_until_on_top(page, node_id, unpin.first)
     ctx.click(unpin.first)
     save_from_the_status_icon(ctx)
 
@@ -2807,10 +2829,6 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     # React Flow rebuilds the canvas after the reload; the scene needs the node
     # back before it can rename it.
     node.wait_for(state="visible", timeout=45000)
-    # At fit zoom the chart's header sits under the menu bar (#493), where the
-    # rename click would land on the bar. The capture is clipped to the chat
-    # header, so framing the node changes no frame.
-    frame_node(page, node_id)
     ctx.beat(800)
 
     # Rename AFTER the reload. A type label ("Vega-Lite") would appear in the
@@ -2821,6 +2839,10 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     # reload proved neither: the save is debounced, the reload beat it, and the
     # header came back reading "Attached to Vega-Lite".
     rename = node.get_by_role("button", name=re.compile("^Edit node title: "))
+    # At fit zoom the chart's header sits under the menu bar (#493), where the
+    # rename click would land on the bar. The capture is clipped to the chat
+    # header, so framing the node changes no frame.
+    frame_until_on_top(page, node_id, rename)
     ctx.focus(rename, hold=700)
     ctx.say("Name the node", "The chat header should follow this, not a uuid.")
     rename.click()
