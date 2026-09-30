@@ -1693,6 +1693,10 @@ def save_node_closeup(
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
+    # The pointer is wherever the last click left it, and once the node is
+    # framed that spot can be over its map. Park it in the pane's empty corner.
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    page.mouse.move(viewport["width"] - 10, viewport["height"] - 60)
     _wait_for_reactflow_ready(page, node_ids=[node_id], max_zoom=1.0, padding=0.05)
     return save_workflow_test_screenshot(
         page,
