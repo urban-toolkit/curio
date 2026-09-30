@@ -81,3 +81,23 @@ export function refitToContainer(
   if (spec.width === "container" && el.clientWidth > 0) view.width(el.clientWidth);
   if (spec.height === "container" && el.clientHeight > 0) view.height(el.clientHeight);
 }
+
+/**
+ * Tells a genuine resize from a refit flipping the mount's scrollbars (#496).
+ *
+ * When re-fitting makes a scrollbar appear or vanish, the mount changes size
+ * because of the refit itself, and the next refit undoes it: A, B, A, B, every
+ * frame. A size equal to the one two callbacks back is that flip, so the caller
+ * resizes without re-reading the mount, and the view settles at the size that
+ * fits. The cost is one missed refit when a node really is resized back to the
+ * size it had two resizes ago.
+ */
+export function createFlipGuard(): (size: string) => boolean {
+  const recent: string[] = [];
+  return (size) => {
+    const flipping = recent.length >= 2 && recent[recent.length - 2] === size;
+    recent.push(size);
+    if (recent.length > 2) recent.shift();
+    return flipping;
+  };
+}

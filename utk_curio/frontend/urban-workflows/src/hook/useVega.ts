@@ -5,7 +5,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { applyContainerSizing, refitToContainer } from "../utils/vegaSpecSizing";
+import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
@@ -231,12 +231,14 @@ export const useVega = ({
 
   useEffect(() => {
     const el = document.getElementById("vega" + data.nodeId);
+    const flipping = createFlipGuard();
     const ro = new ResizeObserver(() => {
       const view = currentViewRef.current;
-      if (view != null) {
+      if (view != null && el) {
         // A node resized by hand kept its chart's old width: resize() alone
-        // never re-reads the mount (#496).
-        refitToContainer(view, el, sizedSpecRef.current);
+        // never re-reads the mount (#496). Not when the refit is only flipping
+        // the mount's scrollbars, which would loop every frame.
+        if (!flipping(`${el.clientWidth}x${el.clientHeight}`)) refitToContainer(view, el, sizedSpecRef.current);
         view.resize().runAsync();
       }
     });

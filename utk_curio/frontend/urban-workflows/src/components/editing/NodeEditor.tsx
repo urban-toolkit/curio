@@ -350,7 +350,7 @@ function NodeEditor({
                                             // instead of scrolling the chart.
                                             <div
                                                 id={outputId}
-                                                className="nodrag nowheel"
+                                                className="nodrag nowheel curio-vega-mount"
                                                 style={outputMountStyle(
                                                     !dashboardOn && inputMarker,
                                                     !dashboardOn && outputMarker,

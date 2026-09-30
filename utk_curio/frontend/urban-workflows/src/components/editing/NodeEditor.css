@@ -148,3 +148,11 @@ select:focus {
     opacity: 0.6;
     cursor: not-allowed;
 }
+
+/* The Vega output's canvas as a block, not inline. An inline canvas sits on a
+   text baseline and leaves a descender gap under it, so a container-sized chart
+   came out 4 px taller than its mount and the mount scrolled both ways (#496). */
+.curio-vega-mount > canvas {
+    display: block;
+    margin: 0 auto;
+}

@@ -12,6 +12,7 @@
  */
 import {
   applyContainerSizing,
+  createFlipGuard,
   isMultiViewSpec,
   refitToContainer,
 } from "../../utils/vegaSpecSizing";
@@ -201,5 +202,52 @@ describe("useVega re-reads the mount before every resize (#496)", () => {
     for (const { index } of resizes) {
       expect(lines[index - 1]).toMatch(/refitToContainer\(/);
     }
+  });
+
+  test("the resize observer checks for a scrollbar flip before it refits", () => {
+    expect(source).toMatch(/if \(!flipping\(`\$\{el\.clientWidth\}x\$\{el\.clientHeight\}`\)\) refitToContainer\(/);
+  });
+});
+
+/**
+ * #496's refit must not loop. In a browser with classic scrollbars a
+ * container-sized chart that overflowed by a few pixels flipped between two
+ * sizes every frame: the refit shrank it to the box the scrollbars left, which
+ * removed the scrollbars, which grew the box, which grew the chart.
+ */
+describe("createFlipGuard", () => {
+  test("lets new sizes through", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x300")).toBe(false);
+    expect(flipping("440x300")).toBe(false);
+  });
+
+  test("stops the A, B, A flip", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x285")).toBe(false);
+    expect(flipping("472x300")).toBe(true);
+  });
+
+  test("a repeated size is not a flip", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x300")).toBe(false);
+  });
+});
+
+describe("the Vega canvas has no baseline gap (#496)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path") as typeof import("path");
+  const css = fs.readFileSync(path.resolve(__dirname, "../../components/editing/NodeEditor.css"), "utf8");
+
+  test("the output mount's canvas is a block", () => {
+    // Inline, it left a descender gap that made a container-sized chart 4 px
+    // taller than its mount, so the mount scrolled both ways.
+    expect(css).toMatch(/\.curio-vega-mount > canvas \{[^}]*display:\s*block;/);
   });
 });
