@@ -15,6 +15,12 @@
   gap: 8px;
   font-size: 0.8rem;
   font-weight: 600;
+}
+/* The default colour sits in :where() so it has no specificity: the chat panel's
+   category tint class on the same element wins regardless of which stylesheet the
+   bundler emits first (the dev/142 panel decomposition changed that order and the
+   review/result cards lost their tint). */
+:where(.header) {
   color: var(--curio-text-primary);
 }
 
