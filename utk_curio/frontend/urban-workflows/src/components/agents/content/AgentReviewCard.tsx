@@ -29,15 +29,15 @@ function sourceRefText(ref: AgentSourceRef): string {
       }`;
     case "external":
       return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}${
-        ref.hint ? ` — ${ref.hint}` : ""
+        ref.hint ? ` (${ref.hint})` : ""
       }`;
     case "secret":
       // dev/116: the key the code reaches by name — never its value.
       return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
     case "user-path":
-      return `${ref.value ?? ""} — not checked by Curio`;
+      return `${ref.value ?? ""} (not checked by Curio)`;
     case "synthetic":
-      return "generated in the node — no external source";
+      return "generated in the node, no external source";
     default:
       return ref.value ?? String(ref.kind);
   }
@@ -62,9 +62,9 @@ export interface PlanNodeReviewState {
 /** dev/71: what a row's lifecycle state means for its action cluster. */
 const ROW_STATE_CHIP: Record<string, string> = {
   solving: "Content review pending",
-  validated: "Validated — review below",
+  validated: "Validated: review below",
   approved: "Solved ✓",
-  failed: "Failed — Solve retries",
+  failed: "Failed: Solve retries",
 };
 
 /** One planned node's review row (dev/67-5 + dev/71 progressive lifecycle):
@@ -217,7 +217,7 @@ const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
   dismissed: "Dismissed",
   superseded: "Superseded by a newer proposal",
-  stale: "The target changed since this was proposed — ask the agent to propose again",
+  stale: "The target changed since this was proposed; ask the agent to propose again",
 };
 
 /** What one Apply click does, per proposal kind — stated on the card. */
@@ -238,15 +238,15 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
 const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
   "project.install":
-    "Applying installs only this project template — nothing is imported, attached, run, or published.",
+    "Applying installs only this project template: nothing is imported, attached, run, or published.",
   "node.template.create":
     "Applying registers the node type in this project and adds its first node.",
   "dataset.install":
-    "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
+    "Applying installs only this dataset into the project's Data Catalog; no agent is installed.",
   "package.install":
-    "Applying opens the package install review (permissions, dependencies, conflicts) — nothing installs until you confirm there.",
+    "Applying opens the package install review (permissions, dependencies, conflicts); nothing installs until you confirm there.",
   "package.draft.apply":
-    "Applying installs the exact reviewed artifact and creates its requested nodes — nothing else changes.",
+    "Applying installs the exact reviewed artifact and creates its requested nodes; nothing else changes.",
 };
 
 /** dev/112: the removals block title — nodes, connections, and the cascade,
@@ -270,23 +270,23 @@ function planEffectLine(part: AgentProposalPart): string | null {
   const removedEdges = part.plan.removedEdges?.length ?? 0;
   if (removed) {
     return (
-      `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed} — ` +
-      "removal deletes their content and cannot be undone."
+      `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed}. ` +
+      "Removal deletes their content and cannot be undone."
     );
   }
   if (removedEdges) {
     // dev/112: an edge-only revision — truthful about what changes.
     const e = part.plan.edgeCount;
     return (
-      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges} — ` +
+      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges}; ` +
       "nodes and their content are untouched."
     );
   }
   if (n === 0) {
     const e = part.plan.edgeCount;
-    return `Applying adds ${e} connection${e === 1 ? "" : "s"} — existing work is untouched.`;
+    return `Applying adds ${e} connection${e === 1 ? "" : "s"}; existing work is untouched.`;
   }
-  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas — existing work is untouched.`;
+  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas; existing work is untouched.`;
 }
 
 /**
@@ -392,7 +392,7 @@ export const AgentReviewCard: React.FC<{
       {part.tool === "node.template.create" && part.template ? (
         <div className={styles.meta}>
           {part.template.label} · {part.template.engine}
-          {part.template.description ? ` — ${part.template.description}` : ""}
+          {part.template.description ? `: ${part.template.description}` : ""}
         </div>
       ) : null}
       {part.tool === "dataflow.plan.write" && part.plan ? (
@@ -418,8 +418,8 @@ export const AgentReviewCard: React.FC<{
                 {victim.label}
                 {victim.nodeType ? ` · ${victim.nodeType}` : ""}
                 {victim.contentChars > 0
-                  ? ` — contains ${victim.contentChars} chars of content`
-                  : " — empty"}
+                  ? ` (contains ${victim.contentChars} chars of content)`
+                  : " (empty)"}
               </li>
             ))}
             {(part.plan.removedEdges ?? []).map((edge) => (
@@ -440,7 +440,7 @@ export const AgentReviewCard: React.FC<{
         <>
           <details className={styles.draftSection}>
             <summary>
-              Files — {part.draft.files.addedTotal} added ·{" "}
+              Files: {part.draft.files.addedTotal} added ·{" "}
               {part.draft.files.modifiedTotal} modified ·{" "}
               {part.draft.files.preservedTotal} preserved
             </summary>
@@ -476,7 +476,7 @@ export const AgentReviewCard: React.FC<{
           {part.draft.dependencies ? (
             <details className={styles.draftSection} open={part.draft.dependencies.blocked}>
               <summary>
-                Dependencies — {part.draft.dependencies.pythonTotal} python ·{" "}
+                Dependencies: {part.draft.dependencies.pythonTotal} python ·{" "}
                 {part.draft.dependencies.jsTotal} js ·{" "}
                 {part.draft.dependencies.findingsTotal} finding
                 {part.draft.dependencies.findingsTotal === 1 ? "" : "s"}
@@ -486,7 +486,7 @@ export const AgentReviewCard: React.FC<{
                   // dev/97: the isolation statement — same routing rule the
                   // install applies, so the card can never disagree with it.
                   <li>
-                    python deps install into the package's isolated overlay —
+                    python deps install into the package's isolated overlay;
                     the shared interpreter is not touched
                   </li>
                 ) : part.draft.dependencies.home === "both" ? (
@@ -539,7 +539,7 @@ export const AgentReviewCard: React.FC<{
               className={styles.draftSection}
               open={part.draft.preview.status === "failed"}
             >
-              <summary>Preview — {part.draft.preview.status}</summary>
+              <summary>Preview: {part.draft.preview.status}</summary>
               <ul className={styles.draftList}>
                 {part.draft.preview.reasons.map((reason, index) => (
                   <li
@@ -554,7 +554,7 @@ export const AgentReviewCard: React.FC<{
                   <li key={`t:${row.templateId}`}>
                     {row.templateId}:{" "}
                     {row.ok ? "all states rendered" :
-                      `failed states — ${row.failedStates.join(", ")}`}
+                      `failed states: ${row.failedStates.join(", ")}`}
                   </li>
                 ))}
                 {part.draft.preview.runnerVersion ? (
@@ -589,8 +589,8 @@ export const AgentReviewCard: React.FC<{
           <div className={styles.removalsTitle}>
             Runs server-side code in the package sandbox
             {part.backend.network
-              ? " — may reach the network (server-network declared)"
-              : " — no network access"}
+              ? " (may reach the network, server-network declared)"
+              : " (no network access)"}
           </div>
           <ul className={styles.removalsList}>
             {part.backend.handlers.map((h) => (
@@ -604,7 +604,7 @@ export const AgentReviewCard: React.FC<{
               return (
                 <li key={`perm:${perm}`}>
                   permission {perm}
-                  {meaning ? ` — ${meaning}` : ""}
+                  {meaning ? `: ${meaning}` : ""}
                 </li>
               );
             })}
@@ -628,7 +628,7 @@ export const AgentReviewCard: React.FC<{
             {part.validation.verdict === "pass"
               ? `Executed through the dataflow${
                   part.validation.evidence?.outputDataType
-                    ? ` — output: ${part.validation.evidence.outputDataType}`
+                    ? ` (output: ${part.validation.evidence.outputDataType})`
                     : ""
                 }`
               : part.validation.evidence?.kind === "upstream-blocker"
@@ -662,7 +662,7 @@ export const AgentReviewCard: React.FC<{
                       {attempt.verdict === "pass"
                         ? "pass ✓"
                         : attempt.verdict === "not-executable"
-                          ? "not executable — no code to run, nothing ran"
+                          ? "not executable: no code to run, nothing ran"
                           : attempt.verdict}
                       {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                       {attempt.source === "current content" ? " · the node's current code" : ""}
@@ -857,7 +857,7 @@ export const AgentReviewCard: React.FC<{
               {nodeKindExecutable(part.pins) === true
                 ? " Solve runs it in the sandbox and fixes errors before its code is trusted."
                 : nodeKindExecutable(part.pins) === false
-                  ? " This kind has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified."
+                  ? " This kind has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified."
                   : null}
             </>
           ) : null}
