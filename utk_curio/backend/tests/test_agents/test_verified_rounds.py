@@ -663,7 +663,7 @@ class TestEmptyUpstreamWaits:
         body = helper._solve(client, token, ctx)
         assert body["results"][ctx["load"]]["status"] == "failed"
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "pending" and stats["reason"].startswith("waiting — upstream node")
+        assert stats["status"] == "pending" and stats["reason"].startswith("waiting: upstream node")
         assert stats["rounds"] == 1
         assert ctx["exec_payloads"] == []  # neither the empty loader nor the stats node ran
         assert body["builderSession"]["nodeRuns"][ctx["stats"]] == "pending"  # Retry after the loader is fixed
@@ -1127,7 +1127,7 @@ class TestVerifiedSolve:
                            headers=_auth(token)).get_json()["turns"]
         card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
         assert any(line.startswith("reason: the batch's time budget") for line in card["lines"])
-        assert any("pending — the batch's time budget" in line for line in card["lines"])
+        assert any("pending: the batch's time budget" in line for line in card["lines"])
 
     def test_a_slice_bound_refusal_is_skipped_never_failed(self, client, user_and_token, tmp_curio, monkeypatch):
         # dev/118 (DEC-075): the runner's 25-node slice bound (and a cycle) is
@@ -1149,7 +1149,7 @@ class TestVerifiedSolve:
         monkeypatch.setattr("utk_curio.backend.app.agents.validation.validate_candidate", _bounded)
         body = self._solve(client, token, ctx)
         stats = body["results"][ctx["stats"]]
-        assert stats["status"] == "skipped" and stats["reason"].startswith("skipped — the upstream slice has 30 nodes")
+        assert stats["status"] == "skipped" and stats["reason"].startswith("skipped: the upstream slice has 30 nodes")
         assert stats["rounds"] == 1  # a bound is not corrected — one round says so
         assert "not fixed" not in json.dumps(stats)
         assert body["results"][ctx["load"]]["status"] == "solved"

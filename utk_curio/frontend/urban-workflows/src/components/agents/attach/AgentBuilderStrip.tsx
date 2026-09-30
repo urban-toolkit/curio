@@ -29,10 +29,10 @@ const PHASE_RANK: Record<string, number> = {
 const STATUS_LABEL: Record<string, string> = {
   solving: "solving",
   generating: "generating…",
-  verifying: "verifying — running in the sandbox…",
-  fixing: "fixing — the run failed, correcting…",
+  verifying: "verifying: running in the sandbox…",
+  fixing: "fixing: the run failed, correcting…",
   verified: "solved ✓ verified",
-  written: "written — no code to run; renders in the browser or its own service",
+  written: "written: no code to run; renders in the browser or its own service",
   solved: "solved",
   failed: "failed",
   skipped: "skipped",
@@ -161,7 +161,7 @@ export const AgentBuilderStrip: React.FC<{
   // dev/118: the wave in words when the batch runs in waves.
   const waveDetail =
     solveWave && solveWave.of > 1
-      ? `wave ${solveWave.wave} of ${solveWave.of} — ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
+      ? `wave ${solveWave.wave} of ${solveWave.of}: ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
       : null;
   const batchDetail = [waveDetail, nodesDetail].filter(Boolean).join(" · ") || undefined;
   // Elapsed is strip-local observation time: builderSession persists no batch
@@ -186,8 +186,8 @@ export const AgentBuilderStrip: React.FC<{
         const skipped = result.notAttempted?.length ?? 0;
         setNotice(
           skipped
-            ? `Cancelled — ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
-            : "Cancelled — all dispatched nodes finished",
+            ? `Cancelled: ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
+            : "Cancelled: all dispatched nodes finished",
         );
       }
     } catch (e) {
@@ -252,9 +252,9 @@ export const AgentBuilderStrip: React.FC<{
     try {
       const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
       if (done?.status === "paused" && done.reason?.message) {
-        setNotice(`Paused — ${done.reason.message}`);
+        setNotice(`Paused: ${done.reason.message}`);
       } else if (done?.status === "cancelled") {
-        setNotice("Simulation cancelled — everything already built stays.");
+        setNotice("Simulation cancelled; everything already built stays.");
       }
     } catch (e) {
       setErrorRemedy(remedyOf(e));
@@ -394,7 +394,7 @@ export const AgentBuilderStrip: React.FC<{
                     aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
                     title={
                       needsUser
-                        ? "This node is waiting for you to confirm a source — open its Dataset Finder first"
+                        ? "This node is waiting for you to confirm a source: open its Dataset Finder first"
                         : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
                     }
                     disabled={needsUser || solveRunning || nodeSolving === nodeId}
@@ -410,7 +410,7 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {solveRunning && (solvePass ?? 0) > 0 ? (
         <div className={styles.hint} aria-live="polite">
-          {`Managing the dataflow — pass ${solvePass}`}
+          {`Managing the dataflow: pass ${solvePass}`}
           {unresolved ? ` · ${unresolved} node${unresolved === 1 ? "" : "s"} left` : ""}
           {userBlocked.length
             ? ` · waiting for you on ${userBlocked.length} node${
@@ -422,13 +422,13 @@ export const AgentBuilderStrip: React.FC<{
       {!solveRunning && solveEndedBy ? (
         <div className={styles.hint} role="status">
           {solveEndedBy === "complete"
-            ? "Finished — nothing left to do."
+            ? "Finished: nothing left to do."
             : solveEndedBy === "stopped"
-              ? `Stopped by you${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+              ? `Stopped by you${unresolved ? `: ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
               : solveEndedBy === "budget"
-                ? `Out of time for this session${unresolved ? ` — ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
+                ? `Out of time for this session${unresolved ? `: ${unresolved} node${unresolved === 1 ? "" : "s"} still pending.` : "."}`
                 : solveEndedBy === "blocked"
-                  ? "Stopped — a specialist must be installed first."
+                  ? "Stopped: a specialist must be installed first."
                   : ""}
         </div>
       ) : null}
@@ -470,7 +470,7 @@ export const AgentBuilderStrip: React.FC<{
       {installReview && (onApplyProposal || onDismissProposal) ? (
         <div className={styles.actions} role="group" aria-label="Missing specialist">
           <span className={styles.reviewSummary}>
-            Solve needs a specialist — {installReview.summary}
+            Solve needs a specialist: {installReview.summary}
           </span>
           {onApplyProposal ? (
             <button
@@ -566,7 +566,7 @@ export const AgentBuilderStrip: React.FC<{
           title={
             solveDisabledReason ??
             (phase === "interrupted"
-              ? "A new execution linked to the interrupted one — nothing is replayed"
+              ? "A new execution linked to the interrupted one; nothing is replayed"
               : "Data-loading nodes run in the sandbox and are fixed before their code is written")
           }
           onClick={() => void solve(failed.length && !pending.length ? failed : undefined)}
@@ -584,7 +584,7 @@ export const AgentBuilderStrip: React.FC<{
             type="button"
             className={styles.run}
             disabled={cancelling}
-            title="Ends the session after the current node finishes — a running fetch cannot be aborted. Everything already written stays."
+            title="Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written stays."
             onClick={() => void cancel()}
           >
             {/* dev/131: the control ends a SESSION that keeps managing the
@@ -612,7 +612,7 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {phase === "interrupted" ? (
         <div className={styles.hint} role="status">
-          Solve was interrupted — the server stopped while it was running. Finished nodes kept
+          Solve was interrupted: the server stopped while it was running. Finished nodes kept
           their content; nothing was replayed. Retry continues from what is still pending.
         </div>
       ) : null}
@@ -621,7 +621,7 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {!simBusy && pauseReason ? (
         <div className={styles.hint}>
-          Paused — {pauseReason.message} (Resume continues from here.)
+          Paused: {pauseReason.message} (Resume continues from here.)
         </div>
       ) : null}
       {notice ? <div className={styles.hint}>{notice}</div> : null}

@@ -489,7 +489,7 @@ class TestSolveSourceGrounding:
         # loader (pending, reason named) instead of running against an empty
         # upstream — and NOTHING of the fabricated code reached the sandbox.
         assert body["results"][stats]["status"] == "pending"
-        assert body["results"][stats]["reason"].startswith("waiting — upstream node")
+        assert body["results"][stats]["reason"].startswith("waiting: upstream node")
         assert exec_payloads == []
         # dev/115: every round was refused by the gate (kind ungrounded-source)
         # and NEVER reached the sandbox; the error names the literal + remedy.

@@ -38,13 +38,13 @@ export const NodeSolveRow: React.FC<{
         | { verdict?: string; rounds?: number; unchanged?: boolean; written?: boolean; proposalId?: string; remedy?: AgentRemedy; stoppedBy?: string }
         | undefined;
       if (done?.remedy) setRemedy(done.remedy);
-      if (done?.verdict === "pass" && done.unchanged) setNotice("Verified — the node's code ran successfully; no change needed.");
-      else if (done?.verdict === "pass" && done.written) setNotice("Solved — the code ran successfully and was written to the node.");
-      else if (done?.verdict === "pass") setNotice("Solved — the corrected code ran successfully; review and apply it below.");
-      else if (done?.verdict === "infrastructure") setNotice("Not verified — the sandbox was unreachable; nothing was changed.");
+      if (done?.verdict === "pass" && done.unchanged) setNotice("Verified: the node's code ran successfully; no change needed.");
+      else if (done?.verdict === "pass" && done.written) setNotice("Solved: the code ran successfully and was written to the node.");
+      else if (done?.verdict === "pass") setNotice("Solved: the corrected code ran successfully; review and apply it below.");
+      else if (done?.verdict === "infrastructure") setNotice("Not verified: the sandbox was unreachable; nothing was changed.");
       else if (done?.verdict === "awaiting-source")
         setNotice(
-          "Awaiting a source — this node's Dataset Finder has candidates for you to " +
+          "Awaiting a source: this node's Dataset Finder has candidates for you to " +
             "confirm. Nothing was generated or written.",
         );
       else if (done?.verdict === "fail")
@@ -53,7 +53,7 @@ export const NodeSolveRow: React.FC<{
           // attempt ran — the notice says where to look and what stopped it.
           `Not fixed after ${done.rounds ?? "?"} attempts${
             done.stoppedBy ? ` (${stoppedByPhrase(done.stoppedBy) || done.stoppedBy})` : ""
-          } — every attempt is below with the code it ran; nothing was written.`,
+          }: every attempt is below with the code it ran; nothing was written.`,
         );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Solve failed");
@@ -77,7 +77,7 @@ export const NodeSolveRow: React.FC<{
         <span className={styles.hint}>
           {running
             ? "Solve keeps running if you close this panel."
-            : "Runs the code in the sandbox, fixes errors, re-runs — only code that passed lands."}
+            : "Runs the code in the sandbox, fixes errors, and re-runs: only code that passed lands."}
         </span>
       </div>
       {running && activity ? (

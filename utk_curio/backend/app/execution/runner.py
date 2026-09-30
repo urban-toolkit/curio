@@ -323,7 +323,7 @@ def run_through_node(
     if len(ordered) > node_limit:
         report["error"] = (
             f"the upstream slice has {len(ordered)} nodes (validation bound "
-            f"{node_limit}) — run the dataflow manually instead"
+            f"{node_limit}); run the dataflow manually instead"
         )
         return report
     report["order"] = [n.id for n in ordered]
@@ -356,7 +356,7 @@ def run_through_node(
             report["blocker"] = node.id
             report["upstreamEmpty"] = True
             report["error"] = (
-                f"upstream node {node.id!r} has no content yet — solve or fill it first"
+                f"upstream node {node.id!r} has no content yet; solve or fill it first"
             )
             return report
         if not is_code:

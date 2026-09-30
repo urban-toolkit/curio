@@ -745,7 +745,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     renderProvider();
     fireEvent.click(screen.getByText("solve"));
     await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
-    const reason = "specialist not installed — Node Content Builder is not installed in this project";
+    const reason = "specialist not installed: Node Content Builder is not installed in this project";
     act(() => {
       emit("node_result", { nodeId: "n1", status: "failed", error: reason });
       emit("node_result", { nodeId: "n2", status: "failed", error: reason });
@@ -790,9 +790,9 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     act(() => {
       emit("solve_pass", { pass: 1, targets: ["n1", "n2"], waiting: [] });
       emit("node_result", { nodeId: "n1", status: "failed",
-        error: "not fixed after 15 attempts — execution-error: SyntaxError: invalid syntax" });
+        error: "not fixed after 15 attempts: execution-error: SyntaxError: invalid syntax" });
       emit("node_result", { nodeId: "n2", status: "pending",
-        reason: "waiting — upstream node 'n1' has no content yet — solve or fill it first" });
+        reason: "waiting: upstream node 'n1' has no content yet; solve or fill it first" });
     });
     expect(screen.getByTestId("solve-errors")).toHaveTextContent("n1:not fixed after 15 attempts");
     expect(screen.getByTestId("solve-notices")).toHaveTextContent("n2:pending");
@@ -815,7 +815,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
         results: { n1: { status: "solved" }, n2: { status: "solved" } },
         appliedContents: [], builderSession: { phase: "ready" },
         endedBy: "complete",
-        waiting: [{ nodeId: "n2", kind: "upstream", reason: "waiting — upstream" }],
+        waiting: [{ nodeId: "n2", kind: "upstream", reason: "waiting: upstream" }],
       } as never);
     });
     // A session that finished everything waits for nothing — the other half of
@@ -863,14 +863,14 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       emit("node_started", { nodeId: "n1" });
       emit("node_result", { nodeId: "n1", status: "solved", verdict: "pass", content: "df" });
       emit("node_result", { nodeId: "v1", status: "solved", content: "{}",
-        verification: { status: "not-executable", reason: "vis-vega has no code the sandbox could run — written, not executed" } });
+        verification: { status: "not-executable", reason: "vis-vega has no code the sandbox could run; written, not executed" } });
       emit("solve_wave", { wave: 2, of: 2, nodeIds: ["n2"] });
-      emit("node_result", { nodeId: "n2", status: "pending", reason: "the batch's time budget (45 min) was spent — Retry continues from here" });
+      emit("node_result", { nodeId: "n2", status: "pending", reason: "the batch's time budget (45 min) was spent; Retry continues from here" });
     });
     expect(screen.getByTestId("solve-wave")).toHaveTextContent("2/2:n2");
     expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verified|v1:written|n2:pending");
     expect(screen.getByTestId("solve-notices")).toHaveTextContent(
-      "v1:vis-vega has no code the sandbox could run — written, not executed|n2:pending — the batch's time budget (45 min) was spent — Retry continues from here",
+      "v1:vis-vega has no code the sandbox could run; written, not executed|n2:pending: the batch's time budget (45 min) was spent; Retry continues from here",
     );
     expect(screen.getByTestId("solve-errors")).toHaveTextContent("∅"); // notices are not errors
     await act(async () => {
@@ -1258,7 +1258,7 @@ describe("AgentAttachmentsProvider — dev/115 verified Solve as a background jo
     renderProvider();
     fireEvent.click(screen.getByText("solve-node"));
     await waitFor(() => expect(api.solveNodeStream).toHaveBeenCalledWith("p1", "a1", "n1", expect.any(Function)));
-    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("Round 2 — generating a fix…");
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("Round 2: generating a fix…");
     await act(async () => {
       finish({ nodeId: "n1", verdict: "pass", rounds: 2, proposalId: "p2" });
     });

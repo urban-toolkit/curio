@@ -325,7 +325,7 @@ export const AgentAttachmentsProvider: React.FC<{
       const body = (
         e as { body?: { resetAt?: string; remedy?: import("../../../api/agentsApi").AgentRemedy } } | null
       )?.body;
-      const reset = body?.resetAt ? ` — resets ${new Date(body.resetAt).toLocaleString()}` : "";
+      const reset = body?.resetAt ? ` (resets ${new Date(body.resetAt).toLocaleString()})` : "";
       appendTurns(attachmentId, [{
         role: "agent", text: `(error) ${msg}${reset}`, error: true,
         ...(body?.remedy ? { remedy: body.remedy } : {}),
@@ -638,7 +638,7 @@ export const AgentAttachmentsProvider: React.FC<{
             });
           } else if (name === "stage") {
             narrate(
-              `${String(payload.action)}${payload.label ? ` — ${String(payload.label)}` : ""}`,
+              `${String(payload.action)}${payload.label ? `: ${String(payload.label)}` : ""}`,
             );
           } else if (name === "node_executed") {
             narrate(`executing upstream ${Number(payload.index) + 1}/${String(payload.total)}`);
@@ -842,7 +842,7 @@ export const AgentAttachmentsProvider: React.FC<{
             notExecutable && typeof verification?.reason === "string"
               ? verification.reason
               : (status === "pending" || status === "skipped") && typeof payload.reason === "string"
-                ? `${status} — ${payload.reason}`
+                ? `${status}: ${payload.reason}`
                 : null;
           if (notice) {
             setSolveNotices((prev) => ({
@@ -984,9 +984,9 @@ export const AgentAttachmentsProvider: React.FC<{
             (name, payload) => {
               const round = typeof payload.round === "number" ? payload.round : null;
               const line =
-                name === "generation_round" ? `Round ${round ?? "?"} — generating…`
-                : name === "node_executed" ? `Round ${round ?? ""} — running in the sandbox…`.replace("Round  — ", "")
-                : name === "round_verdict" ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed" : "failed, fixing…"}`
+                name === "generation_round" ? `Round ${round ?? "?"}: generating…`
+                : name === "node_executed" ? `Round ${round ?? ""}: running in the sandbox…`.replace("Round : ", "")
+                : name === "round_verdict" ? `Round ${round ?? "?"}: ${payload.verdict === "pass" ? "passed" : "failed, fixing…"}`
                 : null;
               if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
             },
@@ -1029,16 +1029,16 @@ export const AgentAttachmentsProvider: React.FC<{
     async (attachmentId: string, nodeId: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
-      setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: "Starting — running the node's current code…" }));
+      setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: "Starting: running the node's current code…" }));
       try {
         return await agentsApi.solveNodeStream(pid, attachmentId, nodeId, (name, payload) => {
           const round = typeof payload.round === "number" ? payload.round : null;
           const line =
             name === "generation_round"
-              ? round === 1 ? "Round 1 — running the current code…" : `Round ${round} — generating a fix…`
+              ? round === 1 ? "Round 1: running the current code…" : `Round ${round}: generating a fix…`
               : name === "node_executed" ? "Running in the sandbox…"
               : name === "round_verdict"
-                ? `Round ${round ?? "?"} — ${payload.verdict === "pass" ? "passed ✓" : payload.verdict === "fail" ? "failed — fixing…" : "not verified (sandbox unreachable)"}`
+                ? `Round ${round ?? "?"}: ${payload.verdict === "pass" ? "passed ✓" : payload.verdict === "fail" ? "failed, fixing…" : "not verified (sandbox unreachable)"}`
                 : null;
           if (line) setSolveNodeActivity((prev) => ({ ...prev, [attachmentId]: line }));
         });

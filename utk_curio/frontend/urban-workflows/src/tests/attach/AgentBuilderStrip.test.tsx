@@ -191,7 +191,7 @@ describe("AgentBuilderStrip streamed solve (dev/63)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Solve" }));
     await waitFor(() =>
-      expect(screen.getByText("Cancelled — 2 nodes not attempted")).toBeInTheDocument(),
+      expect(screen.getByText("Cancelled: 2 nodes not attempted")).toBeInTheDocument(),
     );
   });
 });
@@ -315,7 +315,7 @@ describe("AgentBuilderStrip simulation controls (dev/67-9, DEC-054)", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
-    expect(screen.getByText(/Paused — validation failed/)).toBeInTheDocument();
+    expect(screen.getByText(/Paused: validation failed/)).toBeInTheDocument();
   });
 });
 
@@ -443,7 +443,7 @@ describe("AgentBuilderStrip missing specialist (dev/106)", () => {
   });
 
   it("renders one reason line for six identical node failures", () => {
-    const reason = "specialist not installed — Node Content Builder is not installed in this project";
+    const reason = "specialist not installed: Node Content Builder is not installed in this project";
     const errors = Object.fromEntries(
       ["n1", "n2", "n3", "n4", "n5", "n6"].map((n) => [n, reason]),
     );
@@ -505,8 +505,8 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
         solveProgress={{ "node-aaaa-1": "verifying", "node-bbbb-2": "fixing", "node-cccc-3": "verified" }}
       />,
     );
-    expect(screen.getByText("verifying — running in the sandbox…")).toBeInTheDocument();
-    expect(screen.getByText("fixing — the run failed, correcting…")).toBeInTheDocument();
+    expect(screen.getByText("verifying: running in the sandbox…")).toBeInTheDocument();
+    expect(screen.getByText("fixing: the run failed, correcting…")).toBeInTheDocument();
     expect(screen.getByText("solved ✓ verified")).toBeInTheDocument();
     // The background-job copy and the honest cancel title.
     expect(screen.getByText("Solve keeps running if you close this panel.")).toBeInTheDocument();
@@ -550,7 +550,7 @@ describe("AgentBuilderStrip — dev/116 missing connection keys", () => {
     const group = screen.getByRole("group", { name: "Missing connection keys" });
     expect(within(group).getAllByRole("button", { name: /Add key for/ })).toHaveLength(1);
     expect(group).toHaveTextContent("Add key for api.census.gov");
-    expect(group).toHaveTextContent(/A connection key "noaa" is saved for api.noaa.gov — Solve again/);
+    expect(group).toHaveTextContent(/A connection key "noaa" is saved for api.noaa.gov. Solve again/);
   });
 
   it("no group without remedies", () => {
@@ -578,7 +578,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
         solveErrors={{
-          a: "awaiting your dataset selection — 3 candidate(s) awaiting your selection",
+          a: "awaiting your dataset selection: 3 candidate(s) awaiting your selection",
         }}
         solveRemedies={{ a: remedy("att-a"), b: remedy("att-b") }}
         onOpenChat={onOpenChat}
@@ -618,7 +618,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
-        solveErrors={{ a: "awaiting your dataset selection — 1 candidate(s)" }}
+        solveErrors={{ a: "awaiting your dataset selection: 1 candidate(s)" }}
         solveRemedies={{ a: remedy("att-a") }}
       />,
     );
@@ -639,7 +639,7 @@ describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () =>
         solveWave={{ wave: 2, of: 3, nodeIds: ["b", "c"] }}
       />,
     );
-    expect(screen.getByText(/wave 2 of 3 — 2 nodes/)).toBeInTheDocument();
+    expect(screen.getByText(/wave 2 of 3: 2 nodes/)).toBeInTheDocument();
     expect(screen.getByText(/1\/3 nodes/)).toBeInTheDocument();
   });
 
@@ -651,12 +651,12 @@ describe("AgentBuilderStrip — dev/118 waves, written kinds and notices", () =>
         onComposePrompt={jest.fn()}
         solveProgress={{ v: "written" }}
         solveNotices={{
-          p: "pending — the batch's time budget (45 min) was spent — Retry continues from here",
-          q: "pending — the batch's time budget (45 min) was spent — Retry continues from here",
+          p: "pending: the batch's time budget (45 min) was spent; Retry continues from here",
+          q: "pending: the batch's time budget (45 min) was spent; Retry continues from here",
         }}
       />,
     );
-    expect(screen.getByRole("list", { name: "Plan node progress" })).toHaveTextContent("written — no code to run; renders in the browser or its own service");
+    expect(screen.getByRole("list", { name: "Plan node progress" })).toHaveTextContent("written: no code to run; renders in the browser or its own service");
     const notes = screen.getByRole("note", { name: "Solve notices" });
     expect(notes.textContent!.match(/time budget/g)).toHaveLength(1);
     expect(screen.queryByText(/^Solve failed/)).toBeNull();
@@ -668,7 +668,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
   const waiting = (over: Partial<{ nodeId: string; kind: string; reason: string; attachmentId: string }> = {}) => ({
     nodeId: "a",
     kind: "dataset-selection",
-    reason: "awaiting your dataset selection — 3 candidate(s)",
+    reason: "awaiting your dataset selection: 3 candidate(s)",
     attachmentId: "att-df",
     ...over,
   });
@@ -705,7 +705,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
         onSolve={jest.fn()}
         onComposePrompt={jest.fn()}
-        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "waiting — upstream node 'a' has no content yet" })]}
+        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "waiting: upstream node 'a' has no content yet" })]}
       />,
     );
     expect(screen.getAllByText("needs you")).toHaveLength(1);
@@ -741,7 +741,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
         solveWaiting={[waiting()]}
       />,
     );
-    expect(screen.getByText(/Managing the dataflow — pass 3/)).toHaveTextContent(
+    expect(screen.getByText(/Managing the dataflow: pass 3/)).toHaveTextContent(
       /waiting for you on 1 node/,
     );
     rerender(
@@ -753,7 +753,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      /Out of time for this session — 1 node still pending/,
+      /Out of time for this session: 1 node still pending/,
     );
     rerender(
       <AgentBuilderStrip
@@ -763,6 +763,6 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
         solveEndedBy="complete"
       />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Finished — nothing left to do.");
+    expect(screen.getByRole("status")).toHaveTextContent("Finished: nothing left to do.");
   });
 });
