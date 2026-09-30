@@ -237,27 +237,54 @@ class Report:
     def at_rest(self) -> int:
         return (self.cycle_after[-1] - self.baseline) if self.cycle_after else 0
 
-    def failures(self) -> list:
-        """Why this run shows the #408 shape, or an empty list."""
-        found = []
+    def _phase_cost(self, phase: str) -> int:
+        """The most one phase of a cycle raised RSS above where it started."""
+        cost = 0
+        for before, row in zip(self.samples, self.samples[1:]):
+            if row["cycle"] >= 1 and row["phase"] == phase:
+                cost = max(cost, int((row["peak_mb"] - before["rss_mb"]) * MB))
+        return cost
+
+    @property
+    def compute_cost(self) -> int:
+        """What running the four loaders adds, at its peak."""
+        return self._phase_cost("level 0")
+
+    @property
+    def serve_cost(self) -> int:
+        """What fetching every output at once adds, at its peak."""
+        return self._phase_cost("fetch")
+
+    def checks(self) -> dict:
+        """Each property #408 is about: None when it holds, else why not."""
         if self.killed:
-            found.append(f"the sandbox died: {self.killed}")
-            return found
+            died = f"the sandbox died: {self.killed}"
+            return {"serve": died, "growth": died, "at_rest": died}
+        found = {"serve": None, "growth": None, "at_rest": None}
+        if self.serve_cost > self.compute_cost:
+            found["serve"] = (
+                f"fetching the {LOADERS + 1} outputs added {self.serve_cost / MB:.0f} MB, "
+                f"more than computing them did ({self.compute_cost / MB:.0f} MB)"
+            )
         limit = self.GROWTH_SHARE * self.working_set
         if self.growth_per_cycle > limit:
-            found.append(
+            found["growth"] = (
                 f"RSS grew {self.growth_per_cycle / MB:.0f} MB per re-run after the first, "
                 f"above {self.GROWTH_SHARE:.0%} of one run's working set "
                 f"({self.working_set / MB:.0f} MB)"
             )
         rest_limit = self.REST_UNITS * self.unit
         if self.at_rest > rest_limit:
-            found.append(
+            found["at_rest"] = (
                 f"at rest the sandbox holds {self.at_rest / MB:.0f} MB above its idle "
                 f"baseline, more than {self.REST_UNITS}x the largest single request "
                 f"({self.unit / MB:.0f} MB, {self.unit_request})"
             )
         return found
+
+    def failures(self) -> list:
+        """Why this run shows the #408 shape, or an empty list."""
+        return list(dict.fromkeys(v for v in self.checks().values() if v))
 
     def table(self) -> str:
         lines = [
@@ -271,6 +298,8 @@ class Report:
             lines.append(f"{index:5d}  {after / MB:10.0f}  {peak / MB:6.0f}")
         lines.append(f"growth per re-run {self.growth_per_cycle / MB:.0f} MB; "
                      f"at rest {self.at_rest / MB:.0f} MB above baseline")
+        lines.append(f"computing a cycle added {self.compute_cost / MB:.0f} MB; "
+                     f"serving it added {self.serve_cost / MB:.0f} MB")
         verdict = self.failures()
         lines.append("verdict: " + ("; ".join(verdict) if verdict else "flat"))
         return "\n".join(lines)
@@ -284,6 +313,7 @@ class Report:
             "cycle_peak_mb": [v / MB for v in self.cycle_peak],
             "growth_per_cycle_mb": self.growth_per_cycle / MB,
             "at_rest_mb": self.at_rest / MB, "killed": self.killed,
+            "compute_cost_mb": self.compute_cost / MB, "serve_cost_mb": self.serve_cost / MB,
             "failures": self.failures(),
         }
 
@@ -510,6 +540,14 @@ def run(rows: int = 200_000, cycles: int = 5, variants=(), sandbox_root: Path = 
         if sampler is not None:
             sampler.stop()
         sandbox.stop()
+        # Every cycle writes each output again (about nine parquet files at the
+        # default size), and nothing reads them afterwards. The inputs stay, so
+        # a kept --workdir can be replayed without regenerating them.
+        import shutil
+
+        shutil.rmtree(workdir / ".curio", ignore_errors=True)
+        if owned:
+            shutil.rmtree(workdir, ignore_errors=True)
     return report
 
 
@@ -518,19 +556,30 @@ def summarize(root: Path) -> str:
     rows = []
     for path in sorted(Path(root).rglob("report.json")):
         data = json.loads(path.read_text())
+        samples = path.with_name("samples.csv")
+        if "serve_cost_mb" not in data and samples.exists():
+            # A report written before these two were recorded: derive them.
+            with open(samples, newline="") as handle:
+                recorded = [{**row, "cycle": int(row["cycle"]), "rss_mb": float(row["rss_mb"]),
+                             "peak_mb": float(row["peak_mb"])} for row in csv.DictReader(handle)]
+            probe = Report(rows=0, cycles=0, variants=[], sandbox_root="", samples=recorded)
+            data["compute_cost_mb"] = probe.compute_cost / MB
+            data["serve_cost_mb"] = probe.serve_cost / MB
         after = data["cycle_after_mb"]
         rows.append(
             f"| {path.parent.relative_to(root)} | {data['rows']} | "
             f"{','.join(data['variants']) or 'baseline'} | {data['baseline_mb']:.0f} | "
             f"{data['unit_mb']:.0f} | {' / '.join(f'{v:.0f}' for v in after)} | "
             f"{max(data['cycle_peak_mb'] or [0]):.0f} | {data['growth_per_cycle_mb']:.0f} | "
-            f"{data['at_rest_mb']:.0f} | "
+            f"{data['at_rest_mb']:.0f} | {data.get('compute_cost_mb', 0):.0f} | "
+            f"{data.get('serve_cost_mb', 0):.0f} | "
             f"{'; '.join(data['failures']) or 'flat'} |"
         )
     header = (
         "| run | rows | variant | idle MB | one request MB | RSS after each cycle MB | "
-        "peak MB | growth per re-run MB | at rest above idle MB | verdict |\n"
-        "|---|---|---|---|---|---|---|---|---|---|"
+        "peak MB | growth per re-run MB | at rest above idle MB | compute adds MB | "
+        "serve adds MB | verdict |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|"
     )
     return header + "\n" + "\n".join(rows)
 
