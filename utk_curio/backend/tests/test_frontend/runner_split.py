@@ -24,7 +24,7 @@ Selected with two environment variables, both unset for an ordinary local run
 
 * ``CURIO_E2E_RUNNER`` - ``utk`` keeps only the WebGPU tests, ``desktop``
   only the others;
-* ``CURIO_E2E_SHARD`` - ``k/n`` keeps the k-th of n shards (1-based) of what
+* ``CURIO_E2E_PART`` - ``k/n`` keeps the k-th of n shards (1-based) of what
   is left, balanced by the recorded group durations in ``e2e_durations.json``.
 """
 
@@ -130,9 +130,9 @@ def parse_shard(value: str) -> tuple[int, int]:
     try:
         k, n = (int(part) for part in value.split("/", 1))
     except ValueError:
-        raise ValueError(f"CURIO_E2E_SHARD must be k/n, got {value!r}") from None
+        raise ValueError(f"CURIO_E2E_PART must be k/n, got {value!r}") from None
     if not 1 <= k <= n:
-        raise ValueError(f"CURIO_E2E_SHARD {value!r}: k must be between 1 and n")
+        raise ValueError(f"CURIO_E2E_PART {value!r}: k must be between 1 and n")
     return k - 1, n
 
 
@@ -159,5 +159,7 @@ def select(items, runner: str | None, shard: str | None, durations: dict | None 
 
 def from_environment(environ=os.environ) -> tuple[str | None, str | None]:
     runner = (environ.get("CURIO_E2E_RUNNER") or "").strip() or None
-    shard = (environ.get("CURIO_E2E_SHARD") or "").strip() or None
+    # Not CURIO_E2E_SHARD: tests/shards.py already means the in-container
+    # xdist shard index by that.
+    shard = (environ.get("CURIO_E2E_PART") or "").strip() or None
     return runner, shard

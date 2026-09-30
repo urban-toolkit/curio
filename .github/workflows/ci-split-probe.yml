@@ -158,7 +158,7 @@ jobs:
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_RUNNER: desktop
-      CURIO_E2E_SHARD: ${{ matrix.shard }}/8
+      CURIO_E2E_PART: ${{ matrix.shard }}/8
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/comparisons

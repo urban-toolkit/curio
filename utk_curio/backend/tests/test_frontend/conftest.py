@@ -263,7 +263,7 @@ def pytest_collection_modifyitems(config, items):
 
     Marking always happens, so ``-m webgpu`` / ``-m "not webgpu"`` work in any
     run. Deselection only happens when CI asks for it through
-    ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_SHARD`` (runner_split.py); a local run
+    ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_PART`` (runner_split.py); a local run
     with neither set runs everything, as before.
     """
     for item in items:
