@@ -21,7 +21,7 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { commentsFromMetadata, commentsToMetadata } from "../utils/nodeComments";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
-import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
+import { NODE_CATEGORY_KEY, categoryFg, colorForNodeType } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -69,11 +69,10 @@ import {
     MIN_NODE_WIDTH,
     MINIMIZED_NODE_HEIGHT,
     MINIMIZED_NODE_WIDTH,
-    NodeType,
     SupportedType,
 } from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
-import { NodeTemplateId } from "../registry/types";
+import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
     applyDatasetToNodeData,
     canApplyDatasetToNode,
@@ -638,6 +637,7 @@ export const NodeContainer = ({
                         dashboardOn,
                         suggested: data.suggestionType != "none" && data.suggestionType != undefined,
                         acceptable: data.suggestionAcceptable,
+                        category: packageDescriptor?.category,
                     }),
                     ...styles,
                     width: currentNodeWidth + "px",
@@ -1215,21 +1215,6 @@ const headerIconStyle: CSS.Properties = {
     flexShrink: 0,
 };
 
-// Node border colour = node category, read from the shared palette rather than
-// restated here. DataflowThumbnail used to carry a hand-kept copy of the same
-// hexes, and the Node Catalog picked a third set by hashing a directory name.
-const nodeTypeBorderColor: Record<string, string> = {
-    [NodeType.DATA_LOADING]: categoryFg("data"),
-    [NodeType.DATA_EXPORT]: categoryFg("data"),
-    [NodeType.DATA_TRANSFORMATION]: categoryFg("data"),
-    [NodeType.DATA_SUMMARY]: categoryFg("data"),
-    [NodeType.COMPUTATION_ANALYSIS]: categoryFg("computation"),
-    [NodeType.MERGE_FLOW]: categoryFg("computation"),
-    [NodeType.DATA_POOL]: categoryFg("computation"),
-    [NodeType.VIS_VEGA]: categoryFg("vis"),
-    [NodeType.VIS_SIMPLE]: categoryFg("vis"),
-};
-
 /** The node container's border and surface, resolved in one place.
  *
  * Longhands only, never the `border` shorthand. The two used to be layered: this
@@ -1242,12 +1227,23 @@ const nodeTypeBorderColor: Record<string, string> = {
  */
 export const getNodeContainerStyles = (
     nodeType: string,
-    state: { dashboardOn?: boolean; suggested?: boolean; acceptable?: boolean } = {},
+    state: {
+        dashboardOn?: boolean;
+        suggested?: boolean;
+        acceptable?: boolean;
+        /** The resolved descriptor's category, the one the title-bar pill shows. */
+        category?: NodeCategory | null;
+    } = {},
 ): CSS.Properties => {
-    // `nodeType` arrives versioned for palette-dragged nodes
-    // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
-    // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
-    const accent = nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG;
+    // Node border colour = node category, the same one the pill in the node's
+    // own title bar shows. Keyed off the type alone, every package node was
+    // grey beside a coloured pill (#524). The type map is for a node with no
+    // resolved descriptor. `nodeType` arrives versioned for palette-dragged
+    // nodes (`curio.builtin/merge-flow@1`) but the map is keyed unversioned, so
+    // an unnormalized lookup silently falls back to grey (#159).
+    const accent = state.category
+        ? categoryFg(NODE_CATEGORY_KEY[state.category] ?? "package")
+        : colorForNodeType(unversionedNodeType(nodeType));
     const base: CSS.Properties = {
         position: "relative",
         backgroundColor: "#ffffff",
