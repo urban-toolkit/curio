@@ -90,8 +90,11 @@
 .status_proposed { color: var(--curio-text-secondary); }
 .status_written { color: var(--curio-text-secondary); font-style: italic; }
 
+/* A row out of width moves its next button to a new line; a button keeps its
+   label on one (#505). */
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -103,6 +106,14 @@
   padding: 5px 14px;
   cursor: pointer;
   border: 1px solid transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Beside a button, the hint takes what is left and wraps inside it. */
+.actions > .hint {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .solve {
