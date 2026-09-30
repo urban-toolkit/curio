@@ -99,6 +99,9 @@
     border-radius: 4px;
     padding: 0 4px;
     line-height: 16px;
+    /* The tag row stretches its items to the taller tags beside it, which
+       left the one 16 px line at the top of a taller chip (#495). */
+    align-self: center;
 }
 
 .cardMetaRow {
