@@ -238,6 +238,66 @@ def _mint_dataflow_plan(
     existing_edge_ids = {str(e.get("id")) for e in existing_edges}
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
+    revision_errors = _plan_revision_errors(plan, existing_nodes, existing_edges)
+    if revision_errors:
+        return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
+    remove_node_set = set(remove_nodes)
+    # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
+    # invalid multi-input topology is unmintable, and the corrective error
+    # names the Merge resolution.
+    fanin_errors = _validate_plan_fanin(
+        plan, available, existing_nodes, existing_edges,
+        remove_node_set, set(remove_edges),
+    )
+    if fanin_errors:
+        return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
+    refusal = _plan_topology_refusal(plan, existing_nodes, existing_edges, available, remove_node_set, remove_edges)
+    if refusal:
+        return "refused", refusal, None
+    cascade_edge_ids = _plan_cascade_edge_ids(existing_edges, remove_node_set, remove_edges)
+    positions = _plan_positions(plan, existing_nodes)
+    digest, pins = _plan_pins(spec, plan, existing_nodes)
+    proposal_id = uuid.uuid4().hex
+    n_edges = len(plan["edges"])
+    summary = _plan_summary(plan)
+    part = _plan_review_part(proposal_id, plan, existing_nodes, existing_edges, pins, summary, cascade_edge_ids)
+    _enter_plan_review(spec, loop_ctx, proposal_id, plan)
+    agents_store._store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "dataflow.plan.write",
+            "plan": plan,
+            "baseGraphDigest": digest,
+            # dev/67-5: per-node application state + the mint-time layout.
+            "positions": positions,
+            "editedGoals": {},
+            "appliedRefs": [],
+            "appliedNodeIds": {},
+            # DEC-049.1: the apply re-checks each victim against this mirror.
+            **(
+                {"removeContentSha256": pins["removeContentSha256"]}
+                if "removeContentSha256" in pins
+                else {}
+            ),
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return "proposed", "", part
+
+
+def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list) -> list[str]:
+    """Revision validation against the saved spec (dev/59): removal targets and existing-id edge
+    endpoints must be real; the grammar could only check shape. Errors feed the same correction
+    rounds as every plan failure."""
+    existing_edge_ids = {str(e.get("id")) for e in existing_edges}
+    remove_nodes = plan.get("removeNodes", [])
+    remove_edges = plan.get("removeEdges", [])
     revision_errors: list[str] = []
     for node_id in remove_nodes:
         if node_id not in existing_nodes:
@@ -259,18 +319,13 @@ def _mint_dataflow_plan(
                     f"edges[{i}].{label} {endpoint!r} is neither a plan ref nor an "
                     "existing node id"
                 )
-    if revision_errors:
-        return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
-    remove_node_set = set(remove_nodes)
-    # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
-    # invalid multi-input topology is unmintable, and the corrective error
-    # names the Merge resolution.
-    fanin_errors = _validate_plan_fanin(
-        plan, available, existing_nodes, existing_edges,
-        remove_node_set, set(remove_edges),
-    )
-    if fanin_errors:
-        return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
+    return revision_errors
+
+
+def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: list, available: dict,
+                           remove_node_set: set, remove_edges: list) -> str | None:
+    """dev/112 (DEC-070): the topology refusal, or None — interaction edges obey the preamble's rule
+    and no plan DATA edge may close a cycle in the NET graph; validated BEFORE anything materializes."""
     # dev/112 (DEC-070): topology validated BEFORE anything materializes, like
     # fan-in. (1) Interaction edges obey the preamble's rule (visualization ↔
     # data-pool) — an executable rule, not prose the model must infer. (2) No
@@ -289,7 +344,7 @@ def _mint_dataflow_plan(
 
     kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available)
     if kind_errors:
-        return "refused", "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors), None
+        return "\n- ".join(["the plan wires invalid interaction edges:"] + kind_errors)
     net_pairs = plan_topology.net_data_edges(
         existing_edges, plan, remove_node_set, set(remove_edges)
     )
@@ -302,30 +357,32 @@ def _mint_dataflow_plan(
             + plan_topology.format_cycle(path, _label)
             for u, v, path in closing[:5]
         ]
-        return (
-            "refused",
-            "\n- ".join(
+        return "\n- ".join(
                 ["the plan creates a cycle in the dataflow (data edges must form a DAG):"]
                 + cycle_errors
                 + [
                     "remove one data edge of the loop, or — for a visualization feeding "
                     "back into a data-pool — make that edge \"kind\": \"interaction\""
                 ]
-            ),
-            None,
         )
-    # The cascade: edges incident to removed nodes die with them (dev/59) —
-    # computed here for the review card, recomputed at apply as the truth.
-    cascade_edge_ids = [
+    return None
+
+
+def _plan_cascade_edge_ids(existing_edges: list, remove_node_set: set, remove_edges: list) -> list[str]:
+    """The cascade: edges incident to removed nodes die with them (dev/59) — computed here for the
+    review card, recomputed at apply as the truth."""
+    return [
         str(e.get("id"))
         for e in existing_edges
         if (e.get("source") in remove_node_set or e.get("target") in remove_node_set)
         and str(e.get("id")) not in set(remove_edges)
     ]
-    # dev/67-5: positions are computed ONCE at mint, so per-node applies land
-    # exactly where the whole-plan apply would have put them (and both read
-    # the same map). Extent from the pre-removal spec — victims may inflate
-    # it slightly; a stable layout beats a perfectly tight one.
+
+
+def _plan_positions(plan: dict, existing_nodes: dict) -> dict[str, dict]:
+    """dev/67-5: positions computed ONCE at mint, so per-node applies land exactly where the whole-plan
+    apply would have put them (both read the same map). Extent from the pre-removal spec — victims
+    may inflate it slightly; a stable layout beats a perfectly tight one."""
     xs = [n.get("x") for n in existing_nodes.values() if isinstance(n.get("x"), (int, float))]
     ys = [n.get("y") for n in existing_nodes.values() if isinstance(n.get("y"), (int, float))]
     layout_base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
@@ -341,6 +398,13 @@ def _mint_dataflow_plan(
             "x": float(layout_base_x + depth * _PLAN_COLUMN_OFFSET),
             "y": float(layout_base_y + row * _PLAN_ROW_OFFSET),
         }
+    return positions
+
+
+def _plan_pins(spec: dict, plan: dict, existing_nodes: dict) -> tuple[str, dict]:
+    """The shape digest the apply re-checks and, for removals, every victim pinned by its content at
+    mint (DEC-049.1) — editing a doomed node between mint and apply makes the apply 409 + stale."""
+    remove_nodes = plan.get("removeNodes", [])
     digest = agents_spec_reads._graph_shape_digest(spec)
     pins: dict = {"baseGraphDigest": digest}
     if remove_nodes:
@@ -352,13 +416,29 @@ def _mint_dataflow_plan(
             ).hexdigest()
             for node_id in remove_nodes
         }
-    proposal_id = uuid.uuid4().hex
+    return digest, pins
+
+
+def _plan_summary(plan: dict) -> str:
+    """The review card's one-line summary: counts, and removals named (dev/112)."""
+    remove_nodes = plan.get("removeNodes", [])
+    remove_edges = plan.get("removeEdges", [])
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
     summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
     if remove_nodes or remove_edges:
         # dev/112: removed connections counted too — the user approved edge
         # removals five times without seeing them named.
         summary += _removal_phrase(len(remove_nodes), len(remove_edges), prefix="removes ")
+    return summary
+
+
+def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existing_edges: list,
+                      pins: dict, summary: str, cascade_edge_ids: list) -> dict:
+    """The proposal part the review card renders: the preview, the display copy of the plan (edges by
+    NAME, dev/67-8), and the removals reviewed by name (DEC-049.2; edges too, dev/112)."""
+    remove_nodes = plan.get("removeNodes", [])
+    remove_edges = plan.get("removeEdges", [])
+    n_edges = len(plan["edges"])
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
@@ -431,8 +511,12 @@ def _mint_dataflow_plan(
             for edge_id in remove_edges
             if edge_id in edges_by_id
         ]
-    # The builder session (DR-2) transitions on the SAME spec write: the
-    # attachment record is rule-9 share-stripped and save-preserved already.
+    return part
+
+
+def _enter_plan_review(spec: dict, loop_ctx: dict, proposal_id: str, plan: dict) -> None:
+    """The builder session (DR-2) transitions on the SAME spec write: the attachment record is rule-9
+    share-stripped and save-preserved already."""
     record = attachments.get_attachment(spec, loop_ctx["attachment_id"])
     if record is not None:
         session = record.setdefault("builderSession", {})
@@ -441,33 +525,7 @@ def _mint_dataflow_plan(
         # dev/67-5: the per-node Simulation Mode ledger — reset per plan.
         session["nodeStates"] = {n["ref"]: "planned" for n in plan["nodes"]}
         session["nodeIds"] = {}
-    agents_store._store_proposal(
-        user_key,
-        project_id,
-        spec,
-        loop_ctx,
-        {
-            "proposalId": proposal_id,
-            "tool": "dataflow.plan.write",
-            "plan": plan,
-            "baseGraphDigest": digest,
-            # dev/67-5: per-node application state + the mint-time layout.
-            "positions": positions,
-            "editedGoals": {},
-            "appliedRefs": [],
-            "appliedNodeIds": {},
-            # DEC-049.1: the apply re-checks each victim against this mirror.
-            **(
-                {"removeContentSha256": pins["removeContentSha256"]}
-                if "removeContentSha256" in pins
-                else {}
-            ),
-            "summary": summary,
-            "status": "pending",
-        },
-        part,
-    )
-    return "proposed", "", part
+
 
 
 # dev/67-5: review-stage goal edits are bounded like plan intents.
@@ -679,19 +737,8 @@ def apply_plan_node(
             f"node type {plan_node['nodeType']!r} is no longer available — "
             "ask the agent to replan",
         )
-    pos = (proposal.get("positions") or {}).get(ref) or {}
-    goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
-        f"{plan_node['title']} — {plan_node['intent']}"
-    )
-    node_id = str(uuid.uuid4())
-    created = {
-        "id": node_id,
-        "type": plan_node["nodeType"],
-        "content": "",
-        "goal": goal_text,
-        "x": float(pos.get("x", 80.0)),
-        "y": float(pos.get("y", 80.0)),
-    }
+    created = _created_plan_node(proposal, plan_node, ref)
+    node_id = created["id"]
     dataflow = spec.setdefault("dataflow", {})
     dataflow.setdefault("nodes", []).append(created)
     applied_refs.append(ref)
@@ -735,30 +782,8 @@ def apply_plan_node(
     _complete_plan_if_done(record, proposal, session)
     projects_storage.write_spec(user_key, project_id, spec)
     if isinstance(session_id, str):
-        # A result card WITHOUT flipping the proposal part: it stays pending
-        # for the remaining refs (unlike _log_applied_turn's applied flip).
-        sessions.append_turns(
-            user_key, project_id, session_id, attachment_id,
-            [
-                sessions.make_turn(
-                    "agent",
-                    f"Applied: created node {plan_node['title']!r} from the plan "
-                    f"({len(applied_refs)} of {len(plan.get('nodes', []))}).",
-                    content=[{
-                        "type": "card",
-                        "kind": "result",
-                        "title": "Applied: plan node created",
-                        "lines": [
-                            f"{plan_node['title']} · {plan_node['nodeType']}",
-                            f"node {node_id[:8]}",
-                            f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
-                            *_attached_agent_lines(attached),
-                            f"proposal {proposal_id[:8]}",
-                        ],
-                    }],
-                )
-            ],
-        )
+        _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
+                               plan, plan_node, node_id, applied_refs, attached)
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -778,6 +803,50 @@ def apply_plan_node(
         "skippedAgents": attached["skipped"],
         "builderSession": session,
     }
+
+
+def _created_plan_node(proposal: dict, plan_node: dict, ref: str) -> dict:
+    """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal."""
+    pos = (proposal.get("positions") or {}).get(ref) or {}
+    goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
+        f"{plan_node['title']} — {plan_node['intent']}"
+    )
+    return {
+        "id": str(uuid.uuid4()),
+        "type": plan_node["nodeType"],
+        "content": "",
+        "goal": goal_text,
+        "x": float(pos.get("x", 80.0)),
+        "y": float(pos.get("y", 80.0)),
+    }
+
+
+def _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
+                           plan: dict, plan_node: dict, node_id: str, applied_refs: list, attached: dict) -> None:
+    """A result card WITHOUT flipping the proposal part: it stays pending for the remaining refs
+    (unlike ``_log_applied_turn``'s applied flip)."""
+    sessions.append_turns(
+        user_key, project_id, session_id, attachment_id,
+        [
+            sessions.make_turn(
+                "agent",
+                f"Applied: created node {plan_node['title']!r} from the plan "
+                f"({len(applied_refs)} of {len(plan.get('nodes', []))}).",
+                content=[{
+                    "type": "card",
+                    "kind": "result",
+                    "title": "Applied: plan node created",
+                    "lines": [
+                        f"{plan_node['title']} · {plan_node['nodeType']}",
+                        f"node {node_id[:8]}",
+                        f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
+                        *_attached_agent_lines(attached),
+                        f"proposal {proposal_id[:8]}",
+                    ],
+                }],
+            )
+        ],
+    )
 
 
 def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
@@ -1138,9 +1207,51 @@ def _apply_dataflow_plan(
     apply touches ONLY listed elements — unlisted nodes keep their ids,
     positions, and content by construction."""
 
+    plan = proposal.get("plan") or {}
+    spec_nodes_by_id, remove_nodes = _check_plan_apply_preconditions(
+        user_key, project_id, proposal_id, spec, proposal, session_id, plan,
+    )
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    edges = dataflow.setdefault("edges", [])
+    remove_node_set = set(remove_nodes)
+    removed_edge_ids = _remove_plan_victims(spec, nodes, edges, remove_node_set, plan.get("removeEdges", []))
+    created_nodes, attached_results, ref_to_id = _create_plan_nodes(user_key, spec, nodes, plan, proposal)
+    created_edges = _create_plan_edges(
+        user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
+    )
+    proposal["status"] = "applied"
+    record, node_runs = _plan_apply_session(spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id)
+    projects_storage.write_spec(user_key, project_id, spec)
+    _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
+                      created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results)
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        # Consumed by the frontend bridge (dev/52; removals per dev/59).
+        "appliedGraph": {
+            "nodes": created_nodes,
+            "edges": created_edges,
+            "removedNodeIds": sorted(remove_node_set),
+            "removedEdgeIds": sorted(removed_edge_ids),
+        },
+        # dev/126: as the per-node apply — what each created node was given.
+        "attachedAgents": [row for r in attached_results for row in r["attached"]],
+        "skippedAgents": [row for r in attached_results for row in r["skipped"]],
+        "builderSession": record.get("builderSession") if record else None,
+    }
+
+
+def _check_plan_apply_preconditions(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id,
+                                    plan: dict) -> tuple[dict, list]:
+    """Everything that must hold BEFORE anything mutates — the pinned shape digest, every removal
+    victim's content pin (DEC-049.1), the templates, and the topology against the CURRENT spec
+    (dev/112, DEC-070: ``_mark_stale`` persists the spec, so a later raise would persist the
+    removals). Answers the spec's nodes by id and the removal list."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    plan = proposal.get("plan") or {}
     if agents_spec_reads._graph_shape_digest(spec) != proposal.get("baseGraphDigest"):
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
@@ -1185,9 +1296,8 @@ def _apply_dataflow_plan(
             f"plan node type(s) no longer available: {', '.join(sorted(set(missing)))} — "
             "ask the agent to replan",
         )
-    dataflow = spec.setdefault("dataflow", {})
-    nodes = dataflow.setdefault("nodes", [])
-    edges = dataflow.setdefault("edges", [])
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    edges = (spec.get("dataflow") or {}).get("edges") or []
     # dev/112 (DEC-070): topology re-checked against the CURRENT spec BEFORE
     # anything mutates (``_mark_stale`` persists the spec, so a later raise
     # would persist the removals). The shape digest already catches most
@@ -1212,11 +1322,13 @@ def _apply_dataflow_plan(
             "the canvas changed since this plan was proposed — applying it would now "
             f"close a cycle ({plan_topology.format_cycle(path, _lbl)}) — ask the agent to replan",
         )
-    # Removals first (dev/59): listed edges + the recomputed cascade of edges
-    # incident to removed nodes, then the victims themselves — in place, so
-    # unlisted elements are untouched by construction.
-    remove_node_set = set(remove_nodes)
-    removed_edge_ids = set(plan.get("removeEdges", []))
+    return spec_nodes_by_id, remove_nodes
+
+
+def _remove_plan_victims(spec: dict, nodes: list, edges: list, remove_node_set: set, remove_edges: list) -> set:
+    """Removals first (dev/59): listed edges + the recomputed cascade of edges incident to removed
+    nodes, then the victims themselves — in place, so unlisted elements are untouched by construction."""
+    removed_edge_ids = set(remove_edges)
     for e in edges:
         if isinstance(e, dict) and (
             e.get("source") in remove_node_set or e.get("target") in remove_node_set
@@ -1229,6 +1341,13 @@ def _apply_dataflow_plan(
         # Agent attachments on removed nodes die with them, exactly as manual
         # canvas deletion (dev/32).
         attachments.prune_orphaned_attachments(spec)
+    return removed_edge_ids
+
+
+def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: dict) -> tuple[list, list, dict]:
+    """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
+    per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
+    agents in THIS apply's single spec write (dev/126)."""
     xs = [n.get("x") for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
@@ -1270,6 +1389,14 @@ def _apply_dataflow_plan(
         attached_results.append(
             _attach_plan_node_agents(user_key, spec, node_id, plan_node["nodeType"])
         )
+    return created_nodes, attached_results, ref_to_id
+
+
+def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id, plan: dict,
+                       nodes: list, edges: list, ref_to_id: dict, spec_nodes_by_id: dict) -> list:
+    """The plan's edges: endpoints resolve through the ref map ∪ existing ids (dev/59); handles are
+    explicit end-to-end (DEC-051) — merge targets get a deterministic free in_N slot; an interaction
+    edge (dev/112) takes no port and no slot."""
     # dev/67-3 (DEC-051): handles are explicit end-to-end. Merge targets get a
     # deterministic free in_N slot (a named free toHandle wins; occupied or
     # unnamed falls to the lowest free) — the bridge passes these through
@@ -1328,7 +1455,13 @@ def _apply_dataflow_plan(
         }
         edges.append(edge)
         created_edges.append(edge)
-    proposal["status"] = "applied"
+    return created_edges
+
+
+def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, created_nodes: list,
+                        remove_node_set: set, ref_to_id: dict) -> tuple[dict | None, dict]:
+    """The builder session (DR-2, merged per dev/59): removed victims leave nodeRuns; surviving prior
+    entries persist; new pending nodes join; every ref's ledger row completes (dev/67-5)."""
     # The builder session (DR-2, merged per dev/59): removed victims leave
     # nodeRuns; surviving prior entries persist; new pending nodes join.
     record = attachments.get_attachment(spec, attachment_id)
@@ -1353,7 +1486,14 @@ def _apply_dataflow_plan(
             "nodeStates": {ref: "created" for ref in ref_to_id},
             "nodeIds": dict(ref_to_id),
         }
-    projects_storage.write_spec(user_key, project_id, spec)
+    return record, node_runs
+
+
+def _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
+                      created_nodes: list, created_edges: list, remove_node_set: set, removed_edge_ids: set,
+                      node_runs: dict, attached_results: list) -> None:
+    """The applied turn: truthful for edges (dev/112) plus the post-apply topology verdict the agent
+    needs to confirm a fix instead of asserting one."""
     # dev/112: truthful for edges (the old copy said "removed 0 nodes" after an
     # edge-only removal), plus the post-apply topology verdict the agent needs
     # to confirm a fix instead of asserting one.
@@ -1374,20 +1514,4 @@ def _apply_dataflow_plan(
             f"proposal {proposal_id[:8]}",
         ],
     )
-    return {
-        "attachmentId": attachment_id,
-        "proposalId": proposal_id,
-        "status": "applied",
-        "mutationApplied": True,
-        # Consumed by the frontend bridge (dev/52; removals per dev/59).
-        "appliedGraph": {
-            "nodes": created_nodes,
-            "edges": created_edges,
-            "removedNodeIds": sorted(remove_node_set),
-            "removedEdgeIds": sorted(removed_edge_ids),
-        },
-        # dev/126: as the per-node apply — what each created node was given.
-        "attachedAgents": [row for r in attached_results for row in r["attached"]],
-        "skippedAgents": [row for r in attached_results for row in r["skipped"]],
-        "builderSession": record.get("builderSession") if record else None,
-    }
+
