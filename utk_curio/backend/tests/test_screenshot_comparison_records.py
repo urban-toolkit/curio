@@ -279,6 +279,23 @@ def test_a_node_close_up_counts_a_pale_blank_that_a_full_page_does_not(dirs, mon
     _save(monkeypatch, lambda page: blank)
 
 
+def test_a_node_close_up_fails_a_blank_that_a_full_page_budget_lets_through(dirs, monkeypatch):
+    expected, compare = dirs
+    # A plot panel that lost its marks: 9 of 100 pixels, under 10%, over 2%.
+    _baseline(expected, _white(paint=9))
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: _white())
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    with pytest.raises(AssertionError, match=r"9/100 pixels differ \(9\.00%\), allowed 2\.00%"):
+        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+    [(_, record)] = _records(compare)
+    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
+
+    # The same pair against the full-page budget passes.
+    _save(monkeypatch, lambda page: _white())
+
+
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
     _, compare = dirs
     with pytest.raises(AssertionError, match="remint=true"):

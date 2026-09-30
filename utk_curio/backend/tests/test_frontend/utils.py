@@ -1687,6 +1687,13 @@ def save_workflow_test_screenshot(
 #: close-up were byte-identical or 0.02% apart at any tolerance (run 36788096514).
 CLOSEUP_PIXEL_THRESHOLD = 5
 
+#: Budget of a node close-up, tighter than MAX_DIFF_RATIO. A blank plot keeps
+#: its panel and loses only its marks: the tallest-bar histogram blanked to
+#: 9.27% and the scatter to 10.20% (proof run 36789368569), so at 10% one of
+#: them passed. At 2% the smallest blank is 4.6 times the budget, and the
+#: 0.02% run-to-run noise is a hundredth of it.
+CLOSEUP_MAX_DIFF_RATIO = 0.02
+
 
 def save_node_closeup(
     page: Page,
@@ -1702,7 +1709,8 @@ def save_node_closeup(
     full-page frame that node is a thumbnail, so one that drew nothing and
     left its body blank moves the frame by less than the 10% budget, and the
     comparison passes. Cropped to the node and compared at
-    ``CLOSEUP_PIXEL_THRESHOLD``, the same blank is most of the image.
+    ``CLOSEUP_PIXEL_THRESHOLD`` against ``CLOSEUP_MAX_DIFF_RATIO``, the same
+    blank is several times the budget.
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
@@ -1718,6 +1726,7 @@ def save_node_closeup(
         workflow_filepath,
         test_name=test_name,
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
         clip_selector=f'.react-flow__node[data-id="{node_id}"]',
         fit_reactflow=False,
         sweep_toasts=sweep_toasts,
