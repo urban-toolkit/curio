@@ -397,7 +397,12 @@ jobs:
       # Both write JUnit for the CI report page onto the .curio bind mount,
       # where the host reads it at the end of the job. A re-mint skips them,
       # like every other suite but e2e: it is there for the frames.
+      #
+      # A failed unit suite does not skip the suites after it: each one is
+      # independent information, as test-gpu-isolated already is. The e2e steps
+      # below still stop for any other failure, a broken stack above all.
       - name: 🧪 Run backend unit tests
+        id: backend_unit
         if: env.CURIO_REMINT != '1'
         # About 8 minutes. The limit is for a hang, so it fails here rather
         # than holding the runner until the job's own timeout.
@@ -408,7 +413,8 @@ jobs:
             bash scripts/test.sh --backend-only --use-existing
 
       - name: 🧪 Run sandbox unit tests
-        if: env.CURIO_REMINT != '1'
+        id: sandbox_unit
+        if: ${{ env.CURIO_REMINT != '1' && !cancelled() && (success() || steps.backend_unit.outcome == 'failure') }}
         timeout-minutes: 25
         run: |
           docker compose -p curio-ci exec -T \
@@ -416,11 +422,13 @@ jobs:
             bash scripts/test.sh --sandbox-only --use-existing
 
       - name: 🐍 Set up Python (for e2e)
+        if: ${{ !cancelled() && (success() || steps.backend_unit.outcome == 'failure' || steps.sandbox_unit.outcome == 'failure') }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
+        if: ${{ !cancelled() && (success() || steps.backend_unit.outcome == 'failure' || steps.sandbox_unit.outcome == 'failure') }}
         run: |
           # Docker creates .curio/ as root; the host runner needs write access
           # to create .curio/playwright/expected/. The runner user (deploy) has
@@ -429,6 +437,7 @@ jobs:
             || mkdir -p .curio/playwright/expected
 
       - name: 📦 Stage the built bundle for the host-side SPA test
+        if: ${{ !cancelled() && (success() || steps.backend_unit.outcome == 'failure' || steps.sandbox_unit.outcome == 'failure') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -453,6 +462,7 @@ jobs:
           test -f utk_curio/frontend/urban-workflows/dist/index.html
 
       - name: 🧩 Start the extra e2e shards inside the CI container
+        if: ${{ !cancelled() && (success() || steps.backend_unit.outcome == 'failure' || steps.sandbox_unit.outcome == 'failure') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -505,6 +515,7 @@ jobs:
           done
 
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
+        if: ${{ !cancelled() && (success() || steps.backend_unit.outcome == 'failure' || steps.sandbox_unit.outcome == 'failure') }}
         env:
           # JUnit for the CI report page. Absolute, since test.sh changes
           # directory before it runs pytest.
