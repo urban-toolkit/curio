@@ -250,6 +250,35 @@ def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
     assert (record["status"], record["closeup"]) == ("passed", True)
 
 
+class _PointerPage(_StubPage):
+    viewport_size = {"width": 1280, "height": 720}
+
+    class mouse:  # noqa: N801 - stands in for Page.mouse
+        @staticmethod
+        def move(x, y):
+            pass
+
+
+def test_a_node_close_up_counts_a_pale_blank_that_a_full_page_does_not(dirs, monkeypatch):
+    expected, compare = dirs
+    # A pale map background; the capture is the node's own gray, 10 per channel off.
+    (expected / "screenshot_scene_step.png").parent.mkdir(exist_ok=True)
+    Image.new("RGB", (10, 10), (232, 239, 242)).save(expected / "screenshot_scene_step.png")
+    blank = Image.new("RGB", (10, 10), (242, 242, 242))
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: blank)
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    with pytest.raises(AssertionError, match=r"100/100 pixels differ"):
+        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+    [(_, record)] = _records(compare)
+    assert (record["pixel_threshold"], record["closeup"]) == (e2e_utils.CLOSEUP_PIXEL_THRESHOLD, True)
+    assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
+
+    # The same pair at the full-page tolerance passes: nothing is counted.
+    _save(monkeypatch, lambda page: blank)
+
+
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
     _, compare = dirs
     with pytest.raises(AssertionError, match="remint=true"):

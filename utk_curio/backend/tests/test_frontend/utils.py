@@ -1679,6 +1679,15 @@ def save_workflow_test_screenshot(
     return expected_path
 
 
+#: Per-channel tolerance of a node close-up. A map that drew nothing shows the
+#: node's own gray (242, 242, 242), which is 10 per channel from the pale
+#: background most Autark maps draw (232, 239, 242), so at the default 30 a
+#: blank sparse map counted only its few features: 0.5% of the close-up in
+#: proof run 36788122499. At 5 the same blank is 75%. Two CI captures of every
+#: close-up were byte-identical or 0.02% apart at any tolerance (run 36788096514).
+CLOSEUP_PIXEL_THRESHOLD = 5
+
+
 def save_node_closeup(
     page: Page,
     workflow_filepath: str,
@@ -1692,8 +1701,8 @@ def save_node_closeup(
     For a node whose drawing is the claim: an Autark map or plot. In a
     full-page frame that node is a thumbnail, so one that drew nothing and
     left its body blank moves the frame by less than the 10% budget, and the
-    comparison passes. Cropped to the node, the same blank is most of the
-    image.
+    comparison passes. Cropped to the node and compared at
+    ``CLOSEUP_PIXEL_THRESHOLD``, the same blank is most of the image.
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
@@ -1708,6 +1717,7 @@ def save_node_closeup(
         page,
         workflow_filepath,
         test_name=test_name,
+        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
         clip_selector=f'.react-flow__node[data-id="{node_id}"]',
         fit_reactflow=False,
         sweep_toasts=sweep_toasts,
