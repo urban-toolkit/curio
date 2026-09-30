@@ -25,6 +25,7 @@ from .utils import (
     node_execution_timeout_ms,
     play_node,
     read_node_error_text,
+    skip_if_external_host_unreachable,
     wait_for_node_done,
     wait_for_node_settled,
     wait_for_run_guard_released,
@@ -385,12 +386,17 @@ class TestWorkflowCanvas:
             # no tolerance and no retry (all data is local/deterministic).
             try:
                 wait_for_node_done(self.page, node.id, node_type=node.type)
-            except AssertionError:
+            except AssertionError as exc:
                 # Capture the autk Error tab text (and the once-per-session
                 # WebGPU diagnostics) so the failure dump shows the literal
                 # err.message — the usual reason an autk node fails.
                 if node.type == "AUTK_GRAMMAR":
                     self._capture_autk_error(node, node_el)
+                    # The one network dependency in the suite: DuckDB-WASM
+                    # downloads its spatial extension. A host that does not
+                    # answer is an outage, not a regression; a host that does
+                    # answer leaves the failure standing.
+                    skip_if_external_host_unreachable(str(exc))
                 raise
             # Play also re-ran this node's stale ancestors, and a node that
             # already showed Done settles before that run reaches it. Wait for
@@ -680,6 +686,11 @@ class TestWorkflowCanvas:
             # wait for the done span to be visible (an expected-empty view
             # errored with its verdict, checked in _execute_all_playable_nodes)
             if node.id not in self._expected_empty():
+                # Settle on the status attribute first, with the node type's own
+                # budget: a node Play re-ran as a stale ancestor can be mid-run
+                # here, and a fixed 10 s on the header text timed out on a
+                # loaded machine. The text check below is then only a copy check.
+                wait_for_node_done(self.page, node.id, node_type=node.type)
                 done_span = node_el.locator("span").filter(
                     has_text=re.compile(r"^Done$")
                 )
