@@ -1,0 +1,137 @@
+name: Rerun memory repro
+
+# Diagnostic for #408, never part of normal CI. Replays a four-loader
+# dataflow against a local-style (in-process) sandbox and records its memory,
+# once per variant, to find what keeps the memory after a run. The driver is
+# utk_curio/sandbox/tests/_rerun_memory.py; its docstring says what each
+# variant changes.
+#
+# ubuntu-latest because it is the machine #408 happened on, near enough: Linux,
+# glibc, 16 GB. The self-hosted utk runner has 377 GiB and would never show it.
+#
+# Every job runs the driver from THIS ref against the sandbox of its target,
+# so an older build is measured by the same replay:
+#
+#     gh workflow run rerun-memory-repro.yml -f before_ref=59ff24be
+#     git push origin HEAD:diag/rerun-memory     # before it is on main
+on:
+  workflow_dispatch:
+    inputs:
+      before_ref:
+        description: The build to compare against (59ff24be is the #408 report's)
+        default: 59ff24beb90d172e4375737708f6f85430dee565
+      rows:
+        description: Polygons per loader, comma-separated sizes
+        default: "200000,800000"
+      cycles:
+        description: Re-runs of the whole dataflow
+        default: "5"
+  push:
+    branches: ["diag/rerun-memory**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rerun-memory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [this, before]
+        variant: [baseline, gc, trim, arena2, serial, json]
+    env:
+      BEFORE_REF: ${{ inputs.before_ref || '59ff24beb90d172e4375737708f6f85430dee565' }}
+      ROWS: ${{ inputs.rows || '200000,800000' }}
+      CYCLES: ${{ inputs.cycles || '5' }}
+    steps:
+      - name: 📥 Checkout the driver
+        uses: actions/checkout@v6
+        with:
+          path: driver
+
+      - name: 📥 Checkout the build under test
+        if: matrix.target == 'before'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BEFORE_REF }}
+          path: target
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 📦 Install the target's dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/target"
+          [ "${{ matrix.target }}" = this ] && root="$GITHUB_WORKSPACE/driver"
+          echo "TARGET_ROOT=$root" >> "$GITHUB_ENV"
+          git -C "$root" log -1 --format='target %h %s'
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r "$root/requirements.txt"
+          # The data libraries come from the builtin package, as a launch installs them.
+          python - "$root/packages/curio.builtin@1/manifest.json" > data-reqs.txt <<'PY'
+          import json, sys
+          deps = json.load(open(sys.argv[1]))["dependencies"]["python"]
+          print("\n".join(f"{name}{spec}" for name, spec in deps.items()))
+          PY
+          python -m pip install --quiet -r data-reqs.txt requests psutil
+          free -m
+
+      - name: 🧪 Replay the dataflow
+        shell: bash
+        working-directory: driver
+        run: |
+          set -uo pipefail
+          for rows in ${ROWS//,/ }; do
+            out="$GITHUB_WORKSPACE/out/${{ matrix.target }}/${{ matrix.variant }}/$rows"
+            python -m utk_curio.sandbox.tests._rerun_memory \
+              --sandbox-root "$TARGET_ROOT" --rows "$rows" --cycles "$CYCLES" \
+              --variant "${{ matrix.variant }}" --stop-above-mb 12000 \
+              --workdir "$RUNNER_TEMP/rerun-$rows" --out "$out" || true
+          done
+          free -m
+
+      - name: 📤 Upload the samples
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: rerun-memory-${{ matrix.target }}-${{ matrix.variant }}
+          path: out
+          retention-days: 30
+
+  summary:
+    needs: repro
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout the driver
+        uses: actions/checkout@v6
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 📥 Download every run
+        uses: actions/download-artifact@v6
+        with:
+          pattern: rerun-memory-*
+          merge-multiple: true
+          path: out
+
+      - name: 📊 Tabulate
+        run: |
+          {
+            echo "## Rerun memory, run ${{ github.run_id }}"
+            echo
+            python -m utk_curio.sandbox.tests._rerun_memory --summarize out
+          } | tee -a "$GITHUB_STEP_SUMMARY"
