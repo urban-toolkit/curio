@@ -333,23 +333,6 @@ class TestWorkflowCanvas:
 
             # if Pool node, wait for its data table to show
             if node.type == "DATA_POOL":
-                # DATA_POOL's table lives inside the NodeEditor output tab pane.
-                # The pool auto-switches NodeEditor to that pane (NodeEditor sets
-                # activeTab="output" when contentComponent is defined), so the
-                # DataPoolContent is already mounted and active. We don't wait
-                # for the output nav-link to be "visible" — the data-pool scroll
-                # refactor (commit 76326a8) renders the tiny tab strip clipped,
-                # which Playwright reports as not visible even though the pane is
-                # shown. Best-effort dispatch a click to force the pane active
-                # (dispatch_event doesn't require visibility), then wait for the
-                # table that appears once the upstream output has propagated.
-                output_tab = node_el.locator(
-                    '.nav-link[data-rr-ui-event-key="output"]'
-                ).first
-                try:
-                    output_tab.dispatch_event("click")
-                except Exception:
-                    pass
                 data_table = node_el.locator("td.MuiTableCell-root")
                 # The pool shows data from an upstream node; for autk-grammar
                 # examples that data section parses city-scale PBFs server-side,
