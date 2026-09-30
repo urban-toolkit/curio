@@ -1698,6 +1698,13 @@ CLOSEUP_PIXEL_THRESHOLD = 5
 CLOSEUP_MAX_DIFF_RATIO = 0.02
 
 
+# Sets the canvas viewport's inline will-change; "" hands it back to the stylesheet.
+_VIEWPORT_WILL_CHANGE_JS = """(value) => {
+    const viewport = document.querySelector('.react-flow__viewport');
+    if (viewport) viewport.style.willChange = value;
+}"""
+
+
 def save_node_closeup(
     page: Page,
     workflow_filepath: str,
@@ -1717,18 +1724,27 @@ def save_node_closeup(
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
-    frame_nodes(page, [node_id])
-    return save_workflow_test_screenshot(
-        page,
-        workflow_filepath,
-        test_name=test_name,
-        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
-        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
-        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
-        fit_reactflow=False,
-        sweep_toasts=sweep_toasts,
-        closeup=True,
-    )
+    # The canvas viewport is a `will-change: transform` layer (MainCanvas.css),
+    # which Chrome may keep painted at the zoom it had before this fit (#533):
+    # example 09's close-up came out soft on main, its text and the map's tile
+    # seams 2.62% off the baseline (run 36791096981). Without the hint the node
+    # is painted at the zoom it is shown at.
+    page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "auto")
+    try:
+        frame_nodes(page, [node_id])
+        return save_workflow_test_screenshot(
+            page,
+            workflow_filepath,
+            test_name=test_name,
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+            max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+            fit_reactflow=False,
+            sweep_toasts=sweep_toasts,
+            closeup=True,
+        )
+    finally:
+        page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "")
 
 
 def park_pointer(page: Page) -> None:

@@ -251,12 +251,22 @@ def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
 
 
 class _PointerPage(_StubPage):
+    """A stub page that takes the close-up's pointer and will-change calls."""
     viewport_size = {"width": 1280, "height": 720}
 
     class mouse:  # noqa: N801 - stands in for Page.mouse
         @staticmethod
         def move(x, y):
             pass
+
+    def __init__(self):
+        self.will_change = []
+
+    def evaluate(self, script, arg=None, **k):
+        if script == e2e_utils._VIEWPORT_WILL_CHANGE_JS:
+            self.will_change.append(arg)
+            return None
+        raise RuntimeError("no browser")
 
 
 def test_a_node_close_up_counts_a_pale_blank_that_a_full_page_does_not(dirs, monkeypatch):
@@ -341,6 +351,26 @@ def test_a_missing_or_kept_interaction_frame_keeps_its_place_in_the_pair(dirs, m
     records = [record for _, record in _records(compare)]
     assert sorted(r["status"] for r in records) == ["missing", "unchanged"]
     assert all(r["interaction"] == INTERACTION for r in records)
+
+
+def test_a_close_up_is_painted_without_the_viewport_layer_hint(dirs, monkeypatch):
+    expected, _ = dirs
+    _baseline(expected)
+    page = _PointerPage()
+    seen = []
+
+    def capture(p, selector):
+        seen.append(list(page.will_change))
+        return _white(paint=50)  # over budget, so the comparison raises
+
+    monkeypatch.setattr(e2e_utils, "_capture_element", capture)
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda p, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda p: None)
+    with pytest.raises(AssertionError):
+        e2e_utils.save_node_closeup(page, "scene.json", "n1", test_name="step")
+    # Off while the node is framed and captured, handed back even on a failure.
+    assert seen == [["auto"]]
+    assert page.will_change == ["auto", ""]
 
 
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
