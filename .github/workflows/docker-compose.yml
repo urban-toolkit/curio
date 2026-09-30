@@ -399,6 +399,9 @@ jobs:
       # like every other suite but e2e: it is there for the frames.
       - name: 🧪 Run backend unit tests
         if: env.CURIO_REMINT != '1'
+        # About 8 minutes. The limit is for a hang, so it fails here rather
+        # than holding the runner until the job's own timeout.
+        timeout-minutes: 25
         run: |
           docker compose -p curio-ci exec -T \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/backend.xml curio \
@@ -406,6 +409,7 @@ jobs:
 
       - name: 🧪 Run sandbox unit tests
         if: env.CURIO_REMINT != '1'
+        timeout-minutes: 25
         run: |
           docker compose -p curio-ci exec -T \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/sandbox.xml curio \

@@ -389,7 +389,10 @@ class TestPromoteInvokeConsistency:
 
         lock.acquire()
         try:
-            worker = th.Thread(target=_invoke)
+            # A daemon, so an invocation that never returns fails this test
+            # instead of keeping the finished pytest process alive until the
+            # CI job's timeout.
+            worker = th.Thread(target=_invoke, daemon=True)
             worker.start()
             worker.join(timeout=0.4)
             # The invocation is parked on the lock — it never reads the store
