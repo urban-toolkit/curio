@@ -406,7 +406,8 @@ describe("AgentReviewCard — dev/67-8 connection review stage", () => {
         planNodeState={{ appliedRefs: ["a"], editedGoals: {}, edgeStates: {} }}
       />,
     );
-    expect(screen.getByText("Load → Merge [in_0]")).toBeInTheDocument();
+    // The whole pair shows on hover too, handle included (#511).
+    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("title", "Load → Merge [in_0]");
     // Edge 0: target ref "b" not created yet → disabled with the reason.
     const first = screen.getByRole("button", { name: "Connect Load to Merge" });
     expect(first).toBeDisabled();

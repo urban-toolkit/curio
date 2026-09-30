@@ -807,12 +807,16 @@ export const AgentReviewCard: React.FC<{
               const toReady =
                 !part.plan!.nodes.some((n) => n.ref === edge.to) || applied.includes(edge.to);
               const blockedBy = !fromReady ? edge.fromLabel : !toReady ? edge.toLabel : null;
+              const names =
+                `${edge.fromLabel} ${edge.kind === "interaction" ? "⇄" : "→"} ${edge.toLabel}` +
+                (edge.toHandle ? ` [${edge.toHandle}]` : "") +
+                (edge.kind === "interaction" ? " · interaction" : "");
               return (
                 <li key={index} className={styles.planEdgeRow}>
-                  <span className={styles.planEdgeNames}>
-                    {edge.fromLabel} {edge.kind === "interaction" ? "⇄" : "→"} {edge.toLabel}
-                    {edge.toHandle ? ` [${edge.toHandle}]` : ""}
-                    {edge.kind === "interaction" ? " · interaction" : ""}
+                  {/* Wraps rather than cut: two rows to different targets
+                      used to read the same (#511). */}
+                  <span className={styles.planEdgeNames} title={names}>
+                    {names}
                   </span>
                   {state === "applied" ? (
                     <span className={styles.planNodeCreated}>Connected ✓</span>
