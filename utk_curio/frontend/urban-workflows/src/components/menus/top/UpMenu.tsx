@@ -430,6 +430,8 @@ export default function UpMenu() {
             <div
                 className={clsx(styles.menuBar, "nowheel", "nodrag")}
                 ref={menuBarRef}
+                // fitViewWithMenuOffset measures the bar by this (#493).
+                data-curio-menu-bar="true"
             >
                 <img
                     className={styles.logo}

@@ -1,4 +1,6 @@
-import { fitViewWithMenuOffset } from '../../utils/fitViewWithMenuOffset';
+import fs from 'fs';
+import path from 'path';
+import { fitViewWithMenuOffset, MENU_BAR_ATTR } from '../../utils/fitViewWithMenuOffset';
 import { getViewportForBounds } from 'reactflow';
 
 // react-flow's geometry helpers are mocked: getNodesBounds/getViewportForBounds
@@ -148,6 +150,58 @@ describe('fitViewWithMenuOffset', () => {
 
     const [, widthArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
     expect(widthArg).toBe(1000 - 420);
+  });
+
+  // #493: the menu bar is `position: fixed` over the top of the pane, so a
+  // dataflow whose height set the zoom put its top node's title bar under it.
+  const menuBar = (bottom: number) => {
+    const bar = document.createElement('div');
+    bar.setAttribute('data-curio-menu-bar', 'true');
+    document.body.appendChild(bar);
+    bar.getBoundingClientRect = () => ({ top: 0, bottom, height: bottom }) as DOMRect;
+  };
+
+  test('fits against the height below the menu bar and shifts down past it', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+    menuBar(65);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, widthArg, heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(widthArg).toBe(1000);
+    expect(heightArg).toBe(600 - 65);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 65, zoom: 1 }, undefined);
+  });
+
+  test('a pane that starts below the bar is not shifted again', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 65 }) as DOMRect;
+    menuBar(65);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(heightArg).toBe(600);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6, zoom: 1 }, undefined);
+  });
+
+  test('the canvas menu bar carries the attribute the fit measures', () => {
+    const upMenu = fs.readFileSync(
+      path.resolve(__dirname, '../../components/menus/top/UpMenu.tsx'),
+      'utf8',
+    );
+    expect(upMenu).toContain(`${MENU_BAR_ATTR}="true"`);
   });
 
   test('with an open dock, fits against the VISIBLE width and shifts past the dock', () => {
