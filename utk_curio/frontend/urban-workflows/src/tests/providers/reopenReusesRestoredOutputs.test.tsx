@@ -148,7 +148,7 @@ async function reopen(restored: Record<string, string>) {
   await flush();
   await act(async () => {
     // The fourth argument is the restored outputs, by node id.
-    (code.loadTrill as any)(SPEC, undefined, undefined, restored);
+    code.loadTrill(SPEC, undefined, undefined, restored);
   });
   await flush();
   await act(async () => {
@@ -164,7 +164,7 @@ async function reopen(restored: Record<string, string>) {
 }
 
 describe('reopening a saved dataflow', () => {
-  test.failing('a downstream play reuses the outputs the load restored', async () => {
+  test('a downstream play reuses the outputs the load restored', async () => {
     await reopen(RESTORED);
 
     await act(async () => {
@@ -177,7 +177,7 @@ describe('reopening a saved dataflow', () => {
     expect(triggerExecOf('chart')).toBe(1);
   });
 
-  test.failing('a restored node shows the output it was saved with', async () => {
+  test('a restored node shows the output it was saved with', async () => {
     await reopen(RESTORED);
 
     const load = api.nodes.find((n: any) => n.id === 'load');
@@ -188,7 +188,7 @@ describe('reopening a saved dataflow', () => {
     expect(load?.data?.executedCode).toBe(SPEC.dataflow.nodes[0].content);
   });
 
-  test.failing('a node the load restored nothing for still runs', async () => {
+  test('a node the load restored nothing for still runs', async () => {
     await reopen({ load: RESTORED.load });
 
     await act(async () => {

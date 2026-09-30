@@ -939,6 +939,27 @@ def load_shared_output_file(file_name):
         raise missing
 
 
+def load_artifact(art_id, session_id=None):
+    """An artifact by id: the store first, then the copy a project load hydrated.
+
+    The one rule every reader of a saved output follows, ``/get`` and node
+    inputs alike (#407, #408). The store is session-tagged, so after a reopen
+    under a new sign-in it cannot serve an output the canvas is showing as done
+    - nor when the row was pruned or the database is momentarily locked. The
+    hydrated file in the shared data directory can (see
+    :func:`load_shared_output_file`). When neither has it, the store's error is
+    the one raised: for a missing artifact that is the familiar "No artifact
+    with id", and for a locked database it keeps the real diagnostic.
+    """
+    try:
+        return load_from_duckdb(art_id, session_id=session_id)
+    except Exception as store_error:
+        try:
+            return load_shared_output_file(art_id)
+        except KeyError:
+            raise store_error
+
+
 def save_dataset_parquet(output, kind):
     """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
     directory (top-level, not inside ``artifacts/``).

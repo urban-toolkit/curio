@@ -95,7 +95,8 @@ it("renders a shared project but never installs its declared deps", async () => 
   mockLoadSharedProject.mockResolvedValue({ spec: SPEC_WITH_DEPS, outputs: [] });
   renderLoader();
   // The spec IS applied - a visitor still sees the dataflow…
-  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalledWith(SPEC_WITH_DEPS));
+  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+  expect(mockLoadTrill.mock.calls[0][0]).toBe(SPEC_WITH_DEPS);
   // …but nothing is installed on their behalf.
   expect(mockEnsureWorkflowDeps).not.toHaveBeenCalled();
 });

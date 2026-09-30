@@ -21,14 +21,10 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 import pandas as pd
-import pytest
 
 from utk_curio.sandbox.app import app
 from utk_curio.sandbox.util import parsers, staging
 from utk_curio.sandbox.util.db import init_db, release_connection
-
-_REASON = "#408/#407: /exec input loads have no hydrated-file fallback"
-
 
 class ExecReadsHydratedInputTestCase(unittest.TestCase):
     def setUp(self):
@@ -67,7 +63,6 @@ class ExecReadsHydratedInputTestCase(unittest.TestCase):
         (self.data_dir / art_id).write_bytes((self.data_dir / generated).read_bytes())
         return art_id
 
-    @pytest.mark.xfail(strict=True, reason=_REASON)
     def test_a_hydrated_dataset_parquet_is_an_input(self):
         name = parsers.save_dataset_parquet(self.frame, "dataframe")
 
@@ -76,7 +71,6 @@ class ExecReadsHydratedInputTestCase(unittest.TestCase):
         self.assertEqual(body["stderr"], "")
         self.assertTrue(body["output"]["path"])
 
-    @pytest.mark.xfail(strict=True, reason=_REASON)
     def test_another_sessions_output_is_read_from_its_hydrated_copy(self):
         art_id = self.hydrated_copy_of_another_sessions_output()
 
@@ -99,7 +93,6 @@ class ExecReadsHydratedInputTestCase(unittest.TestCase):
         self.assertIn("No artifact with id", body["stderr"])
         self.assertFalse(body["output"]["path"])
 
-    @pytest.mark.xfail(strict=True, reason=_REASON)
     def test_staging_for_an_isolated_child_uses_the_hydrated_copy(self):
         art_id = self.hydrated_copy_of_another_sessions_output()
         scratch = Path(self._tmp.name) / "scratch"

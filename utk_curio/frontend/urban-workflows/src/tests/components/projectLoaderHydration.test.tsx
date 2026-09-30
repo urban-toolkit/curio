@@ -133,7 +133,7 @@ describe("restoring saved outputs", () => {
 
   // #407/#408: without this the nodes are built as never-run, and the first
   // downstream play re-runs every upstream node the load just restored.
-  it.failing("hands the restored outputs to the load, so those nodes count as done", async () => {
+  it("hands the restored outputs to the load, so those nodes count as done", async () => {
     mockLoadProject.mockResolvedValue({ spec: SPEC, outputs: OUTPUTS });
 
     renderLoader();

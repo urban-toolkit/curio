@@ -41,8 +41,7 @@ def holds_duckdb(view):
     return wrapper
 from utk_curio.sandbox.util.parsers import (
     arrow_frame_schema,
-    load_from_duckdb,
-    load_shared_output_file,
+    load_artifact,
     load_tabular_arrow_from_duckdb,
     load_tabular_preview_from_duckdb,
     parseOutput,
@@ -260,42 +259,29 @@ def get_artifact():
         with chdir_locked(launch_dir):
             total_rows = None
             raw = None
-            try:
-                if max_rows is not None:
+            if max_rows is not None:
+                try:
                     preview = load_tabular_preview_from_duckdb(
                         art_id,
                         max_rows,
                         session_id=session_id,
                     )
-                    if preview is not None:
-                        raw, total_rows = preview
-                if raw is None:
-                    raw = load_from_duckdb(art_id, session_id=session_id)
-                    if max_rows is not None and isinstance(raw, _pd.DataFrame):
-                        total_rows = len(raw)
-                        raw = raw.head(max_rows)
-            except Exception as store_error:
-                # The store could not serve it. Three ways that happens and all
-                # three mean the same thing to a caller holding a project's
-                # saved output: no such row, a row this session may not read
-                # (rows are session-tagged), or no readable database at all -
+                except Exception:
+                    # The full load below reports why, and knows where else
+                    # to look: a project's saved outputs are hydrated into the
+                    # shared data directory, which the store cannot see.
+                    preview = None
+                if preview is not None:
+                    raw, total_rows = preview
+            if raw is None:
+                # The store, or a project output hydrated into the shared
+                # data directory: a row this session may not read (rows are
+                # session-tagged), no row at all, or no readable database -
                 # the file is created on first write and can be locked by a
-                # concurrent /exec. So try the shared data directory, where a
-                # project load hydrates every output the manifest records. That
-                # file carries no session tag, which is what lets a dashboard -
-                # or any second viewer - read an output the producing session no
-                # longer owns.
-                try:
-                    raw = load_shared_output_file(art_id)
-                except KeyError:
-                    # Nothing hydrated under that name either. Report what the
-                    # STORE said rather than what the fallback said: for a
-                    # genuinely missing artifact that is the same KeyError this
-                    # route has always returned, and for a locked or missing
-                    # database it keeps the diagnostic instead of replacing it
-                    # with a misleading "no artifact with id".
-                    raise store_error
-                total_rows = None
+                # concurrent /exec. That file carries no session tag, which is
+                # what lets a dashboard - or any second viewer - read an
+                # output the producing session no longer owns.
+                raw = load_artifact(art_id, session_id=session_id)
                 if max_rows is not None and isinstance(raw, _pd.DataFrame):
                     total_rows = len(raw)
                     raw = raw.head(max_rows)
