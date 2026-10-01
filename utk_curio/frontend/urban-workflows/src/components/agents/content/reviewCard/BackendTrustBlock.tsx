@@ -12,7 +12,7 @@ export const BackendTrustBlock: React.FC<{ backend: Backend }> = ({ backend }) =
   <div className={styles.removals} role="group" aria-label="Server-side code this package runs">
     <div className={styles.removalsTitle}>
       Runs server-side code in the package sandbox
-      {backend.network ? " — may reach the network (server-network declared)" : " — no network access"}
+      {backend.network ? " (may reach the network, server-network declared)" : " (no network access)"}
     </div>
     <ul className={styles.removalsList}>
       {backend.handlers.map((h) => (
@@ -26,7 +26,7 @@ export const BackendTrustBlock: React.FC<{ backend: Backend }> = ({ backend }) =
         return (
           <li key={`perm:${perm}`}>
             permission {perm}
-            {meaning ? ` — ${meaning}` : ""}
+            {meaning ? `: ${meaning}` : ""}
           </li>
         );
       })}

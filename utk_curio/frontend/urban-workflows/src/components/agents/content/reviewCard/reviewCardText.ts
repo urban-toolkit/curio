@@ -27,15 +27,15 @@ export function sourceRefText(ref: AgentSourceRef): string {
       }`;
     case "external":
       return `${ref.value ?? ""}${ref.requirement === "credential-gated" ? " · credential-gated" : ""}${
-        ref.hint ? ` — ${ref.hint}` : ""
+        ref.hint ? ` (${ref.hint})` : ""
       }`;
     case "secret":
       // dev/116: the key the code reaches by name — never its value.
       return `Connection key · ${ref.name ?? ""}${ref.host ? ` · ${ref.host}` : ""}`;
     case "user-path":
-      return `${ref.value ?? ""} — not checked by Curio`;
+      return `${ref.value ?? ""} (not checked by Curio)`;
     case "synthetic":
-      return "generated in the node — no external source";
+      return "generated in the node, no external source";
     default:
       return ref.value ?? String(ref.kind);
   }
@@ -60,16 +60,16 @@ export interface PlanNodeReviewState {
 /** dev/71: what a row's lifecycle state means for its action cluster. */
 export const ROW_STATE_CHIP: Record<string, string> = {
   solving: "Content review pending",
-  validated: "Validated — review below",
+  validated: "Validated: review below",
   approved: "Solved ✓",
-  failed: "Failed — Solve retries",
+  failed: "Failed: Solve retries",
 };
 
 export const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
   dismissed: "Dismissed",
   superseded: "Superseded by a newer proposal",
-  stale: "The target changed since this was proposed — ask the agent to propose again",
+  stale: "The target changed since this was proposed; ask the agent to propose again",
 };
 
 /** What one Apply click does, per proposal kind — stated on the card. */
@@ -90,15 +90,15 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
 export const EFFECT_LINE: Record<string, string> = {
   "node.create": "Applying adds this node to the canvas.",
   "project.install":
-    "Applying installs only this project template — nothing is imported, attached, run, or published.",
+    "Applying installs only this project template: nothing is imported, attached, run, or published.",
   "node.template.create":
     "Applying registers the node type in this project and adds its first node.",
   "dataset.install":
-    "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
+    "Applying installs only this dataset into the project's Data Catalog; no agent is installed.",
   "package.install":
-    "Applying opens the package install review (permissions, dependencies, conflicts) — nothing installs until you confirm there.",
+    "Applying opens the package install review (permissions, dependencies, conflicts); nothing installs until you confirm there.",
   "package.draft.apply":
-    "Applying installs the exact reviewed artifact and creates its requested nodes — nothing else changes.",
+    "Applying installs the exact reviewed artifact and creates its requested nodes; nothing else changes.",
 };
 
 /** dev/112: the removals block title — nodes, connections, and the cascade,
@@ -122,23 +122,23 @@ export function planEffectLine(part: AgentProposalPart): string | null {
   const removedEdges = part.plan.removedEdges?.length ?? 0;
   if (removed) {
     return (
-      `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed} — ` +
-      "removal deletes their content and cannot be undone."
+      `Applying adds ${n} node${n === 1 ? "" : "s"} and removes ${removed}. ` +
+      "Removal deletes their content and cannot be undone."
     );
   }
   if (removedEdges) {
     // dev/112: an edge-only revision — truthful about what changes.
     const e = part.plan.edgeCount;
     return (
-      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges} — ` +
+      `Applying adds ${e} connection${e === 1 ? "" : "s"} and removes ${removedEdges}; ` +
       "nodes and their content are untouched."
     );
   }
   if (n === 0) {
     const e = part.plan.edgeCount;
-    return `Applying adds ${e} connection${e === 1 ? "" : "s"} — existing work is untouched.`;
+    return `Applying adds ${e} connection${e === 1 ? "" : "s"}; existing work is untouched.`;
   }
-  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas — existing work is untouched.`;
+  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas; existing work is untouched.`;
 }
 
 /** A plan node's readiness for its row (dev/71): dependencies by name, its

@@ -23,12 +23,16 @@ export const PlanEdgesList: React.FC<{
     <ul className={styles.planEdgesList}>
       {part.plan!.edges!.map((edge, index) => {
         const { state, blockedBy } = planEdgeRowState(part, edge, index, planNodeState);
+        const names =
+          `${edge.fromLabel} ${edge.kind === "interaction" ? "⇄" : "→"} ${edge.toLabel}` +
+          (edge.toHandle ? ` [${edge.toHandle}]` : "") +
+          (edge.kind === "interaction" ? " · interaction" : "");
         return (
           <li key={index} className={styles.planEdgeRow}>
-            <span className={styles.planEdgeNames}>
-              {edge.fromLabel} {edge.kind === "interaction" ? "⇄" : "→"} {edge.toLabel}
-              {edge.toHandle ? ` [${edge.toHandle}]` : ""}
-              {edge.kind === "interaction" ? " · interaction" : ""}
+            {/* Wraps rather than cut: two rows to different targets
+                used to read the same (#511). */}
+            <span className={styles.planEdgeNames} title={names}>
+              {names}
             </span>
             {state === "applied" ? (
               <span className={styles.planNodeCreated}>Connected ✓</span>

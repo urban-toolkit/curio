@@ -18,7 +18,7 @@ export const TemplateCreateBlocks: React.FC<{ part: AgentProposalPart }> = ({ pa
       {part.template ? (
         <div className={styles.meta}>
           {part.template.label} · {part.template.engine}
-          {part.template.description ? ` — ${part.template.description}` : ""}
+          {part.template.description ? `: ${part.template.description}` : ""}
         </div>
       ) : null}
     </>

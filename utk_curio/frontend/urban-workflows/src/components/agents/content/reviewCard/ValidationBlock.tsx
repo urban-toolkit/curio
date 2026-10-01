@@ -20,7 +20,7 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
     <span>
       {validation.verdict === "pass"
         ? `Executed through the dataflow${
-            validation.evidence?.outputDataType ? ` — output: ${validation.evidence.outputDataType}` : ""
+            validation.evidence?.outputDataType ? ` (output: ${validation.evidence.outputDataType})` : ""
           }`
         : validation.evidence?.kind === "upstream-blocker"
           ? `Upstream node ${validation.evidence?.blockerLabel ?? "?"} failed before this node ran`
@@ -48,7 +48,7 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
                 {attempt.verdict === "pass"
                   ? "pass ✓"
                   : attempt.verdict === "not-executable"
-                    ? "not executable — no code to run, nothing ran"
+                    ? "not executable: no code to run, nothing ran"
                     : attempt.verdict}
                 {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                 {attempt.source === "current content" ? " · the node's current code" : ""}

@@ -27,7 +27,7 @@ export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => 
               <li key={victim.id}>
                 {victim.label}
                 {victim.nodeType ? ` · ${victim.nodeType}` : ""}
-                {victim.contentChars > 0 ? ` — contains ${victim.contentChars} chars of content` : " — empty"}
+                {victim.contentChars > 0 ? ` (contains ${victim.contentChars} chars of content)` : " (empty)"}
               </li>
             ))}
             {(plan.removedEdges ?? []).map((edge) => (

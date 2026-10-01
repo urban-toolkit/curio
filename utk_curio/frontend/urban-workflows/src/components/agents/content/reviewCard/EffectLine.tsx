@@ -24,7 +24,7 @@ export const EffectLine: React.FC<{ part: AgentProposalPart }> = ({ part }) => {
           {nodeKindExecutable(part.pins) === true
             ? " Solve runs it in the sandbox and fixes errors before its code is trusted."
             : nodeKindExecutable(part.pins) === false
-              ? " This kind has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified."
+              ? " This kind has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified."
               : null}
         </>
       ) : null}

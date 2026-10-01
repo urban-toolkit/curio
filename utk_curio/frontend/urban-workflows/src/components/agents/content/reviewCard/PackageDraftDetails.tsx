@@ -13,7 +13,7 @@ export const PackageDraftDetails: React.FC<{ draft: Draft }> = ({ draft }) => (
   <>
     <details className={styles.draftSection}>
       <summary>
-        Files — {draft.files.addedTotal} added ·{" "}
+        Files: {draft.files.addedTotal} added ·{" "}
         {draft.files.modifiedTotal} modified ·{" "}
         {draft.files.preservedTotal} preserved
       </summary>
@@ -46,7 +46,7 @@ export const PackageDraftDetails: React.FC<{ draft: Draft }> = ({ draft }) => (
     {draft.dependencies ? (
       <details className={styles.draftSection} open={draft.dependencies.blocked}>
         <summary>
-          Dependencies — {draft.dependencies.pythonTotal} python ·{" "}
+          Dependencies: {draft.dependencies.pythonTotal} python ·{" "}
           {draft.dependencies.jsTotal} js ·{" "}
           {draft.dependencies.findingsTotal} finding
           {draft.dependencies.findingsTotal === 1 ? "" : "s"}
@@ -55,7 +55,7 @@ export const PackageDraftDetails: React.FC<{ draft: Draft }> = ({ draft }) => (
           {draft.dependencies.home === "overlay" ? (
             // dev/97: the isolation statement — same routing rule the install
             // applies, so the card can never disagree with it.
-            <li>python deps install into the package's isolated overlay — the shared interpreter is not touched</li>
+            <li>python deps install into the package's isolated overlay; the shared interpreter is not touched</li>
           ) : draft.dependencies.home === "both" ? (
             <li>
               python deps install into the package's isolated overlay, plus the shared interpreter for its
@@ -94,7 +94,7 @@ export const PackageDraftDetails: React.FC<{ draft: Draft }> = ({ draft }) => (
     ) : null}
     {draft.preview ? (
       <details className={styles.draftSection} open={draft.preview.status === "failed"}>
-        <summary>Preview — {draft.preview.status}</summary>
+        <summary>Preview: {draft.preview.status}</summary>
         <ul className={styles.draftList}>
           {draft.preview.reasons.map((reason, index) => (
             <li key={`r:${index}`} className={draft.preview!.status === "ok" ? undefined : styles.findingWarn}>
@@ -103,7 +103,7 @@ export const PackageDraftDetails: React.FC<{ draft: Draft }> = ({ draft }) => (
           ))}
           {draft.preview.templates.map((row) => (
             <li key={`t:${row.templateId}`}>
-              {row.templateId}: {row.ok ? "all states rendered" : `failed states — ${row.failedStates.join(", ")}`}
+              {row.templateId}: {row.ok ? "all states rendered" : `failed states: ${row.failedStates.join(", ")}`}
             </li>
           ))}
           {draft.preview.runnerVersion ? <li>runner {draft.preview.runnerVersion}</li> : null}
