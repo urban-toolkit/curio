@@ -4094,6 +4094,135 @@ class TestNodeTemplateCreate:
         nodes = TestNodeCreate()._spec_nodes(user, alice_project)
         assert all(n.get("type") != "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
 
+    # #565: the template's own imports are its declared libraries, and the
+    # apply is the only install the package ever gets.
+
+    def _apply_importing(self, client, user, token, project_id, monkeypatch, *, pip, imports):
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        asked: list[dict] = []
+
+        def _install(deps, on_line=None):
+            asked.append(dict(deps))
+            return pip(deps)
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _install)
+        monkeypatch.setattr(pip_runner, "import_failures", lambda deps: imports)
+        att_id, _ = self._setup(
+            client, user, token, project_id, monkeypatch,
+            replies=[self._template_tail(content="import shapely\nreturn arg\n"),
+                     "Proposed - review it above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, project_id, att_id))
+        resp = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        turns = client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        applied = [t.get("text") or "" for t in turns
+                   if "node type registered" in (t.get("text") or "")]
+        return resp, asked, applied
+
+    def test_apply_installs_the_libraries_the_template_imports(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        user, token = user_and_token
+        resp, asked, applied = self._apply_importing(
+            client, user, token, alice_project, monkeypatch,
+            pip=lambda deps: pip_runner.InstallReport(installed=sorted(deps), skipped=[]),
+            imports={},
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert asked == [{"shapely": "*"}]
+        assert resp.get_json()["createdTemplate"]["importErrors"] == {}
+        assert applied and "cannot be imported" not in applied[-1]
+
+    def test_a_library_that_cannot_be_imported_is_reported_on_the_applied_turn(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        user, token = user_and_token
+        resp, _, applied = self._apply_importing(
+            client, user, token, alice_project, monkeypatch,
+            pip=lambda deps: pip_runner.InstallReport(installed=[], skipped=sorted(deps)),
+            imports={"shapely": "ImportError: GEOS"},
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json()["createdTemplate"]["importErrors"] == {"shapely": "ImportError: GEOS"}
+        assert applied and "shapely cannot be imported (ImportError: GEOS)" in applied[-1]
+
+    def test_a_pip_failure_is_reported_and_the_node_type_stays(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """Reported, not undone: the other file-first installs keep the package
+        when pip fails, and the user's fix is a reachable index."""
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+
+        def _fail(deps):
+            raise pip_runner.PipInstallError("ERROR: No matching distribution found")
+
+        user, token = user_and_token
+        resp, _, applied = self._apply_importing(
+            client, user, token, alice_project, monkeypatch, pip=_fail, imports={},
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert "No matching distribution" in resp.get_json()["createdTemplate"]["dependencyError"]
+        assert applied and "could not be installed" in applied[-1]
+        assert (user_packages_dir(_user_dir_key(user)) / "curio.agent.sentiment-scorer@1").is_dir()
+
+    def test_a_hosted_guest_is_refused_before_anything_lands(
+        self, client, db, tmp_curio, monkeypatch,
+    ):
+        """#451's rule on the one store write it did not reach.
+
+        The shared guest is every anonymous visitor, so a package in its store
+        is in every visitor's palette, and its libraries would be one pip run
+        away. The refusal has to come before the files, not after them.
+        """
+        from utk_curio.backend import config
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: True)
+        # A hosted guest runs on the deployment's GUEST_LLM_* endpoint, not the
+        # DEFAULT_LLM_* one the conftest configures.
+        monkeypatch.setattr(config, "GUEST_LLM_API_TYPE", "openai_compatible")
+        monkeypatch.setattr(config, "GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+        monkeypatch.setattr(config, "GUEST_LLM_MODEL", "test-model")
+        monkeypatch.setattr(config, "GUEST_LLM_API_KEY", "test-key")
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                     email="guest@test.com", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
+        db.session.commit()
+        project = client.post(
+            "/api/projects",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+                  "outputs": []},
+            headers=_auth("guest-token"),
+        ).get_json()["id"]
+
+        resp, asked, _ = self._apply_importing(
+            client, guest, "guest-token", project, monkeypatch,
+            pip=lambda deps: None, imports={},
+        )
+
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert "guest" in resp.get_json()["error"].lower()
+        assert asked == []
+        assert not (user_packages_dir(_user_dir_key(guest)) / "curio.agent.sentiment-scorer@1").exists()
+
 
 class TestAttachRequiresGating:
     """dev/50 — compatibleTargets[].requires gets runtime meaning: a node
