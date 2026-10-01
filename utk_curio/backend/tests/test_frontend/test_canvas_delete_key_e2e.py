@@ -10,15 +10,20 @@ makes widening the binding safe rather than reckless: with the caret inside a
 node's Monaco editor, Delete must edit text and leave the node alone. React Flow
 gets that right via ``isInputDOMNode``, but nothing in this repo pinned it.
 
+The last three cases are #155: deleting wired nodes removes their edges too,
+from the key and from the node header's Delete node button.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_canvas_delete_key_e2e.py -v
 """
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from .utils import (
+    _wait_for_reactflow_ready,
     canvas_nodes,
     connect_nodes,
     dismiss_toasts,
@@ -27,6 +32,7 @@ from .utils import (
     read_node_code,
     require_project_page,
     require_user_auth,
+    run_node_and_wait,
     save_workflow_test_screenshot,
     set_node_code,
     require_owner_view,
@@ -37,8 +43,10 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 ANALYSIS_TILE = "#tile-computation-analysis"
+ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 POS_FIRST = (150, 150)
 POS_SECOND = (760, 150)
+POS_THIRD = (760, 560)
 
 
 def _node_ids(page) -> set[str]:
@@ -176,18 +184,47 @@ def test_delete_inside_a_code_editor_edits_text_and_keeps_the_node(
     )
 
 
-def test_a_wired_node_is_refused_and_the_toast_says_how_many_connections(
+def _edges(page) -> list[dict]:
+    return page.evaluate(
+        "() => (window.__curio_reactFlow.getEdges() || [])"
+        ".map((e) => ({id: e.id, source: e.source, target: e.target}))"
+    )
+
+
+def _node_input(page, node_id: str):
+    return page.evaluate(
+        "id => { const n = (window.__curio_reactFlow.getNodes() || [])"
+        ".find((x) => x.id === id); return n ? n.data.input : null; }",
+        node_id,
+    )
+
+
+def _wait_gone(page, node_id: str) -> None:
+    page.wait_for_function(
+        "id => !document.querySelector(`.react-flow__node[data-id='${id}']`)",
+        arg=node_id,
+        timeout=10000,
+    )
+
+
+def _no_connection_warning(page) -> None:
+    toasts = page.locator('[aria-label="Notifications"] .toast')
+    for index in range(toasts.count()):
+        said = " ".join((toasts.nth(index).text_content() or "").split()).lower()
+        assert "connection" not in said and "cannot be removed" not in said, (
+            f"deleting a wired node was refused: {said!r}"
+        )
+
+
+def test_deleting_a_wired_node_removes_its_edge_and_clears_the_downstream_input(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
 ):
-    """Refusing to delete a connected node must explain itself.
+    """#155: Delete on a wired node removes it with its edge.
 
-    The two tests above never connect their nodes, so neither covers what happens
-    when one is wired - and that is the case a real dataflow is always in. A user
-    test read the silence as "Delete is broken" and only a source bisect showed
-    the refusal was deliberate (``MainCanvas.handleNodesChange``). The behaviour
-    stays; what is pinned here is that the user is told what is in the way.
+    The node downstream stays, and loses the input the deleted node fed it,
+    exactly as when that edge is deleted by hand.
     """
     require_project_page()
     require_user_auth()
@@ -206,68 +243,123 @@ def test_a_wired_node_is_refused_and_the_toast_says_how_many_connections(
     first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
     second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
     connect_nodes(page, first, second)
-    dismiss_toasts(page)
-
-    _select(page, second)
-    page.keyboard.press("Delete")
-    page.wait_for_timeout(1500)
-
-    # Still there: the refusal is the documented behaviour.
-    assert second in _node_ids(page), (
-        "a node with an edge was removed; deleting a wired node is supposed to "
-        "be refused until its connections are gone"
-    )
-
-    # And the user was told, with the count so they know what to clear.
-    toast = page.locator('[aria-label="Notifications"] .toast').first
-    toast.wait_for(state="visible", timeout=10000)
-    said = " ".join((toast.text_content() or "").split())
-    assert "1 connection" in said, (
-        f"the toast did not name how many connections block the delete: {said!r}"
-    )
-    assert "Delete or Backspace" in said, (
-        f"the toast did not say how to clear them: {said!r}"
+    set_node_code(page, first, "return 1\n")
+    run_node_and_wait(page, first, node_type=ANALYSIS_TYPE)
+    page.wait_for_function(
+        "id => { const n = (window.__curio_reactFlow.getNodes() || [])"
+        ".find((x) => x.id === id); return !!(n && n.data.input); }",
+        arg=second,
+        timeout=30000,
     )
     dismiss_toasts(page)
 
-    # Clearing the edge makes the node deletable, which is the path the toast
-    # describes. Proves the refusal is a gate, not a dead end.
-    #
-    # The edge is removed by selecting it and pressing Delete, exactly as the
-    # toast instructs. Not by writing React Flow's store: `useStoreUpdater`
-    # pushes FlowContext's own edge array straight back over it, so the edge
-    # would reappear and the delete stay refused (see utils.drag_to_canvas).
-    edge_point = page.evaluate(
-        """() => {
-            const path = document.querySelector('.react-flow__edge-interaction');
-            if (!path) return null;
-            const at = path.getPointAtLength(path.getTotalLength() / 2);
-            const svg = path.ownerSVGElement;
-            const point = svg.createSVGPoint();
-            point.x = at.x;
-            point.y = at.y;
-            const screen = point.matrixTransform(path.getScreenCTM());
-            return [screen.x, screen.y];
-        }"""
-    )
-    assert edge_point, "no edge interaction path to click"
-    page.mouse.click(edge_point[0], edge_point[1])
-    page.wait_for_function(
-        "() => (window.__curio_reactFlow.getEdges() || [])"
-        ".some((e) => e.selected)",
-        timeout=10000,
-    )
+    _select(page, first)
     page.keyboard.press("Delete")
+    _wait_gone(page, first)
+
+    assert second in _node_ids(page), "the downstream node was removed too"
+    assert _edges(page) == [], f"the deleted node's edge is still there: {_edges(page)}"
     page.wait_for_function(
-        "() => (window.__curio_reactFlow.getEdges() || []).length === 0",
-        timeout=10000,
-    )
-    dismiss_toasts(page)
-    _select(page, second)
-    page.keyboard.press("Delete")
-    page.wait_for_function(
-        "id => !document.querySelector(`.react-flow__node[data-id='${id}']`)",
+        "id => { const n = (window.__curio_reactFlow.getNodes() || [])"
+        ".find((x) => x.id === id); return !!n && !n.data.input; }",
         arg=second,
         timeout=10000,
     )
-    assert second not in _node_ids(page)
+    _no_connection_warning(page)
+
+
+def test_a_selection_of_wired_nodes_is_deleted_with_its_edges(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """#155's report: select connected nodes, press Delete, all of them go.
+
+    A is wired to B and B to C. Selecting A and B removes both, with both
+    edges, and C stays.
+    """
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Delete Key",
+        username="delete_key_selection",
+        project_name="Delete Key Selection",
+    )
+    require_owner_view(page)
+
+    a = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
+    b = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    c = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_THIRD)
+    # Three nodes do not fit a 1280x720 viewport at zoom 1, so fit them all
+    # before wiring, or a handle sits outside the viewport.
+    _wait_for_reactflow_ready(page, padding=0.1)
+    connect_nodes(page, a, b)
+    connect_nodes(page, b, c)
+    dismiss_toasts(page)
+
+    def header_point(node_id: str) -> dict:
+        # A fraction of the scaled width: the header's right end holds its
+        # icon buttons, Delete node among them.
+        box = node_locator(page, node_id).bounding_box()
+        assert box, f"node {node_id} has no layout box"
+        return {"x": box["width"] * 0.4, "y": 6}
+
+    node_locator(page, a).click(position=header_point(a))
+    modifier = "Meta" if sys.platform == "darwin" else "Control"
+    page.keyboard.down(modifier)
+    node_locator(page, b).click(position=header_point(b))
+    page.keyboard.up(modifier)
+    page.wait_for_function(
+        "ids => ids.every((id) => {"
+        "  const el = document.querySelector(`.react-flow__node[data-id='${id}']`);"
+        "  return el && el.classList.contains('selected');"
+        "})",
+        arg=[a, b],
+        timeout=10000,
+    )
+
+    page.keyboard.press("Delete")
+    _wait_gone(page, a)
+    _wait_gone(page, b)
+
+    assert _node_ids(page) == {c}, f"expected only {c} to remain: {_node_ids(page)}"
+    assert _edges(page) == [], f"edges of the deleted nodes remain: {_edges(page)}"
+    _no_connection_warning(page)
+
+
+def test_the_header_delete_removes_a_wired_node(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """The node header's Delete node button follows the same rule as the key."""
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Delete Key",
+        username="delete_key_header",
+        project_name="Delete Key Header",
+    )
+    require_owner_view(page)
+
+    first = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_FIRST)
+    second = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=POS_SECOND)
+    connect_nodes(page, first, second)
+    dismiss_toasts(page)
+
+    node_locator(page, second).get_by_title("Delete node").first.click()
+    _wait_gone(page, second)
+
+    assert _node_ids(page) == {first}
+    assert _edges(page) == [], f"the deleted node's edge is still there: {_edges(page)}"
+    _no_connection_warning(page)
