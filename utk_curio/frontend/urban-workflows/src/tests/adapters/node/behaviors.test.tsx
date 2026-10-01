@@ -248,6 +248,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // without downloading (UniversalNode).
       expect(result.current.sendCodeOverride).toBeUndefined();
       expect(result.current.customWidgetsCallback).toBeUndefined();
+      // Nor the output panel, whose Output / Error / Warning tabs filled the
+      // node: the body is the button and one status line. OutputContent is
+      // mocked above as a div reading "output".
+      const { container } = renderBody(result);
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      expect(container.textContent).not.toContain('output');
     });
 
     test('names the file after the node feeding it', async () => {

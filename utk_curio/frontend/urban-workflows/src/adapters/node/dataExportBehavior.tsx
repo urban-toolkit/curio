@@ -10,7 +10,6 @@ import {
   ExportTarget,
   resolveExportTarget,
 } from '../../utils/dataExportTarget';
-import OutputContent from '../../components/editing/OutputContent';
 
 /**
  * Turn a sandbox payload into the bytes of its file.
@@ -169,6 +168,20 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
       ? `Download this node's input as ${target.filename}`
       : 'Runs the connected node, then downloads its output';
 
+  // One line under the button: what is missing, what is running, or what the
+  // last click did. No output panel, the node is only the button.
+  const output = nodeState.output;
+  const statusText = !wired
+    ? 'Connect a dataset to export it'
+    : pendingDownload
+      ? 'Running the connected node...'
+      : output?.code === 'exec'
+        ? 'Downloading...'
+        : output?.code === 'success' || output?.code === 'error'
+          ? String(output.content ?? '')
+          : '';
+  const statusIsError = wired && !pendingDownload && output?.code === 'error';
+
   const contentComponent = useMemo(
     () => (
       <div
@@ -181,6 +194,7 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
           gap: '8px',
           height: '100%',
           padding: '8px',
+          overflow: 'hidden',
         }}
       >
         <button
@@ -190,16 +204,26 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
           title={title}
           aria-label={label}
           onClick={onClick}
+          style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           {label}
         </button>
-        {!wired ? (
-          <span style={{ fontSize: '11px', opacity: 0.75 }}>Connect a dataset to export it</span>
+        {statusText ? (
+          <span
+            role="status"
+            style={{
+              fontSize: '11px',
+              opacity: statusIsError ? 1 : 0.75,
+              color: statusIsError ? 'var(--curio-danger-text)' : undefined,
+              textAlign: 'center',
+            }}
+          >
+            {statusText}
+          </span>
         ) : null}
-        <OutputContent output={nodeState.output} />
       </div>
     ),
-    [wired, waiting, title, label, onClick, nodeState.output],
+    [wired, waiting, title, label, onClick, statusText, statusIsError],
   );
 
   return { contentComponent };
