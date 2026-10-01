@@ -27,6 +27,7 @@ import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
 import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
+import { useViewportMotionHint } from "../hook/useViewportMotionHint";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -156,6 +157,7 @@ export function MainCanvas() {
 
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
+    const viewportMotionHint = useViewportMotionHint();
 
     // Test hook: expose the ReactFlow instance and a menu-aware fitView so
     // Playwright can force the same shifted viewport the in-app loader uses
@@ -548,6 +550,9 @@ export function MainCanvas() {
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
                 translateExtent={translateExtent}
+                onMoveStart={viewportMotionHint.onMoveStart}
+                onMove={viewportMotionHint.onMove}
+                onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
                 nodesConnectable={!isSharedView}

@@ -17,6 +17,7 @@ import { useProjectLoadState } from "../../components/ProjectLoader";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
 import { dataflowPath } from "../../utils/shareLinks";
+import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
 import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
@@ -63,6 +64,7 @@ export const DashboardPage: React.FC = () => {
   const loadState = useProjectLoadState();
   const canEditLayout = useCanEditLayout();
   const reactFlow = useReactFlow();
+  const viewportMotionHint = useViewportMotionHint();
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const pinnedIds = useMemo(
@@ -161,6 +163,9 @@ export const DashboardPage: React.FC = () => {
           zoomOnScroll={!dashboardLocked}
           zoomOnPinch={!dashboardLocked}
           zoomOnDoubleClick={false}
+          onMoveStart={viewportMotionHint.onMoveStart}
+          onMove={viewportMotionHint.onMove}
+          onMoveEnd={viewportMotionHint.onMoveEnd}
           selectionKeyCode={null}
           multiSelectionKeyCode={null}
           // A dashboard has nothing to delete.

@@ -3,16 +3,13 @@
 Reported symptom: open Provenance, zoom in, and the edges between the version
 cards disappear while the cards themselves stay put.
 
-The report was a COMPOSITOR failure (#504). ``components/MainCanvas.css`` is
-imported once for the whole app and styled ``.react-flow__viewport`` unscoped:
-
-    .react-flow__viewport { will-change: transform; }
-
-so it reached this React Flow too, nested in a modal. With the viewport on its
-own GPU layer, Chrome stopped painting the 2px edges at some zoom levels while
-the cards stayed. ``TrillProvenanceWindow.module.css`` now sets
-``will-change: auto`` on this graph's viewport (pinned in
-``src/tests/styles/provenanceEdgesLayer.test.ts``).
+The report was a COMPOSITOR failure (#504). With this graph's viewport on its
+own GPU layer (``will-change: transform``, which ``components/MainCanvas.css``
+gave every React Flow viewport then), Chrome stopped painting the 2px edges at
+some zoom levels while the cards stayed. ``TrillProvenanceWindow.module.css``
+sets ``will-change: auto`` on this graph's viewport (pinned in
+``src/tests/styles/provenanceEdgesLayer.test.ts``), and MainCanvas.css now
+gives the hint only to a canvas the user is moving (#533).
 
 ``getBoundingClientRect`` reports correct boxes whether or not the edges are
 painted, so the assertions below cannot see that failure; the screenshots this
