@@ -13,9 +13,14 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import agent_jobs
-from utk_curio.backend.app.agents import dataset_resolution as dr
-from utk_curio.backend.app.agents import services as services_mod
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
+from utk_curio.backend.app.agents.application import dataset_resolution as dr
+from utk_curio.backend.app.agents.application.proposals import acquire
+from utk_curio.backend.app.agents.application import spec_reads
+from utk_curio.backend.app.agents.application.turns import grounding
+from utk_curio.backend.app.agents.application.turns import roster as packages_roster
+from utk_curio.backend.app.agents.application.turns import titles
+from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.tests.test_agents import test_routes as _tr
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
 
@@ -73,7 +78,7 @@ class TestAFetchableRowIsDelegated:
             ],
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(API_OBSERVATION),
         )
         body = _select(h, finder_id, [
@@ -99,7 +104,7 @@ class TestAFetchableRowIsDelegated:
         user, token = user_and_token
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(PORTAL_OBSERVATION),
         )
         body = _select(h, finder_id, [
@@ -118,7 +123,7 @@ class TestAFetchableRowIsDelegated:
         user, token = user_and_token
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: {"status": "unreachable", "httpStatus": 404,
                               "detail": "the endpoint answered 404"},
         )
@@ -136,7 +141,7 @@ class TestAFetchableRowIsDelegated:
         user, token = user_and_token
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(API_OBSERVATION),
         )
         monkeypatch.setattr(
@@ -171,7 +176,7 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
             ],
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(API_OBSERVATION),
         )
         return h, finder_id
@@ -183,21 +188,21 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
             "agent.dataset-finder": self._config(client, token, "Finder", "finder-model"),
             "agent.node-builder": self._config(client, token, "Builder", "builder-model"),
         }, headers=_auth(token))
-        inner = services_mod.run_chat_turn
+        inner = providers.run_chat_turn
         models = []
 
         def _recording(config, messages, **kwargs):
             models.append(config.model)
             return inner(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _recording)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _recording)
         delegated = _select(h, finder_id, self._API_ROW).get_json()["delegated"]
         assert delegated["status"] == "delegating"
         _drain(h, delegated["attachmentId"])
         assert models and set(models) == {"builder-model"}
 
     def test_a_builder_that_cannot_run_is_named(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.agents.infrastructure import llm_configs
 
         user, token = user_and_token
         h, finder_id = self._ready(client, user, token, monkeypatch)
@@ -230,7 +235,12 @@ class TestAfterTheImportSolvingContinues:
     def test_an_imported_dataset_resolves_the_node_and_starts_the_builder(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.proposals import acquire
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import grounding
+        from utk_curio.backend.app.agents.application.turns import roster as packages_roster
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         user, token = user_and_token
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
@@ -244,13 +254,13 @@ class TestAfterTheImportSolvingContinues:
         frames: list[str] = []
 
         def _reply(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             frames.append(messages[-1].get("content") or "")
             return loader
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _reply
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _reply
         )
         body = _select(h, finder_id, [{"lane": "catalog", "key": dataset_id}]).get_json()
         assert body["status"] == dr.STATE_RESOLVED  # its file is here; nothing to install
@@ -291,7 +301,7 @@ class TestAMidSessionDatasetStillGetsItsPath:
         code = f'return pd.read_csv(curio_dataset_path("{dataset_id}"))'
         mapping: dict = {}  # what the session started with: nothing
         with app.test_request_context():
-            paths = services_mod._session_dataset_paths(
+            paths = grounding._session_dataset_paths(
                 "p-132", user, mapping, [code],
             )
         assert paths[dataset_id].endswith("mid.csv")
@@ -301,22 +311,22 @@ class TestAMidSessionDatasetStillGetsItsPath:
         self, tmp_curio
     ):
         code = 'return pd.read_csv(curio_dataset_path("imported.ghost"))'
-        assert services_mod._session_dataset_paths("p-132", None, {}, [code]) == {}
+        assert grounding._session_dataset_paths("p-132", None, {}, [code]) == {}
 
     def test_an_already_mapped_id_costs_no_lookup(self, tmp_curio, monkeypatch):
         called: list = []
         monkeypatch.setattr(
-            services_mod, "_dataset_path_topup",
+            grounding, "_dataset_path_topup",
             lambda *a, **k: called.append(a) or a[2],
         )
         code = 'return pd.read_csv(curio_dataset_path("imported.known"))'
-        paths = services_mod._session_dataset_paths(
+        paths = grounding._session_dataset_paths(
             "p-132", object(), {"imported.known": "/data/known.csv"}, [code],
         )
         assert paths == {"imported.known": "/data/known.csv"}
         # The top-up is consulted, and it is the one that skips a resolved id.
         assert len(called) == 1
-        assert services_mod._dataset_ids_in([code]) == ["imported.known"]
+        assert grounding._dataset_ids_in([code]) == ["imported.known"]
 
 
 #: A connector row the Finder found with datalake.search: a portal landing page,
@@ -357,10 +367,10 @@ class _FakeLake:
 
 
 def _lake_harness(client, user, token, monkeypatch, lake):
-    roster = services_mod._LazyRoster
-    monkeypatch.setattr(services_mod, "_LazyRoster", lambda: roster(dict(ROSTER)))
-    monkeypatch.setattr(services_mod, "_lake_service", lambda: lake)
-    monkeypatch.setattr(services_mod, "_LAKE_APPLY_WAIT_S", 0.2)
+    roster = packages_roster._LazyRoster
+    monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+    monkeypatch.setattr(acquire, "_lake_service", lambda: lake)
+    monkeypatch.setattr(acquire, "_LAKE_APPLY_WAIT_S", 0.2)
     return _await_candidates(client, user, token, monkeypatch,
                              discover_replies=[LAKE_CANDIDATES])
 
@@ -390,13 +400,13 @@ class TestAnAcquirableRowIsDownloaded:
         h, finder_id = _lake_harness(client, user, token, monkeypatch, lake)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == services_mod.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
             ),
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(PORTAL_OBSERVATION),
         )
         body = _select(h, finder_id, [
@@ -421,23 +431,23 @@ class TestAnAcquirableRowIsDownloaded:
         dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         lake = _FakeLake(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
         direct = "lake.curio.direct-url@1"
-        roster = services_mod._LazyRoster
-        monkeypatch.setattr(services_mod, "_LazyRoster", lambda: roster({direct: {
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster({direct: {
             "dirName": direct, "provider": "direct",
             "capabilities": {"download": True, "formats": ["csv", "geojson"]},
         }}))
-        monkeypatch.setattr(services_mod, "_lake_service", lambda: lake)
+        monkeypatch.setattr(acquire, "_lake_service", lambda: lake)
         # The Finder's row names only a link: no coordinate was ever proposed.
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
-                "Title" if messages[0].get("content") == services_mod.TITLE_PROMPT else loader
+                "Title" if messages[0].get("content") == titles.TITLE_PROMPT else loader
             ),
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(DATA_OBSERVATION),
         )
         url = "https://data.example.org/areas.geojson"
@@ -485,8 +495,8 @@ class TestAnAcquirableRowIsDownloaded:
             user_store.UserDatasetRepository, "lake_resource_index",
             lambda self: {(CHICAGO, "cauq-8yn6"): "lake.areas"},
         )
-        monkeypatch.setattr(services_mod, "_acting_user", lambda: user)
-        services_mod._settle_lake_acquisitions(h.ukey, h.pid)
+        monkeypatch.setattr(spec_reads, "_acting_user", lambda: user)
+        acquire._settle_lake_acquisitions(h.ukey, h.pid)
         record = dr.source_record(h.spec(), h.load)
         assert record["status"] == dr.STATE_RESOLVED
         assert record["picks"][0]["datasetId"] == "lake.areas"
@@ -501,7 +511,7 @@ class TestAnAcquirableRowIsDownloaded:
         # Even a probe that reads data does not send a downloadable row to the
         # builder as fetch code.
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(DATA_OBSERVATION),
         )
         body = _select(h, finder_id, [

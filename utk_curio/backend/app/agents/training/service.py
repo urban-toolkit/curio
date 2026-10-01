@@ -16,15 +16,21 @@ from __future__ import annotations
 import json
 from typing import Mapping
 
-from utk_curio.backend.app.agents import builtin, content as content_mod
-from utk_curio.backend.app.agents import model_catalog, providers, source_grounding
+from utk_curio.backend.app.agents.domain import (
+    builtin,
+    content as content_mod,
+)
+from utk_curio.backend.app.agents.repositories import model_catalog
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
 from utk_curio.backend.app.agents.evaluation.report import scrub
 from utk_curio.backend.app.agents.training import consent as consent_mod
 from utk_curio.backend.app.agents.training import dataset as dataset_mod
 from utk_curio.backend.app.agents.training import gate as gate_mod
 from utk_curio.backend.app.agents.training import records as records_mod
-from utk_curio.backend.app.agents.provider_config import redact_error
+from utk_curio.backend.app.agents.infrastructure.provider_config import redact_error
+from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 
 #: The suffix a trained model carries, so it is recognisable in the endpoint's
 #: own console as something Curio produced.
@@ -50,8 +56,8 @@ def _training_config(user, user_key: str, config_id: str | None):
     Dataflow Builder runs on (its choice in AI Settings, else the account's
     default). It must hold the user's own key, so training never spends this
     Curio install's key or a guest's."""
-    from utk_curio.backend.app.agents import llm_configs
-    from utk_curio.backend.app.agents.provider_config import (
+    from utk_curio.backend.app.agents.infrastructure import llm_configs
+    from utk_curio.backend.app.agents.infrastructure.provider_config import (
         SOURCE_DEFAULT,
         build_config,
         is_hosted_guest,
@@ -168,11 +174,8 @@ def _roster_for(fixtures) -> tuple:
     run against those examples would name.
     """
     from utk_curio.backend.app.agents.evaluation.report import digest_of
-    from utk_curio.backend.app.agents.services import roster_block
-    from utk_curio.backend.app.packages.services import (
-        _catalog_manifests,
-        _template_entry,
-    )
+    from utk_curio.backend.app.packages.application.agent_reads import _catalog_manifests
+    from utk_curio.backend.app.packages.application.templates import _template_entry
 
     wanted = {"curio.builtin@1"}
     for fixture in fixtures:
@@ -188,7 +191,7 @@ def _roster_for(fixtures) -> tuple:
             continue
         for template in manifest.templates:
             rows.append(_template_entry(manifest.package_id, template))
-    block = roster_block(rows)
+    block = agents_roster.roster_block(rows)
     return block, digest_of([row["id"] for row in rows])
 
 
@@ -426,7 +429,7 @@ def activate(user, user_key: str, job_id: str) -> dict:
     checked against the corpus as it is *now*, so an evaluation that describes
     examples which have since moved cannot authorise anything.
     """
-    from utk_curio.backend.app.agents import llm_configs
+    from utk_curio.backend.app.agents.infrastructure import llm_configs
 
     record = _read_or_refuse(user_key, job_id)
     if record is None:
@@ -485,8 +488,8 @@ def rollback(user, user_key: str, job_id: str) -> dict:
     once that choice has been changed by hand since, because rolling back would
     undo the change. The trained configuration stays, to use or remove in AI
     Settings."""
-    from utk_curio.backend.app.agents import llm_configs
-    from utk_curio.backend.app.agents.provider_config import deployment_config
+    from utk_curio.backend.app.agents.infrastructure import llm_configs
+    from utk_curio.backend.app.agents.infrastructure.provider_config import deployment_config
 
     record = _read_or_refuse(user_key, job_id)
     if record is None:

@@ -21,7 +21,7 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
 
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages";
 
 const ORIGINAL_FETCH = global.fetch;
 

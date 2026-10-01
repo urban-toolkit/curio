@@ -25,7 +25,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.agents.evaluation.canonical import CanonicalGraph, CEdge
+from utk_curio.backend.app.agents.evaluation.canonical import (
+    CanonicalGraph,
+    CEdge,
+)
 from utk_curio.backend.app.agents.evaluation.dependencies import url_allowed
 
 #: Swap passes allowed while improving a pairing. Each pass is monotone (a swap

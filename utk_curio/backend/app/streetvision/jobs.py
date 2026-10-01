@@ -215,7 +215,7 @@ def _cached_image(path: str, cache_dir: str) -> bool:
 
 def _download_image(url: str, dest: str) -> None:
     """Fetch *url* into *dest* under the egress policy and a size cap."""
-    from utk_curio.backend.app.agents import egress
+    from utk_curio.backend.app.agents.infrastructure import egress
 
     part = f"{dest}.part"
     try:

@@ -8,7 +8,8 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
-import { useEnsureWorkflowDeps } from "../../../hook/useEnsureWorkflowDeps";
+import { useEnsureWorkflowDeps } from "../../../providers/packages/useEnsureWorkflowDeps";
+import { useNodeCatalogDrawer } from "../../../providers/packages/NodeCatalogDrawerProvider";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
@@ -38,7 +39,6 @@ import "intro.js/introjs.css";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
-import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
 import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";

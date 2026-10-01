@@ -1,8 +1,8 @@
 import React from "react";
 import { EdgeLabelRenderer } from "reactflow";
-import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
+import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
-import { EDGE_AGENT_BADGES_ATTR } from "../../../utils/agentCatalogEvents";
+import { EDGE_AGENT_BADGES_ATTR } from "../../../services/agents";
 import styles from "./EdgeAgentBadges.module.css";
 
 /**

@@ -1,12 +1,11 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import { attachmentDisplayName, type AgentAttachment } from "../../../services/agents";
 import {
   agentCategoryIcon,
   agentCategoryKey,
 } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
-import { attachmentDisplayName } from "./attachmentDisplayName";
 import styles from "./AgentAvatarBadge.module.css";
 
 /**

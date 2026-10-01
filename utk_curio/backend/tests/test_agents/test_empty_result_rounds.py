@@ -8,7 +8,7 @@ hold, and write nothing when no round can produce rows.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import services as services_mod
+from utk_curio.backend.app.agents.application.solve import rounds as services_mod
 from utk_curio.backend.tests.test_agents.test_verified_rounds import CA, _Exec, _rounds
 
 BOUNDARIES = {

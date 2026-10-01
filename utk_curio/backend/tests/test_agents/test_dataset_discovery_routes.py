@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import content
-from utk_curio.backend.app.agents import dataset_resolution as dr
-from utk_curio.backend.app.agents import services as services_mod
+from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.application import dataset_resolution as dr
+from utk_curio.backend.app.agents.application.turns import titles as services_mod
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_agents import test_routes as _tr
@@ -85,7 +85,7 @@ class _Harness:
             return "df = arg[0]\nreturn df.describe()"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
         self.exec_payloads: list = []
 
@@ -96,7 +96,7 @@ class _Harness:
 
         monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: {"status": "verified", "detail": "200 OK"},
         )
         r = client.post(f"/api/agents/projects/{self.pid}/attachments/{self.att}/run",
@@ -299,7 +299,7 @@ class TestSelectionEndpoint:
         h, finder_id = self._await_candidates(client, user, token, monkeypatch)
         probed: list = []
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: (probed.append(url), {"status": "verified", "detail": "200"})[1],
         )
         r = self._select(h, finder_id, [
@@ -335,7 +335,7 @@ class TestSelectionEndpoint:
         user, token = user_and_token
         h, finder_id = self._await_candidates(client, user, token, monkeypatch)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: {"status": "unreachable", "detail": "404"},
         )
         body = self._select(h, finder_id, [

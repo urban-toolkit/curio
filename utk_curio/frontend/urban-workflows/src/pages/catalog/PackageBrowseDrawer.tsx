@@ -1,5 +1,5 @@
 import React from "react";
-import { PackagePayload } from "../../api/packagesApi";
+import { PackagePayload, primaryCategory } from "../../services/packages";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import {
   catalogIsFresh,
@@ -15,7 +15,6 @@ import {
   CatalogPublishPill,
   shouldShowPublishPill,
 } from "../../components/packages/CatalogPublishPill";
-import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { countLabel } from "../../utils/countLabel";
 

@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listLibraries: jest.fn(),
     addLibrary: jest.fn(),
@@ -15,7 +15,7 @@ jest.mock("../../api/packagesApi", () => ({
 }));
 
 import LibraryManagerWindow from "../../components/menus/libraries/LibraryManagerWindow";
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages/packagesApi";
 
 /**
  * The Installed-libraries modal had no test at all.

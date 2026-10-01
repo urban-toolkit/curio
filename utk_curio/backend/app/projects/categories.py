@@ -135,7 +135,7 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
     resolves a dataset id to its format and collection kind; without it only
     the nodes and the code count.
     """
-    from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+    from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):

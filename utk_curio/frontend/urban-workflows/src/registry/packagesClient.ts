@@ -35,7 +35,7 @@ import {
   withBidirectional,
   withPackageStarter,
 } from '../adapters/node';
-import { packagesApi } from 'api/packagesApi';
+import { packagesApi } from '../services/packages';
 import { getToken } from '../utils/authApi';
 
 import { getBehavior } from './behaviorRegistry';

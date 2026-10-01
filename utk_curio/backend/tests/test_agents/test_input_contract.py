@@ -9,7 +9,7 @@ correctly."* — and the graph below is theirs, from dataflow `623b6620`.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import input_contract as ic
+from utk_curio.backend.app.agents.domain import input_contract as ic
 
 MERGE_SPEC = {
     "dataflow": {

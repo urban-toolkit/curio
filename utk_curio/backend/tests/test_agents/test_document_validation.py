@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import document_validation as dv
+from utk_curio.backend.app.agents.domain import document_validation as dv
 
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
@@ -195,7 +195,7 @@ class TestAutkGrammar:
         assert "jsonschema is unavailable" in verdict["why"]
 
     def test_an_unreadable_schema_degrades_to_unchecked(self, monkeypatch):
-        from utk_curio.backend.app.agents import contracts
+        from utk_curio.backend.app.agents.domain import contracts
 
         def _missing():
             raise FileNotFoundError("autk-grammar.v1.json")
@@ -343,7 +343,7 @@ class TestProseIsARefusalNotAnUnchecked:
 
     def test_the_attempt_trail_keeps_the_map_example(self):
         # The trail cuts each detail shorter than the refusal itself.
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.solve import budgets as services
 
         verdict = dv.validate(AUTK, "not controllable")
         head = dv.refusal_text(AUTK, verdict)[:services._ATTEMPT_DETAIL_CHARS]

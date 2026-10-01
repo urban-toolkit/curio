@@ -211,6 +211,10 @@ A package you save or import lands in your package store:
 
 ---
 
+### Where the code lives
+
+Since memo dev/143 the catalog is layered like the Data Catalog. The backend is `utk_curio/backend/app/packages/{domain,schemas,repositories,infrastructure,application,builder,routes}` behind the one `service.py` facade — and the agents feature is layered the same way, `utk_curio/backend/app/agents/{domain,repositories,infrastructure,application,routes}` behind its `service.py`, with `src/services/agents/` + `src/providers/agents/` on the frontend (memo dev/142) (`builder/` is the Package Builder pipeline beside the layers; dependency rule `domain ← schemas ← repositories ← infrastructure ← application ← routes`, enforced by `tests/test_packages/test_layering.py`). The frontend is `src/services/packages/` — the transport (`packagesApi`, `packagesBlobTransport`, `packageBackendApi`), `usePackageCatalog` (the one hook both the canvas drawer and the `/catalog/nodes` page render, scoped per project or to the account defaults) and the pure logic and types they share; import it from its barrel, `services/packages` — and `src/providers/packages/` (the drawer provider, the palette context, and the two hooks that also refresh the node-kind registry: `usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). The surfaces — `components/packages/`, `pages/catalog/`, the palette dropdown under `components/menus/nodes/` — only render: `tests/packages/servicesBarrel.test.ts` refuses transport there and refuses any runtime import of `registry/` inside the layer (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+
 ## See also
 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.

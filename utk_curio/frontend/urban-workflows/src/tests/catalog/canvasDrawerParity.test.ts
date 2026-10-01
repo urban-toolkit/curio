@@ -40,7 +40,7 @@ const DRAWER_HOOKS = [
 ];
 
 const PROVIDERS = [
-  "providers/NodeCatalogDrawerProvider.tsx",
+  "providers/packages/NodeCatalogDrawerProvider.tsx",
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
 ];

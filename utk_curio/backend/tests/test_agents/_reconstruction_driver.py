@@ -133,7 +133,7 @@ class InProcessDriver:
         the dependency route is exercised; only the subprocess is stubbed, and
         the browser and live tiers install for real.
         """
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         report = pip_runner.InstallReport(installed=[], skipped=[])
         self._no_pip_report = report
@@ -215,11 +215,12 @@ class InProcessDriver:
         return installed
 
     def install_packages_to_project(self, dir_names: Iterable) -> list:
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         out = []
         for dir_name in dir_names:
-            out.append(packages_services.install_to_project(
+            out.append(project_packages.install_to_project(
                 self.user_key, self.project_id, dir_name
             ))
         return out
@@ -264,9 +265,10 @@ class InProcessDriver:
         }
 
     def roster(self) -> list:
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
-        return packages_services.available_templates(self.user_key, self.project_id)
+        return packages_templates.available_templates(self.user_key, self.project_id)
 
     def roster_ids(self) -> set:
         return {str(row["id"]) for row in self.roster()}
@@ -287,7 +289,7 @@ class InProcessDriver:
         is answering. The responder reads the request it was given -- exactly
         what a model does.
         """
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         calls = self.calls
 
@@ -298,7 +300,7 @@ class InProcessDriver:
             return responder(messages, len(calls) - 1)
 
         self.monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
 
     def fake_sandbox(self, kind_for: Callable | None = None) -> None:

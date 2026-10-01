@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import type { AgentAttachment } from "../../../services/agents";
 import { AgentAvatarBadge } from "./AgentAvatarBadge";
 import styles from "./AgentDock.module.css";
 

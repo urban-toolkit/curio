@@ -3,8 +3,8 @@ import type { NodeCategory, NodePackageMeta } from "../../../registry/types";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packageKeys";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
 import { NODE_CATEGORY_KEY } from "../../../constants/nodeCategoryPalette";
-import { formatForkOfSubtitle } from "../../../utils/forkPackageLineage";
-import { usePackagePalette } from "../../../providers/PackagePaletteContext";
+import { formatForkOfSubtitle } from "../../../services/packages";
+import { usePackagePalette } from "../../../providers/packages/PackagePaletteContext";
 import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./PackageMetaHeader.module.css";
 

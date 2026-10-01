@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-import { sanitizeAgentUrl } from "../../components/agents/content/sanitizeAgentContent";
+import { sanitizeAgentUrl } from "../../services/agents";
 import { SafeAgentContent } from "../../components/agents/content/SafeAgentContent";
 import { AgentChatCard } from "../../components/agents/content/AgentChatCard";
 

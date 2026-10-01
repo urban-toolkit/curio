@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.agents.storage import user_agents_dir
+from utk_curio.backend.app.agents.repositories.storage import user_agents_dir
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
 RECORD_VERSION = 1

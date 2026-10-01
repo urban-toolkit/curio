@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { agentsApi, type AgentCard, type AgentCatalogFacets } from "../../api/agentsApi";
-import { notifyAgentCatalogRefresh } from "../../utils/agentCatalogEvents";
-import type { SortMode } from "../../components/packages/publishing/packageTypes";
 import {
+  agentsApi,
   matchesAgentSearch,
   sortAgentCards,
-} from "../../components/agents/catalog/agentListUtils";
+  useAgentCatalog,
+  type AgentCard,
+  type AgentCatalogFacets,
+} from "../../services/agents";
+import type { SortMode } from "../../services/packages";
 
 /**
- * State behind `/catalog/agents`, the account-scope Agent Catalog.
- *
- * Hook-per-surface, the direction both peers converged on: the Node Catalog
- * has `useNodeCatalogBrowse`, and the drawer next door has
- * `useAgentCatalogDrawer`. Keeping the page's state out of the component is
- * what lets the filtering be unit-tested without rendering a grid.
+ * State behind `/catalog/agents`, the account-scope Agent Catalog: this page's
+ * view of THE catalog hook (memo dev/142, F3). It keeps only the page's own
+ * state — search, sort, the rail filter, the category and the selection — and
+ * hands `useAgentCatalog` the account scope (no project id: `installedInProject`
+ * is not meaningful here) and its action-error wording.
  *
  * Scope is the thing to keep straight. The in-canvas drawer installs an agent
  * into ONE dataflow; this page adds it to the user's account, after which it
@@ -65,6 +66,11 @@ export interface AgentCatalogBrowseState {
   reload: () => Promise<void>;
 }
 
+/** A failed action reads as a sentence about the agent, over the rows the user
+ *  is reading — never instead of them. */
+function describeActionError(verb: string, card: { name?: string; dirName: string }, detail: string): string {
+  return `Couldn't ${verb} ${card.name ?? card.dirName}: ${detail}`;
+}
 
 /**
  * The global catalog plus the account's own imports, one row per agent.
@@ -99,109 +105,54 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   const [sort, setSort] = useState<SortMode>("new");
   const [filter, setFilter] = useState<AgentBrowseFilter>("all");
   const [categoryFilter, setCategoryFilterRaw] = useState("");
-  const [agents, setAgents] = useState<AgentCard[]>([]);
-  const [facets, setFacets] = useState<AgentCatalogFacets | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busyCoord, setBusyCoord] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   // Tri-state, matching useNodeCatalogBrowse and DataCatalogBrowse: `undefined`
   // means "nothing chosen yet, fall back to the first row" and `null` means the
-  // user closed the drawer. Collapsing the two (a plain `string | null`) made
-  // Close unusable, because the auto-select effect could not tell a dismissal
-  // from a fresh page and immediately reopened on `filtered[0]`.
+  // user closed the drawer. Collapsing the two made Close unusable, because the
+  // auto-select effect could not tell a dismissal from a fresh page.
   const [selectedCoord, setSelectedCoord] = useState<string | null | undefined>(undefined);
+  const catalog = useAgentCatalog({
+    describeActionError,
+    loadErrorFallback: "Could not load the Agent Catalog.",
+  });
+  // Two feeds, like `useNodeCatalogBrowse` (catalog + listInstalled): the
+  // catalog is built-ins union published definitions, so an agent the user
+  // authored and imported is in neither, and the page that owns the Publish
+  // pill could never show it (#305). The imports feed is an addition, not a
+  // precondition - a failure there must not blank the roster.
+  const [imports, setImports] = useState<AgentCard[]>([]);
+  const loadImports = useCallback(async () => {
+    try {
+      const resp = await agentsApi.listImports();
+      setImports(resp.agents ?? []);
+    } catch (err) {
+      console.warn("[agent-catalog] could not read this account's imports:", err);
+      setImports([]);
+    }
+  }, []);
+  useEffect(() => {
+    void loadImports();
+  }, [loadImports]);
+  const agents = useMemo(() => mergeAgentRows(catalog.cards, imports), [catalog.cards, imports]);
+  const facets = catalog.facets;
+  const reload = useCallback(async () => {
+    await Promise.all([catalog.reload(), loadImports()]);
+  }, [catalog, loadImports]);
+  /** Every action refreshes the imports feed too: the hook refreshes only its own scopes. */
+  const withImports = useCallback(
+    <A extends unknown[]>(fn: (...args: A) => Promise<void>) => async (...args: A) => {
+      await fn(...args);
+      await loadImports();
+    },
+    [loadImports],
+  );
 
   const setCategoryFilter = useCallback(
     (updater: (prev: string) => string) => setCategoryFilterRaw(updater),
     [],
   );
 
-  const reload = useCallback(async () => {
-    // No projectId: this page is account scope, so `installedInProject` is not
-    // meaningful here and asking for it would only mark rows against whichever
-    // dataflow happened to be open last.
-    //
-    // Two calls, like `useNodeCatalogBrowse` (catalog + listInstalled): the
-    // catalog is built-ins union published definitions, so an agent the user
-    // authored and imported is in neither, and the page that owns the Publish
-    // pill could never show it (#305). The imports call is an addition, not a
-    // precondition - a failure there must not blank the roster.
-    const [catalog, imports] = await Promise.all([
-      agentsApi.catalog(),
-      agentsApi.listImports().catch((err) => {
-        console.warn("[agent-catalog] could not read this account's imports:", err);
-        return { agents: [] as AgentCard[] };
-      }),
-    ]);
-    setAgents(mergeAgentRows(catalog.items ?? catalog.agents, imports.agents ?? []));
-    setFacets(catalog.facets ?? null);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      try {
-        await reload();
-      } catch (err) {
-        if (!cancelled) setActionError((err as Error)?.message ?? "Could not load the Agent Catalog.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reload]);
-
-  /**
-   * Run one mutation, then refetch. The error banner sits OVER the rows rather
-   * than replacing them: a failed publish should not blank the catalog the
-   * user is reading.
-   */
-  const run = useCallback(
-    async (agent: AgentCard, verb: string, op: () => Promise<unknown>) => {
-      setBusyCoord(agent.dirName);
-      setActionError(null);
-      try {
-        await op();
-        await reload();
-        // One notify fans out to the drawer and the palette; they hold their
-        // own caches keyed differently, and this is the single chokepoint.
-        notifyAgentCatalogRefresh();
-      } catch (err) {
-        const detail = (err as Error)?.message ?? "unknown error";
-        setActionError(`Couldn't ${verb} ${agent.name}: ${detail}`);
-      } finally {
-        setBusyCoord(null);
-      }
-    },
-    [reload],
-  );
-
-  const onImport = useCallback(
-    (agent: AgentCard) => run(agent, "add", () => agentsApi.import(agent.dirName)),
-    [run],
-  );
-  const onRemoveImport = useCallback(
-    (agent: AgentCard) => run(agent, "remove", () => agentsApi.removeImport(agent.dirName)),
-    [run],
-  );
-  const onPublish = useCallback(
-    (agent: AgentCard) => run(agent, "publish", () => agentsApi.publish(agent.dirName)),
-    [run],
-  );
-  const onUnpublish = useCallback(
-    (agent: AgentCard) => run(agent, "unpublish", () => agentsApi.unpublish(agent.dirName)),
-    [run],
-  );
-
   const filtered = useMemo(() => {
-    // The drawer's helpers, not a second copy. The private one here had already
-    // drifted three ways: it did not trim the query, did not match `category`
-    // (so "canvas" found category matches in the drawer and nothing here), and
-    // sorted with a bare localeCompare rather than the shared base-sensitivity
-    // comparator, so the two surfaces could order one roster differently.
+    // The drawer's helpers, not a second copy: one search, one sort order.
     const rows = agents.filter((agent) => {
       if (!matchesAgentSearch(agent, search)) return false;
       if (filter === "imported" && !agent.imported) return false;
@@ -226,8 +177,7 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
   }, [agents]);
 
   // Resolve the tri-state: an explicit close stays closed, an explicit pick
-  // wins, and "nothing chosen yet" falls back to the first visible row so the
-  // drawer has something to show on arrival.
+  // wins, and "nothing chosen yet" falls back to the first visible row.
   const selectedAgent = useMemo(() => {
     if (selectedCoord === null) return null;
     if (selectedCoord != null) {
@@ -258,10 +208,10 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     setFilter,
     categoryFilter,
     setCategoryFilter,
-    loading,
-    busyCoord,
-    actionError,
-    dismissActionError: useCallback(() => setActionError(null), []),
+    loading: catalog.loading,
+    busyCoord: catalog.busyCoord,
+    actionError: catalog.error,
+    dismissActionError: catalog.dismissError,
     agents,
     filtered,
     facets,
@@ -273,9 +223,9 @@ export function useAgentCatalogBrowse(): AgentCatalogBrowseState {
     setSelectedCoord,
     selectedAgent,
     reload,
-    onImport,
-    onRemoveImport,
-    onPublish,
-    onUnpublish,
+    onImport: withImports(catalog.importAgent),
+    onRemoveImport: withImports(catalog.removeImport),
+    onPublish: withImports(catalog.publish),
+    onUnpublish: withImports(catalog.unpublish),
   };
 }

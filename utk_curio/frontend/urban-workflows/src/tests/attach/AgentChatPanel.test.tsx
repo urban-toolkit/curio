@@ -12,13 +12,13 @@ jest.mock("../../providers/FlowProvider", () => ({
 
 // dev/84: the package-install review flow loads the catalog + conflict probe;
 // mocked so the panel suite stays network-free.
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: { catalog: jest.fn(), listInstalled: jest.fn(), resolve: jest.fn() },
 }));
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
-import type { AgentAttachment, AgentSessionTurn } from "../../api/agentsApi";
+import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",

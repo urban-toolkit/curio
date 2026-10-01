@@ -1,13 +1,12 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { uploadImport: jest.fn() },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi, buildUploadPayload } from "../../services/agents";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
-import { buildUploadPayload } from "../../components/agents/catalog/buildUploadPayload";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 

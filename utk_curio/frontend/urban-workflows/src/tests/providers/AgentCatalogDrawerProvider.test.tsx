@@ -9,7 +9,7 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ agents: [] })),
     listImports: jest.fn(() => Promise.resolve({ agents: [] })),

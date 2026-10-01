@@ -625,7 +625,7 @@ def process_python_code():
     # none, and the traceback is reported either way.
     missing_module = None
     if isinstance(output, dict) and not output.get('path'):
-        from utk_curio.backend.app.packages import missing_import
+        from utk_curio.backend.app.packages.application import missing_import
         from utk_curio.backend.app.users.capabilities import library_install_refusal
         missing_module = missing_import.detect(stderr)
         # Never offer an install the libraries route would refuse (#309).
@@ -918,7 +918,7 @@ def get_starters():
     package ships no sources, so dragging a built-in node onto the canvas
     yields an empty editor; third-party packages may ship a starter per template.
     """
-    from utk_curio.backend.app.packages import generate_packageage_starters  # local import → no cycle
+    from utk_curio.backend.app.packages.application.starters import generate_package_starters
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.users.dependencies import get_current_user
 
@@ -926,7 +926,7 @@ def get_starters():
     user = get_current_user()
     if user is not None:
         try:
-            starters = generate_packageage_starters(_user_dir_key(user))
+            starters = generate_package_starters(_user_dir_key(user))
         except Exception:  # noqa: BLE001 - never fail /starters over a bad package
             current_app.logger.exception("Package-starter loader failed; returning empty list")
     return jsonify(starters)

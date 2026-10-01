@@ -32,9 +32,9 @@ import re
 from pathlib import Path
 from typing import Iterable
 
-from utk_curio.backend.app.packages.storage import (
-    _user_key_segment,
-    _users_base,
+from utk_curio.backend.app.common.user_storage import (
+    user_key_segment as _user_key_segment,
+    users_base as _users_base,
 )
 
 log = logging.getLogger(__name__)

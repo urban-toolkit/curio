@@ -2,7 +2,7 @@ import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExterna
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faForwardStep, faStop } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
-import { refreshPackageRegistry } from "../../../api/packagesApi";
+import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";

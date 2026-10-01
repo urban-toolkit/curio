@@ -12,7 +12,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const mockOpenDrawer = jest.fn();
-jest.mock("../../providers/NodeCatalogDrawerProvider", () => ({
+jest.mock("../../providers/packages/NodeCatalogDrawerProvider", () => ({
   useNodeCatalogDrawer: () => ({
     openNodeCatalogDrawer: mockOpenDrawer,
     closeNodeCatalogDrawer: jest.fn(),

@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import routes as agents_routes
-from utk_curio.backend.app.agents import services as agents_services
-from utk_curio.backend.app.agents.manifest import AGENT_CATEGORIES
-from utk_curio.backend.app.agents.provider_config import ProviderConfigError
-from utk_curio.backend.app.agents.services import AgentServiceError
+from utk_curio.backend.app.agents.routes import common as agents_routes
+from utk_curio.backend.app.agents.application import catalog as agents_services
+from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
+from utk_curio.backend.app.agents.infrastructure.provider_config import ProviderConfigError
+from utk_curio.backend.app.agents.application.errors import AgentServiceError
 
 
 def _auth(token: str) -> dict:

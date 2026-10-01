@@ -20,7 +20,7 @@ from utk_curio.backend.app.datalakes.application.storage_acquire import (
 )
 from utk_curio.backend.app.datalakes.application import jobs as job_store
 from utk_curio.backend.app.datalakes.application.catalog import LakeCatalog
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.datalakes.domain.errors import (
     CapabilityUnsupported,
     DataLakeError,

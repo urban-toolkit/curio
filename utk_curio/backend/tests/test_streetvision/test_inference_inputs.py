@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.streetvision import jobs
 from utk_curio.backend.app.streetvision.services import cache
 from utk_curio.backend.app.streetvision.services import inference as inference_svc

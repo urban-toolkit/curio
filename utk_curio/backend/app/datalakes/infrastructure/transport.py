@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.datalakes.domain.errors import (
     DownloadTooLarge,
     ProviderError,

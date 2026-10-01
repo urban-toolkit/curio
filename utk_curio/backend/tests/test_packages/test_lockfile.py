@@ -20,18 +20,22 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages import defaults as defaults_io
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.spec_packages import (
+from utk_curio.backend.app.packages.repositories import defaults as defaults_io
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import (
+    store_install,
+    store_reads,
+)
+from utk_curio.backend.app.packages.domain.spec_packages import (
     dir_name_from_node_type,
     preserve_project_packages,
     project_packages,
     referencing_nodes,
     set_project_packages,
 )
-from utk_curio.backend.app.packages.storage import (
+from utk_curio.backend.app.packages.repositories.store import (
     package_dir,
-    user_packageages_dir,
+    user_packages_dir,
 )
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -162,7 +166,7 @@ class TestProjectInstall:
         user, _ = user_and_token
         user_key = _user_key_for(user)
 
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
         result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
         assert result["packages"] == [UHVI_DIR]
@@ -203,7 +207,7 @@ class TestProjectUninstall:
         assert UHVI_DIR in result["pruned"]
         # Defaults was never populated for this package, so nothing to remove there.
         assert result["removedFromDefaults"] == []
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
     def test_uninstall_skips_prune_when_other_project_references(
         self, app, user_and_token, alice_project, client,
@@ -230,7 +234,7 @@ class TestProjectUninstall:
         # Now uninstall from the last project: the prune should fire.
         result = packages_services.uninstall_from_project(user_key, second_id, UHVI_DIR)
         assert result["pruned"] == [UHVI_DIR]
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
     def test_uninstall_builtin_rejected(self, app, user_and_token, alice_project):
         user, _ = user_and_token
@@ -413,7 +417,7 @@ class TestRestartHonestyOnCatalogInstall:
         user, _ = user_and_token
         user_key = _user_key_for(user)
         monkeypatch.setattr(
-            packages_services, "_ensure_user_store_install",
+            store_install, "_ensure_user_store_install",
             lambda uk, dn: packages_services.InstallOutcome(
                 copied=True, installed=["geo-sdk", "tiny-lib"],
             ),
@@ -440,8 +444,9 @@ class TestCatalogOverlayRouting:
             self, app, user_and_token, alice_project, monkeypatch):
         from types import SimpleNamespace
 
-        from utk_curio.backend.app.packages import backend_runtime, pip_runner
-        from utk_curio.backend.app.packages import services as svc
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages import service as svc
 
         user, _ = user_and_token
         user_key = _user_key_for(user)
@@ -453,12 +458,12 @@ class TestCatalogOverlayRouting:
             permissions=[],
         )
         monkeypatch.setattr(
-            svc, "install_packageage_from_directory",
+            store_install, "install_package_from_directory",
             lambda uk, src, replace=False: SimpleNamespace(manifest=fake_manifest))
         monkeypatch.setattr(
-            svc, "_is_installed_in_user_store", lambda uk, dn: False)
+            store_reads, "_is_installed_in_user_store", lambda uk, dn: False)
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.backend_runtime.record_entry_pin",
+            'utk_curio.backend.app.packages.infrastructure.backend_runtime.record_entry_pin',
             lambda uk, dn: None)
         monkeypatch.setattr(
             backend_runtime, "build_overlay",

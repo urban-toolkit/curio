@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import egress
+from utk_curio.backend.app.agents.infrastructure import egress
 
 
 def _resolver(mapping):

@@ -130,7 +130,7 @@ describe("the Node catalog offers only tabs that do something", () => {
   });
 
   test("the tab type admits no dead members", () => {
-    const src = read("components/packages/publishing/packageTypes.ts");
+    const src = read("services/packages/types/catalog.ts");  // dev/143 F1: the drawer vocabulary lives in the layer
     expect(src).toContain('export type DrawerTab = "browse" | "installed";');
   });
 

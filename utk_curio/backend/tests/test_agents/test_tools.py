@@ -7,9 +7,9 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import tools
-from utk_curio.backend.app.agents.manifest import ToolRequirement
-from utk_curio.backend.app.agents.tools import ToolContract
+from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+from utk_curio.backend.app.agents.application.tools import ToolContract
 
 
 def _req(tool_id: str, required: bool = False) -> ToolRequirement:
@@ -397,7 +397,7 @@ class TestWebTools:
     honest when unconfigured; no spec needed."""
 
     def _fetch(self, params, monkeypatch=None, result=None, error=None):
-        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.infrastructure import egress
 
         if monkeypatch is not None:
             if error is not None:
@@ -411,7 +411,7 @@ class TestWebTools:
         )
 
     def test_web_fetch_returns_bounded_preview(self, monkeypatch):
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         status, text = self._fetch(
             {"url": "https://api.example.org/x"},
@@ -426,7 +426,7 @@ class TestWebTools:
         assert payload["status"] == 200 and payload["bodyPreview"] == '{"a": 1}'
 
     def test_web_fetch_policy_refusal_is_data(self, monkeypatch):
-        from utk_curio.backend.app.agents.egress import EgressRefused
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressRefused
 
         status, text = self._fetch(
             {"url": "https://metadata.internal/x"},
@@ -438,8 +438,8 @@ class TestWebTools:
 
     def test_web_search_falls_back_to_the_default_provider(self, monkeypatch):
         """Unset is no longer unconfigured: search works out of the box."""
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         seen: dict = {}
@@ -543,8 +543,8 @@ class TestWebSearchTrustedProvider:
     web.fetch (model-supplied URLs) never passes one."""
 
     def test_search_passes_the_operator_host(self, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv(
             "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
@@ -568,8 +568,8 @@ class TestWebSearchTrustedProvider:
         assert "q=weather%20in%20Paris" in seen["url"]
 
     def test_web_fetch_never_passes_a_trusted_host(self, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv(
             "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
@@ -594,8 +594,8 @@ class TestDuckDuckGoShape:
     read it or an unconfigured install would search and find nothing."""
 
     def _search(self, monkeypatch, body: str):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
@@ -640,8 +640,8 @@ class TestWebSearchProviderShapes:
     CURIO_SEARCH_URL template with no provider server and no new deps."""
 
     def _search(self, monkeypatch, body: str):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv("CURIO_SEARCH_URL", "https://api.provider.test/v1?key=K&q={q}")
         monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(

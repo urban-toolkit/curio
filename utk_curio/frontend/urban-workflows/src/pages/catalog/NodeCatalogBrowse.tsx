@@ -3,7 +3,7 @@
  */
 import React, { useState } from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
-import type { SortMode } from "../../components/packages/publishing/packageTypes";
+import type { SortMode } from "../../services/packages";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
@@ -11,7 +11,7 @@ import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
 import { useNodeCatalogBrowse } from "./useNodeCatalogBrowse";
 import { CatalogHeaderImport } from "./CatalogHeaderImport";
 import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   packageCardActions,

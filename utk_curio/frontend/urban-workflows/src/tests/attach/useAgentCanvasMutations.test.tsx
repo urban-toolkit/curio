@@ -50,7 +50,7 @@ import { useAgentCanvasMutations } from "../../components/agents/attach/useAgent
 import {
   notifyAgentCanvasMutation,
   subscribeAgentCanvasMutations,
-} from "../../utils/agentCanvasEvents";
+} from "../../services/agents";
 
 const Host: React.FC = () => {
   useAgentCanvasMutations();

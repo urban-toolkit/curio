@@ -78,12 +78,17 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 }));
 // NodeSaveAsModal imports refreshPackageRegistry from here, not from the
 // bootstrap module, so it has to be part of this mock.
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     factoryInstall: (...args: unknown[]) => mockFactoryInstall(...args),
     installToProject: (...args: unknown[]) => mockInstallToProject(...args),
   },
+}));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: (...args: unknown[]) => mockRefreshRegistry(...args),
+}));
+jest.mock("../../services/packages/packagesBlobTransport", () => ({
+  ...jest.requireActual("../../services/packages/packagesBlobTransport"),
   triggerBlobDownload: jest.fn(),
 }));
 

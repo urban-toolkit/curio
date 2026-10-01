@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.node_appearance` (dev/89
+"""Tests for :mod:`utk_curio.backend.app.packages.domain.node_appearance` (dev/89
 commit 8): the ONE shared color truth — palette mapping, six-digit hex
 normalization, refusals (shorthand/alpha/CSS/whitespace/inaccessible),
 legacy render fallback, and AA-safe derived colors.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.node_appearance import (
+from utk_curio.backend.app.packages.domain.node_appearance import (
     DEFAULT_BACKGROUND,
     MIN_CONTRAST,
     NAMED_COLORS,

@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_compiler` (dev/89 commit 5):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.compiler` (dev/89 commit 5):
 pinned-toolchain resolution, the runtime-externals contract, offline
 node_modules materialization from the verified cache (with tar-safety
 refusals), deterministic bundling, and honest failure modes.
@@ -18,15 +18,15 @@ import pytest
 
 from .conftest import write_fake_tool
 
-from utk_curio.backend.app.packages.build_compiler import (
+from utk_curio.backend.app.packages.builder.compiler import (
     CompileError,
     CompilerToolchain,
     compile_behavior_bundle,
     materialize_node_modules,
     toolchain_from_env,
 )
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_workspace import (
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     create_workspace,
     destroy_workspace,
     populate_inputs,
@@ -273,7 +273,7 @@ class TestMaterializationSafety:
             destroy_workspace(ws)
 
     def test_oversized_member_refused(self):
-        from utk_curio.backend.app.packages import build_compiler
+        from utk_curio.backend.app.packages.builder import compiler as build_compiler
 
         big = b"x" * (build_compiler._MAX_TAR_MEMBER_BYTES + 1)
         ws, lock = self._workspace_with_cache(

@@ -23,8 +23,14 @@ import os
 import pytest
 
 from utk_curio.backend.app.agents.evaluation import live as live_mod
-from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths, load_fixture
-from utk_curio.backend.app.agents.evaluation.report import RunReport, new_run_id
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    fixture_paths,
+    load_fixture,
+)
+from utk_curio.backend.app.agents.evaluation.report import (
+    RunReport,
+    new_run_id,
+)
 from utk_curio.tools.agent_eval import template_index
 
 pytestmark = pytest.mark.live_eval

@@ -1,11 +1,11 @@
-import type { AgentCard } from "../../api/agentsApi";
 import {
   installLabel,
   installTitle,
   matchesAgentSearch,
   missingRequiredAgents,
   sortAgentCards,
-} from "../../components/agents/catalog/agentListUtils";
+  type AgentCard,
+} from "../../services/agents";
 
 function card(over: Partial<AgentCard> = {}): AgentCard {
   return {

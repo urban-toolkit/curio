@@ -695,7 +695,7 @@ class TestStubSpecsValidate:
         that would mean inventing a name. What matters is that a valid spec in
         stays valid on the way out.
         """
-        from utk_curio.backend.app.packages.services import seed_spec_with_defaults
+        from utk_curio.backend.app.packages.application.seeding import seed_spec_with_defaults
 
         merged = seed_spec_with_defaults("guest", _good())
         errors = _errors(merged)
@@ -712,7 +712,7 @@ class TestSchemaMatchesConstants:
     """
 
     def test_the_node_type_pattern_uses_the_backend_grammar(self):
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         expected = (
             f"^{sp._PKG_ID}/{sp._TEMPLATE_ID}(?:@{sp._MAJOR})?$"
@@ -723,7 +723,7 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_node_type_pattern_accepts_what_the_backend_accepts(self):
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         schema_re = re.compile(DEFS["nodeTypeRef"]["pattern"])
         for candidate in (
@@ -745,7 +745,7 @@ class TestSchemaMatchesConstants:
             assert bool(schema_re.match(candidate)) == backend_ok, candidate
 
     def test_the_agent_coord_pattern_is_the_storage_grammar(self):
-        from utk_curio.backend.app.agents.storage import AGENT_DIR_RE
+        from utk_curio.backend.app.agents.repositories.storage import AGENT_DIR_RE
 
         assert DEFS["agentCoord"]["pattern"] == AGENT_DIR_RE.pattern, (
             "dataflow.agents entries are agent directory names; the schema must "
@@ -753,7 +753,7 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_target_kinds_match_the_validator(self):
-        from utk_curio.backend.app.agents.attachments import _TARGET_KINDS
+        from utk_curio.backend.app.agents.application.attachments import _TARGET_KINDS
 
         declared = DEFS["agentTarget"]["properties"]["kind"]["enum"]
         assert set(declared) == set(_TARGET_KINDS), (
@@ -762,12 +762,12 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_attachment_title_cap_matches(self):
-        from utk_curio.backend.app.agents.attachments import TITLE_MAX_CHARS
+        from utk_curio.backend.app.agents.application.attachments import TITLE_MAX_CHARS
 
         assert DEFS["agentAttachment"]["properties"]["title"]["maxLength"] == TITLE_MAX_CHARS
 
     def test_every_agent_spec_key_is_declared(self):
-        from utk_curio.backend.app.agents.project_agents import _AGENT_SPEC_KEYS
+        from utk_curio.backend.app.agents.repositories.project_agents import _AGENT_SPEC_KEYS
 
         declared = set(DEFS["dataflowBase"]["properties"])
         missing = set(_AGENT_SPEC_KEYS) - declared
@@ -821,7 +821,7 @@ class TestSchemaMatchesConstants:
 
     def test_the_template_id_grammar_matches_the_manifest_schema(self):
         """node.type's template half is the manifest's templates[].id grammar."""
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         manifest_path = os.path.join(REPO_ROOT, "docs", "schemas", "node-package.v4.json")
         with open(manifest_path, encoding="utf-8") as fh:
@@ -873,7 +873,7 @@ class TestNodeTypesResolve:
 
     @pytest.mark.parametrize("path", CORPUS, ids=CORPUS_IDS)
     def test_every_node_type_resolves_to_a_template(self, path: str):
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         unresolved = sorted(
             {
@@ -893,7 +893,7 @@ class TestNodeTypesResolve:
         Asserted rather than assumed, so the trill schema does not have to guess
         which templates may omit content.
         """
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         wrong = []
         for path in CORPUS:
@@ -914,7 +914,7 @@ class TestNodeTypesResolve:
         )
 
     def test_interaction_edges_touch_a_bidirectional_template(self):
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         offenders = []
         for path in CORPUS:

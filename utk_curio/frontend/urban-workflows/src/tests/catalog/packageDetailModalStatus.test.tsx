@@ -5,7 +5,7 @@ import { render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 
 /**
  * The Node details modal states the same status wherever it opens.
@@ -16,7 +16,7 @@ import type { PackagePayload } from "../../api/packagesApi";
  * published", including the ones in every project and in the catalog.
  */
 
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     getDefaults: jest.fn(),
     download: jest.fn(),
@@ -24,7 +24,7 @@ jest.mock("../../api/packagesApi", () => ({
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { packagesApi } = require("../../api/packagesApi") as {
+const { packagesApi } = require("../../services/packages/packagesApi") as {
   packagesApi: { getDefaults: jest.Mock };
 };
 

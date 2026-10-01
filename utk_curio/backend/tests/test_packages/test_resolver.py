@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.resolver`.
+"""Tests for :mod:`utk_curio.backend.app.packages.application.resolution`.
 
 Focused unit tests on the pure-Python core (no DB needed) plus a
 fixture-installed scenario for the project-wide resolve.
@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.resolver import (
+from utk_curio.backend.app.packages.application.resolution import resolve_for_project
+from utk_curio.backend.app.packages.domain.versions import (
     DepConflict,
     Range,
     ResolverError,
     merge_python_deps,
     parse_range,
     parse_version,
-    resolve_for_project,
 )
 
 
@@ -111,7 +111,7 @@ def test_merge_python_deps_conflict():
     assert packages_in_conflict == {"alpha@1", "beta@1"}
 
 
-def test_merge_python_deps_disjoint_packageages():
+def test_merge_python_deps_disjoint_packages():
     merged, conflicts = merge_python_deps([
         ("alpha@1", {"numpy": "^1.26"}),
         ("beta@1",  {"shapely": "^2.0"}),
@@ -141,8 +141,8 @@ def _kind(template_id: str = "k") -> dict:
     }
 
 
-def test_resolve_for_project_pulls_transitive(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_resolve_for_project_pulls_transitive(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.base", major=1,
@@ -151,7 +151,7 @@ def test_resolve_for_project_pulls_transitive(tmp_curio, install_packageage, man
         ),
         sources={"base-kind": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.leaf", major=1,
@@ -162,14 +162,14 @@ def test_resolve_for_project_pulls_transitive(tmp_curio, install_packageage, man
         sources={"leaf-kind": {"Default.py": "def run():\n    return {}\n"}},
     )
     result = resolve_for_project("guest", ["ai.test.leaf@1"])
-    dirs = [p["dirName"] for p in result.installed_packageages]
+    dirs = [p["dirName"] for p in result.installed_packages]
     assert dirs == ["ai.test.base@1", "ai.test.leaf@1"]
     assert set(result.python_deps) == {"numpy", "rasterio"}
     assert result.conflicts == ()
 
 
-def test_resolve_for_project_reports_conflict(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_resolve_for_project_reports_conflict(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.alpha", major=1,
@@ -178,7 +178,7 @@ def test_resolve_for_project_reports_conflict(tmp_curio, install_packageage, man
         ),
         sources={"alpha-kind": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.beta", major=1,
@@ -194,8 +194,8 @@ def test_resolve_for_project_reports_conflict(tmp_curio, install_packageage, man
     assert result.ok is False
 
 
-def test_resolve_for_project_missing_packageage_dep(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_resolve_for_project_missing_package_dep(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.leaf", major=1,
@@ -209,8 +209,8 @@ def test_resolve_for_project_missing_packageage_dep(tmp_curio, install_packageag
         resolve_for_project("guest", ["ai.test.leaf@1"])
 
 
-def test_resolve_for_project_detects_cycle(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_resolve_for_project_detects_cycle(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.a", major=1,
@@ -220,7 +220,7 @@ def test_resolve_for_project_detects_cycle(tmp_curio, install_packageage, manife
         ),
         sources={"a-kind": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.b", major=1,
@@ -236,30 +236,30 @@ def test_resolve_for_project_detects_cycle(tmp_curio, install_packageage, manife
 
 def test_resolve_empty():
     result = resolve_for_project("guest", [])
-    assert result.installed_packageages == ()
+    assert result.installed_packages == ()
     assert result.python_deps == {}
     assert result.conflicts == ()
 
 
-def test_resolve_for_project_duplicate_packageage_id_requires_at_major(
-    tmp_curio, install_packageage, manifest_dict,
+def test_resolve_for_project_duplicate_package_id_requires_at_major(
+    tmp_curio, install_package, manifest_dict,
 ):
     kind = _kind("k1")
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.shared", major=1, kinds=[kind],
         ),
         sources={"k1": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.shared", major=2, kinds=[kind],
         ),
         sources={"k1": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.leaf", major=1,
@@ -272,22 +272,22 @@ def test_resolve_for_project_duplicate_packageage_id_requires_at_major(
         resolve_for_project("guest", ["ai.test.leaf@1"])
 
 
-def test_resolve_for_project_packageage_dep_at_major(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_resolve_for_project_package_dep_at_major(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.pick", major=1, kinds=[_kind("a")],
         ),
         sources={"a": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.pick", major=2, kinds=[_kind("b")],
         ),
         sources={"b": {"Default.py": "def run():\n    return {}\n"}},
     )
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.leaf", major=1,
@@ -297,12 +297,12 @@ def test_resolve_for_project_packageage_dep_at_major(tmp_curio, install_packagea
         sources={"leaf-kind": {"Default.py": "def run():\n    return {}\n"}},
     )
     result = resolve_for_project("guest", ["ai.test.leaf@1"])
-    dirs = [p["dirName"] for p in result.installed_packageages]
+    dirs = [p["dirName"] for p in result.installed_packages]
     assert dirs == ["ai.test.pick@2", "ai.test.leaf@1"]
 
 
-def test_lockfile_to_dict(tmp_curio, install_packageage, manifest_dict):
-    install_packageage(
+def test_lockfile_to_dict(tmp_curio, install_package, manifest_dict):
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.demo", major=1,

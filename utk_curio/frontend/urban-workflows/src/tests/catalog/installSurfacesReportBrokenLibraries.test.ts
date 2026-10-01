@@ -21,12 +21,14 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 /** Every user-facing entry point that installs a package's python deps. */
 const INSTALL_SURFACES: [label: string, file: string][] = [
   ["Node Catalog drawer, add to this project",
-   "components/packages/publishing/NodeCatalogDrawer.tsx"],
+   // dev/143 F4: the drawer installs through THE catalog hook, so the notice is read there.
+   "services/packages/usePackageCatalog.ts"],
+  // dev/143 F3: the page's add-to-all-projects lives in THE catalog hook.
   ["Node Catalog page, add to all projects",
-   "pages/catalog/useNodeCatalogBrowse.ts"],
+   "services/packages/usePackageCatalog.ts"],
   ["dataflow open, auto-install of declared packages",
-   "hook/useEnsureWorkflowDeps.ts"],
-  ["archive sideload", "components/packages/publishing/usePackageArchiveImport.ts"],
+   "providers/packages/useEnsureWorkflowDeps.ts"],
+  ["archive sideload", "providers/packages/usePackageArchiveImport.ts"],
   ["Save As, save and install", "components/packages/editing/NodeSaveAsModal.tsx"],
 ];
 

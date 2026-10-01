@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_promotion` (dev/89 commit 7):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.promotion` (dev/89 commit 7):
 exact-digest promotion, stale protection, backup + rollback honesty, the
 persisted journal (disconnect-safe idempotency), pip-at-Apply compensation,
 project-lockfile update, and the activation confirmation order.
@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages import build_promotion, build_staging
-from utk_curio.backend.app.packages.build_extension import installed_package_digest
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_packager import assemble_archive
-from utk_curio.backend.app.packages.build_promotion import (
+from utk_curio.backend.app.packages.builder import promotion as build_promotion
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.builder.extension import installed_package_digest
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.packager import assemble_archive
+from utk_curio.backend.app.packages.builder.promotion import (
     PromotionError,
     confirm_nodes_created,
     confirm_registry_ready,
@@ -20,8 +21,8 @@ from utk_curio.backend.app.packages.build_promotion import (
     promote,
     rollback,
 )
-from utk_curio.backend.app.packages.installer import install_packageage_from_archive
-from utk_curio.backend.app.packages.storage import package_dir
+from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+from utk_curio.backend.app.packages.repositories.store import package_dir
 
 _DEPS = {"python": {}, "js": {}, "packages": {}}
 
@@ -62,7 +63,7 @@ class TestPromotedLibrariesActuallyImport:
     def test_a_library_that_installed_and_will_not_import_is_recorded(
         self, tmp_curio, manifest_dict, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -86,7 +87,7 @@ class TestPromotedLibrariesActuallyImport:
     def test_a_working_library_leaves_the_journal_quiet(
         self, tmp_curio, manifest_dict, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -109,12 +110,14 @@ class TestPromotedLibrariesActuallyImport:
         never probed at all - the one shape where the libraries are hardest to
         reach and the promotion said nothing about them.
         """
-        from utk_curio.backend.app.packages import backend_runtime, pip_runner
-        from utk_curio.backend.app.packages import services as svc
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages import service as svc
+        from utk_curio.backend.app.packages.application import provisioning
 
         asked: list = []
         monkeypatch.setattr(
-            svc, "_declared_import_failures",
+            provisioning, "_declared_import_failures",
             lambda uk, dn, m=None: asked.append(dn) or {"tinylib": "ImportError: boom"},
         )
         monkeypatch.setattr(
@@ -139,7 +142,7 @@ class TestPromotedLibrariesActuallyImport:
     ):
         """The package is installed by this point; a diagnostic's own crash must
         not undo it."""
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -178,8 +181,8 @@ class TestPromoteCreate:
         assert again == first
         assert [s["step"] for s in again["steps"]] == ["verified", "installed"]
 
-    def test_create_collision_refused(self, tmp_curio, manifest_dict, install_packageage):
-        install_packageage("guest")  # ai.test.demo@1 already installed
+    def test_create_collision_refused(self, tmp_curio, manifest_dict, install_package):
+        install_package("guest")  # ai.test.demo@1 already installed
         digest = _stage_build(manifest_dict)
         with pytest.raises(PromotionError, match="already installed") as exc:
             promote("guest", target="ai.test.demo@1", artifact_digest=digest)
@@ -199,15 +202,15 @@ class TestPromoteCreate:
 
 
 class TestPromoteExtend:
-    def _install_base(self, install_packageage, manifest_dict) -> str:
-        install_packageage(
+    def _install_base(self, install_package, manifest_dict) -> str:
+        install_package(
             "guest", manifest=manifest_dict(kinds=[_kind()]),
             sources={"demo-kind": {"Default.py": "def run():\n    return 1\n"}})
         return installed_package_digest("guest", "ai.test.demo@1")
 
     def test_extend_replaces_with_backup(self, tmp_curio, manifest_dict,
-                                         install_packageage):
-        base_digest = self._install_base(install_packageage, manifest_dict)
+                                         install_package):
+        base_digest = self._install_base(install_package, manifest_dict)
         digest = _stage_build(manifest_dict, version="1.1.0", body="return 2\n")
         journal = promote("guest", target="ai.test.demo@1",
                           artifact_digest=digest, base_digest=base_digest)
@@ -219,8 +222,8 @@ class TestPromoteExtend:
         assert body == "return 2\n"
 
     def test_stale_base_refused_untouched(self, tmp_curio, manifest_dict,
-                                          install_packageage):
-        self._install_base(install_packageage, manifest_dict)
+                                          install_package):
+        self._install_base(install_package, manifest_dict)
         digest = _stage_build(manifest_dict, version="1.1.0", body="return 2\n")
         with pytest.raises(PromotionError, match="stale base") as exc:
             promote("guest", target="ai.test.demo@1",
@@ -231,8 +234,8 @@ class TestPromoteExtend:
         assert "return 1" in body  # nothing was overwritten
 
     def test_rollback_restores_prior_package(self, tmp_curio, manifest_dict,
-                                             install_packageage):
-        base_digest = self._install_base(install_packageage, manifest_dict)
+                                             install_package):
+        base_digest = self._install_base(install_package, manifest_dict)
         digest = _stage_build(manifest_dict, version="1.1.0", body="return 2\n")
         promote("guest", target="ai.test.demo@1",
                 artifact_digest=digest, base_digest=base_digest)
@@ -251,10 +254,10 @@ class TestPromoteExtend:
 
 class TestPipAtApply:
     def test_pip_failure_compensates(self, tmp_curio, manifest_dict, monkeypatch,
-                                     install_packageage):
-        from utk_curio.backend.app.packages import pip_runner
+                                     install_package):
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
-        base_digest = TestPromoteExtend()._install_base(install_packageage, manifest_dict)
+        base_digest = TestPromoteExtend()._install_base(install_package, manifest_dict)
 
         def _boom(deps):
             raise pip_runner.PipInstallError("no wheel for left-pad-py")
@@ -300,7 +303,7 @@ class TestLockfileAndActivation:
                           artifact_digest=digest, project_id=project)
         assert "lockfile-updated" in [s["step"] for s in journal["steps"]]
         assert journal["lockfileAdded"] is True
-        from utk_curio.backend.app.packages.services import get_project_lockfile
+        from utk_curio.backend.app.packages.application.project_packages import get_project_lockfile
 
         assert "ai.test.demo@1" in get_project_lockfile(user_key, project)
 
@@ -342,7 +345,7 @@ class TestRestartHonesty:
 
     def _promote_with_pip(self, tmp_curio, manifest_dict, monkeypatch, *,
                           installed, skipped):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -360,7 +363,7 @@ class TestRestartHonesty:
             installed=["torch"], skipped=["shapely"])
         assert journal["restartRecommended"] == {"libs": ["torch"]}
         # The persisted journal carries it too (disconnect-safe).
-        from utk_curio.backend.app.packages.build_promotion import load_journal
+        from utk_curio.backend.app.packages.builder.promotion import load_journal
 
         stored = load_journal("guest", journal["artifactDigest"])
         assert stored["restartRecommended"] == {"libs": ["torch"]}
@@ -373,7 +376,7 @@ class TestRestartHonesty:
         assert "restartRecommended" not in journal
 
     def test_no_python_deps_stays_silent(self, tmp_curio, manifest_dict, monkeypatch):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         def _never(deps, on_line=None):  # pragma: no cover — must not run
             raise AssertionError("pip must not be invoked without declared deps")
@@ -426,7 +429,8 @@ class TestOverlayRoutingAndPostApplyProbe:
 
     def test_backend_only_deps_go_overlay_only_no_restart(
             self, tmp_curio, manifest_dict, monkeypatch):
-        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         calls = {}
 
@@ -453,7 +457,8 @@ class TestOverlayRoutingAndPostApplyProbe:
 
     def test_mixed_manifest_routes_both_restart_from_host_half(
             self, tmp_curio, manifest_dict, monkeypatch):
-        from utk_curio.backend.app.packages import backend_runtime, pip_runner
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         calls = {"overlay": False, "host": False}
         monkeypatch.setattr(
@@ -495,7 +500,7 @@ class TestOverlayRoutingAndPostApplyProbe:
         # Module-level import of a dep that exists ONLY in the overlay: the
         # probe passes exactly because the overlay rides PYTHONPATH — the
         # shadowing edge exercised end to end with a real worker.
-        from utk_curio.backend.app.packages import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
         def _fake_overlay(user_key, dir_name, deps, on_line=None):
             overlay = backend_runtime.overlay_dir_for(user_key, dir_name)

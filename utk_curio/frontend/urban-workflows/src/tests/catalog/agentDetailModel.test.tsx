@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
  * is made in AI Settings, which the link opens on that agent's row.
  */
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { readDefinition: jest.fn(() => Promise.resolve({ manifest: {}, prompts: {} })) },
 }));
 

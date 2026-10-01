@@ -47,13 +47,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from utk_curio.backend.app.packages.installer import (  # noqa: E402
-    refresh_packageage_integrity,
-)
-from utk_curio.backend.app.packages.manifest import (  # noqa: E402
-    ManifestError,
-    load_packageage_manifest,
-)
+from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.service import ManifestError
 
 # Mirrors the schema's `id` pattern (docs/schemas/node-package.v4.json).
 PACKAGE_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]*[a-z0-9]$")
@@ -566,11 +562,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Validate + hash ──
     try:
-        load_packageage_manifest(package_root)
+        load_package_manifest(package_root)
     except ManifestError as exc:
         print(f"error: the generated manifest did not validate: {exc}", file=sys.stderr)
         return 1
-    refresh_packageage_integrity(package_root)
+    refresh_package_integrity(package_root)
     written.append("integrity.json")
 
     # ── Report ──

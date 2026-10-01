@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .utils import (
     api_json,

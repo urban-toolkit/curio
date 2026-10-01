@@ -9,7 +9,8 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages.factory import _STARTER_CODE_SENTINEL
+from utk_curio.backend.app.packages.builder.factory import _STARTER_CODE_SENTINEL
+from utk_curio.backend.app.packages.repositories import catalog_dir
 
 
 def _auth(token):
@@ -87,7 +88,7 @@ def test_catalog_lists_committed_fixtures(client, user_and_token, tmp_curio):
 
 
 def test_list_installed_serializes_lineage(
-    client, user_and_token, tmp_curio, install_packageage, manifest_dict,
+    client, user_and_token, tmp_curio, install_package, manifest_dict,
 ):
     from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -97,7 +98,7 @@ def test_list_installed_serializes_lineage(
         "forkedFrom": {"packageId": "ai.upstream.catalog", "major": 1},
         "root": {"packageId": "ai.upstream.catalog", "major": 1},
     }
-    install_packageage(
+    install_package(
         uk,
         manifest=manifest_dict(package_id="curio.test.lineage.package", lineage=lineage),
     )
@@ -111,7 +112,7 @@ def test_list_installed_serializes_lineage(
 
 
 def test_list_installed_orders_by_created_at_ms_newest_first(
-    client, user_and_token, tmp_curio, install_packageage, manifest_dict,
+    client, user_and_token, tmp_curio, install_package, manifest_dict,
 ):
     """``GET /api/packages`` lists packages sorted by canonical ``manifest.createdAt``."""
 
@@ -119,14 +120,14 @@ def test_list_installed_orders_by_created_at_ms_newest_first(
 
     user, token = user_and_token
     uk = _user_dir_key(user)
-    install_packageage(
+    install_package(
         uk,
         manifest=manifest_dict(
             package_id="ai.sort.older",
             created_at="2020-01-01T00:00:00Z",
         ),
     )
-    install_packageage(
+    install_package(
         uk,
         manifest=manifest_dict(
             package_id="ai.sort.newer",
@@ -174,8 +175,8 @@ def test_install_from_catalog_rejects_unknown(client, user_and_token, tmp_curio)
 
 def _archive_from_draft(d: dict) -> bytes:
     """Build a zip from a factory-shaped draft (no HTTP roundtrip)."""
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
-    return build_packageage_archive(d).archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
+    return build_package_archive(d).archive
 
 
 def test_upload_then_list_then_delete(client, user_and_token, tmp_curio):
@@ -243,7 +244,7 @@ def test_upload_replace(client, user_and_token, tmp_curio):
     assert resp.get_json()["replacedExisting"] is True
 
 
-def test_delete_unknown_packageage_returns_404(client, user_and_token, tmp_curio):
+def test_delete_unknown_package_returns_404(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = client.delete("/api/packages/ai.unknown@1", headers=_auth(token))
     assert resp.status_code == 404
@@ -354,7 +355,7 @@ def test_export_then_upload_with_replace_round_trips(client, user_and_token, tmp
 @pytest.fixture()
 def pip_spy(monkeypatch):
     """Record what pip was asked to install; never actually install."""
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     asked: list[dict] = []
 
@@ -448,7 +449,7 @@ def test_every_file_first_install_reports_a_library_that_cannot_be_imported(
     this the response is a clean 201 and the user meets the failure later as a
     node's ImportError.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     monkeypatch.setattr(
         pip_runner, "install_python_deps",
@@ -490,7 +491,7 @@ def test_a_pip_failure_is_reported_and_the_package_stays_installed(
     Discarding a package the user just authored to punish an unreachable index
     is a worse answer than naming the library that did not arrive.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     def _fail(deps, on_line=None):
         raise pip_runner.PipInstallError("ERROR: No matching distribution found")
@@ -525,7 +526,7 @@ def test_a_declaration_pip_cannot_parse_is_reported_not_a_500(
     ``dependencies.python`` from a node body, so a private module name lands in
     the manifest as a requirement.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     def _bad_spec(deps, on_line=None):
         raise pip_runner.PipSpecError(
@@ -549,7 +550,7 @@ def test_a_package_declaring_nothing_never_pays_for_a_probe(
     client, user_and_token, tmp_curio, monkeypatch,
 ):
     """The probe costs a subprocess and ~19s of cold imports; it is not free."""
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     def _boom(*a, **kw):  # pragma: no cover
         raise AssertionError("probed a package that declares no python deps")
@@ -667,7 +668,7 @@ def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_cu
     )
 
 
-def test_factory_install_creates_packageage(client, user_and_token, tmp_curio):
+def test_factory_install_creates_package(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = client.post(
         "/api/packages/factory/install",
@@ -691,7 +692,7 @@ def test_factory_rejects_malformed_draft(client, user_and_token, tmp_curio):
     assert resp.status_code == 400
 
 
-def test_factory_install_rejects_read_only_packageage(client, user_and_token, tmp_curio):
+def test_factory_install_rejects_read_only_package(client, user_and_token, tmp_curio):
     """Read-only packages (built-in or curated) refuse factory-install writes."""
     _, token = user_and_token
     draft = _draft()
@@ -705,7 +706,7 @@ def test_factory_install_rejects_read_only_packageage(client, user_and_token, tm
     assert "read-only" in resp.get_json()["error"]
 
 
-def test_remove_packageage_rejects_curio_builtin(client, user_and_token, tmp_curio):
+def test_remove_package_rejects_curio_builtin(client, user_and_token, tmp_curio):
     """DELETE on a curio.builtin@<major> dir must be rejected before touching disk."""
     _, token = user_and_token
     resp = client.delete("/api/packages/curio.builtin@1", headers=_auth(token))
@@ -803,12 +804,12 @@ def test_patch_package_metadata_rejects_disallowed_keys(client, user_and_token, 
 
 def test_patch_package_metadata_rejects_readonly_builtin(client, user_and_token, tmp_curio):
     """Read-only packages (curio.builtin@1) return 403 — no defacement allowed."""
-    from utk_curio.backend.app.packages import seed_dev_packageages
+    from utk_curio.backend.app.packages import seed_dev_packages
     from utk_curio.backend.app.projects.services import _user_dir_key
     user, token = user_and_token
     # Auto-seeding fires for ``guest`` at app boot; this test uses a real user
     # so we must seed builtin into that user's store explicitly.
-    seed_dev_packageages(user_key=_user_dir_key(user))
+    seed_dev_packages(user_key=_user_dir_key(user))
     resp = client.patch(
         "/api/packages/curio.builtin@1",
         data=json.dumps({"description": "haha"}),
@@ -909,7 +910,7 @@ def test_patched_metadata_and_readme_survive_export_and_reupload(
 
 
 def test_factory_capabilities_reflect_publish_env_switch(client, user_and_token, monkeypatch):
-    from utk_curio.backend.app.packages import routes as packages_routes
+    from utk_curio.backend.app.packages.routes import common as routes_common
 
     _, token = user_and_token
     # Default — preserve prior behavior: publish is allowed.
@@ -917,21 +918,21 @@ def test_factory_capabilities_reflect_publish_env_switch(client, user_and_token,
     assert r1.status_code == 200
     assert r1.get_json()["catalogPublish"] is True
 
-    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
+    monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     r_off = client.get("/api/packages/factory/capabilities", headers=_auth(token))
     assert r_off.status_code == 200
     assert r_off.get_json()["catalogPublish"] is False
 
-    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True)
+    monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True)
     r2 = client.get("/api/packages/factory/capabilities", headers=_auth(token))
     assert r2.status_code == 200
     assert r2.get_json()["catalogPublish"] is True
 
 
 def test_factory_publish_catalog_forbidden_when_env_off(client, user_and_token, monkeypatch):
-    from utk_curio.backend.app.packages import routes as packages_routes
+    from utk_curio.backend.app.packages.routes import common as routes_common
 
-    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
+    monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     _, token = user_and_token
     resp = client.post(
         "/api/packages/factory/publish-catalog",
@@ -946,11 +947,9 @@ def test_factory_publish_catalog_forbidden_when_env_off(client, user_and_token, 
 
 def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, monkeypatch, tmp_path):
     """Publish redirects catalog root to ``tmp_path`` so we don't touch committed fixtures."""
-    from utk_curio.backend.app.packages import routes as packages_routes
-
-    fake_root = tmp_path / "fixture_packageages"
+    fake_root = tmp_path / "fixture_packages"
     fake_root.mkdir()
-    monkeypatch.setattr(packages_routes, "_catalog_root", lambda: fake_root)
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
 
     draft = _draft()
     draft["manifest"]["id"] = "ai.test.catalog.pub"
@@ -992,11 +991,10 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
 
 
 def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypatch, tmp_path):
-    from utk_curio.backend.app.packages import routes as packages_routes
 
-    fake_root = tmp_path / "fixture_packageages"
+    fake_root = tmp_path / "fixture_packages"
     fake_root.mkdir()
-    monkeypatch.setattr(packages_routes, "_catalog_root", lambda: fake_root)
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
 
     draft = _draft()
     draft["manifest"]["id"] = "ai.test.catalog.unpub"
@@ -1026,9 +1024,9 @@ def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypa
 
 
 def test_unpublish_from_catalog_forbidden_when_env_off(client, user_and_token, monkeypatch):
-    from utk_curio.backend.app.packages import routes as packages_routes
+    from utk_curio.backend.app.packages.routes import common as routes_common
 
-    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
+    monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     _, token = user_and_token
     resp = client.delete(
         "/api/packages/catalog/ai.test.catalog.unpub@1",
@@ -1062,7 +1060,7 @@ def test_resolve_ok(client, user_and_token, tmp_curio):
     assert "numpy" in body["lockfile"]["pythonDeps"]
 
 
-def test_resolve_falls_back_to_catalog_for_uninstalled_packageage(
+def test_resolve_falls_back_to_catalog_for_uninstalled_package(
     client, user_and_token, tmp_curio,
 ):
     """The pre-install conflict probe in NodesHub posts both installed
@@ -1159,7 +1157,7 @@ def test_resolve_catalog_candidate_alongside_the_builtin_package(
     assert body["lockfile"]["pythonDeps"]["geopandas"] == ">=1.1.3"
 
 
-def test_resolve_unknown_packageage_still_errors(client, user_and_token, tmp_curio):
+def test_resolve_unknown_package_still_errors(client, user_and_token, tmp_curio):
     """A package that is neither installed nor in the catalog must still
     surface the precise 'is malformed' error so the wizard / probe gets
     a useful message — the catalog fallback only suppresses the false
@@ -1235,11 +1233,9 @@ def fake_catalog(tmp_path, monkeypatch):
 
     The real catalog is <repo_root>/packages/, which tests must not mutate.
     """
-    from utk_curio.backend.app.packages import routes as packages_routes
-
     catalog = tmp_path / "catalog"
     catalog.mkdir()
-    monkeypatch.setattr(packages_routes, "_catalog_root", lambda: catalog)
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: catalog)
     return catalog
 
 
@@ -1377,7 +1373,7 @@ def test_catalog_install_replace_refreshes_behavior_bundle(
 class TestExportFromTheCatalog:
     """The catalog page exports every row it lists (#275).
 
-    ``export_packageage_archive`` read the user's store only, so "View details
+    ``export_package_archive`` read the user's store only, so "View details
     -> Export" on a catalog row the account had not added answered
     ``package X is not installed`` - true, and useless from a page whose whole
     point is that the package is right there. The route now falls back to the
@@ -1403,16 +1399,14 @@ class TestExportFromTheCatalog:
         assert "integrity.json" not in names
 
     def test_an_installed_copy_still_wins(self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.packages.installer import (
-            install_packageage_from_directory,
-            package_dir,
-        )
-        from utk_curio.backend.app.packages.routes import _catalog_root
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+        from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         user_key = _user_dir_key(user)
-        install_packageage_from_directory(user_key, _catalog_root() / self.CATALOG_ONLY)
+        install_package_from_directory(user_key, catalog_root() / self.CATALOG_ONLY)
         # Change the installed copy so the two sources are distinguishable.
         readme = package_dir(user_key, self.CATALOG_ONLY) / "README.md"
         readme.write_text("installed copy", encoding="utf-8")

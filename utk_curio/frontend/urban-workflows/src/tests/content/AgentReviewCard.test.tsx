@@ -3,7 +3,7 @@ import { subscribeConnectionKeysRequests } from "../../components/connectionKeys
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { AgentReviewCard, nodeKindExecutable } from "../../components/agents/content/AgentReviewCard";
-import type { AgentProposalPart } from "../../api/agentsApi";
+import type { AgentProposalPart } from "../../services/agents";
 
 const part = (status: AgentProposalPart["status"] = "pending"): AgentProposalPart => ({
   type: "proposal",

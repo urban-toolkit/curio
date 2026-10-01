@@ -11,11 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages import backend_contract as bc
-from utk_curio.backend.app.packages.manifest import (
-    ManifestError,
-    load_packageage_manifest,
-)
+from utk_curio.backend.app.packages.domain import backend_contract as bc
+from utk_curio.backend.app.packages.domain.manifest import ManifestError
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
 
 # ── envelope: requests ───────────────────────────────────────────────────────
@@ -137,7 +135,7 @@ class TestManifestBackend:
     def test_parses_declaration(self, tmp_path: Path):
         d = _write_pkg(tmp_path, backend=_GOOD_BACKEND,
                        permissions=[bc.PERMISSION_SERVER_CODE])
-        m = load_packageage_manifest(d)
+        m = load_package_manifest(d)
         assert m.backend is not None
         assert m.backend.entry == "backend/handler.py"
         assert m.backend.handler_names == ["word-count", "echo"]
@@ -146,13 +144,13 @@ class TestManifestBackend:
         assert m.backend.timeout_class_for("ghost") is None
 
     def test_absent_backend_stays_none(self, tmp_path: Path):
-        m = load_packageage_manifest(_write_pkg(tmp_path))
+        m = load_package_manifest(_write_pkg(tmp_path))
         assert m.backend is None
 
     def test_server_code_permission_required(self, tmp_path: Path):
         d = _write_pkg(tmp_path, backend=_GOOD_BACKEND, permissions=[])
         with pytest.raises(ManifestError, match="server-code"):
-            load_packageage_manifest(d)
+            load_package_manifest(d)
 
     @pytest.mark.parametrize("bad_entry", [
         "handler.py", "backend/", "backend/../escape.py", "backend/h.txt",
@@ -165,7 +163,7 @@ class TestManifestBackend:
             permissions=[bc.PERMISSION_SERVER_CODE],
         )
         with pytest.raises(ManifestError, match="backend"):
-            load_packageage_manifest(d)
+            load_package_manifest(d)
 
     def test_handler_validation(self, tmp_path: Path):
         for handlers, marker in [
@@ -180,7 +178,7 @@ class TestManifestBackend:
                 permissions=[bc.PERMISSION_SERVER_CODE],
             )
             with pytest.raises(ManifestError, match=marker):
-                load_packageage_manifest(d)
+                load_package_manifest(d)
 
     def test_template_backend_handler_cross_checked(self, tmp_path: Path):
         # Names a declared handler → parses.
@@ -189,7 +187,7 @@ class TestManifestBackend:
             permissions=[bc.PERMISSION_SERVER_CODE],
             templates=[_template(backendHandler="word-count")],
         )
-        m = load_packageage_manifest(d)
+        m = load_package_manifest(d)
         assert m.templates[0].backend_handler == "word-count"
         # Undeclared handler name → refused naming the declared set.
         d2 = _write_pkg(
@@ -198,17 +196,17 @@ class TestManifestBackend:
             templates=[_template(backendHandler="ghost")],
         )
         with pytest.raises(ManifestError, match="not declared"):
-            load_packageage_manifest(d2)
+            load_package_manifest(d2)
         # backendHandler without a backend block → refused.
         d3 = _write_pkg(tmp_path, templates=[_template(backendHandler="word-count")])
         with pytest.raises(ManifestError, match="requires a top-level 'backend'"):
-            load_packageage_manifest(d3)
+            load_package_manifest(d3)
 
 
 # ── installer: the backend/ bucket ───────────────────────────────────────────
 class TestInstallerBackendDir:
     def test_backend_is_an_allowed_top_dir(self):
-        from utk_curio.backend.app.packages.installer import _ALLOWED_TOP_DIRS
+        from utk_curio.backend.app.packages.repositories.archive import _ALLOWED_TOP_DIRS
 
         assert "backend" in _ALLOWED_TOP_DIRS
 

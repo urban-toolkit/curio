@@ -24,7 +24,7 @@ from unittest.mock import patch
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.agents import llm_configs
+from utk_curio.backend.app.agents.infrastructure import llm_configs
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 KEY = "sk-user-secret-0123456789"
@@ -208,7 +208,7 @@ class TestValidation:
         _, token = user_and_token
         body = {"label": "Scripted", "apiType": "testing", "model": "scripted"}
         assert client.post(f"{BASE}/configs", json=body, headers=_auth(token)).status_code == 201
-        with patch("utk_curio.backend.app.agents.testing_provider.enabled", return_value=False):
+        with patch('utk_curio.backend.app.agents.infrastructure.testing_provider.enabled', return_value=False):
             body["label"] = "Scripted 2"
             refused = client.post(f"{BASE}/configs", json=body, headers=_auth(token))
         assert refused.status_code == 400
@@ -329,7 +329,7 @@ class TestAChoicePerAgent:
         return client.put(f"{BASE}/assignments", json=body, headers=_auth(token))
 
     def test_the_cards_are_the_choosable_built_ins(self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         _, token = user_and_token
         listing = client.get(BASE, headers=_auth(token)).get_json()
@@ -386,7 +386,8 @@ class TestAChoicePerAgent:
         assert refused.status_code == 400 and "send" in refused.get_json()["error"]
 
     def test_an_imported_agent_is_choosable(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import services
+        # The route reads the facade (memo dev/142 B5), so that is the attribute to intercept.
+        from utk_curio.backend.app.agents import service as services
 
         _, token = user_and_token
         original = services.choosable_agents
@@ -425,7 +426,7 @@ class TestModelListing:
             seen.append(config_)
             return ["m1"]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.providers.list_provider_models", _fake)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.list_provider_models', _fake)
         return seen
 
     def test_a_named_configuration_lends_its_key_to_its_own_endpoint_only(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -493,8 +494,8 @@ class TestARunNamesItsConfiguration:
         def _refuse(config_, messages, **kw):
             raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {KEY}")
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _refuse)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn",
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _refuse)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn',
                             lambda config_, messages, **kw: _refuse(config_, messages))
         coord = "agent.chat-agent@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
@@ -511,13 +512,13 @@ class TestARunNamesItsConfiguration:
         assert KEY not in body and KEY not in json.dumps(turns)
 
     def test_the_pins_and_the_ledger_record_it(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import ledger
+        from utk_curio.backend.app.agents.repositories import ledger
 
         user, token = user_and_token
         config_id = _create(client, token, label="Scripted", apiType="testing", baseUrl="",
                             apiKey="", model="scripted").get_json()["config"]["id"]
         client.put(f"{BASE}/default", json={"configId": config_id}, headers=_auth(token))
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn",
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
                             lambda config_, messages, **kw: "ok")
         coord = "agent.chat-agent@1.0.0"
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))

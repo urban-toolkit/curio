@@ -1,5 +1,5 @@
 import React from "react";
-import { DrawerTab } from "./packageTypes";
+import { DrawerTab } from "../../../services/packages";
 import styles from "./DrawerTabs.module.css";
 
 export interface DrawerTabsProps {

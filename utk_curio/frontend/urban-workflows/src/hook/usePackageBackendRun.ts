@@ -15,7 +15,7 @@
  */
 import { useMemo } from "react";
 
-import { invokePackageBackend } from "../api/packageBackendApi";
+import { invokePackageBackend } from "../services/packages";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import type { NodeTemplateId } from "../registry/types";
 

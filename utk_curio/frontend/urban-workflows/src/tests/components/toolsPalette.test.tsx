@@ -55,7 +55,7 @@ jest.mock("../../registry", () => ({
 // which ship ESM that jest's transform does not handle. ToolsMenu only needs the
 // one constant.
 jest.mock("../../registry/packagesClient", () => ({ BUILTIN_PACKAGE_ID: "curio.builtin" }));
-jest.mock("../../api/packagesApi", () => ({ refreshPackageRegistry: jest.fn() }));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({ refreshPackageRegistry: jest.fn() }));
 jest.mock("../../providers/FlowProvider", () => ({
     useFlowContext: () => ({ playAllNodes: jest.fn() }),
 }));

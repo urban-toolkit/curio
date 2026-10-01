@@ -23,10 +23,10 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
 jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { readDefinition: jest.fn(() => new Promise(() => {})) },
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listInstalled: jest.fn(),
     catalog: jest.fn(),
@@ -52,7 +52,7 @@ import { DatasetDetailsContext } from "../../components/datasets/catalog/dataset
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { packagesApi } = require("../../api/packagesApi") as {
+const { packagesApi } = require("../../services/packages/packagesApi") as {
   packagesApi: { listInstalled: jest.Mock; catalog: jest.Mock };
 };
 

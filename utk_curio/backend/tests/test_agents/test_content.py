@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import re
 
-from utk_curio.backend.app.agents import content
+from utk_curio.backend.app.agents.domain import content
 
 
 def _tail(payload: object) -> str:

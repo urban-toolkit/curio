@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.agents import agent_jobs
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -49,7 +49,7 @@ def _endpoint_not_asked_about_tools(monkeypatch):
     that cannot be asked gets: the fenced protocol, which every scripted fake
     in the suite speaks. The trial's own tests restore the real probe.
     """
-    from utk_curio.backend.app.agents import providers
+    from utk_curio.backend.app.agents.infrastructure import providers
 
     monkeypatch.setattr(
         providers, "probe_native_tools",

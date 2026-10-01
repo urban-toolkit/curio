@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import publications
-from utk_curio.backend.app.agents.manifest import AgentManifestError
+from utk_curio.backend.app.agents.repositories import publications
+from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
 
 
 @pytest.fixture

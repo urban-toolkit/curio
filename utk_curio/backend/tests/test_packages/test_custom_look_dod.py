@@ -24,12 +24,14 @@ import pytest
 
 from .conftest import write_fake_tool  # noqa: F401  (default_llm_provider is a fixture)
 
-from utk_curio.backend.app.packages import build_jobs, build_promotion, build_staging
-from utk_curio.backend.app.packages.build_extension import installed_package_digest
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_pipeline import run_build
-from utk_curio.backend.app.packages.build_preview import PREVIEW_STATES
-from utk_curio.backend.app.packages.node_appearance import NAMED_COLORS
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
+from utk_curio.backend.app.packages.builder import promotion as build_promotion
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.builder.extension import installed_package_digest
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.pipeline import run_build
+from utk_curio.backend.app.packages.builder.preview import PREVIEW_STATES
+from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
 from utk_curio.backend.tests.test_packages.test_build_compiler import _FAKE_ESBUILD
 from utk_curio.backend.tests.test_packages.test_build_preview import _FAKE_RUNNER
 
@@ -160,7 +162,7 @@ class TestScenarioDrafts:
         assert colors == [NAMED_COLORS["pink"], NAMED_COLORS["lavender"], "#336699"]
 
     def test_invalid_note_color_refuses(self):
-        from utk_curio.backend.app.packages.build_models import BuildRequestError
+        from utk_curio.backend.app.packages.builder.models import BuildRequestError
 
         bad = _postit_scenario([{"templateId": "postit-note", "content": "x",
                                  "appearance": {"backgroundColor": "#777777"}}])
@@ -175,7 +177,7 @@ class TestLookAgnosticPipeline:
         return job.result
 
     def test_postit_scenario_end_to_end(self, tmp_curio, pinned_tools):
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.repositories.store import package_dir
 
         result = self._build_ready(_postit_scenario(_NOTES))
         archive = build_staging.read_artifact("guest", result.artifact_digest)
@@ -272,7 +274,7 @@ class TestDodThroughTheResearcher:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -280,7 +282,7 @@ class TestDodThroughTheResearcher:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -329,8 +331,8 @@ class TestWeatherInParisScenario:
 
     def test_recorded_video_scenario(self, client, user_and_token, tmp_curio,
                                      pinned_tools, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -391,7 +393,7 @@ class TestWeatherInParisScenario:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -399,7 +401,7 @@ class TestWeatherInParisScenario:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -515,7 +517,7 @@ class TestCurioNotesRetry:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -523,7 +525,7 @@ class TestCurioNotesRetry:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         run = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run",
@@ -564,12 +566,12 @@ class TestReuseFirstNoteCreation:
     def _auth(self, token):
         return {"Authorization": f"Bearer {token}"}
 
-    def test_presentation_template_is_authorable(self, tmp_curio, install_packageage):
-        from utk_curio.backend.app.packages import services as packages_services
+    def test_presentation_template_is_authorable(self, tmp_curio, install_package):
+        from utk_curio.backend.app.packages import service as packages_services
         from utk_curio.backend.app.projects import storage as projects_storage
 
         manifest = _postit_scenario()["manifest"]
-        install_packageage("guest", manifest=manifest, sources={})
+        install_package("guest", manifest=manifest, sources={})
         projects_storage.write_spec("guest", "p-reuse", {
             "dataflow": {"nodes": [], "edges": [],
                          "packages": ["ai.agent.postit@1"]}})
@@ -601,7 +603,7 @@ class TestReuseFirstNoteCreation:
         script = {"replies": [], "calls": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -611,7 +613,7 @@ class TestReuseFirstNoteCreation:
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
 
         # Turn 1: install the notes package through the reviewed draft.
         script["replies"] = [

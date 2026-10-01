@@ -3,8 +3,8 @@ them merged agents with modes, and the P5 composites (memo dev/48)."""
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import builtin
-from utk_curio.backend.app.agents.manifest import AgentManifest
+from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 
 # The dev/06 canonical map: agent id -> its prompt file and capabilities.
@@ -111,7 +111,8 @@ class TestRoster:
         } - _CARDS
 
     def test_every_card_meets_the_rule(self):
-        from utk_curio.backend.app.agents import content, services
+        from utk_curio.backend.app.agents.domain import content
+        from utk_curio.backend.app.agents.application import tool_rounds as services
 
         mutate = set(services.MUTATE_PROPOSAL_TOOLS)
         structured = set(content.STRUCTURED_CAPABILITIES)
@@ -130,7 +131,8 @@ class TestRoster:
 
     def test_no_internal_agent_meets_the_rule(self):
         # Otherwise it would be a card.
-        from utk_curio.backend.app.agents import content, services
+        from utk_curio.backend.app.agents.domain import content
+        from utk_curio.backend.app.agents.application import tool_rounds as services
 
         mutate = set(services.MUTATE_PROPOSAL_TOOLS)
         structured = set(content.STRUCTURED_CAPABILITIES)
@@ -252,7 +254,7 @@ class TestPreambleAndInputs:
     every built-in manifest carries its preamble asset and non-empty reads."""
 
     def test_every_builtin_declares_system_asset_and_reads(self):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         for m in builtin.list_builtin_manifests():
             assert "system" in m.prompts, m.agent_id
@@ -260,7 +262,7 @@ class TestPreambleAndInputs:
             assert m.inputs_reads, f"{m.agent_id} has no inputs.reads"
 
     def test_every_builtin_shares_the_one_preamble(self):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         for m in builtin.list_builtin_manifests():
             assert m.prompts["system"].path == "prompts/default_preamble.txt", m.agent_id
@@ -288,7 +290,7 @@ class TestPreambleAndInputs:
         assert "never a guessed filename" in text
 
     def test_preamble_text_readable_for_all_builtins(self):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         for spec in builtin.BUILTIN_AGENTS:
             coord = f"{spec.agent_id}@1.0.0"
@@ -667,7 +669,7 @@ class TestPackageBuilder:
         assert m.provenance.trust == "built-in"
 
     def test_draft_tool_granted_now_that_the_contract_landed(self):
-        from utk_curio.backend.app.agents import tools
+        from utk_curio.backend.app.agents.application import tools
 
         m = builtin.get_builtin_manifest(self.COORD)
         # dev/89 commit 8 registered the package.draft.apply ToolContract
@@ -873,7 +875,7 @@ class TestResearcher:
         # Apply on the install card proceeds to the notes without a second turn.
         assert 'an install request without "notes" enlists a package and places nothing' in low
         assert "you do not need a second turn" in low
-        from utk_curio.backend.app.agents import tools as tools_mod
+        from utk_curio.backend.app.agents.application import tools as tools_mod
 
         contract = tools_mod.REGISTRY["node.create"].description
         for name in ('"title"', '"goal"', '"appearance": {"backgroundColor"'):

@@ -12,11 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages.manifest import load_packageage_manifest
-from utk_curio.backend.app.packages.routes import _manifest_to_payload
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+from utk_curio.backend.app.packages.schemas.responses import package_payload
 
 # The COMMITTED catalog, named directly rather than through
-# ``_catalog_root()``: these assertions are about what the repository ships,
+# ``catalog_root()``: these assertions are about what the repository ships,
 # and the runtime root is relocatable (``CURIO_PACKAGES_ROOT``) so a test
 # session gets its own copy to publish into.
 REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
@@ -45,7 +46,7 @@ EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
 
 
 @pytest.fixture()
-def builtin_packageage_dir() -> Path:
+def builtin_package_dir() -> Path:
     root = REAL_CATALOG
     candidates = sorted(
         d for d in root.iterdir()
@@ -55,16 +56,16 @@ def builtin_packageage_dir() -> Path:
     return candidates[-1]
 
 
-def test_builtin_packageage_manifest_loads(builtin_packageage_dir: Path):
-    manifest = load_packageage_manifest(builtin_packageage_dir)
+def test_builtin_package_manifest_loads(builtin_package_dir: Path):
+    manifest = load_package_manifest(builtin_package_dir)
     assert manifest.package_id == "curio.builtin"
     assert manifest.major == 1
     template_ids = {t.template_id for t in manifest.templates}
     assert template_ids == EXPECTED_TEMPLATE_IDS
 
 
-def test_builtin_packageage_every_template_has_behavior_and_icon(builtin_packageage_dir: Path):
-    manifest = load_packageage_manifest(builtin_packageage_dir)
+def test_builtin_package_every_template_has_behavior_and_icon(builtin_package_dir: Path):
+    manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
         assert template.behavior in EXPECTED_BEHAVIORS, (
             f"template {template.template_id} declares unknown behavior {template.behavior!r}"
@@ -75,19 +76,19 @@ def test_builtin_packageage_every_template_has_behavior_and_icon(builtin_package
         )
 
 
-def test_builtin_packageage_ships_no_sources(builtin_packageage_dir: Path):
+def test_builtin_package_ships_no_sources(builtin_package_dir: Path):
     """Built-in templates are structural shells — no starter code files."""
-    manifest = load_packageage_manifest(builtin_packageage_dir)
+    manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
         assert template.source is None, (
             f"built-in template {template.template_id} must not declare a source"
         )
-    assert not (builtin_packageage_dir / "sources").exists(), (
+    assert not (builtin_package_dir / "sources").exists(), (
         "built-in package must not ship a sources/ directory"
     )
 
 
-def test_every_catalog_packageage_validates_against_schema():
+def test_every_catalog_package_validates_against_schema():
     """Every manifest in ``packages/`` must satisfy ``docs/schemas/node-package.v4.json``."""
     import json
     from jsonschema import Draft202012Validator
@@ -106,10 +107,10 @@ def test_every_catalog_packageage_validates_against_schema():
         )
 
 
-def test_builtin_packageage_payload_passthrough(builtin_packageage_dir: Path):
+def test_builtin_package_payload_passthrough(builtin_package_dir: Path):
     """The wire payload exposes the new manifest fields per template."""
-    manifest = load_packageage_manifest(builtin_packageage_dir)
-    payload = _manifest_to_payload(manifest)
+    manifest = load_package_manifest(builtin_package_dir)
+    payload = package_payload(manifest)
     templates_by_id = {t["templateId"]: t for t in payload["templates"]}
     vega = templates_by_id["vis-vega"]
     assert vega["behavior"] == "vega"

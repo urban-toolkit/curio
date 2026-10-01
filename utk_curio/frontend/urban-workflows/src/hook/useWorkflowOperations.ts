@@ -27,7 +27,7 @@ import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsAp
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { dashboardSourceNodeIds, prepareDashboardNodes } from "../utils/dashboardLayout";
-import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
+import { notifyAgentDockRefresh } from "../services/agents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";

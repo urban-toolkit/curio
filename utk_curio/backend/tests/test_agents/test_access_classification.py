@@ -10,7 +10,7 @@ status, and the page title of a non-data answer.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import verify
+from utk_curio.backend.app.agents.application import verify
 
 
 class TestClassifyAccess:

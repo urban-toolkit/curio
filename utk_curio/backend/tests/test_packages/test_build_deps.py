@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_deps` (dev/89 commit 4):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.deps` (dev/89 commit 4):
 scan+merge with explicit constraints winning, JS registry resolution with
 lock/integrity/license/SBOM, verified-cache writes, policy gates, python
 review without installation, and package-dep checks.
@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages.build_deps import (
+from utk_curio.backend.app.packages.builder.deps import (
     DependencyPolicy,
     HttpRegistryFetcher,
     DependencyResolutionError,
@@ -22,7 +22,7 @@ from utk_curio.backend.app.packages.build_deps import (
     review_package_dependencies,
     review_python_dependencies,
 )
-from utk_curio.backend.app.packages.build_models import parse_build_request
+from utk_curio.backend.app.packages.builder.models import parse_build_request
 
 
 def _sri(data: bytes) -> str:
@@ -317,9 +317,9 @@ class TestPythonReview:
         assert any(f.code == "py-bad-constraint" and f.severity == "block"
                    for f in findings)
 
-    def test_conflict_with_installed_package_blocks(self, tmp_curio, install_packageage,
+    def test_conflict_with_installed_package_blocks(self, tmp_curio, install_package,
                                                     manifest_dict):
-        install_packageage("guest",
+        install_package("guest",
                            manifest=manifest_dict(python_deps={"rasterio": "^1.3.0"}))
         _, findings = review_python_dependencies(
             {"rasterio": {"constraint": ">=2.0.0", "source": "declared"}},
@@ -329,9 +329,9 @@ class TestPythonReview:
         assert len(conflict) == 1 and conflict[0].severity == "block"
         assert "rasterio" in conflict[0].message
 
-    def test_compatible_with_installed_package_passes(self, tmp_curio, install_packageage,
+    def test_compatible_with_installed_package_passes(self, tmp_curio, install_package,
                                                       manifest_dict):
-        install_packageage("guest",
+        install_package("guest",
                            manifest=manifest_dict(python_deps={"rasterio": "^1.3.0"}))
         _, findings = review_python_dependencies(
             {"rasterio": {"constraint": "^1.3.0", "source": "declared"}},
@@ -341,8 +341,8 @@ class TestPythonReview:
 
 
 class TestPackageDeps:
-    def test_installed_in_range_passes(self, tmp_curio, install_packageage):
-        install_packageage("guest")  # ai.test.demo@1 version 1.0.0
+    def test_installed_in_range_passes(self, tmp_curio, install_package):
+        install_package("guest")  # ai.test.demo@1 version 1.0.0
         rows, findings = review_package_dependencies({"ai.test.demo": "^1.0.0"}, "guest")
         assert rows[0]["status"] == "installed"
         assert rows[0]["installedVersion"] == "1.0.0"
@@ -354,8 +354,8 @@ class TestPackageDeps:
         assert any(f.code == "package-dep-missing" and f.severity == "block"
                    for f in findings)
 
-    def test_version_mismatch_blocks(self, tmp_curio, install_packageage):
-        install_packageage("guest")  # version 1.0.0
+    def test_version_mismatch_blocks(self, tmp_curio, install_package):
+        install_package("guest")  # version 1.0.0
         rows, findings = review_package_dependencies({"ai.test.demo": ">=2.0.0"}, "guest")
         assert rows[0]["status"] == "version-mismatch"
         assert any(f.code == "package-dep-version" for f in findings)

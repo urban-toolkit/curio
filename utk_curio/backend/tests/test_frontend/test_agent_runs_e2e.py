@@ -34,7 +34,7 @@ import re
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .utils import (
     api_json,
@@ -454,7 +454,7 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     """The same turn on an endpoint that calls tools natively: the run is
     offered its tools instead of the fenced syntax, and the model's call does
     what the fenced request does, its result answering the call."""
-    from utk_curio.backend.app.agents import tools
+    from utk_curio.backend.app.agents.application import tools
 
     require_project_page()
     require_user_auth()
@@ -530,7 +530,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     delegates for an Autark node is held to the Autark document's schema, and
     the review minted at the node's own agent carries the document decoded
     from that reply."""
-    from utk_curio.backend.app.agents import reply_schemas
+    from utk_curio.backend.app.agents.application import reply_schemas
 
     require_project_page()
     require_user_auth()

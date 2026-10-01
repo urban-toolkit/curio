@@ -1,11 +1,12 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { catalogSettings: jest.fn(), updateCatalogSettings: jest.fn() },
 }));
 
-import { agentsApi, type CatalogSettingsResponse } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents/agentsApi";
+import type { CatalogSettingsResponse } from "../../services/agents";
 import {
   AgentCatalogSettingsModal,
   fromRows,

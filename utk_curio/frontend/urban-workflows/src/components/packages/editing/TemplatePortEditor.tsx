@@ -1,6 +1,6 @@
 import React from "react";
-import type { PortDraft } from "../../../pages/nodes/factoryDraftModel";
-import { factoryUiMakeId } from "../../../pages/nodes/factoryDraftModel";
+import type { PortDraft } from "../../../services/packages";
+import { factoryUiMakeId } from "../../../services/packages";
 import {
   SUPPORTED_PORT_TYPES,
   isSupportedPortType,

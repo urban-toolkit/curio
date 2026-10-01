@@ -21,8 +21,9 @@ import sys
 
 import pytest
 
-from utk_curio.backend.app.packages import dependency_scanner, pip_runner
-from utk_curio.backend.app.packages.missing_import import detect
+from utk_curio.backend.app.packages.domain import dependency_scanner
+from utk_curio.backend.app.packages.infrastructure import pip_runner
+from utk_curio.backend.app.packages.application.missing_import import detect
 
 
 def _traceback(last_line: str, *, preamble: str = "") -> str:

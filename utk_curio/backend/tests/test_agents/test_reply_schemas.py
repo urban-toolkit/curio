@@ -16,14 +16,12 @@ import json
 import jsonschema
 import pytest
 
-from utk_curio.backend.app.agents import (
-    delegation,
-    document_validation,
-    reply_schemas as rs,
-    services,
-    testing_provider,
-)
-from utk_curio.backend.app.agents.providers import ProviderConfig
+from utk_curio.backend.app.agents.application import delegation
+from utk_curio.backend.app.agents.domain import document_validation
+from utk_curio.backend.app.agents.application import reply_schemas as rs
+from utk_curio.backend.app.agents.application.solve import rounds as services
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.tests.test_agents.test_document_validation import (
     AUTK,
@@ -212,7 +210,7 @@ class TestWhenARunSendsOne:
         assert rs.for_run(_config(model="another"), KEY, rs.GRAMMAR_AUTK) is not None
 
     def test_a_definition_without_the_instruction_for_it_is_never_constrained(self, tmp_curio):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.script_chat_capabilities(structured_output=True)
         manifest = builtin.get_builtin_manifest(NCB)
@@ -292,7 +290,7 @@ class TestADelegatedDocument:
     def test_the_correction_loop_runs_on_decoded_documents(self, app):
         """A constrained document the validator refuses is a round like any
         other, and the corrected one is what the loop keeps."""
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.script_chat_capabilities(structured_output=True)
         reply = rs.autk_reply_schema(rs.FLAVOR_STRICT)

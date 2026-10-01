@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MyPackagesList } from "../../components/packages/publishing/MyPackagesList";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 
 /**
  * Covers the drawer's "Reload from catalog" action and the row-action plumbing

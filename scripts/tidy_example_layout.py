@@ -58,9 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from utk_curio.backend.app.packages.spec_packages import (  # noqa: E402
-    unversioned_node_type,
-)
+from utk_curio.backend.app.packages.service import unversioned_node_type
 
 # Node geometry, mirroring the renderer. 525x350 is NodeContainer's fallback
 # (frontend/urban-workflows/src/components/styles.tsx); a template may override

@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 const mockCtx = jest.fn();
-jest.mock("../../components/agents/attach/AgentAttachmentsProvider", () => ({
+jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
 

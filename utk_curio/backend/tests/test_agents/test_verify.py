@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import verify
+from utk_curio.backend.app.agents.application import verify
 
 
 def _resolver(host_map=None):

@@ -1268,11 +1268,10 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
     everybody else - the failure belongs to whoever installed that package, and
     they get a plain ImportError naming it the first time a node runs.
     """
-    from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.resolver import merge_python_deps
-    from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, install_python_deps_to_target,
-    )
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.service import merge_python_deps
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps_to_target
+    from utk_curio.backend.app.packages.service import PipInstallError
 
     merged, conflicts = merge_python_deps(entries)
     for c in conflicts:
@@ -1316,7 +1315,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     imported lazily by the sandbox's raster code paths.)
 
     All helpers are reused from the backend:
-    - ``manifest.load_packageage_manifest`` to parse each
+    - ``manifest.load_package_manifest`` to parse each
       ``manifest.json`` into a typed dataclass with ``.python_deps``.
     - ``resolver.merge_python_deps`` to surface incompatible ranges as
       warnings instead of silently last-write-wins.
@@ -1324,18 +1323,16 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
       (PEP 440 + ``^X.Y`` caret rewrite + already-satisfied skip + batched
       pip + stderr-tail surfacing on failure).
     """
-    from utk_curio.backend.app.packages.manifest import (
-        ManifestError,
-        load_packageage_manifest,
-    )
-    from utk_curio.backend.app.packages.resolver import merge_python_deps
-    from utk_curio.backend.app.packages.pip_runner import (
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import ManifestError
+    from utk_curio.backend.app.packages.service import merge_python_deps
+    from utk_curio.backend.app.packages.service import (
         PipInstallError,
         install_python_deps,
     )
-    from utk_curio.backend.app.packages.seed import example_dep_package_ids
-    from utk_curio.backend.app.packages import backend_runtime
-    from utk_curio.backend.app.packages.backend_runtime import dep_destinations
+    from utk_curio.backend.app.packages.service import example_dep_package_ids
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.service import dep_destinations
     from utk_curio.backend.app.common.user_storage import users_base
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -1369,7 +1366,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
         for pattern in catalog_globs:
             for pkg_dir in sorted(catalog.glob(pattern)):
                 try:
-                    m = load_packageage_manifest(pkg_dir)
+                    m = load_package_manifest(pkg_dir)
                 except ManifestError:
                     continue
                 if m.dir_name in seen:
@@ -1404,7 +1401,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     if users.is_dir():
         for mf in sorted(users.glob("*/packages/*/manifest.json")):
             try:
-                m = load_packageage_manifest(mf.parent)
+                m = load_package_manifest(mf.parent)
             except ManifestError:
                 continue
             if not scoped and m.dir_name in seen:
@@ -1484,7 +1481,7 @@ def _report_unimportable_deps(merged, *, block: bool) -> None:
         # Imported here, not at module scope: this file is the launcher and
         # keeps backend imports lazy, and resolving the attribute at call time
         # is also what lets a test stand in for the probe.
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         try:
             broken = pip_runner.import_failures(merged)

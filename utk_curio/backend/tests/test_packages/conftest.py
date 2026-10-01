@@ -13,7 +13,7 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages.storage import user_packageages_dir
+from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -42,8 +42,11 @@ def _stub_pip_runner(monkeypatch):
     blanket stub. Tests that turn isolation on, and so route node deps into a
     per-user overlay, stub the installer themselves.
     """
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import (
+        InstallReport,
+        UninstallReport,
+    )
 
     monkeypatch.setattr(
         pip_runner, "install_python_deps",
@@ -141,9 +144,9 @@ def manifest_dict():
 
 
 @pytest.fixture()
-def install_packageage(tmp_curio, make_archive):
+def install_package(tmp_curio, make_archive):
     """Install a synthetic package for the given user_key and return the manifest."""
-    from utk_curio.backend.app.packages.installer import install_packageage_from_archive
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
 
     def _install(
         user_key: str,
@@ -151,14 +154,14 @@ def install_packageage(tmp_curio, make_archive):
         sources: dict[str, dict[str, str]] | None = None,
     ):
         archive = make_archive(manifest=manifest, sources=sources)
-        return install_packageage_from_archive(user_key, archive)
+        return install_package_from_archive(user_key, archive)
     return _install
 
 
 @pytest.fixture()
 def packages_base(tmp_curio):
     """Path to ``.curio/users/`` for the current test workspace."""
-    return user_packageages_dir("guest").parent.parent
+    return user_packages_dir("guest").parent.parent
 
 
 def write_fake_tool(directory, name: str, source: str):

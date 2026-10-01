@@ -9,7 +9,7 @@ jest.mock("../../utils/authApi", () => ({
 }));
 
 import { apiFetch } from "../../utils/authApi";
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents";
 
 const mockFetch = apiFetch as jest.Mock;
 

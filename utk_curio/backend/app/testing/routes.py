@@ -35,7 +35,7 @@ from flask import Blueprint, jsonify, request
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
-from utk_curio.backend.app.agents import testing_provider
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
@@ -588,7 +588,7 @@ def broken_library():
     import os
     import sys
 
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "install").strip()
@@ -742,7 +742,7 @@ def pip_behaviour():
     Overriding is idempotent and always restores from the ORIGINALS captured on
     the first call, so repeated or interleaved modes cannot stack wrappers.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     body = request.get_json(silent=True) or {}
     mode = (body.get("mode") or "normal").strip()
@@ -806,9 +806,12 @@ def package_store():
     """
     import hashlib
 
-    from utk_curio.backend.app.packages import seed_state
-    from utk_curio.backend.app.packages.seed import _catalog_root
-    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE, package_dir
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+    from utk_curio.backend.app.packages.service import (
+        PACKAGE_DIR_RE,
+        package_dir,
+    )
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     body = request.get_json(silent=True) or {}
@@ -859,9 +862,7 @@ def package_store():
         return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
 
     if action == "stale":
-        from utk_curio.backend.app.packages.installer import (
-            refresh_packageage_integrity,
-        )
+        from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
 
         # A marker byte rather than a rewrite: the file stays valid for anything
         # that only parses it, so the ONLY thing this changes is the hash.
@@ -878,7 +879,7 @@ def package_store():
         # is damaged, not out of date, and repairing damage is a different job
         # (`_package_is_healthy`). Skipping this step made the first version of
         # this endpoint simulate the wrong thing entirely.
-        refresh_packageage_integrity(store_root)
+        refresh_package_integrity(store_root)
         seed_state.clear(_user_dir_key(user), dir_name)
 
     def _sha256(path):

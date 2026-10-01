@@ -11,9 +11,9 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import tools as agent_tools
+from utk_curio.backend.app.agents.application import tools as agent_tools
 from utk_curio.backend.app.common.user_storage import users_base
-from utk_curio.backend.app.agents.services import (
+from utk_curio.backend.app.agents.application.turns.delegates import (
     _NOTES_REPLY_CONTRACT,
     _delegated_search_results,
     _enriched_delegate_inputs,
@@ -130,7 +130,7 @@ class TestPresentationTemplates:
         return pkg
 
     def test_only_enlisted_presentation_templates_listed(self, tmp_path, monkeypatch):
-        from utk_curio.backend.app.packages.services import presentation_templates
+        from utk_curio.backend.app.packages.application.templates import presentation_templates
 
         self._install(tmp_path, monkeypatch, enlist_project="p1")
         rows = presentation_templates("guest", "p1")
@@ -138,7 +138,7 @@ class TestPresentationTemplates:
                          "description": "a post-it note"}]
 
     def test_installed_but_not_enlisted_is_excluded(self, tmp_path, monkeypatch):
-        from utk_curio.backend.app.packages.services import presentation_templates
+        from utk_curio.backend.app.packages.application.templates import presentation_templates
 
         self._install(tmp_path, monkeypatch)  # no project lockfile entry
         assert presentation_templates("guest", "p-other") == []
@@ -147,7 +147,7 @@ class TestPresentationTemplates:
 # ── the reply parser (commit 2) ──────────────────────────────────────────────
 class TestExtractNotesReply:
     def test_bare_and_fenced_objects_parse(self):
-        from utk_curio.backend.app.agents.services import _extract_notes_reply
+        from utk_curio.backend.app.agents.application.turns.delegates import _extract_notes_reply
 
         payload = {"answer": "A", "notes": [{"title": "Q", "content": "c"}]}
         assert _extract_notes_reply(json.dumps(payload)) == payload
@@ -157,7 +157,7 @@ class TestExtractNotesReply:
         assert _extract_notes_reply(json.dumps(answer_only)) == answer_only
 
     def test_schema_only_never_prose_intent(self):
-        from utk_curio.backend.app.agents.services import _extract_notes_reply
+        from utk_curio.backend.app.agents.application.turns.delegates import _extract_notes_reply
 
         for text in (
             "I made two notes for you!",
@@ -172,7 +172,7 @@ class TestExtractNotesReply:
 # ── the mint's degraded paths (unit — they return before any store) ─────────
 class TestMintDegradedPaths:
     def _mint(self, text, granted=("node.create",), tmp_path=None, monkeypatch=None):
-        from utk_curio.backend.app.agents.services import _mint_notes_from_delegate
+        from utk_curio.backend.app.agents.application.turns.delegates import _mint_notes_from_delegate
 
         if monkeypatch is not None and tmp_path is not None:
             monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -257,7 +257,7 @@ class TestDataflowBuilderNotesLane:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -265,7 +265,7 @@ class TestDataflowBuilderNotesLane:
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         monkeypatch.setattr(
             agent_tools, "_execute_web_search",
             lambda params: ("ok", json.dumps({"results": [
@@ -355,7 +355,7 @@ class TestDataflowBuilderNotesLane:
 # ── the prompts carry the contract (commit 3) ────────────────────────────────
 class TestPromptsCarryTheDelegationContract:
     def test_dfb_prompt_teaches_the_research_delegation(self):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         text = builtin.read_prompt_text("agent.dataflow-builder@1.0.0", "instruction")
         for marker in (
@@ -369,7 +369,7 @@ class TestPromptsCarryTheDelegationContract:
             assert marker in text, marker
 
     def test_researcher_prompt_carries_the_delegate_posture(self):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         text = builtin.read_prompt_text("agent.researcher@1.0.0", "instruction")
         for marker in (

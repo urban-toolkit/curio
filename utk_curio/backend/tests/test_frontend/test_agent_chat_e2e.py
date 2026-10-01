@@ -32,7 +32,7 @@ import time
 import pytest
 from playwright.sync_api import expect
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .test_agent_runs_e2e import (
     CODE_NODE_ID,
@@ -563,7 +563,7 @@ class TestNativeToolCall:
     def test_a_native_create_call_is_reviewed_and_applied(
         self, page, frontend_server, current_server,
     ):
-        from utk_curio.backend.app.agents import tools
+        from utk_curio.backend.app.agents.application import tools
 
         require_project_page()
         require_user_auth()

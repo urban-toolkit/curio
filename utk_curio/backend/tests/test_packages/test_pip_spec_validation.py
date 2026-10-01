@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.pip_runner import (
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     PipSpecError,
     _spec_argv,
     validate_python_requirement,

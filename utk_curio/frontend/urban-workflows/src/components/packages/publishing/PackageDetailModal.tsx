@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
-import { packagesApi } from "../../../api/packagesApi";
-import type { PackagePayload } from "../../../api/packagesApi";
-import { primaryCategory } from "./packageUtils";
+import { packagesApi, primaryCategory } from "../../../services/packages";
+import type { PackagePayload } from "../../../services/packages";
 import styles from "../../agents/catalog/AgentDetailModal.module.css";
 
 export interface PackageDetailModalProps {

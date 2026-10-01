@@ -21,10 +21,10 @@ import json
 import zipfile
 from pathlib import Path
 
-from utk_curio.backend.app.packages import seed as packages_seed
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages import routes as packages_routes
-from utk_curio.backend.app.packages.storage import catalog_root
+from utk_curio.backend.app.packages import service as packages_service
+from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+
+PACKAGES_APP = Path(__file__).resolve().parents[2] / "app" / "packages"
 
 REPO_CATALOG = Path(__file__).resolve().parents[4] / "packages"
 
@@ -67,14 +67,21 @@ def test_the_default_is_the_committed_catalog(monkeypatch):
 
 
 def test_every_module_resolves_the_same_root(monkeypatch, tmp_path):
-    """Three modules used to carry three copies of the same path expression."""
+    """Three modules used to carry three copies of the same path expression.
+
+    Since memo dev/143 there is ONE, in ``repositories.catalog_dir``: the
+    routes, the seeder and the facade read it rather than carrying a copy, so
+    the override has exactly one place to be honoured.
+    """
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(tmp_path / "catalog"))
-    resolved = {
-        packages_routes._catalog_root(),
-        packages_seed._catalog_root(),
-        packages_services.catalog_root(),
-    }
-    assert resolved == {(tmp_path / "catalog").resolve()}
+    assert catalog_root() == (tmp_path / "catalog").resolve()
+    assert packages_service.catalog_root is catalog_root
+    definitions = [
+        f.relative_to(PACKAGES_APP).as_posix()
+        for f in PACKAGES_APP.rglob("*.py")
+        if "def catalog_root(" in f.read_text() or "def _catalog_root(" in f.read_text()
+    ]
+    assert definitions == ["repositories/catalog_dir.py"], definitions
 
 
 def test_a_publish_goes_where_the_override_points(

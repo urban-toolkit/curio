@@ -4,9 +4,9 @@ import type {
   AgentDatasetCandidatesPart,
   AgentDatasetPick,
   AgentDatasetSelection,
-} from "../../../api/agentsApi";
+} from "../../../services/agents";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
-import { sanitizeAgentUrl } from "./sanitizeAgentContent";
+import { sanitizeAgentUrl } from "../../../services/agents";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
 import {

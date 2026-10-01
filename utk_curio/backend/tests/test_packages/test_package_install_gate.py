@@ -28,7 +28,7 @@ from __future__ import annotations
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.packages import backend_runtime
+from utk_curio.backend.app.packages.infrastructure import backend_runtime
 from utk_curio.backend.app.users.capabilities import package_install_refusal
 
 
@@ -57,8 +57,8 @@ def shared_guest_token(db):
 @pytest.fixture
 def pip_calls(monkeypatch):
     """Every pip run the routes ask for. Empty means the gate fired first."""
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages.pip_runner import InstallReport
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
     calls: list = []
     monkeypatch.setattr(

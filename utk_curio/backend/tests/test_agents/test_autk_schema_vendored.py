@@ -17,7 +17,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from utk_curio.backend.app.agents import contracts
+from utk_curio.backend.app.agents.domain import contracts
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 RECORD = contracts.AUTK_SCHEMA_PATH.with_name("autk-grammar.v1.source.json")

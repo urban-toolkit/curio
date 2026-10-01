@@ -34,7 +34,7 @@ import time
 import pytest
 from playwright.sync_api import expect
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .test_agent_runs_e2e import CODE_NODE_ID, _project_spec
 from .utils import (

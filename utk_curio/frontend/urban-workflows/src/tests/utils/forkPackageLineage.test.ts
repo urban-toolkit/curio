@@ -10,8 +10,8 @@ import {
   partitionPalettePackageGroups,
   partitionPackagesByForkFamily,
   referencedForkParentCoordinates,
-} from "../../utils/forkPackageLineage";
-import type { PackagePayload } from "../../api/packagesApi";
+} from "../../services/packages";
+import type { PackagePayload } from "../../services/packages";
 import type { NodePackageMeta } from "../../registry/types";
 
 const lin = (

@@ -16,7 +16,7 @@ import { computeTranslateExtent } from "../utils/canvasExtent";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
-import { usePackagePalette } from "../providers/PackagePaletteContext";
+import { usePackagePalette } from "../providers/packages/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
 import {
     useDatasetDetails,
@@ -47,12 +47,18 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
-import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import {
+  agentsApi,
+  readAgentDragCoord,
+  notifyAgentDockRefresh,
+  resolveAgentDropTarget,
+  hasAgentDrag,
+  type AgentDropTarget,
+} from "../services/agents";
 import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDropHover";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
-import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
+import { AgentAttachmentsProvider } from "../providers/agents";
 
 export function MainCanvas() {
     const { showToast } = useToastContext();

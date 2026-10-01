@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentRemedy } from "../../../api/agentsApi";
+import type { AgentRemedy } from "../../../services/agents";
 import styles from "../../connectionKeys/AddKeyAction.module.css";
 
 /**

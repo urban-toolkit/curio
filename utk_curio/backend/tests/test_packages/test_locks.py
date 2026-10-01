@@ -13,7 +13,7 @@ What is pinned here, and why each pin exists:
 * ONE acquisition per logical snapshot for the composed readers the audit
   migrated (§7.6): the resolver's two store reads, the catalog probe, the
   build-deps review, the per-user lockfile.
-* A structural audit (§7.8): every raw ``list_user_packageages(...)`` call in
+* A structural audit (§7.8): every raw ``list_user_packages(...)`` call in
   the application is inside a function that is known to own the lock or to be
   an explicitly unlocked core. A new caller has to add itself here — which is
   the point: it makes "did you think about the swap window?" a review question
@@ -28,11 +28,13 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.common import file_locks
-from utk_curio.backend.app.packages import locks
-from utk_curio.backend.app.packages import seed as packages_seed
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.locks import package_seed_lock
-from utk_curio.backend.app.packages.storage import user_packageages_dir
+from utk_curio.backend.app.packages.infrastructure import locks
+from utk_curio.backend.app.packages.application import seeding as packages_seed
+from utk_curio.backend.app.packages.infrastructure import locks
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import agent_reads
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
 from utk_curio.backend.tests.test_packages.test_available_templates import (  # noqa: F401
     _template,
@@ -50,7 +52,7 @@ def test_seeder_and_readers_share_the_one_lock_helper():
     helper. The private ``_SEED_LOCK_*`` constants dev/93 had in seed.py are
     gone, so there is nothing left to drift."""
     assert packages_seed.package_seed_lock is locks.package_seed_lock
-    assert packages_services.package_seed_lock is locks.package_seed_lock
+    assert locks.package_seed_lock is locks.package_seed_lock
     assert not hasattr(packages_seed, "_SEED_LOCK_FILENAME")
     assert not hasattr(packages_seed, "_SEED_LOCK_NAMESPACE")
 
@@ -67,11 +69,11 @@ def test_lock_file_path_namespace_and_key_are_the_seeders(tmp_curio, monkeypatch
     with package_seed_lock("guest"):
         pass
     assert seen == [
-        (user_packageages_dir("guest") / ".seed.lock", "package-seed", "guest")
+        (user_packages_dir("guest") / ".seed.lock", "package-seed", "guest")
     ]
     # An absent store is created so the lock file has a home — an empty store
     # still yields an empty listing, so no reader's logical result changes.
-    assert user_packageages_dir("guest").is_dir()
+    assert user_packages_dir("guest").is_dir()
 
 
 def test_lock_is_released_when_the_body_raises(tmp_curio):
@@ -215,16 +217,17 @@ def _two_packages(user_and_token, alice_project):
 def test_resolver_reads_the_store_twice_under_one_acquisition(
     user_and_token, alice_project, tmp_curio, monkeypatch
 ):
-    from utk_curio.backend.app.packages import resolver
+    from utk_curio.backend.app.packages.application import resolution
+    from utk_curio.backend.app.packages.application import resolution
 
     key, _ = _two_packages(user_and_token, alice_project)
-    counter = _count_acquisitions(monkeypatch, resolver)
-    result = resolver.resolve_for_project(key, ["curio.builtin@1"])
+    counter = _count_acquisitions(monkeypatch, resolution)
+    result = resolution.resolve_for_project(key, ["curio.builtin@1"])
     assert result.ok
     assert counter["n"] == 1, "pinned + transitive reads must share one snapshot"
 
     counter["n"] = 0
-    lock = resolver.lockfile_for_user(key)
+    lock = resolution.lockfile_for_user(key)
     assert len(lock["installedPackages"]) == 2
     assert counter["n"] == 1, "enumerate + resolve must share one snapshot"
 
@@ -233,7 +236,7 @@ def test_agent_resolve_report_is_one_snapshot(
     user_and_token, alice_project, tmp_curio, monkeypatch
 ):
     key, _ = _two_packages(user_and_token, alice_project)
-    counter = _count_acquisitions(monkeypatch, packages_services)
+    counter = _count_acquisitions(monkeypatch, agent_reads)
     report = packages_services.agent_resolve_report(key, ["ai.test.other@1"])
     assert [p["dirName"] for p in report["packages"]] == ["ai.test.other@1"]
     assert counter["n"] == 1, (
@@ -244,8 +247,8 @@ def test_agent_resolve_report_is_one_snapshot(
 def test_build_deps_review_is_one_snapshot(
     user_and_token, alice_project, tmp_curio, monkeypatch
 ):
-    from utk_curio.backend.app.packages import build_deps
-    from utk_curio.backend.app.packages.build_models import parse_build_request
+    from utk_curio.backend.app.packages.builder import deps as build_deps
+    from utk_curio.backend.app.packages.builder.models import parse_build_request
 
     key, _ = _two_packages(user_and_token, alice_project)
     counter = _count_acquisitions(monkeypatch, build_deps)
@@ -266,32 +269,32 @@ def test_build_deps_review_is_one_snapshot(
 # §7.8 — structural audit: every raw store enumeration is accounted for
 # ---------------------------------------------------------------------------
 
-# Functions that may call ``list_user_packageages`` directly. Each is either
+# Functions that may call ``list_user_packages`` directly. Each is either
 # the lock-owning reader itself (the call sits inside ``with
 # package_seed_lock``) or an explicitly UNLOCKED core whose every caller holds
 # the lock. Adding a name here is a deliberate act: say which of the two it is
 # in the function's docstring.
 _ACCOUNTED_ENUMERATORS = {
-    "app/packages/services.py": {"_store_index"},           # unlocked core
-    "app/packages/resolver.py": {"_load_manifests",         # unlocked core
-                                 "lockfile_for_user"},      # lock owner
-    "app/packages/routes.py": {"_ensure_user_seeded",       # lock owner
-                               "list_installed_packageages",
-                               "list_catalog_packageages",
-                               "check_workflow_deps",
-                               "_any_package_declares"},
-    "app/packages/starters.py": {"_generate_unlocked"},     # unlocked core
-    "app/packages/libraries.py": {"package_derived"},       # lock owner
-    "app/packages/build_deps.py": {"installed_manifests"},  # lock owner
+    "app/packages/application/store_reads.py": {"_store_index"},  # unlocked core
+    "app/packages/application/resolution.py": {"_load_manifests",  # unlocked core
+                                             "lockfile_for_user"},  # lock owner
+    "app/packages/application/seeding.py": {"ensure_user_seeded"},  # lock owner
+    "app/packages/application/catalog.py": {"installed_package_payloads",  # lock owners
+                                            "catalog_listing"},
+    "app/packages/application/workflow_deps.py": {"check_workflow_deps"},  # lock owner
+    "app/packages/application/starters.py": {"_generate_unlocked"},  # unlocked core
+    "app/packages/application/libraries.py": {"package_derived",  # lock owners
+                                              "any_package_declares"},
+    "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
 }
 
 
 def _enumeration_sites() -> dict[str, set[str]]:
     app_root = Path(packages_services.__file__).resolve().parents[1]
     found: dict[str, set[str]] = {}
-    for py in sorted(list((app_root / "packages").glob("*.py")) + list((app_root / "agents").glob("*.py"))):
-        if py.name == "storage.py":
-            continue  # the definition
+    for py in sorted(list((app_root / "packages").rglob("*.py")) + list((app_root / "agents").rglob("*.py"))):
+        if py.name == "store.py":
+            continue  # the definition (repositories/store.py)
         tree = ast.parse(py.read_text(encoding="utf-8"))
         rel = py.relative_to(app_root.parent).as_posix()
 
@@ -309,7 +312,7 @@ def _enumeration_sites() -> dict[str, set[str]]:
             def visit_Call(self, node):
                 fn = node.func
                 name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
-                if name == "list_user_packageages":
+                if name == "list_user_packages":
                     found.setdefault(rel, set()).add(self.stack[-1] if self.stack else "<module>")
                 self.generic_visit(node)
 
@@ -320,7 +323,7 @@ def _enumeration_sites() -> dict[str, set[str]]:
 def test_every_raw_store_enumeration_is_a_known_lock_owner_or_unlocked_core():
     sites = _enumeration_sites()
     assert sites == _ACCOUNTED_ENUMERATORS, (
-        "a raw list_user_packageages() call appeared (or moved) outside the "
+        "a raw list_user_packages() call appeared (or moved) outside the "
         "accounted set — decide whether it owns the seed lock or is an unlocked "
         "core called only under it, then record it in _ACCOUNTED_ENUMERATORS"
     )
@@ -330,7 +333,7 @@ def test_agents_domain_never_enumerates_the_store_or_owns_the_lock():
     """ADR-AG-007: template knowledge stays in the packages domain. The agents
     module consumes composites; it neither walks the store nor takes the lock."""
     app_root = Path(packages_services.__file__).resolve().parents[1]
-    for py in (app_root / "agents").glob("*.py"):
+    for py in (app_root / "agents").rglob("*.py"):
         text = py.read_text(encoding="utf-8")
-        assert "list_user_packageages" not in text, py.name
+        assert "list_user_packages" not in text, py.name
         assert "package_seed_lock" not in text, py.name

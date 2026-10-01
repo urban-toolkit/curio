@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import attachments
-from utk_curio.backend.app.agents.attachments import AttachmentError
+from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application.attachments import AttachmentError
 
 
 def _spec():
