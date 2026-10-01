@@ -114,7 +114,7 @@ Nodes in these dataflows either process data or visualize it. Each type of node 
 A node's "type" is the id of the template it was made from. A run that can place or plan nodes receives a roster of the templates this dataflow can use, listed by id, and that roster is the authority on them. These are the built-in templates, by name:
 
 - Data Loading: The Data Loading box is responsible for getting data from the outside world into the dataflow.
-- Data Export: The Export box is responsible for getting data from the dataflow to the outside world.
+- Data Export: One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.
 - Data Transformation: The Data Transformation box is responsible for performing any kinds of transformations to the data.
 - Data Pool: The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.
 - Python Computation: The Computation Analysis box is the generic box responsible for performing any kinds of computations.
@@ -137,7 +137,7 @@ DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need 
 Nodes are uncontrollable, controllable through code (python or JavaScript) or controllable through grammar:
 
 - Data Loading: controllable through python code.
-- Data Export: controllable through python code.
+- Data Export: uncontrollable.
 - Data Transformation: controllable through python code.
 - Data Pool: uncontrollable.
 - Python Computation: controllable through python code.
