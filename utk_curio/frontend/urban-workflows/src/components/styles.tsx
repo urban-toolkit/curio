@@ -89,7 +89,7 @@ import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOu
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
-import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { droppedDatasetSource, isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
@@ -168,8 +168,13 @@ export const NodeContainer = ({
     // an OUTPUT chip linking to its palette row. Derived from the catalog (not
     // stamped) so it tracks install/uninstall. Distinct from the save-lock above —
     // producer nodes keep their save toggle.
-    const { installedComputedByProducer: producerByNode } = useDatasetPalette();
+    const { installedComputedByProducer: producerByNode, datasetsById } = useDatasetPalette();
     const producerDataset = producerByNode.get(nodeId);
+    // A node a dataset was dropped onto reads it too, so it gets a DATASET
+    // pill as well (#442), without becoming a palette node: saving stays on.
+    const consumerSource = datasetPaletteNode
+        ? (data.datasetSource ?? null)
+        : droppedDatasetSource(data, (id) => datasetsById?.get(id));
     // Whether this node is selected on the canvas — drives a more vibrant dataset
     // chip. Read reactively from the React Flow store so it updates on selection.
     const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
@@ -722,9 +727,9 @@ export const NodeContainer = ({
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {datasetPaletteNode && data.datasetSource ? (
+                        {consumerSource ? (
                             <DatasetMetaHeader
-                                source={data.datasetSource}
+                                source={consumerSource}
                                 variant="consumer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
