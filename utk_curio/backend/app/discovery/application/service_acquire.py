@@ -2,11 +2,11 @@
 
 A service is told where and what, and answers once. OpenStreetMap is the one
 so far: autk-db's ``loadOsm``, run in Node by ``providers/autark_osm.py``,
-writes one GeoJSON file per Autark layer, in autk-db's workspace CRS
-(EPSG:3395). Here each layer is moved to WGS84, as GeoJSON requires, with its
-features and properties as Autark built them, and installed: one layer as an
-ordinary dataset, several as one ``osm.x`` layer group, the group an uploaded
-``.pbf`` forms.
+writes one GeoJSON file per Autark layer, one feature per OpenStreetMap way or
+relation, in autk-db's workspace CRS (EPSG:3395). Here each layer is moved to
+WGS84, as GeoJSON requires, with its features and properties as Autark built
+them, and installed: one layer as an ordinary dataset, several as one
+``osm.x`` layer group, the group an uploaded ``.pbf`` forms.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ def place_label(values: dict[str, Any]) -> str:
 def to_wgs84(collection: dict[str, Any]) -> dict[str, Any]:
     """*collection* with every position moved from autk-db's CRS to WGS84.
 
-    Only positions change: each feature keeps its geometry type (a building of
-    several parts stays a GeometryCollection) and its properties exactly.
+    Only positions change: each feature keeps its geometry type (a park cut at
+    the area's edge may be a GeometryCollection) and its properties exactly.
     autk-db's own keys on the collection (``bbox`` in its CRS, ``__autk_layer``)
     are dropped, as they describe the workspace rather than the data.
     """

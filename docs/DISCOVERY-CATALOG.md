@@ -112,7 +112,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want only the rows inside an area.** On a Chicago Data Portal or GeoSampa row, click **Narrow…**, set the **Area**, and click **Download**. A dataset with no location column offers no **Narrow…**.
 
-**I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area. **All layers** adds buildings, roads, parks, water and surface as one group.
+**I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags, its `osm_id`, and a `building_id` naming the building it belongs to. **All layers** adds buildings, roads, parks, water and surface as one group.
 
 **I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
 
@@ -179,8 +179,21 @@ When a download fails, the row says why in the server's own words, for example t
 ### Downloading from OpenStreetMap
 
 - **Autark loads it.** Each resource is one of Autark's layers, loaded with the same code an Autark map uses: **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area). One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
-- **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Roads, parks and water are cut at the box around the area, and at the area's own outline when **Surface** is loaded with them, as in **All layers**. A building that crosses the edge is kept whole.
+- **What a row is.** Each row of **Buildings**, **Roads**, **Parks** and **Water** is one OpenStreetMap way or relation. Every tag it has is a column, named as OpenStreetMap names it (`name`, `building:levels`, `highway`), and `osm_type` (`way` or `relation`) and `osm_id` name it on openstreetmap.org. A building of several parts is one row per part, and `building_id` names the building each belongs to: parts and buildings that touch share one, as an Autark map draws them as one building. **Surface** rows have no tags and no `osm_id`.
+- **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Parks and water are cut at the box around the area. When **Surface** is loaded with them, as in **All layers**, roads, parks and water are also cut at the area's own outline, and a building outside it is left out. A building that crosses the edge is kept whole, and so is a road when **Surface** is not loaded.
 - **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
+
+What each layer holds:
+
+| Layer | Rows | Shape |
+|---|---|---|
+| **Buildings** | Ways and relations tagged `building` or `building:part`, except sheds, garages, carports, huts, kiosks, toilets, service buildings, transformer towers, sties and containers | Areas |
+| **Roads** | Ways tagged `highway`, except footways, cycleways, steps, pedestrian streets, platforms, elevators, raceways, roads that are proposed, under construction or abandoned, and ways tagged `area=yes` | Lines |
+| **Parks** | Ways and relations tagged `leisure` park, playground, dog park or recreation ground; `landuse` wood, grass, forest, orchard, village green, vineyard, cemetery or meadow; or `natural` wood, grass, grassland, forest, scrub, heath or meadow | Areas |
+| **Water** | Ways and relations tagged `natural` water, wetland, strait or spring, or `water` pond, reservoir, lagoon, stream pool, lake, pool, canal or river | Areas |
+| **Surface** | The land inside the box, or inside the named areas' outline | Areas |
+
+A way that is tagged as an area but does not close is a line.
 
 ### Adding from a storage source
 

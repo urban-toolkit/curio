@@ -7,9 +7,11 @@
 //
 // It calls autk-db's own loadOsm, the loader an Autark map node runs, so a
 // download and a map get the same features from the same code. Each layer is
-// written as autk-db's getLayer returns it, to <outDir>/<layer>.geojson; its
-// coordinates are in autk-db's workspace CRS (EPSG:3395), and the Python side
-// moves them to WGS84.
+// written as autk-db's getLayer returns it with `osmElements`, to
+// <outDir>/<layer>.geojson: one feature per way or relation, with `osm_type`,
+// `osm_id` and, for a building, the `building_id` of the building it belongs
+// to. Its coordinates are in autk-db's workspace CRS (EPSG:3395), and the
+// Python side moves them to WGS84.
 //
 // stdout carries two kinds of line for Python, and autk-db's own logging:
 //
@@ -117,7 +119,7 @@ async function main() {
 
   const layers = [];
   for (const entry of timings.layers) {
-    const collection = await db.getLayer(entry.layerName);
+    const collection = await db.getLayer(entry.layerName, { osmElements: true });
     const file = path.join(input.outDir, `${entry.layerType}.geojson`);
     await writeFile(file, JSON.stringify(collection));
     layers.push({ layer: entry.layerType, file, features: collection.features.length });
