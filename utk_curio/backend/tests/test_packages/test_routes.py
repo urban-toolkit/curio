@@ -1591,6 +1591,236 @@ def test_catalog_install_replace_refreshes_behavior_bundle(
 
 
 # ---------------------------------------------------------------------------
+# A user's change to a package that is also in the catalog (#564).
+#
+# Every listing refreshes an installed copy from the catalog when the two
+# differ, so that a fix shipped at an unchanged version reaches existing
+# installs (#194). A difference the user made is not that, and refreshing it
+# undid their change on the next listing, which Save As triggers itself.
+# ---------------------------------------------------------------------------
+
+_LISTINGS = [
+    "/api/packages",
+    "/api/packages/catalog",
+    "/api/packages/defaults",
+    "/api/packages/libraries",
+]
+
+
+def _code_template(template_id: str) -> dict:
+    return {
+        "id": template_id,
+        "label": template_id.title(),
+        "category": "computation",
+        "engine": "python",
+        "editor": "code",
+        "hasCode": True,
+        "hasWidgets": False,
+        "hasGrammar": False,
+        "inputPorts": [],
+        "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+        "source": f"sources/{template_id}.py",
+    }
+
+
+def _shared_catalog_package(fake_catalog, manifest_dict) -> str:
+    """``ai.test.shared@1`` in the catalog, holding one template, ``one``."""
+    manifest = manifest_dict(package_id="ai.test.shared", major=1)
+    manifest["templates"] = [_code_template("one")]
+    return _write_catalog_package(fake_catalog, manifest, {"one.py": "return 'one'\n"})
+
+
+def _install_from_catalog(client, token, dir_name, *, replace=False):
+    resp = client.post(
+        "/api/packages/catalog/install",
+        data=json.dumps({"dirName": dir_name, "replace": replace}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+
+def _save_as_into_shared(client, token) -> str:
+    """Save as package node into ``ai.test.shared@1``, a new template ``two``,
+    the draft the Save As modal sends."""
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.shared"
+    draft["manifest"]["templates"] = [_code_template("two")]
+    draft["sources"] = {"two": {"filename": "two.py", "code": "def run():\n    return 'two'\n"}}
+    return _install_draft(client, token, draft, replace=True)
+
+
+def _store_manifest(user, dir_name) -> dict:
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    path = package_dir(_user_dir_key(user), dir_name) / "manifest.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _store_templates(user, dir_name) -> list[str]:
+    return sorted(t["id"] for t in _store_manifest(user, dir_name)["templates"])
+
+
+def _move_the_catalog(fake_catalog, dir_name) -> None:
+    """What an upgrade does: the catalog's files change, the coordinate does not."""
+    (fake_catalog / dir_name / "sources" / "one.py").write_text(
+        "return 'one, fixed'\n", encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("listing", _LISTINGS)
+def test_a_change_saved_into_a_catalog_package_survives_the_next_listing(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict, listing,
+):
+    """The issue's steps: add the package, Save As into it, list."""
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+
+    _save_as_into_shared(client, token)
+    assert _store_templates(user, dir_name) == ["one", "two"]
+
+    assert client.get(listing, headers=_auth(token)).status_code == 200
+    assert _store_templates(user, dir_name) == ["one", "two"], (
+        f"GET {listing} put the catalog's copy back over the user's save"
+    )
+
+
+def test_a_change_survives_even_after_the_catalog_moves(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """The user's copy is theirs now. A catalog change reaches it through
+    Update, never underneath it."""
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    _save_as_into_shared(client, token)
+
+    _move_the_catalog(fake_catalog, dir_name)
+    client.get("/api/packages", headers=_auth(token))
+
+    assert _store_templates(user, dir_name) == ["one", "two"]
+
+
+def test_an_upload_over_a_catalog_package_survives_the_next_listing(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.shared"
+    draft["manifest"]["templates"] = [_code_template("two")]
+    draft["sources"] = {"two": {"filename": "two.py", "code": "def run():\n    return 'two'\n"}}
+    resp = client.post(
+        "/api/packages/upload?replace=true",
+        data={"file": (io.BytesIO(_archive_from_draft(draft)), "shared.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    client.get("/api/packages", headers=_auth(token))
+
+    assert _store_templates(user, dir_name) == ["two"]
+
+
+def test_a_metadata_edit_to_a_catalog_package_survives_the_catalog_moving(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """Found while fixing #564: the PATCH rewrote ``manifest.json`` and left
+    ``integrity.json`` quoting the old one, so the copy still read as the
+    catalog's and the next catalog change replaced the edit."""
+    from utk_curio.backend.app.packages.repositories.archive import _build_integrity
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+
+    resp = client.patch(
+        f"/api/packages/{dir_name}",
+        data=json.dumps({"description": "My own notes"}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    _move_the_catalog(fake_catalog, dir_name)
+    client.get("/api/packages", headers=_auth(token))
+
+    assert _store_manifest(user, dir_name)["description"] == "My own notes"
+    store = package_dir(_user_dir_key(user), dir_name)
+    recorded = json.loads((store / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+    assert recorded == _build_integrity(store), "integrity.json no longer describes the files"
+
+
+def test_a_catalog_change_still_reaches_a_copy_nobody_changed(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """#194, through the routes: the guarantee the refresh exists for."""
+    _, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+
+    _move_the_catalog(fake_catalog, dir_name)
+    client.get("/api/packages", headers=_auth(token))
+
+    served = client.get(
+        f"/api/packages/{dir_name}/file/sources/one.py", headers=_auth(token),
+    ).get_data(as_text=True)
+    assert "fixed" in served
+
+
+def test_the_e2e_stale_probe_plants_what_an_upgrade_leaves(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """``test_package_refresh_e2e`` makes its copy stale through
+    ``/api/testing/package-store``. What that plants has to be what an upgrade
+    leaves, a catalog copy older than the catalog, or the e2e proves a branch
+    users never take."""
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    probe = {"username": user.username, "dirName": dir_name, "path": "sources/one.py"}
+
+    stale = client.post("/api/testing/package-store", json={**probe, "action": "stale"}).get_json()
+    assert stale["sha256"] != stale["catalog_sha256"]
+    assert seed_state.load(_user_dir_key(user))[dir_name].catalog_copy is not None
+
+    client.get("/api/packages", headers=_auth(token))
+
+    after = client.post("/api/testing/package-store", json={**probe, "action": "hash"}).get_json()
+    assert after["sha256"] == after["catalog_sha256"]
+
+
+def test_update_puts_a_changed_copy_back_on_the_catalogs_track(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict,
+):
+    """Update (#434) is a catalog install with replace: it discards the user's
+    change, and from then on catalog changes reach the copy again."""
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    _save_as_into_shared(client, token)
+
+    _install_from_catalog(client, token, dir_name, replace=True)
+    assert _store_templates(user, dir_name) == ["one"]
+
+    _move_the_catalog(fake_catalog, dir_name)
+    client.get("/api/packages", headers=_auth(token))
+
+    served = client.get(
+        f"/api/packages/{dir_name}/file/sources/one.py", headers=_auth(token),
+    ).get_data(as_text=True)
+    assert "fixed" in served
+
+
+# ---------------------------------------------------------------------------
 # GET /api/packages/<dir>/archive for a package this account never installed
 # ---------------------------------------------------------------------------
 

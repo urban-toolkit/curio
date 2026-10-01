@@ -150,6 +150,7 @@ def install_package_from_archive(
     archive: bytes | IO[bytes],
     *,
     replace: bool = False,
+    from_catalog: bool = False,
 ) -> InstallResult:
     """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
@@ -179,6 +180,10 @@ def install_package_from_archive(
         When ``True``, an existing ``<packageId>@<major>`` directory for
         *user_key* is removed first. Default ``False`` — repeat installs
         of the same coordinate raise.
+    from_catalog:
+        ``True`` when the archive is the shared catalog's copy, which keeps
+        the store copy on the catalog's refresh track (#194). Everything
+        else is the user's own content, and the seeder leaves it alone (#564).
 
     Returns
     -------
@@ -264,15 +269,16 @@ def install_package_from_archive(
             _touch_manifest_for_install_recency(final_dest)
             merged_manifest = load_package_manifest(final_dest)
             # An explicit (re)install supersedes any prior uninstall
-            # tombstone the dev seeder might otherwise honour — the user
-            # just asked for this package to be present, so its seed-state
-            # record gets refreshed below by mark_seeded only if the
-            # caller is the seeder; here we just clear the tombstone so
-            # subsequent restarts don't blow up the manifest cross-check.
+            # tombstone the dev seeder might otherwise honour, and says where
+            # this copy came from: the seeder refreshes a catalog copy nobody
+            # has changed, and never the user's own content (#564).
             try:
-                seed_state.clear(user_key, dir_name)
+                seed_state.mark_installed(
+                    user_key, dir_name,
+                    catalog_copy=seed_state.copy_digest(integrity) if from_catalog else None,
+                )
             except Exception:  # noqa: BLE001 — bookkeeping is best-effort
-                log.exception("Failed to clear uninstall tombstone for %s/%s", user_key, dir_name)
+                log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
             return InstallResult(
                 manifest=merged_manifest,
@@ -323,7 +329,9 @@ def install_package_from_directory(
     """
     if not source_dir.is_dir():
         raise InstallerError(f"catalog source {source_dir} is not a directory")
-    return install_package_from_archive(user_key, zip_package_tree(source_dir), replace=replace)
+    return install_package_from_archive(
+        user_key, zip_package_tree(source_dir), replace=replace, from_catalog=True,
+    )
 
 
 def export_package_archive(
@@ -411,6 +419,7 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
         try:
             shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
             packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+            seed_state.clear(user_key, dir_name)
         except Exception:  # noqa: BLE001
             log.warning("Failed to roll back %s after dep failure", dir_name, exc_info=True)
         raise PackageServiceError(

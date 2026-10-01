@@ -104,6 +104,8 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 4. Choose **New package…** (a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are not offered; the way to change a read-only package is to fork it into a new one.
 5. After the save, the canvas node is rebound to the new package's kind.
 
+Saving into a package you added from the catalog makes that copy your own. Curio keeps it as you saved it when the shared catalog's copy changes, and **Update** replaces it with the catalog's version when the catalog has a higher one. The same holds after you edit the package's metadata or import an archive over it.
+
 > [!IMPORTANT]
 > **Save as package node cannot produce a custom-UI node.** A new package it
 > builds carries `manifest.json` and `sources/`, never a `scripts/` directory,
