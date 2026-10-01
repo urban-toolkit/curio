@@ -24,13 +24,24 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents.domain.manifest import CAPABILITY_ID_RE
+from utk_curio.backend.app.agents.domain.manifest import CAPABILITY_ID_RE, VERSION_RE
 
 SCHEMA = json.loads(
     (Path(__file__).resolve().parents[4] / "docs/schemas/agent-package.v1.json")
     .read_text(encoding="utf-8")
 )
 PROPS = SCHEMA["properties"]
+
+
+class TestRequiredNameAndVersion:
+    """#482: the schema requires ``name``, and the validator refuses a
+    manifest without one; the two version grammars are the same."""
+
+    def test_name_is_required_by_both(self):
+        assert "name" in SCHEMA["required"]
+
+    def test_the_version_grammar_matches(self):
+        assert PROPS["version"]["pattern"] == VERSION_RE.pattern
 
 
 class TestRequiresAgents:

@@ -449,7 +449,7 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
     return AgentManifest(
         agent_id=agent_id,
         version=version,
-        name=str(raw.get("name", agent_id)),
+        name=_require_str(raw.get("name"), where=f"{where}.name"),
         category=category,
         purpose=str(raw.get("purpose", "")),
         roles=[r for r in raw.get("roles", []) if isinstance(r, str)],
