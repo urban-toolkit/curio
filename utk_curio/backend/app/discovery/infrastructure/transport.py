@@ -155,6 +155,11 @@ class HttpDiscoveryTransport:
             failure = DiscoveryTransportError(_redact(message, key))
         if failure is not None:
             raise failure  # outside the handler: see get_page
+        if not (200 <= result.status < 300):
+            # An error page is not the file, whatever the sink was handed: the
+            # caller discards what it wrote, as the recorded transport has
+            # always refused one.
+            raise DiscoveryTransportError(f"{_host(url)} answered {result.status}")
         if key:
             # What a dataset records as where it came from, and the audit:
             # the URL as the provider built it.

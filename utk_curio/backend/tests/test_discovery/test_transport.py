@@ -298,6 +298,18 @@ class TestTheRealTransport:
         assert fake.sent[0][1]["X-App-Token"] == "s3cr3t-value-0123"
         assert "X-App-Token" not in fake.sent[1][1]
 
+    @pytest.mark.parametrize("status", [401, 403, 404, 500])
+    def test_a_download_that_answers_an_error_is_refused(self, wire, status):
+        """As the recorded transport refuses one. Returned as a result instead,
+        an error page was the file: a portal's JSON error installed as a JSON
+        dataset, a CDN's 403 kept as an image."""
+        wire({"https://portal.example/file.json": (status, {"Content-Type": "application/json"},
+                                                   b'{"error": "not found"}')})
+        with pytest.raises(T.DiscoveryTransportError, match=f"answered {status}"):
+            T.HttpDiscoveryTransport().download(
+                "https://portal.example/file.json", lambda b: None, max_bytes=100
+            )
+
     def test_a_download_redirected_elsewhere_carries_no_key(self, wire):
         fake = wire({
             "https://portal.example/file.csv": (302, {"Location": "https://cdn.example/signed"}, b""),
