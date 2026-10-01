@@ -24,6 +24,7 @@ import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
+import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { dashboardSourceNodeIds, prepareDashboardNodes } from "../utils/dashboardLayout";
 import { notifyAgentDockRefresh } from "../utils/agentCatalogEvents";
@@ -109,6 +110,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // read the goal through a ref, the way the name and description already do.
     const workflowGoalRef = useRef("");
     useEffect(() => { workflowGoalRef.current = workflowGoal; }, [workflowGoal]);
+    // The hand-set categories (``dataflow.categories``), saved with the dataflow,
+    // read through a ref for the same reason as the goal. ``serverCategories`` is
+    // the source and the automatic ones, which only the server computes: set from
+    // each load and each save's response, so they change when the dataflow saves.
+    const [workflowCategories, setWorkflowCategoriesState] = useState<HandCategories>({});
+    const workflowCategoriesRef = useRef<HandCategories>({});
+    const [serverCategories, setServerCategories] = useState<DataflowCategories>({});
     // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
     // The authoritative copy lives in ``projectPackagesStore`` so non-React
     // code (palette filter, registry bootstrap) can read it without context.
@@ -211,6 +219,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(true);
     }, []);
 
+    // Loading sets them without dirtying; an edit on the canvas title dirties,
+    // like a rename, and is written by the next save.
+    const setWorkflowCategories = useCallback((next: HandCategories) => {
+        workflowCategoriesRef.current = next;
+        setWorkflowCategoriesState(next);
+    }, []);
+    const updateDataflowCategories = useCallback((next: HandCategories) => {
+        setWorkflowCategories(next);
+        markDirty();
+    }, [setWorkflowCategories, markDirty]);
+
     // beforeunload guard
     useEffect(() => {
         if (!projectDirty) return;
@@ -302,11 +321,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[]) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[], incomingCategories?: HandCategories) => {
         if (!merge) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
             setWorkflowDescription(incomingDescription || "");
+            // Absent = keep: a provenance revert loads a version snapshot, which
+            // carries no categories, and must not clear the dataflow's.
+            if (incomingCategories !== undefined) setWorkflowCategories(incomingCategories);
             // `task` is the dataflow's goal. It has always been a spec field
             // and has always been accepted here, but nothing applied it, so a
             // saved goal was silently dropped on every open.
@@ -909,7 +931,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // where it seeds the new project's refs (dev/81). On an update the
         // backend owns dataflow.datasets and ignores whatever is sent here —
         // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -940,6 +962,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             });
             baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
+            setServerCategories(detail.categories ?? {});
             // Re-pin the client's copy of the name to what the server actually
             // stored. The create branch already did this, so only the update path
             // could drift out of date - and it also self-heals a project that
@@ -975,6 +998,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             projectIdRef.current = detail.id;
             baseRevisionRef.current = detail.spec_revision ?? null;
             syncDatasetsFromSavedSpec(detail.spec);
+            setServerCategories(detail.categories ?? {});
             setProjectId(detail.id);
             if (projectNameRef.current === name) {
                 projectNameRef.current = detail.name;
@@ -1256,7 +1280,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // Save-a-copy is a CREATE: the serialized datasets section seeds the new
         // project's refs (dev/81) — read from the ref so the copy carries the
         // latest installed datasets.
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, workflowGoalRef.current, currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current, workflowCategoriesRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -1268,6 +1292,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             outputs: outputRefs,
         });
         syncDatasetsFromSavedSpec(detail.spec);
+        setServerCategories(detail.categories ?? {});
         projectIdRef.current = detail.id;
         setProjectId(detail.id);
         setProjectName(detail.name);
@@ -1300,6 +1325,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setViewerMode("owner");
         // What this canvas has seen, for the save guard (memo dev/124).
         baseRevisionRef.current = project.spec_revision ?? null;
+        setServerCategories(project.categories ?? {});
 
         const execStatus: Record<string, "stale" | "executed"> = {};
         for (const o of outputs) {
@@ -1325,6 +1351,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setProjectSavedAt(null);
         setViewerMode("shared");
+        setServerCategories(project.categories ?? {});
 
         const execStatus: Record<string, "stale" | "executed"> = {};
         for (const o of outputs) {
@@ -1338,6 +1365,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const discardProject = useCallback(() => {
         setProjectId(null);
         setProjectName("");
+        setServerCategories({});
+        setWorkflowCategories({});
         setProjectDirty(false);
         setProjectSavedAt(null);
         setNodeExecStatus({});
@@ -1385,6 +1414,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         suggestionsLeft,
         workflowGoal,
         setWorkflowGoal,
+        workflowCategories,
+        serverCategories,
         packages,
         setPackages,
         addPackage,
@@ -1420,6 +1451,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         // Project operations
         renameDataflow,
+        updateDataflowCategories,
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,

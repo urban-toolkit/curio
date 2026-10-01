@@ -52,6 +52,8 @@ import {
 } from "../../../utils/dataflowImport";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import ShareMenu from "./ShareMenu";
+import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
+import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 
 export default function UpMenu() {
@@ -75,6 +77,9 @@ export default function UpMenu() {
         cleanCanvas,
         markDirty,
         renameDataflow,
+        workflowCategories,
+        serverCategories,
+        updateDataflowCategories,
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
@@ -118,6 +123,16 @@ export default function UpMenu() {
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
+    };
+
+    // The account's other dataflows, for the category suggestions. Fetched the
+    // first time "+ Category" opens, not on every canvas load.
+    const [categorySuggestions, setCategorySuggestions] = useState<ProjectSummary[]>([]);
+    const suggestionsRequested = useRef(false);
+    const loadCategorySuggestions = () => {
+        if (suggestionsRequested.current) return;
+        suggestionsRequested.current = true;
+        projectsApi.list().then(setCategorySuggestions).catch(() => {});
     };
 
     const closeTrillProvenanceModal = () => {
@@ -229,6 +244,9 @@ export default function UpMenu() {
             workflowNameRef.current,
             "",
             getCurrentProjectPackagesList(),
+            undefined,
+            undefined,
+            workflowCategories,
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -750,6 +768,17 @@ export default function UpMenu() {
                         {workflowName}
                     </h1>
                 )}
+                {/* The dataflow's categories. The automatic ones come from the
+                    last load or save; the hand-set ones save with the dataflow. */}
+                <DataflowCategoryInput
+                    className={styles.workflowCategories}
+                    categories={serverCategories ?? {}}
+                    hand={workflowCategories ?? {}}
+                    onChange={isSharedView ? undefined : updateDataflowCategories}
+                    suggestionItems={categorySuggestions}
+                    onOpenAdd={loadCategorySuggestions}
+                    maxVisible={6}
+                />
             </div>
 
             {isSharedView && (

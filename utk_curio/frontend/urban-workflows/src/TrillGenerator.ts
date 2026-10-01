@@ -11,6 +11,8 @@
  *
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
+import type { HandCategories } from "./utils/dataflowCategories";
+
 export class TrillGenerator {
 
     static provenanceJSON: any = {
@@ -158,7 +160,13 @@ export class TrillGenerator {
         TrillGenerator.list_of_trills = data.versions || {};
     }
 
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = []){
+    /**
+     * *categories* are the hand-set ones (`dataflow.categories`). Pass them from
+     * a save, where the canvas's value is the truth and `{}` clears them; leave
+     * them out anywhere else, and the key is not written, so the server keeps
+     * what is on disk.
+     */
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories){
 
         let trill: any = {
             dataflow: {
@@ -173,6 +181,9 @@ export class TrillGenerator {
         }
         if (description) {
             trill.dataflow.description = description;
+        }
+        if (categories) {
+            trill.dataflow.categories = categories;
         }
 
         const datasetRefs = new Map<string, any>();

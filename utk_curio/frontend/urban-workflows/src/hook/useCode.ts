@@ -337,7 +337,7 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
             if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {

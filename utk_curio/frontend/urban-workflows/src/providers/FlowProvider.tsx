@@ -45,6 +45,7 @@ import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, shouldSaveOutputOn
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
+import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 
 
 export interface IOutput {
@@ -129,7 +130,7 @@ interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -163,9 +164,16 @@ interface FlowContextProps {
     nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
 
+    /** The hand-set categories, saved with the dataflow. */
+    workflowCategories: HandCategories;
+    /** Source and automatic categories, from the last load or save. */
+    serverCategories: DataflowCategories;
+
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
+    /** Replace the hand-set categories; the dataflow is dirty until the next save. */
+    updateDataflowCategories: (next: HandCategories) => void;
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
@@ -292,7 +300,10 @@ export const FlowContext = createContext<FlowContextProps>({
     projectSavedAt: null,
     nodeExecStatus: {},
     viewerMode: "owner",
+    workflowCategories: {},
+    serverCategories: {},
     renameDataflow: () => false,
+    updateDataflowCategories: () => {},
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
