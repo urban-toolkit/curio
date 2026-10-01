@@ -75,5 +75,12 @@
     "headers": {
       "content-type": "application/json"
     }
+  },
+  "POST https://overpass-api.de/api/interpreter 6fe49be35ca5a2fe": {
+    "file": "e375337b49f518e7.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
   }
 }

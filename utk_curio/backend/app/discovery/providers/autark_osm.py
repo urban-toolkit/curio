@@ -108,8 +108,15 @@ class AutarkOsmService:
         )
 
         area = values.get("area") or {}
-        if "names" not in area:
-            raise DiscoveryError("OpenStreetMap needs the area as named areas inside a place")
+        if "names" in area:
+            query_area: dict[str, Any] = {
+                "geocodeArea": area["names"]["geocodeArea"],
+                "areas": list(area["names"]["areas"]),
+            }
+        elif "box" in area:
+            query_area = {"bbox": [float(v) for v in area["box"]]}
+        else:
+            raise DiscoveryError("OpenStreetMap needs an area: named areas inside a place, or a box")
         autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", ROOT_NODE_MODULES)
         if autk_db is None:
             raise ProviderError(
@@ -117,10 +124,7 @@ class AutarkOsmService:
             )
         request = {
             "autkDbUrl": autk_db,
-            "queryArea": {
-                "geocodeArea": area["names"]["geocodeArea"],
-                "areas": list(area["names"]["areas"]),
-            },
+            "queryArea": query_area,
             "layers": list(spec.options["layers"]),
             "outDir": str(out_dir),
             "userAgent": OVERPASS_USER_AGENT,

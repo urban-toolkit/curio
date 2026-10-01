@@ -32,12 +32,18 @@ COORDINATE_PLACES = 7
 
 
 def place_label(values: dict[str, Any]) -> str:
-    """The area a download covers, for its title: "Golf (Illinois)"."""
+    """The area a download covers, for its title: "Golf (Illinois)", or a
+    box's place name, or its corners."""
     area = values.get("area") or {}
     names = area.get("names")
     if names:
         return f"{', '.join(names.get('areas') or [])} ({names.get('geocodeArea', '')})"
-    return str(area.get("label") or "the area")
+    if area.get("label"):
+        return str(area["label"])
+    box = area.get("box")
+    if box:
+        return "(" + ", ".join(f"{v:.4f}" for v in box) + ")"
+    return "the area"
 
 
 def to_wgs84(collection: dict[str, Any]) -> dict[str, Any]:

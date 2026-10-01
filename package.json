@@ -6,7 +6,7 @@
     "node": "^26"
   },
   "dependencies": {
-    "@urban-toolkit/autk-db": "file:utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-3.0.2-curio.1.tgz",
+    "@urban-toolkit/autk-db": "file:utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-3.0.2-curio.2.tgz",
     "web-worker": "^1.5.0"
   }
 }

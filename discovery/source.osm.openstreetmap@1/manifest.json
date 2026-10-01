@@ -3,7 +3,7 @@
   "name": "OpenStreetMap",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for named areas. Each layer arrives as the features an Autark map draws.",
+  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each layer arrives as the features an Autark map draws.",
   "publisher": "OpenStreetMap contributors",
   "homepage": "https://www.openstreetmap.org",
   "license": "ODbL 1.0",
@@ -17,8 +17,9 @@
   "limits": { "requestsPerMinute": 2 },
   "parameters": [
     {
-      "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["names"],
-      "description": "A place, and the areas inside it, as OpenStreetMap names their boundaries."
+      "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box", "names"],
+      "maxAreaKm2": 25,
+      "description": "A box, or the areas inside a place as OpenStreetMap names their boundaries."
     }
   ],
   "resources": [

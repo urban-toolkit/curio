@@ -68,7 +68,7 @@ PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
 PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
     "socrata": ("box",),
     "wfs": ("box",),
-    "autark-osm": ("names",),
+    "autark-osm": ("box", "names"),
 }
 
 #: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.

@@ -2,7 +2,8 @@
 
 The downloads run autk-db's own ``loadOsm`` in Node, as the source does in
 production, against Overpass answers recorded for the Village of Golf,
-Illinois (``fixtures/overpass``, made with the loader's ``record`` mode). No
+Illinois, by name and for a box inside it (``fixtures/overpass``, made with
+the loader's ``record`` mode). No
 test opens a socket: the loader's fetch answers from that corpus, and a miss
 fails naming the request.
 
@@ -29,6 +30,8 @@ from utk_curio.backend.tests.test_discovery.test_acquire import acquire, wait_fo
 
 OSM = "source.osm.openstreetmap@1"
 GOLF = {"names": {"geocodeArea": "Illinois", "areas": ["Golf"]}}
+# A box inside Golf, [west, south, east, north]: about 1.8 km2.
+GOLF_BOX = {"box": [-87.8, 42.05, -87.78, 42.06], "label": "Golf"}
 NOWHERE = {"names": {"geocodeArea": "Illinois", "areas": ["Nowhere Land"]}}
 
 ROOT_AUTK_DB = Path(__file__).resolve().parents[4] / "node_modules" / "@urban-toolkit" / "autk-db"
@@ -85,7 +88,8 @@ class TestTheManifest:
             assert layers[layer] == [layer]
         assert layers["all-layers"] == list(M.AUTARK_OSM_LAYERS)
         (area,) = manifest.declared_parameters("parks")
-        assert area.required and area.accepts == ("names",)
+        assert area.required and area.accepts == ("box", "names")
+        assert area.max_area_km2 == 25
 
     def test_a_minimal_one_parses(self):
         parsed = M._parse_manifest(_osm_manifest(), where="manifest.json")
@@ -121,12 +125,11 @@ class TestTheManifest:
         with pytest.raises(M.ManifestError, match="format must be one of"):
             M._parse_manifest(raw, where="manifest.json")
 
-    def test_an_area_form_the_provider_cannot_send_is_refused(self):
-        """Until autk-db's loadOsm takes a box, a box offered here would be
-        dropped on the way, so the manifest may not offer one."""
+    def test_it_takes_a_box_and_named_areas(self):
+        """autk-db's loadOsm takes both (Autark #107), so the manifest may offer both."""
         raw = _osm_manifest(parameters=[{"id": "area", "type": "area", "label": "Area", "accepts": ["box", "names"]}])
-        with pytest.raises(M.ManifestError, match="accepts box, which a autark-osm source cannot send"):
-            M._parse_manifest(raw, where="manifest.json")
+        (area,) = M._parse_manifest(raw, where="manifest.json").parameters
+        assert area.accepts == ("box", "names")
 
     def test_a_portal_may_not_offer_names(self):
         raw = a_manifest(provider={"type": "socrata", "baseUrl": "https://portal.example"},
@@ -157,7 +160,7 @@ class TestItsRowsNeedNoNetwork:
         rows = {r["resourceId"]: r for r in body["resources"]}
         assert list(rows) == ["buildings", "roads", "parks", "water", "surface", "all-layers"]
         assert rows["parks"]["formats"] == ["geojson"]
-        assert rows["parks"]["parameters"][0]["accepts"] == ["names"]
+        assert rows["parks"]["parameters"][0]["accepts"] == ["box", "names"]
         assert body["sources"] == [{"sourceId": "source.osm.openstreetmap", "status": "ok", "count": 6}]
 
     def test_the_source_row_says_service(self, client, auth, live):
@@ -187,9 +190,11 @@ class TestTheAnswersAreChecked:
         assert res.status_code == 400
         assert "Area" in res.get_json()["error"]
 
-    def test_a_box_is_not_an_area_this_source_takes(self, client, auth, live):
-        res = acquire(client, auth, OSM, "parks", parameters={"area": {"box": [-87.8, 42.05, -87.79, 42.06]}})
+    def test_a_box_over_the_limit_is_refused(self, client, auth, live):
+        # About 9 km by 11 km: over the source's 25 km2.
+        res = acquire(client, auth, OSM, "parks", parameters={"area": {"box": [-87.9, 42.0, -87.8, 42.1]}})
         assert res.status_code == 400
+        assert "25" in res.get_json()["error"]
 
     def test_a_name_that_would_break_the_query_is_refused(self, client, auth, live):
         res = acquire(client, auth, OSM, "parks",
@@ -216,6 +221,20 @@ class TestItBecomesDatasets:
         assert -87.82 < min(lons) and max(lons) < -87.77
         assert 42.04 < min(lats) and max(lats) < 42.07
         assert "__autk_layer" not in collection and "bbox" not in collection
+
+    def test_a_box_downloads_what_is_inside_it(self, client, auth, live):
+        job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF_BOX})
+                       .get_json()["jobId"], timeout=120)
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        assert dataset["title"] == "Parks, Golf"
+        assert dataset["featureCount"] == 32
+        collection = json.loads(Path(dataset["path"]).read_text())
+        west, south, east, north = GOLF_BOX["box"]
+        # Cropped to the box, as autk-db crops a named area's layers to its boundary.
+        for feature in collection["features"]:
+            for lon, lat, *_ in _positions(feature["geometry"]):
+                assert west - 1e-6 <= lon <= east + 1e-6 and south - 1e-6 <= lat <= north + 1e-6
 
     def test_it_records_what_it_was_narrowed_by(self, client, auth, live):
         job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF})
@@ -299,6 +318,14 @@ class TestTheLoaderContract:
         assert request["userAgent"] == OVERPASS_USER_AGENT
         assert request["autkDbUrl"].startswith("file://") and request["autkDbUrl"].endswith("/dist/node.js")
         assert request["fixtures"] is None
+
+    def test_a_box_is_sent_as_autk_dbs_bbox(self, tmp_path, service):
+        if not ROOT_AUTK_DB.is_dir():
+            pytest.skip("the repo-root autk-db is needed to resolve its entry")
+        seen = tmp_path / "request.json"
+        node = _fake_node(tmp_path, f"cat > '{seen}'\necho '__CURIO_OSM_RESULT__ {{\"ok\":true,\"layers\":[]}}'\n")
+        service.load(service.manifest.resource("parks"), {"area": GOLF_BOX}, tmp_path, node=node)
+        assert json.loads(seen.read_text())["queryArea"] == {"bbox": GOLF_BOX["box"]}
 
     def test_its_stages_reach_the_job(self, tmp_path, service):
         if not ROOT_AUTK_DB.is_dir():
@@ -404,6 +431,8 @@ class TestTheLayersMoveToWgs84:
 
     def test_the_place_is_named_for_the_title(self):
         assert place_label({"area": GOLF}) == "Golf (Illinois)"
+        assert place_label({"area": GOLF_BOX}) == "Golf"
+        assert place_label({"area": {"box": GOLF_BOX["box"]}}) == "(-87.8000, 42.0500, -87.7800, 42.0600)"
         assert place_label({"area": {"names": {"geocodeArea": "Chicago", "areas": ["Loop", "Near North Side"]}}}) == (
             "Loop, Near North Side (Chicago)"
         )
