@@ -100,6 +100,43 @@ test("a selection and another pool's propagation are echoes; new data is not", a
   expect(outputCallback.mock.calls[3][2]).toBeUndefined();
 });
 
+test("a selection's echo names the chart it came from, so that chart can leave its own alone", async () => {
+  const outputCallback = jest.fn();
+  const base = {
+    nodeId: "pool-1",
+    nodeType: "curio.builtin/data-pool@1",
+    outputCallback,
+    propagationCallback: jest.fn(),
+    interactionsCallback: jest.fn(),
+  };
+  const input = frame();
+  const { rerender } = renderHook(
+    ({ d }: { d: NodeBehaviorData }) => useDataPoolBehavior(d, nodeState()),
+    { initialProps: { d: { ...base, input } as unknown as NodeBehaviorData } },
+  );
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(1));
+
+  // As FlowProvider.applyNewInteractions hands a pool the latest selection: an
+  // empty one, from a press between two bars, after the plot selected row 0.
+  const interactions = [
+    { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.POINT, data: [0], priority: 1 } }, priority: 1 },
+  ];
+  await act(async () => {
+    rerender({ d: { ...base, input, interactions } as unknown as NodeBehaviorData });
+  });
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(2));
+  expect(outputCallback.mock.calls[1][2]).toEqual({ selectionEcho: true, selectionSource: "plot-1" });
+
+  const cleared = [
+    { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.UNDETERMINED, data: [], priority: 1 } }, priority: 1 },
+  ];
+  await act(async () => {
+    rerender({ d: { ...base, input, interactions: cleared } as unknown as NodeBehaviorData });
+  });
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(3));
+  expect(outputCallback.mock.calls[2][2]).toEqual({ selectionEcho: true, selectionSource: "plot-1" });
+});
+
 // Building parts as an Autark data node hands them on: one feature per part,
 // each carrying the building_id of the building it came from (#536).
 function buildingParts() {

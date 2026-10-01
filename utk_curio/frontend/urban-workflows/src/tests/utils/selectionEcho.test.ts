@@ -1,4 +1,4 @@
-import { isSelectionEcho, markSelectionEcho } from '../../utils/selectionEcho';
+import { isSelectionEcho, markSelectionEcho, selectionEchoSource } from '../../utils/selectionEcho';
 import { normalizeFlowInput } from '../../utils/flowOutputRef';
 
 describe('selectionEcho', () => {
@@ -21,6 +21,14 @@ describe('selectionEcho', () => {
     const delivered = markSelectionEcho(normalizeFlowInput(cached) as object);
     expect(isSelectionEcho(delivered)).toBe(true);
     expect(isSelectionEcho(cached)).toBe(false);
+  });
+
+  test('names the node whose selection it is, through a delivery too', () => {
+    const delivered = markSelectionEcho(normalizeFlowInput({ dataType: 'dataframe', data: { a: [1] } }) as object, 'plot-1');
+    expect(selectionEchoSource(delivered)).toBe('plot-1');
+    expect(selectionEchoSource({ ...delivered })).toBe('plot-1');
+    expect(selectionEchoSource(markSelectionEcho({ a: 1 }))).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(delivered))).toEqual({ dataType: 'dataframe', data: { a: [1] } });
   });
 
   test('anything that is not an object is not an echo', () => {

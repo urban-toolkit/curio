@@ -1986,6 +1986,49 @@ _BRUSH_MISMATCHES_JS = """({ selector, highlight }) => {
 }"""
 
 
+# The bars of an Autark plot, left to right, as page boxes with their labels.
+_BAR_BOXES_JS = """(selector) => {
+    const el = document.querySelector(selector);
+    if (!el) return [];
+    return Array.from(el.querySelectorAll('.autkMark')).map((mark) => {
+        const r = mark.getBoundingClientRect();
+        return { label: (mark.__data__ || {}).label ?? null, left: r.left, right: r.right,
+                 top: r.top, bottom: r.bottom };
+    }).sort((a, b) => a.left - b.left);
+}"""
+
+# Every time an Autark plot's brush rectangle shows or hides, with when, kept
+# on window.__curioBrushLog: a brush the page takes away mid-gesture shows here.
+_WATCH_BRUSH_JS = """(selector) => {
+    const rect = document.querySelector(selector + ' .autkBrush rect.selection');
+    if (!rect) return false;
+    const log = window.__curioBrushLog = [];
+    const t0 = performance.now();
+    const note = (what) => log.push({ t: Math.round(performance.now() - t0), what,
+        shown: rect.style.display !== 'none', width: Number(rect.getAttribute('width') || 0) });
+    window.__curioBrushNote = note;
+    new MutationObserver(() => note('change')).observe(rect, { attributes: true });
+    for (const type of ['mousedown', 'mouseup']) {
+        window.addEventListener(type, () => note(type), true);
+    }
+    return true;
+}"""
+
+
+def bar_boxes(page: Page, selector: str) -> list[dict]:
+    """The bars of the Autark plot in *selector*, left to right, as page boxes."""
+    return page.evaluate(_BAR_BOXES_JS, selector)
+
+
+def watch_brush(page: Page, selector: str) -> None:
+    """Start logging each show and hide of the plot's brush (see :func:`brush_log`)."""
+    assert page.evaluate(_WATCH_BRUSH_JS, selector), f"no brush in {selector}"
+
+
+def brush_log(page: Page) -> list[dict]:
+    return page.evaluate("() => window.__curioBrushLog || []")
+
+
 def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> list | None:
     """The bars of the Autark plot in *selector* whose highlight disagrees with
     its brush, once the selection coming back through a Data Pool has landed:

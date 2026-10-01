@@ -40,18 +40,18 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
-import { markSelectionEcho } from "../utils/selectionEcho";
+import { markSelectionEcho, SelectionEchoOptions } from "../utils/selectionEcho";
 import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, shouldSaveOutputOnRun } from "../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
 
 
-export interface IOutput {
+/** `selectionEcho`: a selection coming back through a Data Pool, not new data,
+ * and `selectionSource` whose it is (utils/selectionEcho). */
+export interface IOutput extends SelectionEchoOptions {
     nodeId: string;
     output: unknown;
-    /** A selection coming back through a Data Pool, not new data (utils/selectionEcho). */
-    selectionEcho?: boolean;
 }
 
 export interface IInteraction {
@@ -610,7 +610,7 @@ const FlowProvider = ({
         sourceId: string,
         rawOutput: unknown,
         edgesOverride?: readonly { source?: unknown; target?: unknown; sourceHandle?: unknown; targetHandle?: unknown }[],
-        options?: { selectionEcho?: boolean },
+        options?: SelectionEchoOptions,
     ) => {
         const currentEdges = (edgesOverride ?? reactFlow.getEdges()) as any[];
         const nodesAffected: string[] = [];
@@ -627,7 +627,7 @@ const FlowProvider = ({
         // Tag this delivery, not the output: normalizeFlowInput returns a fresh
         // object, so the cached output a later connection reads stays untagged
         // and draws like any new input.
-        if (options?.selectionEcho && inputPayload !== "") markSelectionEcho(inputPayload);
+        if (options?.selectionEcho && inputPayload !== "") markSelectionEcho(inputPayload, options.selectionSource);
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -1288,6 +1288,7 @@ const FlowProvider = ({
     const applyNewOutput = (newOutput: IOutput) => {
         propagateDownstreamInputs(newOutput.nodeId, newOutput.output, undefined, {
             selectionEcho: newOutput.selectionEcho,
+            selectionSource: newOutput.selectionSource,
         });
         emittedForInputRef.current.set(
             newOutput.nodeId,
@@ -1349,8 +1350,11 @@ const FlowProvider = ({
 
         let interactionDict: any = {};
 
+        // Each selection goes out with the node it came from, so a pool's echo
+        // can say whose it is (utils/selectionEcho).
         for (const interaction of newInteractions) {
             interactionDict[interaction.nodeId] = {
+                nodeId: interaction.nodeId,
                 details: interaction.details,
                 priority: interaction.priority,
             };
@@ -1516,8 +1520,8 @@ const FlowProvider = ({
     // -----------------------------------------------------------------
     useEffect(() => {
         if (!collab.enabled) return;
-        const localOutputCallback = (nodeId: string, output: any, options?: { selectionEcho?: boolean }) => {
-            applyNewOutput({ nodeId, output, selectionEcho: options?.selectionEcho });
+        const localOutputCallback = (nodeId: string, output: any, options?: SelectionEchoOptions) => {
+            applyNewOutput({ nodeId, output, ...options });
         };
         const localInteractionsCallback = (newInteractions: any, nodeId: string) => {
             setInteractions((prev: IInteraction[]) => {

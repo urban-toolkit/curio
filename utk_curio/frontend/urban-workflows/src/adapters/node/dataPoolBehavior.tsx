@@ -305,8 +305,13 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       setOutput({ code: "success", content: clonedOutput });
       if (typeof data.outputCallback === 'function') {
         // The same rows with new flags: linked charts swap them in and
-        // highlight, they do not redraw (utils/selectionEcho).
-        data.outputCallback(data.nodeId, clonedOutput, { selectionEcho: true });
+        // highlight, they do not redraw (utils/selectionEcho). Between charts
+        // the latest selection wins by default, so the flags are that chart's
+        // own, and the echo says whose.
+        const latest = data.interactions.find((interaction: any) => interaction?.priority === 1);
+        const selectionSource = resolutionMode === ResolutionType.OVERWRITE ? latest?.nodeId : undefined;
+        data.outputCallback(data.nodeId, clonedOutput,
+          selectionSource ? { selectionEcho: true, selectionSource } : { selectionEcho: true });
       }
 
       // call callback propagation

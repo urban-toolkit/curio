@@ -11,6 +11,7 @@ import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
+import type { SelectionEchoOptions } from "../utils/selectionEcho";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -97,8 +98,8 @@ export function useCode(): IUseCode {
     const { getPosition } = usePosition();
 
     const outputCallback = useCallback(
-        (nodeId: string, output: string, options?: { selectionEcho?: boolean }) => {
-            applyNewOutput({nodeId: nodeId, output: output, selectionEcho: options?.selectionEcho});
+        (nodeId: string, output: string, options?: SelectionEchoOptions) => {
+            applyNewOutput({nodeId: nodeId, output: output, ...options});
         },
         [setOutputs]
     );
