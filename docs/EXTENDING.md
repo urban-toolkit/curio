@@ -268,7 +268,7 @@ The two Street Vision hooks ship inside the package itself, at [`packages/curio.
 
 - [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx): place picker, bbox preview, and fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
 - [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5. Converts the finished run into a GEODATAFRAME with [`resultsToFeatureCollection.ts`](../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts), kept as a separate pure module so the shape every downstream node depends on can be tested without React.
-- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
+- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, declared with `handlesOverride`. Worth reading if you ever need a 2-input node.
 
 Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
 

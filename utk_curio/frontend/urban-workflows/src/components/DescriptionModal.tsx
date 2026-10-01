@@ -1,4 +1,5 @@
 import React from "react";
+import ReactMarkdown from "react-markdown";
 import ModalShell from "./ModalShell";
 import content from "./modal-content.module.css";
 import { AccessLevelType } from "../constants";
@@ -47,6 +48,8 @@ export function describePorts(
     ];
 }
 
+const DESCRIPTION_ELEMENTS = ["p", "code", "strong", "em", "ul", "ol", "li"];
+
 function DescriptionModal({
     nodeId,
     nodeType,
@@ -80,10 +83,13 @@ function DescriptionModal({
             linesText.push("Widgets: No");
         }
 
-        linesText.push(descriptor.description);
-
         return linesText;
     };
+
+    const typeDescription = (() => {
+        try { return getNodeDescriptor(nodeType).description; }
+        catch { return undefined; }
+    })();
 
     const nodeLabel = (() => {
         try { return getNodeDescriptor(nodeType).label; }
@@ -103,6 +109,20 @@ function DescriptionModal({
                     ) : null}
                     {description != undefined ? <p>{description}</p> : null}
                     {accessLevel != undefined ? <p>Access Level: {accessLevel}</p> : null}
+                    {/* What the node does, in the package's own words, before
+                        the technical lines (#225). Markdown, so code
+                        formatting reads as code; a description may come from
+                        any package, so it renders text only: no links,
+                        images or raw HTML. */}
+                    {typeDescription ? (
+                        <ReactMarkdown
+                            allowedElements={DESCRIPTION_ELEMENTS}
+                            unwrapDisallowed
+                            skipHtml
+                        >
+                            {typeDescription}
+                        </ReactMarkdown>
+                    ) : null}
                     {getTypeDescription(nodeType).map((line: string, index: number) => (
                         <p key={"description_modal_" + nodeId + "_" + index}>{line}</p>
                     ))}
