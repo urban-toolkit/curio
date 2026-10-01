@@ -1721,15 +1721,17 @@ _VIEWPORT_WILL_CHANGE_JS = """(value) => {
 
 @contextmanager
 def canvas_painted_at_shown_zoom(page: Page):
-    """The canvas without its ``will-change`` hint while inside, for strict captures.
+    """The canvas without a ``will-change`` hint while inside, for strict captures.
 
-    The canvas viewport is a ``will-change: transform`` layer (MainCanvas.css),
-    which Chrome may keep painted at the zoom it had before the last fit
-    (#533): example 09's close-up came out soft on main, its text and the
-    map's tile seams 2.62% off the baseline (run 36791096981). Without the hint
-    a node is painted at the zoom it is shown at. Turning the hint back on
-    starts a fresh layer, so every capture compared against another one, on
-    disk or in memory, belongs inside one block.
+    The canvas viewport is a ``will-change: transform`` layer only while a
+    pan or zoom gesture moves it (MainCanvas.css, useViewportMotionHint), and
+    Chrome may keep such a layer painted at the zoom it had before a fit
+    (#533): example 09's close-up once came out soft, its text and the map's
+    tile seams 2.62% off the baseline (run 36791096981). The inline ``auto``
+    keeps a node painted at the zoom it is shown at whatever the stylesheet
+    says. Handing the hint back can start a fresh layer, so every capture
+    compared against another one, on disk or in memory, belongs inside one
+    block.
     """
     page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "auto")
     try:
