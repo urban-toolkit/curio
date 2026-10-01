@@ -104,7 +104,7 @@ Two iteration modes are supported on the same `fromFeature` shape:
 - `"batched"`: the runtime stacks every source feature's values into uniform arrays and dispatches
   exactly once. The WGSL is responsible for looping over `num_features` and combining contributions
   however the analysis requires (here: per-hour union of shadows → boolean "any shadow", then accumulate
-  sunlight only when none). One dispatch, correct semantics, ~100× faster on Loop-scale data.
+  sunlight only when none). One dispatch, correct semantics.
 
 For the sunlight question, `"batched"` is the right mode, because the shader needs to answer "is *any* building
 shading this road right now" per hour, which is a union the runtime can't compute by post-summation.
