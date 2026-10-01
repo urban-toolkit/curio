@@ -76,6 +76,8 @@ export interface PackageCatalogState {
   /** Defaults scope: how many projects the last install patched. */
   lastInstallSummary: string | null;
   installCandidate: PackagePayload | null;
+  /** Whether the open review adds the candidate or updates the store copy to it. */
+  installMode: "add" | "update";
   conflictReport: ResolveConflict[] | null;
   /** Project scope: the dataflow's id, or the one an auto-save just minted before the prop caught up. */
   effectiveProjectId: string | null;
@@ -88,7 +90,9 @@ export interface PackageCatalogState {
   dismissRestartNotice: () => void;
   /** The pre-install conflict probe: opens the install review for *pkg*. */
   probeInstall: (pkg: PackagePayload) => Promise<void>;
-  /** Install the reviewed candidate into the scope. */
+  /** The same review for an update: *pkg* is the catalog row the store copy is replaced with. */
+  probeUpdate: (pkg: PackagePayload) => Promise<void>;
+  /** Install (or update to) the reviewed candidate. */
   confirmInstall: () => Promise<void>;
   cancelInstall: () => void;
   /** Project scope only. */
@@ -148,6 +152,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const [restartNoticeText, setRestartNoticeText] = useState<string | null>(null);
   const [lastInstallSummary, setLastInstallSummary] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
+  const [installMode, setInstallMode] = useState<"add" | "update">("add");
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
   // When an action auto-saves a brand-new dataflow, the React state update for
@@ -237,17 +242,20 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     [projectId, onEnsureProject, reportActionError],
   );
 
-  const probeInstall = useCallback(
-    async (pkg: PackagePayload) => {
-      if (scope.kind === "project") {
+  const openReview = useCallback(
+    async (pkg: PackagePayload, mode: "add" | "update") => {
+      if (scope.kind === "project" && mode === "add") {
         if ((await ensureSavedProjectId("Couldn't save dataflow before adding")) === null) {
           return;
         }
       }
+      setInstallMode(mode);
       setInstallCandidate(pkg);
       try {
+        // An update's candidate is already in the store, so it is in `installed`.
+        const dirs = installed.map((p) => p.dirName);
         setConflictReport(
-          await probeInstallConflicts([...installed.map((p) => p.dirName), pkg.dirName]),
+          await probeInstallConflicts(mode === "update" ? dirs : [...dirs, pkg.dirName]),
         );
       } catch {
         // A probe that failed for any reason but a conflict report: no review to show.
@@ -256,9 +264,47 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     },
     [scope.kind, installed, ensureSavedProjectId],
   );
+  const probeInstall = useCallback((pkg: PackagePayload) => openReview(pkg, "add"), [openReview]);
+  const probeUpdate = useCallback((pkg: PackagePayload) => openReview(pkg, "update"), [openReview]);
 
   const confirmInstall = useCallback(async () => {
     if (!installCandidate) return;
+    if (installMode === "update") {
+      // Lockfiles name only `<id>@<major>`, so replacing the one store copy
+      // updates every project that uses it. A plain install of a package
+      // already in the store copies nothing (#434).
+      setBusy(true);
+      setActionError(null);
+      setLastInstallSummary(null);
+      try {
+        const result = await packagesApi.installFromCatalog(installCandidate.dirName, { replace: true });
+        if (result.restartRecommended?.libs?.length) {
+          setRestartNoticeText(restartNotice(result.restartRecommended));
+        }
+        await refreshRegistry();
+        await reload();
+        setInstallCandidate(null);
+        setConflictReport(null);
+        const lead = `Updated ${installCandidate.name} to ${result.package?.version ?? installCandidate.version}`;
+        // A behavior bundle is injected once per page, so the new one runs only after a reload.
+        const reloadHint = installCandidate.behaviorScript
+          ? " Reload the page to run its new interface."
+          : "";
+        const notice = dependencyFailureNotice(lead, result);
+        if (notice) {
+          showToast(notice + reloadHint, "error");
+        } else if (scope.kind === "project") {
+          showToast(`${lead}.${reloadHint}`, "success");
+        } else {
+          setLastInstallSummary(reloadHint ? `${lead}.${reloadHint}` : lead);
+        }
+      } catch (err) {
+        reportActionError(`Couldn't update ${installCandidate.name}`, err);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (scope.kind === "project") {
       const effectiveProjectId = projectId ?? savedProjectIdRef.current;
       if (!effectiveProjectId) return;
@@ -323,7 +369,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, scope.kind, projectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
+  }, [installCandidate, installMode, scope.kind, projectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
 
   const uninstallFromProject = useCallback(async (pkg: PackagePayload) => {
     if (scope.kind !== "project") return;
@@ -451,17 +497,17 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     () => ({
       catalog, installed, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
       busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
-      lastInstallSummary, installCandidate, conflictReport, effectiveProjectId,
+      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
-      probeInstall, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
+      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
       reloadFromCatalog, exportArchive,
     }),
     [catalog, installed, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
      busy, publishingPackageKey, reloadingPackageKey, cardActionDir, actionError, restartNoticeText,
-     lastInstallSummary, installCandidate, conflictReport, effectiveProjectId, ensureSavedProjectId,
+     lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
-     probeInstall, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
+     probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, publish, unpublish,
      reloadFromCatalog, exportArchive],
   );
 }

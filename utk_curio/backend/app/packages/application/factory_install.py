@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utk_curio.backend.app.packages.application import store_install as packages_store_install
+from utk_curio.backend.app.packages.application import (
+    provisioning as packages_provisioning,
+    store_install as packages_store_install,
+)
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.builder.factory import (
     BuildResult,
@@ -94,6 +97,7 @@ def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildRe
     onto the installed package so what the draft does not model survives.
     FactoryError / InstallerError propagate for the route to answer.
     """
+    packages_provisioning.assert_may_install()
     manifest_raw = draft.get("manifest")
     refuse_read_only_draft(user_key, manifest_raw)
     existing_dir = installed_dir_for_draft(user_key, manifest_raw)

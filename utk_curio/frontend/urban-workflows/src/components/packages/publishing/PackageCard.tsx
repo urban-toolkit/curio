@@ -27,6 +27,8 @@ export interface PackageCardProps {
   /** When set, this card's secondary actions show a busy state. */
   cardActionDir?: string | null;
   onInstall: (pkg: PackagePayload) => void;
+  /** Update: replace the store copy with the catalog row it is handed. */
+  onUpdate: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
   /** False in a dataflow that has not been saved yet. Only wording now: the
    *  control stays enabled and its click saves the dataflow before removing,
@@ -44,6 +46,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   busy,
   cardActionDir,
   onInstall,
+  onUpdate,
   onUninstall,
   hasProject = true,
   onOpenDetails,
@@ -158,7 +161,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             type="button"
             className={`${styles.btnInstall} ${styles.btnInstallAccent}`}
             disabled={cardBusy}
-            onClick={() => onInstall(catalogRow ?? pkg)}
+            onClick={() => onUpdate(catalogRow ?? pkg)}
           >
             Update
           </button>
