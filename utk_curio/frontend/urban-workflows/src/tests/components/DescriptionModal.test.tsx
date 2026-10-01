@@ -66,3 +66,48 @@ describe('DescriptionModal', () => {
     expect(screen.queryByText('Input number: 1')).toBeNull();
   });
 });
+
+// #225: the description is what a user reads to learn the node, so it renders
+// as text people write (markdown), and comes before the technical lines.
+describe('DescriptionModal description text', () => {
+  const original = mockDescriptor.description;
+  afterEach(() => {
+    mockDescriptor.description = original;
+  });
+
+  function renderModal() {
+    return render(
+      <DescriptionModal
+        nodeId="n1"
+        nodeType={'curio.builtin/spatial-join@1' as NodeTemplateId}
+        show
+        handleClose={() => {}}
+      />,
+    );
+  }
+
+  test('code formatting renders as code, not as backticks', () => {
+    mockDescriptor.description = 'Pick the `name` column.';
+    renderModal();
+    const container = document.body;
+    expect(container.querySelector('code')?.textContent).toBe('name');
+    expect(container.textContent).not.toContain('`');
+  });
+
+  test('a link or raw HTML in a description is not rendered', () => {
+    mockDescriptor.description = 'See [the docs](https://example.org) and <b>this</b>.';
+    renderModal();
+    const container = document.body;
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('b')).toBeNull();
+  });
+
+  test('the description comes before the port lines', () => {
+    mockDescriptor.description = 'Finds the polygon each point falls in.';
+    renderModal();
+    const container = document.body;
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Finds the polygon')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('Finds the polygon')).toBeLessThan(text.indexOf('Input number: 2'));
+  });
+});
