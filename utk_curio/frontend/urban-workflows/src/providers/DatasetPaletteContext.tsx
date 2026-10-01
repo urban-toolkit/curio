@@ -24,6 +24,9 @@ export type DatasetPaletteContextValue = {
    * the live catalog (one shared subscription) so producer chips stay in sync with
    * install/uninstall. See ``installedComputedByProducer``. */
   installedComputedByProducer: Map<string, DatasetCatalogItem>;
+
+  /** This dataflow's datasets by id, for naming a node's DATASET pill (#442). */
+  datasetsById?: Map<string, DatasetCatalogItem>;
 };
 
 const DatasetPaletteContext = createContext<DatasetPaletteContextValue | null>(null);
@@ -61,13 +64,19 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
     [catalog.items],
   );
 
+  const datasetsById = useMemo(
+    () => new Map(catalog.items.map((item) => [item.id, item] as const)),
+    [catalog.items],
+  );
+
   const value: DatasetPaletteContextValue = useMemo(
     () => ({
       datasetRevealId,
       setDatasetRevealId,
       installedComputedByProducer: producerMap,
+      datasetsById,
     }),
-    [datasetRevealId, producerMap],
+    [datasetRevealId, producerMap, datasetsById],
   );
 
   return <DatasetPaletteContext.Provider value={value}>{children}</DatasetPaletteContext.Provider>;
