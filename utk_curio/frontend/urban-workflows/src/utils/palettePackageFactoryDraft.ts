@@ -3,6 +3,7 @@ import type { PackageTemplatePayload, PackagePayload } from "../services/package
 import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { BUILTIN_PACKAGE_ID } from "../registry/packageKeys";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { normalizePortTypes } from "../constants/supportedPortTypes";
 import {
@@ -379,6 +380,18 @@ export function buildSaveAsInstallDraft(opts: {
     draft.publisher = "Local palette";
     draft.description = "Created from canvas Save As.";
     draft.templates = [templateDraftFromCanvasNode(opts.canvasNode, desc, body, slugBase)];
+    // A node of an installed package makes the new package a fork of it, so
+    // the Node Catalog groups the two. A built-in node forks nothing.
+    const src = desc.package;
+    if (src && src.packageId !== BUILTIN_PACKAGE_ID) {
+      const from = { packageId: src.packageId, major: src.major };
+      draft.lineage = {
+        forkedFrom: from,
+        root: src.lineage?.root
+          ? { packageId: src.lineage.root.packageId, major: src.lineage.root.major }
+          : from,
+      };
+    }
     return draft;
   }
 
