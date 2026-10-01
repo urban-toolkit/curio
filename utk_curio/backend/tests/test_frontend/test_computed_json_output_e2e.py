@@ -70,7 +70,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#step-analysis"  # curio.builtin/computation-analysis's tutorialId
+ANALYSIS_TILE = "#tile-computation-analysis"  # curio.builtin/computation-analysis's palette tile
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
@@ -251,14 +251,14 @@ def delete_computed_datasets(current_server):
 def _author_analysis_node(page, at, code: str) -> str:
     """Drop a Python Computation node, set its code, and turn its save toggle on.
 
-    No upstream edge: ``#step-analysis`` runs standalone as long as the code does
+    No upstream edge: ``#tile-computation-analysis`` runs standalone as long as the code does
     not reference ``arg`` (see worker.py's "received no input" guard), which is
     what ``test_global_imports_e2e.py`` relies on too.
     """
     node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=at)
     actual = (canvas_node_type(page, node_id) or "").split("@", 1)[0]
     assert actual == ANALYSIS_TYPE, (
-        "#step-analysis did not drop a Python Computation node: {!r}".format(actual)
+        "#tile-computation-analysis did not drop a Python Computation node: {!r}".format(actual)
     )
     # Through Monaco's setValue: autoClosingBrackets + formatOnType mean typed
     # Python does not round-trip, and setValue fires the same onChange chain.

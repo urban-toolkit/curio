@@ -33,7 +33,7 @@ describe("the canvas title's rename", () => {
     // Both, or the bug survives on whichever path was missed.
     const commit = UP_MENU.slice(
       UP_MENU.indexOf("const commitName"),
-      UP_MENU.indexOf("const openTutorial"),
+      UP_MENU.indexOf("const toggleExpand"),
     );
     expect(commit).toContain("renameDataflow(workflowName)");
     expect(commit).toMatch(/handleNameBlur[\s\S]*commitName\(\)/);
@@ -45,7 +45,7 @@ describe("the canvas title's rename", () => {
     // something back or the dataflow is left visibly nameless.
     const commit = UP_MENU.slice(
       UP_MENU.indexOf("const commitName"),
-      UP_MENU.indexOf("const openTutorial"),
+      UP_MENU.indexOf("const toggleExpand"),
     );
     expect(commit).toMatch(/if \(!renameDataflow\(workflowName\)\)/);
     expect(commit).toContain("setWorkflowName(");

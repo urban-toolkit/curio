@@ -230,10 +230,12 @@ class RunReport:
         lines = [
             f"# Agent reconstruction evaluation — `{self.run_id}`",
             "",
-            "**This is an evaluation report, not a release gate.** Scores here "
-            "describe how a model did against the shipped examples on one run; "
-            "nothing in Curio passes or fails because of them (memo dev/121, "
-            "`DEC-077`).",
+            (
+                "**This is an evaluation report, not a release gate.** Scores here "
+                "describe how a model did against the shipped examples on one run; "
+                "nothing in Curio passes or fails because of them (memo dev/121, "
+                "`DEC-077`)."
+            ),
             "",
             f"- Mode: `{self.mode}`",
             f"- Provider: `{provider.api_type or 'unknown'}`"

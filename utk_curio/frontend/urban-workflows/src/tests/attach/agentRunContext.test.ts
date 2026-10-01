@@ -93,7 +93,7 @@ describe("composeAgentRunContext (memo dev/44)", () => {
 
   it("node-scoped reads resolve from the attached node", () => {
     const att = attachment({
-      coord: "agent.node-explainer@1.0.0",
+      coord: "agent.my-explainer@1.0.0",
       target: { kind: "node", targetId: "n1" },
       reads: ["nodeContext"],
     });
@@ -123,8 +123,8 @@ describe("composeAgentRunContext (memo dev/44)", () => {
   });
 
   it("the chat agent sees the dataflow on screen, and its node when attached to one", () => {
-    // It explains and debugs, so it reads what the removed explainer and
-    // debugger read: the live canvas, unsaved nodes included.
+    // It explains and debugs, so it reads the live canvas, unsaved nodes
+    // included.
     const reads = ["userMessage", "nodeContext", "dataflowContext"];
     const onCanvas = composeAgentRunContext(attachment({ reads }), canvas);
     expect(onCanvas).toContain("n2-unsaved");

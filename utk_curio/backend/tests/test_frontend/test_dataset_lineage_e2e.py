@@ -87,7 +87,7 @@ CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 # The label the node registry gives curio.builtin/data-transformation, which is
 # what the consumer card names the node (`resolveNodeLabel` wins over the raw
 # type). Asserting the label rather than the id also proves the panel resolved

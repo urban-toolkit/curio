@@ -16,7 +16,7 @@ const api = agentsApi as jest.Mocked<typeof agentsApi>;
 function att(id: string) {
   return {
     attachmentId: id,
-    coord: "agent.node-explainer@1.0.0",
+    coord: "agent.my-explainer@1.0.0",
     target: { kind: "canvas" as const },
     sessionId: "s",
     revision: 1,
@@ -24,7 +24,7 @@ function att(id: string) {
     intentEdited: false,
     title: null,
     titleEdited: false,
-    name: "Node Explainer",
+    name: "My Explainer",
     category: "node",
     hooks: ["node"],
   };
@@ -57,9 +57,9 @@ describe("useAgentAttachments", () => {
     await waitFor(() => expect(result.current.attachments).toHaveLength(1));
     api.listAttachments.mockClear();
     await act(async () => {
-      await result.current.attach("agent.node-explainer@1.0.0", { kind: "canvas" });
+      await result.current.attach("agent.my-explainer@1.0.0", { kind: "canvas" });
     });
-    expect(api.attach).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0", { kind: "canvas" });
+    expect(api.attach).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0", { kind: "canvas" });
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalled()); // dock-refresh → reload
   });
 

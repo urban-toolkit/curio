@@ -277,12 +277,13 @@ class TestSandbox(unittest.TestCase):
 
         This is #248: autk-db's loadOsm walks autoLoadLayers.layers in order and
         lets a per-layer failure propagate, so a throw partway leaves the earlier
-        tables registered and the later ones absent. The emit used to publish
-        whatever getLayerTables() held, so the node that failed reported "Done"
-        and a consumer two hops downstream died on "Table table_osm_roads not
-        found". Failing here is also what makes the loss reachable by
-        runDataInBackend's retry: `success: false` returns an empty output.path,
-        the one shape that retry has always keyed on.
+        tables registered and the later ones absent. The emit checks
+        getLayersMetadata() against the tables the spec asks for, so the node
+        that ran the load fails, instead of a consumer two hops downstream
+        dying on "Table table_osm_roads not found". Failing here is also what
+        makes the loss reachable by runDataInBackend's retry: `success: false`
+        returns an empty output.path, the one shape that retry has always keyed
+        on.
         """
         from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
         _worker_init()

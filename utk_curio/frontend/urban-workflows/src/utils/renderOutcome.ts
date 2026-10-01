@@ -123,7 +123,7 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
       empty: true,
       cause: "no-layers",
       message: bounded(
-        `rendered nothing — every layer this document asks for names data the ` +
+        `rendered nothing: every layer this document asks for names data the ` +
         `dataflow does not produce (asked for: ${names(counts.requestedRefs)}; ` +
         `available: ${names(counts.availableRefs)}). Point the layerRefs at a ` +
         `table this node's input actually provides.`,
@@ -160,7 +160,7 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
         `rendered nothing: ${counts.inputProblem} The upstream node that feeds ` +
         "it is what must change; this document is not at fault.",
       ) : bounded(
-        "rendered nothing — 0 rows arrived at this node, so there was nothing " +
+        "rendered nothing: 0 rows arrived at this node, so there was nothing " +
         "to draw. The upstream node that feeds it is what must change; this " +
         "document is not at fault.",
       ),
@@ -179,9 +179,9 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
       empty: true,
       cause: "nothing-drawn",
       message: counts.explanation ? bounded(`rendered nothing: ${counts.explanation}`) : bounded(
-        `rendered nothing — ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
+        `rendered nothing: ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
         `every value of ${fields} is null, so there is nothing to plot. The ` +
-        "upstream node that produces those columns is what must change — a " +
+        "upstream node that produces those columns is what must change; a " +
         "join that matched nothing leaves rows with no data in them.",
       ),
     };
@@ -197,7 +197,7 @@ export function renderOutcome(counts: RenderCounts): RenderOutcome {
       empty: true,
       cause: "nothing-drawn",
       message: counts.explanation ? bounded(`rendered nothing: ${counts.explanation}`) : bounded(
-        `rendered nothing — ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
+        `rendered nothing: ${rowsIn} row${rowsIn === 1 ? "" : "s"} arrived and ` +
         "no mark was drawn: an encoding, a transform or a scale domain removed " +
         "every row. Check that the encoded fields hold values (not all null) " +
         "and that no filter or domain excludes the data.",

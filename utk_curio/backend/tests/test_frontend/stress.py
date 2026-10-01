@@ -624,41 +624,30 @@ DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
 DRAWER_AGENTS = '[data-curio-agent-catalog-drawer="true"]'
 
-#: Built-in palette tiles carry an ``id`` only when their manifest declares a
-#: ``tutorialId`` (ToolsMenu.DraggableTool sets ``id={tutorialID}``), which four
-#: of the twelve do not. The rest are addressed by their position in the
-#: built-in stack, which follows PALETTE_GROUPS ([data, flow], [computation],
-#: [vis_grammar, vis_simple]) with each group in manifest paletteOrder.
-BUILTIN_TILES: tuple[tuple[str, str | None], ...] = (
-    ("data-loading", "step-loading"),
-    ("data-export", None),
-    ("data-transformation", "step-transformation"),
-    ("spatial-join", None),
-    ("merge-flow", "step-merge"),
-    ("data-pool", "step-pool"),
-    ("computation-analysis", "step-analysis"),
-    ("data-summary", None),
-    ("js-computation", None),
-    ("autk-grammar", "step-utk"),
-    ("vis-vega", "step-vega"),
-    ("vis-simple", "step-image"),
+#: The twelve built-in templates in rail order: PALETTE_GROUPS ([data, flow],
+#: [computation], [vis_grammar, vis_simple]) with each group in manifest
+#: paletteOrder. ToolsMenu gives each tile the id ``tile-<template>``.
+BUILTIN_TILES: tuple[str, ...] = (
+    "data-loading",
+    "data-export",
+    "data-transformation",
+    "spatial-join",
+    "merge-flow",
+    "data-pool",
+    "computation-analysis",
+    "data-summary",
+    "js-computation",
+    "autk-grammar",
+    "vis-vega",
+    "vis-simple",
 )
-
-_TILE_INDEX = {name: i for i, (name, _) in enumerate(BUILTIN_TILES)}
-_TILE_ANCHOR = dict(BUILTIN_TILES)
 
 
 def builtin_tile(page, template_id: str):
     """A locator for one built-in palette tile, by manifest template id."""
-    anchor = _TILE_ANCHOR.get(template_id)
-    if anchor:
-        return page.locator(f"#{anchor}")
-    index = _TILE_INDEX.get(template_id)
-    if index is None:
+    if template_id not in BUILTIN_TILES:
         raise KeyError(f"unknown built-in template {template_id!r}")
-    # The built-in stack is the first child of #tools-menu; the three catalog
-    # palettes and the run-all row follow it and also contain draggables.
-    return page.locator("#tools-menu > div").first.locator("[draggable]").nth(index)
+    return page.locator(f"#tile-{template_id}")
 
 
 def package_row(page, template_id: str):

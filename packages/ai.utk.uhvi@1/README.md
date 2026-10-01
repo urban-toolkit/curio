@@ -28,22 +28,3 @@ preserves wiring order on multi-edge ports.
 The defaults assume a workspace layout matching the repo root:
 `./milan/Milan_Tmrt_2022_203_1200D.tif` and
 `./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp`.
-
-## Self-containment
-
-The package is **self-contained**: every template preset lives under
-`templates/<kindId>/` inside this directory. It does **not** reference
-`<CURIO_LAUNCH_CWD>/templates/` or any other path outside its own root.
-
-## Seeding into a developer's package store
-
-The backend ships a small dev-only seeder
-(`utk_curio.backend.app.packages.seed_dev_packageages`) that copies this fixture
-into `.curio/users/guest/packages/ai.utk.uhvi@1/` on backend startup in
-development. The seeder also refreshes the runtime copy when this
-fixture has been edited since the last seed (mtime check), so spike-time
-template tweaks land without a manual `rm -rf`. Set
-`CURIO_RESEED_PACKAGES=1` to force a refresh.
-
-The runtime copy is gitignored (`.curio/` is in the top-level
-`.gitignore`); this fixture is the source of truth.

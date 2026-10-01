@@ -19,11 +19,11 @@ from utk_curio.backend.app.agents.domain.manifest import (
 
 
 def _valid_manifest() -> dict:
-    """A minimal-but-complete valid agent manifest (Node Explainer shape)."""
+    """A minimal-but-complete valid agent manifest: a user's explainer agent."""
     return {
         "$schema": "../../docs/schemas/agent-package.v1.json",
-        "id": "agent.node-explainer",
-        "name": "Node Explainer",
+        "id": "agent.my-explainer",
+        "name": "My Explainer",
         "category": "node",
         "version": "1.0.0",
         "purpose": "Explain what a node or its output does.",
@@ -55,12 +55,12 @@ def _valid_manifest() -> dict:
 class TestValidManifest:
     def test_parses_core_fields(self):
         m = parse_agent_manifest(_valid_manifest())
-        assert m.agent_id == "agent.node-explainer"
+        assert m.agent_id == "agent.my-explainer"
         assert m.version == "1.0.0"
         assert m.category == "node"
         assert m.capability_ids == ["node.explain", "node.output.interpret"]
         assert m.delegates_to == ["agent.node-builder"]
-        assert m.dir_name == "agent.node-explainer@1.0.0"
+        assert m.dir_name == "agent.my-explainer@1.0.0"
 
     def test_parses_prompts_targets_runtime(self):
         m = parse_agent_manifest(_valid_manifest())
@@ -97,7 +97,7 @@ class TestValidManifest:
 class TestAgentId:
     def test_missing_agent_prefix_rejected(self):
         raw = _valid_manifest()
-        raw["id"] = "curio.node-explainer"
+        raw["id"] = "curio.my-explainer"
         with pytest.raises(AgentManifestError, match="must begin with 'agent.'"):
             parse_agent_manifest(raw)
 
@@ -109,7 +109,7 @@ class TestAgentId:
 
     def test_delegates_to_self_rejected(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-explainer"]
+        raw["delegatesTo"] = ["agent.my-explainer"]
         with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
             parse_agent_manifest(raw)
 
@@ -141,7 +141,7 @@ class TestRequiresAgents:
 
     def test_self_rejected(self):
         raw = _valid_manifest()
-        raw["requiresAgents"] = ["agent.node-explainer"]
+        raw["requiresAgents"] = ["agent.my-explainer"]
         with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
             parse_agent_manifest(raw)
 
@@ -302,27 +302,27 @@ class TestToolRequirements:
 
 class TestLoadFromDisk:
     def test_loads_valid_dir(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         (d / "manifest.json").write_text(json.dumps(_valid_manifest()), encoding="utf-8")
         m = load_agent_manifest(d)
-        assert m.agent_id == "agent.node-explainer"
+        assert m.agent_id == "agent.my-explainer"
 
     def test_dir_name_mismatch_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@2.0.0"
+        d = tmp_path / "agent.my-explainer@2.0.0"
         d.mkdir()
         (d / "manifest.json").write_text(json.dumps(_valid_manifest()), encoding="utf-8")
         with pytest.raises(AgentManifestError, match="does not match"):
             load_agent_manifest(d)
 
     def test_missing_manifest_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         with pytest.raises(AgentManifestError, match="missing manifest.json"):
             load_agent_manifest(d)
 
     def test_invalid_json_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         (d / "manifest.json").write_text("{not json", encoding="utf-8")
         with pytest.raises(AgentManifestError, match="invalid JSON"):
