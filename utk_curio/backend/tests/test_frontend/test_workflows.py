@@ -27,6 +27,7 @@ from .utils import (
     assert_autark_map_drawn,
     at_fraction,
     brush_area,
+    brush_mismatches,
     capture_node,
     changed_pixels,
     dismiss_toasts,
@@ -1154,6 +1155,13 @@ class TestWorkflowCanvas:
         assert drawing_kept(page, drawing), (
             f"{where} redrew {step.target} instead of highlighting it"
         )
+        if step.gesture == "brush" and not on_vega:
+            # The bars lit are the ones under the brush, once the selection has
+            # come back to the plot through the pool (#536).
+            wrong = brush_mismatches(page, source_drawing)
+            assert wrong is not None, f"{where} left no brush on {step.source}"
+            assert not wrong, f"{where} lit the wrong bars: " + ", ".join(
+                f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
         frame("after", "target")
         frame("after", "source")
 

@@ -1929,6 +1929,44 @@ def at_fraction(area: dict, fraction) -> tuple[float, float]:
     return (area["x"] + fraction[0] * area["width"], area["y"] + fraction[1] * area["height"])
 
 
+#: An autk-plot mark's fill when it is selected (PlotStyle.highlight, #5dade2),
+#: as getComputedStyle reads it.
+AUTK_PLOT_HIGHLIGHT = "rgb(93, 173, 226)"
+
+# The bars of an Autark plot lit where its brush is not, or under its brush and
+# not lit; null when the plot holds no brush. The brush and the bars share one
+# group, so their page boxes compare as autk-plot's own hit test does. A bar that
+# only touches an edge of the brush could go either way, so it is left out.
+_BRUSH_MISMATCHES_JS = """({ selector, highlight }) => {
+    const el = document.querySelector(selector);
+    const brush = el && el.querySelector('.autkBrush rect.selection');
+    if (!brush || brush.style.display === 'none') return null;
+    const b = brush.getBoundingClientRect();
+    if (!b.width) return null;
+    const wrong = [];
+    for (const mark of el.querySelectorAll('.autkMark')) {
+        const r = mark.getBoundingClientRect();
+        if (Math.abs(r.right - b.left) < 1 || Math.abs(r.left - b.right) < 1) continue;
+        const under = r.right > b.left && r.left < b.right;
+        const lit = getComputedStyle(mark).fill === highlight;
+        if (under !== lit) wrong.push({ label: (mark.__data__ || {}).label ?? null, lit });
+    }
+    return wrong;
+}"""
+
+
+def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> list | None:
+    """The bars of the Autark plot in *selector* whose highlight disagrees with
+    its brush, once the selection coming back through a Data Pool has landed:
+    asked until there are none, for up to *timeout_ms*. None when no brush shows."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        wrong = page.evaluate(_BRUSH_MISMATCHES_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
+        if not wrong or time.monotonic() >= deadline:
+            return wrong
+        page.wait_for_timeout(300)
+
+
 def capture_node(page: Page, node_id: str):
     """The node as a frame of it shows it, in memory (maps painted, see #427)."""
     return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')
