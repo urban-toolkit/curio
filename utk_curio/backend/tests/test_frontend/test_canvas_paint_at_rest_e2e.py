@@ -37,6 +37,7 @@ from .utils import (
     capture_node,
     changed_pixels,
     dismiss_toasts,
+    empty_pane_point,
     frame_nodes,
     require_owner_view,
     require_project_page,
@@ -94,13 +95,6 @@ def _repaint_changes(page) -> float:
     return changed_pixels(shown, repainted, CLOSEUP_PIXEL_THRESHOLD) / (shown.width * shown.height)
 
 
-def _empty_pane_point(page) -> tuple[float, float]:
-    """A point on the pane just left of the probe, in the gap before its neighbour."""
-    box = page.locator(f'.react-flow__node[data-id="{PROBE}"]').bounding_box()
-    assert box, "the probe node has no box"
-    return box["x"] - 40, box["y"] + box["height"] / 2
-
-
 def test_the_canvas_is_painted_at_the_zoom_it_shows(
     app_frontend: "FrontendPage", current_server: str, page
 ):
@@ -145,10 +139,11 @@ def test_the_canvas_is_painted_at_the_zoom_it_shows(
                 f"probe (allowed {PAINT_PROBE_MAX_RATIO:.2%}), so it showed an earlier raster"
             )
 
-    # A wheel zoom in and back out, about a point of the pane beside the probe.
+    # A wheel zoom in and back out, about a point of the bare pane beside the
+    # probe, where the drag below starts too: a press on a node would move it.
     frame_nodes(page, [PROBE])
     _painted(page)
-    x, y = _empty_pane_point(page)
+    x, y = empty_pane_point(page, PROBE)
     page.mouse.move(x, y)
     watch_viewport_hint(page)
     for delta in (-240, -240, 240, 240):
@@ -167,7 +162,8 @@ def test_the_canvas_is_painted_at_the_zoom_it_shows(
             f"(allowed {PAINT_PROBE_MAX_RATIO:.2%}), so it showed an earlier raster"
         )
 
-    # A drag on the empty pane pans it.
+    # A drag on the bare pane pans it.
+    x, y = empty_pane_point(page, PROBE)
     watch_viewport_hint(page)
     page.mouse.move(x, y)
     page.mouse.down()

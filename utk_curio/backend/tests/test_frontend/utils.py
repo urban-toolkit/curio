@@ -1741,10 +1741,35 @@ _WATCH_VIEWPORT_HINT_JS = """() => {
     return true;
 }"""
 
+# A point beside a node where the pointer meets the bare pane, not a node, an
+# edge or a menu: a press there pans, where a press on a node would drag it.
+_EMPTY_PANE_POINT_JS = """(id) => {
+    const pane = document.querySelector('.react-flow__pane');
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!pane || !node) return null;
+    const p = pane.getBoundingClientRect();
+    const n = node.getBoundingClientRect();
+    const midX = n.left + n.width / 2, midY = n.top + n.height / 2;
+    for (let d = 20; d <= 600; d += 20) {
+        for (const [x, y] of [[n.left - d, midY], [n.right + d, midY], [midX, n.top - d], [midX, n.bottom + d]]) {
+            if (x < p.left + 5 || x > p.right - 5 || y < p.top + 5 || y > p.bottom - 5) continue;
+            if (document.elementFromPoint(x, y) === pane) return { x, y };
+        }
+    }
+    return null;
+}"""
+
 #: Long enough for a gesture to settle and drop the viewport's hint: d3 ends a
 #: wheel gesture 150 ms after the last wheel event, and useViewportMotionHint
 #: drops the hint 250 ms after the last move.
 VIEWPORT_SETTLE_WAIT_MS = 1000
+
+
+def empty_pane_point(page: Page, node_id: str) -> tuple[float, float]:
+    """The nearest point beside *node_id* where a press lands on the bare pane."""
+    point = page.evaluate(_EMPTY_PANE_POINT_JS, node_id)
+    assert point, f"no bare pane in view beside node {node_id}"
+    return point["x"], point["y"]
 
 
 def viewport_will_change(page: Page) -> str | None:

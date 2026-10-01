@@ -44,6 +44,7 @@ from .utils import (
     api_json,
     assert_vega_canvas_rendered,
     dismiss_toasts,
+    empty_pane_point,
     node_locator,
     play_node,
     require_owner_view,
@@ -485,10 +486,8 @@ def test_the_dashboard_is_a_layer_only_while_it_is_panned(
 
     # Panning is for the owner editing the layout; a locked page does not move.
     page.get_by_test_id("edit-layout-btn").click()
-    tile = page.locator(f'.react-flow__node[data-id="{CHART}"]').bounding_box()
-    assert tile, "the chart's tile has no box"
-    # Left of the tile: the fit leaves the sides of a wide page empty.
-    x, y = tile["x"] / 2, tile["y"] + tile["height"] / 2
+    # Beside the tile, on the bare pane: a press on the tile would move it.
+    x, y = empty_pane_point(page, CHART)
     watch_viewport_hint(page)
     page.mouse.move(x, y)
     page.mouse.down()
