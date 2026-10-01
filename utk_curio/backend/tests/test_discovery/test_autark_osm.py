@@ -298,7 +298,14 @@ def _fake_node(tmp_path: Path, body: str) -> str:
 
 
 @pytest.fixture()
-def service():
+def service(monkeypatch):
+    """The source's service as a process with no recorded corpus builds it.
+
+    The CI container sets ``CURIO_DISCOVERY_FIXTURES`` for every test, so the
+    variable is cleared here rather than assumed absent."""
+    from utk_curio.backend.app.discovery.infrastructure import transport
+
+    monkeypatch.delenv(transport.ENV_FIXTURES, raising=False)
     return build_service(load_source_manifest(SHIPPED_ROOT / OSM))
 
 
@@ -318,6 +325,17 @@ class TestTheLoaderContract:
         assert request["userAgent"] == OVERPASS_USER_AGENT
         assert request["autkDbUrl"].startswith("file://") and request["autkDbUrl"].endswith("/dist/node.js")
         assert request["fixtures"] is None
+
+    def test_a_test_rig_sends_it_the_recorded_overpass_answers(self, tmp_path, fixture_corpus):
+        """Behind the transport's own gate: the corpus it would answer from,
+        and the Overpass answers inside it."""
+        if not ROOT_AUTK_DB.is_dir():
+            pytest.skip("the repo-root autk-db is needed to resolve its entry")
+        service = build_service(load_source_manifest(SHIPPED_ROOT / OSM))
+        seen = tmp_path / "request.json"
+        node = _fake_node(tmp_path, f"cat > '{seen}'\necho '__CURIO_OSM_RESULT__ {{\"ok\":true,\"layers\":[]}}'\n")
+        service.load(service.manifest.resource("parks"), {"area": GOLF}, tmp_path, node=node)
+        assert json.loads(seen.read_text())["fixtures"] == str(FIXTURES / "overpass")
 
     def test_a_box_is_sent_as_autk_dbs_bbox(self, tmp_path, service):
         if not ROOT_AUTK_DB.is_dir():
