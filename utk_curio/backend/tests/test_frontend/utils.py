@@ -1718,6 +1718,49 @@ _VIEWPORT_WILL_CHANGE_JS = """(value) => {
     if (viewport) viewport.style.willChange = value;
 }"""
 
+# The page's own flow viewport is the first one: a flow drawn inside a node
+# comes later in document order.
+_VIEWPORT_COMPUTED_WILL_CHANGE_JS = """() => {
+    const viewport = document.querySelector('.react-flow__viewport');
+    return viewport ? getComputedStyle(viewport).willChange : null;
+}"""
+
+# Records whether the viewport ever took a will-change hint from now on: the
+# hint comes with a class on the flow's wrapper (useViewportMotionHint).
+_WATCH_VIEWPORT_HINT_JS = """() => {
+    const flow = document.querySelector('.react-flow');
+    const viewport = document.querySelector('.react-flow__viewport');
+    window.__curio_viewport_hint_seen = [];
+    if (window.__curio_viewport_hint_observer) window.__curio_viewport_hint_observer.disconnect();
+    if (!flow || !viewport) return false;
+    const observer = new MutationObserver(() => {
+        window.__curio_viewport_hint_seen.push(getComputedStyle(viewport).willChange);
+    });
+    observer.observe(flow, { attributes: true, attributeFilter: ['class'] });
+    window.__curio_viewport_hint_observer = observer;
+    return true;
+}"""
+
+#: Long enough for a gesture to settle and drop the viewport's hint: d3 ends a
+#: wheel gesture 150 ms after the last wheel event, and useViewportMotionHint
+#: drops the hint 250 ms after the last move.
+VIEWPORT_SETTLE_WAIT_MS = 1000
+
+
+def viewport_will_change(page: Page) -> str | None:
+    """The canvas viewport's computed ``will-change``: ``auto`` unless a gesture moves it."""
+    return page.evaluate(_VIEWPORT_COMPUTED_WILL_CHANGE_JS)
+
+
+def watch_viewport_hint(page: Page) -> None:
+    """Start recording each ``will-change`` the viewport takes; read with ``viewport_hints``."""
+    assert page.evaluate(_WATCH_VIEWPORT_HINT_JS), "no React Flow viewport on the page"
+
+
+def viewport_hints(page: Page) -> list:
+    """The computed ``will-change`` of the viewport at each change since ``watch_viewport_hint``."""
+    return page.evaluate("() => window.__curio_viewport_hint_seen || []")
+
 
 @contextmanager
 def canvas_painted_at_shown_zoom(page: Page):
