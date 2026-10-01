@@ -26,6 +26,17 @@ NOT_THE_PUBLISHER_MESSAGE = (
     "Only the account that published this package can remove it "
     "from the shared catalog."
 )
+NOT_THE_PUBLISHER_REPLACE_MESSAGE = (
+    "Only the account that published this package can replace it "
+    "in the shared catalog."
+)
+
+
+def _refuse_replacing_someone_elses(catalog: Path, dir_name: str, user_key: str) -> None:
+    """A replace removes what is there, so it follows unpublish's rule: only the
+    recorded publisher, and nobody for a package with no record (#563)."""
+    if (catalog / dir_name).is_dir() and not publisher_record.is_publisher(catalog, dir_name, user_key):
+        raise PackageServiceError(NOT_THE_PUBLISHER_REPLACE_MESSAGE, 403)
 
 
 def publish_draft_to_catalog(
@@ -47,6 +58,7 @@ def publish_draft_to_catalog(
     existing_dir = packages_factory_install.installed_dir_for_draft(user_key, body.get("manifest"))
     body = preserve_unedited_sources(body, existing_dir)
     built = build_package_archive(body)
+    _refuse_replacing_someone_elses(catalog, built.manifest.dir_name, user_key)
     result = packages_catalog_dir.publish_package_archive_to_catalog_dir(
         built.archive,
         catalog,

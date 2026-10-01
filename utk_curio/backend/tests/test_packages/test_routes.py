@@ -990,6 +990,80 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
     assert rep_body["package"]["version"] == "9.9.9"
 
 
+def _make_user(db, username: str, token: str):
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    u = User(username=username, name=username.title(), email=f"{username}@test.com")
+    db.session.add(u)
+    db.session.flush()
+    db.session.add(UserSession(user_id=u.id, token=token))
+    db.session.commit()
+    return u
+
+
+def test_a_replace_publish_refuses_a_package_someone_else_published(
+    client, db, user_and_token, monkeypatch, tmp_path,
+):
+    """Only the publisher may replace a catalog package, as only the publisher
+    may remove it: the shared catalog is every user's, and a replace is a
+    removal followed by a write."""
+    fake_root = tmp_path / "fixture_packages"
+    fake_root.mkdir()
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.catalog.owned"
+    _, alice = user_and_token
+    assert client.post(
+        "/api/packages/factory/publish-catalog",
+        data=json.dumps({**draft, "replace": False}), headers=_auth(alice),
+    ).status_code == 201
+
+    _make_user(db, "bob", "bob-token")
+    theirs = copy.deepcopy(draft)
+    theirs["manifest"]["version"] = "9.9.9"
+    resp = client.post(
+        "/api/packages/factory/publish-catalog",
+        data=json.dumps({**theirs, "replace": True}), headers=_auth("bob-token"),
+    )
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+    assert "Only the account that published this package can replace it" in resp.get_json()["error"]
+    published = json.loads((fake_root / "ai.test.catalog.owned@1" / "manifest.json").read_text())
+    assert published["version"] == "1.0.0"
+
+    # The publisher still may.
+    mine = copy.deepcopy(draft)
+    mine["manifest"]["version"] = "1.0.1"
+    assert client.post(
+        "/api/packages/factory/publish-catalog",
+        data=json.dumps({**mine, "replace": True}), headers=_auth(alice),
+    ).status_code == 201
+
+
+def test_a_replace_publish_refuses_a_package_nobody_published(
+    client, user_and_token, monkeypatch, tmp_path,
+):
+    """A package that shipped with the deployment has no publisher record, so
+    nobody may replace it from the UI, as nobody may unpublish it."""
+    fake_root = tmp_path / "fixture_packages"
+    fake_root.mkdir()
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.catalog.shipped"
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
+
+    catalog_dir.publish_package_archive_to_catalog_dir(
+        build_package_archive(draft).archive, fake_root,
+    )
+    _, token = user_and_token
+    bumped = copy.deepcopy(draft)
+    bumped["manifest"]["version"] = "9.9.9"
+    resp = client.post(
+        "/api/packages/factory/publish-catalog",
+        data=json.dumps({**bumped, "replace": True}), headers=_auth(token),
+    )
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+
+
 def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypatch, tmp_path):
 
     fake_root = tmp_path / "fixture_packages"
