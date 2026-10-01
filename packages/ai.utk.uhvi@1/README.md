@@ -28,9 +28,3 @@ preserves wiring order on multi-edge ports.
 The defaults assume a workspace layout matching the repo root:
 `./milan/Milan_Tmrt_2022_203_1200D.tif` and
 `./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp`.
-
-## Self-containment
-
-The package is **self-contained**: every template preset lives under
-`templates/<kindId>/` inside this directory. It does **not** reference
-`<CURIO_LAUNCH_CWD>/templates/` or any other path outside its own root.
