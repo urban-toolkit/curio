@@ -49,11 +49,11 @@ FIXED_DOC = json.dumps({
     "encoding": {"x": {"field": "community", "type": "nominal"}},
 })
 DREW_NOTHING = (
-    "rendered nothing — 12 rows arrived and no mark was drawn: an encoding, a "
+    "rendered nothing:12 rows arrived and no mark was drawn: an encoding, a "
     "transform or a scale domain removed every row."
 )
 NO_ROWS = (
-    "rendered nothing — 0 rows arrived at this node, so there was nothing to "
+    "rendered nothing:0 rows arrived at this node, so there was nothing to "
     "draw. The upstream node that feeds it is what must change; this document "
     "is not at fault."
 )

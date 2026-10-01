@@ -143,7 +143,7 @@ class TestTheRunAndTheRenderTogether:
             started_at="2026-09-11T00:00:00Z", duration_ms=12,
         )
         runtime_journal.record_browser_execution(
-            KEY, PID, "n1", status="error", message="rendered nothing — 0 rows",
+            KEY, PID, "n1", status="error", message="rendered nothing:0 rows",
             kind="empty-render:no-input-rows",
         )
         runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
@@ -159,7 +159,7 @@ class TestTheRunAndTheRenderTogether:
 
     def test_a_grammar_node_is_described_by_its_render_alone(self, tmp_curio):
         runtime_journal.record_browser_execution(
-            KEY, PID, "n1", status="error", message="rendered nothing — 3 rows arrived",
+            KEY, PID, "n1", status="error", message="rendered nothing:3 rows arrived",
             kind="empty-render:nothing-drawn",
         )
         runtime = node_context.compose_node_context(KEY, PID, _spec(), "n1")["runtime"]
