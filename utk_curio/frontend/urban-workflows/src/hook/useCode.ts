@@ -11,6 +11,7 @@ import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
+import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
 
 // Module-level singletons so every node shares the same interpreter
@@ -346,7 +347,7 @@ export function useCode(): IUseCode {
             markDirty();
         } else if(suggestionType == undefined) {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
-            if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
+            if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
