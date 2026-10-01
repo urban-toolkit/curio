@@ -882,14 +882,9 @@ def ai_field(page, label: str):
 def wait_for_drawer_presented(page, selector: str, *, timeout: float = 25000) -> None:
     """Wait until a catalog drawer has actually slid into frame.
 
-    Neither obvious gate works for all three. ``to_be_visible()`` is not one:
-    the drawers sit off-screen behind ``transform: translate3d(100%, 0, 0)``,
-    which keeps a full bounding box. ``aria-hidden="false"`` is the presented
-    signal for the Data and Agent drawers, but the Node Catalog drawer never
-    sets the attribute at all (it toggles a CSS class only), so gating on it
-    there waits forever.
-
-    Measuring where the panel *is* works for all three and cannot drift.
+    ``to_be_visible()`` is not a gate: the drawers sit off-screen behind
+    ``transform: translate3d(100%, 0, 0)``, which keeps a full bounding box.
+    Measuring where the panel *is* works for all three.
     """
     page.wait_for_function(
         """(selector) => {
