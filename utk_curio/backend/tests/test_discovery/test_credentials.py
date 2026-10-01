@@ -185,10 +185,50 @@ class TestItReachesThePortalAndNowhereElse:
             def download(self, *a, **k):  # pragma: no cover
                 raise NotImplementedError
 
-        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}")
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
         bound.json_get("https://portal.example/api/catalog/v1")
         assert seen["credential"] == f"X-App-Token:{SECRET}"
         assert SECRET not in seen["url"]
+
+    def test_a_bound_transport_sends_it_to_no_other_host(self):
+        """A Mapillary thumbnail lives on a CDN; a portal may link a file on
+        another server. Neither is the source, and neither gets its key."""
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append((url, credential))
+                return "{}"
+
+            def get_page(self, url, *, credential=None, headers=None):
+                seen.append((url, credential))
+                return "{}", {}
+
+            def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
+                seen.append((url, credential))
+
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
+        bound.json_get("https://portal.example.evil.net/api")
+        bound.get_page("https://cdn.example/listing")
+        bound.download("https://scontent-ord5-1.xx.fbcdn.net/t.jpg", lambda b: None, max_bytes=10)
+        bound.download("https://portal.example/file.csv", lambda b: None, max_bytes=10)
+        assert seen == [
+            ("https://portal.example.evil.net/api", None),
+            ("https://cdn.example/listing", None),
+            ("https://scontent-ord5-1.xx.fbcdn.net/t.jpg", None),
+            ("https://portal.example/file.csv", f"X-App-Token:{SECRET}"),
+        ]
+
+    def test_the_service_binds_it_to_the_manifest_host(self, discovery_dir, app, db, user_and_token):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        manifest = self._source(discovery_dir)
+        user, _token = user_and_token
+        user.socrata_app_token = SECRET
+        db.session.commit()
+        bound = DiscoveryService("alice", user=user)._transport_for(manifest)
+        assert bound._for("https://portal.example/api", None) == f"X-App-Token:{SECRET}"
+        assert bound._for("https://elsewhere.example/api", None) is None
 
     def test_a_required_token_source_refuses_rather_than_trying_empty(self, discovery_dir, app, db, user_and_token):
         from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse

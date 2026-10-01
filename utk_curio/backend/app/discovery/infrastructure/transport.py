@@ -98,7 +98,9 @@ class HttpDiscoveryTransport:
                 url,
                 max_bytes=MAX_METADATA_BYTES,
                 budget=self.budget,
-                request_fn=_metadata_request(_merge(headers, credential)),
+                request_fn=_metadata_request,
+                headers=headers,
+                secret_headers=_merge(None, credential),
             )
         except egress.EgressRefused:
             raise
@@ -121,7 +123,8 @@ class HttpDiscoveryTransport:
                 sink=sink,
                 max_bytes=bound,
                 budget=self.budget,
-                headers=_merge(headers, credential),
+                headers=headers,
+                secret_headers=_merge(None, credential),
                 progress=progress,
             )
         except egress.EgressTooLarge as exc:
@@ -233,25 +236,35 @@ class CredentialedTransport:
     the URLs providers build, and out of anything a provider might log. Binding
     it here means the one place that materialises a secret stays the one place,
     while every provider stays ignorant of it.
+
+    *hosts* are where the credential may go: the source's own host. A request
+    to any other host (a Mapillary thumbnail on a CDN, a file a portal links
+    to elsewhere) is sent without it. Required, so a binding cannot forget it.
     """
 
-    def __init__(self, inner: DiscoveryTransport, credential: str | None) -> None:
+    def __init__(self, inner: DiscoveryTransport, credential: str | None, *, hosts) -> None:
         self._inner = inner
         self._credential = credential
+        self._hosts = frozenset(str(h).lower() for h in hosts if h)
 
     # Exposed for tests that assert on what was requested; carries no secret.
     @property
     def calls(self):
         return getattr(self._inner, "calls", [])
 
+    def _for(self, url: str, credential: str | None) -> str | None:
+        if credential:
+            return credential
+        return self._credential if _host(url).lower() in self._hosts else None
+
     def json_get(self, url, *, credential=None, headers=None):
         return self._inner.json_get(
-            url, credential=credential or self._credential, headers=headers
+            url, credential=self._for(url, credential), headers=headers
         )
 
     def get_page(self, url, *, credential=None, headers=None):
         return self._inner.get_page(
-            url, credential=credential or self._credential, headers=headers
+            url, credential=self._for(url, credential), headers=headers
         )
 
     def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
@@ -260,7 +273,7 @@ class CredentialedTransport:
             url,
             sink,
             max_bytes=max_bytes,
-            credential=credential or self._credential,
+            credential=self._for(url, credential),
             headers=headers,
             progress=progress,
             ceiling=ceiling,
@@ -313,36 +326,29 @@ def _merge(headers: dict[str, str] | None, credential: str | None) -> dict[str, 
     return out
 
 
-def _metadata_request(headers: dict[str, str]):
-    """An ``egress.fetch`` transport that sends *headers*.
+def _metadata_request(method: str, url: str, *, trusted_host=None, headers=None):
+    """An ``egress.fetch`` transport for metadata: the catalog's timeout, an
+    unencoded body read to :data:`MAX_METADATA_BYTES`, and the headers ``fetch``
+    sends on this hop (a source's key only while the hop is on its origin)."""
+    import requests
 
-    ``fetch``'s default request function takes no headers, and widening its
-    signature would break every two-argument test double in the existing suite.
-    A closure is cheaper than that churn.
-    """
+    from utk_curio.backend.app.common.egress_policy import confirm_peer
 
-    def _request(method: str, url: str, *, trusted_host=None):
-        import requests
-
-        from utk_curio.backend.app.common.egress_policy import confirm_peer
-
-        resp = requests.request(
-            method, url, timeout=METADATA_TIMEOUT_S, allow_redirects=False,
-            stream=True, headers={**headers, "Accept-Encoding": "identity"},
-        )
-        try:
-            confirm_peer(resp, url, trusted_host)
-            body = b""
-            for chunk in resp.iter_content(chunk_size=8192):
-                if len(body) + len(chunk) > MAX_METADATA_BYTES:
-                    body += chunk[: max(0, MAX_METADATA_BYTES + 1 - len(body))]
-                    break
-                body += chunk
-            return resp.status_code, dict(resp.headers), body, resp.headers.get("Location")
-        finally:
-            resp.close()
-
-    return _request
+    resp = requests.request(
+        method, url, timeout=METADATA_TIMEOUT_S, allow_redirects=False,
+        stream=True, headers={**(headers or {}), "Accept-Encoding": "identity"},
+    )
+    try:
+        confirm_peer(resp, url, trusted_host)
+        body = b""
+        for chunk in resp.iter_content(chunk_size=8192):
+            if len(body) + len(chunk) > MAX_METADATA_BYTES:
+                body += chunk[: max(0, MAX_METADATA_BYTES + 1 - len(body))]
+                break
+            body += chunk
+        return resp.status_code, dict(resp.headers), body, resp.headers.get("Location")
+    finally:
+        resp.close()
 
 
 def _host(url: str) -> str:
