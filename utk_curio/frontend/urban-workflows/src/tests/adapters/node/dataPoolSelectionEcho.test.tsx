@@ -116,16 +116,25 @@ test("a selection's echo names the chart it came from, so that chart can leave i
   );
   await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(1));
 
-  // As the flow provider hands them over: the latest chart to select has priority 1.
+  // As FlowProvider.applyNewInteractions hands a pool the latest selection: an
+  // empty one, from a press between two bars, after the plot selected row 0.
   const interactions = [
-    { nodeId: "map-1", details: { autk_selection: { type: VisInteractionType.POINT, data: [0], priority: 1 } }, priority: 0 },
-    { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.UNDETERMINED, data: [], priority: 1 } }, priority: 1 },
+    { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.POINT, data: [0], priority: 1 } }, priority: 1 },
   ];
   await act(async () => {
     rerender({ d: { ...base, input, interactions } as unknown as NodeBehaviorData });
   });
   await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(2));
   expect(outputCallback.mock.calls[1][2]).toEqual({ selectionEcho: true, selectionSource: "plot-1" });
+
+  const cleared = [
+    { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.UNDETERMINED, data: [], priority: 1 } }, priority: 1 },
+  ];
+  await act(async () => {
+    rerender({ d: { ...base, input, interactions: cleared } as unknown as NodeBehaviorData });
+  });
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(3));
+  expect(outputCallback.mock.calls[2][2]).toEqual({ selectionEcho: true, selectionSource: "plot-1" });
 });
 
 // Building parts as an Autark data node hands them on: one feature per part,

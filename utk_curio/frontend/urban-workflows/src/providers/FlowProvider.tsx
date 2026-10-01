@@ -1350,8 +1350,11 @@ const FlowProvider = ({
 
         let interactionDict: any = {};
 
+        // Each selection goes out with the node it came from, so a pool's echo
+        // can say whose it is (utils/selectionEcho).
         for (const interaction of newInteractions) {
             interactionDict[interaction.nodeId] = {
+                nodeId: interaction.nodeId,
                 details: interaction.details,
                 priority: interaction.priority,
             };
