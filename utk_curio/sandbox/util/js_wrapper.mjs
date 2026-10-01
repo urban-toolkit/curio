@@ -1,6 +1,7 @@
 // js_wrapper.mjs — static template for JS Computation node execution.
 //
-// Analogous to python_wrapper.txt for Python nodes.
+// Python nodes need no template: app/worker.py::execute_code and
+// isolation/child.py exec their code directly.
 // Python reads this file, substitutes three placeholders, then pipes the
 // result to `node --input-type=commonjs` via stdin.  Placeholders (replaced
 // by Python before execution, never present in the running script):

@@ -94,6 +94,29 @@ class TestSelfRaised:
         assert ft.is_self_raised(PANDAS_KEYERROR) is False
         assert ft.is_self_raised(CRS_ATTRIBUTE, "gdf = gdf.to_crs(3395)") is False
 
+    def test_a_frame_in_a_file_is_never_the_candidate(self):
+        # Nothing runs node code from python_wrapper.txt any more (#484), so a
+        # frame there is no more the candidate's than a pandas one is.
+        raw = (
+            '  File "/app/utk_curio/sandbox/python_wrapper.txt", line 63, in <module>\n'
+            "KeyError: 'x'\n"
+        )
+        assert ft.is_self_raised(raw) is False
+
+    def test_the_sandboxs_own_traceback_names_the_candidate(self):
+        # What execute_code really writes to stderr, not a hand-typed copy: if
+        # the sandbox ever names the candidate's frame differently, the frame
+        # signal above stops firing and this is where that shows.
+        from utk_curio.sandbox.app import worker
+
+        worker._worker_init()
+        result = worker.execute_code(
+            "    raise KeyError('No common column found')\n", "",
+            "curio.builtin/computation-analysis", "str", save_dataset=False,
+        )
+        assert ft.raising_frame(result["stderr"]) == "<string>:2 in userCode"
+        assert ft.is_self_raised(result["stderr"]) is True
+
 
 class TestExcerpt:
     def test_never_returns_a_partial_line(self):

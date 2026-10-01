@@ -106,14 +106,14 @@ def is_self_raised(raw: object, code: object = None) -> bool:
     boundaries and population datasets to perform a join.')`` — the model's own
     guard — and the trail attributed it to pandas, because the only visible
     thing was a traceback whose frames are full of library paths. Two signals,
-    both cheap: the innermost frame is the executed candidate (the sandbox
-    names it ``<string>`` / ``<stdin>`` / the wrapper), or the candidate's text
-    contains a ``raise`` of that same exception type.
+    both cheap: the innermost frame is the executed candidate (both sandbox
+    paths exec it from a string, so the frame reads ``<string>``), or the
+    candidate's text contains a ``raise`` of that same exception type.
     """
     frames = [m for line in _lines(raw) if (m := _FRAME_RE.match(line))]
     if frames:
         path = frames[-1].group("path")
-        if path.startswith("<") or path.endswith("python_wrapper.txt"):
+        if path.startswith("<"):
             return True
     line = exception_line(raw)
     if not line or not isinstance(code, str) or not code.strip():
