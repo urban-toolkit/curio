@@ -219,73 +219,48 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
 
       let objectsCounter = 0;
 
-      let buildingsLayer = false;
-
-      if (
-          parsedInput.data.features != undefined &&
-          parsedInput.data.features.length > 0 &&
-          parsedInput.data.features[0].properties.building_id != undefined
-      )
-          buildingsLayer = true;
-
       if (parsedInput.dataType == "dataframe")
           objectsCounter = dfIndices.length;
       else if (parsedInput.dataType == "geodataframe")
           objectsCounter = parsedInput.data.features.length;
 
-      if (!buildingsLayer) {
-          for (let i = 0; i < objectsCounter; i++) {
-              if (interactedSet.has(i)) {
-                  if (parsedInput.dataType == "dataframe") {
-                      parsedInput.data.interacted[dfIndices[i]] = "1"; // 1 -> interacted with
+      // A selection names rows, so a building layer is flagged by row too:
+      // each of its parts is a row, and the plot and the map name parts (#536).
+      for (let i = 0; i < objectsCounter; i++) {
+          if (interactedSet.has(i)) {
+              if (parsedInput.dataType == "dataframe") {
+                  parsedInput.data.interacted[dfIndices[i]] = "1"; // 1 -> interacted with
 
-                      if (parsedInput.data.linked != undefined) {
-                          for (const index of parsedInput.data.linked[
-                              dfIndices[i]
-                          ]) {
-                              propagationObj.propagation[index] = "1";
-                          }
-                      }
-                  } else if (parsedInput.dataType == "geodataframe") {
-                      parsedInput.data.features[i].properties.interacted = "1"; // 1 -> interacted with
-                      if (parsedInput.data.features[i].properties.linked != undefined) {
-                          for (const index of parsedInput.data.features[i].properties[dfIndices[i]].linked) {
-                              propagationObj.propagation[index] = "1";
-                          }
+                  if (parsedInput.data.linked != undefined) {
+                      for (const index of parsedInput.data.linked[
+                          dfIndices[i]
+                      ]) {
+                          propagationObj.propagation[index] = "1";
                       }
                   }
-              } else {
-                  if (parsedInput.dataType == "dataframe") {
-                      parsedInput.data.interacted[dfIndices[i]] = "0"; // 0 -> not interacted with
-                      if (parsedInput.data.linked != undefined) {
-                          for (const index of parsedInput.data.linked[dfIndices[i]]) {
-                              propagationObj.propagation[index] = "0";
-                          }
-                      }
-                  } else if (parsedInput.dataType == "geodataframe") {
-                      parsedInput.data.features[i].properties.interacted = "0";
-                      if (parsedInput.data.features[i].properties.linked != undefined) {
-                          for (const index of parsedInput.data.features[i].properties.linked) {
-                              propagationObj.propagation[index] = "0";
-                          }
+              } else if (parsedInput.dataType == "geodataframe") {
+                  parsedInput.data.features[i].properties.interacted = "1"; // 1 -> interacted with
+                  if (parsedInput.data.features[i].properties.linked != undefined) {
+                      for (const index of parsedInput.data.features[i].properties[dfIndices[i]].linked) {
+                          propagationObj.propagation[index] = "1";
                       }
                   }
               }
-          }
-      } else {
-          let currentBuildingId = -1;
-          let uniqueBuildingIndex = -1;
-
-          for (const feature of parsedInput.data.features) {
-              if (feature.properties.building_id != currentBuildingId) {
-                  currentBuildingId = feature.properties.building_id;
-                  uniqueBuildingIndex += 1;
-              }
-
-              if (interactedSet.has(uniqueBuildingIndex)) {
-                  feature.properties.interacted = "1"; // 1 -> interacted with
-              } else {
-                  feature.properties.interacted = "0"; // 0 -> not interacted with
+          } else {
+              if (parsedInput.dataType == "dataframe") {
+                  parsedInput.data.interacted[dfIndices[i]] = "0"; // 0 -> not interacted with
+                  if (parsedInput.data.linked != undefined) {
+                      for (const index of parsedInput.data.linked[dfIndices[i]]) {
+                          propagationObj.propagation[index] = "0";
+                      }
+                  }
+              } else if (parsedInput.dataType == "geodataframe") {
+                  parsedInput.data.features[i].properties.interacted = "0";
+                  if (parsedInput.data.features[i].properties.linked != undefined) {
+                      for (const index of parsedInput.data.features[i].properties.linked) {
+                          propagationObj.propagation[index] = "0";
+                      }
+                  }
               }
           }
       }
