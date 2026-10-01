@@ -125,6 +125,7 @@ import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
 import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString, describeAutkRun } from '../../../adapters/node/autkGrammarBehavior';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
+import { markSelectionEcho } from '../../../utils/selectionEcho';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -878,6 +879,39 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
         await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('upstream', [1]));
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test("a plot's own selection back through a pool is left alone; another chart's is applied", async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { dataRef: 'upstream', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        await waitFor(() => expect(clearHighlightOnPlot).toHaveBeenCalled());
+        clearHighlightOnPlot.mockClear();
+
+        const flagged = (row: number | null) => ({
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === row ? '1' : '0' } })) },
+        });
+        // A press between two bars: the plot's own selection is empty for a
+        // moment, and comes back through the pool with every flag off.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(null), 'plot-1') } }); });
+        // Then a map's selection of row 1.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(1), 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('upstream', [1]));
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+        expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
 
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {

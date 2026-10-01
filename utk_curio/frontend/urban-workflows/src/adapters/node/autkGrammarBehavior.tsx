@@ -29,6 +29,7 @@ import {
 } from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
+import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -908,8 +909,17 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             console.error("[autk-grammar] interaction sync failed:", err);
         });
     };
+    // A selection this node made, back through a Data Pool, is what it already
+    // shows. A plot's brush IS its selection, so putting it back replaces the
+    // brush, and an empty one (a press between two bars) erases the brush the
+    // pointer is still drawing. A redraw and a direct selection still apply it.
+    useEffect(() => {
+        if (selectionEchoSource(data.input) === data.nodeId) return;
+        syncHighlightsNow();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data.input]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(syncHighlightsNow, [data.input, (data as any).interactions]);
+    useEffect(syncHighlightsNow, [(data as any).interactions]);
 
     // A starter document chosen from the arriving input, the way every grammar
     // node fills an empty editor (hook/useStarterSpec): once, only into an

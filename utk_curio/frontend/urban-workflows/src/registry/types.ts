@@ -4,6 +4,7 @@ import { Position, Edge } from 'reactflow';
 import React from 'react';
 import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
+import type { SelectionEchoOptions } from '../utils/selectionEcho';
 
 /**
  * Identifier used as the dispatch key for a node kind.
@@ -115,7 +116,7 @@ export type UseNodeStateReturn = ReturnType<typeof import('../hook/useNodeState'
  */
 export interface NodeBehaviorData extends INodeData {
   /** FlowProvider callback — push this node's output to downstream nodes. */
-  outputCallback: (nodeId: string, output: any, options?: { selectionEcho?: boolean }) => void;
+  outputCallback: (nodeId: string, output: any, options?: SelectionEchoOptions) => void;
   /** FlowProvider callback — propagate interaction resolution data. */
   propagationCallback: (propagation: IPropagation) => void;
   /** FlowProvider callback — push interactions to connected interaction nodes. */

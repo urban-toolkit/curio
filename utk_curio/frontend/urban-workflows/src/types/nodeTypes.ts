@@ -3,6 +3,7 @@ import { AccessLevelType } from "../constants";
 import { IInteraction, IPropagation } from "../providers/FlowProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
 import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
+import type { SelectionEchoOptions } from "../utils/selectionEcho";
 
 /**
  * Represents the content structure of code data
@@ -61,7 +62,7 @@ export interface INodeData {
   pythonInterpreter?: PythonInterpreter;
   jsInterpreter?: JavaScriptInterpreter;
   /** `options.selectionEcho`: the output is a selection coming back, not new data (see utils/selectionEcho). */
-  outputCallback?: (nodeId: string, output: string, options?: { selectionEcho?: boolean }) => void;
+  outputCallback?: (nodeId: string, output: string, options?: SelectionEchoOptions) => void;
   codeChangeCallback?: (nodeId: string, output: string) => void;
   interactionsCallback?: (interactions: any, nodeId: string) => void;
   propagationCallback?: (propagation: IPropagation) => void;
