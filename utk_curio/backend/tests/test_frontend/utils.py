@@ -1864,11 +1864,11 @@ _CANVAS_MARKS_JS = """
 
 # A marked pixel of a canvas the page shows, in page coordinates: the one
 # nearest a point given as fractions of the part of the canvas in view. A node
-# can show less of its drawing than the canvas holds (an Autark map's canvas
-# is 400 px tall in a 281 px body), and overlays sit on top of it, so what is in
-# view is asked of elementFromPoint. Every pixel around the one chosen is
-# marked too: 7x7 where the marks are that wide, as a map's polygons are, else
-# 3x3, as a bar is, so the point is well inside its mark.
+# can show less of its drawing than the canvas holds (a multi-view chart
+# scrolls in its pane), and overlays sit on top of it (an Autark map's menu and
+# legend), so what is in view is asked of elementFromPoint. Every pixel around
+# the one chosen is marked too: 7x7 where the marks are that wide, as a map's
+# polygons are, else 3x3, as a bar is, so the point is well inside its mark.
 _MARK_POINT_JS = "async ({ selector, at }) => {" + _CANVAS_MARKS_JS + """
     const el = document.querySelector(selector);
     if (!el) return null;
@@ -3996,6 +3996,48 @@ def assert_autark_map_drawn(
     assert colours > 8 and opaque > 0.5, (
         f"Autark node {node_id}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
         f"colours, so no map was drawn"
+    )
+
+
+# An Autark node's drawing (its map canvas or plot div) and the node body it is
+# shown in, in layout pixels, which the canvas zoom does not scale.
+_AUTK_DRAWING_FIT_JS = """(id) => {
+    const map = document.getElementById('autk-grammar-map-' + id);
+    const drawing = map || document.getElementById('autk-grammar-plot-' + id);
+    const pane = drawing && drawing.closest('.tab-pane');
+    if (!pane) return null;
+    return {
+        kind: map ? 'map' : 'plot',
+        drawing: [drawing.offsetWidth, drawing.offsetHeight],
+        body: [pane.clientWidth, pane.clientHeight],
+    };
+}"""
+
+
+def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> None:
+    """Assert an Autark node's map or plot fills its node body exactly.
+
+    A drawing taller than the body runs on under the node's footer, where it
+    cannot be seen or picked, and a map is then centred below the middle of
+    what shows (#534). A node with no drawing is left to the checks that
+    expect one.
+    """
+    deadline = time.monotonic() + timeout / 1000
+    while True:
+        fit = page.evaluate(_AUTK_DRAWING_FIT_JS, node_id)
+        if fit is None:
+            return
+        shown = min(fit["body"]) > 0
+        fits = shown and all(abs(d - b) <= 1 for d, b in zip(fit["drawing"], fit["body"]))
+        if fits or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(250)
+    (dw, dh), (bw, bh) = fit["drawing"], fit["body"]
+    assert shown, f"Autark node {node_id}: its {fit['kind']} is in an output tab that is not shown"
+    assert fits, (
+        f"Autark node {node_id}: its {fit['kind']} is {dw}x{dh} px in a {bw}x{bh} px "
+        f"node body, so it does not fill the body"
+        + (f" and {dh - bh} px of it are hidden" if dh > bh else "")
     )
 
 

@@ -24,6 +24,7 @@ from .utils import (
     _compare_images,
     _wait_for_no_node_running,
     _wait_for_reactflow_ready,
+    assert_autark_drawing_fits,
     assert_autark_map_drawn,
     at_fraction,
     bar_boxes,
@@ -1083,8 +1084,9 @@ class TestWorkflowCanvas:
 
         # A map or plot that drew nothing leaves a blank node, which in the
         # full-page frame above can stay under the budget. Each one is also
-        # compared on its own, up close.
+        # compared on its own, up close, after checking it fills its node.
         for node in self._drawing_autark_nodes():
+            assert_autark_drawing_fits(self.page, node.id)
             save_node_closeup(
                 self.page,
                 self.spec.filepath,

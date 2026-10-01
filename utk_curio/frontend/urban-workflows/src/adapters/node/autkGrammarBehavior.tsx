@@ -51,7 +51,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const lastSpecRef = useRef<string | null>(null);
     // What kind of step this spec is, so the body can say so. A data-only or
     // compute-only node has no map/plot to draw, and used to render a blank
-    // 400px box under a green "Done" chip - indistinguishable from a node that
+    // box under a green "Done" chip - indistinguishable from a node that
     // never ran or silently failed (#282). Seeded from the authored spec so the
     // pre-run body already says what running it will do; updated on every run.
     const [specKind, setSpecKind] = useState<AutkSpecKind>(() =>
@@ -1095,9 +1095,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // The wrapper is always mounted - applyGrammar owns its
                 // children (canvas / plot div) and empties it on every run - so
                 // the data/compute feedback is a SIBLING React owns, not a child
-                // the next run would wipe (#282). A render node keeps the old
-                // 400px box; a data/compute node has nothing to draw there, so
-                // the box collapses and the summary is the body.
+                // the next run would wipe (#282). A map or plot fills the node
+                // body, as a Vega-Lite chart does (#534): with a floor, the
+                // drawing ran on under the node's footer. A data/compute node
+                // has nothing to draw there, so the summary is the body.
                 <div
                     className="nodrag nopan nowheel"
                     style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
@@ -1132,7 +1133,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             position: 'relative',
                             width: '100%',
                             flex: 1,
-                            minHeight: specKind === 'data' || specKind === 'compute' ? 0 : 400,
+                            minHeight: 0,
                             overflow: 'hidden',
                         }}
                     />
