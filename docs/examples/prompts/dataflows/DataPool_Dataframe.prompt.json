@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/DataPool_Dataframe.json",
-    "sha256": "8257d32897a1080f12d50b2d16ca9f44187fa7af8ff54ee42db6fb7f52115544",
+    "sha256": "5e4598877a77561c98f013c7ab7464ed4f35f33837085dad82ee7bc049ba1522",
     "walkthrough": null
   },
   "prompt": "Create a small nine-row table of letters and numbers in a loading step and send it through a fan-out node so several views could read the same table.",

@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Heat and climate"], "complexity": ["Advanced"]},
     "nodes": [
       {
         "id": "sh-data",

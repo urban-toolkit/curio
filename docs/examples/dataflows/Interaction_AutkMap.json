@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "load-demo",

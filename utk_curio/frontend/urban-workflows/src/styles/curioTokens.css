@@ -276,9 +276,9 @@
 
   /* ── Catalog kind palette ──────────────────────────────────────────────
      One colour per *kind* of catalog item, for the places that identify a
-     dataflow / package / dataset rather than a category or a format. Dataflows
-     have no categorization at all, so the projects list paints every card with
-     the one dataflow colour instead of a per-project accent. */
+     dataflow / package / dataset rather than a category or a format. The
+     projects list paints every card with the one dataflow colour instead of a
+     per-project accent. */
   --curio-kind-dataflow-fg: #5B6472;
   --curio-kind-dataflow-bg: #E4E7EC;
 

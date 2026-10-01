@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Building and energy"], "complexity": ["Intermediate"]},
     "description": "Five parallel dataflows producing a faceted Vega-Lite drill-down across orthogonal axes (Chicago building energy use).",
     "nodes": [
       {

@@ -412,7 +412,55 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _to_summary(p, graph_preview=None, spec_revision=None, is_example=False) -> ProjectSummary:
+def _categories(user, project_id: str, spec, *, sources=None, dataset_kind=None) -> dict:
+    """``categories`` for one project: its source, and what its spec says.
+
+    *sources* and *dataset_kind* let a listing compute the shipped-id map and
+    read each dataset manifest once for every row.
+    """
+    from utk_curio.backend.app.projects.categories import DatasetKinds, categories_for
+    from utk_curio.backend.app.projects.seed import shipped_sources
+
+    if sources is None:
+        sources = shipped_sources(user) if user is not None else {}
+    if dataset_kind is None:
+        dataset_kind = DatasetKinds(_user_dir_key(user) if user is not None else None)
+    return categories_for(spec, sources.get(project_id), dataset_kind)
+
+
+def _normalize_spec_categories(spec) -> None:
+    """Clean ``dataflow.categories`` in place; an empty one is dropped."""
+    from utk_curio.backend.app.projects.categories import normalize_hand
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict) or "categories" not in dataflow:
+        return
+    hand = normalize_hand(dataflow["categories"])
+    if hand:
+        dataflow["categories"] = hand
+    else:
+        del dataflow["categories"]
+
+
+def _carry_hand_categories(new_spec, old_spec) -> None:
+    """A spec written without ``dataflow.categories`` keeps the on-disk ones.
+
+    Five writers emit specs (see ``docs/schemas/trill.v1.json``) and only the
+    canvas knows this field, so an agent's graph edit must not clear what the
+    user set. A spec that carries the key is authoritative: the canvas always
+    writes it, and an empty one clears them.
+    """
+    new_df = new_spec.get("dataflow") if isinstance(new_spec, dict) else None
+    old_df = old_spec.get("dataflow") if isinstance(old_spec, dict) else None
+    if not isinstance(new_df, dict) or not isinstance(old_df, dict):
+        return
+    if "categories" not in new_df and "categories" in old_df:
+        new_df["categories"] = old_df["categories"]
+
+
+def _to_summary(
+    p, graph_preview=None, spec_revision=None, is_example=False, categories=None,
+) -> ProjectSummary:
     """*spec_revision* keeps one meaning for the field across the API (memo
     dev/124): how many times the spec has been written, background writes
     included. ``None`` falls back to the column."""
@@ -428,11 +476,13 @@ def _to_summary(p, graph_preview=None, spec_revision=None, is_example=False) -> 
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
         graph_preview=graph_preview,
         is_example=is_example,
+        categories=categories or {},
     )
 
 
 def _to_detail(
-    p, spec=None, outputs=None, dataset_install_warnings=None, spec_revision=None
+    p, spec=None, outputs=None, dataset_install_warnings=None, spec_revision=None,
+    categories=None,
 ) -> ProjectDetail:
     """*spec_revision* is the project's write counter (memo dev/124) — the
     number a client holds as its basis, which counts every write rather than
@@ -452,6 +502,7 @@ def _to_detail(
         spec=spec,
         outputs=outputs or [],
         dataset_install_warnings=dataset_install_warnings or [],
+        categories=categories or {},
     )
 
 
@@ -585,6 +636,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
+    _normalize_spec_categories(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
@@ -629,7 +681,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
                       dataset_install_warnings=install_warnings,
-                      spec_revision=storage.spec_revision(ukey, project_id))
+                      spec_revision=storage.spec_revision(ukey, project_id),
+                      categories=_categories(user, project_id, effective_spec))
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -703,6 +756,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # drop a fresh install. (The client-sent section still seeds
             # ``create()`` — Save a copy / trill import.)
             preserve_dataset_refs(effective_spec, existing_spec)
+            _carry_hand_categories(effective_spec, existing_spec)
+            _normalize_spec_categories(effective_spec)
             # Same identity backfill as on create: an update may be the first
             # time a spec written elsewhere reaches disk.
             if _ensure_dataflow_identity(effective_spec, data.name or project.name):
@@ -757,6 +812,17 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if data.name and _sync_dataflow_name(effective_spec, project.name):
             spec_dirty = True
 
+        # A categories-only PUT - the Projects page's "Edit categories" -
+        # writes into the on-disk spec, under the same lock as any save.
+        if data.categories is not None:
+            dataflow = (
+                effective_spec.get("dataflow") if isinstance(effective_spec, dict) else None
+            )
+            if isinstance(dataflow, dict):
+                dataflow["categories"] = data.categories
+                _normalize_spec_categories(effective_spec)
+                spec_dirty = True
+
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
 
@@ -772,7 +838,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
                       dataset_install_warnings=install_warnings,
-                      spec_revision=storage.spec_revision(ukey, project_id))
+                      spec_revision=storage.spec_revision(ukey, project_id),
+                      categories=_categories(user, project_id, effective_spec))
 
 
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
@@ -887,6 +954,7 @@ def load_project(user, project_id: str) -> dict:
         "project": _to_detail(
             project, spec=spec, outputs=hydrated,
             spec_revision=storage.spec_revision(ukey, project_id),
+            categories=_categories(user, project_id, spec),
         ),
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
@@ -940,6 +1008,7 @@ def load_shared_project(project_id: str) -> dict:
     detail = _to_detail(
         project, spec=spec, outputs=hydrated,
         spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(project.owner, project_id, spec),
     )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
@@ -962,18 +1031,20 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # deleted on purpose is not resurrected on the next listing. Imported here
     # rather than at module scope: ``seed`` imports this module for
     # ``_is_shared_guest`` / ``_user_dir_key``.
+    from utk_curio.backend.app.projects.categories import DatasetKinds
     from utk_curio.backend.app.projects.seed import (
         ensure_user_examples_seeded,
-        example_project_ids,
+        shipped_sources,
     )
 
     ensure_user_examples_seeded(user)
     projects = repo.list_for_user(user.id, sort=sort)
-    # Once for the whole listing: the set is read off ``docs/examples/``, and
+    # Once for the whole listing: the map is read off ``docs/examples/``, and
     # every row below is checked against it so the page knows which cards may
-    # not offer Delete.
-    example_ids = example_project_ids(user)
+    # not offer Delete and where each one came from.
+    sources = shipped_sources(user)
     ukey = _user_dir_key(user)
+    dataset_kind = DatasetKinds(ukey)
     summaries = []
     dropped_stale_row = False
     for p in projects:
@@ -987,7 +1058,10 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
         summaries.append(_to_summary(
             p, graph_preview=_extract_graph_preview(spec),
             spec_revision=storage.spec_revision(ukey, p.id),
-            is_example=p.id in example_ids,
+            is_example=p.id in sources,
+            categories=_categories(
+                user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
+            ),
         ))
     if dropped_stale_row:
         db.session.commit()

@@ -1,41 +1,21 @@
 /* ─────────────────────────────────────────────────────────────
    /projects in the shape of the catalog browse pages:
-   project cards | detail drawer.
+   category rail | project cards | detail drawer.
 
-   The page grid, header band, filter bar and drawer shell are reused from
-   ../catalog/CatalogBrowseLayout.module.css. This file holds only what is
-   specific to projects — including the absence of a category rail (#286).
+   The page grid, rail, header band, filter bar and drawer shell are reused
+   from ../catalog/CatalogBrowseLayout.module.css. This file holds only what is
+   specific to projects.
 
    Colours and geometry come from ../../styles/curioTokens.css. The card grid
    also inherits the --catalogBrowseCard* variables declared on `.page` in the
    catalog layout, so gaps and padding change on all three browse pages at once.
    ───────────────────────────────────────────────────────────── */
 
-/* The shared `.page` grid is `212px | 1fr | drawer`, because the three
-   catalog pages all filter by category down the left. This page has nothing
-   to put there: its only tabs were "All projects" and "Recent", which
-   returned identical sets (#286). Collapse the rail column rather than
-   re-numbering `.main` and the drawer, so the shared layout is untouched and
-   the catalog pages keep their rails.
-
-   The doubled class is deliberate. `.page` and `.pageWithDrawer` live in the
-   catalog module, so which of two equal-specificity rules wins would come down
-   to the order webpack happens to inject the two stylesheets - not something
-   this file should depend on. Repeating the class makes these (0,2,0) and
-   settles it outright. */
-.pageNoRail.pageNoRail {
-  grid-template-columns: 0 minmax(0, 1fr) 0;
-}
-.pageNoRailWithDrawer.pageNoRailWithDrawer {
-  grid-template-columns: 0 minmax(0, 1fr) 320px;
-}
-
-/* The catalog layout drops to two columns here; keep the rail collapsed. */
-@media (max-width: 1100px) {
-  .pageNoRail.pageNoRail,
-  .pageNoRailWithDrawer.pageNoRailWithDrawer {
-    grid-template-columns: 0 minmax(0, 1fr);
-  }
+/* The rail's first group (All / Your dataflows) has no label above it, so it
+   takes the gap a first label would have left. */
+.railTop {
+  height: 12px;
+  flex-shrink: 0;
 }
 
 .main {
@@ -138,7 +118,7 @@
    like a picked catalog item: a raised shadow plus a border in the item's own
    colour. On the catalog pages that colour carries information — a dataset's
    format, a package's node category. A dataflow has neither, so here it is the
-   one dataflow colour on every card. */
+   one dataflow colour on every card; its categories are chips in the body. */
 
 .card {
   position: relative;
@@ -161,10 +141,10 @@
 }
 
 /* One colour for every dataflow. The catalog pages key a card's colour to
-   something real (a dataset's format, a package's node category); a dataflow
-   has no categorization at all, so a per-project accent was decoration that
-   read as information. The thumbnail below still colours its nodes by type,
-   which is the part that says something. */
+   one thing (a dataset's format, a package's node category); a dataflow's
+   categories are many and are shown as chips, so a per-project accent would
+   be decoration that read as information. The thumbnail below still colours
+   its nodes by type. */
 .cardStrip {
   min-height: 32px;
   display: flex;
@@ -199,6 +179,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Source and topic, one line: the rail has the rest. */
+.cardTags {
+  display: flex;
+  gap: var(--catalogBrowseCardTagGap, 5px);
+  margin-top: 3px;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.cardTags > * {
+  flex-shrink: 0;
 }
 
 .cardThumbnail {
@@ -256,8 +249,11 @@
    of the drawer is ../catalog/CatalogBrowseDrawerBody, shared with both
    catalogs, so a layout change there necessarily lands on this page too. */
 
+/* Two columns: Rename, Edit categories, Duplicate and Delete do not fit one
+   320px row. */
 .detailButtonRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 

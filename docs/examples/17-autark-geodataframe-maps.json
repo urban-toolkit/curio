@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
     "nodes": [
       {
         "id": "b4bf489f-0c68-5c14-9461-ba8bfa2bb5c0",

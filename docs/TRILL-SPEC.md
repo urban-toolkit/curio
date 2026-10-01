@@ -25,6 +25,7 @@ spec
 │   ├── packages[]              node-package lockfile      (backend-owned on update)
 │   ├── datasets[]              Data Catalog references    (backend-owned on update)
 │   ├── description
+│   ├── categories              tags, city, topic, complexity set by hand
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node execution history (browser-side only)
@@ -58,6 +59,16 @@ edge. There is no `"Data"` value.
 `sourceHandle` and `targetHandle` name the concrete ports. They matter: when they
 are absent, the reader infers a merge slot from an `in_N` substring of `edge.id`,
 which cannot recover a named port such as `in_points`.
+
+### Categories
+
+`categories` holds what a person said the dataflow is about, each section a list
+of short labels: `tags`, `city`, `topic`, and `complexity` (one of Beginner,
+Intermediate or Advanced). The Projects page filters by these, and by two things
+this document does not store: where the dataflow came from (a use case, an
+example or a test that ships with Curio), and the tags and data types its nodes
+imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
+`categories` out keeps the ones already saved.
 
 ### Ownership
 

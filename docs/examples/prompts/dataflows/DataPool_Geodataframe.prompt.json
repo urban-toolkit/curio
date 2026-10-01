@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/DataPool_Geodataframe.json",
-    "sha256": "17b55dc1d7a83862828a8590223b6873b33723e660bbc8661c367c74def13402",
+    "sha256": "57ba4f619f0cbc05eda9d4f2369c7b45239a0b7b1e6b4e8116880a4852080693",
     "walkthrough": null
   },
   "prompt": "Read the accessibility score polygons from the file docs/examples/data/access_score.geojson in this checkout, keeping the coverage, average attribute count, neighborhood and geometry columns, and route them through a fan-out node.",

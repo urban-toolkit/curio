@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "d1a20f3e-4b56-4789-a012-b3c4d5e6f701",

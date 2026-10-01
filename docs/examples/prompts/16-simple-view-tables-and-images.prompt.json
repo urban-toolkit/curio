@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/16-simple-view-tables-and-images.json",
-    "sha256": "442214a9ee6a95a5fd6a5b539185f8639d90a8507190f4a629dc807dfd9dcfc9",
+    "sha256": "9c014c58918d1014488999702cb78811a71d8e90ef8fc33123426985a348a4fa",
     "walkthrough": "docs/examples/16-simple-view-tables-and-images.md"
   },
   "prompt": "Build two independent little paths that both end in the built-in viewer, to show the two things it does on its own. In the first, generate a small table of neighbourhood readings and display it as a table. In the second, generate a few rows that each carry a picture and display those as one card per row. Nothing should read a file or reach the network.",

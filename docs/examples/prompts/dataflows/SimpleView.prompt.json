@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/SimpleView.json",
-    "sha256": "f4d5a1b55dbf97f5a90361da35ea7e2fd45d21072b8ddd64c365bcf16858aeb1",
+    "sha256": "970adc090729276bda22cb525bdab50d5d6bc3b8d427e1fff0e3fe42245408ca",
     "walkthrough": null
   },
   "prompt": "Create a three-row table of cities with their population and area in a loading step and show it in the simple table view.",

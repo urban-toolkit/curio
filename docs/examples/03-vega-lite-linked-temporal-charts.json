@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets"], "complexity": ["Intermediate"]},
     "description": "Temporal aggregation feeding linked bar + line Vega-Lite views (Chicago speed-camera violations).",
     "nodes": [
       {

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/20-storage-folder-of-csv-files.json",
-    "sha256": "a481a6d1cd96f499ba5914af6a4fe57f0a2de4e48b8e89fc0787cad441457627",
+    "sha256": "8e6f79e447d5c177f69c903536263f916463303c163e8ae3c44a86a1186e6e1c",
     "walkthrough": "docs/examples/20-storage-folder-of-csv-files.md"
   },
   "prompt": "Load the Example air quality readings table from the Data Catalog, which combines one CSV file per sensor and day, and chart PM2.5 over time for each sensor in Vega-Lite. Also load the Example air quality stations table, join it with the readings to get the mean PM2.5 of each station, and map the stations by that mean in Vega-Lite.",

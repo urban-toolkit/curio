@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Milan"], "topic": ["Heat and climate"], "complexity": ["Advanced"]},
     "nodes": [
       {
         "id": "c80722e7-8960-4308-8f1d-90b121acf126",

@@ -18,7 +18,8 @@ import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPalette
 // the pane, 65 px tall. Fitted against the full pane height, a dataflow whose
 // height sets the zoom got about 60 px of top margin, and the top node's title
 // bar sat under the bar (#493). So the height is measured the way the width is:
-// the fit uses the pane below the bar and is shifted down by it.
+// the fit uses the pane below the bar and is shifted down by it. The dataflow
+// title and its category chips hang below the bar, so they count too.
 //
 // (The very first approach — rf.fitView() then a second rf.setViewport — was
 // also broken for animated fits: fitView starts an async transition and returns
@@ -27,6 +28,22 @@ import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPalette
 
 /** The attribute UpMenu puts on the canvas menu bar. */
 export const MENU_BAR_ATTR = "data-curio-menu-bar";
+
+/** The attribute UpMenu puts on the dataflow title block under the bar. Its
+ *  category chips hang below it, so the fit keeps the top node clear of both. */
+export const CANVAS_TITLE_ATTR = "data-curio-canvas-title";
+
+/** The lowest bottom edge of the overlays fixed along the top of the pane. */
+function topOverlayBottom(): number | null {
+    const overlays = [
+        ...document.querySelectorAll<HTMLElement>(`[${MENU_BAR_ATTR}]`),
+        ...document.querySelectorAll<HTMLElement>(
+            `[${CANVAS_TITLE_ATTR}], [${CANVAS_TITLE_ATTR}] [data-curio-category-chips]`,
+        ),
+    ];
+    if (overlays.length === 0) return null;
+    return Math.max(...overlays.map((el) => el.getBoundingClientRect().bottom));
+}
 
 const FALLBACK_MIN_ZOOM = 0.05;
 const FALLBACK_MAX_ZOOM = 2;
@@ -87,11 +104,12 @@ export function fitViewWithMenuOffset(
     }
     const visibleWidth = Math.max(1, paneRect.width - occluded);
 
-    // Height the menu bar covers at the top of the pane, measured the same way.
-    const bar = document.querySelector<HTMLElement>(`[${MENU_BAR_ATTR}]`);
+    // Height the menu bar, and the dataflow title with its category chips below
+    // it, cover at the top of the pane, measured the same way.
+    const overlayBottom = topOverlayBottom();
     let occludedTop = 0;
-    if (bar) {
-        const raw = bar.getBoundingClientRect().bottom - paneRect.top;
+    if (overlayBottom !== null) {
+        const raw = overlayBottom - paneRect.top;
         if (raw > 0) occludedTop = Math.min(raw, paneRect.height - 1);
     }
     const visibleHeight = Math.max(1, paneRect.height - occludedTop);

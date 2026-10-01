@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Interaction_Vega_Autark.json",
-    "sha256": "a861ac81f4f15371c165060e69fe82882c572892db49a1432e03c62be6be2932",
+    "sha256": "9634b77d7a19c098f0be5ad7dd85f57eef4046763e1a11b57f39c42ea2971b1a",
     "walkthrough": null
   },
   "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keep coverage, the average attribute count, the neighborhood name and the geometry, clean and flatten the attribute counts, and compute a weighted accessibility score per neighborhood in a Python step. Fan the result out to two linked views: an Autark map coloured by the accessibility score and a Vega-Lite plot of accessibility by neighborhood, with selections travelling between them.",

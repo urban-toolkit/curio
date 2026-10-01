@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["New York"], "topic": ["Building and energy"], "complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "pbf-load",

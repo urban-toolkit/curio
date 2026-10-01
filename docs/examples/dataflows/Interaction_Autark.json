@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Building and energy"], "complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "ia-data",

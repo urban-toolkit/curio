@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets"], "complexity": ["Intermediate"]},
     "description": "Multiple independent dataflows joined via Merge Flow into one coordinated dashboard (Chicago red-light violations).",
     "nodes": [
       {

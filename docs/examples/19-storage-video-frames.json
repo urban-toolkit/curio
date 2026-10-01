@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets"], "complexity": ["Beginner"]},
     "name": "Storage: video frames",
     "description": "A folder of numbered dashcam frames with a telemetry file, indexed in place as one collection: the frames in order, and each sequence as a track.",
     "task": "Show a dashcam's frames in order, and map where each sequence drove.",

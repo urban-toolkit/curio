@@ -25,9 +25,22 @@ import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import PromptDialog from "../../components/PromptDialog";
+import DataflowCategoriesDialog from "../../components/projects/DataflowCategoriesDialog";
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 import { backendUrl } from "../../utils/backendUrl";
 import { countLabel } from "../../utils/countLabel";
+import {
+  FACET_SECTIONS,
+  OWNER_YOURS,
+  SOURCE_LABELS,
+  allCategoryValues,
+  facetEntries,
+  facetValues,
+  matchesSelection,
+  type FacetKey,
+  type FacetSelection,
+  type HandCategories,
+} from "../../utils/dataflowCategories";
 
 type ViewMode = "grid" | "list";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
@@ -57,6 +70,36 @@ function edgeCount(project: ProjectSummary): number {
   return project.graph_preview?.edges.length ?? 0;
 }
 
+/** The filter bar's quick chips: the source entries, as the Data Catalog's
+ *  chip row mirrors its rail. */
+const QUICK_SOURCES: { key: FacetKey; value: string; label: string }[] = [
+  { key: "source", value: SOURCE_LABELS.use_case, label: SOURCE_LABELS.use_case },
+  { key: "source", value: SOURCE_LABELS.example, label: SOURCE_LABELS.example },
+  { key: "source", value: SOURCE_LABELS.test, label: SOURCE_LABELS.test },
+  { key: "owner", value: OWNER_YOURS, label: "Yours" },
+];
+
+/** What a card shows: where it came from and what it is about. */
+function cardChips(project: ProjectSummary): string[] {
+  return [
+    ...facetValues(project.categories, "source"),
+    ...facetValues(project.categories, "topic"),
+  ];
+}
+
+/** A drawer info row per category section, omitted when the section is empty. */
+function categoryInfoRows(project: ProjectSummary) {
+  const rows: { label: string; value: string }[] = [];
+  const source = facetValues(project.categories, "source");
+  rows.push({ label: "Source", value: source[0] ?? "Your dataflow" });
+  for (const { key, label } of FACET_SECTIONS) {
+    if (key === "source" || key === "tags") continue;
+    const values = facetValues(project.categories, key);
+    if (values.length) rows.push({ label, value: values.join(", ") });
+  }
+  return rows;
+}
+
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
@@ -75,6 +118,9 @@ const ProjectsList: React.FC = () => {
   // each holding the project it was opened for.
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
+  const [categoriesTarget, setCategoriesTarget] = useState<ProjectSummary | null>(null);
+  // One entry per rail section; sections combine. Empty is "All dataflows".
+  const [selection, setSelection] = useState<FacetSelection>({});
   // The project an action is currently running against. A delete can take a
   // while, and the buttons were re-clickable throughout.
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -94,16 +140,51 @@ const ProjectsList: React.FC = () => {
     loadProjects();
   }, [loadProjects]);
 
-  const filtered = useMemo(() => {
+  // What the search box leaves; the rail counts and filters within it.
+  const searched = useMemo(() => {
     // Trim first, the same normalization the catalog predicates this page's chrome
     // mirrors already do (packageUtils.matchesSearch, agentListUtils.matchesAgentSearch)
     // - so a name pasted with a trailing space still matches (#231). No empty-query
     // short-circuit: `"anything".includes("")` is already true, and keeping the
     // `.filter()` keeps `filtered` a fresh array every render, which is what the
-    // tri-state auto-select effect below is written against.
+    // tri-state auto-select effect below is written against. A category matches
+    // too, so "Autark" finds every dataflow with an Autark node.
     const needle = search.trim().toLowerCase();
-    return projects.filter((p) => p.name.toLowerCase().includes(needle));
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(needle) ||
+        allCategoryValues(p.categories).some((v) => v.toLowerCase().includes(needle)),
+    );
   }, [projects, search]);
+
+  const filtered = useMemo(
+    () => searched.filter((p) => matchesSelection(p, selection)),
+    [searched, selection],
+  );
+
+  const toggleFacet = (key: FacetKey, value: string) =>
+    setSelection((prev) => {
+      const next = { ...prev };
+      if (next[key] === value) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+
+  // "All dataflows" clears every section, so its count is everything searched.
+  const allCount = searched.length;
+  const yoursCount = useMemo(
+    () => facetEntries(searched, "owner", selection)[0]?.count ?? 0,
+    [searched, selection],
+  );
+  const railSections = useMemo(
+    () =>
+      FACET_SECTIONS.map((section) => ({
+        ...section,
+        entries: facetEntries(searched, section.key, selection),
+      })).filter((section) => section.entries.length > 0),
+    [searched, selection],
+  );
+  const filtering = Object.keys(selection).length > 0;
 
   // Mirrors the catalog browse pages: the first item is selected so the detail
   // drawer arrives populated instead of empty.
@@ -144,6 +225,18 @@ const ProjectsList: React.FC = () => {
 
   const handleRename = (project: ProjectSummary) => setRenameTarget(project);
 
+  const performCategories = async (project: ProjectSummary, hand: HandCategories) => {
+    setBusyId(project.id);
+    try {
+      await projectsApi.update(project.id, { categories: hand });
+      loadProjects();
+    } catch (err) {
+      showToast((err as Error)?.message || "Couldn't save those categories.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleDuplicate = async (project: ProjectSummary) => {
     try {
       await projectsApi.duplicate(project.id);
@@ -182,6 +275,9 @@ const ProjectsList: React.FC = () => {
         return;
       case "rename":
         handleRename(project);
+        return;
+      case "categories":
+        setCategoriesTarget(project);
         return;
       case "duplicate":
         void handleDuplicate(project);
@@ -248,19 +344,53 @@ const ProjectsList: React.FC = () => {
       <GlobalPageHeader />
       <AppSectionTabs />
 
-      {/* No category rail: the three catalog browse pages filter by category,
-          this page had only "All projects" and "Recent" and they were the same
-          set (#286). ``pageNoRail`` collapses the rail column the shared grid
-          reserves, so the header starts at the left edge instead of behind a
-          212px gap. */}
-      <div
-        className={joined(
-          browseStyles.page,
-          styles.pageNoRail,
-          drawerSlotOpen && browseStyles.pageWithDrawer,
-          drawerSlotOpen && styles.pageNoRailWithDrawer
-        )}
-      >
+      <div className={joined(browseStyles.page, drawerSlotOpen && browseStyles.pageWithDrawer)}>
+        {/* The catalogs' rail, with the sections the owner chose. Its source,
+            tags and data types are computed by the server; city, topic and
+            complexity are what each dataflow says it is. */}
+        <aside className={browseStyles.categoryRail} aria-label="Filter dataflows">
+          <div className={styles.railTop} />
+          <button
+            className={joined(browseStyles.railButton, !filtering && browseStyles.railButtonActive)}
+            type="button"
+            onClick={() => setSelection({})}
+          >
+            <span>All dataflows</span>
+            <span className={browseStyles.railCountBadge}>{allCount}</span>
+          </button>
+          <button
+            className={joined(
+              browseStyles.railButton,
+              selection.owner === OWNER_YOURS && browseStyles.railButtonActive,
+            )}
+            type="button"
+            onClick={() => toggleFacet("owner", OWNER_YOURS)}
+          >
+            <span>Your dataflows</span>
+            <span className={browseStyles.railCount}>{yoursCount}</span>
+          </button>
+          {railSections.map((section) => (
+            <React.Fragment key={section.key}>
+              <div className={browseStyles.railDivider} />
+              <p className={browseStyles.railLabel}>{section.label}</p>
+              {section.entries.map((entry) => (
+                <button
+                  key={entry.value}
+                  className={joined(
+                    browseStyles.railButton,
+                    selection[section.key] === entry.value && browseStyles.railButtonActive,
+                  )}
+                  type="button"
+                  onClick={() => toggleFacet(section.key, entry.value)}
+                >
+                  <span>{entry.value}</span>
+                  <span className={browseStyles.railCount}>{entry.count}</span>
+                </button>
+              ))}
+            </React.Fragment>
+          ))}
+        </aside>
+
         <main className={styles.main}>
           <section className={browseStyles.browseHeader}>
             <p className={browseStyles.crumb}>Projects</p>
@@ -298,6 +428,26 @@ const ProjectsList: React.FC = () => {
           </section>
 
           <div className={browseStyles.filterBar}>
+            <button
+              className={joined(browseStyles.chip, !filtering && browseStyles.chipActive)}
+              type="button"
+              onClick={() => setSelection({})}
+            >
+              All
+            </button>
+            {QUICK_SOURCES.map((chip) => (
+              <button
+                key={chip.label}
+                className={joined(
+                  browseStyles.chip,
+                  selection[chip.key] === chip.value && browseStyles.chipActive,
+                )}
+                type="button"
+                onClick={() => toggleFacet(chip.key, chip.value)}
+              >
+                {chip.label}
+              </button>
+            ))}
             <span className={browseStyles.filterSpacer} />
             <select
               className={browseStyles.sortSelect}
@@ -332,11 +482,12 @@ const ProjectsList: React.FC = () => {
             <div className={browseStyles.empty}>
               {/* `search.trim()`, matching the needle above: a whitespace-only box
                   is not a filter, so an empty account must not be told its
-                  projects were filtered out (#231). Search is the only filter
-                  left now the status tabs are gone (#286). */}
-              {search.trim()
-                ? "No projects match that search."
-                : "No projects yet. Create a new dataflow!"}
+                  projects were filtered out (#231). */}
+              {filtering && projects.length > 0
+                ? "No dataflows match the current filters."
+                : search.trim()
+                  ? "No projects match that search."
+                  : "No projects yet. Create a new dataflow!"}
             </div>
           ) : (
             <div className={styles.cardScroll} data-curio-projects-scroll="true">
@@ -385,6 +536,15 @@ const ProjectsList: React.FC = () => {
                           ? " · " + new Date(p.last_opened_at).toLocaleDateString()
                           : ""}
                       </span>
+                      {cardChips(p).length > 0 ? (
+                        <span className={styles.cardTags}>
+                          {cardChips(p).map((value) => (
+                            <span key={value} className={browseStyles.tag} data-curio-tag-chip="true">
+                              {value}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
                     </div>
                     <div className={styles.cardThumbnail}>
                       <DataflowThumbnail preview={p.graph_preview} />
@@ -424,11 +584,13 @@ const ProjectsList: React.FC = () => {
               description={selected.description}
               infoLabel="Dataflow info"
               infoRows={[
+                ...categoryInfoRows(selected),
                 { label: "Revision", value: selected.spec_revision },
                 { label: "Last opened", value: catalogRelativeTime(selected.last_opened_at) },
                 { label: "Updated", value: formatDate(selected.updated_at) },
                 { label: "Created", value: formatDate(selected.created_at) },
               ]}
+              tags={facetValues(selected.categories, "tags")}
               primaryAction={
                 <button
                   type="button"
@@ -495,6 +657,21 @@ const ProjectsList: React.FC = () => {
             const project = renameTarget;
             setRenameTarget(null);
             void performRename(project, name);
+          }}
+        />
+      ) : null}
+
+      {categoriesTarget ? (
+        <DataflowCategoriesDialog
+          dataflowName={categoriesTarget.name}
+          categories={categoriesTarget.categories}
+          suggestionItems={projects}
+          busy={busyId === categoriesTarget.id}
+          onCancel={() => setCategoriesTarget(null)}
+          onConfirm={(hand) => {
+            const project = categoriesTarget;
+            setCategoriesTarget(null);
+            void performCategories(project, hand);
           }}
         />
       ) : null}

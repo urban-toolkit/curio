@@ -127,6 +127,18 @@
   cursor: pointer;
 }
 
+/* The category chips hang under the title without widening its container,
+   so the title stays exactly where it was. */
+.workflowCategories {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: -6px;
+  width: max-content;
+  max-width: 60vw;
+  text-align: left;
+}
+
 .input {
   font-size: 24px;
   text-align: center;

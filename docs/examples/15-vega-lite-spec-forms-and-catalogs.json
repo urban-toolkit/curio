@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets", "Greenery"], "complexity": ["Intermediate"]},
     "description": "Writing the spec yourself, over three catalog formats and a spatial join.",
     "nodes": [
       {

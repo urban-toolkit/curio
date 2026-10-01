@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"complexity": ["Beginner"]},
     "name": "Simple View images",
     "task": "Show that Simple View renders a frame that carries images.",
     "timestamp": 0,

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/17-autark-geodataframe-maps.json",
-    "sha256": "9b6fc16638b65e5c165656053dce105acf5fcd77579f532683a89699d3ce66af",
+    "sha256": "08cea838e012d14fcc3521ce623e5a8b0ce7f33b9776a413603934937c3953ef",
     "walkthrough": "docs/examples/17-autark-geodataframe-maps.md"
   },
   "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog, keep the downtown ZIPs (the Loop and its neighbours), and add each ZIP's area in square kilometres, measured in a projected coordinate system. Draw the frame as an Autark map coloured by area, and next to it the same map in Vega-Lite. Then show the same pair of maps three more times: once from a plain DataFrame that still holds the geometry column, once from a DataFrame with the geometry dropped (both views should say there is nothing to draw), and once from the frame reprojected to Illinois East. Also make a second layer with a point at the centre of each ZIP and draw the polygons and the points together on one Autark map. Finally add a bar chart of area by ZIP, linked to the first Autark map so that hovering a bar highlights its ZIP.",

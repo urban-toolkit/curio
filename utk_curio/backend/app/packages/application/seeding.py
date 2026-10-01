@@ -109,27 +109,27 @@ INSTALL_ON_DEMAND_PACKAGE_IDS = frozenset({"curio.streetvision"})
 
 
 def example_dep_package_ids() -> tuple[str, ...]:
-    """Package IDs the seeded example dataflows declare as dependencies.
+    """Package IDs the seeded dataflows declare as dependencies.
 
-    Scans ``docs/examples/*.json`` and unions each spec's
+    Walks every shipped dataflow (``projects/shipped.py``) and unions each spec's
     ``dataflow.packages`` lockfile, returning the package IDs (major
     stripped, sorted) — so the launcher (their python deps) and this seeder
     (copy into the user store) provision exactly the packages the examples
     depend on, with no hardcoded allowlist to keep in sync.
 
-    Minus :data:`INSTALL_ON_DEMAND_PACKAGE_IDS`. An example may declare a heavy
+    Minus ``curio.builtin``, which every store is seeded with anyway (a test
+    dataflow declares it), and minus :data:`INSTALL_ON_DEMAND_PACKAGE_IDS`.
+    An example may declare a heavy
     package — it has to, or nothing downstream can tell what its nodes need —
     without that declaration turning into a multi-gigabyte pip run on every
     ``--with-examples`` / ``--deploy`` boot. Shared source of truth: the
     launcher's catalog dep walk
     (``utk_curio/main.py::install_manifest_dependencies``) calls this too.
     """
-    repo_root = Path(__file__).resolve().parents[5]
-    examples_dir = repo_root / "docs" / "examples"
+    from utk_curio.backend.app.projects.shipped import shipped_dataflows
+
     ids: set[str] = set()
-    if not examples_dir.is_dir():
-        return ()
-    for json_path in sorted(examples_dir.glob("*.json")):
+    for json_path in (s.path for s in shipped_dataflows()):
         try:
             spec = json.loads(json_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -140,7 +140,7 @@ def example_dep_package_ids() -> tuple[str, ...]:
             for dir_name in declared:
                 if isinstance(dir_name, str) and "@" in dir_name:
                     ids.add(dir_name.split("@", 1)[0])
-    return tuple(sorted(ids - INSTALL_ON_DEMAND_PACKAGE_IDS))
+    return tuple(sorted(ids - INSTALL_ON_DEMAND_PACKAGE_IDS - {BUILTIN_PACKAGE_ID}))
 
 
 def _latest_package_dir(catalog_root: Path, package_id: str) -> Path | None:

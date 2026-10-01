@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Boston"], "topic": ["Heat and climate", "Building and energy"], "complexity": ["Advanced"]},
     "nodes": [
       {
         "id": "whatif-data",

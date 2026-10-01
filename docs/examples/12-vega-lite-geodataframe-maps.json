@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
     "description": "A GeoDataFrame drawn directly by the Vega-Lite node: ZIP polygons, their centroids, and ordinary charts over the same frame.",
     "nodes": [
       {

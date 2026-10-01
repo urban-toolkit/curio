@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets"], "complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "cd3b6afc-900d-417c-8064-375ed01a912f",

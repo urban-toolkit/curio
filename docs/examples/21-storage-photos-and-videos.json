@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets"], "complexity": ["Intermediate"]},
     "name": "Storage: photos and videos",
     "description": "A street survey folder of geotagged photos and a video, indexed in place as one collection: a gallery, a map, and frames sampled from the video.",
     "task": "Show a street survey's photos and video, map where they were taken, and sample frames from the video.",
