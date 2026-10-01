@@ -327,6 +327,7 @@ def test_an_interaction_frame_keeps_the_pointer_and_the_framing(dirs, monkeypatc
     [(_, record)] = _records(compare)
     assert (record["status"], record["interaction"]) == ("passed", INTERACTION)
     assert record["pixel_threshold"] == e2e_utils.CLOSEUP_PIXEL_THRESHOLD
+    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
     assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
     assert "closeup" not in record
 

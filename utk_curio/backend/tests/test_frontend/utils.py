@@ -1931,15 +1931,17 @@ def save_interaction_frame(
 
     Neither refits the canvas nor moves the pointer, and never sweeps toasts
     (that parks the pointer too): a held hover has to still be held when the
-    shutter fires. Compared at ``CLOSEUP_PIXEL_THRESHOLD``, like a close-up.
-    *interaction* names the frame's place in its pair (step, phase, role,
-    node) for the CI report's Interaction pairs.
+    shutter fires. Compared at ``CLOSEUP_PIXEL_THRESHOLD`` against
+    ``CLOSEUP_MAX_DIFF_RATIO``, like a close-up. *interaction* names the
+    frame's place in its pair (step, phase, role, node) for the CI report's
+    Interaction pairs.
     """
     return save_workflow_test_screenshot(
         page,
         workflow_filepath,
         test_name=test_name,
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
         clip_selector=f'.react-flow__node[data-id="{node_id}"]',
         fit_reactflow=False,
         interaction=interaction,
