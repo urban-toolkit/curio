@@ -432,7 +432,7 @@ class TestTheLayersMoveToWgs84:
     def test_the_place_is_named_for_the_title(self):
         assert place_label({"area": GOLF}) == "Golf (Illinois)"
         assert place_label({"area": GOLF_BOX}) == "Golf"
-        assert place_label({"area": {"box": GOLF_BOX["box"]}}) == "(-87.8000, 42.0500, -87.7800, 42.0600)"
+        assert place_label({"area": {"box": GOLF_BOX["box"]}}) == "-87.8000, 42.0500 to -87.7800, 42.0600"
         assert place_label({"area": {"names": {"geocodeArea": "Chicago", "areas": ["Loop", "Near North Side"]}}}) == (
             "Loop, Near North Side (Chicago)"
         )

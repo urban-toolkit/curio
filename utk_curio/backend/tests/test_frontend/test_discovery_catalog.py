@@ -327,6 +327,50 @@ def test_downloading_lands_a_real_dataset_in_the_data_catalog(
     expect(row).to_be_visible()
 
 
+
+OSM = "source.osm.openstreetmap@1"
+
+#: The box its parks were recorded for, inside the Village of Golf, Illinois.
+GOLF_BOX = ("-87.8", "42.05", "-87.78", "42.06")
+
+
+def test_openstreetmap_asks_for_an_area_and_lands_autarks_layer(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """A service row: Download asks for the area first, then autk-db's own
+    loader runs in Node on the backend (against the recorded Overpass answers)
+    and the layer lands as a dataset named after its area."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="discoveryosm", project="Discovery OSM")
+    _goto_discovery(page, app_frontend, f"/catalog/discovery/{OSM}")
+
+    row = page.locator('[data-discovery-resource="parks"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Download").click()
+
+    dialog = page.get_by_role("dialog", name="Download Parks")
+    expect(dialog).to_be_visible(timeout=15000)
+    expect(dialog.get_by_text("Area is needed.")).to_be_visible()
+    dialog.get_by_role("tab", name="Coordinates").click()
+    for label, value in zip(("West", "South", "East", "North"), GOLF_BOX):
+        dialog.get_by_label(label, exact=True).fill(value)
+    expect(dialog.get_by_text("Area is needed.")).to_have_count(0)
+    dialog.get_by_role("button", name="Download").click()
+    expect(dialog).to_have_count(0)
+
+    view = row.get_by_role("button", name="View dataset")
+    expect(view).to_be_visible(timeout=120000)
+    view.click()
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    expect(
+        details.get_by_role("heading", name="Parks, -87.8000, 42.0500 to -87.7800, 42.0600")
+    ).to_be_visible(timeout=30000)
+    expect(details.get_by_text("Downloaded from")).to_be_visible(timeout=15000)
+    expect(details.get_by_role("link", name="OpenStreetMap")).to_be_visible(timeout=15000)
+    expect(details.get_by_text("-87.8000, 42.0500, -87.7800, 42.0600")).to_be_visible(timeout=15000)
+
 def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     app_frontend: "FrontendPage", current_server: str, page
 ):

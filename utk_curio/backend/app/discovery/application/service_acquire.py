@@ -32,8 +32,8 @@ COORDINATE_PLACES = 7
 
 
 def place_label(values: dict[str, Any]) -> str:
-    """The area a download covers, for its title: "Golf (Illinois)", or a
-    box's place name, or its corners."""
+    """The area a download covers, for its title: "Golf (Illinois)", a box's
+    place name, or the box as the area field shows it."""
     area = values.get("area") or {}
     names = area.get("names")
     if names:
@@ -42,7 +42,8 @@ def place_label(values: dict[str, Any]) -> str:
         return str(area["label"])
     box = area.get("box")
     if box:
-        return "(" + ", ".join(f"{v:.4f}" for v in box) + ")"
+        west, south, east, north = box
+        return f"{west:.4f}, {south:.4f} to {east:.4f}, {north:.4f}"
     return "the area"
 
 
