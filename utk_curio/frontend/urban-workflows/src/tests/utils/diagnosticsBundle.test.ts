@@ -29,7 +29,6 @@ function monitor(): MonitorPayload {
       projectsEnabled: true,
       guestLoginAllowed: true,
       collabEnabled: false,
-      sharedInstallsAllowed: false,
       factoryPublishAllowed: true,
       saveNodeOutputDefault: false,
       llmProviderConfigured: true,
