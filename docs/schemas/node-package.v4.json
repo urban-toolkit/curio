@@ -244,10 +244,6 @@
           "type": "boolean",
           "description": "Whether the node exposes a provenance tab in its editor. Defaults to true; set to false to suppress (e.g. on display-only kinds)."
         },
-        "tutorialId": {
-          "type": "string",
-          "description": "Anchor id this kind exposes to the in-app tutorial system (`step-loading`, `step-vega`, ...)."
-        },
         "backendHandler": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$",

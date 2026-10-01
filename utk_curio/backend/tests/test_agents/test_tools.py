@@ -472,6 +472,8 @@ class TestWebTools:
         )
         assert status == "error"
         assert "not configured" in text and "web.fetch" in text
+        # It names the actual fault, the missing placeholder.
+        assert "CURIO_SEARCH_URL" in text and "{q}" in text
 
 
 class TestPackageTools:

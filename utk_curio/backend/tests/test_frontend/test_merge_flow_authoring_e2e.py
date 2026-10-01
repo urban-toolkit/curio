@@ -46,8 +46,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#step-analysis"
-MERGE_TILE = "#step-merge"
+ANALYSIS_TILE = "#tile-computation-analysis"
+MERGE_TILE = "#tile-merge-flow"
 
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 MERGE_TYPE = "curio.builtin/merge-flow"

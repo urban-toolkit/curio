@@ -60,7 +60,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#step-analysis"
+ANALYSIS_TILE = "#tile-computation-analysis"
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 

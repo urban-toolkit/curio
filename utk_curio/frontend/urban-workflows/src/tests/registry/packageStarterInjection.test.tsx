@@ -57,7 +57,6 @@ const TEMPLATE = {
   bidirectional: false,
   containerStyle: null,
   hasProvenance: null,
-  tutorialId: null,
 };
 
 const FIXTURE_PACK = {

@@ -164,13 +164,13 @@ DATAFLOW_GOAL = (
     "Compare income per capita across neighborhoods and flag the outliers."
 )
 
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 
 # The quickstart scene is docs/QUICK-START.md on camera, with its code and spec.
-LOADING_TILE = "#step-loading"
-VEGA_TILE = "#step-vega"
+LOADING_TILE = "#tile-data-loading"
+VEGA_TILE = "#tile-vis-vega"
 QUICKSTART_CODE = (
     "import pandas as pd\n\n"
     "d = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], "
@@ -963,13 +963,13 @@ def scene_canvas(ctx: Ctx) -> None:
         hold=2600,
     )
     for tile, label in (
-        ("#step-loading", "Data Loading"),
-        ("#step-analysis", "Python Computation"),
-        ("#step-transformation", "Data Transformation"),
-        ("#step-pool", "Data Pool"),
-        ("#step-utk", "Autark: 2D and 3D maps, GPU compute"),
-        ("#step-vega", "Vega-Lite charts"),
-        ("#step-merge", "Merge Flow"),
+        ("#tile-data-loading", "Data Loading"),
+        ("#tile-computation-analysis", "Python Computation"),
+        ("#tile-data-transformation", "Data Transformation"),
+        ("#tile-data-pool", "Data Pool"),
+        ("#tile-autk-grammar", "Autark: 2D and 3D maps, GPU compute"),
+        ("#tile-vis-vega", "Vega-Lite charts"),
+        ("#tile-merge-flow", "Merge Flow"),
     ):
         locator = page.locator(tile)
         if not locator.count():
@@ -979,7 +979,7 @@ def scene_canvas(ctx: Ctx) -> None:
     tour.hush()
     tour.say(
         "Menus for the rest",
-        "File, View, Data catalogs, Provenance, and a built-in tutorial.",
+        "File, View, Data catalogs, and Provenance.",
         hold=2200,
     )
     for label in ("File", "View", "Data", "Provenance"):
