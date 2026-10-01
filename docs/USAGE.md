@@ -76,7 +76,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | Flag | Default | Effect |
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
-| `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
+| `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
