@@ -1339,7 +1339,8 @@ _RUNNING_NODE_IDS_JS = """() => [...document.querySelectorAll('.react-flow__node
     .map((n) => n.getAttribute('data-id'))"""
 
 
-def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEOUT_MS) -> None:
+def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEOUT_MS,
+                              report_as: str | None = None) -> None:
     """Block until no node on the canvas is running, over three samples in a row.
 
     A view below a node that just ran draws on its own once the new input
@@ -1347,7 +1348,20 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
     gap records the view mid-draw: a spinner and an empty body. The draw starts
     a few browser tasks after the upstream node settles, so one idle sample is
     not enough.
+
+    With *report_as*, the nodes found running when the wait begins are noted in
+    the test output and the Allure report under that name, so a run the caller
+    did not start stays visible even when it ends in time.
     """
+    if report_as:
+        running = page.evaluate(_RUNNING_NODE_IDS_JS)
+        if running:
+            note = f"{report_as}: still running when the wait began: {running}"
+            print(note)
+            try:
+                allure.attach(note, name=report_as, attachment_type=allure.attachment_type.TEXT)
+            except Exception:
+                pass
     page.evaluate("() => { window.__curioIdleSamples = 0; }")
     try:
         page.wait_for_function(_NO_NODE_RUNNING_JS, arg=3, polling=150, timeout=timeout_ms)

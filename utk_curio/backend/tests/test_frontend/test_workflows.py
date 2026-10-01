@@ -844,6 +844,14 @@ class TestWorkflowCanvas:
 
         self._execute_all_playable_nodes()
 
+        # A view below the last node that ran draws on its own once the new
+        # input reaches it: after that node reports Done and after its run
+        # released the run guard. On a loaded machine that draw outlasted the
+        # 10 s "Done" check below (workflow 09, linked views). Let the canvas go
+        # idle first, as the captures do; a node that never stops fails here,
+        # named, and any node still running is noted in the report.
+        _wait_for_no_node_running(self.page, report_as="running after the last Play")
+
         for node in self.spec.nodes:
             if not node.has_play_button:
                 continue
@@ -852,6 +860,9 @@ class TestWorkflowCanvas:
             # wait for the done span to be visible (an expected-empty view
             # errored with its verdict, checked in _execute_all_playable_nodes)
             if node.id not in self._expected_empty():
+                # Success from the status attribute, failing with the node's own
+                # error text; the text check below is then only a copy check.
+                wait_for_node_done(self.page, node.id, node_type=node.type)
                 done_span = node_el.locator("span").filter(
                     has_text=re.compile(r"^Done$")
                 )
