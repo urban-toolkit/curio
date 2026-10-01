@@ -5,12 +5,10 @@ import {
   matchesSearch,
   primaryCategory,
   sortPackages,
-  toApiPayload,
   usePackageCatalog,
   withRestartNotice,
 } from "../../services/packages";
 import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
-import { draftFromInstalledPackagePayload } from "../../utils/palettePackageFactoryDraft";
 import { useToastContext } from "../../providers/ToastProvider";
 import { usePackageArchiveImport } from "../../providers/packages/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
@@ -29,15 +27,10 @@ export function useNodeCatalogBrowse() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [selectedDirName, setSelectedDirName] = useState<string | null | undefined>(undefined);
 
-  const publishDraft = useCallback(
-    (row: PackagePayload) => toApiPayload(draftFromInstalledPackagePayload(row)) as Record<string, unknown>,
-    [],
-  );
   const catalogState = usePackageCatalog({
     scope: { kind: "defaults" },
     showToast,
     refreshRegistry: refreshPackageRegistry,
-    publishDraft,
   });
   const {
     catalog,

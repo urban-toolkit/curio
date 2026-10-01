@@ -11,7 +11,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
     installToProject: jest.fn(),
     uninstallFromProject: jest.fn(),
     installToDefaults: jest.fn(),
-    factoryPublishCatalog: jest.fn(),
+    publishToCatalog: jest.fn(),
     unpublishFromCatalog: jest.fn(),
     installFromCatalog: jest.fn(),
     download: jest.fn(),
@@ -47,7 +47,7 @@ beforeEach(() => {
   api.installToProject.mockResolvedValue({ packages: ["ai.test.alpha@1", "ai.test.beta@1"], importErrors: {} });
   api.uninstallFromProject.mockResolvedValue({ packages: ["ai.test.alpha@1"], pruned: ["ai.test.beta@1"], removedFromDefaults: [] });
   api.installToDefaults.mockResolvedValue({ packages: ["ai.test.alpha@1", "ai.test.beta@1"], projects: [{ id: "p1", ok: true }, { id: "p2", ok: true }] });
-  api.factoryPublishCatalog.mockResolvedValue({} as never);
+  api.publishToCatalog.mockResolvedValue({} as never);
   api.unpublishFromCatalog.mockResolvedValue(undefined);
   api.installFromCatalog.mockResolvedValue({} as never);
   api.download.mockResolvedValue(undefined);
@@ -63,7 +63,6 @@ function projectHook(overrides: Partial<Parameters<typeof usePackageCatalog>[0]>
     usePackageCatalog({
       scope: { kind: "project", projectId: "p1" },
       showToast, refreshRegistry, onInstalledToProject, onProjectLockfile, beforeReload,
-      publishDraft: (row) => ({ manifest: { id: row.packageId } }),
       logLabel: "test",
       ...overrides,
     }),
@@ -326,11 +325,13 @@ describe("usePackageCatalog — update (#434)", () => {
 });
 
 describe("usePackageCatalog — publish, unpublish, reload, export", () => {
-  it("publish rebuilds the draft through the injected mapping, replaces, reloads and toasts", async () => {
+  it("publish names the installed copy, never a rebuilt draft, replaces, reloads and toasts (#433)", async () => {
     const h = projectHook();
     await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
     await act(() => h.result.current.publish("ai.test.alpha@1"));
-    expect(api.factoryPublishCatalog).toHaveBeenCalledWith({ manifest: { id: "ai.test.alpha" }, replace: true });
+    // The backend copies the store directory; a draft rebuilt from the
+    // listing row carried no README, LICENSE or scripts/.
+    expect(api.publishToCatalog).toHaveBeenCalledWith("ai.test.alpha@1", { replace: true });
     expect(h.showToast).toHaveBeenCalledWith("Published ai.test.alpha.", "success");
     expect(h.result.current.publishingPackageKey).toBeNull();
   });
@@ -339,7 +340,7 @@ describe("usePackageCatalog — publish, unpublish, reload, export", () => {
     const h = projectHook();
     await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
     await act(() => h.result.current.publish("ai.test.beta@1"));
-    expect(api.factoryPublishCatalog).not.toHaveBeenCalled();
+    expect(api.publishToCatalog).not.toHaveBeenCalled();
   });
 
   it("unpublish takes a row or a dirName and names the package", async () => {

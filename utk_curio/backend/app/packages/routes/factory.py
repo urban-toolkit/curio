@@ -33,7 +33,7 @@ def factory_capabilities():
 @require_auth
 @_map_package_errors
 def factory_publish_catalog():
-    """Build a draft and publish into ``<repo_root>/packages/`` - **developers only**.
+    """Publish the caller's installed ``{dirName}`` into ``<repo_root>/packages/``.
 
     Allowed by default; set ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` to ``0``,
     ``false``, ``no``, or ``off`` to disable. Writes the same directory layout
@@ -42,16 +42,14 @@ def factory_publish_catalog():
     """
     if not routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
         return routes_common.catalog_publish_disabled()
-    body = dict(request.get_json(silent=True) or {})
-    replace = bool(body.pop("replace", False))
-    built, result, catalog_path = packages_publishing.publish_draft_to_catalog(
-        user_key(), body, replace=replace,
+    body = request.get_json(silent=True) or {}
+    result, catalog_path = packages_publishing.publish_installed_to_catalog(
+        user_key(), requests.catalog_dir_name(body), replace=requests.replace_flag(body),
     )
     return jsonify({
         "package": package_payload(result.manifest, package_mtime_path=catalog_path),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
-        "filename": built.filename,
         "catalogDir": str(catalog_path),
     }), 201
 

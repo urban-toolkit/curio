@@ -53,13 +53,6 @@ export interface UsePackageCatalogOptions {
   reloadWindow?: () => void;
   /** A prefix for the console warning that accompanies every action error (the drawer logs; the page does not). */
   logLabel?: string;
-  /**
-   * The publish body for an installed package. Both surfaces rebuild a factory
-   * draft from the payload (`draftFromInstalledPackagePayload` → `toApiPayload`);
-   * that utility reads the registry, so the surfaces hand the layer the finished
-   * mapping instead of the layer importing it.
-   */
-  publishDraft?: (row: PackagePayload) => Record<string, unknown>;
 }
 
 export interface PackageCatalogState {
@@ -144,9 +137,6 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     refreshRegistry = resolved,
     reloadWindow = () => window.location.reload(),
     logLabel,
-    publishDraft = () => {
-      throw new Error("usePackageCatalog: publishing needs the `publishDraft` mapping");
-    },
   } = options;
   const projectId = scope.kind === "project" ? scope.projectId : null;
 
@@ -428,7 +418,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     setPublishingPackageKey(dirName);
     setActionError(null);
     try {
-      await packagesApi.factoryPublishCatalog({ ...publishDraft(row), replace: true });
+      await packagesApi.publishToCatalog(dirName, { replace: true });
       await reload();
       showToast(`Published ${row.name}.`, "success");
     } catch (err) {
@@ -436,7 +426,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     } finally {
       setPublishingPackageKey(null);
     }
-  }, [publishDraft, reload, reportActionError, showToast]);
+  }, [reload, reportActionError, showToast]);
 
   const unpublish = useCallback(async (target: PackagePayload | string) => {
     const dirName = typeof target === "string" ? target : target.dirName;

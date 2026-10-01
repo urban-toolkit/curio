@@ -82,10 +82,9 @@ def build_draft(user_key: str, draft: dict) -> BuildResult:
     without this ships placeholder bodies for every sibling - an exported
     archive that silently destroys code when imported elsewhere.
     """
-    draft = preserve_unedited_sources(
-        draft, installed_dir_for_draft(user_key, draft.get("manifest")),
-    )
-    return build_package_archive(draft)
+    existing_dir = installed_dir_for_draft(user_key, draft.get("manifest"))
+    draft = preserve_unedited_sources(draft, existing_dir)
+    return build_package_archive(draft, onto=existing_dir)
 
 
 def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildResult, InstallResult]:
@@ -94,16 +93,16 @@ def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildRe
     Save-As over an existing package only carries real source bytes for the
     template the user actively edited; every other template comes through
     with the STARTER_CODE placeholder. Read the unedited templates' real
-    source from disk before the rebuild so we don't clobber them.
+    source from disk before the rebuild so we don't clobber them, and build
+    onto the installed package so what the draft does not model survives.
     FactoryError / InstallerError propagate for the route to answer.
     """
     packages_provisioning.assert_may_install()
     manifest_raw = draft.get("manifest")
     refuse_read_only_draft(user_key, manifest_raw)
-    draft = preserve_unedited_sources(
-        draft, installed_dir_for_draft(user_key, manifest_raw),
-    )
-    built = build_package_archive(draft)
+    existing_dir = installed_dir_for_draft(user_key, manifest_raw)
+    draft = preserve_unedited_sources(draft, existing_dir)
+    built = build_package_archive(draft, onto=existing_dir)
     result = packages_store_install.install_package_from_archive(
         user_key, built.archive, replace=replace,
     )
