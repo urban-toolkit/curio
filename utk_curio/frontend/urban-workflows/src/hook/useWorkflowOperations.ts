@@ -20,6 +20,7 @@ import {
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { useUserContext } from "../providers/UserProvider";
+import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
@@ -1365,6 +1366,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const discardProject = useCallback(() => {
         setProjectId(null);
         setProjectName("");
+        setWorkflowName(DEFAULT_WORKFLOW_NAME);
         setServerCategories({});
         setWorkflowCategories({});
         setProjectDirty(false);
@@ -1372,7 +1374,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodeExecStatus({});
         setDataflowDatasets([]);
         setViewerMode("owner");
-    }, []);
+    }, [setWorkflowName]);
 
     // Both marks return the SAME state object when the node is already in the
     // target status. CodeEditor calls markNodeStale on every keystroke, and an

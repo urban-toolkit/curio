@@ -1,6 +1,9 @@
 /** Every canvas node maps to UniversalNode via this RF ``node.type``; real template id is ``data.nodeType``. */
 export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
 
+/** The name of a dataflow nobody has named yet: a fresh canvas, and File > New. */
+export const DEFAULT_WORKFLOW_NAME = "DefaultDataflow";
+
 /**
  * Canonical unversioned node-type identifiers.
  *
