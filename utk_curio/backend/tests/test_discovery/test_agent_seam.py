@@ -316,7 +316,8 @@ class TestStorageSourcesAreNotOffered:
         tools._discovery_search_rows({"q": "noise"})
         assert seen["include_storage"] is False
         listing = tools._discovery_service().list_catalog()["sources"]
-        portals = [s for s in listing if s["kind"] != "storage" and s["capabilities"]["search"]]
+        # A service (OpenStreetMap) is not a portal either: see the class below.
+        portals = [s for s in listing if s["kind"] == "portal" and s["capabilities"]["search"]]
         assert _egress_cost("discovery.search", {}) == len(portals)
 
     def test_a_row_from_one_is_not_marked_acquirable(self, app, shipped_root):
@@ -332,3 +333,42 @@ class TestStorageSourcesAreNotOffered:
         )
         assert status == "refused" and card is None
         assert "storage source" in text
+
+
+class TestServiceSourcesAreNotOffered:
+    """A service row downloads for an area set on the Discovery Catalog page,
+    so, as for storage, no agent tool lists, searches, or proposes one."""
+
+    OSM = "source.osm.openstreetmap@1"
+
+    def test_the_roster_leaves_them_out(self, app, shipped_root):
+        status, text = tools.execute_read_tool(
+            "discovery.sources", user_key="1", project_id="p", target=None, params={}
+        )
+        assert status == "ok"
+        assert self.OSM not in text
+
+    def test_a_search_of_one_says_it_is_unsupported(self, app, shipped_root):
+        rows, legs = tools._discovery_search_rows({"sourceId": self.OSM, "q": "buildings"})
+        assert rows == [] and legs == [{"sourceId": self.OSM, "status": "unsupported"}]
+
+    def test_a_fan_out_is_not_charged_for_them(self, app, shipped_root):
+        listing = tools._discovery_service().list_catalog()["sources"]
+        searchable = [s for s in listing if s["kind"] != "storage" and s["capabilities"]["search"]]
+        assert any(s["dirName"] == self.OSM for s in searchable)
+        assert _egress_cost("discovery.search", {}) == len(searchable) - 1
+
+    def test_a_row_from_one_is_not_marked_acquirable(self, app, shipped_root):
+        row = {"name": "Buildings", "sourceType": "discovery", "sourceId": self.OSM, "resourceId": "buildings"}
+        _mint_row_acquirable(row, _LazyRoster())
+        assert row.get("acquirable") is None
+
+    def test_a_proposal_for_one_is_refused(self, app, shipped_root):
+        from utk_curio.backend.app.agents.application.proposals import acquire as services
+
+        status, text, card = services._mint_discovery_acquire(
+            "1", "p", {}, {"params": {"sourceId": self.OSM, "resourceId": "buildings"}}
+        )
+        assert status == "refused" and card is None
+        assert "downloads for an area set on its page" in text
+

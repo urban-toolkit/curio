@@ -17,7 +17,7 @@ ROOT_NODE_MODULES = REPO_ROOT / 'node_modules'
 
 #: What every Overpass request from Curio's Node processes says it is. The
 #: Overpass usage policy asks a client to identify itself.
-OVERPASS_USER_AGENT = 'Curio (https://github.com/urban-toolkit/curio) autk-db'
+OVERPASS_USER_AGENT = 'Curio (https://curio.urbantk.org) autk-db'
 
 
 def node_env(base=None):

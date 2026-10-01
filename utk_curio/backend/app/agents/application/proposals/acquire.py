@@ -207,6 +207,13 @@ def _mint_discovery_acquire(
             "page in the Discovery Catalog",
             None,
         )
+    if manifest.is_service:
+        return (
+            "refused",
+            f"{manifest.name} downloads for an area set on its page in the "
+            "Discovery Catalog",
+            None,
+        )
 
     held = service._acquire.already_held(manifest, resource_id, fmt)
     if held is not None:
@@ -408,8 +415,9 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
 def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
-    # the Discovery Catalog page, never offered to agents.
-    if (source or {}).get("kind") == "storage":
+    # the Discovery Catalog page, and a service downloads for an area set there:
+    # neither is offered to agents.
+    if (source or {}).get("kind") in ("storage", "service"):
         return False
     capabilities = (source or {}).get("capabilities") or {}
     if not capabilities.get("download"):

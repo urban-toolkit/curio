@@ -850,9 +850,10 @@ def _discovery_service():
 
 
 def _portal_rows(sources) -> list[dict]:
-    """The portals among *sources*. Storage sources are added from the Discovery
-    Catalog page, where a row can be narrowed, so no agent tool offers them."""
-    return [s for s in sources or [] if s.get("kind") != "storage"]
+    """The portals among *sources*. Storage and service sources are added from
+    the Discovery Catalog page, where a row can be narrowed and a service's area
+    is set, so no agent tool offers them."""
+    return [s for s in sources or [] if s.get("kind") not in ("storage", "service")]
 
 
 def _discovery_source_rows() -> list[dict]:
@@ -893,7 +894,8 @@ def _discovery_search_rows(params: dict) -> list[dict]:
         from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
         try:
-            storage = service.get_manifest(source_id).is_storage
+            manifest = service.get_manifest(source_id)
+            storage = manifest.is_storage or manifest.is_service
         except DiscoveryError:
             storage = False
         if storage:
