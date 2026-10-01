@@ -121,6 +121,16 @@ describe("autkSourcesFrom", () => {
       .toEqual(["census"]);
   });
 
+  test("several layers keep their own names: `upstream` names none of them (#483)", () => {
+    // USAGE: "Several layers keep their own names". The alias used to point
+    // `upstream` at layer 0 as well, which no doc said.
+    const layers = read(
+      frame({ name: "parks", fromBundle: true, index: 0 }),
+      frame({ fromBundle: true, index: 1 }),
+    );
+    expect(autkSourcesFrom(layers, MAP_ON("upstream")).tables).toEqual(["parks", "upstream_1"]);
+  });
+
   test("a bundle's unnamed layers are named by position, and keep their layer type", () => {
     const prepared = autkSourcesFrom(
       read(
