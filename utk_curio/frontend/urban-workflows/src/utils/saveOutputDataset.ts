@@ -26,6 +26,17 @@ export function isNonProducingNodeType(nodeType: string): boolean {
   return NON_PRODUCING_NODE_TYPES.has(unversionedNodeType(nodeType));
 }
 
+/**
+ * Whether a node's footer shows the save-output toggle (#445): a playable node
+ * whose output can be saved. Not a dataset-palette node (saving is locked
+ * there) and not a visualization sink (nothing of its own to save).
+ */
+export function showsSaveOutputToggle(data: any, disablePlay: boolean): boolean {
+  if (disablePlay) return false;
+  if (isDatasetPaletteNode(data)) return false;
+  return !isNonProducingNodeType(String(data?.nodeType ?? ""));
+}
+
 /** Workflow-wide default when a node has no explicit ``saveOutputDataset`` (env + UI). */
 export const DEFAULT_SAVE_OUTPUT_DATASET = defaultSaveOutputDatasetFromEnv();
 

@@ -115,7 +115,6 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       if (data.input == null || data.input === '') return;
 
       const startTime = formatDate(new Date());
-      const execId = NodeType.VIS_SIMPLE + '-' + data.nodeId;
       const typesInput = data.input.dataType ? [data.input.dataType] : [];
 
       let parsedInput = data.input;
@@ -128,7 +127,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
       }
 
-      nodeExecProv(startTime, startTime, workflowNameRef.current, execId, mapTypes(typesInput), mapTypes(typesInput), '');
+      nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
 
       const view = deriveView(parsedInput);
       setCurrentMode(view.mode);

@@ -290,7 +290,7 @@ export const useVega = ({
       startTime,
       endTime,
       workflowNameRef.current,
-      NodeType.VIS_VEGA + "-" + data.nodeId,
+      data.nodeId,
       mapTypes(typesInput),
       mapTypes(typesOuput),
       code

@@ -123,3 +123,46 @@ def test_parse_output_and_parquet_previews_agree_on_geometry(tmp_path: Path):
     parsed_rows = rows_from_parse_output(parseOutput(as_secondary))
 
     assert parsed_rows[0]["other"] == parquet_rows[0]["geometry"]
+
+
+def _fields_by_name(payload: dict) -> dict:
+    return {field["name"]: field for field in payload["schema"]["fields"]}
+
+
+def test_parquet_nullability_comes_from_the_file_statistics(tmp_path: Path):
+    """#444: a Parquet column is nullable only when the file holds a null in it.
+
+    The null sits past the preview's sample, so only the file's own
+    statistics can know about it.
+    """
+    path = tmp_path / "output.parquet"
+    pd.DataFrame(
+        {"gid": ["a", "b", "c", "d"], "score": [1.0, 2.0, 3.0, None]}
+    ).to_parquet(path, index=False)
+
+    payload = DatasetPreviewService().preview(
+        {"format": "parquet", "path": path.as_posix(), "schema": {"fields": []}},
+        row_limit=2,
+        offset=0,
+    )
+
+    fields = _fields_by_name(payload)
+    assert fields["gid"]["nullable"] is False
+    assert fields["score"]["nullable"] is True
+
+
+def test_csv_nullability_is_true_only_where_the_sample_has_an_empty_cell(tmp_path: Path):
+    """#444: a CSV has no schema, so a column the sample shows no gap in is
+    left unknown rather than marked nullable."""
+    path = tmp_path / "rows.csv"
+    path.write_text("gid,name\nx1,Loop\nx2,\n", encoding="utf-8")
+
+    payload = DatasetPreviewService().preview(
+        {"format": "csv", "path": path.as_posix(), "schema": {"fields": []}},
+        row_limit=10,
+        offset=0,
+    )
+
+    fields = _fields_by_name(payload)
+    assert fields["name"]["nullable"] is True
+    assert "nullable" not in fields["gid"]

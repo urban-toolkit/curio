@@ -90,6 +90,36 @@ export function isDatasetPaletteNode(data: any): boolean {
   return !!data?.datasetSource?.datasetId;
 }
 
+/**
+ * The DATASET pill of a node a dataset was dropped onto (#442), or ``null``.
+ *
+ * Such a node is not a palette node: it keeps its own code and its save
+ * toggle, so it carries no ``datasetSource``. Its pill names the first dataset
+ * it references (``datasetRefs``, which a save keeps) and counts the rest.
+ * Title and format come from *lookup*, then from this session's
+ * ``appliedDatasets``, then the id itself.
+ */
+export function droppedDatasetSource(
+  data: any,
+  lookup?: (datasetId: string) => Partial<Pick<DatasetNodeSource, "title" | "format" | "origin">> | undefined,
+): DatasetNodeSource | null {
+  if (isDatasetPaletteNode(data)) return null;
+  const refs: string[] = Array.from(
+    new Set((data?.datasetRefs || []).filter((ref: unknown) => typeof ref === "string" && ref)),
+  );
+  if (refs.length === 0) return null;
+  const first = refs[0];
+  const listed = lookup?.(first);
+  const applied = data?.appliedDatasets?.[first];
+  const title = listed?.title || applied?.title || first;
+  return {
+    datasetId: first,
+    title: refs.length > 1 ? `${title} +${refs.length - 1}` : title,
+    format: (listed?.format ?? applied?.format) as DatasetNodeSource["format"],
+    origin: listed?.origin ?? "imported",
+  };
+}
+
 /** The installed-dataset id a palette node is linked to, or ``null``. */
 export function getDatasetSourceId(data: any): string | null {
   return data?.datasetSource?.datasetId ?? null;

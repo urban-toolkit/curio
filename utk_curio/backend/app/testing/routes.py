@@ -800,9 +800,9 @@ def package_store():
 
     ``hash`` answers ``{"sha256": "...", "catalog_sha256": "..."}`` so a caller
     can compare the store copy against the catalog it came from in one call.
-    ``stale`` appends a marker byte to the file and drops the package's
-    seed-state record, then answers the same shape — after which the two hashes
-    differ by construction.
+    ``stale`` appends a marker byte to the file and records the result as the
+    copy the catalog installed, then answers the same shape, after which the
+    two hashes differ by construction.
     """
     import hashlib
 
@@ -879,8 +879,15 @@ def package_store():
         # is damaged, not out of date, and repairing damage is a different job
         # (`_package_is_healthy`). Skipping this step made the first version of
         # this endpoint simulate the wrong thing entirely.
-        refresh_package_integrity(store_root)
-        seed_state.clear(_user_dir_key(user), dir_name)
+        #
+        # ...and record that older pair as the copy the catalog installed,
+        # which is what an upgrade leaves behind. Clearing the record instead
+        # made the copy look like one from before the record existed, and a
+        # copy recorded as the user's own is never refreshed at all (#564).
+        integrity = refresh_package_integrity(store_root)
+        seed_state.mark_installed(
+            _user_dir_key(user), dir_name, catalog_copy=seed_state.copy_digest(integrity),
+        )
 
     def _sha256(path):
         h = hashlib.sha256()

@@ -30,3 +30,34 @@ export function pendingInstallsNotYetListed(
       !(p.producerNodeId && producers.has(p.producerNodeId)),
   );
 }
+
+/** Shape the drawer's placeholder matching reads off a catalog row. */
+export interface DrawerListedRef extends InstalledMatchRef {
+  origin?: string;
+  installed?: boolean;
+  dirName?: string | null;
+}
+
+/**
+ * The drawer's "Installing…" cards: pending installs no listed row stands for.
+ *
+ * A row counts once it is what the install produces: an installed item, a
+ * non-catalog row, or a run's saved output (a computed row with a store
+ * folder). An un-installed hub row sharing the id does not, so its
+ * placeholder stays while the install runs. A run's output is never added to
+ * the project, so the "In project" tab shows no run placeholders (#217).
+ */
+export function drawerPendingInstalls(
+  pending: PendingInstall[],
+  items: DrawerListedRef[],
+  tab: string,
+): PendingInstall[] {
+  const landed = items.filter(
+    (item) =>
+      item.installed === true ||
+      (item.origin !== "hub" && item.origin !== "computed") ||
+      (item.origin === "computed" && Boolean(item.dirName)),
+  );
+  const shown = tab === "installed" ? pending.filter((entry) => !entry.producerNodeId) : pending;
+  return pendingInstallsNotYetListed(shown, landed);
+}

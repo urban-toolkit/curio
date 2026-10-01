@@ -11,7 +11,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
     installToProject: jest.fn(),
     uninstallFromProject: jest.fn(),
     installToDefaults: jest.fn(),
-    factoryPublishCatalog: jest.fn(),
+    publishToCatalog: jest.fn(),
     unpublishFromCatalog: jest.fn(),
     installFromCatalog: jest.fn(),
     download: jest.fn(),
@@ -47,7 +47,7 @@ beforeEach(() => {
   api.installToProject.mockResolvedValue({ packages: ["ai.test.alpha@1", "ai.test.beta@1"], importErrors: {} });
   api.uninstallFromProject.mockResolvedValue({ packages: ["ai.test.alpha@1"], pruned: ["ai.test.beta@1"], removedFromDefaults: [] });
   api.installToDefaults.mockResolvedValue({ packages: ["ai.test.alpha@1", "ai.test.beta@1"], projects: [{ id: "p1", ok: true }, { id: "p2", ok: true }] });
-  api.factoryPublishCatalog.mockResolvedValue({} as never);
+  api.publishToCatalog.mockResolvedValue({} as never);
   api.unpublishFromCatalog.mockResolvedValue(undefined);
   api.installFromCatalog.mockResolvedValue({} as never);
   api.download.mockResolvedValue(undefined);
@@ -63,7 +63,6 @@ function projectHook(overrides: Partial<Parameters<typeof usePackageCatalog>[0]>
     usePackageCatalog({
       scope: { kind: "project", projectId: "p1" },
       showToast, refreshRegistry, onInstalledToProject, onProjectLockfile, beforeReload,
-      publishDraft: (row) => ({ manifest: { id: row.packageId } }),
       logLabel: "test",
       ...overrides,
     }),
@@ -251,12 +250,88 @@ describe("usePackageCatalog — defaults install", () => {
   });
 });
 
+describe("usePackageCatalog — update (#434)", () => {
+  // The store holds alpha 1.0.0; the catalog has moved on to 1.1.0.
+  const NEWER = pkg("ai.test.alpha", { version: "1.1.0" });
+
+  beforeEach(() => {
+    api.installFromCatalog.mockResolvedValue({
+      package: NEWER, integrity: {}, replacedExisting: true, importErrors: {},
+    });
+  });
+
+  it("defaults scope: replaces the store copy from the catalog, never a plain install, and says it updated", async () => {
+    const refreshRegistry = jest.fn(async () => undefined);
+    const { result } = renderHook(() => usePackageCatalog({ scope: { kind: "defaults" }, refreshRegistry }));
+    await waitFor(() => expect(result.current.installed).toHaveLength(1));
+    await act(() => result.current.probeUpdate(NEWER));
+    expect(result.current.installMode).toBe("update");
+    await act(() => result.current.confirmInstall());
+    expect(api.installFromCatalog).toHaveBeenCalledWith("ai.test.alpha@1", { replace: true });
+    expect(api.installToDefaults).not.toHaveBeenCalled();
+    expect(result.current.lastInstallSummary).toBe("Updated ai.test.alpha to 1.1.0");
+    expect(refreshRegistry).toHaveBeenCalled();
+    expect(result.current.installCandidate).toBeNull();
+  });
+
+  it("project scope: the same replace, a success toast, and the lockfile left alone", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    await act(() => h.result.current.probeUpdate(NEWER));
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installFromCatalog).toHaveBeenCalledWith("ai.test.alpha@1", { replace: true });
+    expect(api.installToProject).not.toHaveBeenCalled();
+    expect(h.onInstalledToProject).not.toHaveBeenCalled();
+    expect(h.showToast).toHaveBeenCalledWith("Updated ai.test.alpha to 1.1.0.", "success");
+  });
+
+  it("a package with its own interface says the page must reload to run the new one", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    await act(() => h.result.current.probeUpdate({ ...NEWER, behaviorScript: "scripts/behaviors.js" }));
+    await act(() => h.result.current.confirmInstall());
+    expect(h.showToast).toHaveBeenCalledWith(
+      "Updated ai.test.alpha to 1.1.0. Reload the page to run its new interface.", "success",
+    );
+  });
+
+  it("a restart recommendation and a library that failed are reported, as for an install", async () => {
+    api.installFromCatalog.mockResolvedValueOnce({
+      package: NEWER, integrity: {}, replacedExisting: true,
+      restartRecommended: { libs: ["numpy"] }, dependencyError: "index unreachable",
+    });
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    await act(() => h.result.current.probeUpdate(NEWER));
+    await act(() => h.result.current.confirmInstall());
+    expect(h.result.current.restartNoticeText).toMatch(/numpy/);
+    expect(h.showToast).toHaveBeenCalledTimes(1);
+    expect(h.showToast.mock.calls[0][0]).toMatch(/^Updated ai\.test\.alpha to 1\.1\.0, but its libraries could not be installed: index unreachable/);
+    expect(h.showToast.mock.calls[0][1]).toBe("error");
+  });
+
+  it("a failed update is a banner naming the package, and an add after it is an add again", async () => {
+    api.installFromCatalog.mockRejectedValueOnce(new Error("off"));
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    await act(() => h.result.current.probeUpdate(NEWER));
+    await act(() => h.result.current.confirmInstall());
+    expect(h.result.current.actionError).toBe("Couldn't update ai.test.alpha: off");
+    await act(() => h.result.current.probeInstall(CATALOG[1]));
+    expect(h.result.current.installMode).toBe("add");
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).toHaveBeenCalledWith("p1", "ai.test.beta@1");
+  });
+});
+
 describe("usePackageCatalog — publish, unpublish, reload, export", () => {
-  it("publish rebuilds the draft through the injected mapping, replaces, reloads and toasts", async () => {
+  it("publish names the installed copy, never a rebuilt draft, replaces, reloads and toasts (#433)", async () => {
     const h = projectHook();
     await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
     await act(() => h.result.current.publish("ai.test.alpha@1"));
-    expect(api.factoryPublishCatalog).toHaveBeenCalledWith({ manifest: { id: "ai.test.alpha" }, replace: true });
+    // The backend copies the store directory; a draft rebuilt from the
+    // listing row carried no README, LICENSE or scripts/.
+    expect(api.publishToCatalog).toHaveBeenCalledWith("ai.test.alpha@1", { replace: true });
     expect(h.showToast).toHaveBeenCalledWith("Published ai.test.alpha.", "success");
     expect(h.result.current.publishingPackageKey).toBeNull();
   });
@@ -265,7 +340,7 @@ describe("usePackageCatalog — publish, unpublish, reload, export", () => {
     const h = projectHook();
     await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
     await act(() => h.result.current.publish("ai.test.beta@1"));
-    expect(api.factoryPublishCatalog).not.toHaveBeenCalled();
+    expect(api.publishToCatalog).not.toHaveBeenCalled();
   });
 
   it("unpublish takes a row or a dirName and names the package", async () => {

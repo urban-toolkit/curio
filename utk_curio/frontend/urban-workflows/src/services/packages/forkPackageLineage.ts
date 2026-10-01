@@ -102,6 +102,11 @@ export function comparePackageVersionDescending(versionA: string, versionB: stri
   return versionB.localeCompare(versionA, undefined, { sensitivity: "base" });
 }
 
+/** True when *candidate* is a higher version than *current*: the catalog row offers an update. */
+export function isNewerPackageVersion(candidate: string, current: string): boolean {
+  return comparePackageVersionDescending(current, candidate) > 0;
+}
+
 function parseSemverLoose(v: string): number[] {
   const core = v.trim().split(/[-+]/, 1)[0] ?? "";
   const parts = core.split(".").map((s) => {

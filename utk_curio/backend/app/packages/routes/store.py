@@ -46,6 +46,7 @@ def upload_package():
     into memory once (the installer caps it at 128 MiB uncompressed). Installs
     the manifest's declared python deps too, and says whether they import — a
     sideloaded package's libraries used to be nobody's job."""
+    packages_provisioning.assert_may_install()
     key = user_key()
     upload = requests.uploaded_archive(request.files)
     replace = request.args.get("replace", "false").lower() == "true"

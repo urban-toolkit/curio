@@ -37,6 +37,12 @@ import {
 } from "../../components/catalog/catalogCardActions";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
+/** A failed action says why, as the Agent Catalog's do: "Couldn't X: <reason>". */
+function withReason(text: string, err: unknown): string {
+  const reason = err instanceof Error ? err.message.trim() : "";
+  return reason ? `${text}: ${reason}` : text;
+}
+
 export const DataCatalogBrowse: React.FC = () => {
   const { projectId } = useFlowContext();
   const { showToast } = useToastContext();
@@ -185,7 +191,7 @@ export const DataCatalogBrowse: React.FC = () => {
           }),
         );
       } catch (err) {
-        showToast(`Couldn't add ${dataset.title} to all projects`, "error");
+        showToast(withReason(`Couldn't add ${dataset.title} to all projects`, err), "error");
       } finally {
         setDefaultsBusyId(null);
       }
@@ -210,7 +216,7 @@ export const DataCatalogBrowse: React.FC = () => {
           }),
         );
       } catch (err) {
-        showToast(`Couldn't remove ${dataset.title} from all projects`, "error");
+        showToast(withReason(`Couldn't remove ${dataset.title} from all projects`, err), "error");
       } finally {
         setDefaultsBusyId(null);
       }
@@ -250,7 +256,7 @@ export const DataCatalogBrowse: React.FC = () => {
           viewDatasetDetailsToast(openDatasetDetails, dataset.id, { fallbackDataset: dataset }),
         );
       } catch (err) {
-        showToast(`Couldn't unpublish ${dataset.title}`, "error");
+        showToast(withReason(`Couldn't unpublish ${dataset.title}`, err), "error");
       } finally {
         setPublishingId(null);
       }
@@ -273,7 +279,7 @@ export const DataCatalogBrowse: React.FC = () => {
           viewDatasetDetailsToast(openDatasetDetails, dataset.id, { fallbackDataset: dataset }),
         );
       } catch (err) {
-        showToast(`Couldn't publish ${dataset.title}`, "error");
+        showToast(withReason(`Couldn't publish ${dataset.title}`, err), "error");
       } finally {
         setPublishingId(null);
       }

@@ -166,6 +166,47 @@ describe("TrillGenerator node appearance (dev/89)", () => {
   });
 });
 
+describe("TrillGenerator node header (#412)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists a renamed header at metadata.packageTemplateLabel", () => {
+    // The header's rename writes data.packageTemplateLabel, and the header
+    // reads it back. The serializer wrote only data.title, so the rename
+    // lasted until the dataflow was reopened.
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "renamed-1",
+            nodeType: "curio.builtin/computation-analysis",
+            packageTemplateLabel: "Clean the parcels",
+          },
+        },
+        {
+          // A blank label is no label: the header falls back to the type's.
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: {
+            nodeId: "blank-1",
+            nodeType: "curio.builtin/computation-analysis",
+            packageTemplateLabel: "   ",
+          },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["renamed-1"].metadata.packageTemplateLabel).toBe("Clean the parcels");
+    expect(byId["blank-1"].metadata).toBeUndefined();
+  });
+});
+
 describe("TrillGenerator node comments (#237)", () => {
   beforeEach(() => {
     TrillGenerator.reset();
