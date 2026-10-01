@@ -17,7 +17,7 @@ jest.mock("../../providers/ToastProvider", () => ({
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { render, act, screen, fireEvent } from '@testing-library/react';
+import { render, act, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const PROJECTS = [
@@ -32,6 +32,11 @@ const PROJECTS = [
     created_at: '2026-01-01T10:00:00Z',
     updated_at: '2026-02-02T10:00:00Z',
     graph_preview: { nodes: [{ id: 'a', type: 't', x: 0, y: 0 }], edges: [] },
+    categories: {
+      source: 'example',
+      auto: { tags: ['Vega-Lite'], data_type: ['Tables'] },
+      hand: { city: ['Chicago'], topic: ['Sensors'] },
+    },
   },
   {
     id: 'p2',
@@ -44,8 +49,11 @@ const PROJECTS = [
     created_at: '2026-01-05T10:00:00Z',
     updated_at: '2026-01-06T10:00:00Z',
     graph_preview: null,
+    categories: { source: null, auto: { tags: ['Autark'], data_type: [] }, hand: {} },
   },
 ];
+
+const mockUpdate = jest.fn();
 
 const mockList = jest.fn();
 
@@ -58,7 +66,7 @@ jest.mock('../../providers/ToastProvider', () => ({
 jest.mock('../../api/projectsApi', () => ({
   projectsApi: {
     list: (...args: unknown[]) => mockList(...args),
-    update: jest.fn(),
+    update: (...args: unknown[]) => mockUpdate(...args),
     duplicate: jest.fn(),
     delete: jest.fn(),
     create: jest.fn(),
@@ -89,6 +97,8 @@ async function renderPage() {
 
 beforeEach(() => {
   mockList.mockReset();
+  mockUpdate.mockReset();
+  mockUpdate.mockResolvedValue({});
   stubProjects(PROJECTS);
 });
 
@@ -136,18 +146,84 @@ describe('projects page chrome', () => {
 });
 
 describe('projects filtering', () => {
-  // #286: the rail held "All projects" and "Recent", which returned the same
-  // rows in the same order - their only filter was on ``archived_at``, which no
-  // scope varied and #261 removed. Both tabs and the rail went with it, so
-  // search is the only filter left.
-  test('there is no status rail, and only one request is made', async () => {
-    const { queryByRole } = await renderPage();
+  const rail = () => within(screen.getByRole('complementary', { name: 'Filter dataflows' }));
+  const railButton = (name: string) => rail().getByRole('button', { name: new RegExp('^' + name) });
+  const cardIds = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-project-id]')).map((c) =>
+      c.getAttribute('data-project-id'),
+    );
 
-    expect(queryByRole('complementary', { name: 'Project filters' })).toBeNull();
-    expect(queryByRole('button', { name: /^Recent/ })).toBeNull();
-    // Two identical scopes meant two round trips on every load and sort change.
+  test('the rail lists each section with counts, from one request', async () => {
+    await renderPage();
+
+    expect(railButton('All dataflows').textContent).toBe('All dataflows2');
+    expect(railButton('Your dataflows').textContent).toBe('Your dataflows1');
+    const labels = Array.from(
+      screen.getByRole('complementary', { name: 'Filter dataflows' }).querySelectorAll('.railLabel'),
+    ).map((l) => l.textContent);
+    // Sections with nothing in them are left out: no dataflow has a complexity.
+    expect(labels).toEqual(['By source', 'Tags', 'Data type', 'City', 'Topic']);
+    expect(railButton('Examples').textContent).toBe('Examples1');
+    expect(railButton('Autark').textContent).toBe('Autark1');
+    expect(railButton('Sensors').textContent).toBe('Sensors1');
+    // #286 removed a second, identical request; the rail needs none either.
     expect(mockList).toHaveBeenCalledTimes(1);
     expect(mockList.mock.calls[0][0]).not.toHaveProperty('scope');
+  });
+
+  test('an entry filters the cards, and the counts follow it', async () => {
+    const { container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(railButton('Autark'));
+    });
+    expect(cardIds(container)).toEqual(['p2']);
+    // p1 is the only dataflow with a topic, and it is filtered out.
+    expect(rail().queryByRole('button', { name: /^Sensors/ })).toBeNull();
+
+    // Clicking the active entry clears it.
+    await act(async () => {
+      fireEvent.click(railButton('Autark'));
+    });
+    expect(cardIds(container)).toEqual(['p1', 'p2']);
+  });
+
+  test('sections combine, and All dataflows clears them', async () => {
+    const { container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.click(railButton('Vega-Lite'));
+    });
+    expect(cardIds(container)).toEqual(['p1']);
+    // Your dataflows stays on the rail with a count of 0; p1 ships with Curio.
+    expect(railButton('Your dataflows').textContent).toBe('Your dataflows0');
+    await act(async () => {
+      fireEvent.click(railButton('Your dataflows'));
+    });
+    expect(screen.getByText('No dataflows match the current filters.')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(railButton('All dataflows'));
+    });
+    expect(cardIds(container)).toEqual(['p1', 'p2']);
+  });
+
+  test('search finds a category as well as a name', async () => {
+    const { getByPlaceholderText, container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.change(getByPlaceholderText('Search projects…'), { target: { value: 'vega' } });
+    });
+
+    expect(cardIds(container)).toEqual(['p1']);
+  });
+
+  test('a card shows where it came from and its topic', async () => {
+    const { container } = await renderPage();
+
+    const card = container.querySelector('[data-project-id="p1"]') as HTMLElement;
+    const chips = Array.from(card.querySelectorAll('[data-curio-tag-chip]')).map((c) => c.textContent);
+    expect(chips).toEqual(['Examples', 'Sensors']);
   });
 
   // #231: the filter used the raw input value as the needle, so a name pasted with
@@ -245,9 +321,9 @@ describe('project card selection', () => {
   });
 
   test('every dataflow card carries the same colour, whatever its accent', async () => {
-    // Dataflows have no categorization, so colour here cannot mean anything.
-    // The catalog pages key a card's colour to something real (a dataset's
-    // format, a package's node category); this page used to key it to
+    // A dataflow's categories are many and show as chips, so a card colour
+    // cannot mean anything. The catalog pages key a card's colour to one thing
+    // (a dataset's format, a package's node category); this page used to key it to
     // `thumbnail_accent`, which is set by nothing and read as noise beside
     // them. p1 is "sky" and p2 is "peach" in the fixture; neither reaches the
     // DOM.
@@ -393,7 +469,7 @@ describe('projects detail drawer', () => {
     // The menu is the shared `CardContextMenu` since #285, so its rows announce
     // as menu items while the drawer's announce as buttons - one of each is the
     // assertion, not two buttons.
-    for (const label of ['Rename', 'Duplicate', 'Delete']) {
+    for (const label of ['Rename', 'Edit categories', 'Duplicate', 'Delete']) {
       expect(screen.getByRole('menuitem', { name: label })).toBeTruthy();
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
@@ -422,6 +498,44 @@ describe('projects detail drawer', () => {
     });
     expect(queryByRole('menuitem', { name: 'Delete' })).toBeNull();
     expect(getByRole('menuitem', { name: 'Rename' })).toBeTruthy();
+  });
+
+  test('the drawer lists the categories, and Edit categories saves the hand-set ones', async () => {
+    const { container, getByRole } = await renderPage();
+
+    const info = Array.from(container.querySelectorAll('.infoRow')).map((r) => r.textContent);
+    expect(info).toEqual(expect.arrayContaining(['SourceExamples', 'CityChicago', 'TopicSensors']));
+
+    await act(async () => {
+      fireEvent.click(getByRole('button', { name: 'Edit categories' }));
+    });
+    const dialog = within(getByRole('dialog'));
+    expect(dialog.getByRole('heading', { name: 'Categories of "Air quality"' })).toBeTruthy();
+    // Read off the nodes, so not removable here either.
+    expect(dialog.queryByRole('button', { name: 'Remove Vega-Lite' })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(dialog.getByRole('button', { name: 'Remove Sensors' }));
+    });
+    await act(async () => {
+      // A field with a suggestion list is a combobox.
+      fireEvent.change(dialog.getByRole('combobox', { name: 'Category name' }), {
+        target: { value: 'Air' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(dialog.getByRole('button', { name: 'Add' }));
+    });
+    await act(async () => {
+      fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+    });
+
+    // The section select starts on Topic.
+    expect(mockUpdate).toHaveBeenCalledWith('p1', {
+      categories: { city: ['Chicago'], topic: ['Air'] },
+    });
+    // The list is fetched again so the rail shows what was saved.
+    expect(mockList).toHaveBeenCalledTimes(2);
   });
 
   test('closing the drawer collapses it', async () => {

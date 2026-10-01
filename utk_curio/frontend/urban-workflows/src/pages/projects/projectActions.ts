@@ -15,6 +15,7 @@
 export type ProjectActionId =
   | "open"
   | "rename"
+  | "categories"
   | "duplicate"
   | "delete";
 
@@ -58,6 +59,7 @@ export function projectActions(state: ProjectActionState = {}): ProjectAction[] 
     // surfaces that offer it.
     { id: "open", label: "Open dataflow" },
     { id: "rename", label: "Rename" },
+    { id: "categories", label: "Edit categories" },
     { id: "duplicate", label: "Duplicate" },
     ...(state.isExample
       ? []

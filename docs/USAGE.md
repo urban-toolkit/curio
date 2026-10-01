@@ -78,7 +78,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node-catalog Publish/Unpublish actions are offered |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
-| `--with-examples` | off | Seed the example projects from `docs/examples/` |
+| `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
 | `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
@@ -524,6 +524,26 @@ running anything.
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
 console output is not restored: no saved dataset carries it.
+
+## Finding a dataflow
+
+The **Projects** page lists your dataflows next to the ones that ship with Curio, and
+the rail on its left filters them. Pick one entry in each section; the sections
+combine, and **All dataflows** clears them.
+
+| Section | What it holds |
+|---|---|
+| **Your dataflows** | the ones you created, imported or duplicated |
+| **By source** | Use cases, Examples and Tests that ship with Curio |
+| **Tags** | the tools a dataflow uses, such as Autark, Vega-Lite, GeoPandas, Pandas, GPU compute and Computer vision, plus tags you add |
+| **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
+| **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
+
+Tags and data types come from the dataflow itself: its nodes, the libraries its code
+imports and the formats of its datasets. They change when you save, and cannot be
+removed by hand. Add a tag, a city, a topic or a complexity with **+ Category** under
+the dataflow's title on the canvas, which saves with the dataflow, or with **Edit
+categories** on the Projects page.
 
 ## Data Catalog
 
