@@ -540,7 +540,7 @@ def _session_waiting_summary(results: dict, targets: list) -> list[dict]:
         remedy = result.get("remedy") if isinstance(result.get("remedy"), dict) else None
         kind = (
             "dataset-selection" if (remedy or {}).get("kind") == "dataset-selection"
-            else "upstream" if "waiting — upstream" in str(result.get("reason") or "")
+            else "upstream" if result.get("waitingOn") == "upstream"
             else "retry"
         )
         out.append({
