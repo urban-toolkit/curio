@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Greenery"], "complexity": ["Beginner"]},
     "description": "Spatial density + zip-code aggregation in Vega-Lite, fanned out via a Data Pool (Chicago green roofs).",
     "nodes": [
       {

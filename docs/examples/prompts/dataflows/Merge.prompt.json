@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Merge.json",
-    "sha256": "20eb18f8470cee96c9bf0e8a87effea4bf3557ffd12dc30ac1ad30218b078305",
+    "sha256": "cd93cf8ea7455fc070d33e74501c433d773290e44d13aa24e4391fa6c85d5b5d",
     "walkthrough": null
   },
   "prompt": "Load two small nine-row tables of the same letters with different numbers, combine them into one input, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",

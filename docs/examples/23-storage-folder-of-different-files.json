@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets", "Greenery"], "complexity": ["Beginner"]},
     "name": "Storage: a folder of different files",
     "description": "A shapefile and a GeoJSON file from one folder, each declared as its own resource and added as its own dataset, drawn on one map.",
     "task": "Put a folder's roads shapefile and parks GeoJSON on one map.",

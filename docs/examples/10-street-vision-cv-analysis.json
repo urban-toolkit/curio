@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Greenery"], "complexity": ["Advanced"]},
     "nodes": [
       {
         "id": "5988175e-84aa-4964-84de-aba7d55cf122",

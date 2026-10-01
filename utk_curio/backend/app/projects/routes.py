@@ -89,6 +89,7 @@ def update_project(project_id: str):
             base_revision=_optional_int(
                 body.get("baseRevision", body.get("base_revision"))
             ),
+            categories=body.get("categories"),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))

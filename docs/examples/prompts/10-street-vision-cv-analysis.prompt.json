@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/10-street-vision-cv-analysis.json",
-    "sha256": "b48234cf010ce1a1e2fb456501a4f61ec30e36a4d369fb40fb83ad63aa6e24da",
+    "sha256": "3059d7b6b20bf4228866da815c2b489d66c8120cda13464695384edcfae23b47",
     "walkthrough": "docs/examples/10-street-vision-cv-analysis.md"
   },
   "prompt": "I want to measure street-level greenery around Lincoln Park in Chicago from street view imagery. Fetch street view images across a bounding box, run a semantic segmentation model over them to get per-class pixel shares, and give me a gallery to inspect the results. Separately, load the official Chicago neighborhood polygons from the Data Catalog, rename their name column to what the join step expects, and tag each image with the neighborhood it falls in through a spatial join. Then show me a map of the tagged points and a bar chart of the average greenery share per neighborhood. The fetching, inference and gallery steps are not part of the standard node set, so whatever provides them needs installing first.",

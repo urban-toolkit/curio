@@ -277,7 +277,7 @@ class TestFixturesAreNotMistakenForDataflows:
     def test_the_validators_corpora_do_not_reach_the_fixture_directory(self):
         """``validate_trill.py --all`` walks ``docs/examples`` -- the fixtures
         sit in a subdirectory its globs do not enter, and the seeder's
-        ``_example_files`` glob is at the same level."""
+        ``shipped_dataflows`` walks only the two dataflow folders."""
         import importlib.util
 
         spec = importlib.util.spec_from_file_location(
@@ -293,7 +293,7 @@ class TestFixturesAreNotMistakenForDataflows:
 
         from utk_curio.backend.app.projects import seed
 
-        seeded = seed._example_files(REPO_ROOT / "docs" / "examples")
+        seeded = [s.path for s in seed.shipped_dataflows(REPO_ROOT / "docs" / "examples")]
         assert not [p for p in seeded if "prompt.json" in Path(p).name]
 
     def test_the_curated_example_glob_does_not_match_a_fixture(self):

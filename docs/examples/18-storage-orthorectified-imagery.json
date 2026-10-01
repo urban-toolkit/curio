@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
     "name": "Storage: orthorectified imagery",
     "description": "A folder of GeoTIFF tiles by year, indexed in place as one collection: footprints on a map, then one year's tiles joined into a mosaic.",
     "task": "Map where each year's tiles fall, then join 2024's tiles into one raster and summarise its bands.",

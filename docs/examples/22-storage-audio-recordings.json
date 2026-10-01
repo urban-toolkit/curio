@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Sensors"], "complexity": ["Intermediate"]},
     "name": "Storage: audio recordings",
     "description": "Noise recordings by sensor, timed by their file names and indexed in place as one collection: spectrograms, then levels per window.",
     "task": "Show each noise recording, cut the recordings into windows, and chart each window's level per sensor.",

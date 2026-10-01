@@ -57,10 +57,19 @@ class ProjectUpdate:
     #: ``None`` means "no opinion" and is never checked, which is how scripts,
     #: tests and internal callers keep working unchanged.
     base_revision: Optional[int] = None
+    #: The hand-set categories (``categories.HAND_SECTIONS``), written into
+    #: ``dataflow.categories``. ``None`` leaves them as they are.
+    categories: Optional[dict] = None
 
     def __post_init__(self):
         if self.thumbnail_accent and self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = None
+        if self.categories is not None:
+            if not isinstance(self.categories, dict):
+                raise ValueError("categories must be an object")
+            from utk_curio.backend.app.projects.categories import normalize_hand
+
+            self.categories = normalize_hand(self.categories)
         if self.outputs is not None:
             self.outputs = [
                 OutputRef(**o) if isinstance(o, dict) else o for o in self.outputs
@@ -83,6 +92,9 @@ class ProjectSummary:
     #: per request from the filenames rather than stored on the row - see
     #: ``seed.example_project_ids``.
     is_example: bool = False
+    #: ``{"source", "auto": {"tags", "data_type"}, "hand": {...}}`` - see
+    #: ``projects/categories.py``.
+    categories: dict = field(default_factory=dict)
 
 
 @dataclass

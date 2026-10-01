@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
     "description": "Which column holds the geometry, and what happens when the answer is not obvious.",
     "nodes": [
       {

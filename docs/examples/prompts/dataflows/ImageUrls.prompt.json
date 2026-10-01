@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/ImageUrls.json",
-    "sha256": "556977bd645dfd5250bfa3ca473a107b337489780e7ca57292fc7b5096937522",
+    "sha256": "b4429bd297060b3f5ae373dab344207ac90bb96ab56362dd8cbc93381f063b8c",
     "walkthrough": null
   },
   "prompt": "Generate a small geographic frame in which every row carries a picture as well as a location and a score, and send it to the built-in viewer so each row shows up as a card with its image rather than as a row of text.",

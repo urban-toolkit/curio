@@ -38,34 +38,27 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def _examples_dir() -> Path:
-    # utk_curio/backend/app/datasets/seed.py  ->  <repo_root>/docs/examples/
-    return Path(__file__).resolve().parents[4] / "docs" / "examples"
-
-
 def example_dep_dataset_dirs() -> tuple[str, ...]:
-    """Dataset directory names the seeded example dataflows declare they need.
+    """Dataset directory names the seeded dataflows declare they need.
 
-    Scans ``docs/examples/*.json`` and unions each spec's
-    ``dataflow.datasets`` refs, returning their ``dirName``s sorted - so the
-    seeder provisions exactly the datasets the examples reference, with no
-    hardcoded allowlist to keep in sync. The direct analogue of
+    Walks every shipped dataflow (``projects/shipped.py``) and unions each
+    spec's ``dataflow.datasets`` refs, returning their ``dirName``s sorted - so
+    the seeder provisions exactly the datasets the seeded dataflows reference,
+    with no hardcoded allowlist to keep in sync. The direct analogue of
     ``packages/seed.py::example_dep_package_ids``.
 
     A dataset nothing declares stays out of every ``--with-examples`` /
     ``--deploy`` boot simply by not appearing in a lockfile; users add it from
     the Data Catalog drawer when they want it.
     """
-    examples_dir = _examples_dir()
+    from utk_curio.backend.app.projects.shipped import shipped_dataflows
+
     dir_names: set[str] = set()
-    if not examples_dir.is_dir():
-        return ()
-    for json_path in sorted(examples_dir.glob("*.json")):
+    for json_path in (s.path for s in shipped_dataflows()):
         try:
             spec = json.loads(json_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):

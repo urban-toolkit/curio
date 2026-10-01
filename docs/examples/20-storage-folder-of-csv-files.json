@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Sensors"], "complexity": ["Beginner"]},
     "name": "Storage: a folder of CSV files",
     "description": "One CSV file per sensor and day, combined into one table when added, joined to a stations file.",
     "task": "Chart three sensors' readings over time, and map each station by its mean.",

@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Niterói"], "topic": ["Mobility and streets"], "complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "reg-data",

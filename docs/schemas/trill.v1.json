@@ -39,6 +39,12 @@
       "description": "A dataflow as captured inside dataflowProvenance.versions. Same fields as a live one and validated the same way, but only 'nodes' and 'edges' are required: a snapshot is a historical record, most on-disk ones predate the fields a live dataflow must now carry, and history cannot be retroactively completed without falsifying it. Requiring more here would make an otherwise-correct spec permanently invalid on account of its own past.",
       "required": ["nodes", "edges"]
     },
+    "categoryValues": {
+      "type": "array",
+      "description": "One hand-set category section: short labels, de-duplicated ignoring case.",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+    },
     "dataflowBase": {
       "type": "object",
       "description": "Every field a dataflow may carry, with no required list of its own. Referenced by 'dataflow' and 'snapshotDataflow', which differ only in what they require - this keeps the property definitions in one place so the two cannot drift.",
@@ -84,6 +90,17 @@
         "description": {
           "type": "string",
           "description": "Longer prose description, shown on the example cards. Emitted only when non-empty, so an unset description is an absent key rather than an empty string."
+        },
+        "categories": {
+          "type": "object",
+          "description": "The hand-set categories the Projects rail filters by: the user's own tags, city, topic and complexity. The rail's other sections are not stored: its source comes from the project id and its automatic tags and data types from the nodes (projects/categories.py). Always written by TrillGenerator.generateTrill; the backend drops an empty one and keeps the on-disk value when a writer omits the key.",
+          "additionalProperties": false,
+          "properties": {
+            "tags": { "$ref": "#/$defs/categoryValues" },
+            "city": { "$ref": "#/$defs/categoryValues" },
+            "topic": { "$ref": "#/$defs/categoryValues" },
+            "complexity": { "$ref": "#/$defs/categoryValues", "maxItems": 1 }
+          }
         },
         "datasets": {
           "type": "array",

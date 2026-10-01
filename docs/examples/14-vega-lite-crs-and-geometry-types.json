@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
     "description": "Any coordinate system, any geometry type, drawn by the same spec.",
     "nodes": [
       {
