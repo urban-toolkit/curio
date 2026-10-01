@@ -298,7 +298,8 @@ describe('projects detail drawer', () => {
     expect(getByRole('button', { name: 'Open dataflow' })).toBeTruthy();
     // graph_preview carries one node and no edges; the meta row states both,
     // in the slot where the catalogs put "N nodes · packageId".
-    expect(screen.getByText('1 nodes · 0 connections')).toBeTruthy();
+    // One node, and a count that agrees with it (#508).
+    expect(screen.getByText('1 node · 0 connections')).toBeTruthy();
     expect(screen.getByText('Sensor readings')).toBeTruthy();
   });
 

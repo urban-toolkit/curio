@@ -16,7 +16,7 @@ export const AddKeyAction: React.FC<{ remedy?: AgentRemedy | null; className?: s
   if (remedy.kind === "use-connection-key") {
     return (
       <span className={`${styles.note}${className ? ` ${className}` : ""}`}>
-        A connection key{remedy.name ? ` "${remedy.name}"` : ""} is saved for {remedy.host} — Solve again so the
+        A connection key{remedy.name ? ` "${remedy.name}"` : ""} is saved for {remedy.host}. Solve again so the
         builder uses it.
       </span>
     );

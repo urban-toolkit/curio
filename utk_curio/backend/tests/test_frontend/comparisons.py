@@ -12,8 +12,14 @@ per comparison:
 - ``expected.png``  the baseline as committed
 - ``created.png``   what this run captured
 - ``diff.png``      where the two differ: red pixels count against the budget,
-                    amber ones differ but within the tolerance, and the rest is
-                    the expected image faded to gray
+                    amber ones differ but within the tolerance, blue ones (a
+                    re-mint only) differ inside text a run writes fresh every
+                    time, and the rest is the expected image faded to gray
+
+The status is ``passed``, ``failed``, ``minted``, ``missing`` or
+``capture-error``, and under ``--remint-baselines`` also ``reminted`` (the
+capture replaced the baseline; ``expected.png`` is the one it replaced) or
+``unchanged`` (the baseline was kept).
 
 ``scripts/ci_report.py`` turns a directory of these into one HTML page. Like
 diagnostics.py this is best effort: a record that cannot be written is
@@ -35,6 +41,7 @@ current_nodeid = None
 
 COUNTED = (255, 0, 0)
 WITHIN = (255, 190, 60)
+VOLATILE = (70, 130, 255)
 # How much of the expected image's contrast survives in the diff's backdrop:
 # enough to find your way around the page, faint enough that the red wins.
 FADE = 0.2
@@ -51,12 +58,14 @@ def nodeid(environ=os.environ):
     return re.sub(r" \((setup|call|teardown)\)$", "", raw)
 
 
-def diff_image(arr, counted, expected_cmp):
+def diff_image(arr, counted, expected_cmp, volatile=None):
     """Where two same-size captures differ, drawn over the faded expected one.
 
     *arr* is the per-channel absolute difference the comparison measured,
     *counted* the pixels it counted against the budget, so the red here is
-    exactly the share the verdict reports.
+    exactly the share the verdict reports. *volatile*, from a re-mint, marks
+    the counted pixels inside text a run writes fresh every time, which the
+    re-mint did not count; they are drawn blue instead.
     """
     import numpy as np
     from PIL import Image
@@ -65,14 +74,25 @@ def diff_image(arr, counted, expected_cmp):
     out = np.repeat((255.0 - (255.0 - gray) * FADE).astype(np.uint8)[:, :, None], 3, axis=2)
     out[arr.any(axis=2) & ~counted] = WITHIN
     out[counted] = COUNTED
+    if volatile is not None:
+        out[counted & volatile] = VOLATILE
     return Image.fromarray(out, "RGB")
 
 
 def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected=None, created=None, expected_cmp=None, arr=None,
            counted=None, mismatched=None, total=None, ratio=None, error=None,
-           environ=os.environ):
-    """Write one comparison's folder. Returns its path, or None when off."""
+           volatile=None, remint_ratio=None, remint_min_ratio=None,
+           recapture_ratio=None, expected_bytes=None, forced=False, closeup=False,
+           interaction=None, environ=os.environ):
+    """Write one comparison's folder. Returns its path, or None when off.
+
+    *expected_bytes* is the baseline as it was before a re-mint replaced it;
+    without it ``expected.png`` is copied from the file at *baseline*.
+    *closeup* marks one node framed on its own (``utils.save_node_closeup``).
+    *interaction* places a frame in its before/after pair
+    (``utils.save_interaction_frame``).
+    """
     if not enabled(environ):
         return None
     try:
@@ -81,7 +101,10 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
             max_diff_ratio=max_diff_ratio, capture=capture, expected=expected,
             created=created, expected_cmp=expected_cmp, arr=arr, counted=counted,
             mismatched=mismatched, total=total, ratio=ratio, error=error,
-            environ=environ,
+            volatile=volatile, remint_ratio=remint_ratio,
+            remint_min_ratio=remint_min_ratio, recapture_ratio=recapture_ratio,
+            expected_bytes=expected_bytes, forced=forced, closeup=closeup,
+            interaction=interaction, environ=environ,
         )
     except Exception as exc:
         print(f"[e2e-compare] could not record {os.path.basename(baseline)}: {exc}")
@@ -89,7 +112,7 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
 
 
 def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
-                   environ=os.environ):
+                   closeup=False, interaction=None, environ=os.environ):
     """Record a comparison that had no baseline, with what would have been minted."""
     if not enabled(environ):
         return None
@@ -101,27 +124,36 @@ def record_missing(take, *, baseline, pixel_threshold, max_diff_ratio, capture,
     return record(
         "missing", baseline=baseline, pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio, capture=capture, created=created,
-        error=error, environ=environ,
+        error=error, closeup=closeup, interaction=interaction, environ=environ,
     )
 
 
 def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected, created, expected_cmp, arr, counted, mismatched, total,
-           ratio, error, environ):
+           ratio, error, volatile, remint_ratio, remint_min_ratio,
+           recapture_ratio, expected_bytes, forced, closeup, interaction, environ):
     test_id = nodeid(environ)
     name = os.path.basename(baseline)
     out_dir = _claim(environ[DIR_ENV], name, test_id)
     images = {}
 
-    if os.path.isfile(baseline):
+    if expected_bytes is not None:
+        with open(os.path.join(out_dir, "expected.png"), "wb") as handle:
+            handle.write(expected_bytes)
+        images["expected"] = "expected.png"
+    elif os.path.isfile(baseline):
         shutil.copyfile(baseline, os.path.join(out_dir, "expected.png"))
         images["expected"] = "expected.png"
     if created is not None:
         created.save(os.path.join(out_dir, "created.png"))
         images["created"] = "created.png"
     if arr is not None and counted is not None and expected_cmp is not None:
-        diff_image(arr, counted, expected_cmp).save(os.path.join(out_dir, "diff.png"))
+        diff_image(arr, counted, expected_cmp, volatile).save(os.path.join(out_dir, "diff.png"))
         images["diff"] = "diff.png"
+    volatile_pixels = (
+        int((counted & volatile).sum())
+        if volatile is not None and counted is not None else None
+    )
 
     data = {
         "nodeid": test_id,
@@ -140,6 +172,17 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
         "error": error,
         "images": images,
     }
+    # Only a re-mint writes these, so every other record reads as before.
+    for key, value in (("remint_ratio", remint_ratio), ("remint_min_ratio", remint_min_ratio),
+                       ("recapture_ratio", recapture_ratio), ("volatile_pixels", volatile_pixels)):
+        if value is not None:
+            data[key] = value
+    if forced:
+        data["forced"] = True  # named by --remint-force
+    if closeup:
+        data["closeup"] = True
+    if interaction:
+        data["interaction"] = dict(interaction)
     # Last, and atomically: the report skips a folder without record.json, so
     # a run killed mid-write leaves nothing half-read.
     tmp = os.path.join(out_dir, "record.json.tmp")

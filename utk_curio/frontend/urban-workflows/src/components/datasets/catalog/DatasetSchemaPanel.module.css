@@ -102,8 +102,11 @@
   text-transform: uppercase;
 }
 
-.headRow span,
-.fieldRow span {
+/* The row's own cells only. As a descendant rule it also padded the icon,
+   the name and the PK badge inside .fieldCell, 32 px each, which left the
+   name two or three letters and no room for its ellipsis (#501). */
+.headRow > span,
+.fieldRow > span {
   padding: 0 16px;
 }
 

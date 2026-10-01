@@ -68,16 +68,14 @@ OWN_DATASET_CODE = (
 )
 
 
-def _show_drawer_name_and_actions(drawer) -> None:
-    """Scroll the details drawer so its dataset name sits at the top.
+def _expect_actions_in_view(drawer) -> None:
+    """The drawer's actions are on screen without scrolling anything (#526).
 
-    Publish renders below the fold of the drawer's own scroll box, which the
-    full-page capture does not scroll. With the name block at the top, the
-    name and the action buttons are both in the frame.
+    They used to sit at the end of the drawer's one scroll box, about 220 px
+    below the fold for a dataset, so the capture had to scroll the drawer to
+    show them. Only the body between the header and the actions scrolls now.
     """
-    drawer.locator("h2").first.evaluate(
-        "el => el.parentElement.scrollIntoView({block: 'start'})"
-    )
+    expect(drawer.locator('[data-curio-drawer-ctas="true"]')).to_be_in_viewport(ratio=1)
 
 
 def _modal(page, name):
@@ -343,7 +341,7 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     own_card.click()
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
-    _show_drawer_name_and_actions(drawer)
+    _expect_actions_in_view(drawer)
 
     save_workflow_test_screenshot(
         page, "publish-offered-for-own-dataset",
@@ -505,7 +503,7 @@ def test_the_catalog_pages_use_one_button_vocabulary(
         f"Publish is not the dark action fill: {fill}. Black is an action, "
         f"white with a border is destructive, and Publish is an action."
     )
-    _show_drawer_name_and_actions(drawer)
+    _expect_actions_in_view(drawer)
 
     save_workflow_test_screenshot(
         page, "catalog-page-button-vocabulary",

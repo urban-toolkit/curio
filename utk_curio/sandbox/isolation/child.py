@@ -410,7 +410,8 @@ def serialize_output(value, scratch_dir, *, slot="out"):
         prepared, encoded = codec._prepare_frame_for_parquet(
             value, geometry_col=codec.active_geometry_name(value)
         )
-        prepared.to_parquet(os.path.join(scratch_dir, name))
+        prepared.to_parquet(os.path.join(scratch_dir, name),
+                            row_group_size=codec.PARQUET_ROW_GROUP_ROWS)
         meta = {"encoded_object_columns": encoded}
         frame_metadata = getattr(value, "metadata", None)
         if isinstance(frame_metadata, dict) and frame_metadata:

@@ -645,12 +645,16 @@
 /* "Use in a node": the reference to paste, and where the bytes live (#206). */
 .referenceRow {
     display: flex;
+    /* The info column is about 240 px wide and the labelled Copy button takes
+       about 174 of them, which left the code a 45 px box (#500). The code gets
+       the row to itself and the button goes under it. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
 }
 
 .referenceCode {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     /* A reference is one token and can be long; scroll it rather than wrap a
        string the reader is about to copy. */
     min-width: 0;

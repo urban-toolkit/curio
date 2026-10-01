@@ -220,4 +220,39 @@ describe('DataPoolContent', () => {
     await act(async () => {}); // flush state updates from resolved preview fetch
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
   });
+
+  // ---- #517: the pool shows at most 100 rows and must say so ---------------
+
+  const rowsOf = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ row: `row_${String(i).padStart(3, '0')}` }));
+
+  test('a server preview says how many rows the table has', async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: 'dataframe',
+      data: { row: rowsOf(100).map((r) => r.row) },
+      preview: true,
+      previewRows: 100,
+      totalRows: 200,
+    } as any);
+
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[{ col: 1 }]}
+        data={{ nodeId: 'test-node', input: { filename: 'artifact_id' } }}
+      />
+    );
+
+    expect(await screen.findByText('Showing first 100 of 200 rows')).toBeInTheDocument();
+  });
+
+  test('the full output table, when shown, says how many rows it has', () => {
+    render(<DataPoolContent {...defaultProps} tableData={rowsOf(150)} />);
+    expect(screen.getByText('Showing first 100 of 150 rows')).toBeInTheDocument();
+  });
+
+  test('a table that fits says nothing about rows', () => {
+    render(<DataPoolContent {...defaultProps} />);
+    expect(screen.queryByTestId('tabular-preview-row-notice')).toBeNull();
+  });
 });

@@ -22,7 +22,6 @@ import {
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "../toolsMenuPackagePalette";
 import rowStyles from "./DatasetPaletteRows.module.css";
-import packageCardStyles from "../../../packages/publishing/PackageCard.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
 import { useReactFlow } from "reactflow";
@@ -34,6 +33,19 @@ import { DetailsButton } from "../../../DetailsButton";
 import { useDatasetDetails } from "../../../datasets/catalog/datasetDetailsContext";
 import { datasetReferenceCode } from "../../../../services/datasetCatalog";
 
+
+/**
+ * An id with a break opportunity after each `.` and before its `@version`, so a
+ * long one wraps where it reads instead of losing the version (#527).
+ */
+export function breakableId(text: string | null | undefined): React.ReactNode {
+  if (!text) return text;
+  return text.split(/([.@])/).map((part, index) => {
+    if (part === ".") return <React.Fragment key={index}>.<wbr /></React.Fragment>;
+    if (part === "@") return <React.Fragment key={index}><wbr />@</React.Fragment>;
+    return part;
+  });
+}
 
 export const DatasetRow = memo(function DatasetRow({
   dataset,
@@ -95,12 +107,8 @@ export const DatasetRow = memo(function DatasetRow({
           </span>
         </div>
         <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
-          <span className={packageStyles.packageKindRowLabel}>
-            {datasetDisplayTitle(dataset)}
-          </span>
-          <span className={packageCardStyles.cardMetaText}>
-            {datasetSubtitle(dataset)}
-          </span>
+          <span className={rowStyles.datasetRowTitle}>{datasetDisplayTitle(dataset)}</span>
+          <span className={rowStyles.datasetRowId}>{breakableId(datasetSubtitle(dataset))}</span>
 
           <div className={rowStyles.rowMeta}>
             <span className={packageStyles.packageKindCategoryChip}>

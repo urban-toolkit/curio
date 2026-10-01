@@ -163,6 +163,16 @@ class Ctx:
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
     snapshot: Callable[..., None] = lambda label, **kw: None
+    #: Pins one node, up close, as its own baseline. Also a no-op while recording.
+    node_snapshot: Callable[[str, str], None] = lambda label, node_id: None
+
+    def capture_node(self, label: str, node_id: str) -> None:
+        """Pin one node, framed up close, as a baseline called *label*.
+
+        For a node whose drawing is the claim: an Autark map, which in a
+        full-page frame is a thumbnail (see ``utils.save_node_closeup``).
+        """
+        self.node_snapshot(label, node_id)
 
     def capture(self, label: str, *, allow_running: bool = False,
                 fit_reactflow: bool | None = None) -> None:
@@ -331,6 +341,30 @@ def top_menu(page, label: str):
     return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
+_ON_TOP_JS = """(el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!hit && (hit === el || el.contains(hit));
+}"""
+
+
+def frame_until_on_top(page, node_id: str, target, *, attempts: int = 6) -> None:
+    """Frame *node_id* until *target*, a control in it, is what a click would hit.
+
+    Example 01's top chart sits under the menu bar at fit zoom (#493). One
+    framing is not enough after a load: the canvas fits itself again once its
+    nodes are measured, which can land after the framing and undo it.
+    """
+    target.wait_for(state="visible", timeout=15000)
+    for _ in range(attempts):
+        frame_node(page, node_id)
+        if target.evaluate(_ON_TOP_JS):
+            return
+    raise AssertionError(
+        f"{target} stayed covered after {attempts} framings of node {node_id}"
+    )
+
+
 def open_provenance(ctx: Ctx):
     """Open the Provenance modal from the top menu and return its dialog.
 
@@ -347,6 +381,16 @@ def open_provenance(ctx: Ctx):
     page.wait_for_selector(".react-flow__node", timeout=20000)
     ctx.beat(900)
     return dialog
+
+
+def show_every_version(ctx: Ctx, dialog) -> None:
+    """Frame the whole version chain, the way a user reaches an old version.
+
+    The window opens on the selected version at a readable zoom (#507), so the
+    rest of the chain is off screen until it is panned to or fitted.
+    """
+    ctx.click(dialog.get_by_role("button", name="fit view"))
+    ctx.beat(600)
 
 
 # The provenance modal renders its own React Flow inside a portal on
@@ -437,7 +481,6 @@ PROVENANCE_EXAMPLE = "01-vega-lite-chained-transforms.json"
     fit_reactflow=False,
 )
 def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
-    page = ctx.page
     spec = load_example_spec(PROVENANCE_EXAMPLE)["dataflow"]
     node_count, edge_count = len(spec["nodes"]), len(spec["edges"])
 
@@ -452,17 +495,7 @@ def provenance_graph_of_a_loaded_dataflow(ctx: Ctx) -> None:
     )
 
     ctx.say("One version per node, then one per connection",
-            "Zoom in on the newest.")
-    # Wheel-zoom with the pointer on the newest version, so React Flow zooms
-    # around it and it stays in view. The zoom buttons zoom around the centre,
-    # and a DOM scroll afterwards moves React Flow's wrapper, not the graph.
-    box = versions.last.bounding_box()
-    assert box, "the newest provenance version has no layout box"
-    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-    for _ in range(6):
-        page.mouse.wheel(0, -200)
-        ctx.beat(120)
-    ctx.beat(900)
+            "The window opens on the newest.")
 
     # The load-bearing check. DataflowThumbnail draws one <line> per edge and two
     # <rect> per node, and SKIPS any edge whose endpoints are missing from the
@@ -584,6 +617,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             open_provenance(ctx)
 
     for index in targets:
+        show_every_version(ctx, dialog)
         version = versions.nth(index)
         expected = version_graph(version)
         ctx.click(version, hold=520)
@@ -606,6 +640,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
             "Each one put its own graph on the canvas.")
 
     # Forward to the newest, so the canvas ends where it started.
+    show_every_version(ctx, dialog)
     ctx.click(versions.nth(count - 1), hold=520)
     await_canvas_nodes(page, saved["nodes"])
     restored = canvas_graph(page)
@@ -1295,7 +1330,6 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     node_id = first_node_of_type(PROVENANCE_EXAMPLE, "vis-vega")
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
-    node.scroll_into_view_if_needed()
     # Not `run_node_and_wait`: that waits for a code node's text pane, which a
     # chart does not have. Wait on the status attribute, then on drawn marks.
     play_node(page, node_id)
@@ -1304,7 +1338,10 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
 
     ctx.say("Pin it, and save", "Pinning saves the output behind the chart.")
     pin = node.get_by_role("button", name="Pin to dashboard")
-    pin.wait_for(state="visible", timeout=15000)
+    # This chart is the top node of a tall dataflow, so at fit zoom its header
+    # sits under the menu bar (#493) and the click would land on the bar. The
+    # capture refits the view, so framing it here changes no frame.
+    frame_until_on_top(page, node_id, pin.first)
     ctx.click(pin.first)
     save_from_the_status_icon(ctx)
     project_id = dataflow_id_from_url(page)
@@ -1349,7 +1386,8 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     node = node_locator(page, node_id)
     node.wait_for(state="visible", timeout=45000)
     unpin = node.get_by_role("button", name="Unpin from dashboard")
-    unpin.wait_for(state="visible", timeout=15000)
+    # Back on the canvas, the load fit puts the header under the menu bar again.
+    frame_until_on_top(page, node_id, unpin.first)
     ctx.click(unpin.first)
     save_from_the_status_icon(ctx)
 
@@ -1464,6 +1502,7 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.focus(autark, hold=1200)
     ctx.say("Run the dataflow", "With WebGPU back, the whole chain draws.")
     ctx.capture("webgpu-recovered")
+    ctx.capture_node("webgpu-recovered-map", node_id)
     assert not errors, f"an uncaught page error escaped during recovery: {errors}"
 
 
@@ -1667,6 +1706,7 @@ def autark_data_node_says_what_it_loaded(ctx: Ctx) -> None:
     ctx.say("After, it names what it made",
             "The same tables the next node's map will draw.")
     ctx.capture("after-run")
+    ctx.capture_node("after-run-map", map_id)
 
 
 # ---------------------------------------------------------------------------
@@ -2289,15 +2329,21 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
     #    precisely so it would, and it is the only thing naming the field
     #    before anything is typed. 1px of slack for sub-pixel rounding.
+    #    Measured as text: a placeholder is not content, so the input's own
+    #    scrollWidth never grows past it and cannot show the crop (#355).
     goal.fill("")
     goal.blur()
     ctx.beat(200)
     empty = goal.evaluate(
-        "el => ({ scroll: el.scrollWidth, client: el.clientWidth })"
+        "el => { const cs = getComputedStyle(el);"
+        " const pen = document.createElement('canvas').getContext('2d');"
+        " pen.font = cs.font;"
+        " return { text: pen.measureText(el.placeholder).width,"
+        " box: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) }; }"
     )
-    assert empty["scroll"] <= empty["client"] + 1, (
+    assert empty["text"] <= empty["box"] + 1, (
         f"the goal placeholder is cropped with {avatars} agents attached: "
-        f"scrollWidth {empty['scroll']} > clientWidth {empty['client']} "
+        f"its text is {empty['text']:.0f}px in a {empty['box']:.0f}px box "
         "(#227/#355)"
     )
 
@@ -2599,7 +2645,10 @@ def catalog_details_clear_the_version_badge(ctx: Ctx) -> None:
 
     ctx.say("Scroll to the bottom of the details",
             "This is where the two used to collide.")
-    drawer.evaluate("el => el.scrollTo({ top: el.scrollHeight })")
+    # The body scrolls, not the drawer (#526).
+    drawer.locator('[data-curio-drawer-body="true"]').evaluate(
+        "el => el.scrollTo({ top: el.scrollHeight })"
+    )
     page.wait_for_timeout(600)
 
     badge = page.locator("span[title]").filter(has_text=re.compile("isolated", re.I))
@@ -2812,6 +2861,10 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     # reload proved neither: the save is debounced, the reload beat it, and the
     # header came back reading "Attached to Vega-Lite".
     rename = node.get_by_role("button", name=re.compile("^Edit node title: "))
+    # At fit zoom the chart's header sits under the menu bar (#493), where the
+    # rename click would land on the bar. The capture is clipped to the chat
+    # header, so framing the node changes no frame.
+    frame_until_on_top(page, node_id, rename)
     ctx.focus(rename, hold=700)
     ctx.say("Name the node", "The chat header should follow this, not a uuid.")
     rename.click()

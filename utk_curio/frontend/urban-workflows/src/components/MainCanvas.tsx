@@ -556,6 +556,10 @@ export function MainCanvas() {
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
                 deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
+                // The version badge owns the bottom-right corner, and the
+                // attribution drawn there sat under it (#509). The other three
+                // canvases already hide it.
+                proOptions={{ hideAttribution: true }}
             >
                 <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
                 <Controls />

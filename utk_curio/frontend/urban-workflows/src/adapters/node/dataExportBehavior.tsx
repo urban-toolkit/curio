@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useEdges, useReactFlow } from 'reactflow';
+import { useFlowContext } from '../../providers/FlowProvider';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { resolveNodeDisplayLabel } from '../../utils/palettePackageFactoryDraft';
@@ -65,6 +66,7 @@ function serialize(result: any, format: ExportTarget['format']): string {
  */
 export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [busy, setBusy] = useState(false);
+  const { signalNodeExecDone } = useFlowContext();
 
   const input = data.input && typeof data.input === 'object' ? (data.input as any) : null;
   const connected = Boolean(input?.path);
@@ -111,7 +113,15 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   );
 
   const download = useCallback(async () => {
-    if (!connected || busy) return;
+    if (busy) return;
+    if (!connected) {
+      // Only Play or Run All get here, the button being disabled. Nothing ran,
+      // so clear the "exec" they set rather than claim anything, and let a run
+      // move on instead of waiting out its watchdog for this node.
+      nodeState.setOutput({ code: '', content: '' });
+      signalNodeExecDone(data.nodeId);
+      return;
+    }
     setBusy(true);
     nodeState.setOutput({ code: 'exec', content: '', outputType: target.format });
     try {
@@ -138,8 +148,11 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
       });
     } finally {
       setBusy(false);
+      // The export emits nothing downstream, so this is what tells a Run All
+      // it finished. Outside a run it does nothing.
+      signalNodeExecDone(data.nodeId);
     }
-  }, [connected, busy, input, target, nodeState]);
+  }, [connected, busy, input, target, nodeState, signalNodeExecDone, data.nodeId]);
 
   const customWidgetsCallback = useCallback(
     (div: HTMLElement) => {
@@ -173,10 +186,6 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
     },
     [connected, busy, target.filename, download],
   );
-
-  useEffect(() => {
-    nodeState.setOutput({ code: 'success', content: '', outputType: target.format });
-  }, [data.input, target.format]);
 
   const contentComponent = useMemo(
     () => <OutputContent output={nodeState.output} />,

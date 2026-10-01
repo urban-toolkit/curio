@@ -62,8 +62,109 @@ function cell(value: unknown): unknown {
     return value;
 }
 
+// apache-arrow's Type ids and units as plain numbers, so this module keeps its
+// type-only import of the library.
+const TYPE_DATE = 8;
+const TYPE_TIMESTAMP = 10;
+const DATE_UNIT_DAY = 0;
+const MS_PER_DAY = 86400000;
+const NANOS_PER_SECOND = BigInt(1000000000);
+// Nanoseconds per TimeUnit: SECOND, MILLISECOND, MICROSECOND, NANOSECOND.
+const NANOS_PER_UNIT = [NANOS_PER_SECOND, BigInt(1000000), BigInt(1000), BigInt(1)];
+const FIXED_OFFSET = /^([+-])(\d{2}):?(\d{2})$/;
+
+/** `datetime.date.isoformat()`, what the JSON path sends for a date. */
+function isoDate(epochMs: number): string {
+    return new Date(epochMs).toISOString().slice(0, 10);
+}
+
+/** Seconds east of UTC in *timezone* at *epochSeconds*. */
+function offsetSeconds(epochSeconds: number, timezone: string): number {
+    const fixed = FIXED_OFFSET.exec(timezone);
+    if (fixed) {
+        const value = Number(fixed[2]) * 3600 + Number(fixed[3]) * 60;
+        return fixed[1] === "-" ? -value : value;
+    }
+    try {
+        const parts = new Intl.DateTimeFormat("en-US", {
+            timeZone: timezone,
+            hourCycle: "h23",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+        }).formatToParts(new Date(epochSeconds * 1000));
+        const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+        const wall = Date.UTC(part("year"), part("month") - 1, part("day"),
+            part("hour"), part("minute"), part("second"));
+        return Math.round(wall / 1000 - epochSeconds);
+    } catch {
+        return 0; // a zone this engine does not know: UTC, rather than no column
+    }
+}
+
+function offsetText(seconds: number): string {
+    const abs = Math.abs(seconds);
+    const hours = String(Math.floor(abs / 3600)).padStart(2, "0");
+    const minutes = String(Math.floor((abs % 3600) / 60)).padStart(2, "0");
+    return `${seconds < 0 ? "-" : "+"}${hours}:${minutes}`;
+}
+
+/**
+ * `pandas.Timestamp.isoformat()`: the wall time to the second, then
+ * microseconds, or nanoseconds when there are any, only when not zero, then
+ * the UTC offset when the column has a time zone.
+ */
+function isoTimestamp(nanos: bigint, timezone: string | null): string {
+    let seconds = nanos / NANOS_PER_SECOND;
+    let fraction = nanos % NANOS_PER_SECOND;
+    if (fraction < BigInt(0)) {
+        fraction += NANOS_PER_SECOND;
+        seconds -= BigInt(1);
+    }
+    const epochSeconds = Number(seconds);
+    const offset = timezone ? offsetSeconds(epochSeconds, timezone) : 0;
+    let text = new Date((epochSeconds + offset) * 1000).toISOString().slice(0, 19);
+    const sub = Number(fraction);
+    if (sub % 1000 !== 0) text += "." + String(sub).padStart(9, "0");
+    else if (sub !== 0) text += "." + String(sub / 1000).padStart(6, "0");
+    return timezone ? text + offsetText(offset) : text;
+}
+
+/**
+ * Dates and timestamps as the strings the JSON path sends, which `isoformat()`
+ * writes there (`sandbox/util/codec.py`). Arrow's own `get` returns epoch
+ * milliseconds, and a float for micro- and nanosecond columns, so this reads
+ * the stored integers. A missing date is null and a missing timestamp is
+ * "NaT", again as on the JSON path.
+ */
+function temporalToArray(vector: Vector): unknown[] {
+    const type = vector.type as any;
+    const isDate = type.typeId === TYPE_DATE;
+    const out = new Array(vector.length);
+    let i = 0;
+    for (const chunk of vector.data as any[]) {
+        for (let j = 0; j < chunk.length; j++, i++) {
+            if (!chunk.getValid(j)) {
+                out[i] = isDate ? null : "NaT";
+            } else if (isDate) {
+                const raw = Number(chunk.values[j]);
+                out[i] = isoDate(type.unit === DATE_UNIT_DAY ? MS_PER_DAY * raw : raw);
+            } else {
+                const nanos = BigInt(chunk.values[j]) * NANOS_PER_UNIT[type.unit];
+                out[i] = isoTimestamp(nanos, type.timezone || null);
+            }
+        }
+    }
+    return out;
+}
+
 function columnToArray(vector: Vector | null): unknown[] {
     if (!vector) return [];
+    const typeId = (vector.type as any).typeId;
+    if (typeId === TYPE_DATE || typeId === TYPE_TIMESTAMP) return temporalToArray(vector);
     const out = new Array(vector.length);
     for (let i = 0; i < vector.length; i++) out[i] = cell(vector.get(i));
     return out;

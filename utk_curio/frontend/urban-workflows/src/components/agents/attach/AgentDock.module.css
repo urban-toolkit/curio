@@ -32,6 +32,11 @@
   min-width: 0;
   flex: 1 1 auto;
   max-width: 420px;
+  /* The dock is absolutely positioned, so it is as wide as its content, and
+     the input's `width: 100%` had nothing definite to fill: it fell back to
+     about twenty characters and cut the placeholder (#227). A definite width
+     gives it one; the flex line above still lets a crowded dock shrink it. */
+  width: 320px;
 }
 
 .goalLabel {

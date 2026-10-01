@@ -131,6 +131,19 @@ describe("restoring saved outputs", () => {
     ]);
   });
 
+  // #407/#408: without this the nodes are built as never-run, and the first
+  // downstream play re-runs every upstream node the load just restored.
+  it("hands the restored outputs to the load, so those nodes count as done", async () => {
+    mockLoadProject.mockResolvedValue({ spec: SPEC, outputs: OUTPUTS });
+
+    renderLoader();
+
+    await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+    expect(mockLoadTrill).toHaveBeenCalledWith(
+      SPEC, undefined, undefined, { py: OUTPUTS[0].filename },
+    );
+  });
+
   it("restores nothing when nothing was saved", async () => {
     mockLoadProject.mockResolvedValue({ spec: SPEC, outputs: [] });
 

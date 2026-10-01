@@ -104,6 +104,7 @@ export default function GrammarEditor({
                     setDiagnosticsOptions(options: {
                         validate?: boolean;
                         enableSchemaRequest?: boolean;
+                        schemaRequest?: "error" | "warning" | "ignore";
                         schemas?: unknown[];
                     }): void;
                 };
@@ -111,6 +112,10 @@ export default function GrammarEditor({
             jsonLanguage.jsonDefaults.setDiagnosticsOptions({
                 validate: true,
                 enableSchemaRequest: false,
+                // With fetching off, a `$schema` that cannot be loaded is not a
+                // problem with the spec; left unset, Monaco reported it as a
+                // warning squiggle under every valid Vega-Lite URL (#494).
+                schemaRequest: "ignore",
                 schemas: [],
             });
         } catch {

@@ -24,6 +24,7 @@
 #   --e2e-only          Run only the E2E suite
 #   --unit-only         Run only backend, sandbox, and frontend unit tests (no E2E)
 #   --allure-dir DIR    Write Allure results to DIR (passed to E2E pytest)
+#   --allow-empty       Count an E2E run that selects no test (pytest's exit 5) as passed
 #   --parallel N        Run the E2E suite on N pytest-xdist workers, each against
 #                       its own backend+sandbox pair (one shared frontend).
 #                       N=auto picks min(4, cores/4). Default 1, or $CURIO_E2E_PARALLEL.
@@ -45,6 +46,7 @@ VIDEOS=0
 EXAMPLES=1
 E2E_WORKFLOWS=""
 ALLURE_DIR=""
+ALLOW_EMPTY=0
 PARALLEL="${CURIO_E2E_PARALLEL:-1}"
 SUITE="all"   # all | backend | sandbox | jest | e2e | unit
 
@@ -61,9 +63,10 @@ while [[ $# -gt 0 ]]; do
     --e2e-only)      SUITE="e2e";          shift ;;
     --unit-only)     SUITE="unit";         shift ;;
     --allure-dir)    ALLURE_DIR="$2";      shift 2 ;;
+    --allow-empty)   ALLOW_EMPTY=1;        shift ;;
     --parallel)      PARALLEL="$2";        shift 2 ;;
     --help|-h)
-      sed -n '2,35p' "$0"
+      sed -n '2,36p' "$0"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -447,7 +450,11 @@ if [[ $RUN_E2E -eq 1 ]]; then
   die "cd to utk_curio/backend" $?
   # CURIO_E2E_TARGETS narrows the run to specific files (smoke runs); default is the suite.
   env $E2E_ENV python -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
-  record "E2E tests" $?
+  rc=$?
+  # pytest's 5: nothing was selected, as when a CI re-mint filter names only
+  # tests the other runner owns.
+  (( ALLOW_EMPTY == 1 && rc == 5 )) && rc=0
+  record "E2E tests" $rc
 fi
 
 exit $OVERALL

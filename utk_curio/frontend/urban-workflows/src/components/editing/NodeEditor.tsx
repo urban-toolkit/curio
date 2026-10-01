@@ -31,6 +31,7 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
+import { outputMountStyle } from "../../utils/outputMountStyle";
 
 type NodeEditorProps = {
     outputId?: string;
@@ -51,6 +52,9 @@ type NodeEditorProps = {
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
+    /** The node draws an input / output marker at its edge (#522). */
+    inputMarker?: boolean;
+    outputMarker?: boolean;
 };
 
 function NodeEditor({
@@ -72,6 +76,8 @@ function NodeEditor({
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
+    inputMarker = false,
+    outputMarker = false,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
     // Seed from the prop so the editors receive the real content on their
@@ -344,13 +350,11 @@ function NodeEditor({
                                             // instead of scrolling the chart.
                                             <div
                                                 id={outputId}
-                                                className="nodrag nowheel"
-                                                style={{
-                                                    textAlign: "center",
-                                                    width: "100%",
-                                                    height: "100%",
-                                                    overflow: "auto",
-                                                }}
+                                                className="nodrag nowheel curio-vega-mount"
+                                                style={outputMountStyle(
+                                                    !dashboardOn && inputMarker,
+                                                    !dashboardOn && outputMarker,
+                                                )}
                                             ></div>
                                         ) : (
                                             contentComponent

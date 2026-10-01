@@ -60,11 +60,11 @@ describe('getUnversionedFlowNodeType', () => {
 describe('colour maps resolve both id forms', () => {
   // Both maps are static mirrors of the built-in package keyed by unversioned
   // ids. A versioned miss is not a crash, it is a silently grey node — exactly
-  // the kind of regression a type check cannot catch.
+  // the kind of regression a type check cannot catch. Merge Flow is not here:
+  // its category is `flow`, which is the neutral grey itself (#524).
   const COLOURED: NodeType[] = [
     NodeType.DATA_LOADING,
     NodeType.DATA_TRANSFORMATION,
-    NodeType.MERGE_FLOW,
     NodeType.DATA_POOL,
     NodeType.VIS_VEGA,
   ];

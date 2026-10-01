@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build one self-contained HTML page from a CI job's test results.
 
-test-gpu runs five suites and about 240 screenshot comparisons, and the only
+A CI run has a dozen suites and about 240 screenshot comparisons, and the only
 ways to read them were the job log and a zipped Allure site that has to be
 served before it opens. This writes a single HTML file with everything inline,
 images included. Uploaded with ``actions/upload-artifact`` and
@@ -19,6 +19,8 @@ Every input is optional, because a step that never ran leaves no file:
     --failures DIR       an e2e run's CURIO_E2E_FAILURE_DIR, for the screenshot
                          each failed test left behind
     --jobs PATH          GitHub's jobs API response for this run attempt
+    --all-jobs           report on every job in --jobs rather than this one: the
+                         page the run's ci-report job builds from every runner
 
 With Pillow importable every image is transcoded to lossless WebP, identical
 pixel for pixel at about half the size of the PNG; without it the recorded
@@ -63,18 +65,24 @@ TRACE_KEEP = 6000  # characters kept from each end of a long trace
 MAX_LISTED = 200  # failures listed per suite
 STATUS_RANK = {"passed": 0, "xfailed": 1, "skipped": 2, "error": 3, "failed": 4}
 
+# "reminted" and "unchanged" come only from a --remint-baselines run: the first
+# replaced its baseline, the second kept it. "minted" is a baseline this run
+# wrote where there was none, so it is new and needs a look like a re-mint.
 COMPARISON_GROUP = {
     "failed": "over", "capture-error": "capture", "missing": "missing",
-    "passed": "within", "minted": "within",
+    "passed": "within", "minted": "minted",
+    "reminted": "reminted", "unchanged": "unchanged",
 }
 COMPARISON_LABEL = {
     "failed": "Over budget", "capture-error": "Capture failed",
     "missing": "No baseline", "passed": "Within budget", "minted": "Minted",
+    "reminted": "Re-minted", "unchanged": "Unchanged",
 }
-GROUP_ORDER = ("over", "capture", "missing", "within")
+GROUP_ORDER = ("reminted", "minted", "over", "capture", "missing", "within", "unchanged")
 GROUP_LABEL = {
-    "over": "Over budget", "capture": "Capture failed",
-    "missing": "No baseline", "within": "Within budget",
+    "reminted": "Re-minted", "minted": "Minted", "over": "Over budget",
+    "capture": "Capture failed", "missing": "No baseline", "within": "Within budget",
+    "unchanged": "Unchanged",
 }
 
 
@@ -132,6 +140,10 @@ class Report:
     images: dict = field(default_factory=dict)  # path -> data URI, or None past the budget
     image_mb: int = 0
     jobs_given: bool = False
+    # Every job of the run, when the page reports on the run rather than one job.
+    all_jobs: list | None = None
+    # Interaction frames in before/after pairs, see build_pairs.
+    pairs: list = field(default_factory=list)
     problems: list = field(default_factory=list)
 
 
@@ -329,10 +341,95 @@ def read_comparisons(root):
 
 
 def _comparison_order(record):
-    budget = record.get("max_diff_ratio") or 0
-    closeness = (record.get("ratio") or 0) / budget if budget else 0
     group = COMPARISON_GROUP.get(record.get("status"), "within")
+    if group in ("reminted", "unchanged"):
+        closeness = record.get("ratio") or 0  # biggest change first
+    else:
+        budget = record.get("max_diff_ratio") or 0
+        closeness = (record.get("ratio") or 0) / budget if budget else 0
     return GROUP_ORDER.index(group), -closeness, record.get("baseline") or ""
+
+
+# ---------------------------------------------------------------- interaction pairs
+
+#: What "What changed" marks: more than this in some channel, the rule the
+#: interaction steps in test_workflows count a highlight by.
+PAIR_CHANGE_THRESHOLD = 40
+PAIR_ROLES = ("source", "target")
+PAIR_PHASES = ("before", "after")
+PAIR_FADE = 0.2  # as comparisons.FADE: how much of the after frame shows under the red
+
+
+def pair_frame(record):
+    """The image a pair shows for *record*: its baseline as this run leaves it.
+
+    A re-mint wrote this run's capture over the baseline, and a missing
+    baseline has only the capture that would become one. Every other record's
+    baseline is the file as committed, or as a mint just wrote it.
+    """
+    images = record.get("images") or {}
+    if record.get("status") in ("reminted", "missing"):
+        return images.get("created")
+    return images.get("expected") or images.get("created")
+
+
+def build_pairs(records):
+    """Interaction frames by step, one row per node with its before and after record."""
+    steps = {}
+    for record in records:
+        meta = record.get("interaction")
+        if not isinstance(meta, dict):
+            continue
+        key = (meta.get("workflow") or "", meta.get("step") or "")
+        step = steps.setdefault(key, {
+            "workflow": key[0], "step": key[1], "gesture": meta.get("gesture") or "",
+            "source": meta.get("source") or "", "target": meta.get("target") or "",
+            "rows": {},
+        })
+        role = meta.get("role") or ""
+        row = step["rows"].setdefault(role, {"role": role, "node": meta.get("node") or ""})
+        row[meta.get("phase") or ""] = record
+    pairs = []
+    for key in sorted(steps):
+        step = steps[key]
+        rows = [step["rows"][role] for role in PAIR_ROLES if role in step["rows"]]
+        rows += [row for role, row in step["rows"].items() if role not in PAIR_ROLES]
+        pairs.append({**step, "rows": rows})
+    return pairs
+
+
+def change_image(before_path, after_path, threshold=PAIR_CHANGE_THRESHOLD):
+    """The after frame faded, with every pixel that differs from before in red.
+
+    Returns ``(data URI, changed pixels, total pixels)``, or None without Pillow.
+    """
+    try:
+        from PIL import Image, ImageChops, features
+    except Exception:
+        return None
+    with Image.open(before_path) as b, Image.open(after_path) as a:
+        before, after = b.convert("RGB"), a.convert("RGB")
+    size = (max(before.width, after.width), max(before.height, after.height))
+    before, after = before.resize(size), after.resize(size)
+    over = ImageChops.difference(before, after).point(lambda v: 255 if v > threshold else 0)
+    red, green, blue = over.split()
+    mask = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    backdrop = after.convert("L").point(lambda v: int(255 - (255 - v) * PAIR_FADE)).convert("RGB")
+    marked = Image.composite(Image.new("RGB", size, (255, 0, 0)), backdrop, mask)
+    buf = io.BytesIO()
+    webp = bool(features.check("webp"))
+    marked.save(buf, "WEBP" if webp else "PNG", **({"lossless": True} if webp else {}))
+    return (_data_uri("image/webp" if webp else "image/png", buf.getvalue()),
+            mask.histogram()[255], size[0] * size[1])
+
+
+def add_pair_changes(pairs):
+    """Give each row with both frames its before-to-after ``change``."""
+    for pair in pairs:
+        for row in pair["rows"]:
+            frames = [pair_frame(row[p]) if p in row else None for p in PAIR_PHASES]
+            if all(frames):
+                row["change"] = change_image(*frames)
 
 
 def read_failures(root):
@@ -353,6 +450,14 @@ def read_job(path, job_name):
         jobs = (json.load(handle) or {}).get("jobs") or []
     return (next((j for j in jobs if j.get("name") == job_name), None)
             or next((j for j in jobs if j.get("status") == "in_progress"), None))
+
+
+def read_jobs(path):
+    """Every job in a jobs API response, in the order GitHub lists them."""
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return (json.load(handle) or {}).get("jobs") or []
 
 
 def run_meta(environ):
@@ -439,6 +544,8 @@ def build(args, environ=os.environ):
             return fallback
 
     report.job = guarded("jobs", lambda: read_job(args.jobs, args.job_name or report.meta["job"]), None)
+    if getattr(args, "all_jobs", False):
+        report.all_jobs = guarded("jobs", lambda: read_jobs(args.jobs), None)
     for kind, reader, entries in (("pytest", read_junit, args.junit), ("jest", read_jest, args.jest),
                                   ("tsc", read_tsc, args.tsc)):
         for label, path in entries or []:
@@ -466,12 +573,20 @@ def build(args, environ=os.environ):
                         case.screenshot = shots.pop(folder)
                         break
     report.stray_screenshots = shots
+    report.pairs = guarded("interaction pairs", lambda: build_pairs(report.comparisons), [])
+    guarded("interaction changes", lambda: add_pair_changes(report.pairs), None)
 
     ordered = [case.screenshot for suite in report.suites for case in suite.cases if case.screenshot]
     ordered += list(shots.values())
+    # A pair shows a kept baseline too, which the comparison cards leave out.
+    ordered += [pair_frame(row[phase]) for pair in report.pairs for row in pair["rows"]
+                for phase in PAIR_PHASES if phase in row and pair_frame(row[phase])]
     for record in report.comparisons:
+        if record.get("status") == "unchanged":
+            continue  # listed without images: a re-mint kept these baselines
         ordered += [record["images"][kind] for kind in ("expected", "created", "diff")
                     if kind in record["images"]]
+    ordered = list(dict.fromkeys(ordered))
     encoded = guarded("images", lambda: encode_images(ordered, args.workers), {})
     report.images = budget_images(encoded, ordered, args.max_image_mb)
     return report
@@ -513,8 +628,11 @@ def _iso(value):
 
 
 def overall(report):
-    step_failed = any(s.get("conclusion") == "failure"
-                      for s in (report.job or {}).get("steps") or [])
+    if report.all_jobs is not None:
+        step_failed = any(j.get("conclusion") == "failure" for j in report.all_jobs)
+    else:
+        step_failed = any(s.get("conclusion") == "failure"
+                          for s in (report.job or {}).get("steps") or [])
     if step_failed or any(s.status in ("failed", "unreadable") for s in report.suites):
         return "failed"
     if any(r.get("status") in ("failed", "capture-error", "missing") for r in report.comparisons):
@@ -532,8 +650,11 @@ def render(report):
     elif meta["ref"]:
         title += f": {meta['ref']}"
     sections = [
-        *([("Steps", "steps", render_steps)] if report.jobs_given else []),
+        *([("Jobs" if report.all_jobs is not None else "Steps", "steps",
+            render_jobs if report.all_jobs is not None else render_steps)]
+          if report.jobs_given else []),
         ("Test suites", "suites", render_suites),
+        *([("Interaction pairs", "interactions", render_pairs)] if report.pairs else []),
         ("Screenshot comparisons", "comparisons", render_comparisons),
     ]
     body = []
@@ -589,9 +710,12 @@ def render_header(report, title):
     bits.append(esc(meta["generated"]))
     state = overall(report)
     word = {"passed": "Passed", "failed": "Failed", "unclear": "No results"}[state]
-    links = [("Steps", "steps")] if report.jobs_given else []
-    links += [("Test suites", "suites"),
-              (f"Screenshot comparisons ({len(report.comparisons)})", "comparisons")]
+    links = ([("Jobs" if report.all_jobs is not None else "Steps", "steps")]
+             if report.jobs_given else [])
+    links += [("Test suites", "suites")]
+    if report.pairs:
+        links.append((f"Interaction pairs ({len(report.pairs)})", "interactions"))
+    links.append((f"Screenshot comparisons ({len(report.comparisons)})", "comparisons"))
     nav = " ".join(f'<a href="#{a}">{esc(t)}</a>' for t, a in links)
     return (f'<header class="top"><div class="title-row"><h1>{esc(title)}</h1>'
             f"{badge(state, word)}</div>"
@@ -631,6 +755,40 @@ def render_steps(report):
              f'<th class="num">Time</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
     open_attr = " open" if failed else ""
     return (f'<section id="steps"><h2>Steps</h2><details class="steps-box"{open_attr}>'
+            f"<summary>{esc(summary)}</summary>{table}</details></section>")
+
+
+def render_jobs(report):
+    """Every job of the run, with the failed steps of the ones that failed."""
+    rows, failed, done = [], 0, 0
+    for job in report.all_jobs or []:
+        if job.get("status") != "completed":
+            continue  # this job, still building the page, and anything queued
+        done += 1
+        conclusion = job.get("conclusion") or "unknown"
+        failed += conclusion == "failure"
+        start, end = _iso(job.get("started_at")), _iso(job.get("completed_at"))
+        took = duration((end - start).total_seconds()) if start and end else ""
+        name = esc(job.get("name") or "")
+        if job.get("html_url"):
+            name = f'<a href="{esc(job["html_url"])}">{name}</a>'
+        broke = [s for s in job.get("steps") or [] if s.get("conclusion") == "failure"]
+        if broke:
+            steps = ", ".join(
+                f'<a href="{esc(job["html_url"])}#step:{int(s["number"])}:1">{esc(s.get("name") or "")}</a>'
+                if job.get("html_url") and s.get("number") is not None else esc(s.get("name") or "")
+                for s in broke)
+            name += f'<div class="muted">failed: {steps}</div>'
+        rows.append(f'<tr class="{esc(conclusion)}"><td>{name}</td>'
+                    f"<td>{badge(conclusion)}</td><td class=\"num\">{esc(took)}</td></tr>")
+    if not done:
+        return ('<section id="steps"><h2>Jobs</h2><p class="muted">No job list: the jobs '
+                "API response for this run was missing or could not be read.</p></section>")
+    summary = f"{failed} of {done} jobs failed" if failed else f"All {done} completed jobs succeeded"
+    table = ('<div class="table-wrap"><table class="steps"><thead><tr><th>Job</th><th>Result</th>'
+             f'<th class="num">Time</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+    open_attr = " open" if failed else ""
+    return (f'<section id="steps"><h2>Jobs</h2><details class="steps-box"{open_attr}>'
             f"<summary>{esc(summary)}</summary>{table}</details></section>")
 
 
@@ -749,25 +907,140 @@ def render_tsc(suite):
     return '<p class="muted">No type errors.</p>'
 
 
+def _figure(uri, caption, full):
+    if not uri:
+        return (f'<figure class="empty"><div class="placeholder">{esc(full)}</div>'
+                f"<figcaption>{esc(caption)}</figcaption></figure>")
+    return (f'<figure><button type="button" class="shot" aria-label="Open {esc(caption.lower())} at original size">'
+            f'<img src="{uri}" alt="{esc(full)}" loading="lazy" decoding="async" data-caption="{esc(full)}">'
+            f"</button><figcaption>{esc(caption)}</figcaption></figure>")
+
+
+def render_pairs(report):
+    """Each interaction step's nodes before and after it, for a person to judge."""
+    cards = []
+    for pair in report.pairs:
+        rows = []
+        for row in pair["rows"]:
+            node = row.get("node") or "?"
+            figures, states = [], []
+            for phase in PAIR_PHASES:
+                record = row.get(phase)
+                if record is None:
+                    figures.append(_figure(None, phase.capitalize(), "not captured"))
+                    continue
+                path = pair_frame(record)
+                full = f"{phase.capitalize()}: {record.get('baseline') or node}"
+                figures.append(_figure(report.images.get(path) if path else None,
+                                       phase.capitalize(), full if path else "nothing was captured"))
+                status = record.get("status") or "passed"
+                word = esc(COMPARISON_LABEL.get(status, status).lower())
+                states.append(f'{phase} <a href="#{esc(record.get("anchor") or "")}">{word}</a>'
+                              if status != "unchanged" else f"{phase} {word}")
+            change = row.get("change")
+            if change:
+                uri, changed, total = change
+                caption = f"What changed: {changed:,} pixels ({changed / total:.2%})" if total else "What changed"
+                figures.append(_figure(uri, caption, f"{caption}, {node}"))
+            else:
+                figures.append(_figure(None, "What changed", "needs both frames"))
+            label = {"source": "Source", "target": "Target"}.get(row.get("role"), row.get("role") or "?")
+            rows.append(f'<div class="pair-row"><h4>{esc(label)} <code>{esc(node)}</code>'
+                        f'<span class="muted">{", ".join(states)}</span></h4>'
+                        f'<div class="trio">{"".join(figures)}</div></div>')
+        gesture = pair.get("gesture") or "gesture"
+        cards.append(
+            f'<article class="card pair"><header class="card-head">{badge("interaction", gesture)}'
+            f'<h3>{esc(pair["workflow"])}: {esc(pair["step"])}</h3></header>'
+            f'<p class="test">A {esc(gesture)} on <code>{esc(pair.get("source"))}</code>, '
+            f'which lights up <code>{esc(pair.get("target"))}</code>.</p>{"".join(rows)}</article>')
+    intro = ('<p class="note">Each row is one node of an interaction step, framed together '
+             "with the other node, before and after the gesture. The frames are the baselines "
+             "as this run leaves them, so on a mint or re-mint run they are the new ones. "
+             f"What changed marks in red every pixel that differs by more than {PAIR_CHANGE_THRESHOLD} "
+             "in a channel between the two.</p>")
+    return (f'<section id="interactions"><h2>Interaction pairs</h2>{intro}'
+            f'<div class="cards">{"".join(cards)}</div></section>')
+
+
 def render_comparisons(report):
     records = report.comparisons
     if not records:
         return ('<section id="comparisons"><h2>Screenshot comparisons</h2><p class="muted">'
                 "No comparisons were recorded.</p></section>")
-    counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in records)
+    shown = [r for r in records if r.get("status") != "unchanged"]
+    kept = [r for r in records if r.get("status") == "unchanged"]
+    counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in shown)
     chips = [f'<button type="button" class="chip" data-group="all" aria-pressed="true">All '
-             f'<span class="num">{len(records)}</span></button>']
+             f'<span class="num">{len(shown)}</span></button>']
     chips += [f'<button type="button" class="chip {g}" data-group="{g}" aria-pressed="false">'
               f'{GROUP_LABEL[g]} <span class="num">{counts[g]}</span></button>'
               for g in GROUP_ORDER if counts[g]]
+    # Across the groups: every node framed on its own, whatever became of it.
+    closeups = sum(1 for r in shown if r.get("closeup"))
+    if closeups:
+        chips.append('<button type="button" class="chip closeup" data-group="closeup" '
+                     f'aria-pressed="false">Close-ups <span class="num">{closeups}</span></button>')
+    interactions = sum(1 for r in shown if r.get("interaction"))
+    if interactions:
+        chips.append('<button type="button" class="chip interaction" data-group="interaction" '
+                     f'aria-pressed="false">Interactions <span class="num">{interactions}</span></button>')
+    volatile = ('<span class="swatch volatile"></span> different, inside text a run writes '
+                'fresh every time (not counted by a re-mint) '
+                if any(r.get("volatile_pixels") for r in records) else "")
     legend = ('<p class="legend"><span class="swatch counted"></span> counted against the budget '
               '<span class="swatch within"></span> different, but within the per-channel tolerance '
-              '<span class="swatch same"></span> the same (expected image, faded)</p>')
+              f'{volatile}<span class="swatch same"></span> the same (expected image, faded)</p>')
     tools = (f'<div class="tools">{"".join(chips)}<input id="cmp-search" type="search" '
              'placeholder="Filter by baseline or test" aria-label="Filter comparisons"></div>')
-    cards = "".join(render_comparison(report, r) for r in records)
-    return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{tools}{legend}'
-            f'<div class="cards">{cards}</div></section>')
+    intro = render_remint_intro(records) if counts["reminted"] or kept else ""
+    if counts["minted"]:
+        intro += render_minted_intro(records)
+    cards = "".join(render_comparison(report, r) for r in shown)
+    return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{intro}{tools}{legend}'
+            f'<div class="cards">{cards}</div>{render_unchanged(kept)}</section>')
+
+
+def _remint_floor(records):
+    return next((r["remint_min_ratio"] for r in records if r.get("remint_min_ratio") is not None), None)
+
+
+def render_remint_intro(records):
+    reminted = sum(1 for r in records if r.get("status") == "reminted")
+    kept = sum(1 for r in records if r.get("status") == "unchanged")
+    floor = _remint_floor(records)
+    rule = (f"more than {percent(floor)} of its pixels changed" if floor is not None
+            else "its pixels changed")
+    forced = sum(1 for r in records if r.get("status") == "reminted" and r.get("forced"))
+    requested = (f" {forced} of them were requested by name, so they were replaced whatever "
+                 "changed." if forced else "")
+    return (f'<p class="note">A re-mint run: {reminted} baselines were replaced by what this run '
+            f"captured and {kept} were kept. A baseline is replaced when {rule}, not counting "
+            "text a run writes fresh every time (file names, ids, dates, times and the app "
+            f"version).{requested} Each re-minted card shows the baseline it replaced; the "
+            "replacements are in this run's <code>reminted-baselines</code> artifact.</p>")
+
+
+def render_minted_intro(records):
+    minted = sum(1 for r in records if r.get("status") == "minted")
+    return (f'<p class="note">{minted} baselines did not exist, so this run wrote them from what '
+            "it captured. Each Minted card shows the new baseline; nothing checked it against "
+            "an older one.</p>")
+
+
+def render_unchanged(records):
+    if not records:
+        return ""
+    rows = "".join(
+        f"<tr><td><code>{esc(r.get('baseline') or '?')}</code></td>"
+        f'<td class="num">{percent(r.get("ratio"))}</td>'
+        f'<td class="num">{percent(r.get("remint_ratio"))}</td></tr>'
+        for r in sorted(records, key=lambda r: -(r.get("remint_ratio") or 0)))
+    return (f'<details class="unchanged" id="unchanged"><summary>{len(records)} baselines '
+            "kept as committed</summary><div class=\"table-wrap\"><table><thead><tr>"
+            '<th>Baseline</th><th class="num">Pixels changed</th>'
+            '<th class="num">Not counting volatile text</th></tr></thead>'
+            f"<tbody>{rows}</tbody></table></div></details>")
 
 
 def render_comparison(report, record):
@@ -780,12 +1053,44 @@ def render_comparison(report, record):
     ratio = record.get("ratio")
 
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
+    if record.get("closeup"):
+        head.append(badge("closeup", "close-up"))
+    meta = record.get("interaction")
+    if isinstance(meta, dict):
+        head.append(badge("interaction", f"{meta.get('step')}, {meta.get('phase')}"))
     test = XDIST_GROUP.sub("", nodeid)
     test_bits = f'<span class="test-id">{esc(test)}</span>' if test else ""
     if record.get("test_status") in ("failed", "error"):
         test_bits += " " + badge("failed", "test failed")
+    captions = (("expected", "Expected"), ("created", "Created"), ("diff", "Difference"))
 
-    if ratio is not None and budget:
+    if status == "reminted":
+        captions = (("expected", "Committed baseline"), ("created", "Re-minted"),
+                    ("diff", "Difference"))
+        recapture = record.get("recapture_ratio")
+        floor = record.get("remint_min_ratio") or 0
+        verdict = (f"<strong>{percent(ratio)}</strong> of pixels changed from the committed "
+                   f"baseline by more than {esc(threshold)} per channel, "
+                   f"<strong>{percent(record.get('remint_ratio'))}</strong> not counting "
+                   "volatile text.")
+        if recapture is not None:
+            verdict += f" A second capture right after moved {percent(recapture)}."
+            if recapture > floor:
+                head.append(badge("capture", "moved on recapture"))
+        if ratio is not None and budget and ratio > budget:
+            head.append(badge("over", "over the budget until committed"))
+        if record.get("forced"):
+            head.append(badge("reminted", "requested"))
+        meter = ""
+    elif status == "minted":
+        # The new baseline, and a second capture compared with it.
+        captions = (("expected", "New baseline"), ("created", "Captured again"),
+                    ("diff", "Difference"))
+        verdict = (f"No baseline existed, so this capture became one. A second capture right "
+                   f"after differs from it by <strong>{percent(ratio)}</strong> (more than "
+                   f"{esc(threshold)} per channel); budget <strong>{percent(budget)}</strong>.")
+        meter = ""
+    elif ratio is not None and budget:
         verdict = (f"<strong>{percent(ratio)}</strong> of pixels differ by more than {esc(threshold)} "
                    f"per channel; budget <strong>{percent(budget)}</strong>.")
         share = min(ratio / budget, 1.0)
@@ -812,7 +1117,7 @@ def render_comparison(report, record):
     error = f'<pre class="message">{esc(record["error"])}</pre>' if record.get("error") else ""
 
     figures = []
-    for kind, caption in (("expected", "Expected"), ("created", "Created"), ("diff", "Difference")):
+    for kind, caption in captions:
         path = record["images"].get(kind)
         uri = report.images.get(path) if path else None
         full = f"{caption}: {baseline}"
@@ -829,7 +1134,9 @@ def render_comparison(report, record):
                            f"<figcaption>{caption}</figcaption></figure>")
     search = f"{baseline} {test}".lower()
     return (f'<article class="card cmp" id="{esc(record.get("anchor") or "")}" '
-            f'data-group="{group}" data-search="{esc(search)}">'
+            f'data-group="{group}" data-closeup="{"1" if record.get("closeup") else ""}" '
+            f'data-interaction="{"1" if record.get("interaction") else ""}" '
+            f'data-search="{esc(search)}">'
             f'<header class="card-head">{"".join(head)}</header>'
             f'<p class="test">{test_bits}</p>'
             f'<p class="verdict"><span>{verdict}</span>{meter}</p>'
@@ -864,9 +1171,15 @@ def render_summary(report):
         else:
             lines.append(f"| {cell(suite.label)} | {word} | | | | |")
     counts = Counter(COMPARISON_GROUP.get(r.get("status"), "within") for r in report.comparisons)
+    remint = (f" Re-mint: {counts['reminted']} baselines replaced, {counts['unchanged']} kept."
+              if counts["reminted"] or counts["unchanged"] else "")
+    if counts["minted"]:
+        remint += f" Minted: {counts['minted']} new baselines."
+    if report.pairs:
+        remint += f" Interaction pairs: {len(report.pairs)} steps."
     lines += ["", f"Screenshot comparisons: {len(report.comparisons)} recorded, "
               f"{counts['over']} over budget, {counts['missing']} without a baseline, "
-              f"{counts['capture']} capture failures."]
+              f"{counts['capture']} capture failures.{remint}"]
     return "\n".join(lines) + "\n"
 
 
@@ -900,7 +1213,8 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.passed,.badge.success,.badge.within{color:var(--pass)}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
-.badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed{color:var(--skip)}
+.badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
+.badge.reminted,.badge.minted,.badge.closeup,.badge.interaction{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}
@@ -924,6 +1238,8 @@ border-radius:6px;background:var(--panel);color:var(--text)}
 .legend{color:var(--muted);font-size:12px;display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center}
 .swatch{display:inline-block;width:12px;height:12px;border:1px solid var(--line);vertical-align:-2px}
 .swatch.counted{background:#ff0000}.swatch.within{background:#ffbe3c}.swatch.same{background:#d9d9d9}
+.swatch.volatile{background:#4682ff}
+details.unchanged{margin:14px 0}
 .cards{display:flex;flex-direction:column;gap:14px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
 content-visibility:auto;contain-intrinsic-size:auto 520px}
@@ -940,6 +1256,8 @@ border:1px solid var(--line);overflow:hidden;vertical-align:middle}
 .meter-label,.facts{color:var(--muted);font-size:12px}
 .trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
 .trio figure{margin:0;min-width:0}
+.pair-row{border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.pair-row h4 .muted{font-weight:400}
 figcaption{font-size:12px;color:var(--muted);margin-top:3px;text-align:center}
 .shot{display:block;width:100%;padding:0;border:1px solid var(--line);background:var(--code);cursor:zoom-in}
 .shot img{display:block;width:100%;height:auto;max-height:70vh;object-fit:contain}
@@ -971,8 +1289,10 @@ JS = """
   function filter() {
     const q = ((search && search.value) || '').trim().toLowerCase();
     for (const card of cards) {
-      card.hidden = !((group === 'all' || card.dataset.group === group) &&
-                      (!q || card.dataset.search.includes(q)));
+      const inGroup = group === 'all' || card.dataset.group === group ||
+                      (group === 'closeup' && card.dataset.closeup === '1') ||
+                      (group === 'interaction' && card.dataset.interaction === '1');
+      card.hidden = !(inGroup && (!q || card.dataset.search.includes(q)));
     }
   }
   for (const chip of chips) {
@@ -1046,6 +1366,8 @@ def parse_args(argv=None):
     parser.add_argument("--failures", metavar="DIR")
     parser.add_argument("--jobs", metavar="PATH", help="the jobs API response for this run attempt")
     parser.add_argument("--job-name", help="which job in --jobs is this one (default: $GITHUB_JOB)")
+    parser.add_argument("--all-jobs", action="store_true",
+                        help="report on every job in --jobs, not only this one")
     parser.add_argument("--out", required=True, metavar="PATH")
     parser.add_argument("--summary", metavar="PATH", help="also write a Markdown summary here")
     parser.add_argument("--max-image-mb", type=int, default=150,

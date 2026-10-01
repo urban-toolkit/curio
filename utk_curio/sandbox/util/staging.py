@@ -32,6 +32,8 @@ from pathlib import Path
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 from utk_curio.sandbox.util import codec
 from utk_curio.sandbox.util.parsers import (
+    load_shared_output_file,
+    save_to_duckdb,
     _json_artifact_rel_path,
     _make_id,
     _read_json_artifact,
@@ -100,7 +102,19 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
     not collide. Recurses for container kinds, extending the prefix as it goes.
     """
     scratch_dir = Path(scratch_dir)
-    kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
+    try:
+        kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
+    except Exception as store_error:
+        # The rule parsers.load_artifact applies in-process (#407): a project
+        # output the store cannot serve to this session is read from the copy
+        # the project load hydrated. Staging works from a store row, so that
+        # value is stored for this session and staged like any other.
+        try:
+            value = load_shared_output_file(art_id)
+        except KeyError:
+            raise store_error
+        adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
 
     if kind == "null":
         return {"kind": "null"}

@@ -46,6 +46,8 @@ def dirs(tmp_path, monkeypatch):
     expected.mkdir()
     monkeypatch.setattr(e2e_utils, "WORKFLOW_SCREENSHOT_EXPECTED_DIR", str(expected))
     monkeypatch.setattr(e2e_utils, "MINT_BASELINES", False)
+    monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", False)
+    monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ())
     monkeypatch.setenv(comparisons.DIR_ENV, str(compare))
     monkeypatch.setattr(comparisons, "current_nodeid", NODEID)
     return expected, compare
@@ -128,7 +130,7 @@ def test_the_backdrop_is_the_expected_image_faded():
 
 def test_a_missing_baseline_records_what_would_have_been_minted(dirs, monkeypatch):
     expected, compare = dirs
-    with pytest.raises(AssertionError, match="--mint-baselines"):
+    with pytest.raises(AssertionError, match="remint=true"):
         _save(monkeypatch, lambda page: _white(paint=3))
 
     [(folder, record)] = _records(compare)
@@ -163,6 +165,190 @@ def test_a_minted_baseline_is_recorded_as_minted(dirs, monkeypatch):
 
     [(_, record)] = _records(compare)
     assert record["status"] == "minted"
+
+
+def _remint_on(monkeypatch, *captures):
+    monkeypatch.setattr(e2e_utils, "REMINT_BASELINES", True)
+    monkeypatch.setattr(e2e_utils, "_wait_for_webfont", lambda page: True)
+    taken = list(captures)
+    return lambda page: taken.pop(0)
+
+
+def test_a_reminted_baseline_is_recorded_with_the_one_it_replaced(dirs, monkeypatch):
+    expected, compare = dirs
+    baseline = _baseline(expected, _white(paint=1))
+    old_bytes = baseline.read_bytes()
+    new = _white(paint=30)
+    _save(monkeypatch, _remint_on(monkeypatch, new, new.copy()))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "reminted"
+    # Old against new, which is what the review looks at: 29 pixels changed.
+    assert (record["mismatched"], record["ratio"]) == (29, 0.29)
+    assert (record["remint_ratio"], record["recapture_ratio"]) == (0.29, 0.0)
+    assert record["remint_min_ratio"] == e2e_utils.REMINT_MIN_RATIO
+    assert record["volatile_pixels"] == 0
+    # The baseline as it was, byte for byte, although the file now holds the new one.
+    assert (folder / "expected.png").read_bytes() == old_bytes
+    assert baseline.read_bytes() != old_bytes
+    assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+
+
+def test_a_baseline_named_by_force_is_recorded_as_requested(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected, _white(paint=1))
+    monkeypatch.setattr(e2e_utils, "REMINT_FORCE", ("scene_step",))
+    same = _white(paint=1)
+    _save(monkeypatch, _remint_on(monkeypatch, same, same.copy()))
+
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["forced"], record["ratio"]) == ("reminted", True, 0.0)
+
+
+def test_a_kept_baseline_is_recorded_as_unchanged(dirs, monkeypatch):
+    expected, compare = dirs
+    baseline = _baseline(expected, _white(paint=1))
+    before = baseline.read_bytes()
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=1)))
+
+    [(_, record)] = _records(compare)
+    assert record["status"] == "unchanged"
+    assert (record["ratio"], record["remint_ratio"]) == (0.0, 0.0)
+    assert "recapture_ratio" not in record
+    assert baseline.read_bytes() == before
+
+
+def test_volatile_text_is_drawn_blue_and_not_counted_by_a_remint(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected, _white())
+    # The first row changed, all of it inside a volatile text box.
+    monkeypatch.setattr(e2e_utils, "_volatile_boxes", lambda page, clip: [(0, 0, 10, 0.5)])
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=10)))
+
+    [(folder, record)] = _records(compare)
+    assert record["status"] == "unchanged"
+    assert (record["mismatched"], record["volatile_pixels"], record["remint_ratio"]) == (10, 10, 0.0)
+    diff = Image.open(folder / "diff.png").convert("RGB")
+    assert diff.getpixel((0, 0)) == comparisons.VOLATILE
+    assert diff.getpixel((5, 5)) == (255, 255, 255)
+
+
+def test_an_ordinary_comparison_records_no_remint_fields(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected)
+    _save(monkeypatch, lambda page: _white(paint=1))
+    [(_, record)] = _records(compare)
+    assert not {"remint_ratio", "remint_min_ratio", "recapture_ratio", "volatile_pixels",
+                "closeup", "interaction"} & set(record)
+
+
+def test_a_close_up_says_so_in_its_record(dirs, monkeypatch):
+    expected, compare = dirs
+    _baseline(expected)
+    _save(monkeypatch, lambda page: _white(paint=1), closeup=True)
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("passed", True)
+
+
+class _PointerPage(_StubPage):
+    viewport_size = {"width": 1280, "height": 720}
+
+    class mouse:  # noqa: N801 - stands in for Page.mouse
+        @staticmethod
+        def move(x, y):
+            pass
+
+
+def test_a_node_close_up_counts_a_pale_blank_that_a_full_page_does_not(dirs, monkeypatch):
+    expected, compare = dirs
+    # A pale map background; the capture is the node's own gray, 10 per channel off.
+    (expected / "screenshot_scene_step.png").parent.mkdir(exist_ok=True)
+    Image.new("RGB", (10, 10), (232, 239, 242)).save(expected / "screenshot_scene_step.png")
+    blank = Image.new("RGB", (10, 10), (242, 242, 242))
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: blank)
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    with pytest.raises(AssertionError, match=r"100/100 pixels differ"):
+        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+    [(_, record)] = _records(compare)
+    assert (record["pixel_threshold"], record["closeup"]) == (e2e_utils.CLOSEUP_PIXEL_THRESHOLD, True)
+    assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
+
+    # The same pair at the full-page tolerance passes: nothing is counted.
+    _save(monkeypatch, lambda page: blank)
+
+
+def test_a_node_close_up_fails_a_blank_that_a_full_page_budget_lets_through(dirs, monkeypatch):
+    expected, compare = dirs
+    # A plot panel that lost its marks: 9 of 100 pixels, under 10%, over 2%.
+    _baseline(expected, _white(paint=9))
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: _white())
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    with pytest.raises(AssertionError, match=r"9/100 pixels differ \(9\.00%\), allowed 2\.00%"):
+        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+    [(_, record)] = _records(compare)
+    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
+
+    # The same pair against the full-page budget passes.
+    _save(monkeypatch, lambda page: _white())
+
+
+INTERACTION = {"workflow": "scene.json", "step": "bar-hover", "gesture": "hover",
+               "phase": "after", "role": "target", "node": "n1", "source": "n2", "target": "n1"}
+
+
+class _HeldPointerPage(_StubPage):
+    """A page whose pointer must not move: a held hover is the subject."""
+
+    class mouse:  # noqa: N801 - stands in for Page.mouse
+        @staticmethod
+        def move(x, y):
+            raise AssertionError("the pointer moved, which would let go of a hover")
+
+
+def test_an_interaction_frame_keeps_the_pointer_and_the_framing(dirs, monkeypatch):
+    expected, compare = dirs
+    (expected / "screenshot_scene_step.png").parent.mkdir(exist_ok=True)
+    _white().save(expected / "screenshot_scene_step.png")
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda page, selector: _white())
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
+
+    def refit(page, **kw):
+        raise AssertionError("the canvas was refitted under a held pointer")
+
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", refit)
+    monkeypatch.setattr(e2e_utils, "dismiss_toasts", refit)
+    e2e_utils.save_interaction_frame(_HeldPointerPage(), "scene.json", "n1",
+                                     test_name="step", interaction=INTERACTION)
+
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["interaction"]) == ("passed", INTERACTION)
+    assert record["pixel_threshold"] == e2e_utils.CLOSEUP_PIXEL_THRESHOLD
+    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
+    assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
+    assert "closeup" not in record
+
+
+def test_a_missing_or_kept_interaction_frame_keeps_its_place_in_the_pair(dirs, monkeypatch):
+    expected, compare = dirs
+    with pytest.raises(AssertionError, match="remint=true"):
+        _save(monkeypatch, lambda page: _white(paint=1), interaction=INTERACTION)
+    _baseline(expected, _white(paint=1))
+    _save(monkeypatch, _remint_on(monkeypatch, _white(paint=1)), interaction=INTERACTION)
+    records = [record for _, record in _records(compare)]
+    assert sorted(r["status"] for r in records) == ["missing", "unchanged"]
+    assert all(r["interaction"] == INTERACTION for r in records)
+
+
+def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
+    _, compare = dirs
+    with pytest.raises(AssertionError, match="remint=true"):
+        _save(monkeypatch, lambda page: _white(paint=1), closeup=True)
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("missing", True)
 
 
 def test_nothing_is_recorded_when_it_is_off(dirs, monkeypatch):

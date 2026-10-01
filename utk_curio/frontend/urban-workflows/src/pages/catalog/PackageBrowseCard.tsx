@@ -3,6 +3,7 @@ import { PackagePayload, primaryCategory } from "../../services/packages";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import styles from "./PackageBrowseCard.module.css";
+import { countLabel } from "../../utils/countLabel";
 
 /**
  * The card's colour is its node category — the same palette the canvas paints a
@@ -95,7 +96,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
         {/* See DataCatalogBrowseCard: aims the #333 baseline at the claim. */}
         <div className={browseStyles.tagRow} data-curio-tag-row="true">
           <span className={browseStyles.tag} data-curio-tag-chip="true">
-            {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
+            {countLabel(pkg.templates.length, "node")}
           </span>
           <span className={browseStyles.tag} data-curio-tag-chip="true">{cat}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (
@@ -111,7 +112,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
 
       <div className={browseStyles.cardMeta}>
         <span className={browseStyles.metaLeft}>
-          {pkg.templates.length} templates · {pkg.packageId}
+          {countLabel(pkg.templates.length, "template")} · {pkg.packageId}
         </span>
         <span className={browseStyles.metaRight}>{relativeFromMs(pkg.createdAtMs)}</span>
       </div>

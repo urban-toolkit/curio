@@ -1,8 +1,7 @@
 import React from "react";
 import ModalShell from "./ModalShell";
 import content from "./modal-content.module.css";
-import { AccessLevelType, NodeType } from "../constants";
-import { ConnectionValidator } from "../ConnectionValidator";
+import { AccessLevelType } from "../constants";
 import { getNodeDescriptor } from "../registry";
 import { NodeTemplateId } from "../registry/types";
 
@@ -16,6 +15,37 @@ type DescriptionModalProps = {
     handleClose: any;
     custom?: boolean;
 };
+
+/**
+ * The modal's lines about one side's ports.
+ *
+ * A kind with one port reads as it always has: its cardinality, then the types
+ * it takes. A kind with several says how many there are and lists each one's
+ * types, so Spatial Join's two inputs do not read as "Input number: 1" and one
+ * input taking GEODATAFRAME twice (#528).
+ */
+export function describePorts(
+    ports: readonly { cardinality?: string; types: readonly string[] }[],
+    side: "Input" | "Output",
+): string[] {
+    if (ports.length === 0) return [`${side} number: N/A`];
+    if (ports.length === 1) {
+        const [port] = ports;
+        const lines = [`${side} number: ${port.cardinality ?? "1"}`];
+        if (port.types.length > 0) {
+            lines.push(`Supported ${side.toLowerCase()} types: ${port.types.join(", ")}`);
+        }
+        return lines;
+    }
+    return [
+        `${side} number: ${ports.length}`,
+        ...ports.map((port, index) => {
+            const connections =
+                port.cardinality && port.cardinality !== "1" ? ` (${port.cardinality})` : "";
+            return `${side} ${index + 1}${connections}: ${port.types.join(", ")}`;
+        }),
+    ];
+}
 
 function DescriptionModal({
     nodeId,
@@ -31,29 +61,10 @@ function DescriptionModal({
 
     const getTypeDescription = (nodeType: NodeTemplateId) => {
         const descriptor = getNodeDescriptor(nodeType);
-        let linesText: string[] = [];
-
-        const inputCardinality = descriptor.inputPorts.length > 0
-            ? descriptor.inputPorts[0].cardinality ?? '1'
-            : 'N/A';
-        linesText.push("Input number: " + inputCardinality);
-
-        if (ConnectionValidator._inputTypesSupported[nodeType]?.length > 0)
-            linesText.push(
-                "Supported input types: " +
-                    ConnectionValidator._inputTypesSupported[nodeType].join(", ")
-            );
-
-        const outputCardinality = descriptor.outputPorts.length > 0
-            ? descriptor.outputPorts[0].cardinality ?? '1'
-            : 'N/A';
-        linesText.push("Output number: " + outputCardinality);
-
-        if (ConnectionValidator._outputTypesSupported[nodeType]?.length > 0)
-            linesText.push(
-                "Supported output types: " +
-                    ConnectionValidator._outputTypesSupported[nodeType].join(", ")
-            );
+        let linesText: string[] = [
+            ...describePorts(descriptor.inputPorts, "Input"),
+            ...describePorts(descriptor.outputPorts, "Output"),
+        ];
 
         if (descriptor.hasCode) {
             linesText.push("Coding: Python");

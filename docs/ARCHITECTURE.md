@@ -642,15 +642,15 @@ default.
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
 >
-> - `test-gpu` runs `tests/test_isolation_linux.py` on the Linux runner: the
+> - `unit` runs `tests/test_isolation_linux.py` in the sandbox suite on Linux: the
 >   fork, the seccomp filter (socket, connect and ptrace denied), the rlimits,
 >   the deadline kill, session scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
-> - `test-gpu-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
+> - `test-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
 >   the Python-node workflows against it. This is where *ordinary nodes still
 >   work* is demonstrated. It asserts the stack actually came up isolated
 >   before trusting the result.
-> - `test-gpu-exec-user` boots a third stack with isolation and the
+> - `test-exec-user` boots a third stack with isolation and the
 >   `curio-exec` account, the same shape `docker-compose.deploy.yml` ships,
 >   and asserts the **filesystem** half over the sandbox's HTTP API
 >   (`tests/live/test_exec_user_boundary.py`). This is the only job whose

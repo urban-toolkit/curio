@@ -114,6 +114,33 @@ describe("fetchData", () => {
         expect(warn).toHaveBeenCalled();
     });
 
+    it("falls back, loudly, when the stream ends before its announced rows", async () => {
+        // The Arrow route streams batch by batch; a cut-off stream still
+        // decodes, just shorter. X-Curio-Rows is what gives it away.
+        const cut = arrowResponse();
+        cut.headers.set("X-Curio-Rows", "5");
+        const fetchMock = jest
+            .fn()
+            .mockResolvedValueOnce(cut)
+            .mockResolvedValueOnce(jsonResponse());
+        (global as any).fetch = fetchMock;
+
+        expect(await fetchData("a1")).toEqual(JSON_ENVELOPE);
+        expect(warn).toHaveBeenCalled();
+    });
+
+    it("keeps a stream whose rows match what it announced", async () => {
+        const whole = arrowResponse();
+        whole.headers.set("X-Curio-Rows", "2");
+        const fetchMock = jest.fn().mockResolvedValue(whole);
+        (global as any).fetch = fetchMock;
+
+        const result = await fetchData("a1");
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(Array.from(result.data.n)).toEqual([1, 2]);
+    });
+
     it("still throws when the JSON fallback itself fails", async () => {
         const fetchMock = jest
             .fn()

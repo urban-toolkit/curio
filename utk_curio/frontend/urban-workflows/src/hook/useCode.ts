@@ -60,6 +60,10 @@ type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
+    // #407: a node whose saved output a project load restored mounts as having
+    // run: the output it shows, and the source that produced it.
+    output?: { code: string; content: string };
+    executedCode?: string;
 };
 
 /** What a load built, so a caller can hydrate against it. */
@@ -70,7 +74,12 @@ export interface LoadedGraph {
 
 interface IUseCode {
     createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
-    loadTrill: (trill: any, suggestionType?: string) => LoadedGraph;
+    loadTrill: (
+        trill: any,
+        suggestionType?: string,
+        fromProvenance?: boolean,
+        restoredOutputs?: Record<string, string>,
+    ) => LoadedGraph;
 }
 
 export function useCode(): IUseCode {
@@ -122,8 +131,18 @@ export function useCode(): IUseCode {
      * nodes downstream of its producer, and the only reliable statement of who
      * those are, at this moment, is the edge list this function just built:
      * React Flow's own store is written from an effect and is a render behind.
+     *
+     * `restoredOutputs` maps a node id to the saved output a project load
+     * restored for it. Those nodes are built as having run, from their current
+     * code, so a downstream play reuses them instead of re-running the chain
+     * (#407); without it every node counted as never run.
      */
-    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean): LoadedGraph => {
+    const loadTrill = (
+        trill: any,
+        suggestionType?: string,
+        fromProvenance?: boolean,
+        restoredOutputs?: Record<string, string>,
+    ): LoadedGraph => {
 
         let nodes = [];
         let edges = [];
@@ -231,6 +250,14 @@ export function useCode(): IUseCode {
 
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
+
+            const restored = restoredOutputs?.[node.id];
+            if (restored !== undefined) {
+                // The same content a run shows (CodeEditor), and the source
+                // playNodesUpTo compares against to tell a valid result.
+                nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
+                nodeMeta.executedCode = node.content;
+            }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
 
@@ -352,6 +379,8 @@ export function useCode(): IUseCode {
             comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
+            output = undefined,
+            executedCode = undefined,
         } = options;
 
         const node: Node = {
@@ -405,6 +434,8 @@ export function useCode(): IUseCode {
                 outputCallback,
                 interactionsCallback,
                 propagationCallback: applyNewPropagation,
+                ...(output !== undefined ? { output } : {}),
+                ...(executedCode !== undefined ? { executedCode } : {}),
             },
         };
 

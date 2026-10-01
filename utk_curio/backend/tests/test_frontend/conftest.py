@@ -4,7 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
-from . import comparisons, diagnostics
+from . import comparisons, diagnostics, runner_split
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
 
@@ -239,8 +239,80 @@ def pytest_itemcollected(item):
     """
     if item.get_closest_marker("xdist_group") is None:
         module = getattr(item, "module", None)
-        if module is not None:
+        walk = getattr(getattr(item, "callspec", None), "params", {}).get("walk")
+        if walk is not None:
+            # One group per walkthrough scene. Each opens its own page and
+            # user, so they are independent, and as one module group they were
+            # the floor of the whole parallel run: 31 scenes, 8.8 minutes, on
+            # one worker.
+            item.add_marker(pytest.mark.xdist_group(f"walk-{walk.slug}"))
+        elif module is not None:
             item.add_marker(pytest.mark.xdist_group(module.__name__.rsplit(".", 1)[-1]))
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "webgpu: the browser runs WebGPU, so CI runs it on the utk GPU runner "
+        "(set automatically, see runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "needs_parallel: needs the sibling backends of --parallel, which only "
+        "the utk job runs (runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "only_workflows(*basenames): a test_workflows test deselected for every "
+        "other workflow",
+    )
+    config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
+
+
+class _OnlyWorkflows:
+    """Deselects an ``only_workflows`` test for every workflow it does not name.
+
+    After pytest has put the items in order, never by parametrizing the test
+    over fewer workflows: pytest orders a test with fewer parameters than its
+    class's others ahead of them, so test_node_interaction ran its gestures
+    before test_node_type_and_content looked at the nodes unrun (CI run
+    36794470794). Selecting the test alone still loads only those workflows.
+    """
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_collection_modifyitems(self, config, items):
+        kept, dropped = [], []
+        for item in items:
+            only = item.get_closest_marker("only_workflows")
+            params = getattr(getattr(item, "callspec", None), "params", {}) or {}
+            workflow = params.get("loaded_workflow")
+            if only is not None and workflow is not None and os.path.basename(str(workflow)) not in only.args:
+                dropped.append(item)
+            else:
+                kept.append(item)
+        if dropped:
+            config.hook.pytest_deselected(items=dropped)
+            items[:] = kept
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark the WebGPU tests, and keep only this runner's share of the suite.
+
+    Marking always happens, so ``-m webgpu`` / ``-m "not webgpu"`` work in any
+    run. Deselection only happens when CI asks for it through
+    ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_PART`` (runner_split.py); a local run
+    with neither set runs everything, as before.
+    """
+    for item in items:
+        if runner_split.item_needs_webgpu(item):
+            item.add_marker(pytest.mark.webgpu)
+    runner, shard = runner_split.from_environment()
+    if not runner and not shard:
+        return
+    kept, dropped = runner_split.select(items, runner, shard)
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept
 
 
 # ------------------------------------------------------------------ #

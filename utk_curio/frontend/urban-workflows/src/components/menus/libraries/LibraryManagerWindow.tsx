@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import styles from "./LibraryManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { packagesApi } from "../../../services/packages";
@@ -262,15 +264,12 @@ export default function LibraryManagerWindow({
         </span>
       );
     }
+    // Only the badge: the banner above the table dismisses the same status,
+    // and a second × here sat beside Remove looking like the destructive one
+    // (#518).
     return (
       <div className={styles.statusErrorInline}>
         <span title={s.message}>⚠ {s.badge ?? "Failed"}</span>
-        <button
-          type="button"
-          className={styles.statusDismiss}
-          onClick={() => dismissStatus(kind, fullSpec)}
-          title="Dismiss"
-        >×</button>
       </div>
     );
   };
@@ -352,6 +351,8 @@ export default function LibraryManagerWindow({
                     type="button"
                     className={styles.statusDismiss}
                     onClick={() => dismissStatus(s.libKind, s.spec)}
+                    title="Dismiss"
+                    aria-label="Dismiss"
                   >×</button>
                 </div>
                 <pre className={styles.logOutput}>{s.message}</pre>
@@ -424,7 +425,10 @@ export default function LibraryManagerWindow({
                             disabled={status?.kind === "installing" || status?.kind === "removing"}
                             onClick={() => void handleRemove(r.kind, fullSpec)}
                             title="Remove from your library list"
-                          >×</button>
+                            aria-label="Remove"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} />
+                          </button>
                         ) : null}
                       </td>
                     </tr>

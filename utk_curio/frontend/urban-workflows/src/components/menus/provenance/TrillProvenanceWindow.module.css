@@ -14,3 +14,10 @@
     border-radius: 4px;
     overflow: hidden;
 }
+
+/* MainCanvas.css gives every React Flow viewport `will-change: transform`,
+   for panning the dataflow canvas in Firefox. On a layer of its own Chrome
+   stops painting this graph's thin edges at some zoom levels (#504). */
+.graphDiv :global(.react-flow__viewport) {
+    will-change: auto;
+}

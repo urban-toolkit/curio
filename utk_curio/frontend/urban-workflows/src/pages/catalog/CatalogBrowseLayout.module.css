@@ -715,7 +715,17 @@
   box-shadow: -4px 0 10px rgba(0,0,0,0.09);
   display: flex;
   flex-direction: column;
+  /* The body scrolls, not the drawer: the header and the action row stay
+     where they are (#526). */
+  overflow: hidden;
+}
+
+.drawerBody {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .drawerHeader {

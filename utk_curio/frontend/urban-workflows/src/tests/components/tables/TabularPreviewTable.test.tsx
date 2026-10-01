@@ -88,6 +88,31 @@ describe('TabularPreviewTable still renders its content', () => {
     expect(container.querySelectorAll('tbody tr')).toHaveLength(10);
   });
 
+  test('a table showing fewer rows than it has says so (#517)', () => {
+    const { container, getByText } = render(
+      <TabularPreviewTable rows={wideRows(3, 150)} rowKeyPrefix="t" />,
+    );
+    expect(getByText('Showing first 100 of 150 rows')).toBeInTheDocument();
+    // Beside the table, not a row of it: consumers count the rows.
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(100);
+  });
+
+  test('a preview the server cut says how many rows the whole table has', () => {
+    const { getByText } = render(
+      <TabularPreviewTable rows={wideRows(3, 100)} totalRows={5000} rowKeyPrefix="t" />,
+    );
+    expect(getByText('Showing first 100 of 5,000 rows')).toBeInTheDocument();
+  });
+
+  test('a table shown whole says nothing about rows', () => {
+    const { queryByTestId, rerender } = render(
+      <TabularPreviewTable rows={wideRows(3, 3)} totalRows={3} rowKeyPrefix="t" />,
+    );
+    expect(queryByTestId('tabular-preview-row-notice')).toBeNull();
+    rerender(<TabularPreviewTable rows={wideRows(3, 3)} rowKeyPrefix="t" />);
+    expect(queryByTestId('tabular-preview-row-notice')).toBeNull();
+  });
+
   test('an empty frame renders no headers and does not throw', () => {
     const { container } = render(<TabularPreviewTable rows={[]} rowKeyPrefix="t" />);
     expect(container.querySelectorAll('thead th')).toHaveLength(0);

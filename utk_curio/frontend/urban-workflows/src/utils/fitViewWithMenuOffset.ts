@@ -14,10 +14,19 @@ import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPalette
 // with a wide panel open, a framed node overflowed off the right edge. Sizing to
 // the visible width is what actually makes the node fit on screen.
 //
+// The menu bar is the same kind of overlay along the top: `position: fixed` over
+// the pane, 65 px tall. Fitted against the full pane height, a dataflow whose
+// height sets the zoom got about 60 px of top margin, and the top node's title
+// bar sat under the bar (#493). So the height is measured the way the width is:
+// the fit uses the pane below the bar and is shifted down by it.
+//
 // (The very first approach — rf.fitView() then a second rf.setViewport — was
 // also broken for animated fits: fitView starts an async transition and returns
 // immediately, so the viewport read back was the pre-animation value and the
 // instant setViewport cancelled the fit, shifting the canvas instead of framing.)
+
+/** The attribute UpMenu puts on the canvas menu bar. */
+export const MENU_BAR_ATTR = "data-curio-menu-bar";
 
 const FALLBACK_MIN_ZOOM = 0.05;
 const FALLBACK_MAX_ZOOM = 2;
@@ -78,20 +87,30 @@ export function fitViewWithMenuOffset(
     }
     const visibleWidth = Math.max(1, paneRect.width - occluded);
 
+    // Height the menu bar covers at the top of the pane, measured the same way.
+    const bar = document.querySelector<HTMLElement>(`[${MENU_BAR_ATTR}]`);
+    let occludedTop = 0;
+    if (bar) {
+        const raw = bar.getBoundingClientRect().bottom - paneRect.top;
+        if (raw > 0) occludedTop = Math.min(raw, paneRect.height - 1);
+    }
+    const visibleHeight = Math.max(1, paneRect.height - occludedTop);
+
     const bounds = getNodesBounds(targetNodes);
     const { x, y, zoom } = getViewportForBounds(
         bounds,
         visibleWidth,
-        paneRect.height,
+        visibleHeight,
         minZoom,
         maxZoom,
         padding,
     );
 
-    // getViewportForBounds centered the content within [0, visibleWidth]; shift it
-    // right past the dock so it centers in the strip [occluded, paneRect.width].
+    // getViewportForBounds centered the content within the visible box at the
+    // origin; shift it right past the dock and down past the bar so it centers
+    // in [occluded, paneRect.width] x [occludedTop, paneRect.height].
     rf.setViewport(
-        { x: x + occluded, y, zoom },
+        { x: x + occluded, y: y + occludedTop, zoom },
         options?.duration ? { duration: options.duration } : undefined,
     );
     return true;

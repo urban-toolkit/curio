@@ -416,12 +416,12 @@ def _resolve_outputs_elem(elem, session_id=None):
     Distinguishing on the keys keeps refs loading while letting inline values flow
     through instead of raising KeyError('path').
     """
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseInput
+    from utk_curio.sandbox.util.parsers import load_artifact, parseInput
     if isinstance(elem, str):
-        return load_from_duckdb(elem, session_id=session_id)
+        return load_artifact(elem, session_id=session_id)
     if isinstance(elem, dict):
         if 'path' in elem:
-            return load_from_duckdb(elem['path'], session_id=session_id)
+            return load_artifact(elem['path'], session_id=session_id)
         if 'dataType' in elem and 'data' in elem:
             return parseInput(elem)
     return elem
@@ -496,7 +496,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     import contextlib
     import traceback
 
-    load_from_duckdb = _globals_cache['load_from_duckdb']
+    from utk_curio.sandbox.util.parsers import load_artifact
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
@@ -545,7 +545,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     file_path_list = eval(file_path, {'__builtins__': {}})
                     input_data = [_resolve_outputs_elem(elem, session_id=session_id) for elem in file_path_list]
                 elif file_path:
-                    input_data = load_from_duckdb(file_path, session_id=session_id)
+                    # The store, or the output a project load hydrated (#407).
+                    input_data = load_artifact(file_path, session_id=session_id)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
                 t_load = time.perf_counter()
 
@@ -868,7 +869,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     import traceback
 
     from utk_curio.sandbox.util.parsers import (
-        load_from_duckdb, save_to_duckdb, detect_kind, save_dataset_parquet,
+        load_artifact, save_to_duckdb, detect_kind, save_dataset_parquet,
     )
 
     t0 = time.perf_counter()
@@ -887,7 +888,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             input_data = [_resolve_outputs_elem(elem, session_id=session_id)
                           for elem in file_path_list]
         elif file_path:
-            input_data = load_from_duckdb(file_path, session_id=session_id)
+            input_data = load_artifact(file_path, session_id=session_id)
         input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
 
         # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an

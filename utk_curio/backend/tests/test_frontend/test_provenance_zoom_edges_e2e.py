@@ -3,29 +3,23 @@
 Reported symptom: open Provenance, zoom in, and the edges between the version
 cards disappear while the cards themselves stay put.
 
-**This test does not currently reproduce the report.** Driven headlessly in
-Chromium, by the wheel and by the zoom control, all the way to React Flow's
-maxZoom, the edges stay present and stay painted. It is kept because it does
-guard a real way the edges CAN vanish: ``TrillProvenanceWindow``'s
-``ProvenanceEdge`` returns ``null`` the moment a node measurement is missing
-(``if (!src?.width || !src?.height || ...) return null``), so anything that
-disturbs node measurement silently removes every edge - and nothing else
-covered that.
-
-What it cannot see, and what the report may be: a COMPOSITOR failure.
-``components/MainCanvas.css`` is imported once for the whole app and styles
-``.react-flow__viewport`` unscoped, so it reaches every React Flow in the app -
-including this one, nested in a modal:
+The report was a COMPOSITOR failure (#504). ``components/MainCanvas.css`` is
+imported once for the whole app and styled ``.react-flow__viewport`` unscoped:
 
     .react-flow__viewport { will-change: transform; }
 
-That promotes the viewport to its own GPU layer (the comment beside it says it
-is there for Firefox). React Flow paints all edges as a single
-``<svg class="react-flow__edges">`` inside that layer while each node is its own
-DOM subtree, so if the layer fails to rasterise it is the edges that vanish and
-the cards that remain. ``getBoundingClientRect`` still reports correct boxes in
-that case, which is exactly why the assertions below cannot detect it - and why
-headless Chromium, which rasterises differently, is the wrong place to look.
+so it reached this React Flow too, nested in a modal. With the viewport on its
+own GPU layer, Chrome stopped painting the 2px edges at some zoom levels while
+the cards stayed. ``TrillProvenanceWindow.module.css`` now sets
+``will-change: auto`` on this graph's viewport (pinned in
+``src/tests/styles/provenanceEdgesLayer.test.ts``).
+
+``getBoundingClientRect`` reports correct boxes whether or not the edges are
+painted, so the assertions below cannot see that failure; the screenshots this
+test saves can. The assertions guard another way the edges can vanish:
+``ProvenanceEdge`` returns ``null`` the moment a node measurement is missing
+(``if (!src?.width || !src?.height || ...) return null``), so anything that
+disturbs node measurement silently removes every edge.
 
 Run::
 

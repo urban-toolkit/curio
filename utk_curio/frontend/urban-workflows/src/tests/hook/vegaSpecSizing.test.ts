@@ -12,7 +12,9 @@
  */
 import {
   applyContainerSizing,
+  createFlipGuard,
   isMultiViewSpec,
+  refitToContainer,
 } from "../../utils/vegaSpecSizing";
 
 describe("isMultiViewSpec", () => {
@@ -135,5 +137,117 @@ describe("applyContainerSizing hands back what it was given", () => {
   test("returns the same object, so callers can use it inline", () => {
     const spec: Record<string, unknown> = { mark: "bar" };
     expect(applyContainerSizing(spec)).toBe(spec);
+  });
+});
+
+/**
+ * #496: vega-lite reads the container's size into the width/height signals at
+ * start and on window:resize only, and `view.resize()` never re-reads it, so a
+ * chart kept its first width after a scrollbar appeared or the node was resized.
+ */
+describe("refitToContainer", () => {
+  const fakeView = () => ({ width: jest.fn(), height: jest.fn() });
+  const mount = { clientWidth: 489, clientHeight: 250 };
+
+  test("gives a container-width view the mount's current width", () => {
+    const view = fakeView();
+    refitToContainer(view, mount, applyContainerSizing({ mark: "bar", height: { step: 14 } }));
+    expect(view.width).toHaveBeenCalledWith(489);
+    expect(view.height).not.toHaveBeenCalled();
+  });
+
+  test("and a container-height view its height", () => {
+    const view = fakeView();
+    refitToContainer(view, mount, applyContainerSizing({ mark: "bar" }));
+    expect(view.width).toHaveBeenCalledWith(489);
+    expect(view.height).toHaveBeenCalledWith(250);
+  });
+
+  test("leaves a size the author declared alone", () => {
+    const view = fakeView();
+    refitToContainer(view, mount, applyContainerSizing({ mark: "bar", width: 800, height: 300 }));
+    expect(view.width).not.toHaveBeenCalled();
+    expect(view.height).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for a multi-view spec, which keeps its natural size", () => {
+    const view = fakeView();
+    refitToContainer(view, mount, applyContainerSizing({ vconcat: [{ mark: "bar" }] }));
+    expect(view.width).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for a mount that is not laid out", () => {
+    const view = fakeView();
+    refitToContainer(view, { clientWidth: 0, clientHeight: 0 }, applyContainerSizing({ mark: "bar" }));
+    expect(view.width).not.toHaveBeenCalled();
+    expect(view.height).not.toHaveBeenCalled();
+  });
+});
+
+describe("useVega re-reads the mount before every resize (#496)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path") as typeof import("path");
+  const source = fs.readFileSync(path.resolve(__dirname, "../../hook/useVega.ts"), "utf8");
+
+  test("every view.resize() follows a refitToContainer", () => {
+    // useVega cannot be rendered under jest (vega is ESM), so the wiring is
+    // read from the source: each resize call must come right after a refit.
+    const lines = source.split("\n");
+    const resizes = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /\.resize\(\)\.runAsync\(\)/.test(line));
+    expect(resizes.length).toBeGreaterThanOrEqual(2);
+    for (const { index } of resizes) {
+      expect(lines[index - 1]).toMatch(/refitToContainer\(/);
+    }
+  });
+
+  test("the resize observer checks for a scrollbar flip before it refits", () => {
+    expect(source).toMatch(/if \(!flipping\(`\$\{el\.clientWidth\}x\$\{el\.clientHeight\}`\)\) refitToContainer\(/);
+  });
+});
+
+/**
+ * #496's refit must not loop. In a browser with classic scrollbars a
+ * container-sized chart that overflowed by a few pixels flipped between two
+ * sizes every frame: the refit shrank it to the box the scrollbars left, which
+ * removed the scrollbars, which grew the box, which grew the chart.
+ */
+describe("createFlipGuard", () => {
+  test("lets new sizes through", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x300")).toBe(false);
+    expect(flipping("440x300")).toBe(false);
+  });
+
+  test("stops the A, B, A flip", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x285")).toBe(false);
+    expect(flipping("472x300")).toBe(true);
+  });
+
+  test("a repeated size is not a flip", () => {
+    const flipping = createFlipGuard();
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("472x300")).toBe(false);
+    expect(flipping("457x300")).toBe(false);
+  });
+});
+
+describe("the Vega canvas has no baseline gap (#496)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path") as typeof import("path");
+  const css = fs.readFileSync(path.resolve(__dirname, "../../components/editing/NodeEditor.css"), "utf8");
+
+  test("the output mount's canvas is a block", () => {
+    // Inline, it left a descender gap that made a container-sized chart 4 px
+    // taller than its mount, so the mount scrolled both ways.
+    expect(css).toMatch(/\.curio-vega-mount > canvas \{[^}]*display:\s*block;/);
   });
 });

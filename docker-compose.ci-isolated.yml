@@ -1,5 +1,5 @@
 # Compose override for the isolated-execution CI job
-# (.github/workflows/docker-compose.yml, job `test-gpu-isolated`).
+# (.github/workflows/docker-compose.yml, job `test-isolated`).
 #
 # Boots the same image with CURIO_ISOLATION=fork, so a real workload runs through
 # the confined path instead of in-process. The unit suite proves the boundary
@@ -59,7 +59,7 @@ services:
       # Empty, deliberately. This image contains curio-exec and the container
       # runs as root, so the launcher would otherwise discover it -- and this
       # job is the one that covers isolation WITHOUT a filesystem boundary.
-      # test-gpu-exec-user covers the other half.
+      # test-exec-user covers the other half.
       - CURIO_EXEC_USER=
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.

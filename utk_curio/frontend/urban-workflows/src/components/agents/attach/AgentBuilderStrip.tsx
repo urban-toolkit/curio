@@ -155,8 +155,8 @@ export const AgentBuilderStrip: React.FC<{
         const skipped = result.notAttempted?.length ?? 0;
         setNotice(
           skipped
-            ? `Cancelled — ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
-            : "Cancelled — all dispatched nodes finished",
+            ? `Cancelled: ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
+            : "Cancelled: all dispatched nodes finished",
         );
       }
     } catch (e) {
@@ -204,9 +204,9 @@ export const AgentBuilderStrip: React.FC<{
     try {
       const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
       if (done?.status === "paused" && done.reason?.message) {
-        setNotice(`Paused — ${done.reason.message}`);
+        setNotice(`Paused: ${done.reason.message}`);
       } else if (done?.status === "cancelled") {
-        setNotice("Simulation cancelled — everything already built stays.");
+        setNotice("Simulation cancelled; everything already built stays.");
       }
     } catch (e) {
       setErrorRemedy(remedyOf(e));
@@ -340,7 +340,7 @@ export const AgentBuilderStrip: React.FC<{
       ) : null}
       {phase === "interrupted" ? (
         <div className={styles.hint} role="status">
-          Solve was interrupted — the server stopped while it was running. Finished nodes kept
+          Solve was interrupted: the server stopped while it was running. Finished nodes kept
           their content; nothing was replayed. Retry continues from what is still pending.
         </div>
       ) : null}

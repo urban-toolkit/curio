@@ -40,6 +40,8 @@ from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
 
+from .bounded_exec import bounded_argv
+
 log = logging.getLogger(__name__)
 
 #: Hard cap on one import probe. Generous enough for a slow cold import of a
@@ -98,21 +100,14 @@ def _resolve_exec_gid(user):
         return None
 
 
-def _drops_privileges(preexec) -> bool:
-    """Whether *preexec* was built to change uid. Used by the tests."""
-    return bool(getattr(preexec, "curio_drops_privileges", False))
+def _pip_bounds() -> dict | None:
+    """The limits a pip run starts under, and the account it drops to.
 
-
-def _build_preexec():
-    """A ``preexec_fn`` bounding the pip run, dropping privileges when it can.
-
-    Returns ``None`` off POSIX, where there is no ``preexec_fn`` and no uid to
-    drop to.
+    Returns ``None`` off POSIX, where there are no rlimits and no uid to drop to.
 
     A local launch configures no execution user, which is not a failure: there
     is no lesser account to become, and refusing to install without one would
-    break every local run. The limits still apply, and the returned callable
-    records whether it drops privileges so a test can tell the two apart.
+    break every local run. The limits still apply.
     """
     if os.name != "posix":
         return None
@@ -122,35 +117,23 @@ def _build_preexec():
     user = (os.environ.get("CURIO_EXEC_USER") or "").strip()
     uid = _resolve_exec_uid(user)
     gid = _resolve_exec_gid(user)
-    limits = [
-        (resource.RLIMIT_CPU, _BUILD_CPU_SECONDS),
-        (resource.RLIMIT_FSIZE, _BUILD_MAX_FILE_BYTES),
-    ]
-
-    def _preexec():  # runs in the child, pre-exec
-        for key, value in limits:
-            try:
-                resource.setrlimit(key, (value, value))
-            except (ValueError, OSError):
-                pass
-        if uid is not None and gid is not None and os.getuid() == 0:
-            # Group first: after setuid the process can no longer change it.
-            try:
-                os.setgid(gid)
-                os.setuid(uid)
-            except OSError:
-                pass
-
-    _preexec.curio_drops_privileges = bool(
-        uid is not None and gid is not None
-    )
-    return _preexec
+    bounds: dict = {"rlimits": [
+        [resource.RLIMIT_CPU, _BUILD_CPU_SECONDS],
+        [resource.RLIMIT_FSIZE, _BUILD_MAX_FILE_BYTES],
+    ]}
+    if uid is not None and gid is not None:
+        bounds["drop"] = [uid, gid]
+    return bounds
 
 
-def _pip_child_kwargs() -> dict:
-    """Extra ``subprocess`` kwargs that harden a pip run."""
-    preexec = _build_preexec()
-    return {"preexec_fn": preexec} if preexec is not None else {}
+def _bounded(cmd: list[str]) -> list[str]:
+    """*cmd*, hardened: bounded, and unprivileged where an execution user exists.
+
+    Applied after exec by :mod:`bounded_exec` rather than in a ``preexec_fn``,
+    which can deadlock the forked child of a threaded process before exec.
+    """
+    bounds = _pip_bounds()
+    return bounded_argv(cmd, bounds) if bounds is not None else list(cmd)
 
 
 def _looks_like_no_wheel(output: str) -> bool:
@@ -780,8 +763,7 @@ def install_python_deps_to_target(
     log.info("Running %s", " ".join(cmd))
     if on_line is not None:
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            **_pip_child_kwargs(),
+            _bounded(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         last_lines: list[str] = []
         if proc.stdout is not None:
@@ -821,8 +803,7 @@ def install_python_deps_to_target(
         return InstallReport(installed=specs, skipped=[])
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
-            **_pip_child_kwargs(),
+            _bounded(cmd), capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise PipInstallError(
@@ -853,7 +834,7 @@ def _install_to_target_allowing_builds(base, specs, deps, *, on_line=None):
     dependency that has no wheel for the platform, which is a real and ordinary
     situation, not an attack.
 
-    The build inherits :func:`_pip_child_kwargs`, so it is bounded by rlimits
+    The build runs through :func:`_bounded`, so it is bounded by rlimits
     and runs as the execution user when one is configured and the backend is
     root. That is the whole of the containment: it is a uid boundary, not a
     sandbox, and it does not stop a malicious setup.py from using the network.
@@ -862,8 +843,7 @@ def _install_to_target_allowing_builds(base, specs, deps, *, on_line=None):
     log.info("Running %s", " ".join(cmd))
     if on_line is not None:
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            **_pip_child_kwargs(),
+            _bounded(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         last_lines: list[str] = []
         if proc.stdout is not None:
@@ -890,8 +870,7 @@ def _install_to_target_allowing_builds(base, specs, deps, *, on_line=None):
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
-            **_pip_child_kwargs(),
+            _bounded(cmd), capture_output=True, text=True, timeout=_PIP_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         raise PipInstallError(

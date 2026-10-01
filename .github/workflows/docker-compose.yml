@@ -85,49 +85,121 @@ on:
         description: 'Also run the multi-user stress job (~30 min on the GPU runner)'
         type: boolean
         default: false
+      # A re-mint run: e2e only, and every screenshot whose screen changed is
+      # written over its baseline. Review the frames on the run's
+      # curio-ci-report.html, then commit its reminted-baselines artifact.
+      # This is the only way baselines are made (see the test_frontend README).
+      remint:
+        description: 'Re-mint the screenshot baselines (e2e only; artifact reminted-baselines)'
+        type: boolean
+        default: false
+      remint_filter:
+        description: 'With remint: a pytest -k expression to re-mint only some tests (empty for all)'
+        type: string
+        default: ''
+      remint_force:
+        description: 'With remint: comma-separated parts of baseline names to re-mint however little they changed'
+        type: string
+        default: ''
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
 permissions:
   contents: read
 
-# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports, so
-# two jobs must never execute at once.
+# Concurrency is set on the two utk jobs, not on the run. The self-hosted
+# runner on `utk` shares one GPU and a fixed set of CI ports, so two of its jobs
+# must never execute at once; the ubuntu-latest jobs each get a fresh VM of
+# their own and share nothing, so they need no group at all. A run-wide group
+# made the whole run wait behind another run on the same ref, ubuntu-latest
+# jobs included, and an eviction threw away all of it rather than the GPU half.
 #
 # Keyed per ref, not repo-wide. A repo-wide group serialises too, but GitHub
-# keeps only ONE run pending per group, so each newly queued run evicted the
-# previously pending one: runs were cancelled having started zero jobs, twice on
-# main itself, which leaves main unverified while still looking untouched. Per
-# ref, a new push still supersedes its own branch's pending run, which is what
-# you want, without discarding anyone else's.
+# keeps only ONE job pending per group, so each newly queued one evicted the
+# previously pending one: main was left unverified while still looking
+# untouched. Per ref, a new push still supersedes its own branch's pending GPU
+# job, which is what you want, without discarding anyone else's.
 #
-# Allowing runs from different refs to be in progress at once is safe here, but
+# Letting utk jobs from different refs be in progress at once is safe here, but
 # it rests on TWO invariants. Break either and the GPU/port contention is back:
 #
 #   1. Exactly ONE registered runner (`utk-gpu`) carries the
-#      [self-hosted, linux, gpu, curio] labels all three jobs ask for, so it runs
-#      a single job at a time and GitHub queues the rest. Two runs interleave
-#      their jobs; they never execute together. (The jobs within one run cannot
-#      collide regardless, since they use distinct compose projects: curio-ci,
-#      curio-ci-iso, curio-ci-exec-user.)
-#   2. `cancel-in-progress: false`, so an in-progress run is never cancelled.
-#      Eviction can then only ever kill a run that has started zero jobs, and a
-#      job-less run holds no containers, ports or GPU handle to leak. Flip this
-#      to true to save queue time and that stops being true: a cancelled job can
-#      skip its `if: always()` teardown and strand a compose project that the
-#      next run then trips over.
-concurrency:
-  group: utk-ci-${{ github.ref }}
-  cancel-in-progress: false
+#      [self-hosted, linux, gpu, curio] labels the utk jobs (test-gpu,
+#      test-gpu-stress) ask for, so it runs a single job at a time and GitHub
+#      queues the rest. Two runs interleave their jobs; they never execute
+#      together.
+#   2. `cancel-in-progress: false`, so an in-progress job is never cancelled.
+#      Eviction can then only ever kill a job that has not started, and such a
+#      job holds no containers, ports or GPU handle to leak. Flip this to true
+#      to save queue time and that stops being true: a cancelled job can skip
+#      its `if: always()` teardown and strand a compose project that the next
+#      job then trips over.
+#
+# test-gpu-stress has a group of its own, so it and another run's pending
+# test-gpu never evict each other; the runner serialises them anyway. A
+# re-mint dispatch's test-gpu gets a group of its own too, so it and the
+# branch's ordinary run never evict each other while pending.
 
 jobs:
+  # The image every ubuntu-latest job below runs, built once per commit and
+  # pushed to GHCR under the commit's SHA. The layer cache lives in the Actions
+  # cache, so a commit that changes only source rebuilds only the layers after
+  # the source copy (see the Dockerfile's order). The utk jobs keep building
+  # their own image from the runner's warm local cache, so the GPU path never
+  # waits on this one.
+  build-image:
+    if: >-
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🏷️ Name the image
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔨 Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.name.outputs.image }}
+          cache-from: type=gha,scope=curio-image
+          cache-to: type=gha,scope=curio-image,mode=max
+
   test-gpu:
     # Runs on the self-hosted runner on `utk` (NVIDIA GPU), registered with
-    # these labels. There is no GitHub-hosted fallback: the WebGPU compute
-    # examples (06/07) require real hardware WebGPU, which a GPU-less
-    # ubuntu-latest runner cannot provide.
+    # these labels. It runs the e2e tests whose browser needs WebGPU -- the
+    # WebGPU compute examples (06/07) and every other Autark dataflow need real
+    # hardware WebGPU, which a GPU-less ubuntu-latest runner cannot provide --
+    # and nothing else: utk is one machine, so everything on it runs in series,
+    # while ubuntu-latest runs the rest of the suite on as many runners as the
+    # jobs below ask for. Which e2e test goes where is decided from the tests
+    # themselves (utk_curio/backend/tests/test_frontend/runner_split.py).
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 90
+    # The utk queue, per ref (see the note above the jobs).
+    concurrency:
+      group: utk-ci-${{ github.ref }}${{ inputs.remint && '-remint' || '' }}
+      cancel-in-progress: false
 
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
     # `utk`. Run only for push / workflow_dispatch / same-repo PRs. Fork PRs
@@ -144,13 +216,6 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
 
-    # actions: read lets the CI report page (the last steps below) list this
-    # job's steps and how each ended, through the jobs API. contents: read is
-    # restated because a job-level block replaces the workflow's.
-    permissions:
-      contents: read
-      actions: read
-
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
       # image's default CMD carries no auth flag, which means CURIO_NO_AUTH=1 --
@@ -163,12 +228,14 @@ jobs:
       # Hardware WebGPU path (see conftest.py browser_type_launch_args).
       CURIO_WEBGPU_BACKEND: hardware
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      # Only the e2e tests that need what utk has (runner_split.py).
+      CURIO_E2E_RUNNER: utk
       # autk-grammar data pools parse city-scale PBFs server-side; give the
       # data-table render a larger budget than the 30s default on this host.
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
       # Screenshot, node states and browser log of every failed e2e test
       # (tests/test_frontend/diagnostics.py), uploaded as e2e-failures.
-      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       # Trace every test and keep the failing ones, so a rare browser-side
       # failure (#318) is diagnosable from its first recurrence. "1" records DOM
       # snapshots and the action log; per-action screenshots ("full") cost far
@@ -176,8 +243,15 @@ jobs:
       CURIO_E2E_TRACE: "1"
       # Every screenshot comparison, passing or not, with its expected, created
       # and difference images (tests/test_frontend/comparisons.py), for the CI
-      # report page built at the end of this job.
+      # report page the ci-report job builds.
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      # "1" on a re-mint dispatch, which runs the e2e suite alone with
+      # --remint-baselines; the filter narrows it with -k. Read by the steps
+      # below from the environment, never spliced into a script: the filter is
+      # free text from the dispatch form.
+      CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+      CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+      CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
       # Isolation from prod on the same host: distinct compose project
       # (-p curio-ci below) + its own host ports (CURIO_E2E_*_PORT below, which
       # docker-compose.ci.yml publishes) so the CI stack never collides with
@@ -189,12 +263,9 @@ jobs:
       # CURIO_E2E_SANDBOX_PORT below. Each worker is a Chromium + backend +
       # sandbox (~3 GiB) inside the one container, on a host that also runs
       # the prod stacks, and no N beats the longest group: groups are atomic
-      # under --dist loadgroup, and test_walkthrough_baselines takes 6m22s on
-      # its own. Priced from the 4-worker run's Allure timeline (40m12s of
-      # test time over 87 groups): LPT makespan is 10m at 4 workers, 6m42s at
-      # 6, and 6m22s at 7 or more. So 6 buys all but 20s of what parallelism
-      # can give here and 8 would only add load. To go higher, lower the floor
-      # first -- split that module off its per-file xdist group.
+      # under --dist loadgroup. Since the split this job holds about 18 minutes
+      # of test time whose longest group (example 09) is 4.4 minutes, so 6
+      # workers already reach that floor.
       CURIO_E2E_PARALLEL: "6"
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       # Host-side Playwright targets the remapped ports (utils.py
@@ -373,20 +444,6 @@ jobs:
             | grep -qF "<meta name=\"curio-backend-url\" content=\"${CURIO_E2E_BACKEND_URL}\">"
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
 
-      # Both write JUnit for the CI report page onto the .curio bind mount,
-      # where the host reads it at the end of the job.
-      - name: 🧪 Run backend unit tests
-        run: |
-          docker compose -p curio-ci exec -T \
-            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/backend.xml curio \
-            bash scripts/test.sh --backend-only --use-existing
-
-      - name: 🧪 Run sandbox unit tests
-        run: |
-          docker compose -p curio-ci exec -T \
-            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/sandbox.xml curio \
-            bash scripts/test.sh --sandbox-only --use-existing
-
       - name: 🐍 Set up Python (for e2e)
         uses: actions/setup-python@v6
         with:
@@ -452,7 +509,7 @@ jobs:
               # CURIO_ISOLATION=off for the same reason docker-compose.ci.yml
               # sets it: these shards run as root in an image carrying
               # curio-exec, so --deploy would discover it and isolate. The
-              # isolated stacks are test-gpu-isolated and test-gpu-exec-user.
+              # isolated stacks are test-isolated and test-exec-user.
               export CURIO_ISOLATION=off
               python curio.py start backend --deploy --testing --with-examples \
                 --backend-host 0.0.0.0 --backend-port "$BACKEND_PORT" \
@@ -476,77 +533,58 @@ jobs:
             done
           done
 
-      - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
+      - name: 🎭 Run the WebGPU e2e tests (hardware WebGPU)
         env:
           # JUnit for the CI report page. Absolute, since test.sh changes
           # directory before it runs pytest.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+        shell: bash
         run: |
-          bash scripts/test.sh --e2e-only --use-existing \
+          set -euo pipefail
+          # pytest splits PYTEST_ADDOPTS the way a shell would, so the filter
+          # goes in quoted.
+          extra=()
+          if [ "${CURIO_REMINT:-}" = 1 ]; then
+            PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+              # A filter may name only tests the other runner owns.
+              extra+=(--allow-empty)
+            fi
+            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FORCE"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
+            fi
+            export PYTEST_ADDOPTS
+            echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
+          fi
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL" \
-            --allure-dir "$GITHUB_WORKSPACE/allure-results"
+            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
 
-      - name: 📊 Install Allure CLI
-        if: always()
+      # What a re-mint wrote into this checkout: the baselines whose screen
+      # changed, and any it minted. Exactly those files, flat, for review on the
+      # report page and then a commit. The *_actual.png a failure leaves behind
+      # is gitignored, so --exclude-standard keeps it out.
+      - name: 📦 Collect the re-minted baselines
+        if: always() && env.CURIO_REMINT == '1'
+        shell: bash
         run: |
-          ALLURE_VERSION=2.32.0
-          wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
-          tar -xzf "allure-${ALLURE_VERSION}.tgz"
-          echo "$PWD/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          mkdir -p ci-report/reminted-baselines
+          git ls-files --modified --others --exclude-standard \
+            -- docs/examples/dataflows/expected_outputs \
+            | { grep -E '\.png$' || true; } > reminted-list.txt
+          while IFS= read -r f; do cp "$f" ci-report/reminted-baselines/; done < reminted-list.txt
+          echo "$(wc -l < reminted-list.txt) baselines re-minted"
 
-      - name: 📊 Generate Allure report
-        if: always()
-        run: allure generate allure-results -o allure-report --clean
-
-      - name: 📤 Upload Allure report artifact
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: allure-report
-          path: allure-report
-          retention-days: 30
-
-      # Both of these used to be skipped by any e2e failure, which is backwards:
-      # a red e2e run is exactly when you want to know whether the frontend still
-      # builds and its unit tests still pass. Gated on !cancelled() rather than
-      # always() so a cancelled run stops promptly instead of building an image
-      # nobody is waiting for.
       - name: Check frontend availability
-        # Unlike Jest below, this one does need the stack, so don't add a second
-        # red X when the containers never came up in the first place.
+        # Needs the stack, so it adds no second red X when the containers never
+        # came up in the first place.
         if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
         run: |
           curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
-
-      - name: Jest frontend unit tests
-        # Builds its own frontend_builder image and never touches the running
-        # stack, so this stands on its own no matter what happened above.
-        if: ${{ !cancelled() }}
-        run: |
-          docker build --target frontend_builder -t curio-frontend-test .
-          # --json feeds the CI report page; the console output is unchanged.
-          docker run --rm -v "$GITHUB_WORKSPACE/ci-report:/ci-report" curio-frontend-test \
-            npm test -- --json --outputFile=/ci-report/jest.json
-
-      - name: TypeScript typecheck
-        # Jest transpiles through babel, which strips types without checking
-        # them, so main could sit broken for tsc while every build was green.
-        # Two such breaks landed in one day during the #363-#373 merge, both in
-        # src/tests/, which tsconfig's "include": ["src/**/*"] does cover.
-        #
-        # The docker build is repeated rather than reusing the tag above because
-        # that step is `if: !cancelled()`: if it is ever skipped or reordered, a
-        # bare docker run would fail with "image not found" instead of a type
-        # error. It is a layer-cache hit.
-        if: ${{ !cancelled() }}
-        # bash, for pipefail: the tee below must not hide tsc's exit status.
-        shell: bash
-        run: |
-          docker build --target frontend_builder -t curio-frontend-test .
-          # --pretty false pins the "file(line,col): error TSnnnn" lines the CI
-          # report page reads; the copy in ci-report/ is for that page.
-          docker run --rm curio-frontend-test npm run typecheck -- --pretty false 2>&1 \
-            | tee ci-report/typecheck.txt
 
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
@@ -567,66 +605,17 @@ jobs:
             'for f in .curio/shards/*/messages-*.log .curio/shards/*/launch-*.out; do [ -f "$f" ] && { echo "=== $f ==="; cat "$f"; echo; }; done' \
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
-      # One self-contained page for this job (scripts/ci_report.py): its steps,
-      # each suite's results with the failures, and every screenshot comparison
-      # with its expected, created and difference images and the threshold.
-      # Uploaded unzipped, so its entry in the run's artifact list opens in the
-      # browser. continue-on-error: the page reports on the job, it must never
-      # be the reason the job is red. The PR fields come in through env, never
-      # inline in the script, since a PR title is anyone's text.
-      - name: 📊 Build the CI report page
-        id: ci_report
+      # Everything the ci-report job builds the run's page from: this job's
+      # JUnit, screenshot comparisons, failure diagnostics, Allure results and,
+      # on a re-mint, the baselines it wrote.
+      - name: 📤 Upload the results for the CI report
         if: always()
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_HEAD_REF: ${{ github.head_ref }}
-        run: |
-          curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
-            -o ci-report/jobs.json || echo '{}' > ci-report/jobs.json
-          # A re-run gets its own name, so an earlier attempt's page and link
-          # stay valid.
-          file=curio-ci-report.html
-          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || file="curio-ci-report-attempt-$GITHUB_RUN_ATTEMPT.html"
-          python3 scripts/ci_report.py \
-            --junit "Backend unit tests=.curio/ci-report/backend.xml" \
-            --junit "Sandbox unit tests=.curio/ci-report/sandbox.xml" \
-            --junit "End-to-end tests=ci-report/e2e.xml" \
-            --jest "Jest frontend unit tests=ci-report/jest.json" \
-            --tsc "TypeScript typecheck=ci-report/typecheck.txt" \
-            --comparisons "$CURIO_E2E_COMPARE_DIR" \
-            --failures "$CURIO_E2E_FAILURE_DIR" \
-            --jobs ci-report/jobs.json \
-            --out "$file" --summary ci-report/summary.md
-          echo "file=$file" >> "$GITHUB_OUTPUT"
-
-      - name: 📤 Upload the CI report page
-        id: ci_report_upload
-        if: always() && steps.ci_report.outputs.file != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
-          path: ${{ steps.ci_report.outputs.file }}
-          archive: false
+          name: ci-inputs-test-gpu
+          path: ci-report/
           if-no-files-found: ignore
-          retention-days: 30
-
-      - name: 🔗 Link the CI report page from the run summary
-        if: always() && steps.ci_report_upload.outputs.artifact-url != ''
-        env:
-          REPORT_FILE: ${{ steps.ci_report.outputs.file }}
-          REPORT_URL: ${{ steps.ci_report_upload.outputs.artifact-url }}
-        run: |
-          {
-            echo "## CI report"
-            echo
-            echo "[Open $REPORT_FILE]($REPORT_URL): this job's steps, test suites and every screenshot comparison, on one page."
-            echo
-            cat ci-report/summary.md 2>/dev/null || true
-          } >> "$GITHUB_STEP_SUMMARY"
+          retention-days: 7
 
       - name: 📤 Upload sandbox logs
         if: always()
@@ -639,15 +628,6 @@ jobs:
             shard-logs.txt
           retention-days: 7
 
-      - name: 📤 Upload e2e failure diagnostics
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: e2e-failures
-          path: e2e-failures/
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: 🧹 Tear down containers
         if: always()
         run: |
@@ -657,35 +637,262 @@ jobs:
           # safety net for the next run.
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
-  # Second stack, same runner, booted with CURIO_ISOLATION=fork so a real workload
-  # runs through the confined path. Runs after test-gpu rather than beside it:
-  # the runner takes one job at a time, and both want the GPU and the bind
-  # mounts. See docker-compose.ci-isolated.yml for why this stack drops --deploy
-  # and leaves CURIO_EXEC_USER empty, and what that does and does not cover.
-  #
-  # Scoped to the workflows whose nodes are Python, because isolation wraps
-  # /exec only -- /execJs spawns Node either way (sandbox/app/api.py). Running
-  # the full matrix here would double a 23-minute e2e pass to re-prove the JS
-  # and WebGPU paths the first job already covered.
-  test-gpu-isolated:
-    needs: test-gpu
-    # Even if the in-process suite failed, this one's result is independent
-    # information and worth having -- unless the run was cancelled.
+  # The Python unit suites need the image but neither a GPU nor a browser, so
+  # they run here, beside test-gpu, instead of adding nine minutes to it. The
+  # backend suite, the longest of them, runs as two balanced parts
+  # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json).
+  unit:
+    name: unit (${{ matrix.name }})
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: backend-1, suite: backend, part: "1/2" }
+          - { name: backend-2, suite: backend, part: "2/2" }
+          - { name: sandbox, suite: sandbox, part: "" }
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_BACKEND_URL: "http://localhost:5022"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # JUnit is written inside the container, onto the .curio bind mount: the
+      # directory is the container's (root-owned), so the host cannot create it.
+      - name: 🧪 Run the ${{ matrix.name }} unit tests
+        # About 5 minutes a part. The limit is for a hang, so it fails here
+        # rather than holding the job until its own timeout.
+        timeout-minutes: 25
+        run: |
+          docker compose -p curio-ci exec -T \
+            -e CURIO_UNIT_PART="${{ matrix.part }}" \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}.xml curio \
+            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
+
+      - name: 📤 Upload the results for the CI report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-inputs-unit-${{ matrix.name }}
+          path: .curio/ci-report/${{ matrix.name }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Jest and tsc need Node and the frontend's own dependencies, nothing else, so
+  # they run on the checkout rather than inside an image.
+  jest:
     if: >-
-      !cancelled() &&
+      !inputs.remint &&
       github.event_name != 'schedule' &&
       github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, linux, gpu, curio]
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: utk_curio/frontend/urban-workflows
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: utk_curio/frontend/urban-workflows/package-lock.json
+
+      - name: 📦 Install the frontend's dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          mkdir -p "$GITHUB_WORKSPACE/ci-report"
+
+      - name: Jest frontend unit tests
+        # --json feeds the CI report page; the console output is unchanged.
+        run: npm test -- --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest.json"
+
+      - name: TypeScript typecheck
+        # Jest transpiles through babel, which strips types without checking
+        # them, so main could sit broken for tsc while every build was green.
+        # --pretty false pins the "file(line,col): error TSnnnn" lines the CI
+        # report page reads. bash, for pipefail: tee must not hide the status.
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck -- --pretty false 2>&1 | tee "$GITHUB_WORKSPACE/ci-report/typecheck.txt"
+
+      - name: 📤 Upload the results for the CI report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-inputs-jest
+          path: ci-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Every e2e test whose browser does not run WebGPU, spread over a matrix of
+  # ubuntu-latest runners, each with its own stack. Which tests those are is
+  # decided from the tests themselves (runner_split.py): CURIO_E2E_RUNNER picks
+  # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it. test-gpu
+  # runs the other half, and the CI report job checks that together they ran
+  # everything.
+  #
+  # Screenshot baselines are shared with test-gpu. They hold here as they are
+  # (the probe runs compared every frame against the utk-minted baselines and
+  # none exceeded its budget), and a re-mint writes each baseline on the runner
+  # that compares it.
+  e2e-desktop:
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      CURIO_E2E_RUNNER: desktop
+      CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
+      CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
+      CURIO_E2E_TRACE: "1"
+      CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+      CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+      CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
+      CURIO_E2E_BACKEND_URL: "http://localhost:5022"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐍 Set up Python (for e2e)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
+
+      # Same as test-gpu: test_spa_deep_link_e2e.py serves the bundle the image
+      # ships, and dist/ is not in the checkout.
+      - name: 📦 Stage the built bundle for the host-side SPA test
+        run: |
+          set -euo pipefail
+          cid="$(docker compose -p curio-ci ps -q curio | head -n1)"
+          rm -rf utk_curio/frontend/urban-workflows/dist
+          docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" \
+            utk_curio/frontend/urban-workflows/dist
+          test -f utk_curio/frontend/urban-workflows/dist/index.html
+
+      - name: 🎭 Run this part of the e2e tests
+        env:
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "${CURIO_REMINT:-}" = 1 ]; then
+            PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-baselines"
+            if [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS -k $quoted"
+              # A filter may name only tests the utk runner owns.
+              extra+=(--allow-empty)
+            fi
+            if [ -n "${CURIO_REMINT_FORCE:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FORCE"
+              PYTEST_ADDOPTS="$PYTEST_ADDOPTS --remint-force $quoted"
+            fi
+            export PYTEST_ADDOPTS
+          fi
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
+            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
+
+      - name: 📦 Collect the re-minted baselines
+        if: always() && env.CURIO_REMINT == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-report/reminted-baselines
+          git ls-files --modified --others --exclude-standard \
+            -- docs/examples/dataflows/expected_outputs \
+            | { grep -E '\.png$' || true; } > reminted-list.txt
+          while IFS= read -r f; do cp "$f" ci-report/reminted-baselines/; done < reminted-list.txt
+
+      - name: 📋 Capture the stack's logs
+        if: always()
+        run: |
+          docker compose -p curio-ci logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'cat .curio/messages.log 2>/dev/null' > ci-report/curio-messages.txt 2>&1 || true
+
+      - name: 📤 Upload the results for the CI report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-inputs-e2e-desktop-${{ matrix.part }}
+          path: ci-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The isolated stack (CURIO_ISOLATION=fork), running the Python-node
+  # workflows. None of them draws with WebGPU, so it runs here, beside test-gpu,
+  # rather than after it. See docker-compose.ci-isolated.yml for why this stack
+  # drops --deploy and leaves CURIO_EXEC_USER empty.
+  #
+  # Scoped to the workflows whose nodes are Python, because isolation wraps
+  # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
+  test-isolated:
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
-      CURIO_WEBGPU_BACKEND: hardware
-      CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
-      # A fourth port triple: prod is 2000/5002/8080, curio-dev 2010/5012/8090,
-      # the in-process CI stack 2020/5022/8100.
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5032"
@@ -694,69 +901,29 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2030"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
-      # Python nodes only; see the note above the job. Not example 18: under
-      # isolation a node's raster output is stored under its artifact id, so
-      # the browser's run and the harness's name different files and cannot
-      # be compared, although the mosaic itself runs.
+      # Not example 18: under isolation a node's raster output is stored under
+      # its artifact id, so the browser's run and the harness's name different
+      # files and cannot be compared, although the mosaic itself runs.
       ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,Merge.json,Vega.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
-      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/e2e-failures
+      CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
-
     steps:
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
-
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🔨 Build all service images in parallel
-        run: docker compose -p curio-ci-iso build --parallel
-
-      - name: ▶️ Start containers
-        run: docker compose -p curio-ci-iso up -d
-
-      - name: 🧪 Wait for services to become healthy
-        id: stack_healthy
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout 300 bash -euo pipefail -c '
-            while true; do
-              cid="$(docker compose -p curio-ci-iso ps -a -q curio | head -n1 || true)"
-              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
-              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
-              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
-              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
-              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
-              if [[ "${state}" == "exited" ]]; then
-                echo "the isolated stack exited during startup. Logs:"
-                docker compose -p curio-ci-iso logs --no-color --tail=200 curio || true
-                exit 1
-              fi
-              sleep 2
-            done
-          '
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci-iso
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # The whole point of the job: prove the stack is actually isolated before
-      # reading anything into the test results. Without this a silently
-      # degraded boot (fork unavailable, pyseccomp missing) would run the
-      # in-process path and report a green "isolated" run.
+      # reading anything into the test results. /version reports the mode the
+      # sandbox resolved, the same answer the UI badge shows.
       - name: 🔒 Assert the stack came up configured for isolation
         shell: bash
         run: |
           set -euo pipefail
-          # Boot-time, so this is the configuration only. Whether the workloads
-          # below actually forked is a separate question, asked after they run
-          # by "Assert the workflows above actually forked".
-          #
-          # Ask the sandbox, do not read the logs. The startup banner goes to
-          # the sandbox subprocess's stderr, which curio.py routes into
-          # .curio/messages.log -- `docker compose logs` only carries the
-          # launcher's own output, so grepping it here found nothing and failed
-          # a stack that may well have been isolated.
-          #
-          # /version reports the mode the sandbox *resolved*, which is the
-          # question being asked, and it is the same answer the UI badge shows.
           mode="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
                   | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))')"
           if [ "$mode" != "fork" ]; then
@@ -771,20 +938,15 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
           docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
             || mkdir -p .curio/playwright/expected
 
-      # The e2e suite drives this stack through /api/testing/* -- stub-login and
-      # stub-project to skip the signup UI, reset-db between every test. That
-      # blueprint refuses with 404 unless the server is BOTH a dev env and a
-      # declared test rig (backend/app/testing/routes.py), and a compose-owned
-      # stack only gets the second factor from --testing on its command.
-      # Drop it and the stack still comes up healthy while all ~207 e2e tests
-      # error inside an autouse fixture on a bare 404 -- 12k log lines that say
-      # nothing about the cause. Ask once, here, and name it.
+      # See the same step in test-gpu: without --testing every e2e test errors
+      # in its autouse fixture on a bare 404.
       - name: 🔒 Assert the test stubs are reachable
         shell: bash
         run: |
@@ -796,62 +958,36 @@ jobs:
             echo "::error::/api/testing/reset-db answered ${code}; this stack is not a test rig (--testing)" >&2
             exit 1
           fi
-          echo "OK: the testing stubs are mounted."
 
       - name: 📦 Stage the built bundle for the host-side SPA test
-        shell: bash
         run: |
           set -euo pipefail
-          # test_spa_deep_link_e2e.py boots the production static server
-          # (main.run_spa_static_server) on the real built bundle, host-side. That
-          # bundle is baked into the image (Dockerfile: COPY --from=frontend_builder)
-          # and dist/ is gitignored, so a --use-existing run has none on the host
-          # and the test fails by design rather than skipping quietly.
-          #
-          # Take the shipped artifact out of the running container rather than
-          # rebuilding it: that is the exact bundle a deployed Curio serves, which
-          # is what the test exists to cover. Nothing is dirtied, dist/ is ignored.
-          cid="$(docker compose -p curio-ci-iso ps -q curio | head -n1 || true)"
-          if [ -z "$cid" ]; then
-            echo "::error::no running curio container in curio-ci-iso; cannot stage the bundle" >&2
-            exit 1
-          fi
-          # Removed first: copying into an existing directory nests it one deeper.
+          cid="$(docker compose -p curio-ci-iso ps -q curio | head -n1)"
           rm -rf utk_curio/frontend/urban-workflows/dist
           docker cp "$cid:/app/utk_curio/frontend/urban-workflows/dist" \
             utk_curio/frontend/urban-workflows/dist
           test -f utk_curio/frontend/urban-workflows/dist/index.html
 
       - name: 🎭 Run the Python-node workflows against the isolated stack
+        env:
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
         run: |
           bash scripts/test.sh --e2e-only --use-existing \
             --workflows "$ISOLATED_WORKFLOWS"
 
+      # `isolation` above is the mode the sandbox resolved at boot. A zygote
+      # spawn that fails later degrades to in-process for the life of the
+      # process, and this job would then have produced the same correct answers
+      # in-process and gone green as a duplicate of the in-process run.
+      # `isolation_active` is the outcome, so it is read after the workflows.
       - name: 🔒 Assert the workflows above actually forked
         shell: bash
         run: |
           set -euo pipefail
-          # The boot-time check earlier reads `isolation`, the mode the sandbox
-          # RESOLVED. That is settled before any node runs, so on its own it
-          # verifies a configuration and not a workload.
-          #
-          # The gap it leaves is reachable. The zygote is started lazily on the
-          # first /exec, and a spawn that fails degrades to in-process for the
-          # life of the process rather than failing the request, because the
-          # node still has to run. `isolation` does not move when that happens.
-          # This job would then have run every workflow in-process, produced
-          # the same correct answers, and gone green as a duplicate of test-gpu.
-          #
-          # `isolation_active` is the outcome rather than the intent, so it has
-          # to be read AFTER the workflows. `pending` means nothing executed,
-          # which is a failure here too: it would mean the e2e step dispatched
-          # no node at all.
           active="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
                     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation_active",""))')"
           if [ "$active" != "fork" ]; then
             echo "::error::the workflows did not run isolated (isolation_active='${active:-nothing}')" >&2
-            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
-              'grep -i isolation .curio/messages.log 2>/dev/null | tail -20' >&2 || true
             exit 1
           fi
           echo "OK: node execution was dispatched to the zygote"
@@ -859,78 +995,39 @@ jobs:
       - name: 📋 Capture sandbox/backend logs
         if: always()
         run: |
-          docker compose -p curio-ci-iso logs --no-color --tail=8000 \
-            > "$GITHUB_WORKSPACE/isolated-container-logs.txt" 2>&1 || true
-          # Where the sandbox's own stderr actually lands, including the
-          # isolation banner, every [isolation] warning, and a child's
-          # faulthandler traceback when one dies on a signal. Root-owned on the
-          # mounted workspace, so read it out through a root container.
+          docker compose -p curio-ci-iso logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
-            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
-            > "$GITHUB_WORKSPACE/isolated-messages.txt" 2>&1 || true
+            'cat .curio/messages.log 2>/dev/null' > ci-report/curio-messages.txt 2>&1 || true
 
-      - name: 📤 Upload isolated-stack logs
+      - name: 📤 Upload the results for the CI report
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: isolated-container-logs
-          path: |
-            isolated-container-logs.txt
-            isolated-messages.txt
-          retention-days: 7
-
-      - name: 📤 Upload e2e failure diagnostics
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: isolated-e2e-failures
-          path: e2e-failures/
+          name: ci-inputs-test-isolated
+          path: ci-report/
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: 🧹 Tear down containers
-        if: always()
-        run: |
-          docker compose -p curio-ci-iso down -v --remove-orphans || true
-          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
-
-  # The only job that boots what the deploy actually ships: isolation
-  # WITH an execution account, so node code runs unprivileged instead of
-  # as root.
+  # The only job that boots what the deploy actually ships: isolation WITH an
+  # execution account, so node code runs unprivileged instead of as root.
   #
-  # Why this is a third job rather than a flag on test-gpu-isolated: setting
-  # an execution user hardens ./instance and ./.curio/data to 0700/0600 root-owned at
-  # boot, and the e2e harness computes its ground truth by executing every code
-  # node in the HOST test process and writing artifacts into .curio/data as the
-  # runner user. The two cannot coexist -- the comparison dies with EACCES
-  # before a browser is driven. So this job drops the workflow comparison and
-  # asserts the boundary over the sandbox's HTTP API instead, which touches
-  # none of the hardened paths from the host.
-  #
-  # What it buys: every isolation test that exists today runs its children as
-  # root, and root reads through any mode bit. Two of this branch's defects
-  # (the hardlinked staged input at 0600 root, and the scratch root inside a
-  # 0700 store) were therefore invisible to CI and were found by reading and by
-  # a deployed instance. This job is where that class of defect fails fast.
-  test-gpu-exec-user:
-    needs: test-gpu-isolated
-    # Independent information, same as the isolated job -- and it must not be
-    # skipped just because an earlier suite was red, since a permissions
-    # regression is exactly the kind of thing that also breaks other jobs.
-    # Serialized behind them because all three share the runner's workspace.
-    if: >-
-      !cancelled() &&
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, linux, gpu, curio]
+  # Why this is a job of its own rather than a flag on test-isolated: setting
+  # an execution user hardens ./instance and ./.curio/data to 0700/0600
+  # root-owned at boot, and the e2e harness computes its ground truth by
+  # executing every code node in the HOST test process and writing artifacts
+  # into .curio/data as the runner user. The two cannot coexist, so this job
+  # drops the workflow comparison and asserts the boundary over the sandbox's
+  # HTTP API instead, which touches none of the hardened paths from the host.
+  test-exec-user:
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-
+    permissions:
+      contents: read
+      packages: read
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-exec-user.yml
-      # A fifth port triple: prod 2000/5002/8080, curio-dev 2010/5012/8090,
-      # the in-process CI stack 2020/5022/8100, the isolated one 2030/5032/8110.
       CURIO_E2E_BACKEND_PORT: "5042"
       CURIO_E2E_SANDBOX_PORT: "2040"
       CURIO_E2E_FRONTEND_PORT: "8120"
@@ -938,74 +1035,28 @@ jobs:
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       # Read by utk_curio/sandbox/tests/live/test_exec_user_boundary.py. The
       # token is under a different name on purpose: the sandbox test tree's
-      # conftest pops CURIO_SANDBOX_TOKEN for the whole session so the
-      # in-container unit suite reaches the unauthenticated local mode.
+      # conftest pops CURIO_SANDBOX_TOKEN for the whole session.
       CURIO_LIVE_SANDBOX_URL: "http://localhost:2040"
       CURIO_LIVE_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       CURIO_LIVE_LAUNCH_DIR: /app
       CURIO_LIVE_EXEC_USER: curio-exec
-
     steps:
-      # Must be first, and matters more here than in the other jobs: this stack
-      # chmods the bind-mounted ./instance, ./.curio/data and ./datasets to
-      # 0700 root-owned, and ./datasets is part of the git checkout. Without
-      # this, actions/checkout runs as the runner user over a tree it can no
-      # longer write.
-      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
-
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🔨 Build all service images in parallel
-        run: docker compose -p curio-ci-exec-user build --parallel
-
-      # Hardening skips a path that does not exist (hardening.harden_paths),
-      # and so does the audit. A fresh CI workspace has no .curio/users and may
-      # have no instance/, so without this the boundary tests for those would
-      # find nothing to be denied -- and they refuse to pass vacuously, which
-      # would be a red job for something that is not a defect. Create them
-      # before boot, which is also the state any real deployment is in.
-      #
-      # The canary is the point of the .curio/users case: defect 5 was an
-      # isolated node reading ANOTHER user's imported datasets by absolute
-      # path, bypassing the permission check the backend does on the way in.
-      # A directory that is empty cannot demonstrate that it is closed.
-      - name: 🌱 Seed the paths the boundary is asserted against
-        run: |
-          set -euo pipefail
-          mkdir -p .curio/data .curio/users/some-other-user .curio/datalakes instance datasets
-          echo "another user's private dataset"             > .curio/users/some-other-user/canary.txt
-
-      - name: ▶️ Start containers
-        run: docker compose -p curio-ci-exec-user up -d
-
-      # The boot is itself an assertion. CURIO_ISOLATION=fork on an instance with
-      # auth on is FAIL-CLOSED (isolation/hardening.py::apply_and_report): a
-      # sandbox that cannot confine, or that finds a sensitive path still
-      # readable by curio-exec after hardening, exits rather than serve. So a
-      # stack that never becomes healthy is a real result, not flake, and the
-      # logs collected below are the diagnosis.
-      - name: 🧪 Wait for services to become healthy
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout 420 bash -euo pipefail -c '
-            while true; do
-              cid="$(docker compose -p curio-ci-exec-user ps -a -q curio | head -n1 || true)"
-              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
-              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
-              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
-              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
-              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
-              if [[ "${state}" == "exited" ]]; then
-                echo "the exec-user stack exited during startup (fail-closed isolation refuses to serve unconfined). Logs:"
-                docker compose -p curio-ci-exec-user logs --no-color --tail=200 curio || true
-                exit 1
-              fi
-              sleep 2
-            done
-          '
+      # Hardening skips a path that does not exist, and so does the audit, so
+      # the paths the boundary is asserted against are created before boot --
+      # which is also the state any real deployment is in. The canary is what
+      # proves another user's datasets stay closed: an empty directory cannot.
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci-exec-user
+          token: ${{ secrets.GITHUB_TOKEN }}
+          timeout: "420"
+          seed: |
+            mkdir -p .curio/data .curio/users/some-other-user .curio/datalakes instance datasets
+            echo "another user's private dataset" > .curio/users/some-other-user/canary.txt
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v6
@@ -1013,27 +1064,21 @@ jobs:
           python-version: "3.12"
 
       # Only pytest. The suite talks to the sandbox over HTTP and imports
-      # nothing from the project, deliberately: it must see the stack the way a
-      # node does, not through the code under test.
+      # nothing from the project, deliberately.
       - name: 📦 Install pytest
         run: python -m pip install --quiet "pytest==9.0.3"
 
-      # Every test in that module skips when CURIO_LIVE_SANDBOX_URL is unset,
-      # which is what keeps it inert during the ordinary unit run -- and what
-      # would make this job green over an entirely un-run suite if the variable
-      # were ever dropped from the env block above. So read the summary line
-      # afterwards and require that something actually passed.
-      #
-      # Deliberately not "no skips": test_the_deployment_secret_cannot_be_read
-      # skips by design when the stack has no .env, which is the case here, and
-      # a rule that forbade that would just get deleted the first time it fired.
+      # Every test in that module skips when CURIO_LIVE_SANDBOX_URL is unset, so
+      # require that something actually passed.
       - name: 🔒 Assert the isolation boundary holds under an execution user
         shell: bash
         run: |
           set -euo pipefail
           test -n "${CURIO_LIVE_SANDBOX_URL:-}" \
             || { echo "::error::CURIO_LIVE_SANDBOX_URL is unset, so the whole suite would skip" >&2; exit 1; }
-          python -m pytest utk_curio/sandbox/tests/live -v -ra | tee exec-user-pytest.txt
+          mkdir -p ci-report
+          python -m pytest utk_curio/sandbox/tests/live -v -ra \
+            --junitxml=ci-report/exec-user.xml | tee exec-user-pytest.txt
           summary="$(tail -1 exec-user-pytest.txt)"
           grep -qE '[0-9]+ passed' <<<"$summary" \
             || { echo "::error::no test in the boundary suite actually ran: $summary" >&2; exit 1; }
@@ -1041,32 +1086,150 @@ jobs:
       - name: 📋 Capture sandbox/backend logs
         if: always()
         run: |
-          docker compose -p curio-ci-exec-user logs --no-color --tail=8000 \
-            > "$GITHUB_WORKSPACE/exec-user-container-logs.txt" 2>&1 || true
-          # Where the sandbox's own stderr lands, including the isolation
-          # banner, every [isolation] warning and the hardening audit's
-          # findings. Root-owned on the mounted workspace, so read it out
-          # through a root container.
+          mkdir -p ci-report
+          docker compose -p curio-ci-exec-user logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
-            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null' \
-            > "$GITHUB_WORKSPACE/exec-user-messages.txt" 2>&1 || true
+            'cat .curio/messages.log 2>/dev/null' > ci-report/curio-messages.txt 2>&1 || true
 
-      - name: 📤 Upload exec-user stack logs
+      - name: 📤 Upload the results for the CI report
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: exec-user-container-logs
-          path: |
-            exec-user-container-logs.txt
-            exec-user-messages.txt
-            exec-user-pytest.txt
+          name: ci-inputs-test-exec-user
+          path: ci-report/
+          if-no-files-found: ignore
           retention-days: 7
 
-      - name: 🧹 Tear down containers
+  # Curio on a machine the size of a laptop. ubuntu-latest is 4 cores and 16 GB
+  # -- the machine #408 was reported on -- where utk has 377 GiB, and memory
+  # trouble that a server absorbs is exactly what a desktop user hits.
+  #
+  # * The #408 replay at the reporter's scale: four loaders of 800k polygons
+  #   re-run five times against an in-process sandbox, which must stay flat and
+  #   below the ceiling (utk_curio/sandbox/tests/_rerun_memory.py). The unit
+  #   suite runs the same replay at 200k.
+  # * The stress harness at the tiers a desktop sees (1, 5 and 10 users)
+  #   against the deployment-shaped stack, with nothing OOM-killed.
+  test-desktop-stress:
+    needs: build-image
+    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
+      # The stress overlay's port triple, as test-gpu-stress uses it.
+      CURIO_E2E_BACKEND_URL: "http://localhost:5072"
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5072"
+      CURIO_E2E_SANDBOX_PORT: "2070"
+      CURIO_E2E_FRONTEND_PORT: "8150"
+      CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # The replay runs the sandbox from this checkout, the way a local launch
+      # does, so it needs what a launch installs: requirements.txt plus the
+      # data libraries the builtin package declares.
+      - name: 📦 Install the sandbox's dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-report
+          python -m pip install --quiet -r requirements.txt
+          python - packages/curio.builtin@1/manifest.json > data-reqs.txt <<'PY'
+          import json, sys
+          deps = json.load(open(sys.argv[1]))["dependencies"]["python"]
+          print("\n".join(f"{name}{spec}" for name, spec in deps.items()))
+          PY
+          python -m pip install --quiet -r data-reqs.txt
+
+      - name: 🧠 Replay #408 at the reporter's scale
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m utk_curio.sandbox.tests._rerun_memory \
+            --rows 800000 --cycles 5 --stop-above-mb 12000 \
+            --workdir "$RUNNER_TEMP/rerun" --out ci-report/rerun-memory \
+            | tee ci-report/rerun-memory.txt
+          { echo "## #408 replay, 800k polygons per loader"; echo; echo '```'
+            cat ci-report/rerun-memory.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: ./.github/actions/start-stack
+        with:
+          image: ${{ needs.build-image.outputs.image }}
+          project: curio-ci-stress
+          token: ${{ secrets.GITHUB_TOKEN }}
+          timeout: "420"
+
+      - name: 📈 Start the container stats sampler
+        run: |
+          nohup bash -c 'while true; do
+            docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}" \
+              >> "$GITHUB_WORKSPACE/ci-report/docker-stats.log" 2>/dev/null || true
+            echo "HOST|$(cut -d" " -f1-3 /proc/loadavg | tr " " "|")|$(nproc)|$(free -m | awk "/^Mem:/ {print \$7}")" \
+              >> "$GITHUB_WORKSPACE/ci-report/docker-stats.log" 2>/dev/null || true
+            sleep 5
+          done' > /dev/null 2>&1 &
+          echo "$!" > "$GITHUB_WORKSPACE/stats-sampler.pid"
+
+      # Node 26 for the Autark compiler the harness runs.
+      - name: 🟩 Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "26"
+
+      - name: 🔥 Run the desktop tiers (1, 5, 10 users)
+        run: |
+          python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 1,5,10 \
+            --out "$GITHUB_WORKSPACE/ci-report/stress" \
+            --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log"
+
+      - name: 📈 Stop the container stats sampler
+        if: always()
+        run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
+
+      # The verdict a laptop user would have given: the OOM killer took nothing.
+      - name: 🔒 Assert nothing was OOM-killed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1)"
+          if [ "$(docker inspect --format '{{.State.OOMKilled}}' "$cid")" = true ]; then
+            echo "::error::the stack's container was OOM-killed" >&2
+            exit 1
+          fi
+          if sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process'; then
+            echo "::error::the kernel OOM-killed a process during this job" >&2
+            exit 1
+          fi
+          echo "OK: nothing was OOM-killed"
+
+      - name: 📋 Capture stack logs
         if: always()
         run: |
-          docker compose -p curio-ci-exec-user down -v --remove-orphans || true
-          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          docker compose -p curio-ci-stress logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
+
+      - name: 📤 Upload the results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-stress-report
+          path: ci-report/
+          if-no-files-found: warn
+          retention-days: 7
 
   # Many users at once: 5, 10, 50 and 100 of them creating dataflows from the
   # shipped examples and running every node, Autark included.
@@ -1075,7 +1238,7 @@ jobs:
   # own stack (the deployment shape, so the numbers describe what users hit)
   # and its own port triple, and a red tier here means "the stack does not hold
   # up under N users", which is a different verdict from "a dataflow is
-  # broken". Serialized behind the others because they share the runner.
+  # broken". Serialized behind test-gpu because they share the runner.
   #
   # The two tiers measure different halves of a dataflow. The HTTP tiers drive
   # the backend endpoints the canvas calls -- including the Autark data load,
@@ -1084,7 +1247,7 @@ jobs:
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
-    needs: test-gpu-exec-user
+    needs: test-gpu
     # Not on every push: on the cron above, on a PR labelled `stress`, or on a
     # manual dispatch that asks for it. `!cancelled()` rather than a plain
     # condition because on those three triggers the jobs it needs are skipped,
@@ -1095,11 +1258,14 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && inputs.stress) ||
+       (github.event_name == 'workflow_dispatch' && inputs.stress && !inputs.remint) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 75
+    concurrency:
+      group: utk-ci-stress-${{ github.ref }}
+      cancel-in-progress: false
 
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
@@ -1274,3 +1440,163 @@ jobs:
         run: |
           docker compose -p curio-ci-stress down -v --remove-orphans || true
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+  # One page for the whole run (scripts/ci_report.py): every job's result, each
+  # suite's results with the failures, and every screenshot comparison, from
+  # utk and ubuntu-latest alike. Uploaded unzipped, so its entry in the run's
+  # artifact list opens in the browser. It also merges the e2e jobs' Allure
+  # results into one report, and on a re-mint their baselines into one
+  # reminted-baselines artifact to review and commit.
+  #
+  # And it checks that the split lost nothing a run could still lose. That
+  # every test is collected on exactly one runner is a unit test
+  # (test_e2e_runner_split.py); what only a run can show is a test that went to
+  # ubuntu-latest and then skipped because it wanted WebGPU after all.
+  ci-report:
+    needs: [test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, test-desktop-stress]
+    if: >-
+      !cancelled() &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # actions: read lets the page list every job of the run through the jobs API.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The page transcodes screenshots to WebP when Pillow is there.
+      - name: 📦 Install Pillow
+        run: python -m pip install --quiet Pillow
+
+      - name: 📥 Download every job's results
+        uses: actions/download-artifact@v6
+        with:
+          pattern: ci-inputs-*
+          path: inputs
+
+      - name: 🧩 Merge them
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p merged/comparisons merged/failures merged/allure-results merged/reminted-baselines
+          for dir in inputs/*/; do
+            for part in comparisons failures allure-results reminted-baselines; do
+              if [ -d "$dir$part" ]; then cp -r "$dir$part/." "merged/$part/"; fi
+            done
+          done
+          ls inputs
+
+      - name: 🚫 Fail on a desktop test that skipped for want of WebGPU
+        run: python3 scripts/ci_check_split.py inputs
+
+      - name: 📤 Upload the re-minted baselines
+        if: always() && inputs.remint
+        uses: actions/upload-artifact@v6
+        with:
+          name: reminted-baselines
+          path: merged/reminted-baselines/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: 📊 Install Allure CLI
+        if: always()
+        run: |
+          ALLURE_VERSION=2.32.0
+          wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
+          tar -xzf "allure-${ALLURE_VERSION}.tgz"
+          echo "$PWD/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: 📊 Generate Allure report
+        if: always()
+        run: allure generate merged/allure-results -o allure-report --clean
+
+      - name: 📤 Upload Allure report artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: allure-report
+          path: allure-report
+          retention-days: 30
+
+      # continue-on-error: the page reports on the run, it must never be the
+      # reason the run is red. The PR fields come in through env, never inline
+      # in the script, since a PR title is anyone's text.
+      - name: 📊 Build the CI report page
+        id: ci_report
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-report
+          curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            -o ci-report/jobs.json || echo '{}' > ci-report/jobs.json
+          args=()
+          for part in inputs/ci-inputs-unit-backend-*/; do
+            k="${part%/}"; k="${k##*-}"
+            args+=(--junit "Backend unit tests, part $k=${part}backend-$k.xml")
+          done
+          args+=(
+            --junit "Sandbox unit tests=inputs/ci-inputs-unit-sandbox/sandbox.xml"
+            --junit "End-to-end tests, GPU runner=inputs/ci-inputs-test-gpu/e2e.xml"
+          )
+          for part in inputs/ci-inputs-e2e-desktop-*/; do
+            k="${part%/}"; k="${k##*-}"
+            args+=(--junit "End-to-end tests, desktop part $k=${part}e2e.xml")
+          done
+          args+=(
+            --junit "Isolated workflows=inputs/ci-inputs-test-isolated/e2e.xml"
+            --junit "Execution-user boundary=inputs/ci-inputs-test-exec-user/exec-user.xml"
+            --jest "Jest frontend unit tests=inputs/ci-inputs-jest/jest.json"
+            --tsc "TypeScript typecheck=inputs/ci-inputs-jest/typecheck.txt"
+          )
+          file=curio-ci-report.html
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || file="curio-ci-report-attempt-$GITHUB_RUN_ATTEMPT.html"
+          python3 scripts/ci_report.py "${args[@]}" \
+            --comparisons merged/comparisons \
+            --failures merged/failures \
+            --jobs ci-report/jobs.json --all-jobs \
+            --out "$file" --summary ci-report/summary.md
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload the CI report page
+        id: ci_report_upload
+        if: always() && steps.ci_report.outputs.file != ''
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.ci_report.outputs.file }}
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 🔗 Link the CI report page from the run summary
+        if: always() && steps.ci_report_upload.outputs.artifact-url != ''
+        env:
+          REPORT_FILE: ${{ steps.ci_report.outputs.file }}
+          REPORT_URL: ${{ steps.ci_report_upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "## CI report"
+            echo
+            echo "[Open $REPORT_FILE]($REPORT_URL): every job, test suite and screenshot comparison of this run, on one page."
+            echo
+            cat ci-report/summary.md 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"

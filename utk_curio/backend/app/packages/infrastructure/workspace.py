@@ -49,6 +49,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
+from .bounded_exec import bounded_argv
+
 log = logging.getLogger(__name__)
 
 _IS_POSIX = os.name == "posix"
@@ -461,12 +463,14 @@ def _assign_to_win_job(handle: object, pid: int) -> bool:
 
 
 def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
-    """Build the child-side rlimit applier. Returns ``(applied_names, preexec)``.
+    """Build the child's rlimits. Returns ``(applied_names, bounds)``.
 
-    On POSIX the second element is a ``preexec_fn``. On Windows it is a Job
-    Object handle instead, which the caller assigns the started process to -
-    there is no pre-exec hook, and a job bounds the whole process tree rather
-    than one process.
+    On POSIX the second element is the bounds :func:`bounded_exec.bounded_argv`
+    applies once the child has exec'd, never a ``preexec_fn``: that runs Python
+    in the forked copy of a threaded process, which can deadlock before exec
+    (see bounded_exec). On Windows it is a Job Object handle instead, which the
+    caller assigns the started process to - a job bounds the whole process tree
+    rather than one process.
 
     Address space and process-count limits are Linux-only *on POSIX*: macOS
     ignores RLIMIT_AS in practice and counts RLIMIT_NPROC per-user, which would
@@ -488,14 +492,9 @@ def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
         plan.append(("as", resource.RLIMIT_AS, limits.memory_bytes))
         plan.append(("nproc", resource.RLIMIT_NPROC, limits.max_processes))
 
-    def _preexec() -> None:  # runs in the child, pre-exec
-        for _, key, value in plan:
-            try:
-                resource.setrlimit(key, (value, value))
-            except (ValueError, OSError):
-                pass
-
-    return [name for name, _, _ in plan], _preexec
+    return [name for name, _, _ in plan], {
+        "rlimits": [[key, value] for _, key, value in plan],
+    }
 
 
 class _PipeReader(threading.Thread):
@@ -564,22 +563,21 @@ def run_worker(
     """
     if not argv or not all(isinstance(a, str) and a for a in argv):
         raise WorkspaceError("argv must be a non-empty list of strings")
-    applied, preexec = _apply_rlimits(limits)
+    applied, bounds = _apply_rlimits(limits)
     started = time.monotonic()
     proc = subprocess.Popen(
-        argv,
+        bounded_argv(argv, bounds) if _IS_POSIX else argv,
         cwd=str(workspace.work_dir),
         env=_minimal_env(workspace, extra_env),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=_IS_POSIX,
-        preexec_fn=preexec if _IS_POSIX else None,  # noqa: PLW1509 — exec follows
         close_fds=True,
         # A new process group is what lets the whole tree be killed on Windows,
         # the same role start_new_session plays on POSIX.
         creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if not _IS_POSIX else 0),
     )
-    win_job = None if _IS_POSIX else preexec
+    win_job = None if _IS_POSIX else bounds
     if win_job is not None and not _assign_to_win_job(win_job, proc.pid):
         # The bounds did not take, so do not report them as applied. The job is
         # closed in the finally below; KILL_ON_JOB_CLOSE only affects members.

@@ -2318,6 +2318,32 @@ class TestReviewProposals:
         done = events[-1][1]
         assert any(p["type"] == "proposal" for p in done["content"])
 
+    def test_the_card_and_its_result_name_the_node_not_its_id(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # #506: both read "node 'n1'", an id the user sees nowhere else, while
+        # the chat header names the node by its kind.
+        _, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        node = {"id": "n1", "type": "curio.builtin/computation-analysis",
+                "title": "Word counts", "content": "print(1)"}
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [node], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        assert proposal["summary"] == "Replace the content of the Python Computation node · Word counts"
+        assert proposal["pins"]["nodeId"] == "n1"  # the id stays where the apply checks it
+
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        result = self._turns(client, token, alice_project, att_id)[-1]
+        text = json.dumps(result, ensure_ascii=False)
+        assert "Applied: Python Computation node · Word counts content updated." in text
+        assert "node n1" not in text and "(n1)" not in text
+
     def test_apply_executes_the_write_and_logs_a_result_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -3021,8 +3047,9 @@ class TestNodeCreate:
         created = body["createdNode"]
         assert created["type"] == "curio.builtin/computation-analysis"
         assert created["content"] == "print('new')"
-        # Placement: right of the existing extent, on its row.
-        assert created["x"] > 100 and created["y"] == 60.0
+        # Placement: a gutter right of the existing node's right edge (x 100 plus
+        # the default 525 width), on its row, so the two never overlap (#499).
+        assert created["x"] == 100 + 525 + 120 and created["y"] == 60.0
         nodes = self._spec_nodes(user, alice_project)
         assert len(nodes) == 2
         inserted = next(n for n in nodes if n["id"] == created["id"])
@@ -4307,7 +4334,7 @@ class TestDataflowPlanMint:
         body = r.get_json()
         proposal = next(p for p in body["content"] if p["type"] == "proposal")
         assert proposal["tool"] == "dataflow.plan.write"
-        assert proposal["summary"] == "Apply plan · 2 nodes, 1 edges"
+        assert proposal["summary"] == "Apply plan · 2 nodes, 1 edge"
         assert "baseGraphDigest" in proposal["pins"]
         assert [n["title"] for n in proposal["plan"]["nodes"]] == ["Load", "Analyze"]
         # The raw plan part was consumed by the mint — no duplicate part.
@@ -4946,7 +4973,10 @@ class TestDataflowPlanApply:
         analyze = next(n for n in nodes if n.get("goal", "").startswith("Analyze"))
         # Server-minted ids wired through the ref map; topological columns.
         assert edges[0]["source"] == load["id"] and edges[0]["target"] == analyze["id"]
-        assert analyze["x"] == load["x"] + 420
+        # One node's width and a gutter apart, and the first column clear of the
+        # existing node (x 10, default width 525), so nothing overlaps (#410).
+        assert load["x"] == 10 + 525 + 120
+        assert analyze["x"] == load["x"] + 525 + 120
         assert load["content"] == "" and load["goal"] == "Load — load the data"
         # Builder session: applied phase, both nodes pending for Solve.
         session = body["builderSession"]
@@ -6448,7 +6478,7 @@ class TestDestructiveReplan:
         proposal = self._proposal(self._run(client, token, alice_project, att_id))
         assert "removeContentSha256" not in proposal["pins"]
         assert "removals" not in proposal["plan"]
-        assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"
+        assert proposal["summary"] == "Apply plan · 1 node, 0 edges"
 
 
 class TestPerNodePlanApply:
@@ -9325,7 +9355,7 @@ class TestPlanTopologyMint:
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch, replies=["Fix.\n" + self._tail(plan)])
         proposal = self._proposal(self._run(client, token, alice_project, att_id).get_json())
         assert proposal is not None, "an edge-only plan must mint (no filler nodes needed)"
-        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edges"
+        assert proposal["summary"] == "Apply plan · 0 nodes, 1 edge"
         assert proposal["plan"]["edges"] == [{
             "from": "vis", "to": "pool", "kind": "interaction",
             "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
@@ -9462,7 +9492,7 @@ class TestPlanTopologyApply:
         assert all(e["id"] != "e5" for e in edges)
         assert any(e.get("type") == "Interaction" and e["source"] == "vis" and e["target"] == "pool" for e in edges)
         applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
-        assert applied == "Applied: plan added 0 nodes and 1 connections, removed 1 connection. Topology: acyclic."
+        assert applied == "Applied: plan added 0 nodes and 1 connection, removed 1 connection. Topology: acyclic."
 
     def test_applied_turn_reports_a_user_cycle_the_plan_left_alone(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

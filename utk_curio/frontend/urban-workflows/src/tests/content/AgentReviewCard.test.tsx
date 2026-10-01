@@ -123,7 +123,7 @@ describe("AgentReviewCard — dev/48 proposal kinds", () => {
     expect(text.indexOf("cannot hold streaming output")).toBeLessThan(
       text.indexOf("print('score')"),
     );
-    expect(screen.getByText(/Sentiment Scorer · python — Scores text\./)).toBeInTheDocument();
+    expect(screen.getByText(/Sentiment Scorer · python: Scores text\./)).toBeInTheDocument();
     expect(
       screen.getByText("Applying registers the node type in this project and adds its first node."),
     ).toBeInTheDocument();
@@ -173,10 +173,10 @@ describe("AgentReviewCard — dev/52 dataflow.plan.write kind", () => {
       },
     };
     render(<AgentReviewCard part={plan} onApply={jest.fn()} onDismiss={jest.fn()} />);
-    expect(screen.getByText("2 nodes · 1 connections — heat analysis")).toBeInTheDocument();
+    expect(screen.getByText("2 nodes · 1 connection · heat analysis")).toBeInTheDocument();
     expect(screen.getByText(/Load · curio.builtin\/data-loading/)).toBeInTheDocument();
     expect(
-      screen.getByText("Applying adds these 2 connected nodes to the canvas — existing work is untouched."),
+      screen.getByText("Applying adds these 2 connected nodes to the canvas; existing work is untouched."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
   });
@@ -207,10 +207,10 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
     render(<AgentReviewCard part={revision} onApply={jest.fn()} onDismiss={jest.fn()} />);
     const section = screen.getByRole("group", { name: "Nodes and connections this plan removes" });
     expect(section).toHaveTextContent("Removes 2 nodes (and 1 connected edge)");
-    expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis — contains 10 chars of content");
-    expect(section).toHaveTextContent("Scratch — empty");
+    expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis (contains 10 chars of content");
+    expect(section).toHaveTextContent("Scratch (empty)");
     expect(
-      screen.getByText("Applying adds 1 node and removes 2 — removal deletes their content and cannot be undone."),
+      screen.getByText("Applying adds 1 node and removes 2. Removal deletes their content and cannot be undone."),
     ).toBeInTheDocument();
   });
 
@@ -231,7 +231,7 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
     expect(section).toHaveTextContent("Removes 1 connection");
     expect(section).toHaveTextContent("Metric Distribution → Pool Input Merge");
     expect(
-      screen.getByText("Applying adds 1 connection and removes 1 — nodes and their content are untouched."),
+      screen.getByText("Applying adds 1 connection and removes 1; nodes and their content are untouched."),
     ).toBeInTheDocument();
   });
 
@@ -406,7 +406,8 @@ describe("AgentReviewCard — dev/67-8 connection review stage", () => {
         planNodeState={{ appliedRefs: ["a"], editedGoals: {}, edgeStates: {} }}
       />,
     );
-    expect(screen.getByText("Load → Merge [in_0]")).toBeInTheDocument();
+    // The whole pair shows on hover too, handle included (#511).
+    expect(screen.getByText("Load → Merge [in_0]")).toHaveAttribute("title", "Load → Merge [in_0]");
     // Edge 0: target ref "b" not created yet → disabled with the reason.
     const first = screen.getByRole("button", { name: "Connect Load to Merge" });
     expect(first).toBeDisabled();
@@ -640,7 +641,7 @@ describe("AgentReviewCard backend trust edge (memo dev/91 §5)", () => {
     const block = screen.getByRole("group", {
       name: "Server-side code this package runs",
     });
-    expect(block).toHaveTextContent("may reach the network (server-network declared)");
+    expect(block).toHaveTextContent("may reach the network, server-network declared");
     expect(block).toHaveTextContent("permission server-network");
   });
 
@@ -677,7 +678,7 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
 
   it("renders the three counts summaries collapsed, names on expand", () => {
     render(<AgentReviewCard part={draftPart()} onApply={jest.fn()} />);
-    expect(screen.getByText("Files — 2 added · 0 modified · 0 preserved")).toBeInTheDocument();
+    expect(screen.getByText("Files: 2 added · 0 modified · 0 preserved")).toBeInTheDocument();
     expect(screen.getByText("added sources/note.tsx")).toBeInTheDocument();
     expect(screen.getByText(/templates: 1 added/)).toBeInTheDocument();
   });
@@ -704,7 +705,7 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
       },
     });
     const { container } = render(<AgentReviewCard part={part} onApply={jest.fn()} />);
-    const deps = screen.getByText(/Dependencies — 1 python/).closest("details");
+    const deps = screen.getByText(/Dependencies: 1 python/).closest("details");
     expect(deps).toHaveAttribute("open");
     expect(screen.getByText("block: torch conflicts with installed packages")).toBeInTheDocument();
     expect(container.textContent).toContain("python · torch 2.4.0");
@@ -719,7 +720,7 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
       },
     });
     render(<AgentReviewCard part={part} onApply={jest.fn()} />);
-    expect(screen.getByText("Preview — skipped")).toBeInTheDocument();
+    expect(screen.getByText("Preview: skipped")).toBeInTheDocument();
     expect(screen.getByText(/NOT rendered before review/)).toBeInTheDocument();
   });
 
@@ -733,9 +734,9 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
       },
     });
     render(<AgentReviewCard part={part} onApply={jest.fn()} />);
-    const preview = screen.getByText("Preview — failed").closest("details");
+    const preview = screen.getByText("Preview: failed").closest("details");
     expect(preview).toHaveAttribute("open");
-    expect(screen.getByText("note-kind: failed states — error")).toBeInTheDocument();
+    expect(screen.getByText("note-kind: failed states: error")).toBeInTheDocument();
   });
 
   it("requested nodes line carries titles and colors", () => {
@@ -749,7 +750,7 @@ describe("AgentReviewCard rich draft sections (memo dev/96)", () => {
   it("pre-dev/96 parts (no draft field) render exactly as before", () => {
     const legacy = { ...draftPart(), draft: undefined };
     render(<AgentReviewCard part={legacy} onApply={jest.fn()} />);
-    expect(screen.queryByText(/Files —/)).toBeNull();
+    expect(screen.queryByText(/Files:/)).toBeNull();
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
   });
 });
@@ -775,7 +776,7 @@ describe("dependency home line (memo dev/97)", () => {
 
   it("overlay routing states the isolation", () => {
     render(<AgentReviewCard part={withDeps("overlay")} onApply={jest.fn()} />);
-    expect(screen.getByText(/isolated overlay —.*shared interpreter is not touched/s)).toBeInTheDocument();
+    expect(screen.getByText(/isolated overlay;.*shared interpreter is not touched/s)).toBeInTheDocument();
   });
 
   it("both routing names the warm-sandbox half", () => {
@@ -852,7 +853,7 @@ describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
     const block = screen.getByRole("group", { name: "Data source" });
     expect(block).toHaveTextContent("Source · Several sources");
     expect(block).toHaveTextContent("https://api.x.gov/v1 · credential-gated");
-    expect(block).toHaveTextContent("data/tracts.geojson — not checked by Curio");
+    expect(block).toHaveTextContent("data/tracts.geojson (not checked by Curio)");
   });
 
   it("labels synthetic data as generated in the node", () => {
@@ -866,7 +867,7 @@ describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
     expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(
       "Source · Synthetic data",
     );
-    expect(screen.getByText(/generated in the node — no external source/)).toBeInTheDocument();
+    expect(screen.getByText(/generated in the node, no external source/)).toBeInTheDocument();
   });
 
   it("renders no Source block when the proposal carries none (older/other cards unchanged)", () => {
@@ -987,7 +988,7 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
         onApply={jest.fn()}
       />,
     );
-    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated — a connection key 'census' is saved/);
+    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated \(a connection key 'census' is saved/);
   });
 
   it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form", () => {
@@ -1018,7 +1019,7 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
     };
     render(<AgentReviewCard part={failed} onApply={jest.fn()} />);
     expect(screen.queryByRole("button", { name: /Add key/ })).toBeNull();
-    expect(screen.getByText(/A connection key "census" is saved for api.census.gov — Solve again/)).toBeInTheDocument();
+    expect(screen.getByText(/A connection key "census" is saved for api.census.gov. Solve again/)).toBeInTheDocument();
   });
 });
 
@@ -1038,7 +1039,7 @@ describe("AgentReviewCard — dev/118 every executable kind", () => {
     const second = render(
       <AgentReviewCard part={{ ...part(), tool: "node.create", pins: { nodeType: "curio.builtin/spatial-join@1", executable: false }, source }} onApply={jest.fn()} />,
     );
-    expect(screen.getByText(/has no code to run — Solve writes it, the browser or its own service renders it; it is never called verified/)).toBeInTheDocument();
+    expect(screen.getByText(/has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified/)).toBeInTheDocument();
     second.unmount();
     // A part minted before the flag, on a kind the registry has never seen:
     // the card says nothing rather than guessing.
@@ -1081,7 +1082,7 @@ describe("AgentReviewCard — dev/118 every executable kind", () => {
       />,
     );
     expect(screen.getAllByRole("list", { name: "Verification attempts" })[1]).toHaveTextContent(
-      "Round 1 · not executable — no code to run, nothing ran",
+      "Round 1 · not executable: no code to run, nothing ran",
     );
   });
 });

@@ -24,6 +24,9 @@ import pytest
 from utk_curio.backend.app.monitor import counters
 
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+# An address, not any "@": the hardware section names the CPU, and an Intel
+# model reads "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz".
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 # Every string an aggregate payload is allowed to contain, beyond a timestamp.
@@ -72,7 +75,7 @@ def test_no_identifier_appears_in_the_payload(client, seeded):
     raw = client.get("/api/monitor").get_data(as_text=True)
 
     assert "zqx" not in raw.lower(), "a seeded name reached the payload"
-    assert "@" not in raw, "an email-shaped string reached the payload"
+    assert EMAIL.search(raw) is None, "an email-shaped string reached the payload"
     assert "probe.invalid" not in raw
     assert IPV4.search(raw) is None, "an IP-shaped string reached the payload"
     assert "/Users/" not in raw, "a filesystem path reached the payload"

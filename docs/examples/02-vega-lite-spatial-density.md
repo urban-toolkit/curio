@@ -120,8 +120,6 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan",
-  "width": 500,
-  "height": 600,
   "title": "Green Roof Locations in Chicago",
   "mark": "circle",
   "encoding": {

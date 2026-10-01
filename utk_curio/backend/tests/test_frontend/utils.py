@@ -8,6 +8,7 @@ import textwrap
 from pathlib import Path
 from contextlib import contextmanager
 from io import BytesIO
+from typing import NamedTuple
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
@@ -762,8 +763,12 @@ def _wait_for_reactflow_ready(
     padding: float = 0.2,
     stable_frames: int = 3,
     timeout_ms: int = 10000,
+    node_ids: list[str] | None = None,
+    max_zoom: float | None = None,
 ) -> None:
     """Force ReactFlow into a deterministic viewport before screenshotting.
+
+    With *node_ids* the fit frames only those nodes, at most *max_zoom*.
 
     Without this, ``save_workflow_test_screenshot`` races the app-side
     ``fitView`` call in ``useWorkflowOperations`` (which runs on a
@@ -789,13 +794,16 @@ def _wait_for_reactflow_ready(
     )
 
     page.evaluate(
-        """(padding) => {
+        """({ padding, nodeIds, maxZoom }) => {
             const fit = window.__curio_fitViewWithMenuOffset;
             if (typeof fit === 'function') {
-                fit({ padding, duration: 0, includeHiddenNodes: true });
+                const options = { padding, duration: 0, includeHiddenNodes: true };
+                if (nodeIds) options.nodes = nodeIds.map((id) => ({ id }));
+                if (maxZoom !== null) options.maxZoom = maxZoom;
+                fit(options);
             }
         }""",
-        padding,
+        {"padding": padding, "nodeIds": node_ids, "maxZoom": max_zoom},
     )
 
     page.wait_for_function(
@@ -1101,6 +1109,142 @@ def dismiss_toasts(
 #: recorded in the command.
 MINT_BASELINES = False
 
+#: Whether this run re-mints: every capture is compared with its committed
+#: baseline, and one whose screen changed is written over it (a missing one is
+#: minted). Off unless ``--remint-baselines`` was passed. The CI report page
+#: shows each re-minted frame next to the baseline it replaced.
+REMINT_BASELINES = False
+
+#: How to ask for baselines, in every message that needs one.
+REMINT_HOW = (
+    "To make baselines, run `gh workflow run docker-compose.yml --ref <branch> "
+    "-f remint=true`, review the frames on that run's curio-ci-report.html, "
+    "then commit its reminted-baselines artifact."
+)
+
+
+#: Baselines a re-mint rewrites whatever it finds, named by a part of their
+#: file names (``--remint-force``): the frames a fix is known to change by
+#: less than REMINT_MIN_RATIO, such as a few words of text.
+REMINT_FORCE: tuple = ()
+
+
+def allow_baseline_writes(*, mint: bool, remint: bool, force=(), environ=os.environ) -> None:
+    """Turn on ``--mint-baselines`` / ``--remint-baselines``, on CI only.
+
+    A baseline is what CI renders. A capture from any other machine differs in
+    text antialiasing, fonts and scrollbars, and would then fail on CI or hide
+    a change there.
+    """
+    global MINT_BASELINES, REMINT_BASELINES, REMINT_FORCE
+    force = tuple(part for part in force if part)
+    if force and not remint:
+        raise pytest.UsageError("--remint-force only means something with --remint-baselines.")
+    if not (mint or remint):
+        return
+    if environ.get("GITHUB_ACTIONS") != "true":
+        flag = "--remint-baselines" if remint else "--mint-baselines"
+        raise pytest.UsageError(f"{flag} runs on CI only. {REMINT_HOW}")
+    MINT_BASELINES = bool(mint)
+    REMINT_BASELINES = bool(remint)
+    REMINT_FORCE = force
+
+
+#: A re-mint leaves a baseline alone when at most this share of its pixels
+#: changed, not counting the volatile text below. A fix usually changes far
+#: more; one that changes a few words may not, and names its frames with
+#: ``--remint-force`` instead. Layout that moves between runs (an id wrapping
+#: at another character, a node settling a pixel away) can pass it, so a few
+#: frames are re-minted by every run.
+REMINT_MIN_RATIO = 0.0005
+
+#: Text a run writes fresh every time, so it differs from any baseline even
+#: when the screen is the same: artifact file names (epoch milliseconds and a
+#: random suffix), uuids, bare uuid hex and the 8-character short ids, a
+#: package id's random segment, dates and times of day, and the app version in
+#: the corner, which moves with every commit to main. A re-mint does not count
+#: differences inside it, or in the rest of its line, which a token of another
+#: width moves; ordinary comparisons still count everything.
+VOLATILE_TEXT = (
+    r"\b\d{13}_[0-9a-f]{8}\b",
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    r"\b[0-9a-f]{32}\b",
+    r"\b(?=[0-9a-f]{0,7}\d)(?=[0-9a-f]{0,7}[a-f])[0-9a-f]{8}\b",
+    r"(?<=\.)(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{8,10}(?=@\d)",
+    r"\b\d{1,2}/\d{1,2}/\d{4}\b",
+    r"\b\d{1,2}:\d{2}(?::\d{2})?\s?[AP]M\b",
+    r"^\s*\d+\.\d+\.\d+[\w.+-]*\s*$",
+)
+
+# The client boxes of every VOLATILE_TEXT match through the end of its line
+# (or of its text node, when that is wrapped rather than broken), relative to
+# *root* (the captured element) or to the top-left of the page.
+_VOLATILE_BOXES_BODY = """
+    const origin = root ? root.getBoundingClientRect() : {left: 0, top: 0};
+    const res = patterns.map((p) => new RegExp(p, 'g'));
+    const boxes = [];
+    const walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.nodeValue || '';
+        if (!text.trim()) continue;
+        for (const re of res) {
+            re.lastIndex = 0;
+            for (let m = re.exec(text); m; m = re.exec(text)) {
+                if (!m[0]) { re.lastIndex += 1; continue; }
+                const range = document.createRange();
+                const lineEnd = text.indexOf('\\n', m.index + m[0].length);
+                range.setStart(node, m.index);
+                range.setEnd(node, lineEnd === -1 ? text.length : lineEnd);
+                for (const r of range.getClientRects()) {
+                    if (r.width > 0 && r.height > 0) {
+                        boxes.push([r.left - origin.left, r.top - origin.top,
+                                    r.right - origin.left, r.bottom - origin.top]);
+                    }
+                }
+            }
+        }
+    }
+    return {boxes, scale: window.devicePixelRatio || 1};
+"""
+_VOLATILE_BOXES_PAGE_JS = (
+    "(patterns) => { window.scrollTo(0, 0); const root = null;" + _VOLATILE_BOXES_BODY + "}"
+)
+_VOLATILE_BOXES_ELEMENT_JS = "(root, patterns) => {" + _VOLATILE_BOXES_BODY + "}"
+
+
+def _volatile_boxes(page, clip_selector: str | None) -> list:
+    """Pixel boxes of the volatile text in what is about to be captured.
+
+    Never raises: with no boxes a re-mint just counts every difference.
+    """
+    try:
+        if clip_selector is None:
+            found = page.evaluate(_VOLATILE_BOXES_PAGE_JS, list(VOLATILE_TEXT))
+        else:
+            # A missing element is the capture's failure to report, not this one's.
+            found = page.locator(clip_selector).first.evaluate(
+                _VOLATILE_BOXES_ELEMENT_JS, list(VOLATILE_TEXT), timeout=5000)
+        scale = float(found.get("scale") or 1)
+        return [tuple(v * scale for v in box) for box in found.get("boxes") or []]
+    except Exception:  # noqa: BLE001 - best effort, like the webfont wait
+        return []
+
+
+def _box_mask(boxes, shape):
+    """A boolean image of *shape* that is true inside *boxes*, one pixel padded."""
+    import math
+
+    import numpy as np
+
+    mask = np.zeros(shape, dtype=bool)
+    height, width = shape
+    for x0, y0, x1, y1 in boxes:
+        left, top = max(0, int(x0) - 1), max(0, int(y0) - 1)
+        right, bottom = min(width, math.ceil(x1) + 1), min(height, math.ceil(y1) + 1)
+        if right > left and bottom > top:
+            mask[top:bottom, left:right] = True
+    return mask
+
 #: The app's first font is Rubik, fetched from Google Fonts at runtime
 #: (src/index.html). Everything after it in the stack is a system fallback, so
 #: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
@@ -1216,6 +1360,126 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
         ) from None
 
 
+class _Comparison(NamedTuple):
+    actual_cmp: object
+    expected_cmp: object
+    diff: object
+    arr: object
+    counted: object
+    mismatched: int
+    total: int
+    ratio: float
+
+
+def _compare_images(actual_img, expected_img, pixel_threshold: int) -> _Comparison:
+    """Count the pixels where *actual_img* and *expected_img* differ by more than
+    *pixel_threshold* in any channel, both resized to the larger of their sizes.
+    """
+    from PIL import Image, ImageChops
+    import numpy as np
+
+    target_w = max(actual_img.width, expected_img.width)
+    target_h = max(actual_img.height, expected_img.height)
+    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
+    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
+
+    diff = ImageChops.difference(actual_cmp, expected_cmp)
+    arr = np.asarray(diff)
+    total = int(arr.shape[0] * arr.shape[1])
+    counted = (arr > pixel_threshold).any(axis=2)
+    mismatched = int(counted.sum())
+    ratio = mismatched / total if total else 0.0
+    return _Comparison(actual_cmp, expected_cmp, diff, arr, counted, mismatched, total, ratio)
+
+
+def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
+            max_diff_ratio, record_args) -> None:
+    """Write a fresh capture over its baseline when the screen changed.
+
+    Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
+    volatile text, or the baseline is one REMINT_FORCE names. Otherwise the
+    baseline stays as committed and the record says ``unchanged``. A re-minted frame is recorded next to the baseline it
+    replaced, for the CI report page, and captured a second time: when that
+    capture differs from the first by more than the budget the screen had not
+    settled, so the old baseline is put back and the test fails.
+
+    The old-versus-new difference never fails the test: showing what changed is
+    what a re-mint is for.
+    """
+    from PIL import Image
+
+    name = os.path.basename(expected_path)
+    with open(expected_path, "rb") as handle:
+        old_bytes = handle.read()
+    old_img = Image.open(BytesIO(old_bytes)).convert("RGB")
+    boxes = _volatile_boxes(page, clip_selector)
+    try:
+        new_img = capture()
+    except Exception as exc:
+        comparisons.record(
+            "capture-error", expected=old_img,
+            error=f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
+
+    cmp = _compare_images(new_img, old_img, pixel_threshold)
+    volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == old_img.size else None
+    changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
+    remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
+    forced = any(part in name for part in REMINT_FORCE)
+    evidence = dict(
+        expected=old_img, created=new_img, expected_cmp=cmp.expected_cmp,
+        arr=cmp.arr, counted=cmp.counted, volatile=volatile,
+        mismatched=cmp.mismatched, total=cmp.total, ratio=cmp.ratio,
+        remint_ratio=remint_ratio, remint_min_ratio=REMINT_MIN_RATIO,
+        forced=forced,
+    )
+    if remint_ratio <= REMINT_MIN_RATIO and not forced:
+        comparisons.record("unchanged", **evidence, **record_args)
+        return
+
+    try:
+        _assert_mintable(new_img, expected_path, page)
+    except AssertionError as exc:
+        comparisons.record("capture-error", error=str(exc), **evidence, **record_args)
+        raise
+    new_img.save(expected_path)
+    try:
+        again = capture()
+    except Exception as exc:
+        with open(expected_path, "wb") as handle:
+            handle.write(old_bytes)
+        comparisons.record(
+            "capture-error", expected=old_img, created=new_img,
+            error=f"second capture failed, baseline left as committed: "
+                  f"{type(exc).__name__}: {exc}", **record_args,
+        )
+        raise
+    settle = _compare_images(again, new_img, pixel_threshold)
+    if settle.ratio > max_diff_ratio:
+        with open(expected_path, "wb") as handle:
+            handle.write(old_bytes)
+        comparisons.record(
+            "failed", expected=new_img, created=again,
+            expected_cmp=settle.expected_cmp, arr=settle.arr,
+            counted=settle.counted, mismatched=settle.mismatched,
+            total=settle.total, ratio=settle.ratio,
+            error="the screen was still changing: a second capture right "
+                  "after the re-mint differs from it, so the baseline was left "
+                  "as committed", **record_args,
+        )
+        raise AssertionError(
+            f"not re-minting {name}: a second capture right after differs from "
+            f"the first by {settle.ratio:.2%}, over the {max_diff_ratio:.2%} "
+            "budget, so the screen had not settled. The baseline is left as "
+            "committed."
+        )
+    comparisons.record(
+        "reminted", expected_bytes=old_bytes, recapture_ratio=settle.ratio,
+        **evidence, **record_args,
+    )
+
+
 def save_workflow_test_screenshot(
     page: Page,
     workflow_filepath: str,
@@ -1227,6 +1491,8 @@ def save_workflow_test_screenshot(
     clip_selector: str | None = None,
     sweep_toasts: bool = False,
     allow_running: bool = False,
+    closeup: bool = False,
+    interaction: dict | None = None,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 
@@ -1244,8 +1510,11 @@ def save_workflow_test_screenshot(
     report page (see comparisons.py).
 
     If the file does **not** exist the run FAILS. Creating a baseline is a
-    deliberate act, ``pytest --mint-baselines``, because whatever the app renders
-    that day becomes the definition of correct for every run afterwards.
+    deliberate act, a CI run dispatched with ``remint=true`` (``--mint-baselines``
+    and ``--remint-baselines`` refuse to run anywhere else), because whatever
+    the app renders that day becomes the definition of correct for every run
+    afterwards. Under ``--remint-baselines`` an existing baseline is compared
+    and, when its screen changed, rewritten (see :func:`_remint`).
 
     It used to mint implicitly, which meant a first run always passed. Two ways
     that bites, both seen: a baseline captured against a broken build enshrines
@@ -1285,6 +1554,9 @@ def save_workflow_test_screenshot(
     draws on its own after its input arrives is photographed drawn, not
     mid-draw. Pass *allow_running* only when a run in progress is the subject.
 
+    *closeup* only labels the record, for the CI report's Close-ups filter, and
+    *interaction* (see :func:`save_interaction_frame`) for its Interaction pairs.
+
     Returns the path to the expected screenshot file.
     """
     if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
@@ -1292,8 +1564,7 @@ def save_workflow_test_screenshot(
             f"max_diff_ratio={max_diff_ratio} is above the {MAX_DIFF_RATIO:.0%} "
             "ceiling (MAX_DIFF_RATIO): a comparison may be tighter, never looser"
         )
-    from PIL import Image, ImageChops, ImageEnhance
-    import numpy as np
+    from PIL import Image, ImageEnhance
 
     stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
@@ -1326,17 +1597,17 @@ def save_workflow_test_screenshot(
         pixel_threshold=pixel_threshold,
         max_diff_ratio=max_diff_ratio,
         capture=f"element {clip_selector}" if clip_selector is not None else "full page",
+        closeup=closeup,
+        interaction=interaction,
     )
 
     minted_now = False
     if not os.path.isfile(expected_path):
-        if not MINT_BASELINES:
+        if not (MINT_BASELINES or REMINT_BASELINES):
             message = (
-                f"no baseline at {expected_path}. Run with --mint-baselines to "
-                "create it, on a build you trust and a machine whose rendering "
-                "matches CI's, then look at the PNG before committing it. A "
-                "baseline is the definition of correct for every later run, so "
-                "it is not something a test run should produce as a side effect."
+                f"no baseline at {expected_path}. {REMINT_HOW} A baseline is "
+                "the definition of correct for every later run, so it is not "
+                "something a test run should produce as a side effect."
             )
             comparisons.record_missing(_capture, **record_args)
             raise AssertionError(message)
@@ -1344,6 +1615,13 @@ def save_workflow_test_screenshot(
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
         minted_now = True
+    elif REMINT_BASELINES:
+        _remint(
+            page, expected_path, _capture, clip_selector=clip_selector,
+            pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio,
+            record_args=record_args,
+        )
+        return expected_path
 
     expected_img = Image.open(expected_path).convert("RGB")
     try:
@@ -1355,23 +1633,15 @@ def save_workflow_test_screenshot(
         )
         raise
 
-    target_w = max(actual_img.width, expected_img.width)
-    target_h = max(actual_img.height, expected_img.height)
-    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
-    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
-
-    diff = ImageChops.difference(actual_cmp, expected_cmp)
-    arr = np.asarray(diff)
-    total = int(arr.shape[0] * arr.shape[1])
-    counted = (arr > pixel_threshold).any(axis=2)
-    mismatched = int(counted.sum())
-    ratio = mismatched / total if total else 0.0
+    cmp = _compare_images(actual_img, expected_img, pixel_threshold)
+    actual_cmp, expected_cmp, diff = cmp.actual_cmp, cmp.expected_cmp, cmp.diff
+    mismatched, total, ratio = cmp.mismatched, cmp.total, cmp.ratio
     failed = ratio > max_diff_ratio
 
     comparisons.record(
         "failed" if failed else "minted" if minted_now else "passed",
         expected=expected_img, created=actual_img, expected_cmp=expected_cmp,
-        arr=arr, counted=counted, mismatched=mismatched, total=total,
+        arr=cmp.arr, counted=cmp.counted, mismatched=mismatched, total=total,
         ratio=ratio, **record_args,
     )
 
@@ -1410,6 +1680,318 @@ def save_workflow_test_screenshot(
             f"See Allure report attachments for visual diff."
         )
     return expected_path
+
+
+#: Per-channel tolerance of a node close-up. A map that drew nothing shows the
+#: node's own gray (242, 242, 242), which is 10 per channel from the pale
+#: background most Autark maps draw (232, 239, 242), so at the default 30 a
+#: blank sparse map counted only its few features: 0.5% of the close-up in
+#: proof run 36788122499. At 5 the same blank is 75%. Two CI captures of every
+#: close-up were byte-identical or 0.02% apart at any tolerance (run 36788096514).
+CLOSEUP_PIXEL_THRESHOLD = 5
+
+#: Budget of a node close-up, tighter than MAX_DIFF_RATIO. A blank plot keeps
+#: its panel and loses only its marks: the tallest-bar histogram blanked to
+#: 9.27% and the scatter to 10.20% (proof run 36789368569), so at 10% one of
+#: them passed. At 2% the smallest blank is 4.6 times the budget, and the
+#: 0.02% run-to-run noise is a hundredth of it.
+CLOSEUP_MAX_DIFF_RATIO = 0.02
+
+
+def save_node_closeup(
+    page: Page,
+    workflow_filepath: str,
+    node_id: str,
+    *,
+    test_name: str,
+    sweep_toasts: bool = False,
+) -> str:
+    """Compare one node, framed at up to 100% zoom, against its own baseline.
+
+    For a node whose drawing is the claim: an Autark map or plot. In a
+    full-page frame that node is a thumbnail, so one that drew nothing and
+    left its body blank moves the frame by less than the 10% budget, and the
+    comparison passes. Cropped to the node and compared at
+    ``CLOSEUP_PIXEL_THRESHOLD`` against ``CLOSEUP_MAX_DIFF_RATIO``, the same
+    blank is several times the budget.
+
+    Leaves the viewport on the node; a later full-page capture fits it again.
+    """
+    frame_nodes(page, [node_id])
+    return save_workflow_test_screenshot(
+        page,
+        workflow_filepath,
+        test_name=test_name,
+        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+        fit_reactflow=False,
+        sweep_toasts=sweep_toasts,
+        closeup=True,
+    )
+
+
+def park_pointer(page: Page) -> None:
+    """Move the pointer to the pane's empty bottom-right corner.
+
+    The pointer is wherever the last click left it, and once a node is framed
+    that spot can be over its map or its chart.
+    """
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    page.mouse.move(viewport["width"] - 10, viewport["height"] - 60)
+
+
+def frame_nodes(page: Page, node_ids) -> None:
+    """Fit the canvas to *node_ids* at up to 100% zoom, the pointer parked first."""
+    park_pointer(page)
+    # The full-page fit's padding: less lets a tall node's header reach the
+    # dataflow title in the canvas's top-left corner.
+    _wait_for_reactflow_ready(page, node_ids=list(node_ids), max_zoom=1.0)
+
+
+# ---------------------------------------------------------------- interactions
+#
+# A gesture on one drawn node (a hover over a bar, a pick on a map) and the
+# node it should light up, compared before and after. See
+# test_workflows.INTERACTIONS.
+
+#: How many pixels of the target have to change, by more than 40 in some
+#: channel, for a gesture to count as having reached it. One bar of 90 turned
+#: red was 63 at 55% zoom (CI run 36791426801); two captures of a node that is
+#: not changing differ by none.
+INTERACTION_MIN_CHANGED_PIXELS = 20
+
+#: The page's size while interaction steps run: room to frame a pair of nodes
+#: at up to 100% zoom. At the suite's 1280x720 a bar chart above a map fitted
+#: at 55%, where one bar is two pixels wide.
+INTERACTION_VIEWPORT = {"width": 1600, "height": 1440}
+
+#: How close to its first capture a target has to come back once the gesture
+#: is undone: the share of pixels over ``CLOSEUP_PIXEL_THRESHOLD``.
+INTERACTION_RESTORED_RATIO = 0.01
+
+# The element a node draws into: a Vega chart's canvas, an Autark map's canvas,
+# or the box an Autark plot puts its svg in.
+_DRAWING_SELECTOR_JS = """(id) => {
+    for (const selector of ['#vega' + id + ' canvas', '#autk-grammar-map-' + id,
+                            '#autk-grammar-plot-' + id]) {
+        if (document.querySelector(selector)) return selector;
+    }
+    return null;
+}"""
+
+# The drawing now, kept on window so a later check can ask whether it is still
+# the one in the page: a redraw replaces it, a highlight keeps it.
+_KEEP_DRAWING_JS = """(selector) => {
+    const el = document.querySelector(selector);
+    (window.__curioKeptDrawings = window.__curioKeptDrawings || {})[selector] = el;
+    return !!el;
+}"""
+_DRAWING_KEPT_JS = """(selector) => {
+    const kept = (window.__curioKeptDrawings || {})[selector];
+    return !!kept && kept.isConnected && document.querySelector(selector) === kept;
+}"""
+
+# Defines readMarks(el): a canvas's pixels, read through toDataURL (which a
+# WebGPU map canvas answers as a 2D chart does), with where each one sits in
+# the page and whether it is marked: opaque and saturated, so a bar or a
+# polygon rather than an edge, an axis or the background.
+_CANVAS_MARKS_JS = """
+    const readMarks = async (el) => {
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const img = new Image();
+        img.src = el.toDataURL('image/png');
+        await img.decode();
+        const w = img.width, h = img.height;
+        if (!w || !h) return null;
+        const scratch = document.createElement('canvas');
+        scratch.width = w;
+        scratch.height = h;
+        const ctx = scratch.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const px = ctx.getImageData(0, 0, w, h).data;
+        const box = el.getBoundingClientRect();
+        const marked = (x, y) => {
+            const i = (y * w + x) * 4;
+            const hi = Math.max(px[i], px[i + 1], px[i + 2]);
+            const lo = Math.min(px[i], px[i + 1], px[i + 2]);
+            return px[i + 3] >= 250 && hi > 0 && (hi - lo) / hi > 0.3;
+        };
+        return { w, h, box, sx: box.width / w, sy: box.height / h, marked };
+    };
+"""
+
+# A marked pixel of a canvas the page shows, in page coordinates: the one
+# nearest a point given as fractions of the part of the canvas in view. A node
+# can show less of its drawing than the canvas holds (an Autark map's canvas
+# is 400 px tall in a 281 px body), and overlays sit on top of it, so what is in
+# view is asked of elementFromPoint. Every pixel around the one chosen is
+# marked too: 7x7 where the marks are that wide, as a map's polygons are, else
+# 3x3, as a bar is, so the point is well inside its mark.
+_MARK_POINT_JS = "async ({ selector, at }) => {" + _CANVAS_MARKS_JS + """
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    const marks = await readMarks(el);
+    if (!marks) return null;
+    const { w, h, box, sx, sy, marked } = marks;
+    const onPage = (x, y) => [box.left + (x + 0.5) * sx, box.top + (y + 0.5) * sy];
+    const shown = (x, y) => document.elementFromPoint(...onPage(x, y)) === el;
+    const inside = (x, y, r) => {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) if (!marked(x + dx, y + dy)) return false;
+        }
+        return true;
+    };
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    const step = Math.max(1, Math.round(8 / sx));
+    for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+            if (shown(x, y)) {
+                x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+                x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+            }
+        }
+    }
+    if (x1 < 0) return null;
+    const cx = x0 + at[0] * (x1 - x0), cy = y0 + at[1] * (y1 - y0);
+    for (const r of [3, 1]) {
+        const found = [];
+        for (let y = Math.max(y0, r); y <= Math.min(y1, h - 1 - r); y++) {
+            for (let x = Math.max(x0, r); x <= Math.min(x1, w - 1 - r); x++) {
+                if (inside(x, y, r)) found.push([(x - cx) ** 2 + (y - cy) ** 2, x, y]);
+            }
+        }
+        found.sort((a, b) => a[0] - b[0]);
+        for (const [, x, y] of found) {
+            if (shown(x, y)) {
+                const [pageX, pageY] = onPage(x, y);
+                return { x: pageX, y: pageY };
+            }
+        }
+    }
+    return null;
+}"""
+
+# Where a brush gesture drags, in page coordinates: an Autark plot's d3 brush
+# overlay, or, on a Vega canvas, the box its marks take.
+_BRUSH_AREA_JS = "async (selector) => {" + _CANVAS_MARKS_JS + """
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    const asBox = (r) => ({ x: r.left, y: r.top, width: r.width, height: r.height });
+    const overlay = el.querySelector('rect.overlay');
+    if (overlay) return asBox(overlay.getBoundingClientRect());
+    if (el.tagName !== 'CANVAS') return asBox(el.getBoundingClientRect());
+    const marks = await readMarks(el);
+    if (!marks) return null;
+    const { w, h, box, sx, sy, marked } = marks;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (marked(x, y)) {
+                x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+                x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+            }
+        }
+    }
+    if (x1 < 0) return null;
+    return { x: box.left + x0 * sx, y: box.top + y0 * sy,
+             width: (x1 - x0 + 1) * sx, height: (y1 - y0 + 1) * sy };
+}"""
+
+
+def drawing_selector(page: Page, node_id: str) -> str | None:
+    """The selector of the element *node_id* draws into, or None before it drew."""
+    return page.evaluate(_DRAWING_SELECTOR_JS, node_id)
+
+
+def keep_drawing(page: Page, selector: str) -> None:
+    assert page.evaluate(_KEEP_DRAWING_JS, selector), f"nothing matches {selector}"
+
+
+def drawing_kept(page: Page, selector: str) -> bool:
+    """Whether *selector* still matches the element :func:`keep_drawing` saw."""
+    return bool(page.evaluate(_DRAWING_KEPT_JS, selector))
+
+
+def mark_point(page: Page, selector: str, at=(0.5, 0.5)) -> dict | None:
+    """``{x, y}`` in the page: the marked pixel of *selector*'s canvas nearest *at*
+    of the part in view."""
+    return page.evaluate(_MARK_POINT_JS, {"selector": selector, "at": list(at)})
+
+
+def brush_area(page: Page, selector: str) -> dict | None:
+    """``{x, y, width, height}`` in the page: where a brush on *selector* drags."""
+    return page.evaluate(_BRUSH_AREA_JS, selector)
+
+
+def at_fraction(area: dict, fraction) -> tuple[float, float]:
+    """The page point at *fraction* ``(fx, fy)`` of *area*."""
+    return (area["x"] + fraction[0] * area["width"], area["y"] + fraction[1] * area["height"])
+
+
+def capture_node(page: Page, node_id: str):
+    """The node as a frame of it shows it, in memory (maps painted, see #427)."""
+    return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')
+
+
+def changed_pixels(before, after, threshold: int = 40) -> int:
+    """Pixels that differ by more than *threshold* in some channel."""
+    return _compare_images(after, before, threshold).mismatched
+
+
+def wait_for_node_capture(page: Page, node_id: str, done, *, timeout_ms: int = 15000):
+    """Capture *node_id* until ``done(capture)`` holds. Returns ``(capture, held)``."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        capture = capture_node(page, node_id)
+        if done(capture):
+            return capture, True
+        if time.monotonic() >= deadline:
+            return capture, False
+        page.wait_for_timeout(300)
+
+
+def wait_for_node_still(page: Page, node_id: str, *, timeout_ms: int = 10000):
+    """Capture *node_id* until two captures in a row match; returns the last."""
+    previous = [capture_node(page, node_id)]
+
+    def still(capture):
+        same = _compare_images(capture, previous[0], CLOSEUP_PIXEL_THRESHOLD).ratio <= REMINT_MIN_RATIO
+        previous[0] = capture
+        return same
+
+    capture, held = wait_for_node_capture(page, node_id, still, timeout_ms=timeout_ms)
+    assert held, f"node {node_id} was still changing after {timeout_ms} ms"
+    return capture
+
+
+def save_interaction_frame(
+    page: Page,
+    workflow_filepath: str,
+    node_id: str,
+    *,
+    test_name: str,
+    interaction: dict,
+) -> str:
+    """Compare one node of an interaction, as it is framed now, against its baseline.
+
+    Neither refits the canvas nor moves the pointer, and never sweeps toasts
+    (that parks the pointer too): a held hover has to still be held when the
+    shutter fires. Compared at ``CLOSEUP_PIXEL_THRESHOLD`` against
+    ``CLOSEUP_MAX_DIFF_RATIO``, like a close-up. *interaction* names the
+    frame's place in its pair (step, phase, role, node) for the CI report's
+    Interaction pairs.
+    """
+    return save_workflow_test_screenshot(
+        page,
+        workflow_filepath,
+        test_name=test_name,
+        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+        fit_reactflow=False,
+        interaction=interaction,
+    )
 
 
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):

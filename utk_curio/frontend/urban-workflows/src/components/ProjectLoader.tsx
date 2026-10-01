@@ -162,7 +162,13 @@ export const ProjectLoader: React.FC<{
             "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
           );
         }
-        loaded = loadTrill(spec);
+        // The outputs the manifest restored, by node: those nodes are built as
+        // having run, so a downstream play reuses them (#407).
+        const restored: Record<string, string> = {};
+        for (const o of outputs ?? []) {
+          if (o?.node_id && o.filename) restored[o.node_id] = o.filename;
+        }
+        loaded = loadTrill(spec, undefined, undefined, restored);
         // Auto-install missing deps only for the owner's own project — never
         // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note), and
         // never for a dashboard: opening a page to look at it must not install

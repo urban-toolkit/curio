@@ -5,7 +5,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { applyContainerSizing } from "../utils/vegaSpecSizing";
+import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
@@ -60,6 +60,10 @@ export const useVega = ({
   // The spec most recently compiled. `processData` needs it to prepare rows the
   // same way `compileGrammar` did -- hot reload never goes through the latter.
   const lastSpecRef = React.useRef<any>(null);
+
+  // The same spec after container sizing, which says whether the view's width
+  // and height follow its mount (#496).
+  const sizedSpecRef = React.useRef<Record<string, unknown> | null>(null);
 
   // The rows the view holds, which a direct selection is matched against.
   const lastValuesRef = React.useRef<any[]>([]);
@@ -226,13 +230,19 @@ export const useVega = ({
   }, [connected, upstreamErrored, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
+    const el = document.getElementById("vega" + data.nodeId);
+    const flipping = createFlipGuard();
     const ro = new ResizeObserver(() => {
-      if (currentViewRef.current != null) {
-        currentViewRef.current.resize().runAsync();
+      const view = currentViewRef.current;
+      if (view != null && el) {
+        // A node resized by hand kept its chart's old width: resize() alone
+        // never re-reads the mount (#496). Not when the refit is only flipping
+        // the mount's scrollbars, which would loop every frame.
+        if (!flipping(`${el.clientWidth}x${el.clientHeight}`)) refitToContainer(view, el, sizedSpecRef.current);
+        view.resize().runAsync();
       }
     });
 
-    const el = document.getElementById("vega" + data.nodeId);
     if (el) ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -309,6 +319,7 @@ export const useVega = ({
     // "container" injection there anyway) and the output pane scrolls; unit
     // and layer specs fill the node, unless the author sized them (#202).
     applyContainerSizing(specObj);
+    sizedSpecRef.current = specObj;
 
     let vegaspec = lite.compile(specObj).spec;
 
@@ -388,7 +399,9 @@ export const useVega = ({
       // Canvas pixel dimensions are fixed at initialization time. If the node
       // hasn't finished layout by then the coordinates will be wrong. Resize
       // after the first render so the canvas matches the actual container size
-      // before the user can interact.
+      // before the user can interact. A tall chart's scrollbar only appears
+      // with that first draw, so the width is read again here (#496).
+      refitToContainer(view, container, specObj);
       return view.resize().runAsync();
     }).then(() => {
       const map = buildVgsidMap(view);
