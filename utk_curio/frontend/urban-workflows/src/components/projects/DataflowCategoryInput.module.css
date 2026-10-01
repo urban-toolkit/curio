@@ -23,9 +23,10 @@
   white-space: nowrap;
 }
 
-/* Read off the nodes, so they are not removable: plain, no border. */
+/* Read off the nodes, so they are not removable: filled, no border. The
+   dataflow grey reads as a chip on the canvas and on a white dialog alike. */
 .chipAuto {
-  background: var(--curio-page-bg);
+  background: var(--curio-kind-dataflow-bg);
 }
 
 /* Set by hand: outlined, with a remove button. */
