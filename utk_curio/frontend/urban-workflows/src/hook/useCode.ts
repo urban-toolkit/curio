@@ -11,6 +11,7 @@ import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
+import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
 
 // Module-level singletons so every node shares the same interpreter
@@ -61,6 +62,9 @@ type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
+    // #412: a renamed node header (metadata.packageTemplateLabel), which the
+    // header reads through resolveNodeDisplayLabel.
+    packageTemplateLabel?: string;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -224,6 +228,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.simpleVis != undefined)
                 nodeMeta.simpleVis = node.metadata.simpleVis;
 
+            // #412: and so does a renamed node header.
+            if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
+                nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -339,7 +347,7 @@ export function useCode(): IUseCode {
             markDirty();
         } else if(suggestionType == undefined) {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
-            if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
+            if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
@@ -380,6 +388,7 @@ export function useCode(): IUseCode {
             comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
+            packageTemplateLabel = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -425,6 +434,7 @@ export function useCode(): IUseCode {
                 comments,
                 spatialJoin,
                 simpleVis,
+                packageTemplateLabel,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

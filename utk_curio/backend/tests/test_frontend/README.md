@@ -182,18 +182,6 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 
 The DB stub is strictly additive - Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
-**One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
-`dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
-canvas ends up with no workflow name at all (it clobbers `FlowProvider`'s
-`"DefaultDataflow"` default). Nothing notices until a test presses **File > New
-dataflow** and then **Save**: `discardProject()` clears `projectName`, so
-`saveCurrentProject` sends `nameOverride || projectName || workflowNameRef.current`
-= `undefined`, and `ProjectCreate` rejects it with `name is required`. The symptom
-is an error toast and a URL that stays on `/dataflow/new`, because `handleSave`
-only navigates after a successful create. A test that needs a second empty
-dataflow should stub another project rather than create one through the File
-menu.
-
 ### Shared helpers
 
 | Helper | What it does |
