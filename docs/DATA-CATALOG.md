@@ -147,7 +147,7 @@ The generated code names the dataset with `curio_dataset_path("<datasetId>")`, o
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
-A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Clicking a pill reveals the dataset's row in the palette. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
+A node tied to a dataset shows a pill on its title bar: **DATASET** when it reads one dropped on the canvas or onto the node, **OUTPUT** when it produced one. Clicking a pill reveals the dataset's row in the palette. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
 
 ### Collections
 
