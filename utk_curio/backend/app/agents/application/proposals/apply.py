@@ -204,9 +204,12 @@ def _apply_node_template_create(
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     label = created_template["label"]
+    broken_line = _broken_library_line(
+        created_template.get("importErrors"), created_template.get("dependencyError"),
+    )
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: node type registered and node created ({created['id']}).",
+        f"Applied: node type registered and node created ({created['id']}).{broken_line}",
         "Applied: custom node type created",
         [
             f"{label} · {created_template['id']}",
@@ -373,14 +376,20 @@ def _apply_package_install(
     }
 
 
-def _broken_library_line(import_errors) -> str:
+def _broken_library_line(import_errors, dependency_error=None) -> str:
     """`` rasterio cannot be imported (...).`` for the applied turn, or ``""``.
 
     One sentence, appended to the turn the user reads after Apply. The wording
     matches the frontend's ``dependencyFailureNotice`` deliberately: the same
     failure should not read as a different problem depending on whether a
-    button or an agent reached it.
+    button or an agent reached it. That includes its order: pip's own failure
+    leads, because the probe after it only restates it as "not installed".
     """
+    if dependency_error:
+        return (
+            f" But its libraries could not be installed: {dependency_error}."
+            " Nodes needing them will fail until they are installed."
+        )
     if not import_errors:
         return ""
     named = "; ".join(

@@ -438,6 +438,37 @@ def test_reload_from_catalog_installs_the_packages_declared_deps(
     ]
 
 
+def test_an_agent_drafted_node_type_installs_the_deps_it_derived_from_the_source(
+    client, user_and_token, tmp_curio, pip_spy,
+):
+    """The agent's creation fallback is a factory build too (#565).
+
+    It declared the library its node body imports, registered the package and
+    enlisted it in the project, and installed nothing, so the node's first run
+    raised ImportError until the dataflow was reopened.
+    """
+    from utk_curio.backend.app.packages.application.template_packages import (
+        create_template_package,
+    )
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    project = client.post(
+        "/api/projects",
+        json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+              "outputs": []},
+        headers=_auth(token),
+    ).get_json()["id"]
+
+    created = create_template_package(_user_dir_key(user), project, {
+        "label": "Shapely buffer", "engine": "python",
+        "content": "import shapely\nreturn arg\n",
+    })
+
+    assert pip_spy == [{"shapely": "*"}]
+    assert created["importErrors"] == {}
+
+
 @pytest.mark.parametrize("route", ["upload", "factory", "catalog"])
 def test_every_file_first_install_reports_a_library_that_cannot_be_imported(
     client, user_and_token, tmp_curio, monkeypatch, route,

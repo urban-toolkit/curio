@@ -11,13 +11,13 @@ from __future__ import annotations
 import re
 
 from utk_curio.backend.app.packages.repositories.archive import InstallerError
-from utk_curio.backend.app.packages.application import project_packages as packages_project_packages
-from utk_curio.backend.app.packages.domain.errors import PackageServiceError
-from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
-from utk_curio.backend.app.packages.builder.factory import (
-    build_package_archive,
-    FactoryError,
+from utk_curio.backend.app.packages.application import (
+    factory_install as packages_factory_install,
+    project_packages as packages_project_packages,
+    provisioning as packages_provisioning,
 )
+from utk_curio.backend.app.packages.domain.errors import PackageServiceError
+from utk_curio.backend.app.packages.builder.factory import FactoryError
 
 
 # Agent-drafted packages (memo dev/48 §3.2b) are namespaced so they can never
@@ -47,9 +47,15 @@ def create_template_package(user_key: str, project_id: str, template: dict) -> d
     Save-as flow produces), installs it to the user store via the factory's
     atomic staging, and adds it to *project_id*'s package lockfile. Returns
     the created template entry (``available_templates`` shape, plus
-    ``packageDir``). Factory/installer validation failures raise
-    :class:`PackageServiceError` with the verbatim message — nothing is ever
-    half-registered (the factory stages atomically).
+    ``packageDir``) and the dependency step's fields. Factory/installer
+    validation failures raise :class:`PackageServiceError` with the verbatim
+    message, and nothing is ever half-registered (the factory stages atomically).
+
+    The install is the wizard's "Save and install", gate and dependency step
+    included (#565): a hosted guest is refused (403) before anything is
+    written, and the libraries the build derives from the node's own imports
+    are installed here or nowhere, because ``install_to_project`` finds the
+    package already in the store and only probes.
     """
     label = str(template.get("label") or "").strip()
     slug = template_slug(label)
@@ -91,11 +97,13 @@ def create_template_package(user_key: str, project_id: str, template: dict) -> d
         "sources": {slug: {"filename": filename, "code": code}},
     }
     try:
-        built = build_package_archive(draft)
-        install_package_from_archive(user_key, built.archive, replace=False)
+        built, result = packages_factory_install.install_draft(user_key, draft, replace=False)
     except (FactoryError, InstallerError) as exc:
         raise PackageServiceError(str(exc), 409) from exc
     dir_name = built.manifest.dir_name
+    dependency_fields = packages_provisioning.provision_declared_deps(
+        user_key, dir_name, result.manifest,
+    )
     packages_project_packages.install_to_project(user_key, project_id, dir_name)
     return {
         "id": f"{package_id}/{slug}",
@@ -103,4 +111,5 @@ def create_template_package(user_key: str, project_id: str, template: dict) -> d
         "description": description,
         "authorable": True,
         "packageDir": dir_name,
+        **dependency_fields,
     }
