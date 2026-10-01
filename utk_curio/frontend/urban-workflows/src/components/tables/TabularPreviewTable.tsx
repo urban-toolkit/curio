@@ -7,6 +7,7 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import { shortenString } from "../../utils/parsing";
+import { cellText } from "../../utils/cellText";
 import { visiblePreviewColumns } from "../../utils/tabularPreview";
 
 export interface TabularPreviewTableProps {
@@ -29,7 +30,7 @@ function formatCell(value: unknown): string {
   if (value === undefined || value === null) {
     return "null";
   }
-  return shortenString(String(value));
+  return shortenString(cellText(value));
 }
 
 export const TabularPreviewTable: React.FC<TabularPreviewTableProps> = ({

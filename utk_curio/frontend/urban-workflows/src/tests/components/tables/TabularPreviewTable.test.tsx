@@ -130,3 +130,37 @@ describe('TabularPreviewTable still renders its content', () => {
     expect(getByText('Loading preview…')).toBeInTheDocument();
   });
 });
+
+describe('TabularPreviewTable object cells (#443)', () => {
+  // The Data Pool builds its rows in the browser from a GeoJSON
+  // FeatureCollection, so a property holding a dict or a secondary geometry
+  // reaches the cell as an object. String(value) printed "[object Object]".
+  const cells = (rows: Record<string, unknown>[]) => {
+    const { container } = render(<TabularPreviewTable rows={rows} rowKeyPrefix="t" />);
+    return Array.from(container.querySelectorAll('tbody td')).map((td) => td.textContent);
+  };
+
+  test('a geometry reads as WKT, the way the server writes it', () => {
+    expect(cells([
+      { g: { type: 'Point', coordinates: [1, 2] } },
+      { g: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } },
+      { g: { type: 'MultiPoint', coordinates: [[0, 0], [1.5, 2]] } },
+    ])).toEqual([
+      'POINT (1 2)',
+      'POLYGON ((0 0, 1 0, 1 1, 0 0))',
+      'MULTIPOINT ((0 0), (1.5 2))',
+    ]);
+  });
+
+  test('any other object reads as JSON', () => {
+    expect(cells([
+      { a: { CurbRamp: 1.93, Obstacle: 0.5 } },
+      { a: [1, 2] },
+    ])).toEqual(['{"CurbRamp":1.93,"Obstacle":0.5}', '[1,2]']);
+  });
+
+  test('no cell says [object Object]', () => {
+    const text = cells([{ a: { x: 1 }, g: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }]);
+    expect(text.join(' ')).not.toContain('[object Object]');
+  });
+});
