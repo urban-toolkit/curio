@@ -27,6 +27,7 @@ from .utils import (
     assert_autark_map_drawn,
     at_fraction,
     brush_area,
+    brush_mismatches,
     capture_node,
     changed_pixels,
     dismiss_toasts,
@@ -169,12 +170,14 @@ INTERACTIONS = {
         Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
         Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick"),
     ),
+    # Autark to Autark: a histogram brush and a building map, through a pool.
+    # No pick the other way: at the pair's 86% zoom a building is a few
+    # pixels, so a pick that lands changes 1 to 9 of the map's pixels, and two
+    # of six probes landed on none (CI run 36796749223).
+    "Interaction_Autark.json": (
+        Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
+    ),
 }
-# Interaction_Autark's plot brush (Autark to Autark) joins once its frames are
-# minted with the #536 fix and reviewed: the ones minted before it showed the
-# brush lighting bins outside it. It gets no building pick: at its pair's 86%
-# zoom a building is a few pixels, so a pick that lands changes 1 to 9 of the
-# map's pixels, and two of six probes landed on none (CI run 36796749223).
 
 
 def _linked(spec, a: str, b: str) -> bool:
@@ -1154,6 +1157,13 @@ class TestWorkflowCanvas:
         assert drawing_kept(page, drawing), (
             f"{where} redrew {step.target} instead of highlighting it"
         )
+        if step.gesture == "brush" and not on_vega:
+            # The bars lit are the ones under the brush, once the selection has
+            # come back to the plot through the pool (#536).
+            wrong = brush_mismatches(page, source_drawing)
+            assert wrong is not None, f"{where} left no brush on {step.source}"
+            assert not wrong, f"{where} lit the wrong bars: " + ", ".join(
+                f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
         frame("after", "target")
         frame("after", "source")
 
