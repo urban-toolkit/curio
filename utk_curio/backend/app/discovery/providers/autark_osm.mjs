@@ -54,7 +54,7 @@ async function fixtureFetch(root) {
     const key = fixtureKey(opts.method || 'GET', url, opts.body);
     const entry = index[key];
     if (!entry) {
-      throw new Error(`no recorded Overpass answer for ${key}; record it with scripts/record_discovery_fixtures.py`);
+      throw new Error(`no recorded Overpass answer for ${key}; record it with this script's record mode (ARCHITECTURE.md, Services)`);
     }
     // Filed gzipped: an Overpass answer is JSON and shrinks tenfold.
     const body = gunzipSync(await readFile(path.join(root, entry.file)));
