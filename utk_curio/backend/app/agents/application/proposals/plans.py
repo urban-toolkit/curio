@@ -384,9 +384,9 @@ def _plan_positions(plan: dict, existing_nodes: dict) -> dict[str, dict]:
     """dev/67-5: positions computed ONCE at mint, so per-node applies land exactly where the whole-plan
     apply would have put them (both read the same map). Extent from the pre-removal spec — victims
     may inflate it slightly; a stable layout beats a perfectly tight one."""
-    xs = [n.get("x") for n in existing_nodes.values() if isinstance(n.get("x"), (int, float))]
+    right = _right_edge(existing_nodes.values())
     ys = [n.get("y") for n in existing_nodes.values() if isinstance(n.get("y"), (int, float))]
-    layout_base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    layout_base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     layout_base_y = min(ys) if ys else 80.0
     layout_depths = _plan_depths(plan["nodes"], plan["edges"])
     layout_rows: dict[int, int] = {}
@@ -1153,11 +1153,30 @@ def apply_plan_edges(
     }
 
 
+# A node's box as the canvas draws it when the node sets no size of its own
+# (DEFAULT_NODE_WIDTH/HEIGHT, frontend src/constants.ts), and the gutters the
+# shipped examples are laid out with (scripts/tidy_example_layout.py). Steps
+# smaller than the box put every placed node on top of its neighbour (#499,
+# #410).
+_NODE_WIDTH = 525
+_NODE_HEIGHT = 350
+_NODE_H_GUTTER = 120
+_NODE_V_GUTTER = 80
+
+
+def _right_edge(nodes) -> float | None:
+    """The rightmost edge of the placed nodes, each at its own width, or None."""
+    edges = [
+        float(n["x"]) + float(n["width"] if isinstance(n.get("width"), (int, float)) else _NODE_WIDTH)
+        for n in nodes
+        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
+    ]
+    return max(edges) if edges else None
+
+
 # Plan layout (dev/52): topological columns right of the existing extent.
-_PLAN_COLUMN_OFFSET = 420
-
-
-_PLAN_ROW_OFFSET = 240
+_PLAN_COLUMN_OFFSET = _NODE_WIDTH + _NODE_H_GUTTER
+_PLAN_ROW_OFFSET = _NODE_HEIGHT + _NODE_V_GUTTER
 
 
 def _plan_depths(nodes: list[dict], edges: list[dict]) -> dict[str, int]:
@@ -1349,9 +1368,9 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
     """The plan's new nodes at the mint-time layout (+ review-stage overlays); refs already applied
     per-node are REAL nodes — skipped, their ids seed the edge resolution. Each created node gets its
     agents in THIS apply's single spec write (dev/126)."""
-    xs = [n.get("x") for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
+    right = _right_edge(nodes)
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
-    base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    base_x = (right + _NODE_H_GUTTER) if right is not None else 80.0
     base_y = min(ys) if ys else 80.0
     depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
     rows: dict[int, int] = {}

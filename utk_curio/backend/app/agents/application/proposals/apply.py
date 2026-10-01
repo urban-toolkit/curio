@@ -646,11 +646,8 @@ def _apply_project_install(
     }
 
 
-# Placement for server-minted nodes (dev/48): right of the current extent,
-# aligned with the rightmost node's row. Offsets match typical node width.
-_NODE_PLACEMENT_X_OFFSET = 420
-
-
+# Placement for server-minted nodes (dev/48): a gutter right of the current
+# extent, aligned with the rightmost node's row.
 _NODE_PLACEMENT_DEFAULT = (80.0, 80.0)
 
 
@@ -674,14 +671,11 @@ def _insert_node(
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
-    xs = [
-        (n.get("x"), n.get("y"))
-        for n in nodes
-        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
-    ]
-    if xs:
-        max_x, at_y = max(xs, key=lambda p: p[0])
-        x = float(max_x) + _NODE_PLACEMENT_X_OFFSET
+    placed = [n for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
+    if placed:
+        rightmost = max(placed, key=lambda n: agents_plans._right_edge([n]))
+        x = agents_plans._right_edge([rightmost]) + agents_plans._NODE_H_GUTTER
+        at_y = rightmost.get("y")
         y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
     else:
         x, y = _NODE_PLACEMENT_DEFAULT
