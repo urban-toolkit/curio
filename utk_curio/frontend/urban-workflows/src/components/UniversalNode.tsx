@@ -196,8 +196,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
     // A selection coming back through a Data Pool: the same rows with new
-    // `interacted` flags, which useVega's hot reload swaps into the view it
-    // already has. Rebuilding the chart would throw its own selection away.
+    // `interacted` flags, which useVega's hot reload sets on the rows the view
+    // already holds. Rebuilding the chart would throw its own selection away.
     if (isSelectionEcho(data.input)) return;
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;

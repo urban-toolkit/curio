@@ -10,6 +10,7 @@ import type { RenderCounts } from "../utils/renderOutcome";
 import { prepareVegaInput } from "../utils/vegaInput";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
+import { isSelectionEcho } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
@@ -71,6 +72,16 @@ export const useVega = ({
   incomingSelectionRef.current = data.interactions;
 
   /**
+   * Sets the `interacted` flag on the rows the view already holds. The rows
+   * keep their `_vgsid_`, so a selection made in this chart still finds its
+   * marks afterwards.
+   */
+  const setInteracted = (view: any, flagOf: (t: any) => string) =>
+    view
+      .change("data", vega.changeset().modify(() => true, "interacted", flagOf))
+      .runAsync();
+
+  /**
    * A selection from a chart joined to this one by a direct interaction edge,
    * with no Data Pool between them. The rows it picks out are flagged
    * `interacted` in the view as it is, so the spec's `datum.interacted`
@@ -82,16 +93,7 @@ export const useVega = ({
     const incoming = incomingSelectionRef.current;
     if (!view || !Array.isArray(incoming) || incoming.length === 0) return;
     const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
-    view
-      .change(
-        "data",
-        vega.changeset().modify(
-          () => true,
-          "interacted",
-          (t: any) => (picked.has(t.__row_index__) ? "1" : "0"),
-        ),
-      )
-      .runAsync();
+    setInteracted(view, (t: any) => (picked.has(t.__row_index__) ? "1" : "0"));
   };
 
   // Why the node body is blank, when it is. Persistent, unlike a toast.
@@ -178,6 +180,22 @@ export const useVega = ({
     const prepared = await prepareVegaInput(data.input, lastSpecRef.current);
     setEmptyState(prepared);
     const values = prepared.values;
+    const prevView = currentViewRef.current;
+
+    // A Data Pool sending a selection back: the same rows with new
+    // `interacted` flags. Fresh rows would get fresh `_vgsid_` ids, and a
+    // selection made in this chart (a hovered bar) would then match none of
+    // them (#535), so only the flags change. The rows stay the view's own.
+    if (
+      prevView
+      && isSelectionEcho(data.input)
+      && Array.isArray(values)
+      && values.length === lastValuesRef.current.length
+    ) {
+      setInteracted(prevView, (t: any) => values[t.__row_index__]?.interacted ?? t.interacted)
+        .then(() => applyDirectSelection(prevView));
+      return;
+    }
     lastValuesRef.current = values;
 
     let changeset = vega
@@ -185,7 +203,6 @@ export const useVega = ({
       .remove(() => true)
       .insert(values);
 
-    const prevView = currentViewRef.current;
     if (prevView) {
       prevView.change("data", changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
