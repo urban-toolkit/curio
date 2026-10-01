@@ -668,6 +668,89 @@ def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_cu
     )
 
 
+def test_save_as_into_an_installed_package_keeps_everything_it_does_not_change(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """#432: Save as package node into an existing package rebuilt it from the
+    modal's draft, which models only a package's sources and a few manifest
+    keys, and the installer then replaced the directory. README, LICENSE,
+    ``scripts/``, ``backend/``, ``behaviorScript``, template keys like
+    ``badge``, and every declared range were lost.
+
+    The id is deliberately one the shared catalog does not hold: for a package
+    that is also in the catalog, the next listing re-copies the catalog version
+    over any saved change (#564), which would hide what this test checks.
+    """
+    from utk_curio.backend.app.packages.application import provisioning
+    from utk_curio.backend.app.packages.domain import backend_contract as bc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    # The package carries a backend, so its deps route to an overlay: keep pip off the network.
+    monkeypatch.setattr(provisioning, "_overlay_import_failures", lambda *a, **k: {})
+    monkeypatch.setattr(backend_runtime, "build_overlay", lambda *a, **k: {"libs": [], "bytes": 0})
+
+    manifest = {
+        "id": "ai.test.saveinto", "version": "1.0.0", "name": "Save into", "publisher": "Tests",
+        "description": "d", "license": "MIT",
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "permissions": [bc.PERMISSION_SERVER_CODE],
+        "behaviorScript": "scripts/behaviors.js",
+        "dependencies": {"packages": {}, "python": {"numpy": ">=1.24", "rasterio": ">=1.3"}, "js": {}},
+        "templates": [{
+            "id": "demo", "label": "Demo", "category": "computation", "engine": "python",
+            "editor": "code", "hasCode": True, "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/demo.py", "badge": "NEW", "grammarId": "demo-grammar",
+        }],
+        "backend": {"entry": "backend/handler.py",
+                    "handlers": [{"name": "count", "timeoutClass": "quick"}]},
+    }
+    base_files = {
+        "sources/demo.py": "import numpy\nreturn arg\n",
+        "README.md": "# Save into\n",
+        "LICENSE": "MIT License\n",
+        "scripts/behaviors.js": "/* the package's own interface */\n",
+        "backend/handler.py": "import rasterio\nHANDLERS = {}\n",
+    }
+    user, token = user_and_token
+    assert _upload(client, token, _zip({"manifest.json": json.dumps(manifest), **base_files})).status_code == 201
+
+    # What NodeSaveAsModal sends for an installed target: the modelled manifest
+    # keys, the existing template with a placeholder body, the canvas node as a
+    # new template, and no README or LICENSE text.
+    modelled = {k: manifest[k] for k in (
+        "id", "version", "name", "publisher", "description", "license",
+        "compatibility", "permissions", "dependencies")}
+    existing = {k: v for k, v in manifest["templates"][0].items() if k not in ("badge", "grammarId")}
+    added = {**existing, "id": "added", "label": "Added", "source": "sources/added.py"}
+    save_as = {
+        "manifest": {**modelled, "templates": [existing, added]},
+        "sources": {
+            "demo": {"filename": "demo.py", "code": _STARTER_CODE_SENTINEL},
+            "added": {"filename": "added.py", "code": "import shapely\nreturn arg\n"},
+        },
+        "readme": "", "license_text": "", "replace": True,
+    }
+    resp = client.post("/api/packages/factory/install", data=json.dumps(save_as), headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    root = package_dir(_user_dir_key(user), "ai.test.saveinto@1")
+    for rel, body in base_files.items():
+        assert (root / rel).read_text() == body, f"{rel} did not survive the save"
+    assert (root / "sources" / "added.py").read_text() == "import shapely\nreturn arg\n"
+    saved = json.loads((root / "manifest.json").read_text())
+    assert saved["behaviorScript"] == "scripts/behaviors.js"
+    assert saved["backend"] == manifest["backend"]
+    by_id = {t["id"]: t for t in saved["templates"]}
+    assert set(by_id) == {"demo", "added"}
+    assert by_id["demo"]["badge"] == "NEW" and by_id["demo"]["grammarId"] == "demo-grammar"
+    # Declared ranges stay; a name only the new node imports arrives at "*";
+    # a name only a carried-forward file imports (backend/) is still declared.
+    assert saved["dependencies"]["python"] == {"numpy": ">=1.24", "rasterio": ">=1.3", "shapely": "*"}
+
+
 def test_factory_install_creates_package(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = client.post(
@@ -934,15 +1017,31 @@ def test_factory_publish_catalog_forbidden_when_env_off(client, user_and_token, 
 
     monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     _, token = user_and_token
-    resp = client.post(
-        "/api/packages/factory/publish-catalog",
-        data=json.dumps(_draft()),
-        headers=_auth(token),
-    )
+    resp = _publish(client, token, "ai.test.factory@1")
     assert resp.status_code == 403
     body = resp.get_json()
     assert "error" in body
     assert "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH" in body["error"]
+
+
+def _install_draft(client, token, draft, *, replace=False) -> str:
+    """Install *draft* into the caller's store, as Save As does; answers its dirName."""
+    resp = client.post(
+        "/api/packages/factory/install",
+        data=json.dumps({**draft, "replace": replace}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["package"]["dirName"]
+
+
+def _publish(client, token, dir_name, *, replace=False):
+    """Publish the caller's installed copy of *dir_name*."""
+    return client.post(
+        "/api/packages/factory/publish-catalog",
+        data=json.dumps({"dirName": dir_name, "replace": replace}),
+        headers=_auth(token),
+    )
 
 
 def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, monkeypatch, tmp_path):
@@ -954,12 +1053,9 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
     draft = _draft()
     draft["manifest"]["id"] = "ai.test.catalog.pub"
     _, token = user_and_token
+    dir_name = _install_draft(client, token, draft)
 
-    resp = client.post(
-        "/api/packages/factory/publish-catalog",
-        data=json.dumps({**draft, "replace": False}),
-        headers=_auth(token),
-    )
+    resp = _publish(client, token, dir_name)
     assert resp.status_code == 201, resp.get_data(as_text=True)
     body = resp.get_json()
     assert body["package"]["packageId"] == "ai.test.catalog.pub"
@@ -969,25 +1065,157 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
     assert published.is_dir()
     assert (published / "manifest.json").is_file()
 
-    dup = client.post(
-        "/api/packages/factory/publish-catalog",
-        data=json.dumps({**draft, "replace": False}),
-        headers=_auth(token),
-    )
+    dup = _publish(client, token, dir_name)
     assert dup.status_code == 400
     assert "already exists" in dup.get_json()["error"]
 
     bumped = copy.deepcopy(draft)
     bumped["manifest"]["version"] = "9.9.9"
-    rep = client.post(
-        "/api/packages/factory/publish-catalog",
-        data=json.dumps({**bumped, "replace": True}),
-        headers=_auth(token),
-    )
+    _install_draft(client, token, bumped, replace=True)
+    rep = _publish(client, token, dir_name, replace=True)
     assert rep.status_code == 201
     rep_body = rep.get_json()
     assert rep_body["replacedExisting"] is True
     assert rep_body["package"]["version"] == "9.9.9"
+
+
+def test_publish_needs_the_package_installed(client, user_and_token, monkeypatch, tmp_path):
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: tmp_path)
+    _, token = user_and_token
+    resp = _publish(client, token, "ai.test.nowhere@1")
+    assert resp.status_code == 404, resp.get_data(as_text=True)
+    assert not (tmp_path / "ai.test.nowhere@1").exists()
+
+
+def _zip(files: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, body in files.items():
+            zf.writestr(name, body)
+    return buf.getvalue()
+
+
+def _shipped_files(root) -> dict[str, bytes]:
+    """Every file of a package directory but the bookkeeping each copy writes for itself."""
+    return {
+        p.relative_to(root).as_posix(): p.read_bytes()
+        for p in sorted(root.rglob("*"))
+        if p.is_file() and p.name != "integrity.json" and not p.name.startswith(".")
+    }
+
+
+def test_publish_copies_the_installed_package_as_it_is(client, user_and_token, monkeypatch, tmp_path):
+    """#433: publish used to rebuild the package from a draft of its listing row,
+    which has no README, LICENSE or ``scripts/``, no ``behaviorScript``, and
+    turned every declared range into ``*``. The catalog copy is now the store
+    copy, byte for byte."""
+    fake_root = tmp_path / "fixture_packages"
+    fake_root.mkdir()
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
+    manifest = {
+        "id": "ai.test.rich", "version": "1.0.0", "name": "Rich", "publisher": "Tests",
+        "description": "d", "license": "MIT",
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1}, "permissions": [],
+        "behaviorScript": "scripts/behaviors.js",
+        "dependencies": {"packages": {}, "python": {"numpy": ">=1.24"}, "js": {}},
+        "templates": [{
+            "id": "demo", "label": "Demo", "category": "computation", "engine": "python",
+            "editor": "code", "hasCode": True, "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/demo.py", "badge": "NEW",
+        }],
+    }
+    archive = _zip({
+        "manifest.json": json.dumps(manifest),
+        "sources/demo.py": "import numpy\nreturn arg\n",
+        "README.md": "# Rich\n",
+        "LICENSE": "MIT License\n",
+        "scripts/behaviors.js": "/* the package's own interface */\n",
+    })
+    user, token = user_and_token
+    assert _upload(client, token, archive).status_code == 201
+
+    resp = _publish(client, token, "ai.test.rich@1")
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    store = _shipped_files(package_dir(_user_dir_key(user), "ai.test.rich@1"))
+    catalog = _shipped_files(fake_root / "ai.test.rich@1")
+    assert catalog == store
+    assert {"README.md", "LICENSE", "scripts/behaviors.js"} <= set(catalog)
+    published = json.loads(catalog["manifest.json"])
+    assert published["dependencies"]["python"] == {"numpy": ">=1.24"}
+    assert published["behaviorScript"] == "scripts/behaviors.js"
+    assert published["templates"][0]["badge"] == "NEW"
+
+
+def _make_user(db, username: str, token: str):
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    u = User(username=username, name=username.title(), email=f"{username}@test.com")
+    db.session.add(u)
+    db.session.flush()
+    db.session.add(UserSession(user_id=u.id, token=token))
+    db.session.commit()
+    return u
+
+
+def test_a_replace_publish_refuses_a_package_someone_else_published(
+    client, db, user_and_token, monkeypatch, tmp_path,
+):
+    """Only the publisher may replace a catalog package, as only the publisher
+    may remove it: the shared catalog is every user's, and a replace is a
+    removal followed by a write."""
+    fake_root = tmp_path / "fixture_packages"
+    fake_root.mkdir()
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.catalog.owned"
+    _, alice = user_and_token
+    dir_name = _install_draft(client, alice, draft)
+    assert _publish(client, alice, dir_name).status_code == 201
+
+    # Bob holds his own package under the same coordinate.
+    _make_user(db, "bob", "bob-token")
+    theirs = copy.deepcopy(draft)
+    theirs["manifest"]["version"] = "9.9.9"
+    _install_draft(client, "bob-token", theirs)
+    resp = _publish(client, "bob-token", dir_name, replace=True)
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+    assert "Only the account that published this package can replace it" in resp.get_json()["error"]
+    published = json.loads((fake_root / "ai.test.catalog.owned@1" / "manifest.json").read_text())
+    assert published["version"] == "1.0.0"
+
+    # The publisher still may.
+    mine = copy.deepcopy(draft)
+    mine["manifest"]["version"] = "1.0.1"
+    _install_draft(client, alice, mine, replace=True)
+    assert _publish(client, alice, dir_name, replace=True).status_code == 201
+
+
+def test_a_replace_publish_refuses_a_package_nobody_published(
+    client, user_and_token, monkeypatch, tmp_path,
+):
+    """A package that shipped with the deployment has no publisher record, so
+    nobody may replace it from the UI, as nobody may unpublish it."""
+    fake_root = tmp_path / "fixture_packages"
+    fake_root.mkdir()
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: fake_root)
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.catalog.shipped"
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
+
+    catalog_dir.publish_package_archive_to_catalog_dir(
+        build_package_archive(draft).archive, fake_root,
+    )
+    _, token = user_and_token
+    bumped = copy.deepcopy(draft)
+    bumped["manifest"]["version"] = "9.9.9"
+    dir_name = _install_draft(client, token, bumped)
+    resp = _publish(client, token, dir_name, replace=True)
+    assert resp.status_code == 403, resp.get_data(as_text=True)
 
 
 def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypatch, tmp_path):
@@ -1000,11 +1228,7 @@ def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypa
     draft["manifest"]["id"] = "ai.test.catalog.unpub"
     _, token = user_and_token
 
-    pub = client.post(
-        "/api/packages/factory/publish-catalog",
-        data=json.dumps({**draft, "replace": False}),
-        headers=_auth(token),
-    )
+    pub = _publish(client, token, _install_draft(client, token, draft))
     assert pub.status_code == 201
     published = fake_root / "ai.test.catalog.unpub@1"
     assert published.is_dir()

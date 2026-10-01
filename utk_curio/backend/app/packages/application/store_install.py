@@ -379,6 +379,9 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
             copied=False,
             import_errors=packages_provisioning._declared_import_failures(user_key, dir_name),
         )
+    # Before the copy, not in provision_python_deps: a refusal there leaves
+    # the files in the store, and the next call takes the branch above (#451).
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
@@ -462,10 +465,15 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> Inst
     user's store through the same validator, size caps and integrity writer the
     sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404."""
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
-    return install_package_from_directory(user_key, src, replace=replace)
+    result = install_package_from_directory(user_key, src, replace=replace)
+    # Same as the first copy in _ensure_user_store_install: a replaced backend
+    # entry keeps its old pin otherwise, and every invocation is refused.
+    packages_backend_runtime.record_entry_pin(user_key, dir_name)
+    return result
 
 
 def remove_package(user_key: str, dir_name: str) -> None:

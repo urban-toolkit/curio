@@ -68,6 +68,7 @@ There are two places you manage packages:
 |---|---|---|---|
 | **Add to project** | Drawer | This project's lockfile, plus your package store if the package is not there yet | The package's nodes appear in this project's palette only. |
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
+| **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
 | **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
@@ -104,9 +105,10 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 5. After the save, the canvas node is rebound to the new package's kind.
 
 > [!IMPORTANT]
-> **Save as package node cannot produce a custom-UI node.** The package it
+> **Save as package node cannot produce a custom-UI node.** A new package it
 > builds carries `manifest.json` and `sources/`, never a `scripts/` directory,
-> so **forking a custom-UI package this way drops its interface**.
+> so **forking a custom-UI package this way drops its interface**. Saving into
+> an existing package keeps every file it already has.
 >
 > To author a node with its own React interface, work from a checkout and build
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
@@ -119,6 +121,7 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 - Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library and Curio's own modules. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
 - In `.js`, `.mjs` and `.cjs` sources, `import … from "X"`, dynamic `import("X")` and `require("X")` are collected. Relative paths are skipped, subpaths collapse to the package (`lodash/fp` → `lodash`), and scoped packages keep their scope (`@scope/pkg`).
 - Detected names are written with `*` as the version range. The UI does not offer version pins.
+- Saving into an existing package keeps every dependency it already declares, with its range, and adds newly detected names.
 - Imported archives and catalog installs are not re-scanned: their dependencies are what the package author declared.
 
 ### Editing package metadata

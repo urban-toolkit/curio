@@ -31,7 +31,6 @@ export interface InstallResponse {
 
 /** Response from ``factory/publish-catalog`` (fixture write). */
 export interface CatalogPublishResponse extends InstallResponse {
-  filename: string;
   catalogDir: string;
 }
 
