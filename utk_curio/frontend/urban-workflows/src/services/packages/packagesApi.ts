@@ -93,30 +93,30 @@ export const packagesApi = {
     });
   },
 
-  /** Whether ``factoryPublishCatalog`` is allowed (``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH``; on by default). */
+  /** Whether ``publishToCatalog`` is allowed (``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH``; on by default). */
   factoryCapabilities(): Promise<FactoryCapabilities> {
     return apiFetch("/api/packages/factory/capabilities");
   },
 
   /**
-   * Publish the wizard draft into the backend catalog (``<repo_root>/packages/``).
-   * Can be disabled with ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` = ``0`` / ``false`` / ``no`` / ``off``.
-   *
-   * *draft* is the usual ``toApiPayload`` object; optional ``replace`` overwrites an
-   * existing catalog directory for the same coordinate.
+   * Publish the user's installed copy of *dirName* into the backend catalog
+   * (``<repo_root>/packages/``), as it is. Can be disabled with
+   * ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` = ``0`` / ``false`` / ``no`` / ``off``.
+   * ``replace`` overwrites a catalog copy this user published.
    */
-  factoryPublishCatalog(
-    draft: Record<string, unknown>,
+  publishToCatalog(
+    dirName: string,
+    opts: { replace?: boolean } = {},
   ): Promise<CatalogPublishResponse> {
     return apiFetch("/api/packages/factory/publish-catalog", {
       method: "POST",
-      body: JSON.stringify(draft),
+      body: JSON.stringify({ dirName, replace: Boolean(opts.replace) }),
     });
   },
 
   /**
    * Remove a pkg from the catalog (`<repo_root>/packages/<dirName>/`).
-   * Gated by the same env flag as `factoryPublishCatalog`; does not uninstall
+   * Gated by the same env flag as `publishToCatalog`; does not uninstall
    * from the user's package store.
    */
   unpublishFromCatalog(dirName: string): Promise<void> {

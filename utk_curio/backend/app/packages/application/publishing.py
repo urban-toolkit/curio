@@ -8,19 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utk_curio.backend.app.packages.application import factory_install as packages_factory_install
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
-from utk_curio.backend.app.packages.builder.factory import (
-    BuildResult,
-    build_package_archive,
-    preserve_unedited_sources,
-)
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories import (
     catalog_dir as packages_catalog_dir,
     publisher_record,
 )
-from utk_curio.backend.app.packages.repositories.archive import InstallResult
+from utk_curio.backend.app.packages.repositories.archive import InstallResult, zip_package_tree
+from utk_curio.backend.app.packages.repositories.store import package_dir
 
 NOT_THE_PUBLISHER_MESSAGE = (
     "Only the account that published this package can remove it "
@@ -39,34 +34,34 @@ def _refuse_replacing_someone_elses(catalog: Path, dir_name: str, user_key: str)
         raise PackageServiceError(NOT_THE_PUBLISHER_REPLACE_MESSAGE, 403)
 
 
-def publish_draft_to_catalog(
-    user_key: str, body: dict, *, replace: bool,
-) -> tuple[BuildResult, InstallResult, Path]:
-    """Build a draft and publish it into ``<repo_root>/packages/`` — **developers only**.
+def publish_installed_to_catalog(
+    user_key: str, dir_name: str, *, replace: bool,
+) -> tuple[InstallResult, Path]:
+    """Publish the caller's installed copy of *dir_name* into ``<repo_root>/packages/``.
 
-    Same trap as the factory install: a draft built from
-    ``draftFromInstalledPackagePayload`` only carries real source for the
-    template the user actively edited; every other template ships the
-    STARTER_CODE placeholder. Read the user's installed sources from disk
-    before the rebuild so we don't publish placeholders to the catalog.
+    The store directory goes over as it is, through the same archive the
+    Export button downloads: README, LICENSE, ``scripts/``, ``backend/``,
+    declared version ranges and every manifest key arrive unchanged (#433).
     Records who published it — without that the catalog is a global tree with
     no recorded owner, so nothing could tell a package the user authored from
     one that shipped with the deployment (see repositories/publisher_record.py).
-    FactoryError / InstallerError propagate for the route to answer.
+    InstallerError propagates for the route to answer.
     """
+    if not PACKAGE_DIR_RE.match(dir_name):
+        raise PackageServiceError("dir_name must match <packageId>@<major>")
+    source = package_dir(user_key, dir_name)
+    if not source.is_dir():
+        raise PackageServiceError(f"package {dir_name} is not installed", 404)
     catalog = packages_catalog_dir.catalog_root()
-    existing_dir = packages_factory_install.installed_dir_for_draft(user_key, body.get("manifest"))
-    body = preserve_unedited_sources(body, existing_dir)
-    built = build_package_archive(body)
-    _refuse_replacing_someone_elses(catalog, built.manifest.dir_name, user_key)
+    _refuse_replacing_someone_elses(catalog, dir_name, user_key)
     result = packages_catalog_dir.publish_package_archive_to_catalog_dir(
-        built.archive,
+        zip_package_tree(source),
         catalog,
         replace=replace,
     )
     catalog_path = catalog / result.manifest.dir_name
     publisher_record.record_publisher(catalog, result.manifest.dir_name, user_key)
-    return built, result, catalog_path
+    return result, catalog_path
 
 
 def unpublish_from_catalog(user_key: str, dir_name: str) -> None:

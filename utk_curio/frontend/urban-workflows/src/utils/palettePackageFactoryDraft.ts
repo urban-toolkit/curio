@@ -310,7 +310,7 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
   };
 }
 
-/** Factory draft from ``GET /api/packages`` row — used for palette “publish to catalog”. */
+/** Factory draft from a ``GET /api/packages`` row: the base Save As adds a node to. */
 export function draftFromInstalledPackagePayload(
   pkg: PackagePayload,
   getStarters?: StartersLookup,
