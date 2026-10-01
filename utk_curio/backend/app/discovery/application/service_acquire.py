@@ -159,6 +159,7 @@ class ServiceAcquire:
                 dataset = self._add_images(
                     manifest, spec, resource_id, answer, values, values_hash,
                     root=incoming, title=title, stage=stage, cancelled=cancelled,
+                    attribution=getattr(service, "attribution", None),
                 )
             finally:
                 shutil.rmtree(incoming, ignore_errors=True)
@@ -220,7 +221,7 @@ class ServiceAcquire:
 
     def _add_images(
         self, manifest, spec, resource_id, answer, values, values_hash, *, root: Path,
-        title, stage, cancelled,
+        title, stage, cancelled, attribution: str | None = None,
     ) -> dict[str, Any]:
         """A service's images as one collection, its files where a node reads
         a downloaded collection's: ``objects/<datasetId>/<file_id>.<ext>``."""
@@ -232,8 +233,8 @@ class ServiceAcquire:
         if not answer.images:
             if answer.found and answer.skipped:
                 raise DiscoveryError(
-                    f"{manifest.name} found {answer.found:,} images in {place} but sent none "
-                    "from a host its source lists"
+                    f"{manifest.name} found {answer.found:,} in {place} and kept no "
+                    f"{spec.name.lower()}: {answer.skip_reason or 'none could be downloaded'}"
                 )
             raise DiscoveryError(f"{manifest.name} has no {spec.name.lower()} in {place} that match")
         if self._install_path is None:  # pragma: no cover - wired in service.py
@@ -270,8 +271,8 @@ class ServiceAcquire:
             stage("Adding to your Data Catalog…")
         label = (title or "").strip() or f"{spec.name}, {place}"
         description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
-        if manifest.license:
-            description += f", {manifest.license}: each row names its photographer"
+        if attribution:
+            description += f". {attribution}"
         dataset = self._install_path(
             dest, "index.parquet", "collection",
             title=label, discovery_source=provenance, row_count=len(rows),

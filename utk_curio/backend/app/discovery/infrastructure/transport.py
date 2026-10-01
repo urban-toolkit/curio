@@ -93,19 +93,30 @@ class HttpDiscoveryTransport:
         return self.get_page(url, credential=credential, headers=headers)[0]
 
     def get_page(self, url, *, credential=None, headers=None):
+        sent, key = _keyed(url, credential)
+        failure = None
         try:
             result = egress.fetch(
-                url,
+                sent,
                 max_bytes=MAX_METADATA_BYTES,
                 budget=self.budget,
                 request_fn=_metadata_request,
                 headers=headers,
                 secret_headers=_merge(None, credential),
             )
-        except egress.EgressRefused:
-            raise
+        except egress.EgressRefused as exc:
+            if not key:
+                raise
+            failure = egress.EgressRefused(_redact(str(exc), key))
         except Exception as exc:  # transport: unreachable, never a policy claim
-            raise DiscoveryTransportError(f"could not reach {_host(url)}: {exc}") from exc
+            message = f"could not reach {_host(url)}: {exc}"
+            if not key:
+                raise DiscoveryTransportError(message) from exc
+            failure = DiscoveryTransportError(_redact(message, key))
+        if failure is not None:
+            # Raised outside the handler, so it holds no original exception:
+            # that one names the URL that carried the key.
+            raise failure
         if not (200 <= result.status < 300):
             raise DiscoveryTransportError(f"{_host(url)} answered {result.status}")
         if result.truncated:
@@ -117,9 +128,11 @@ class HttpDiscoveryTransport:
     def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
                  ceiling=None):
         bound = min(int(max_bytes), int(ceiling or MAX_DISCOVERY_DOWNLOAD_BYTES))
+        sent, key = _keyed(url, credential)
+        failure = None
         try:
-            return egress.download(
-                url,
+            result = egress.download(
+                sent,
                 sink=sink,
                 max_bytes=bound,
                 budget=self.budget,
@@ -128,11 +141,27 @@ class HttpDiscoveryTransport:
                 progress=progress,
             )
         except egress.EgressTooLarge as exc:
-            raise DownloadTooLarge(str(exc)) from exc
-        except egress.EgressRefused:
-            raise
+            if not key:
+                raise DownloadTooLarge(str(exc)) from exc
+            failure = DownloadTooLarge(_redact(str(exc), key))
+        except egress.EgressRefused as exc:
+            if not key:
+                raise
+            failure = egress.EgressRefused(_redact(str(exc), key))
         except Exception as exc:
-            raise DiscoveryTransportError(f"could not download from {_host(url)}: {exc}") from exc
+            message = f"could not download from {_host(url)}: {exc}"
+            if not key:
+                raise DiscoveryTransportError(message) from exc
+            failure = DiscoveryTransportError(_redact(message, key))
+        if failure is not None:
+            raise failure  # outside the handler: see get_page
+        if key:
+            # What a dataset records as where it came from, and the audit:
+            # the URL as the provider built it.
+            result.url = url
+            result.final_url = _redact(result.final_url, key) if result.final_url != sent else url
+            result.audit = {**result.audit, "url": url, "finalUrl": result.final_url}
+        return result
 
 
 class FixtureDiscoveryTransport:
@@ -319,11 +348,37 @@ def _merge(headers: dict[str, str] | None, credential: str | None) -> dict[str, 
     and the slot; they never see what is in it.
     """
     out = dict(headers or {})
-    if credential:
+    if credential and not credential.startswith("?"):
         name, _, value = credential.partition(":")
         if name and value:
             out[name] = value
     return out
+
+
+def _keyed(url: str, credential: str | None) -> tuple[str, str | None]:
+    """The URL to send, with a ``query`` key added, and the key (or None).
+
+    The one place a query key becomes part of a URL. The keyed URL goes to
+    the network and nowhere else; every URL and message the transport hands
+    back is the provider's own or :func:`_redact`-ed.
+    """
+    if not credential or not credential.startswith("?"):
+        return url, None
+    name, _, value = credential[1:].partition("=")
+    if not name or not value:
+        return url, None
+    return egress.with_params(url, {name: value}), value
+
+
+def _redact(text: str | None, key: str | None) -> str | None:
+    """*text* with *key* taken out, as written and as a URL encodes it."""
+    if not text or not key:
+        return text
+    from urllib.parse import quote, quote_plus
+
+    for form in sorted({key, quote(key, safe=""), quote_plus(key)}, key=len, reverse=True):
+        text = text.replace(form, "<key>")
+    return text
 
 
 def _metadata_request(method: str, url: str, *, trusted_host=None, headers=None):

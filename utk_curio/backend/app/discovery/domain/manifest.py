@@ -47,7 +47,7 @@ STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 
 #: Services: told where and what, they answer with one download. Nothing to
 #: browse, so their ``resources`` are declared, like storage's, with no path.
-SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary")
+SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary", "google-streetview")
 
 #: Provider implementations that exist. Kept here rather than imported from
 #: ``providers`` so that reading a manifest never drags in a transport.
@@ -62,6 +62,7 @@ PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "wfs": ("area",),
     "autark-osm": ("area",),
     "mapillary": ("area", "captured", "imageType", "size", "maxImages"),
+    "google-streetview": ("area", "spacing", "headings", "fov", "pitch", "size", "outdoorOnly", "maxImages"),
 }
 
 #: The forms of an area each provider can send. A manifest may not offer a
@@ -71,6 +72,7 @@ PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
     "wfs": ("box",),
     "autark-osm": ("box", "names"),
     "mapillary": ("box",),
+    "google-streetview": ("box",),
 }
 
 #: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.
@@ -82,20 +84,33 @@ AUTARK_OSM_LAYERS = ("buildings", "roads", "parks", "water", "surface")
 AUTARK_OVERPASS_BASE = "https://overpass-api.de"
 
 #: What a service resource can be, and the file format it lands as.
-SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {"autark-osm": ("table",), "mapillary": ("images", "table")}
-SERVICE_FORMATS: dict[str, tuple[str, ...]] = {"autark-osm": ("geojson",), "mapillary": ("geojson",)}
+SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {
+    "autark-osm": ("table",), "mapillary": ("images", "table"), "google-streetview": ("images",),
+}
+SERVICE_FORMATS: dict[str, tuple[str, ...]] = {
+    "autark-osm": ("geojson",), "mapillary": ("geojson",), "google-streetview": (),
+}
 
 #: The Mapillary API endpoint each kind of resource asks.
 MAPILLARY_ENDPOINTS = {"images": "images", "table": "map_features"}
+
+#: Where each keyed service's API is. Fixed, as Overpass is for autark-osm.
+SERVICE_API_BASES = {
+    "mapillary": "https://graph.mapillary.com",
+    "google-streetview": "https://maps.googleapis.com",
+}
 
 _HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
 AUTH_MODES = ("public", "optional-token", "required-token")
 
-#: v1 is header-only, and that single constraint is load-bearing: it means no
-#: secret ever enters a URL, which is what makes the egress audit record, every
-#: refusal message and every job record safe to store verbatim.
-AUTH_SCHEMES = ("header",)
+#: How a key is sent. ``header`` is preferred: the key never enters a URL.
+#: ``query`` is for an API that documents no other way (Google's Street View
+#: takes ``key=``): the transport adds the parameter at send time, to the
+#: request it sends and nothing else, and takes it out of every URL and
+#: message it hands back, so the audit record, a refusal and a job record
+#: stay safe to store verbatim.
+AUTH_SCHEMES = ("header", "query")
 
 #: The credential slots that exist, as a SERVER-owned allowlist. A manifest may
 #: name one; it may not invent one. Each maps to a column on the user's row -
@@ -160,6 +175,7 @@ _SECRET_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){0,2}$")
 _ICON_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.png$")
 _RESOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 _VALUE_PREFIX_RE = re.compile(r"^[A-Za-z]{1,16} $")
+_PARAM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
 _EXTENSION_RE = re.compile(r"^[a-z0-9]{1,8}$")
 _HF_REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]{0,95}/[A-Za-z0-9][\w.-]{0,95}$")
 _REVISION_RE = re.compile(r"^[A-Za-z0-9][\w.-]{0,63}$")
@@ -196,6 +212,8 @@ class AuthSpec:
     help_url: str | None = None
     #: Put before the token in the header's value, e.g. ``"Bearer "``.
     value_prefix: str | None = None
+    #: The query parameter a ``query`` key is sent as, e.g. ``"key"``.
+    param_name: str | None = None
 
     @property
     def needs_token(self) -> bool:
@@ -370,6 +388,11 @@ def _parse_provider(raw: object) -> ProviderSpec:
                 f"manifest.provider.baseUrl must be {AUTARK_OVERPASS_BASE}: autk-db sends "
                 "its Overpass queries there itself"
             )
+        pinned = SERVICE_API_BASES.get(kind)
+        if pinned and base_url != pinned:
+            # A person's key for this service goes to the service's own API
+            # and nowhere a manifest could point it.
+            raise ManifestError(f"manifest.provider.baseUrl must be {pinned} for {kind}")
     if kind == "s3":
         prefix = options.get("prefix", "")
         if not isinstance(prefix, str) or prefix.startswith("/") or ".." in prefix.split("/"):
@@ -420,10 +443,7 @@ def _parse_auth(raw: object) -> AuthSpec:
         raise ManifestError(f"manifest.auth.mode must be one of {sorted(AUTH_MODES)}")
     scheme = str(raw.get("scheme") or "header").strip().lower()
     if scheme not in AUTH_SCHEMES:
-        raise ManifestError(
-            f"manifest.auth.scheme must be one of {sorted(AUTH_SCHEMES)} "
-            "(v1 is header-only so no secret can enter a URL)"
-        )
+        raise ManifestError(f"manifest.auth.scheme must be one of {sorted(AUTH_SCHEMES)}")
     secret_id = raw.get("secretId")
     if secret_id is not None:
         secret_id = _require_str(secret_id, "auth.secretId")
@@ -441,15 +461,28 @@ def _parse_auth(raw: object) -> AuthSpec:
     header_name = raw.get("headerName")
     if header_name is not None:
         header_name = _require_str(header_name, "auth.headerName")
-    if mode != "public" and not header_name:
-        raise ManifestError("manifest.auth.headerName is required when a token is used")
-    help_url = raw.get("helpUrl")
-    if help_url is not None:
-        help_url = _require_str(help_url, "auth.helpUrl")
+    param_name = raw.get("paramName")
+    if param_name is not None:
+        param_name = _require_str(param_name, "auth.paramName")
+        if not _PARAM_NAME_RE.match(param_name):
+            raise ManifestError("manifest.auth.paramName must be a short query parameter name")
     value_prefix = raw.get("valuePrefix")
     if value_prefix is not None:
         if not isinstance(value_prefix, str) or not _VALUE_PREFIX_RE.match(value_prefix):
             raise ManifestError("manifest.auth.valuePrefix must be a word and a space, e.g. 'Bearer '")
+    if scheme == "query":
+        if header_name is not None or value_prefix is not None:
+            raise ManifestError("manifest.auth: a query key takes paramName, not headerName or valuePrefix")
+        if mode != "public" and not param_name:
+            raise ManifestError("manifest.auth.paramName is required when a query key is used")
+    else:
+        if param_name is not None:
+            raise ManifestError("manifest.auth.paramName applies to scheme 'query' only")
+        if mode != "public" and not header_name:
+            raise ManifestError("manifest.auth.headerName is required when a token is used")
+    help_url = raw.get("helpUrl")
+    if help_url is not None:
+        help_url = _require_str(help_url, "auth.helpUrl")
     return AuthSpec(
         mode=mode,
         secret_id=secret_id,
@@ -457,6 +490,7 @@ def _parse_auth(raw: object) -> AuthSpec:
         header_name=header_name,
         help_url=help_url,
         value_prefix=value_prefix,
+        param_name=param_name,
     )
 
 
@@ -904,6 +938,7 @@ def build_manifest_dict(manifest: DiscoverySourceManifest) -> dict[str, Any]:
             "headerName": manifest.auth.header_name or None,
             "helpUrl": manifest.auth.help_url or None,
             "valuePrefix": manifest.auth.value_prefix or None,
+            **({"paramName": manifest.auth.param_name} if manifest.auth.param_name else {}),
         },
         "resources": [_resource_dict(spec) for spec in manifest.resources],
         "capabilities": {

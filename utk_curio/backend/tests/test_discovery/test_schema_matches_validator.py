@@ -47,10 +47,13 @@ def test_the_auth_mode_enum_matches(schema):
     assert schema["properties"]["auth"]["properties"]["mode"]["enum"] == sorted(M.AUTH_MODES)
 
 
-def test_the_auth_scheme_enum_matches_and_is_header_only(schema):
+def test_the_auth_scheme_enum_matches(schema):
     enum = schema["properties"]["auth"]["properties"]["scheme"]["enum"]
-    assert enum == sorted(M.AUTH_SCHEMES)
-    assert enum == ["header"], "v1 is header-only; a query scheme would put secrets in URLs"
+    assert enum == sorted(M.AUTH_SCHEMES) == ["header", "query"]
+
+
+def test_the_query_parameter_name_pattern_matches(schema):
+    assert schema["properties"]["auth"]["properties"]["paramName"]["pattern"] == M._PARAM_NAME_RE.pattern
 
 
 def test_the_secret_id_pattern_matches(schema):

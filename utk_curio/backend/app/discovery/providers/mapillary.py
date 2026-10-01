@@ -88,6 +88,8 @@ class ImageSet:
     images: list[DownloadedImage]
     found: int
     skipped: int = 0
+    #: Why an image found was not kept, as a person reads it.
+    skip_reason: str = ""
 
 
 def cells(box: list[float], max_sq_deg: float = MAX_CELL_SQ_DEG) -> list[list[float]]:
@@ -162,6 +164,8 @@ class MapillaryService:
     #: What its GeoJSON is in. Autark's OpenStreetMap layers are in World
     #: Mercator and are moved; these are already longitude and latitude.
     crs = "EPSG:4326"
+    #: What a dataset's description says of where its images come from.
+    attribution = "CC BY-SA 4.0: each row names its photographer"
 
     def __init__(self, manifest: DiscoverySourceManifest, *, transport) -> None:
         self.manifest = manifest
@@ -317,7 +321,8 @@ class MapillaryService:
                 relpath=relpath, path=path, size=written, image_id=image_id,
                 columns=self._columns(record),
             ))
-        return ImageSet(images=images, found=found, skipped=skipped)
+        return ImageSet(images=images, found=found, skipped=skipped,
+                        skip_reason="its image was not on a host the source lists")
 
     def _thumbnails(self, ids: list[str], size: str, cancelled) -> dict[str, str]:
         out: dict[str, str] = {}

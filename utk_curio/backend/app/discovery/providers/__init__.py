@@ -22,7 +22,9 @@ from utk_curio.backend.app.discovery.domain.manifest import (
     DiscoverySourceManifest,
 )
 from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransport
-from utk_curio.backend.app.discovery.providers import arcgis, autark_osm, ckan, direct, mapillary, socrata, wfs
+from utk_curio.backend.app.discovery.providers import (
+    arcgis, autark_osm, ckan, direct, google_streetview, mapillary, socrata, wfs,
+)
 from utk_curio.backend.app.discovery.providers.base import BaseProvider, DiscoveryProvider
 from utk_curio.backend.app.discovery.providers.folder import FolderStorage
 from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
@@ -50,6 +52,7 @@ STORAGE_PROVIDERS: dict[str, type] = {
 SERVICE_PROVIDERS: dict[str, type] = {
     autark_osm.AutarkOsmService.type: autark_osm.AutarkOsmService,
     mapillary.MapillaryService.type: mapillary.MapillaryService,
+    google_streetview.GoogleStreetViewService.type: google_streetview.GoogleStreetViewService,
 }
 
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.
@@ -79,7 +82,7 @@ assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) == set(P
 # What a manifest may declare and what the provider reads are the same list.
 _MODULES = {
     "socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct,
-    "autark-osm": autark_osm, "mapillary": mapillary,
+    "autark-osm": autark_osm, "mapillary": mapillary, "google-streetview": google_streetview,
 }
 for _type, _module in _MODULES.items():
     assert tuple(getattr(_module, "PARAMETER_IDS", ())) == PROVIDER_PARAMETER_IDS.get(_type, ()), (

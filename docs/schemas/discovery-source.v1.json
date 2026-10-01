@@ -78,6 +78,7 @@
             "ckan",
             "direct",
             "folder",
+            "google-streetview",
             "huggingface",
             "mapillary",
             "s3",
@@ -150,6 +151,7 @@
                   "arcgis",
                   "autark-osm",
                   "ckan",
+                  "google-streetview",
                   "mapillary",
                   "s3",
                   "socrata",
@@ -171,6 +173,25 @@
           "if": {
             "properties": {
               "type": {
+                "const": "google-streetview"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "baseUrl": {
+                "const": "https://maps.googleapis.com"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "mapillary"
               }
             },
@@ -183,6 +204,9 @@
               "options"
             ],
             "properties": {
+              "baseUrl": {
+                "const": "https://graph.mapillary.com"
+              },
               "options": {
                 "required": [
                   "imageHosts"
@@ -243,9 +267,15 @@
         },
         "scheme": {
           "enum": [
-            "header"
+            "header",
+            "query"
           ],
-          "description": "header only in v1. That single constraint means no secret ever enters a URL, which is what makes the egress audit record, refusal messages and job records safe to store verbatim."
+          "description": "How the key is sent. 'header' (the default) keeps it out of every URL. 'query', for an API that documents no other way, adds paramName=<key> to the request at send time only: the URL a dataset records, the audit record, refusals and job records never hold it."
+        },
+        "paramName": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$",
+          "description": "The query parameter a 'query' key is sent as, e.g. 'key'."
         },
         "headerName": {
           "type": [
@@ -285,9 +315,66 @@
           },
           "then": {
             "required": [
-              "secretId",
-              "headerName"
+              "secretId"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "optional-token",
+                  "required-token"
+                ]
+              },
+              "scheme": {
+                "const": "query"
+              }
+            },
+            "required": [
+              "mode",
+              "scheme"
+            ]
+          },
+          "then": {
+            "required": [
+              "paramName"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "headerName"
+                  ]
+                },
+                {
+                  "required": [
+                    "valuePrefix"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "optional-token",
+                    "required-token"
+                  ]
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "required": [
+                "headerName"
+              ]
+            }
           }
         }
       ]
@@ -369,7 +456,7 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 64,
-      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface', 'autark-osm' and 'mapillary'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
+      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface', 'autark-osm', 'mapillary' and 'google-streetview'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
       "items": {
         "type": "object",
         "required": [
@@ -634,6 +721,55 @@
                   "required": [
                     "endpoint"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "const": "google-streetview"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "format"
+                    ]
+                  }
+                ]
+              },
+              "properties": {
+                "kind": {
+                  "const": "images"
                 }
               }
             }

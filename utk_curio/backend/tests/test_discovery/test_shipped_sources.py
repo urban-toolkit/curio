@@ -126,10 +126,17 @@ class TestEveryShippedSource:
             assert manifest.resources, "a storage source says how its files are organized"
 
     def test_a_token_source_names_its_slot_and_header(self, path: Path):
-        auth = M.load_source_manifest(path).auth
+        manifest = M.load_source_manifest(path)
+        auth = manifest.auth
         if auth.uses_token:
-            assert auth.secret_id and auth.header_name
-            assert auth.scheme == "header"
+            assert auth.secret_id
+            if auth.scheme == "query":
+                # Only where the API documents no other way: Google's Street
+                # View takes key= alone.
+                assert manifest.provider.type == "google-streetview"
+                assert auth.param_name and not auth.header_name
+            else:
+                assert auth.scheme == "header" and auth.header_name
             assert auth.help_url, "tell the user where to get the token"
 
     def test_its_icon_is_a_real_png_within_the_cap(self, path: Path):

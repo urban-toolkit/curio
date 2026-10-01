@@ -144,17 +144,25 @@ def has_token(user, secret_id: str | None) -> bool:
 
 
 def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
-    """``"<Header-Name>:<token>"`` for *manifest*, or None.
+    """``"<Header-Name>:<token>"`` for *manifest*, ``"?<param>=<token>"`` for a
+    ``query`` key, or None.
 
     The transport is the only caller, and the only code that turns this into a
-    request header. Providers are handed the header NAME and the slot; they
-    never see what is in it.
-
-    Header-only by construction: ``auth.scheme`` accepts nothing else, which is
-    what keeps a secret out of every URL, audit record and error message.
+    request header or a query parameter. Providers are handed the name and the
+    slot; they never see what is in it, so no URL a provider builds, and no
+    audit record, refusal or job record made from one, holds a key.
     """
     auth = manifest.auth
-    if not auth.uses_token or not auth.header_name:
+    if not auth.uses_token:
+        return None
+    if auth.scheme == "query":
+        if not auth.param_name:
+            return None
+        token = token_for_slot(user, auth.secret_id)
+        # ``?name=value``: the transport adds it to the URL it sends and to
+        # nothing it returns or records.
+        return f"?{auth.param_name}={token}" if token else None
+    if not auth.header_name:
         return None
     token = token_for_slot(user, auth.secret_id)
     if not token:

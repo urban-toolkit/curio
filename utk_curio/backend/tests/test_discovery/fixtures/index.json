@@ -421,6 +421,246 @@
     },
     "status": 206
   },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.9105%2C-87.6315&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-denied-01.json",
+    "headers": {
+      "Content-Length": "89",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.639375&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-07.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.640125&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-06.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-01.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.639375&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-08.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-04.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.641625&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-09.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.640125&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-05.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-02.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.641625&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-03.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/placeholder.jpg",
+    "headers": {
+      "Content-Length": "692",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
   "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=Loop%2C%20Chicago": {
     "file": "nominatim/loop-chicago.json",
     "headers": {
