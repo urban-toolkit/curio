@@ -260,7 +260,7 @@ describe("AI Settings: Connection keys (dev/116)", () => {
 describe("AI Settings: the data-portal token", () => {
   /**
    * A third credential on this screen, and the first that is not about AI at
-   * all: the Data Lake Catalog sends it to Socrata portals. It lives here
+   * all: the Discovery Catalog sends it to Socrata portals. It lives here
    * because this is the account's one credentials surface - the Agent
    * Catalog's account policy was deliberately moved INTO this modal rather
    * than living in a second one holding half the answer.

@@ -23,7 +23,7 @@
  "test_computed_json_output_e2e": 13.5,
  "test_dashboard_page_e2e": 88.6,
  "test_data_catalog": 33.8,
- "test_data_lake_catalog": 78.1,
+ "test_discovery_catalog": 78.1,
  "test_data_pool_hscroll_e2e": 10.0,
  "test_data_pool_scroll_e2e": 10.3,
  "test_data_summary_hscroll_e2e": 9.4,

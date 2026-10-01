@@ -43,10 +43,10 @@ COPY pyproject.toml MANIFEST.in ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY datasets/ datasets/
-# The Data Lake Catalog's source manifests. Needed for the same reason
+# The Discovery Catalog's source manifests. Needed for the same reason
 # datasets/ is: the catalog root is read from the image, and without this the
 # roster is empty and every source is a 404.
-COPY datalakes/ datalakes/
+COPY discovery/ discovery/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/

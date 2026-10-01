@@ -282,7 +282,7 @@ def solve_attachment_stream(
         if verify else {}
     )
     # dev/126: and the Data Catalog rows the discovery delegate is handed.
-    agents_acquire._settle_lake_acquisitions(user_key, project_id)
+    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     solve_catalog_rows = agents_grounding._catalog_rows_for_discovery(user_key, project_id)
     # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
     # DURING the session can still be resolved to a sandbox path.

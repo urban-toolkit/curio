@@ -30,9 +30,9 @@ const DRAWERS = [
 ];
 
 /**
- * Every browse drawer, including the Data Lake Catalog's.
+ * Every browse drawer, including the Discovery Catalog's.
  *
- * A lake source is deliberately absent from `DRAWERS`: it has no publish
+ * A source is deliberately absent from `DRAWERS`: it has no publish
  * concept at all. Sources are operator-authored - there is no import route,
  * because a source declares a host the server makes outbound requests to on a
  * user's behalf - so "publish this portal" is not an action that exists. The
@@ -40,7 +40,7 @@ const DRAWERS = [
  * what this list is for; forcing a publish pill onto it to satisfy a loop
  * would be inventing a control to pass a test.
  */
-const ALL_DRAWERS = [...DRAWERS, "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx"];
+const ALL_DRAWERS = [...DRAWERS, "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx"];
 
 describe("catalog drawer parity", () => {
   test("every browse drawer is built from the shared drawer body", () => {

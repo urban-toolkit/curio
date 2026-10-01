@@ -17,12 +17,12 @@
   color: var(--curio-text-primary);
 }
 
-/* The lake glyph is tinted rather than neutral, because it is also the
+/* The source glyph is tinted rather than neutral, because it is also the
    FALLBACK a source with no icon renders in the grid - where the neutral
    treatment would read as a missing image rather than a deliberate mark. */
-.kindIcon_lake {
-  background: var(--curio-kind-lake-bg);
-  color: var(--curio-kind-lake-on-tint);
+.kindIcon_discovery {
+  background: var(--curio-kind-source-bg);
+  color: var(--curio-kind-source-on-tint);
 }
 
 .size_sm {
@@ -193,7 +193,7 @@
   color: var(--curio-format-osm-on-tint);
 }
 
-/* A lake's PBF resource is OpenStreetMap data, the Data Catalog's `osm`. */
+/* A source's PBF resource is OpenStreetMap data, the Data Catalog's `osm`. */
 .formatBadge_pbf {
   background: var(--curio-format-osm-bg);
   color: var(--curio-format-osm-on-tint);

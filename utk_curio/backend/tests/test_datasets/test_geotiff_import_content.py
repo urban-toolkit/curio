@@ -2,8 +2,8 @@
 
 An upload's format comes from its name, and a download's from its URL and
 headers. A file stored as ``geotiff`` must also start the way a TIFF does, so
-one that does not is refused, says why, and leaves nothing behind. The lake
-download of the same case is in ``test_datalakes/test_acquire.py``.
+one that does not is refused, says why, and leaves nothing behind. The Discovery Catalog
+download of the same case is in ``test_discovery/test_acquire.py``.
 """
 
 from __future__ import annotations

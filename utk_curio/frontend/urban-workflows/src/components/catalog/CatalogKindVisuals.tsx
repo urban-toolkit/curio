@@ -10,7 +10,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import styles from "./CatalogKindVisuals.module.css";
 
-export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "lake";
+export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source";
 
 export interface CatalogKindMeta {
   icon: IconDefinition;
@@ -39,13 +39,13 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     label: "Agent",
     shortLabel: "Agent",
   },
-  // A data lake SOURCE: a portal you pull from. The download arrow says what
+  // A Discovery Catalog SOURCE: a portal you pull from. The download arrow says what
   // you do with one, which is more use than a drop of water would be - and it
-  // is what distinguishes a lake card from the dataset card it produces.
-  lake: {
+  // is what distinguishes a source card from the dataset card it produces.
+  source: {
     icon: faCloudArrowDown,
-    label: "Data lake",
-    shortLabel: "Lake",
+    label: "Source",
+    shortLabel: "Source",
   },
 };
 

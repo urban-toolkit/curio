@@ -11,7 +11,7 @@
 import {
   agentCardActions,
   datasetCardActions,
-  lakeSourceCardActions,
+  discoverySourceCardActions,
   packageCardActions,
 } from "../../components/catalog/catalogCardActions";
 
@@ -64,8 +64,8 @@ describe("catalog card actions", () => {
     ).toEqual(["view-details"]);
   });
 
-  test("a data lake source offers the browse, then its details", () => {
-    expect(lakeSourceCardActions({ browsable: true }).map((a) => a.id)).toEqual([
+  test("a Discovery Catalog source offers the browse, then its details", () => {
+    expect(discoverySourceCardActions({ browsable: true }).map((a) => a.id)).toEqual([
       "browse-datasets",
       "view-details",
     ]);
@@ -73,7 +73,7 @@ describe("catalog card actions", () => {
 
   test("a source that cannot be searched offers only its details", () => {
     // The drawer shows why in that slot, not a button, as for a current package.
-    expect(lakeSourceCardActions({ browsable: false }).map((a) => a.id)).toEqual([
+    expect(discoverySourceCardActions({ browsable: false }).map((a) => a.id)).toEqual([
       "view-details",
     ]);
   });
@@ -89,7 +89,7 @@ describe("catalog card actions", () => {
       ...agentCardActions({ imported: true }),
       ...packageCardActions({ isInstalled: false, hasUpdate: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
     ];
     // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
     // which is half the guarantee - the other half is that no builder emits one.
@@ -104,7 +104,7 @@ describe("catalog card actions", () => {
       ...datasetCardActions({ inAllProjects: true }),
       ...agentCardActions({ imported: true }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
     ];
     expect(every.every((a) => !a.destructive)).toBe(true);
   });
@@ -114,7 +114,7 @@ describe("catalog card actions", () => {
       datasetCardActions({ inAllProjects: false }),
       agentCardActions({ imported: true }),
       packageCardActions({ isInstalled: false, hasUpdate: false }),
-      lakeSourceCardActions({ browsable: true }),
+      discoverySourceCardActions({ browsable: true }),
     ]) {
       expect(list[list.length - 1].id).toBe("view-details");
     }
@@ -126,7 +126,7 @@ describe("catalog card actions", () => {
       ...datasetCardActions({ inAllProjects: true }),
       ...agentCardActions({ imported: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
     ]) {
       expect(action.label.trim()).not.toBe("");
     }

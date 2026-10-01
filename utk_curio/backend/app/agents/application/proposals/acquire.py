@@ -1,4 +1,4 @@
-"""The data-lake acquisition proposal: a row minted as acquirable, the confirmed picks applied through the lake service, the outcome settled.
+"""The Discovery Catalog acquisition proposal: a row minted as acquirable, the confirmed picks applied through the discovery service, the outcome settled.
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
@@ -25,9 +25,9 @@ log = logging.getLogger(__name__)
 def _acquire_format(row: dict) -> str | None:
     """The format to download a confirmed row as, when it can be named: a
     ``direct`` row's from the content type the probe saw, a connector row's
-    from its own ``format`` when that is one the Data Lake accepts."""
-    from utk_curio.backend.app.datalakes.domain import formats
-    from utk_curio.backend.app.datalakes.domain.manifest import LAKE_ACQUIRABLE_FORMATS
+    from its own ``format`` when that is one the Discovery Catalog accepts."""
+    from utk_curio.backend.app.discovery.domain import formats
+    from utk_curio.backend.app.discovery.domain.manifest import DISCOVERY_ACQUIRABLE_FORMATS
 
     probed = formats.CONTENT_TYPE_FORMATS.get(formats.content_type_of(
         {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
@@ -35,23 +35,23 @@ def _acquire_format(row: dict) -> str | None:
     if probed and row.get("resourceId") == row.get("url"):
         return probed
     named = str(row.get("format") or "").strip().lower()
-    return named if named in LAKE_ACQUIRABLE_FORMATS else None
+    return named if named in DISCOVERY_ACQUIRABLE_FORMATS else None
 
 
 def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
-    """Download every confirmed acquirable row through the Data Lake, and record
+    """Download every confirmed acquirable row through the Discovery Catalog, and record
     each as the catalog pick it becomes.
 
-    The download is ``DataLakeService.start_acquire``, the one the Data Lake page
-    uses, so the dataset carries its ``lakeSource`` and a resource the account
+    The download is ``DiscoveryService.start_acquire``, the one the Discovery Catalog page
+    uses, so the dataset carries its ``discoverySource`` and a resource the account
     already holds is not fetched again. It is not handed to a builder: the
     builder writes fetch code, and here Curio fetches. Every download shares one
     wait. One that lands inside it becomes an imported catalog pick; one still
     running becomes a pick that is ``acquiring``, settled by
-    ``_settle_lake_acquisitions`` once the dataset is held. Returns one summary
+    ``_settle_discovery_acquisitions`` once the dataset is held. Returns one summary
     per download.
     """
-    from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+    from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
     summaries: list[dict] = []
     running: list[tuple[int, dict, str]] = []
@@ -59,14 +59,14 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     for index, row in enumerate(rows):
         if row.get("lane") != "external" or not row.get("acquirable"):
             continue
-        service = service or _lake_service()
+        service = service or _discovery_service()
         summary = {"name": row.get("name"), "sourceId": row["sourceId"],
                    "resourceId": row["resourceId"]}
         try:
             started = service.start_acquire(
                 row["sourceId"], row["resourceId"], fmt=_acquire_format(row),
             )
-        except DataLakeError as exc:
+        except DiscoveryError as exc:
             row["acquireError"] = str(exc)[:200]
             summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
             continue
@@ -77,10 +77,10 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
                               "alreadyPresent": True})
         else:
             running.append((index, summary, str(started.get("jobId") or "")))
-    deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+    deadline = time.monotonic() + _DISCOVERY_APPLY_WAIT_S
     for index, summary, job_id in running:
         row = rows[index]
-        outcome = _await_lake_job(service, job_id, deadline=deadline) or {}
+        outcome = _await_discovery_job(service, job_id, deadline=deadline) or {}
         status = outcome.get("status")
         dataset_id = outcome.get("datasetId") or (outcome.get("dataset") or {}).get("id")
         if status == "completed" and dataset_id:
@@ -116,7 +116,7 @@ def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
     return None
 
 
-def _settle_lake_acquisitions(user_key: str, project_id: str) -> None:
+def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
     """Resolve nodes whose confirmed download has landed since it was confirmed.
 
     Called at a Solve's entry, while the request's user can read the datasets
@@ -135,9 +135,9 @@ def _settle_lake_acquisitions(user_key: str, project_id: str) -> None:
             UserDatasetRepository,
         )
 
-        held = UserDatasetRepository(user).lake_resource_index()
+        held = UserDatasetRepository(user).discovery_resource_index()
     except Exception:  # noqa: BLE001 - an unreadable store settles nothing
-        log.warning("Could not read the held Data Lake datasets for project %s",
+        log.warning("Could not read the held Discovery Catalog datasets for project %s",
                     project_id, exc_info=True)
         return
     with projects_storage.spec_write_lock(user_key, project_id):
@@ -146,19 +146,19 @@ def _settle_lake_acquisitions(user_key: str, project_id: str) -> None:
             projects_storage.write_spec(user_key, project_id, fresh)
 
 
-def _lake_service():
+def _discovery_service():
     from flask import g
 
-    from utk_curio.backend.app.datalakes.service import DataLakeService
+    from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user = getattr(g, "user", None)
-    return DataLakeService(
+    return DiscoveryService(
         _user_dir_key(user) if user is not None else None, user=user
     )
 
 
-def _mint_datalake_acquire(
+def _mint_discovery_acquire(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
     """Propose downloading ONE portal resource into the Data Catalog.
@@ -172,9 +172,9 @@ def _mint_datalake_acquire(
     Every refusal is honest chat instead of a dead proposal (docs/06
     idempotence), and each names what to do about it.
     """
-    from utk_curio.backend.app.datalakes.domain.errors import (
+    from utk_curio.backend.app.discovery.domain.errors import (
         CredentialRequired,
-        DataLakeError,
+        DiscoveryError,
     )
 
     params = req.get("params") or {}
@@ -184,17 +184,17 @@ def _mint_datalake_acquire(
     if not source_id or not resource_id:
         return "refused", "a download needs both a sourceId and a resourceId", None
 
-    service = _lake_service()
+    service = _discovery_service()
     try:
         manifest = service.get_manifest(source_id)
-    except DataLakeError:
+    except DiscoveryError:
         known = [
             row.get("dirName")
             for row in (service.list_catalog().get("sources") or [])
         ]
         return (
             "refused",
-            f"there is no data lake source {source_id!r} here; this deployment "
+            f"there is no Discovery Catalog source {source_id!r} here; this deployment "
             f"connects to {', '.join(str(k) for k in known) or 'none'}",
             None,
         )
@@ -204,7 +204,7 @@ def _mint_datalake_acquire(
         return (
             "refused",
             f"{manifest.name} is a storage source; add its resources from its "
-            "page in the Data Lake Catalog",
+            "page in the Discovery Catalog",
             None,
         )
 
@@ -228,7 +228,7 @@ def _mint_datalake_acquire(
             "to paste it to you.",
             None,
         )
-    except DataLakeError as exc:
+    except DiscoveryError as exc:
         return "refused", f"{manifest.name} could not describe {resource_id!r}: {exc}", None
 
     offered = [str(f) for f in (detail.get("formats") or [])]
@@ -253,7 +253,7 @@ def _mint_datalake_acquire(
         preview_bits.append(chosen.upper())
     part = content.make_proposal_part(
         proposal_id=proposal_id,
-        tool="datalake.acquire",
+        tool="discovery.acquire",
         summary=summary,
         preview=" · ".join(preview_bits),
         pins={"sourceId": manifest.dir_name, "resourceId": resource_id, "format": chosen},
@@ -265,7 +265,7 @@ def _mint_datalake_acquire(
         loop_ctx,
         {
             "proposalId": proposal_id,
-            "tool": "datalake.acquire",
+            "tool": "discovery.acquire",
             "sourceId": manifest.dir_name,
             "sourceName": manifest.name,
             "resourceId": resource_id,
@@ -285,7 +285,7 @@ def _mint_datalake_acquire(
     )
 
 
-def _apply_datalake_acquire(
+def _apply_discovery_acquire(
     user_key: str,
     project_id: str,
     attachment_id: str,
@@ -305,24 +305,24 @@ def _apply_datalake_acquire(
     job id and says so, which is honest either way and is one code path rather
     than two.
     """
-    from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+    from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
     source_id = proposal.get("sourceId", "")
     resource_id = proposal.get("resourceId", "")
-    service = _lake_service()
+    service = _discovery_service()
     try:
         service.get_manifest(source_id)
-    except DataLakeError as exc:
+    except DiscoveryError as exc:
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"that data lake source is no longer available ({exc}) - ask the "
+            f"that Discovery Catalog source is no longer available ({exc}) - ask the "
             "agent to search again",
         )
     try:
         started = service.start_acquire(
             source_id, resource_id, fmt=proposal.get("format") or None
         )
-    except DataLakeError as exc:
+    except DiscoveryError as exc:
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id, str(exc)
         )
@@ -332,7 +332,7 @@ def _apply_datalake_acquire(
         return {"ok": True, "datasetId": dataset.get("id"), "alreadyPresent": True}
 
     job_id = started.get("jobId")
-    outcome = _await_lake_job(service, job_id)
+    outcome = _await_discovery_job(service, job_id)
     if outcome is not None and outcome.get("status") == "failed":
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
@@ -350,14 +350,14 @@ def _apply_datalake_acquire(
 #: How long the apply endpoint waits before handing the job back. Long enough
 #: for a small file from a responsive portal, short enough not to hold a
 #: request open on a large one.
-_LAKE_APPLY_WAIT_S = 20
+_DISCOVERY_APPLY_WAIT_S = 20
 
 
-def _await_lake_job(service, job_id: str | None, *, deadline: float | None = None) -> dict | None:
+def _await_discovery_job(service, job_id: str | None, *, deadline: float | None = None) -> dict | None:
     if not job_id:
         return None
     if deadline is None:
-        deadline = time.monotonic() + _LAKE_APPLY_WAIT_S
+        deadline = time.monotonic() + _DISCOVERY_APPLY_WAIT_S
     while time.monotonic() < deadline:
         row = service.get_job(job_id)
         if row.get("status") in ("completed", "failed", "refused", "cancelled"):
@@ -373,7 +373,7 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
     so a model-supplied ``acquirable`` never survives. The answer reads the
     roster and the probe, never the run's grants: a person confirming the row
     uses the download route, which needs only their sign-in, and an agent's
-    own ``datalake.acquire`` proposal is checked against its grant where it is
+    own ``discovery.acquire`` proposal is checked against its grant where it is
     minted.
 
     - A connector source (anything but ``direct``) is acquirable when the
@@ -408,7 +408,7 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
 def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
-    # the Data Lake page, never offered to agents.
+    # the Discovery Catalog page, never offered to agents.
     if (source or {}).get("kind") == "storage":
         return False
     capabilities = (source or {}).get("capabilities") or {}
@@ -421,7 +421,7 @@ def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
         return False
     if row.get("access") != verify.ACCESS_FETCHABLE:
         return False
-    from utk_curio.backend.app.datalakes.domain import formats
+    from utk_curio.backend.app.discovery.domain import formats
 
     content_type = formats.content_type_of(
         {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}

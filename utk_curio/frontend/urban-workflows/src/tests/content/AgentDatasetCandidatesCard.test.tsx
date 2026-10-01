@@ -73,8 +73,8 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
         external: [
           { name: "Verified", sourceType: "api", url: "https://ok.example/x",
             verification: { status: "verified" } } as any,
-          { name: "Downloadable", sourceType: "lake", url: "https://lake.example/r",
-            acquirable: true, sourceId: "lake.a", resourceId: "r" },
+          { name: "Downloadable", sourceType: "discovery", url: "https://source.example/r",
+            acquirable: true, sourceId: "source.a", resourceId: "r" },
           { name: "Model claim", sourceType: "api", url: "https://claimed.example/y" },
           { name: "Bad scheme", sourceType: "api", url: "javascript:alert(1)",
             verification: { status: "verified" } } as any,
@@ -86,7 +86,7 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     const links = screen.getAllByRole("link", { name: "View on the portal ↗" });
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "https://ok.example/x",
-      "https://lake.example/r",
+      "https://source.example/r",
     ]);
     links.forEach((a) => expect(a).toHaveAttribute("rel", expect.stringContaining("noopener")));
     // Unvouched URLs stay plain text, as before.
@@ -327,7 +327,7 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
 });
 
 describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
-  const LAKE: AgentDatasetCandidatesPart = {
+  const DISCOVERY: AgentDatasetCandidatesPart = {
     type: "datasetCandidates",
     lanes: {
       external: [
@@ -335,9 +335,9 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
           // A connector row whose landing page is a portal: the probe says a
           // person would download it, but Curio downloads it itself.
           name: "Chicago community areas",
-          sourceType: "lake",
+          sourceType: "discovery",
           url: "https://data.cityofchicago.org/d/cauq-8yn6",
-          sourceId: "lake.cityofchicago.data-portal@1",
+          sourceId: "source.cityofchicago.data-portal@1",
           resourceId: "cauq-8yn6",
           acquirable: true,
           access: "manual-download",
@@ -346,8 +346,8 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
         },
         {
           name: "Chicago wards",
-          sourceType: "lake",
-          sourceId: "lake.cityofchicago.data-portal@1",
+          sourceType: "discovery",
+          sourceId: "source.cityofchicago.data-portal@1",
           resourceId: "sp34-6z76",
           acquirable: true,
         },
@@ -357,7 +357,7 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
   };
 
   it("offers only the download, never the portal steps", () => {
-    render(<AgentDatasetCandidatesCard part={LAKE} onImportDataset={jest.fn()} />);
+    render(<AgentDatasetCandidatesCard part={DISCOVERY} onImportDataset={jest.fn()} />);
     expect(screen.getAllByText("Downloadable")).toHaveLength(2);
     expect(screen.queryByText(/Download it from the portal/)).toBeNull();
     expect(screen.queryByText("Import dataset")).toBeNull();
@@ -374,13 +374,13 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
         reason: "Chicago wards is downloading into your Data Catalog; Solve the node once it lands",
       },
     });
-    render(<AgentDatasetCandidatesCard part={LAKE} onRecordSelection={onRecordSelection} />);
+    render(<AgentDatasetCandidatesCard part={DISCOVERY} onRecordSelection={onRecordSelection} />);
     fireEvent.click(screen.getByLabelText("Select Chicago wards"));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Confirm source for this node/ }));
     });
     expect(onRecordSelection).toHaveBeenCalledWith([
-      { lane: "external", key: "lake.cityofchicago.data-portal@1/sp34-6z76" },
+      { lane: "external", key: "source.cityofchicago.data-portal@1/sp34-6z76" },
     ]);
     expect(screen.getByText(/downloading into your Data Catalog/)).toBeInTheDocument();
   });
@@ -389,9 +389,9 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
 describe("rowProvenance", () => {
   it("states a row's coordinate and link, and nothing for a row with neither", () => {
     expect(rowProvenance({
-      name: "a", sourceType: "lake", url: "https://x.example/a.csv",
-      sourceId: "lake.a.b@1", resourceId: "r1",
-    })).toEqual({ lakeId: "lake.a.b@1", resourceId: "r1", resourceUrl: "https://x.example/a.csv" });
+      name: "a", sourceType: "discovery", url: "https://x.example/a.csv",
+      sourceId: "source.a.b@1", resourceId: "r1",
+    })).toEqual({ sourceId: "source.a.b@1", resourceId: "r1", resourceUrl: "https://x.example/a.csv" });
     expect(rowProvenance({ name: "a", sourceType: "document" })).toBeUndefined();
   });
 });

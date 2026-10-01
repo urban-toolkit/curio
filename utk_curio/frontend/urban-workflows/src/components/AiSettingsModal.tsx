@@ -35,7 +35,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
   // HuggingFace gates some models behind a licence you accept with your own
   // account, so the token is per user rather than one the operator holds.
   const [hfToken, setHfToken] = useState("");
-  // The Data Lake Catalog sends this one to Socrata portals.
+  // The Discovery Catalog sends this one to Socrata portals.
   const [socrataToken, setSocrataToken] = useState("");
   // Whether this install supplies a Socrata token everyone inherits:
   // "(optional)" is misleading when leaving the box blank already
@@ -163,7 +163,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 Only needed for <strong>gated</strong> models in the Street
                 Vision node, which you unlock by accepting each model's licence
                 on your own HuggingFace account. Public models need no token.
-                Hugging Face sources in the Data Lake Catalog send it too.
+                Hugging Face sources in the Discovery Catalog send it too.
               </span>
               <a
                 href="https://huggingface.co/settings/tokens"
@@ -208,7 +208,7 @@ const AiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) => 
                 autoComplete="new-password"
               />
               <span className={modal.hint}>
-                Used by the <strong>Data Lake Catalog</strong> for Socrata
+                Used by the <strong>Discovery Catalog</strong> for Socrata
                 portals, such as Chicago&apos;s. They answer without one; a
                 token raises the rate limit, and it is issued to you rather
                 than to this install, so it lives on your account.

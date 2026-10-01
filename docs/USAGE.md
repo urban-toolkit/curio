@@ -14,7 +14,7 @@
 - [Autark node](#autark-node)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
-- [Data Lake Catalog](#data-lake-catalog)
+- [Discovery Catalog](#discovery-catalog)
 - [Agent Catalog](#agent-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
@@ -252,7 +252,7 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-Below the configurations, **Save tokens** stores a HuggingFace token (for gated models in the Street Vision node, and for Hugging Face sources in the Data Lake Catalog) and a Socrata app token for the Data Lake Catalog.
+Below the configurations, **Save tokens** stores a HuggingFace token (for gated models in the Street Vision node, and for Hugging Face sources in the Discovery Catalog) and a Socrata app token for the Discovery Catalog.
 
 ### Connection keys
 
@@ -567,13 +567,13 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 
 For the full guide, covering the storage layers, the action matrix, computed datasets and lineage, previews, OSM PBF and GeoPackage imports, and publishing, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).
 
-## Data Lake Catalog
+## Discovery Catalog
 
-The Data Catalog holds datasets you already have; the **Data Lake Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are.
+The Data Catalog holds datasets you already have; the **Discovery Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are.
 
-Sources are JSON manifests under `<repo_root>/datalakes/`, relocated with **`CURIO_DATALAKE_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/datalakes/` for your own. Users cannot import one from the app.
+Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`CURIO_DISCOVERY_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
 
-For the full guide, covering searching, downloading, storage sources, collections, API tokens, and the Dataset Finder, see [docs/DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md).
+For the full guide, covering searching, downloading, storage sources, collections, API tokens, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
 
 ## Agent Catalog
 

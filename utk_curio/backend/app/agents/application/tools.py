@@ -224,16 +224,16 @@ REGISTRY: dict[str, ToolContract] = {
             "origin": _text("A dataset origin."),
         }),
     ),
-    # Data Lake Catalog - consumer: agent.dataset-finder. Three contracts, not
+    # Discovery Catalog - consumer: agent.dataset-finder. Three contracts, not
     # two, and deliberately the same roster/detail/reviewed-mutate shape
     # packages.catalog + packages.resolve + package.install already has: it is
     # the shape that stops the model inventing a source id.
-    "datalake.sources": ToolContract(
-        id="datalake.sources",
+    "discovery.sources": ToolContract(
+        id="discovery.sources",
         contract_version="1",
         effect="read",
         description=(
-            "List the data portals and lakes this deployment connects to. "
+            "List the data portals and storage this deployment connects to. "
             "Params: none. Returns rows with sourceId, name, provider, "
             "publisher, the formats it can deliver, whether it can be "
             "searched, and whether this account holds the credential the "
@@ -243,14 +243,14 @@ REGISTRY: dict[str, ToolContract] = {
         ),
         parameters=_no_params(),
     ),
-    "datalake.search": ToolContract(
-        id="datalake.search",
+    "discovery.search": ToolContract(
+        id="discovery.search",
         contract_version="1",
         effect="read",
         description=(
             "Search connected data portals LIVE. Params: "
             '{"q": "<text>", "sourceId": "<sourceId@major from '
-            'datalake.sources, optional>", "format": "<fmt, optional>"}. '
+            'discovery.sources, optional>", "format": "<fmt, optional>"}. '
             "PREFER naming a sourceId: without one this searches every portal "
             "at once and is charged one web call PER PORTAL, which can spend "
             "the whole per-run budget of 4 in a single request. Returns "
@@ -261,21 +261,21 @@ REGISTRY: dict[str, ToolContract] = {
         parameters=_object({
             "q": _text("Text to search for."),
             "sourceId": _text(
-                "A sourceId@major from datalake.sources. Without one, every "
+                "A sourceId@major from discovery.sources. Without one, every "
                 "portal is searched and each is charged one web call."
             ),
             "format": _text("A format the resource must offer."),
         }),
     ),
-    "datalake.acquire": ToolContract(
-        id="datalake.acquire",
+    "discovery.acquire": ToolContract(
+        id="discovery.acquire",
         contract_version="1",
         effect="mutate",
         description=(
             "Propose downloading ONE resource from a connected data portal "
             "into the Data Catalog, where it becomes an ordinary dataset. "
             'Params: {"sourceId": "<sourceId@major>", "resourceId": "<id from '
-            'datalake.search results>", "format": "<one of the formats that '
+            'discovery.search results>", "format": "<one of the formats that '
             'result listed, optional>"}. The user reviews the proposal; '
             "nothing is downloaded and nothing is added to the catalog without "
             "their approval. This never writes fetch code, and it never "
@@ -284,7 +284,7 @@ REGISTRY: dict[str, ToolContract] = {
         parameters=_object(
             {
                 "sourceId": _text("The portal's sourceId@major."),
-                "resourceId": _text("A resourceId from datalake.search results."),
+                "resourceId": _text("A resourceId from discovery.search results."),
                 "format": _text("One of the formats that result listed."),
             },
             "sourceId", "resourceId",
@@ -656,10 +656,10 @@ def _truncate(text: str) -> str:
 
 # catalog.search bounds (dev/50): plenty for ranking, small enough to never
 # crowd the context; description is display metadata, not a document.
-#: Bounds for the lake tools, matching the catalog ones above. A portal can
+#: Bounds for the discovery tools, matching the catalog ones above. A portal can
 #: answer with hundreds; a model needs the first handful.
-_DATALAKE_MAX_ROWS = 20
-_DATALAKE_DESC_MAX_CHARS = 200
+_DISCOVERY_MAX_ROWS = 20
+_DISCOVERY_DESC_MAX_CHARS = 200
 
 _CATALOG_SEARCH_MAX_ROWS = 40
 _CATALOG_DESC_MAX_CHARS = 200
@@ -830,35 +830,35 @@ def _resolve_node_id(target: dict | None, params: dict) -> str | None:
     return None
 
 
-def _datalake_service():
-    """The lake service for the acting user.
+def _discovery_service():
+    """The discovery service for the acting user.
 
-    Thin wrapper over the datalakes domain (`ADR-AG-007`), the same way
+    Thin wrapper over the discovery domain (`ADR-AG-007`), the same way
     ``_catalog_search_rows`` wraps the datasets one: the user rides the request
-    context, and the service is the same one the Data Lake Catalog pages use.
+    context, and the service is the same one the Discovery Catalog pages use.
     """
     from flask import g
 
-    from utk_curio.backend.app.datalakes.service import DataLakeService
+    from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user = getattr(g, "user", None)
-    return DataLakeService(
+    return DiscoveryService(
         _user_dir_key(user) if user is not None else None, user=user
     )
 
 
 def _portal_rows(sources) -> list[dict]:
-    """The portals among *sources*. Storage sources are added from the Data
-    Lake page, where a row can be narrowed, so no agent tool offers them."""
+    """The portals among *sources*. Storage sources are added from the Discovery
+    Catalog page, where a row can be narrowed, so no agent tool offers them."""
     return [s for s in sources or [] if s.get("kind") != "storage"]
 
 
-def _datalake_source_rows() -> list[dict]:
+def _discovery_source_rows() -> list[dict]:
     """The roster. Disk only - no portal is contacted."""
-    listing = _datalake_service().list_catalog()
+    listing = _discovery_service().list_catalog()
     rows = []
-    for source in _portal_rows(listing.get("sources"))[:_DATALAKE_MAX_ROWS]:
+    for source in _portal_rows(listing.get("sources"))[:_DISCOVERY_MAX_ROWS]:
         auth = source.get("auth") or {}
         rows.append(
             {
@@ -866,7 +866,7 @@ def _datalake_source_rows() -> list[dict]:
                 "name": source.get("name"),
                 "provider": source.get("provider"),
                 "publisher": source.get("publisher"),
-                "description": (source.get("description") or "")[:_DATALAKE_DESC_MAX_CHARS],
+                "description": (source.get("description") or "")[:_DISCOVERY_DESC_MAX_CHARS],
                 "formats": (source.get("capabilities") or {}).get("formats") or [],
                 "searchable": bool((source.get("capabilities") or {}).get("search")),
                 # Whether a token will be sent, never the token. A model that
@@ -877,35 +877,35 @@ def _datalake_source_rows() -> list[dict]:
     return rows
 
 
-def _datalake_search_rows(params: dict) -> list[dict]:
+def _discovery_search_rows(params: dict) -> list[dict]:
     def _param(name: str) -> str | None:
         value = params.get(name)
         if isinstance(value, str) and value.strip():
             return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
         return None
 
-    service = _datalake_service()
+    service = _discovery_service()
     query = _param("q") or ""
     source_id = _param("sourceId")
     fmt = _param("format")
     if source_id:
-        from utk_curio.backend.app.datalakes.domain.errors import DataLakeError
+        from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
         try:
             storage = service.get_manifest(source_id).is_storage
-        except DataLakeError:
+        except DiscoveryError:
             storage = False
         if storage:
             return [], [{"sourceId": source_id, "status": "unsupported"}]
         payload = service.search_source(
-            source_id, q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS
+            source_id, q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS
         )
     else:
         payload = service.search_all(
-            q=query, fmt=fmt, limit=_DATALAKE_MAX_ROWS, include_storage=False
+            q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS, include_storage=False
         )
     rows = []
-    for row in (payload.get("resources") or [])[:_DATALAKE_MAX_ROWS]:
+    for row in (payload.get("resources") or [])[:_DISCOVERY_MAX_ROWS]:
         rows.append(
             {
                 "sourceId": row.get("sourceId"),
@@ -913,7 +913,7 @@ def _datalake_search_rows(params: dict) -> list[dict]:
                 "resourceId": row.get("resourceId"),
                 "name": row.get("name"),
                 "publisher": row.get("publisher"),
-                "description": (row.get("description") or "")[:_DATALAKE_DESC_MAX_CHARS],
+                "description": (row.get("description") or "")[:_DISCOVERY_DESC_MAX_CHARS],
                 "formats": row.get("formats") or [],
                 "updatedAt": row.get("updatedAt"),
                 "alreadyInDataCatalog": bool(row.get("alreadyHeldDatasetId")),
@@ -928,8 +928,8 @@ def _datalake_search_rows(params: dict) -> list[dict]:
     ]
 
 
-def datalake_sources_contacted(params: dict) -> int:
-    """How many portals a ``datalake.search`` with these params will contact.
+def discovery_sources_contacted(params: dict) -> int:
+    """How many portals a ``discovery.search`` with these params will contact.
 
     The budget is charged per portal, so a fan-out costs what it costs. Counted
     here rather than assumed to be one: charging a fan-out a single tick would
@@ -939,7 +939,7 @@ def datalake_sources_contacted(params: dict) -> int:
     if isinstance(source_id, str) and source_id.strip():
         return 1
     try:
-        listing = _datalake_service().list_catalog()
+        listing = _discovery_service().list_catalog()
     except Exception:  # noqa: BLE001 - a count must never fail a run
         return 1
     return max(
@@ -975,15 +975,15 @@ def execute_read_tool(
             return _execute_web_search(params)
         # dev/84: the package tools read through the packages domain (which
         # does its own project/lockfile reads) — handled before the spec read.
-        # The lake tools read the datalakes domain, which does its own
+        # The discovery tools read the discovery domain, which does its own
         # manifest reads - handled before the project spec read, like the
         # package tools below.
-        if tool_id == "datalake.sources":
+        if tool_id == "discovery.sources":
             return "ok", _truncate(
-                json.dumps({"sources": _datalake_source_rows()}, ensure_ascii=False)
+                json.dumps({"sources": _discovery_source_rows()}, ensure_ascii=False)
             )
-        if tool_id == "datalake.search":
-            rows, unavailable = _datalake_search_rows(params)
+        if tool_id == "discovery.search":
+            rows, unavailable = _discovery_search_rows(params)
             payload = {"resources": rows}
             if unavailable:
                 payload["unavailableSources"] = unavailable

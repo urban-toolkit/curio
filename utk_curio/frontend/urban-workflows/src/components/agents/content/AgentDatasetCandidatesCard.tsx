@@ -11,20 +11,20 @@ import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
 import {
   acquireKey,
-  startLakeAcquire,
-  useLakeAcquire,
-} from "../../../services/dataLakeCatalog/dataLakeCatalogHooks";
-import type { LakeAcquireJob } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
-import { isTerminal, jobProgress } from "../../../services/dataLakeCatalog/dataLakeCatalogTypes";
+  startDiscoveryAcquire,
+  useDiscoveryAcquire,
+} from "../../../services/discoveryCatalog/discoveryCatalogHooks";
+import type { DiscoveryAcquireJob } from "../../../services/discoveryCatalog/discoveryCatalogTypes";
+import { isTerminal, jobProgress } from "../../../services/discoveryCatalog/discoveryCatalogTypes";
 import { notifyDatasetCatalogRefresh } from "../../../services/datasetCatalog/datasetCatalogApi";
-import type { DatasetLakeSourceInput } from "../../../services/datasetCatalog/datasetCatalogTypes";
+import type { DatasetDiscoverySourceInput } from "../../../services/datasetCatalog/datasetCatalogTypes";
 
-/** Where a file downloaded by hand from this row came from: its Data Lake
+/** Where a file downloaded by hand from this row came from: its Discovery Catalog
  * coordinate when it has one, and its link. Exported for tests. */
-export function rowProvenance(row: AgentDatasetCandidateRow): DatasetLakeSourceInput | undefined {
-  const source: DatasetLakeSourceInput = {};
+export function rowProvenance(row: AgentDatasetCandidateRow): DatasetDiscoverySourceInput | undefined {
+  const source: DatasetDiscoverySourceInput = {};
   if (row.sourceId && row.resourceId) {
-    source.lakeId = row.sourceId;
+    source.sourceId = row.sourceId;
     source.resourceId = row.resourceId;
   }
   if (row.url) source.resourceUrl = row.url;
@@ -116,7 +116,7 @@ export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null 
  * only. Toggling a selection composes the editable confirmation prompt into
  * the chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
  * on review cards. The one row action is Download, on a row Curio can
- * download: the same download the Data Lake Catalog page runs. A row may also
+ * download: the same download the Discovery Catalog page runs. A row may also
  * open what it names, read-only, the way the same dataset or portal row does
  * everywhere else: a catalog row's "View details", and a verified external
  * row's "View on the portal". Every text field arrives bounded +
@@ -138,7 +138,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * be downloaded from a portal can be brought in from the card that taught
    * the download. Resolves to the imported dataset's id, or null when the
    * import failed (the hook has already shown its own toast). */
-  onImportDataset?: (file: File, lakeSource?: DatasetLakeSourceInput) => Promise<string | null>;
+  onImportDataset?: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
 }> = ({
   part,
   tintClassName,
@@ -154,12 +154,12 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const [recordError, setRecordError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [downloaded, setDownloaded] = useState<string | null>(null);
-  const { jobs } = useLakeAcquire();
+  const { jobs } = useDiscoveryAcquire();
 
   const rowKey = (lane: string, index: number) => `${lane}:${index}`;
 
   /** The server addresses rows by identifier: a catalog row's datasetId, an
-   * external row's url, or its Data Lake coordinate when it has no url. A row
+   * external row's url, or its Discovery Catalog coordinate when it has no url. A row
    * with none of these cannot be confirmed. */
   const picksFor = (keys: Set<string>): AgentDatasetPick[] => {
     const out: AgentDatasetPick[] = [];
@@ -211,14 +211,14 @@ export const AgentDatasetCandidatesCard: React.FC<{
     }
   };
 
-  /** The Data Lake page's own download: the same endpoint and the same job,
+  /** The Discovery Catalog page's own download: the same endpoint and the same job,
    * followed after this card unmounts. The dataset it lands is this node's
    * source, confirmed by id like an import. */
   const download = async (row: AgentDatasetCandidateRow) => {
     if (!row.sourceId || !row.resourceId) return;
     setRecordError(null);
     try {
-      await startLakeAcquire(row.sourceId, row.resourceId, {}, (job) => {
+      await startDiscoveryAcquire(row.sourceId, row.resourceId, {}, (job) => {
         void landed(row, job);
       });
     } catch (e) {
@@ -226,7 +226,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
     }
   };
 
-  const landed = async (row: AgentDatasetCandidateRow, job: LakeAcquireJob) => {
+  const landed = async (row: AgentDatasetCandidateRow, job: DiscoveryAcquireJob) => {
     if (job.status !== "completed" || !job.datasetId) {
       setRecordError(job.error || `The download of ${row.name} was ${job.status}.`);
       return;

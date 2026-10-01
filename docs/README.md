@@ -8,7 +8,7 @@
 - [Node catalog](NODE-CATALOG.md): add, share, and publish node packages, and save a canvas node as one
 - [Data catalog](DATA-CATALOG.md): import, reuse, and publish datasets, including your nodes' outputs
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
-- [Data lake catalog](DATA-LAKE-CATALOG.md): search open data portals, and open folders, buckets and repositories, and bring their datasets into your Data Catalog
+- [Discovery Catalog](DISCOVERY-CATALOG.md): search open data portals, and open folders, buckets and repositories, and bring their datasets into your Data Catalog
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 
@@ -26,7 +26,7 @@ Each example below has a JSON dataflow you can import into Curio plus a step-by-
 
 The same examples are also seeded into the public deployments at [**flow.urbantk.org**](https://flow.urbantk.org) (stable) and [**dev.urbantk.org**](https://dev.urbantk.org) (latest `main`). Sign in to fork them into your own projects, or browse them read-only as a guest.
 
-Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_dataset_path("<id>")`, or `curio_collection("<id>")` for a collection. The storage examples (18 to 23) read datasets added from the **Example storage** source of the [Data Lake Catalog](DATA-LAKE-CATALOG.md). The four Autark examples (06, 07, 08, 11) read a committed `.osm.pbf` by relative path instead, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
+Every example reads its inputs from the [Data Catalog](DATA-CATALOG.md): the datasets ship in `<repo_root>/datasets/` and each dataflow declares the ones it needs, so the loader nodes address them by id with `curio_dataset_path("<id>")`, or `curio_collection("<id>")` for a collection. The storage examples (18 to 23) read datasets added from the **Example storage** source of the [Discovery Catalog](DISCOVERY-CATALOG.md). The four Autark examples (06, 07, 08, 11) read a committed `.osm.pbf` by relative path instead, because the browser fetches those bytes directly and `.pbf` is not a catalog format.
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 

@@ -79,14 +79,14 @@ curio/
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
-├── datalakes/                      # The Data Lake Catalog: one manifest per portal or storage source this install can reach
+├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
 ├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -137,7 +137,7 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Add usage diagrams, screenshots, or schema explanations
 * Contribute inline documentation and docstrings
 
-The four catalog guides (`NODE-CATALOG.md`, `DATA-CATALOG.md`, `AGENT-CATALOG.md`, `DATA-LAKE-CATALOG.md`) share one outline, so a reader who knows one knows where to look in the others: **1. What is the X Catalog?** (Concept, What ships with Curio, Storage layers), **2. Surfaces and workflows** (Action matrix, Workflows), **3. Using X in a dataflow**, the catalog's own parts, then **Importing, publishing, and sharing**, **The manifest**, **Operator notes**, and **See also**. Keep them at user level: name UI labels exactly as the app shows them, and leave routes, module names, internal mechanism and design rationale to [ARCHITECTURE.md](ARCHITECTURE.md) and code comments.
+The four catalog guides (`NODE-CATALOG.md`, `DATA-CATALOG.md`, `AGENT-CATALOG.md`, `DISCOVERY-CATALOG.md`) share one outline, so a reader who knows one knows where to look in the others: **1. What is the X Catalog?** (Concept, What ships with Curio, Storage layers), **2. Surfaces and workflows** (Action matrix, Workflows), **3. Using X in a dataflow**, the catalog's own parts, then **Importing, publishing, and sharing**, **The manifest**, **Operator notes**, and **See also**. Keep them at user level: name UI labels exactly as the app shows them, and leave routes, module names, internal mechanism and design rationale to [ARCHITECTURE.md](ARCHITECTURE.md) and code comments.
 
 ### Community and Support
 
@@ -261,7 +261,7 @@ answers differently than it did yesterday. Rather than trust every author to
 remember to inject a fake, the suite makes forgetting a loud, immediate failure.
 If you hit it, the fix is almost always to inject a fake transport -- most
 network-touching code in this repo already takes one (`egress.fetch`'s
-`request_fn` and `resolver`, `RegistryFetcher`, `LakeTransport`).
+`request_fn` and `resolver`, `RegistryFetcher`, `DiscoveryTransport`).
 
 Two markers opt out, and they mean different things:
 

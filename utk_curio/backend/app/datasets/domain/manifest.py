@@ -61,17 +61,17 @@ class DatasetManifest:
     # Each entry describes one upstream input feeding the producer node:
     # ``{"nodeId", "nodeType"?}`` and/or ``{"datasetId"}``.
     upstream_inputs: list[dict[str, Any]] | None = None
-    # Where a dataset downloaded from the Data Lake Catalog came from:
-    # ``{lakeId, lakeName, resourceId, resourceUrl, finalUrl, fetchedAt,
+    # Where a dataset downloaded from the Discovery Catalog came from:
+    # ``{sourceId, sourceName, resourceId, resourceUrl, finalUrl, fetchedAt,
     # contentSha256}``. A nested block rather than five scalars because it is
     # one fact with parts, and because ``source_label`` - the obvious place to
     # put a provenance string - is a display field already load-bearing for
     # dedup and cannot carry a machine-readable back-reference. Without
     # ``resourceId`` there is no answering "do I already hold this?", which is
     # what stops the same file being downloaded twice.
-    lake_source: dict[str, Any] | None = None
+    discovery_source: dict[str, Any] | None = None
     # A ``collection`` dataset: files referenced where they are, indexed by the
-    # data file (one row per file). Says which lake source and resource the
+    # data file (one row per file). Says which source and resource the
     # files belong to, what kind they are, and how many there were when the
     # index was written. The files are found through the source, so a folder
     # moved and re-declared in its manifest keeps its collections working.
@@ -116,15 +116,15 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
     if schema is not None and not isinstance(schema, dict):
         raise ManifestError(f"{where}.schema must be an object when present")
 
-    lake_source = raw.get("lakeSource")
-    if lake_source is not None:
-        if not isinstance(lake_source, dict):
-            raise ManifestError(f"{where}.lakeSource must be an object when present")
+    discovery_source = raw.get("discoverySource")
+    if discovery_source is not None:
+        if not isinstance(discovery_source, dict):
+            raise ManifestError(f"{where}.discoverySource must be an object when present")
         # Bounded: every value in it came off a remote portal, and a manifest is
         # read on every catalog listing.
-        lake_source = {
+        discovery_source = {
             str(k)[:64]: (v if isinstance(v, (int, float, bool)) else str(v)[:512])
-            for k, v in list(lake_source.items())[:16]
+            for k, v in list(discovery_source.items())[:16]
             if v is not None
         }
 
@@ -173,7 +173,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
             if isinstance(raw.get("upstreamInputs"), list)
             else None
         ),
-        lake_source=lake_source,
+        discovery_source=discovery_source,
         collection=collection,
     )
 
@@ -233,7 +233,7 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
             if manifest.upstream_inputs
             else None
         ),
-        "lakeSource": dict(manifest.lake_source) if manifest.lake_source else None,
+        "discoverySource": dict(manifest.discovery_source) if manifest.discovery_source else None,
         "collection": dict(manifest.collection) if manifest.collection else None,
     }
 

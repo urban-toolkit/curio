@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "7be2513ab1031ea3480f3c545a8a9eba68e70552d2ff9997752f267578c54d55",
-    "manifest.json": "14be3bc87885c8646c73252cce7e2e48ca4f8dd723ee52a58cc293c68f8b50c9",
+    "README.md": "2eb39d593cab75afa6147d99677d1e984cf65acf97a27b6a7c77c75531766b06",
+    "manifest.json": "bbd4e81aef1e0fc10eed0d8ac08b2caad9de6996962b0f6f3a2d4768b056828c",
     "sources/mosaic-rasters.py": "340d4c53f78e330739b0489ba98f7b335d64cdc474f4b6b690b3144dbe9af6a1",
     "sources/split-audio.py": "06701ca2d02116edf5a2902d9780950159fea0511189d8b2345ac654f2016b75",
     "sources/video-frames.py": "74528432ae99f7ea4912dbbc0a4a31c29ca63d4d0be01197f08e929640034a2d"

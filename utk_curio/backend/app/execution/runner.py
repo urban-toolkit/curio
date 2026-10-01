@@ -395,7 +395,7 @@ def run_through_node(
         if collections:
             # Where each curio_collection("<id>") the slice reads keeps its
             # files, and where a node writes what it derives: the same
-            # resolution /processPythonCode sends (datalakes.application.exec_collections).
+            # resolution /processPythonCode sends (discovery.application.exec_collections).
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir

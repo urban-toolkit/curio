@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/discovery-source.v1.json",
+  "title": "Curio Discovery Catalog Source Manifest (v1)",
+  "description": "Schema for a Curio Discovery Catalog source manifest.json. A source describes either a data PORTAL (a Socrata or CKAN site, an ArcGIS hub, an OGC WFS server, or a bare https link), whose datasets are discovered live, or a STORAGE location (a folder, a public S3 bucket, a Hugging Face dataset repo), whose files are organized by the resources it declares. It ships in a directory named '<sourceId>@<major>' containing this manifest and an optional icon.png, under discovery/ or an instance's .curio/discovery/. Field names are camelCase. Source ids begin with 'source.' and name the PUBLISHER, never the software. Manifests are operator-authored: there is no import route. This schema is the canonical spec; the backend validator in utk_curio/backend/app/discovery/domain/manifest.py implements the supported subset, and tests/test_discovery/test_schema_matches_validator.py keeps the two from drifting. User-facing overview: docs/DISCOVERY-CATALOG.md.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "provider"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^source\\.[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,4}$",
+      "description": "source.<publisher>.<source>, 3 to 6 dot-separated lowercase segments."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9999
+        }
+      }
+    },
+    "description": {
+      "type": "string"
+    },
+    "publisher": {
+      "type": "string"
+    },
+    "homepage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "icon": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\.png$",
+      "description": "A single .png filename inside the source folder. PNG only: an SVG served from the app's own origin can carry script, and this is the one file here whose bytes are rendered rather than parsed. Omitted or unreadable means the shared source glyph is shown instead."
+    },
+    "provider": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "enum": [
+            "arcgis",
+            "ckan",
+            "direct",
+            "folder",
+            "huggingface",
+            "s3",
+            "socrata",
+            "wfs"
+          ]
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own (a 'direct' resource id IS the URL), and 'folder', which has a root instead."
+        },
+        "options": {
+          "type": "object",
+          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main)."
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A 'folder' source's directory. Absolute, or relative to the repository for a manifest shipped under discovery/. Never served to clients."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "folder"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "root"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "huggingface"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "baseUrl",
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "required": [
+                  "repo"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "arcgis",
+                  "ckan",
+                  "s3",
+                  "socrata",
+                  "wfs"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "baseUrl"
+            ]
+          }
+        }
+      ]
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "enum": [
+            "optional-token",
+            "public",
+            "required-token"
+          ]
+        },
+        "secretId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){0,2}$",
+          "description": "Names a per-user credential SLOT, never a value. Shared across sources of a family, so one socrata.app-token serves every Socrata portal."
+        },
+        "scheme": {
+          "enum": [
+            "header"
+          ],
+          "description": "header only in v1. That single constraint means no secret ever enters a URL, which is what makes the egress audit record, refusal messages and job records safe to store verbatim."
+        },
+        "headerName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "helpUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "valuePrefix": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z]{1,16} $",
+          "description": "Written before the token in the header value, e.g. 'Bearer '."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "optional-token",
+                  "required-token"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "secretId",
+              "headerName"
+            ]
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "search": {
+          "type": "boolean"
+        },
+        "describe": {
+          "type": "boolean"
+        },
+        "download": {
+          "type": "boolean"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "csv",
+              "geojson",
+              "geotiff",
+              "json",
+              "parquet"
+            ]
+          },
+          "description": "A portal only: an upper bound, intersected with the Data Catalog's own SUPPORTED_FORMATS at acquire time, so a manifest can narrow what may be ingested, never widen it. A storage manifest that declares it is refused: its formats follow from its resources."
+        },
+        "maxDownloadBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864,
+          "description": "A manifest may lower the server's ceiling, never raise it."
+        },
+        "allowOffBaseDistributions": {
+          "type": "boolean",
+          "description": "Let a download follow a URL off baseUrl. CKAN distributions legitimately live off-portal. It widens what a hostile search response can steer a request at, so it is an operator's decision per portal rather than a provider default."
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "requestsPerMinute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000,
+          "description": "For a storage source: how many matched files it lists and adds at once. A listing stops at the limit, and adding a resource with more files than it is refused. A manifest may lower it, never raise it."
+        }
+      }
+    },
+    "createdAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updatedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "A storage source's files, as the datasets they form. Required for 'folder', 's3' and 'huggingface'; refused for a portal. Each entry's path is a template relative to the root whose captures become columns.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "path"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "audio",
+              "frames",
+              "images",
+              "media",
+              "rasters",
+              "table",
+              "videos"
+            ],
+            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders."
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "geojson",
+              "gpkg",
+              "json",
+              "parquet",
+              "pbf",
+              "shp"
+            ],
+            "description": "The file format of a 'table' resource."
+          },
+          "datasets": {
+            "type": "string",
+            "pattern": "^(one|per-file|per:[a-z_][a-z0-9_]{0,31}(,[a-z_][a-z0-9_]{0,31})*)$",
+            "description": "'one' (default): every matched file forms one dataset. 'per:<field>': one dataset per value of a capture. 'per-file': one per file, for tables and rasters."
+          },
+          "extensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]{1,8}$"
+            },
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
+          },
+          "fps": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "description": "Frames per second of a 'frames' resource: each frame's t_s is its number over it."
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_]{0,31}$",
+            "description": "A collection only: the date or strftime capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds."
+          },
+          "metadata": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "on": {
+                "type": "string"
+              }
+            },
+            "description": "A collection only: a CSV, Parquet or JSON table joined onto the rows, by file_name, frame or a capture."
+          },
+          "options": {
+            "type": "object",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet."
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "folder",
+                  "huggingface",
+                  "s3"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ]
+      }
+    }
+  ]
+}

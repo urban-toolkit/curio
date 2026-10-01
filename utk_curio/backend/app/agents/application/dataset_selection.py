@@ -94,7 +94,7 @@ def record_dataset_selection(
             # may be days old, and the delegation below depends on this one.
             agents_mint._mint_row_access(row)
         agents_acquire._mint_row_acquirable(row, roster)
-    # A row Curio can download is downloaded now, by the Data Lake, and
+    # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)
     with projects_storage.spec_write_lock(user_key, project_id):

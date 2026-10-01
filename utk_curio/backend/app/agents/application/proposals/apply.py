@@ -81,8 +81,8 @@ def apply_proposal(
         return _apply_dataset_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
-    if tool == "datalake.acquire":
-        return agents_acquire._apply_datalake_acquire(
+    if tool == "discovery.acquire":
+        return agents_acquire._apply_discovery_acquire(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
     if tool == "package.install":

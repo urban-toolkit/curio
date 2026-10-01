@@ -66,7 +66,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         if entry is None:
             raise RuntimeError(
                 f"Collection '{dataset_id}' is not available in this environment - "
-                "add it from the Data Lake Catalog, then run this node again."
+                "add it from the Discovery Catalog, then run this node again."
             )
         index_path = resolve_index(dataset_id)
         import pandas as pd

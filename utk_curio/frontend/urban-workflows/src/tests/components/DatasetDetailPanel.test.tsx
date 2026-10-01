@@ -460,9 +460,9 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     mockUseDatasetLineage.mockReset();
   });
 
-  const lakeSource = {
-    lakeId: "lake.cityofchicago.data-portal@1",
-    lakeName: "City of Chicago Data Portal",
+  const discoverySource = {
+    sourceId: "source.cityofchicago.data-portal@1",
+    sourceName: "City of Chicago Data Portal",
     resourceId: "ijzp-q8t2",
     resourceUrl: "https://data.cityofchicago.org/resource/ijzp-q8t2.csv",
     fetchedAt: new Date().toISOString(),
@@ -481,21 +481,21 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     // The dataset is `origin: "imported"` like any upload, so without this
     // block nothing on the page says it came from a portal at all - which was
     // the state a full-stack run found it in.
-    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+    renderWithRouter(catalogItem({ origin: "imported", discoverySource }));
 
     const portal = screen.getByRole("link", { name: "City of Chicago Data Portal" });
     expect(portal).toHaveAttribute(
       "href",
-      "/catalog/lakes/lake.cityofchicago.data-portal%401",
+      "/catalog/discovery/source.cityofchicago.data-portal%401",
     );
   });
 
   it("links the resource out to the portal's own page", () => {
-    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+    renderWithRouter(catalogItem({ origin: "imported", discoverySource }));
 
     // With the arrow every link that opens a new tab carries.
     const resource = screen.getByRole("link", { name: "ijzp-q8t2 ↗" });
-    expect(resource).toHaveAttribute("href", lakeSource.resourceUrl);
+    expect(resource).toHaveAttribute("href", discoverySource.resourceUrl);
     // An outbound link to a third party: no window handle back to this tab.
     expect(resource).toHaveAttribute("rel", expect.stringContaining("noopener"));
   });
@@ -503,7 +503,7 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
   it("says a hand download came by hand, from its link", () => {
     renderWithRouter(catalogItem({
       origin: "imported",
-      lakeSource: {
+      discoverySource: {
         resourceUrl: "https://data.example.org/cities.csv",
         manual: true,
         fetchedAt: new Date().toISOString(),

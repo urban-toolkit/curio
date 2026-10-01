@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { notifyDatasetCatalogRefresh } from "./datasetCatalogApi";
-import type { DatasetCatalogItem, DatasetLakeSourceInput } from "./datasetCatalogTypes";
+import type { DatasetCatalogItem, DatasetDiscoverySourceInput } from "./datasetCatalogTypes";
 
 /**
  * The ONE dataset-import pathway, shared by the Data Catalog drawer's footer
@@ -21,7 +21,7 @@ export interface DatasetImportOptions {
   /** ``importDataset`` from ``useDatasetCatalog``; it reloads the listing. */
   importDataset: (
     file: File,
-    opts?: { lakeSource?: DatasetLakeSourceInput },
+    opts?: { discoverySource?: DatasetDiscoverySourceInput },
   ) => Promise<DatasetCatalogItem | null | undefined>;
   showToast: (
     message: string,
@@ -49,7 +49,7 @@ export function useDatasetImport({
   const inFlight = useRef(false);
 
   const importFile = useCallback(
-    async (file: File, opts?: { lakeSource?: DatasetLakeSourceInput }) => {
+    async (file: File, opts?: { discoverySource?: DatasetDiscoverySourceInput }) => {
       if (inFlight.current) return null;
       inFlight.current = true;
       setImporting(true);

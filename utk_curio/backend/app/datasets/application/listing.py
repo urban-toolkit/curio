@@ -719,7 +719,7 @@ class CatalogListing:
         if item.get("format") == "collection":
             raise DatasetCatalogError(
                 "A collection cannot be exported as a single file: its files stay in "
-                "its Data Lake source.",
+                "its Discovery Catalog source.",
                 400,
             )
         resolved = self._paths._resolve_item_path(item)

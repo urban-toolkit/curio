@@ -2,7 +2,7 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-Curio has four catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
+Curio has four catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals and storage you take datasets from.
 
 This guide is in six parts, plus operator notes:
 
@@ -60,7 +60,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the top menu **Data → Node Catalog**, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Data Lake Catalog** tabs beside it are the other three catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Discovery Catalog** tabs beside it are the other three catalogs.
 
 ### Action matrix
 
@@ -219,7 +219,7 @@ Since memo dev/143 the catalog is layered like the Data Catalog. The backend is 
 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
-- [`docs/DATA-LAKE-CATALOG.md`](DATA-LAKE-CATALOG.md): the data portals you download datasets from.
+- [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
 - [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.

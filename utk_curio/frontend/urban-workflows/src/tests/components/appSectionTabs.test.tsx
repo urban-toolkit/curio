@@ -43,7 +43,7 @@ describe('AppSectionTabs', () => {
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
-      ['Data Lake Catalog', '/catalog/lakes'],
+      ['Discovery Catalog', '/catalog/discovery'],
       ['Monitor', '/monitor'],
     ]);
   });
@@ -52,7 +52,7 @@ describe('AppSectionTabs', () => {
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
-    ['/catalog/lakes', 'Data Lake Catalog'],
+    ['/catalog/discovery', 'Discovery Catalog'],
     ['/monitor', 'Monitor'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
@@ -66,11 +66,11 @@ describe('AppSectionTabs', () => {
     expect(activeLabels(container)).toEqual(['Data Catalog']);
   });
 
-  test('a portal detail route keeps Data Lake Catalog active', () => {
-    // Same reason the Data Catalog link is not `end`: /catalog/lakes/:sourceDir
+  test('a portal detail route keeps Discovery Catalog active', () => {
+    // Same reason the Data Catalog link is not `end`: /catalog/discovery/:sourceDir
     // is a page WITHIN that section, so the tab has to stay lit on it.
-    const { container } = renderAt('/catalog/lakes/lake.uk.data-gov@1');
-    expect(activeLabels(container)).toEqual(['Data Lake Catalog']);
+    const { container } = renderAt('/catalog/discovery/source.uk.data-gov@1');
+    expect(activeLabels(container)).toEqual(['Discovery Catalog']);
   });
 
   test('the Monitor tab is unconditional', () => {

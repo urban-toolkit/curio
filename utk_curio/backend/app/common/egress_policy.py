@@ -2,7 +2,7 @@
 
 Extracted from ``agents/egress.py``, whose docstring opens "THE one module
 that speaks HTTP **on an agent's behalf**". That is still true of that module,
-and it is why this one exists: the Data Lake Catalog's transport is not an
+and it is why this one exists: the Discovery Catalog's transport is not an
 agent, so it needs the policy without inheriting the agent framing or the
 agent-shaped body bound. ``agents/egress.py`` re-exports every name defined
 here, so its own callers are unchanged and see the same objects.

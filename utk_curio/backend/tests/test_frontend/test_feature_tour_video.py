@@ -2279,25 +2279,25 @@ def scene_jupyter(ctx: Ctx) -> None:
     wait_for_projects_page(page, timeout=30000)
 
 
-def scene_data_lakes(ctx: Ctx) -> None:
-    """The Data Lake Catalog page and one portal's details. No search, so no portal is contacted."""
+def scene_data_discovery(ctx: Ctx) -> None:
+    """The Discovery Catalog page and one portal's details. No search, so no portal is contacted."""
     page, tour = ctx.page, ctx.tour
-    page.goto(f"{ctx.frontend}/catalog/lakes")
+    page.goto(f"{ctx.frontend}/catalog/discovery")
     page.wait_for_load_state("domcontentloaded")
-    expect(page.get_by_role("heading", name="Data Lake Catalog")).to_be_visible(timeout=30000)
+    expect(page.get_by_role("heading", name="Discovery Catalog")).to_be_visible(timeout=30000)
     tour.beat(1800)
     tour.say(
         "Open data portals, reachable from Curio",
         "Each card is a portal this deployment can search and download from.",
         hold=2800,
     )
-    tour.still("datalakes-catalog")
+    tour.still("discovery-catalog")
     tour.focus(page.get_by_label("Search every portal"), hold=1200)
-    card = page.locator("article[data-lake-source]").first
+    card = page.locator("article[data-discovery-source]").first
     details = card.get_by_role("button", name="View details", exact=True)
     if details.count():
         tour.click(details, hold=1600)
-        tour.still("datalakes-source")
+        tour.still("discovery-source")
         page.keyboard.press("Escape")
         tour.beat(600)
     tour.hush()
@@ -2375,7 +2375,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     # build on the one they share.
     ("quickstart", scene_quickstart),
     ("catalogpages", scene_catalog_pages),
-    ("datalakes", scene_data_lakes),
+    ("discovery", scene_data_discovery),
     ("monitor", scene_monitor),
     # Needs a --collab stack (CURIO_E2E_COLLAB=1), so the full tour skips it
     # unless that is set; see scene_collaboration.

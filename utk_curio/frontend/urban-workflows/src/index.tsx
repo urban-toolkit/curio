@@ -82,8 +82,8 @@ import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
-import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
-import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
+import DiscoveryCatalogBrowse from "./pages/discovery/DiscoveryCatalogBrowse";
+import DiscoverySourceDetail from "./pages/discovery/DiscoverySourceDetail";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
@@ -193,10 +193,10 @@ const App: React.FC = () => {
                           dataset's details over the Data Catalog. */}
                       <Route path="data/:datasetId?" element={<DataCatalogBrowse />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
-                      <Route path="lakes" element={<DataLakeCatalogBrowse />} />
+                      <Route path="discovery" element={<DiscoveryCatalogBrowse />} />
                       <Route
-                        path="lakes/:sourceDir"
-                        element={<DataLakeSourceDetail />}
+                        path="discovery/:sourceDir"
+                        element={<DiscoverySourceDetail />}
                       />
                     </Route>
                     {/* Deliberately outside RequireAuth: the monitor is

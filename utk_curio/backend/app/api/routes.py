@@ -399,7 +399,7 @@ def get_file_preview():
 # execution path cannot drift: a dataset referenced only in code used to be
 # resolvable here and invisible to the catalog's usage helper (#250). The names
 # stay re-exported because tests and callers import them from this module.
-from utk_curio.backend.app.datalakes.application.exec_collections import (  # noqa: E402
+from utk_curio.backend.app.discovery.application.exec_collections import (  # noqa: E402
     resolve_exec_collections,
 )
 from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402

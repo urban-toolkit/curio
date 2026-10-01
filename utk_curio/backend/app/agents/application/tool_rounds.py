@@ -309,7 +309,7 @@ MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.create",
     "node.template.create",
     "dataset.install",
-    "datalake.acquire",
+    "discovery.acquire",
     "package.install",  # dev/84
     "package.draft.apply",  # dev/89
     "dataflow.plan.write",
@@ -329,16 +329,16 @@ def _round_cap_cutoff_card(tool: str) -> dict:
     }
 
 
-#: The tools that spend the per-run web budget. ``datalake.sources`` is absent
+#: The tools that spend the per-run web budget. ``discovery.sources`` is absent
 #: on purpose: it reads manifests off disk, and charging it would burn a run's
 #: allowance on a free call.
-_EGRESS_TOOLS = ("web.fetch", "web.search", "datalake.search")
+_EGRESS_TOOLS = ("web.fetch", "web.search", "discovery.search")
 
 
 def _egress_cost(tool_id: str, params: dict) -> int:
     """How many requests this tool call will make."""
-    if tool_id == "datalake.search":
-        return tools.datalake_sources_contacted(params)
+    if tool_id == "discovery.search":
+        return tools.discovery_sources_contacted(params)
     return 1
 
 
@@ -367,7 +367,7 @@ def _execute_tool_request(
     else:
         if tool_id in _EGRESS_TOOLS:
             # Charged by the number of requests the call will ACTUALLY make,
-            # not one per tool call. A federated datalake.search contacts every
+            # not one per tool call. A federated discovery.search contacts every
             # searchable portal, so a flat tick would let one call issue five
             # requests against a budget of four - the same undercount
             # CallBudget's docstring records being fixed once already, where a

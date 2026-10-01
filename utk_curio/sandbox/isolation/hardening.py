@@ -44,7 +44,7 @@ SENSITIVE_PATHS = (
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
     (".env", "the deployment's secrets, including SECRET_KEY"),
-    (".curio/datalakes", "the operator's lake manifests: each names a folder or host the server reads"),
+    (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
 
 # Directories whose contents reach a child as a hardlink, and which therefore

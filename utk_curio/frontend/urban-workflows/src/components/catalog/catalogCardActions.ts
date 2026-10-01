@@ -12,7 +12,7 @@
  * The catalogs differ in their primary action, which is why this is one
  * function each rather than one for all: a dataset is added to every project or
  * detached from it, an agent is imported or un-imported, a package is installed
- * and can then be updated, and a data lake source is browsed. Each builder
+ * and can then be updated, and a Discovery Catalog source is browsed. Each builder
  * takes the state its drawer already computes, so neither surface decides
  * anything the other cannot see.
  *
@@ -87,7 +87,7 @@ export function packageCardActions(state: {
   return [...primary, VIEW_DETAILS];
 }
 
-export function lakeSourceCardActions(state: {
+export function discoverySourceCardActions(state: {
   /** Searchable by this account: `unsearchableReason` found nothing. */
   browsable: boolean;
 }): CatalogCardAction[] {

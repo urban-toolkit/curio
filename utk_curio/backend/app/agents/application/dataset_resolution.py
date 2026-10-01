@@ -209,7 +209,7 @@ def resolve_picks(
     candidate rows (the persisted ``datasetCandidates`` part).
 
     The key is a catalog row's ``datasetId`` or an external row's ``url``, or
-    for an external row with no url its Data Lake coordinate (``row_key``). The
+    for an external row with no url its Discovery Catalog coordinate (``row_key``). The
     client never sends a name, path or URL of its own, so a selection cannot
     introduce a source the runtime did not propose and probe. Raises
     ``DatasetResolutionError`` naming the first key that does not resolve.
@@ -288,7 +288,7 @@ def acquired_pick(row: dict, dataset_id: str) -> dict:
         "datasetId": str(dataset_id),
         "installed": False,
         "imported": True,
-        "lakeSource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+        "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
     }
 
 
@@ -300,7 +300,7 @@ def acquiring_pick(row: dict, job_id: object) -> dict:
         "name": str(row.get("name") or row.get("resourceId") or "")[:120],
         "sourceType": "catalog",
         "installed": False,
-        "lakeSource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+        "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
         "acquiring": {"jobId": str(job_id or "")},
     }
 
@@ -334,10 +334,10 @@ def settle_acquisitions(spec: dict, held: dict) -> list[str]:
         for index, pick in enumerate(picks):
             if not isinstance(pick, dict) or not pick.get("acquiring"):
                 continue
-            lake = pick.get("lakeSource") or {}
-            dataset_id = held.get((lake.get("sourceId"), lake.get("resourceId")))
+            discovered = pick.get("discoverySource") or {}
+            dataset_id = held.get((discovered.get("sourceId"), discovered.get("resourceId")))
             if dataset_id:
-                picks[index] = acquired_pick({**lake, "name": pick.get("name")}, dataset_id)
+                picks[index] = acquired_pick({**discovered, "name": pick.get("name")}, dataset_id)
                 settled = True
         if not settled:
             continue
@@ -453,9 +453,9 @@ def confirmed_source(spec: dict | None, node_id: str) -> dict | None:
               # when it cannot — the builder must not author a fetch for a
               # source that only exists behind a browser download.
               "verification", "access", "accessWhy", "downloadSteps",
-              # The Data Lake coordinate, and whether Curio downloads it: a
+              # The Discovery Catalog coordinate, and whether Curio downloads it: a
               # builder must not write fetch code for a row Curio downloads.
-              "sourceId", "resourceId", "acquirable", "lakeSource")}
+              "sourceId", "resourceId", "acquirable", "discoverySource")}
             for pick in picks
         ],
     }

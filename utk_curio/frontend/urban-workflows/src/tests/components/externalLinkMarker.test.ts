@@ -5,7 +5,7 @@ import path from "path";
  * A text link that opens a new tab says so, with "↗", and nothing else does.
  *
  * The arrow is how the app tells you a click leaves the page. It used to be
- * applied by hand, so the same portal homepage carried it on the lake source
+ * applied by hand, so the same portal homepage carried it on the source
  * page and not in the drawer beside it, a downloaded dataset's resource link
  * had none, and AI Settings used "→" for its three key links.
  *

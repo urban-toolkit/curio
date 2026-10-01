@@ -80,7 +80,7 @@ export interface UserData {
   /** Whether a HuggingFace token is stored. The token itself never leaves the
    * server; this is what AI Settings shows instead. */
   has_huggingface_token?: boolean;
-  /** Whether a Socrata app token is stored, for the Data Lake Catalog. Same
+  /** Whether a Socrata app token is stored, for the Discovery Catalog. Same
    * rule: a boolean, never the value. */
   has_socrata_app_token?: boolean;
 }

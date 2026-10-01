@@ -152,7 +152,7 @@ export const AgentChatPanel: React.FC<{
    * could not fetch — resolves with the imported dataset's id. */
   onImportDataset?: (
     file: File,
-    lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+    discoverySource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
   ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;

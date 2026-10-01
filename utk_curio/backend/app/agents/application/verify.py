@@ -166,8 +166,8 @@ def _refine_with(provider_module):
 def verify_socrata(url: str, *, request_fn=None, resolver=None, budget=None,
                    headers=None, params=None) -> dict:
     """Kept as a name because tests and callers refer to it; the Socrata URL
-    knowledge itself now lives in ``datalakes/providers/socrata.py``."""
-    from utk_curio.backend.app.datalakes.providers import socrata
+    knowledge itself now lives in ``discovery/providers/socrata.py``."""
+    from utk_curio.backend.app.discovery.providers import socrata
 
     return _refine_with(socrata)(
         url, request_fn=request_fn, resolver=resolver, budget=budget,
@@ -178,12 +178,12 @@ def verify_socrata(url: str, *, request_fn=None, resolver=None, budget=None,
 def _validators() -> list[tuple]:
     """URL-shape recogniser → refinement, one entry per provider family.
 
-    Imported lazily so ``agents`` does not pull the datalakes package in at
-    import time. The dependency direction (agents → datalakes.providers) is the
+    Imported lazily so ``agents`` does not pull the discovery package in at
+    import time. The dependency direction (agents → discovery.providers) is the
     right way round: agents already reaches into ``packages`` and ``datasets``
     the same way, per ADR-AG-007.
     """
-    from utk_curio.backend.app.datalakes.providers import RECOGNISERS
+    from utk_curio.backend.app.discovery.providers import RECOGNISERS
 
     return [(module.recognize, _refine_with(module)) for module in RECOGNISERS]
 
@@ -256,7 +256,7 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
 # request; `classify_access` is a pure function of one observation.
 
 #: Content types a loader can parse directly. Archives are not among them:
-#: the Data Lake refuses them (``datalakes/domain/formats.py``), so a person
+#: the Discovery Catalog refuses them (``discovery/domain/formats.py``), so a person
 #: unpacks one and imports the file.
 _DATA_CONTENT_TYPES = (
     "json", "geo+json", "csv", "text/csv", "xml", "octet-stream",
@@ -277,9 +277,9 @@ _STEPS_MAX = 6
 
 
 def _is_archive(content_type: str, url: str | None) -> bool:
-    """Whether the answer is an archive, by the Data Lake's own table: its
+    """Whether the answer is an archive, by the Discovery Catalog's own table: its
     content type (parameters such as ``charset`` stripped) or the URL's suffix."""
-    from utk_curio.backend.app.datalakes.domain import formats
+    from utk_curio.backend.app.discovery.domain import formats
 
     if formats.content_type_of({"Content-Type": content_type}) in formats.ARCHIVE_CONTENT_TYPES:
         return True
