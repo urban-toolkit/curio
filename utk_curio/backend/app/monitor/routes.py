@@ -38,10 +38,6 @@ _GLOBAL_PER_MINUTE = 100
 _rate_state: dict = {}
 
 
-def _env_true(name: str, default: str = "0") -> bool:
-    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
-
-
 def _sandbox_monitor():
     """The sandbox's counters, or None when it cannot be reached.
 
@@ -137,6 +133,7 @@ def _deployment(sandbox) -> dict:
     """
     from utk_curio import __version__
     from utk_curio.backend import config
+    from utk_curio.backend.app.packages.routes import common as packages_routes_common
 
     return {
         "version": __version__,
@@ -147,13 +144,15 @@ def _deployment(sandbox) -> dict:
         "projectsEnabled": not config.CURIO_NO_PROJECT,
         "guestLoginAllowed": bool(config.ALLOW_GUEST_LOGIN),
         "collabEnabled": bool(config.ENABLE_COLLAB),
-        "sharedInstallsAllowed": _env_true("CURIO_ALLOW_SHARED_INSTALLS"),
-        "factoryPublishAllowed": _env_true("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"),
+        # The switch the package and dataset catalog routes obey.
+        "factoryPublishAllowed": bool(packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH),
         "saveNodeOutputDefault": bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT),
         # The Deployment default a signed-in user falls back to: the operator's
         # endpoint with a model (``provider_config.deployment_config``).
         "llmProviderConfigured": _deployment_llm_configured(),
-        "searchToolConfigured": bool(os.environ.get("CURIO_AGENT_SEARCH_URL", "").strip()),
+        # Whether the operator named a search provider (--agent-search-url);
+        # web.search reads the same variable and has a keyless default.
+        "searchToolConfigured": bool(os.environ.get("CURIO_SEARCH_URL", "").strip()),
         "env": config.CURIO_ENV,
         "platform": platform.platform(),
         "pythonVersion": platform.python_version(),
