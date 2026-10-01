@@ -33,9 +33,9 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
 
   const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
 
-  // Same query key as the palette dropdown so the module-level catalog cache is
-  // shared (single network fetch). Saveable live outputs surface freshly-installed
-  // computed datasets before the next project save.
+  // This dataflow's datasets only (`includeHub: false`), which is what the
+  // producer pills need. Saveable live outputs surface freshly saved computed
+  // datasets before the next project save.
   const liveOutputs = useMemo(
     () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
     [outputs, nodes, defaultSaveOutputDataset],
