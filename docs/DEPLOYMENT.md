@@ -299,6 +299,8 @@ docker compose -p curio-dev up -d --force-recreate
 
 The `-p curio-dev` flag isolates this stack's Compose project so it doesn't conflict with stable.
 
+**Every dev deploy starts the dev stack empty.** When [`deploy.yml`](#optional-cicd-with-github-actions--tailscale) deploys to `/srv/curio-dev`, it deletes `instance/`, `.curio/` and the datasets accounts published into `datasets/`. Accounts, projects and every stored file are gone after each deploy. The stable deploy keeps all three.
+
 ## Optional: CI/CD with GitHub Actions + Tailscale
 
 The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) for push-to-deploy via Tailscale, so the GitHub Actions runner can reach your server without exposing public SSH. This is overkill for a one-person deployment but useful when multiple people merge to `main` and you want each merge automatically reflected on the dev stack.
