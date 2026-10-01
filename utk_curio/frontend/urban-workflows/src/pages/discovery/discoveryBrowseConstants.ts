@@ -14,7 +14,7 @@ import {
  * drive the counts, and a provider with no sources simply reads zero.
  */
 export const PROVIDER_FILTERS: { value: DiscoveryProviderType; label: string }[] = (
-  ["socrata", "ckan", "arcgis", "wfs", "direct", "folder", "s3", "huggingface", "autark-osm"] as DiscoveryProviderType[]
+  ["socrata", "ckan", "arcgis", "wfs", "direct", "folder", "s3", "huggingface", "autark-osm", "mapillary"] as DiscoveryProviderType[]
 ).map((value) => ({ value, label: DISCOVERY_PROVIDER_LABEL[value] }));
 
 export const AUTH_FILTERS: { value: DiscoveryAuthMode; label: string }[] = (

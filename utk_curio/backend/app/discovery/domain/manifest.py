@@ -47,7 +47,7 @@ STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 
 #: Services: told where and what, they answer with one download. Nothing to
 #: browse, so their ``resources`` are declared, like storage's, with no path.
-SERVICE_PROVIDER_TYPES = ("autark-osm",)
+SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary")
 
 #: Provider implementations that exist. Kept here rather than imported from
 #: ``providers`` so that reading a manifest never drags in a transport.
@@ -61,6 +61,7 @@ PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "socrata": ("area",),
     "wfs": ("area",),
     "autark-osm": ("area",),
+    "mapillary": ("area", "captured", "imageType", "size", "maxImages"),
 }
 
 #: The forms of an area each provider can send. A manifest may not offer a
@@ -69,6 +70,7 @@ PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
     "socrata": ("box",),
     "wfs": ("box",),
     "autark-osm": ("box", "names"),
+    "mapillary": ("box",),
 }
 
 #: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.
@@ -80,8 +82,13 @@ AUTARK_OSM_LAYERS = ("buildings", "roads", "parks", "water", "surface")
 AUTARK_OVERPASS_BASE = "https://overpass-api.de"
 
 #: What a service resource can be, and the file format it lands as.
-SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {"autark-osm": ("table",)}
-SERVICE_FORMATS: dict[str, tuple[str, ...]] = {"autark-osm": ("geojson",)}
+SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {"autark-osm": ("table",), "mapillary": ("images", "table")}
+SERVICE_FORMATS: dict[str, tuple[str, ...]] = {"autark-osm": ("geojson",), "mapillary": ("geojson",)}
+
+#: The Mapillary API endpoint each kind of resource asks.
+MAPILLARY_ENDPOINTS = {"images": "images", "table": "map_features"}
+
+_HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
 AUTH_MODES = ("public", "optional-token", "required-token")
 
@@ -374,6 +381,16 @@ def _parse_provider(raw: object) -> ProviderSpec:
         revision = options.get("revision", "main")
         if not isinstance(revision, str) or not _REVISION_RE.match(revision):
             raise ManifestError("manifest.provider.options.revision is not a valid revision")
+    if kind == "mapillary":
+        hosts = options.get("imageHosts")
+        if (
+            not isinstance(hosts, list) or not hosts
+            or any(not isinstance(h, str) or not _HOST_RE.match(h) for h in hosts)
+        ):
+            raise ManifestError(
+                "manifest.provider.options.imageHosts must list the hosts Mapillary's images "
+                "come from, as lowercase host names (a parent domain covers its subdomains)"
+            )
     return ProviderSpec(type=kind, base_url=base_url, options=dict(options), root=root)
 
 
@@ -567,13 +584,25 @@ def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> R
     kinds = SERVICE_RESOURCE_KINDS[provider_type]
     if kind not in kinds:
         raise ManifestError(f"manifest.{where}.kind must be one of {list(kinds)} for {provider_type}")
-    fmt = _require_str(raw.get("format"), f"{where}.format").lower()
-    formats = SERVICE_FORMATS[provider_type]
-    if fmt not in formats:
-        raise ManifestError(f"manifest.{where}.format must be one of {list(formats)} for {provider_type}")
+    if kind in COLLECTION_KINDS:
+        # Its files land as one collection, as a storage resource's do.
+        if raw.get("format") is not None:
+            raise ManifestError(
+                f"manifest.{where}.format applies to a table; {kind} land as a collection"
+            )
+        fmt = None
+    else:
+        fmt = _require_str(raw.get("format"), f"{where}.format").lower()
+        formats = SERVICE_FORMATS[provider_type]
+        if fmt not in formats:
+            raise ManifestError(f"manifest.{where}.format must be one of {list(formats)} for {provider_type}")
     options = raw.get("options") or {}
     if not isinstance(options, dict):
         raise ManifestError(f"manifest.{where}.options must be an object")
+    if provider_type == "mapillary" and options.get("endpoint") != MAPILLARY_ENDPOINTS[kind]:
+        raise ManifestError(
+            f"manifest.{where}.options.endpoint must be {MAPILLARY_ENDPOINTS[kind]!r} for {kind}"
+        )
     if provider_type == "autark-osm":
         layers = options.get("layers")
         if (

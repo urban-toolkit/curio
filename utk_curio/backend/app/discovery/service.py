@@ -25,6 +25,7 @@ from utk_curio.backend.app.discovery.application.catalog import DiscoveryCatalog
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
+    CredentialRequired,
     DiscoveryError,
     ResourceNotFound,
     SourceNotFound,
@@ -111,6 +112,7 @@ class DiscoveryService:
             service_for=self._service_for,
             install_bytes=self._install_bytes,
             find_held=self._find_held,
+            install_path=self._install_path,
         )
 
     # ── collaborators ──────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ class DiscoveryService:
     def _service_for(self, manifest: DiscoverySourceManifest):
         from utk_curio.backend.app.discovery.providers import build_service
 
-        return build_service(manifest)
+        return build_service(manifest, self._transport_for(manifest))
 
     def _listing_scope(self, manifest: DiscoverySourceManifest) -> str:
         """Whose listing this is: every user's for a public source, this
@@ -499,6 +501,14 @@ class DiscoveryService:
         )
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+        auth = manifest.auth
+        if manifest.is_service and auth.needs_token and not self._credential_for(manifest):
+            # Refused here, as a portal's search is, rather than as the
+            # service's own 401 halfway through a job.
+            raise CredentialRequired(
+                f"{manifest.name} needs a {auth.secret_id} token before it can be used"
+                + (f" - see {auth.help_url}" if auth.help_url else "")
+            )
 
         # Bounded before the job exists, so a user cannot queue fifty downloads
         # and discover the limit fifty jobs later.

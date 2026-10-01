@@ -1,0 +1,78 @@
+{
+  "id": "source.mapillary.imagery",
+  "name": "Mapillary",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Street-level photos from Mapillary for a box, narrowed by when they were taken and whether they are panoramas, at the size you choose. Each image keeps its photographer, capture time and place. Also the signs and objects Mapillary detected in the photos, as points. Needs your Mapillary access token.",
+  "publisher": "Mapillary",
+  "homepage": "https://www.mapillary.com",
+  "license": "CC BY-SA 4.0",
+  "tags": ["mapillary", "street-level", "imagery", "photos", "panoramas"],
+  "provider": {
+    "type": "mapillary",
+    "baseUrl": "https://graph.mapillary.com",
+    "options": { "imageHosts": ["fbcdn.net"] }
+  },
+  "auth": {
+    "mode": "required-token",
+    "secretId": "mapillary.token",
+    "headerName": "Authorization",
+    "valuePrefix": "OAuth ",
+    "helpUrl": "https://www.mapillary.com/dashboard/developers"
+  },
+  "limits": { "requestsPerMinute": 10 },
+  "resources": [
+    {
+      "id": "images", "name": "Street-level images", "kind": "images",
+      "description": "Photos taken along streets and paths, each with its photographer, capture time, heading and place.",
+      "options": { "endpoint": "images" },
+      "parameters": [
+        {
+          "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box"],
+          "maxAreaKm2": 25,
+          "description": "The box to take images from."
+        },
+        {
+          "id": "captured", "type": "dateRange", "label": "Taken between",
+          "description": "Only images taken in these dates."
+        },
+        {
+          "id": "imageType", "type": "choice", "label": "Images", "default": "all",
+          "options": [
+            { "value": "all", "label": "All images" },
+            { "value": "panoramas", "label": "Panoramas only" },
+            { "value": "flat", "label": "No panoramas" }
+          ]
+        },
+        {
+          "id": "size", "type": "choice", "label": "Size", "default": "1024",
+          "description": "The width of each image, in pixels.",
+          "options": [
+            { "value": "256", "label": "256 px" },
+            { "value": "1024", "label": "1024 px" },
+            { "value": "2048", "label": "2048 px" }
+          ]
+        },
+        {
+          "id": "maxImages", "type": "integer", "label": "Most images", "default": 100,
+          "min": 1, "max": 1000,
+          "description": "Images are taken from across the box, newest first, up to this many."
+        }
+      ]
+    },
+    {
+      "id": "map-features", "name": "Map features", "kind": "table", "format": "geojson",
+      "description": "Signs, markings and street objects Mapillary detected in its photos, as points.",
+      "options": { "endpoint": "map_features" },
+      "parameters": [
+        {
+          "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box"],
+          "maxAreaKm2": 25,
+          "description": "The box to take features from."
+        }
+      ]
+    }
+  ],
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

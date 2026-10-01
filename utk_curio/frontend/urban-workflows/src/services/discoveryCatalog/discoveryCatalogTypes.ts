@@ -18,14 +18,15 @@ export type DiscoveryProviderType =
   | "folder"
   | "s3"
   | "huggingface"
-  | "autark-osm";
+  | "autark-osm"
+  | "mapillary";
 
 /** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
 export const STORAGE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["folder", "s3", "huggingface"];
 
 /** Matches `SERVICE_PROVIDER_TYPES`: sources told where and what, which answer
  *  with one download. */
-export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["autark-osm"];
+export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["autark-osm", "mapillary"];
 
 /** A `portal` is searched for its datasets; a `storage` source declares them;
  *  a `service` declares what it can be asked for. */
@@ -84,6 +85,7 @@ export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   s3: "S3 bucket",
   huggingface: "Hugging Face",
   "autark-osm": "OpenStreetMap (Autark)",
+  mapillary: "Mapillary",
 };
 
 export const DISCOVERY_AUTH_LABEL: Record<DiscoveryAuthMode, string> = {

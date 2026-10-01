@@ -22,7 +22,7 @@ from utk_curio.backend.app.discovery.domain.manifest import (
     DiscoverySourceManifest,
 )
 from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransport
-from utk_curio.backend.app.discovery.providers import arcgis, autark_osm, ckan, direct, socrata, wfs
+from utk_curio.backend.app.discovery.providers import arcgis, autark_osm, ckan, direct, mapillary, socrata, wfs
 from utk_curio.backend.app.discovery.providers.base import BaseProvider, DiscoveryProvider
 from utk_curio.backend.app.discovery.providers.folder import FolderStorage
 from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
@@ -49,6 +49,7 @@ STORAGE_PROVIDERS: dict[str, type] = {
 #: resources are declared; nothing is searched or listed.
 SERVICE_PROVIDERS: dict[str, type] = {
     autark_osm.AutarkOsmService.type: autark_osm.AutarkOsmService,
+    mapillary.MapillaryService.type: mapillary.MapillaryService,
 }
 
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.
@@ -78,7 +79,7 @@ assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) == set(P
 # What a manifest may declare and what the provider reads are the same list.
 _MODULES = {
     "socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct,
-    "autark-osm": autark_osm,
+    "autark-osm": autark_osm, "mapillary": mapillary,
 }
 for _type, _module in _MODULES.items():
     assert tuple(getattr(_module, "PARAMETER_IDS", ())) == PROVIDER_PARAMETER_IDS.get(_type, ()), (
@@ -110,15 +111,24 @@ def build_storage(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
     return cls(manifest, transport)
 
 
-def build_service(manifest: DiscoverySourceManifest):
+def build_service(manifest: DiscoverySourceManifest, transport: DiscoveryTransport | None = None):
     """Construct the service a manifest names, answering from the recorded
-    corpus when the transport would."""
+    corpus when the transport would.
+
+    OpenStreetMap's requests are sent by autk-db in Node, so it takes the
+    corpus's folder; a service Curio asks over HTTP takes *transport*, the
+    source's own, with its key bound to its host.
+    """
     from utk_curio.backend.app.discovery.infrastructure.transport import fixture_root
 
     cls = SERVICE_PROVIDERS.get(manifest.provider.type)
     if cls is None:
         raise CapabilityUnsupported(f"{manifest.name} is not a service source")
-    return cls(manifest, fixtures=autark_osm.fixtures_for(fixture_root()))
+    if cls is autark_osm.AutarkOsmService:
+        return cls(manifest, fixtures=autark_osm.fixtures_for(fixture_root()))
+    if transport is None:
+        raise CapabilityUnsupported(f"{manifest.name} is asked over HTTP and needs a transport")
+    return cls(manifest, transport=transport)
 
 
 __all__ = [

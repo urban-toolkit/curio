@@ -70,7 +70,22 @@ class TestEveryShippedSource:
         provider can gain an option without anyone auditing whether it was
         safe to publish - which is where a credential would end up."""
         row = source_row(M.load_source_manifest(path))
-        assert "options" not in json.dumps(row)
+
+        def without_choices(node):
+            """The row less each choice parameter's options: those are the
+            form's choices, which a person must see, not wiring."""
+            if isinstance(node, dict):
+                is_choice = node.get("type") == "choice" and "id" in node
+                return {
+                    key: without_choices(value)
+                    for key, value in node.items()
+                    if not (is_choice and key == "options")
+                }
+            if isinstance(node, list):
+                return [without_choices(value) for value in node]
+            return node
+
+        assert "options" not in json.dumps(without_choices(row)).lower()
 
     def test_the_auth_block_is_booleans_a_slot_name_and_a_link(self, path: Path):
         """Never a value. ``secretId`` names WHICH credential is wanted; it is
@@ -89,7 +104,13 @@ class TestEveryShippedSource:
         manifest = M.load_source_manifest(path)
         formats = manifest.capabilities.formats
         assert formats, "a source that can deliver nothing is not useful"
-        allowed = M.STORAGE_FORMATS if manifest.is_storage else M.DISCOVERY_ACQUIRABLE_FORMATS
+        if manifest.is_storage:
+            allowed = M.STORAGE_FORMATS
+        elif manifest.is_service:
+            # A service's images land as one collection, as a bucket's do.
+            allowed = M.DISCOVERY_ACQUIRABLE_FORMATS + ("collection",)
+        else:
+            allowed = M.DISCOVERY_ACQUIRABLE_FORMATS
         assert set(formats) <= set(allowed)
 
     def test_a_searchable_source_has_a_base_to_search(self, path: Path):

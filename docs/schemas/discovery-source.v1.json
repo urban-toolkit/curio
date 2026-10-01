@@ -79,6 +79,7 @@
             "direct",
             "folder",
             "huggingface",
+            "mapillary",
             "s3",
             "socrata",
             "wfs"
@@ -90,7 +91,7 @@
         },
         "options": {
           "type": "object",
-          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main)."
+          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main). 'mapillary': imageHosts, the hosts its images come from (a parent domain covers its subdomains)."
         },
         "root": {
           "type": "string",
@@ -149,6 +150,7 @@
                   "arcgis",
                   "autark-osm",
                   "ckan",
+                  "mapillary",
                   "s3",
                   "socrata",
                   "wfs"
@@ -163,6 +165,40 @@
             "required": [
               "baseUrl"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "mapillary"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "options": {
+                "required": [
+                  "imageHosts"
+                ],
+                "properties": {
+                  "imageHosts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         {
@@ -333,7 +369,7 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 64,
-      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface' and 'autark-osm'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
+      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface', 'autark-osm' and 'mapillary'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
       "items": {
         "type": "object",
         "required": [
@@ -425,8 +461,14 @@
           },
           "options": {
             "type": "object",
-            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads.",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads. For a 'mapillary' resource: endpoint, 'images' for an images resource and 'map_features' for a table.",
             "properties": {
+              "endpoint": {
+                "enum": [
+                  "images",
+                  "map_features"
+                ]
+              },
               "layers": {
                 "type": "array",
                 "minItems": 1,
@@ -537,6 +579,60 @@
                 "options": {
                   "required": [
                     "layers"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "const": "mapillary"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "required": [
+                "options"
+              ],
+              "not": {
+                "required": [
+                  "path"
+                ]
+              },
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "images",
+                    "table"
+                  ]
+                },
+                "format": {
+                  "const": "geojson"
+                },
+                "options": {
+                  "required": [
+                    "endpoint"
                   ]
                 }
               }

@@ -355,8 +355,9 @@ class TestServiceSourcesAreNotOffered:
     def test_a_fan_out_is_not_charged_for_them(self, app, shipped_root):
         listing = tools._discovery_service().list_catalog()["sources"]
         searchable = [s for s in listing if s["kind"] != "storage" and s["capabilities"]["search"]]
-        assert any(s["dirName"] == self.OSM for s in searchable)
-        assert _egress_cost("discovery.search", {}) == len(searchable) - 1
+        services = {s["dirName"] for s in searchable if s["kind"] == "service"}
+        assert {self.OSM, "source.mapillary.imagery@1"} <= services
+        assert _egress_cost("discovery.search", {}) == len(searchable) - len(services)
 
     def test_a_row_from_one_is_not_marked_acquirable(self, app, shipped_root):
         row = {"name": "Buildings", "sourceType": "discovery", "sourceId": self.OSM, "resourceId": "buildings"}
