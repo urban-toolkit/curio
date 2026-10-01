@@ -8,7 +8,7 @@
 import {
   resolveAgentDropTarget,
   type NodeRect,
-} from "../../utils/agentCatalogEvents";
+} from "../../services/agents";
 
 const NODES: NodeRect[] = [
   { id: "n1", position: { x: 0, y: 0 }, width: 100, height: 50 },

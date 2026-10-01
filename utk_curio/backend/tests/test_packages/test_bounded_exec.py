@@ -18,12 +18,14 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages import bounded_exec, build_workspace
-from utk_curio.backend.app.packages.build_workspace import WorkerLimits
+from utk_curio.backend.app.packages.infrastructure import bounded_exec
+from utk_curio.backend.app.packages.infrastructure import workspace as build_workspace
+from utk_curio.backend.app.packages.infrastructure.workspace import WorkerLimits
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX rlimits")
 
-PACKAGES = Path(build_workspace.__file__).resolve().parent
+# The whole packages tree: its modules sit in layer directories now.
+PACKAGES = Path(build_workspace.__file__).resolve().parents[1]
 
 
 def _run(argv, bounds):
@@ -101,7 +103,7 @@ def test_nothing_in_the_package_runtime_forks_with_a_preexec_fn():
     # A new subprocess call reaching for preexec_fn would bring the hang back.
     offenders = [
         f"{path.name}:{number}"
-        for path in sorted(PACKAGES.glob("*.py"))
+        for path in sorted(PACKAGES.rglob("*.py"))
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if re.search(r"\bpreexec_fn\s*=", line)
     ]

@@ -122,7 +122,7 @@ def _sandbox_section(payload) -> dict:
 
 
 def _deployment_llm_configured() -> bool:
-    from utk_curio.backend.app.agents.provider_config import deployment_config
+    from utk_curio.backend.app.agents.infrastructure.provider_config import deployment_config
 
     return deployment_config("", guest=False) is not None
 

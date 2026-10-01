@@ -22,15 +22,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from utk_curio.backend.app.agents.evaluation.canonical import (  # noqa: E402
+from utk_curio.backend.app.agents.evaluation.canonical import (
     TemplateFacts,
     canonical_graph_from_spec,
 )
-from utk_curio.backend.app.agents.evaluation.dependencies import (  # noqa: E402
+from utk_curio.backend.app.agents.evaluation.dependencies import (
     declared_dependencies,
     referenced_sources,
 )
-from utk_curio.backend.app.agents.evaluation.fixtures import (  # noqa: E402
+from utk_curio.backend.app.agents.evaluation.fixtures import (
     example_paths,
     fixture_id_for_example,
     sha256_of_file,

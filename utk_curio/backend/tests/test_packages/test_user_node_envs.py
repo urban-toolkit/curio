@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages import backend_runtime as rt
-from utk_curio.backend.app.packages import services
+from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
+from utk_curio.backend.app.packages.application import libraries
+from utk_curio.backend.app.packages.application import provisioning
 
 
 class _Manifest:
@@ -48,8 +49,8 @@ def pip_calls(monkeypatch):
     use them - so this fixture stubs the target installer for the tests that
     would otherwise reach the network.
     """
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages.pip_runner import InstallReport
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
     calls: list[tuple[str, dict, str | None]] = []
 
@@ -73,7 +74,7 @@ def pip_calls(monkeypatch):
 @pytest.fixture
 def probe_says_missing(monkeypatch):
     """Every dep reads as absent, so the installer is always asked to work."""
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     monkeypatch.setattr(
         pip_runner, "import_failures_in",
@@ -95,14 +96,14 @@ class TestWhereTheDepsLand:
     ):
         """The existing behaviour, unchanged - this is the local single-user
         case the feature was built for, and every Windows launch."""
-        services.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
+        provisioning.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
 
         assert [c[0] for c in pip_calls] == ["host"]
 
     def test_with_isolation_they_go_to_the_callers_own_tree(
         self, isolated, pip_calls, probe_says_missing, launch_tree,
     ):
-        services.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
+        provisioning.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
 
         assert [c[0] for c in pip_calls] == ["target"]
         assert str(rt.user_node_overlay_dir("7")) == pip_calls[0][2]
@@ -112,8 +113,8 @@ class TestWhereTheDepsLand:
     ):
         """The property the whole change exists for: what user 7 installed is
         not importable by user 8's nodes, and the reverse."""
-        services.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
-        services.provision_python_deps("8", "ai.test.demo@1", _Manifest({"titlecase": ""}))
+        provisioning.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
+        provisioning.provision_python_deps("8", "ai.test.demo@1", _Manifest({"titlecase": ""}))
 
         seven, eight = rt.user_node_overlay_dir("7"), rt.user_node_overlay_dir("8")
         assert seven != eight
@@ -131,11 +132,11 @@ class TestWhereTheDepsLand:
             rt, "build_overlay", lambda *a, **kw: {"libs": [], "bytes": 0},
         )
         monkeypatch.setattr(
-            services, "_overlay_import_failures", lambda *a, **kw: {},
+            provisioning, "_overlay_import_failures", lambda *a, **kw: {},
         )
         manifest = _Manifest({"humanize": ""}, backend={"entry": "h.py"})
 
-        services.provision_python_deps("7", "ai.test.demo@1", manifest)
+        provisioning.provision_python_deps("7", "ai.test.demo@1", manifest)
 
         assert pip_calls == []
 
@@ -148,7 +149,7 @@ class TestIncremental:
         """The user tree is the sum of everything they have installed, not
         derived state. Wiping it to add one library would re-run pip over their
         whole environment - and leave them with nothing if that run failed."""
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures_in",
@@ -156,7 +157,7 @@ class TestIncremental:
                 {d: "not installed" for d in deps if d == "titlecase"}
             ),
         )
-        services.provision_python_deps(
+        provisioning.provision_python_deps(
             "7", "ai.test.demo@1", _Manifest({"humanize": "", "titlecase": ""}),
         )
 
@@ -166,13 +167,13 @@ class TestIncremental:
     def test_nothing_missing_means_no_pip_at_all(
         self, isolated, pip_calls, launch_tree, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures_in",
             lambda deps, path, interpreter=None: {},
         )
-        services.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
+        provisioning.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
 
         assert pip_calls == []
 
@@ -188,7 +189,7 @@ class TestTheProbeAsksTheRightInterpreter:
         answer for one that never imports this tree."""
         import sys
 
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setenv("CURIO_BACKEND_SANDBOX_PYTHON", "/nonexistent/python")
         seen: list[str | None] = []
@@ -198,7 +199,7 @@ class TestTheProbeAsksTheRightInterpreter:
             return {d: "not installed" for d in deps}
 
         monkeypatch.setattr(pip_runner, "import_failures_in", _probe)
-        services.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
+        provisioning.provision_python_deps("7", "ai.test.demo@1", _Manifest({"humanize": ""}))
 
         assert seen and all(i == sys.executable for i in seen)
         assert rt.sandbox_interpreter() == "/nonexistent/python", "the pin is real"
@@ -228,7 +229,7 @@ class TestTheLibrariesDialog:
     def test_with_isolation_it_installs_into_the_callers_own_tree(
         self, client, user_and_token, isolated, pip_calls, launch_tree, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures_in",
@@ -250,7 +251,7 @@ class TestTheLibrariesDialog:
     ):
         """Asking the host about a library that went into the user's tree would
         report a perfectly good install as broken."""
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures",
@@ -273,8 +274,8 @@ class TestTheLibrariesDialog:
 @pytest.fixture
 def uninstall_calls(monkeypatch):
     """Record which uninstaller was reached, without removing anything."""
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages.pip_runner import UninstallReport
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import UninstallReport
 
     calls: list[tuple[str, list[str], str | None]] = []
 
@@ -300,7 +301,7 @@ class TestWhereTheUninstallLands:
     def test_without_isolation_it_uses_the_shared_interpreter(
         self, in_process, uninstall_calls, launch_tree,
     ):
-        services.uninstall_user_library("alice", "humanize")
+        libraries.uninstall_user_library("alice", "humanize")
 
         assert uninstall_calls == [("host", ["humanize"], None)]
 
@@ -310,7 +311,7 @@ class TestWhereTheUninstallLands:
         overlay = rt.user_node_overlay_dir("alice")
         overlay.mkdir(parents=True, exist_ok=True)
 
-        services.uninstall_user_library("alice", "humanize")
+        libraries.uninstall_user_library("alice", "humanize")
 
         assert uninstall_calls == [("target", ["humanize"], str(overlay))]
 
@@ -319,7 +320,7 @@ class TestWhereTheUninstallLands:
     ):
         rt.user_node_overlay_dir("alice").mkdir(parents=True)
 
-        services.uninstall_user_library("alice", "humanize")
+        libraries.uninstall_user_library("alice", "humanize")
 
         assert [kind for kind, _, _ in uninstall_calls] == ["target"]
 
@@ -329,7 +330,7 @@ class TestWhereTheUninstallLands:
         for who in ("alice", "bob"):
             rt.user_node_overlay_dir(who).mkdir(parents=True)
 
-        services.uninstall_user_library("alice", "humanize")
+        libraries.uninstall_user_library("alice", "humanize")
 
         target = uninstall_calls[0][2]
         assert target == str(rt.user_node_overlay_dir("alice"))
@@ -338,7 +339,7 @@ class TestWhereTheUninstallLands:
     def test_a_user_with_no_tree_is_a_clean_no_op(
         self, isolated, uninstall_calls, launch_tree,
     ):
-        report = services.uninstall_user_library("nobody", "humanize")
+        report = libraries.uninstall_user_library("nobody", "humanize")
 
         assert uninstall_calls == []
         assert report.removed == []

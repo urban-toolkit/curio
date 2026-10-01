@@ -1,7 +1,7 @@
 import React from "react";
 
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import type { AgentCard } from "../../api/agentsApi";
+import type { AgentCard } from "../../services/agents";
 import { agentCategoryKey } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 import cardStyles from "./AgentCatalogBrowseCard.module.css";

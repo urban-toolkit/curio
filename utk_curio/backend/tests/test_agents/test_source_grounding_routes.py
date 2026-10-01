@@ -82,7 +82,7 @@ def _script(monkeypatch, replies):
     calls: list = []
 
     def _fake_run(config, messages, **kwargs):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
             return "Title"
@@ -90,7 +90,7 @@ def _script(monkeypatch, replies):
         entry = replies[min(len(calls) - 1, len(replies) - 1)]
         return entry(calls) if callable(entry) else entry
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+    monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
     return calls
 
 
@@ -144,7 +144,7 @@ def _fake_probe(monkeypatch, verdicts: dict, counter: list | None = None):
             return {"status": "unverified", "detail": "no probeable URL — the identifier was never checked"}
         return dict(verdicts.get(url) or {"status": "unreachable", "httpStatus": 404,
                                           "detail": "the endpoint answered 404"})
-    monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+    monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
 
 
 class TestRegression298:
@@ -554,7 +554,7 @@ class TestCandidatesMint:
     """The runtime mint over a tool-less Dataset Finder child's reply."""
 
     def test_schema_recognition_bare_fenced_and_chat_json(self):
-        from utk_curio.backend.app.agents import services as s
+        from utk_curio.backend.app.agents.application.turns import delegates as s
 
         block = {"datasetCandidates": {"lanes": {"external": [], "catalog": []}}}
         assert s._extract_candidates_reply(json.dumps(block)) == block["datasetCandidates"]
@@ -564,7 +564,7 @@ class TestCandidatesMint:
         assert s._extract_candidates_reply("no json here") is None
 
     def test_mint_drops_unknown_catalog_rows_and_verifies_external(self, monkeypatch):
-        from utk_curio.backend.app.agents import services as s
+        from utk_curio.backend.app.agents.application.turns import delegates as s
 
         _fake_probe(monkeypatch, {NOAA: {"status": "verified", "httpStatus": 200}})
         loop_ctx: dict = {}
@@ -585,7 +585,7 @@ class TestCandidatesMint:
         assert "1 catalog row(s) were dropped" in text
 
     def test_nothing_usable_is_honest(self):
-        from utk_curio.backend.app.agents import services as s
+        from utk_curio.backend.app.agents.application.turns import delegates as s
 
         part, text, outcome = s._mint_candidates_from_delegate(
             {}, _candidates_reply(external=[], catalog=[{"name": "Fake", "sourceType": "catalog", "datasetId": "ds-9"}]),

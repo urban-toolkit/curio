@@ -11,10 +11,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages import libraries as libs
-from utk_curio.backend.app.packages import pip_runner
+from utk_curio.backend.app.packages.application import libraries as libs
+from utk_curio.backend.app.packages.infrastructure import pip_runner
 from utk_curio.backend.app.packages import routes as packages_routes
-from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
+    InstallReport,
+    UninstallReport,
+)
 
 
 def _auth(token):
@@ -64,9 +67,9 @@ def test_corrupt_file_is_treated_as_empty(tmp_curio):
 
 
 def test_package_derived_reads_installed_manifests(
-    tmp_curio, install_packageage, manifest_dict,
+    tmp_curio, install_package, manifest_dict,
 ):
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.pyheavy",
@@ -81,12 +84,12 @@ def test_package_derived_reads_installed_manifests(
 
 
 def test_package_derived_reports_real_install_state(
-    tmp_curio, install_packageage, manifest_dict,
+    tmp_curio, install_package, manifest_dict,
 ):
     """A package can declare a dep that isn't actually installed — the entry
     must report ``installed`` truthfully (flask present, a bogus name absent),
     so the modal stops showing declared-but-missing libs as installed."""
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.realstate",
@@ -99,10 +102,10 @@ def test_package_derived_reports_real_install_state(
 
 
 def test_aggregate_combines_standalone_and_package(
-    tmp_curio, install_packageage, manifest_dict,
+    tmp_curio, install_package, manifest_dict,
 ):
     libs.add_library("guest", "python", "scikit-learn==1.4")
-    install_packageage(
+    install_package(
         "guest",
         manifest=manifest_dict(
             package_id="ai.test.combine",
@@ -122,7 +125,7 @@ def test_aggregate_combines_standalone_and_package(
 
 def _report(*, installed, skipped):
     """Stand-in for pip_runner.InstallReport."""
-    from utk_curio.backend.app.packages.pip_runner import InstallReport
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
     return InstallReport(installed=list(installed), skipped=list(skipped))
 
@@ -158,13 +161,10 @@ class TestLibraryRoutes:
         which the dialog renders as a green "Already installed" badge - for a
         library that raises ImportError the moment a node touches it.
         """
-        from utk_curio.backend.app.packages import routes as pkg_routes
-
         monkeypatch.setattr(
-            pkg_routes, "_split_lib_spec", lambda spec: ("rasterio", ""),
-            raising=False,
+            libs, "split_lib_spec", lambda spec: ("rasterio", ""),
         )
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
         monkeypatch.setattr(pip_runner, "install_python_deps",
                             lambda deps: _report(installed=[], skipped=["rasterio"]))
         monkeypatch.setattr(
@@ -187,7 +187,7 @@ class TestLibraryRoutes:
     def test_a_working_library_reports_no_import_error(
         self, client, user_and_token, monkeypatch
     ):
-        import utk_curio.backend.app.packages.pip_runner as pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
         monkeypatch.setattr(pip_runner, "install_python_deps",
                             lambda deps: _report(installed=["numpy"], skipped=[]))
         monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
@@ -235,11 +235,11 @@ class TestLibraryRoutes:
         assert resp.get_json()["standalone"]["python"] == []
 
     def test_post_includes_package_derived_in_list(
-        self, client, user_and_token, install_packageage, manifest_dict,
+        self, client, user_and_token, install_package, manifest_dict,
     ):
         from utk_curio.backend.app.projects.services import _user_dir_key
         user, token = user_and_token
-        install_packageage(
+        install_package(
             _user_dir_key(user),
             manifest=manifest_dict(
                 package_id="ai.test.routes",
@@ -278,11 +278,11 @@ class TestLibraryRoutes:
     ],
 )
 def test_split_lib_spec(spec, expected):
-    assert packages_routes._split_lib_spec(spec) == expected
+    assert libs.split_lib_spec(spec) == expected
 
 
 def test_remove_keeps_a_library_a_package_still_declares(
-    client, user_and_token, tmp_curio, monkeypatch, install_packageage, manifest_dict,
+    client, user_and_token, tmp_curio, monkeypatch, install_package, manifest_dict,
 ):
     """Removing a standalone entry must not pip-uninstall a package's dependency.
 
@@ -293,7 +293,7 @@ def test_remove_keeps_a_library_a_package_still_declares(
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     user, token = user_and_token
-    install_packageage(
+    install_package(
         _user_dir_key(user),
         manifest=manifest_dict(package_id="ai.test.needsflask", python_deps={"flask": ""}),
     )

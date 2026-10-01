@@ -67,9 +67,12 @@ describe("the agent browse page reports only what it can know", () => {
     // Account scope: the page has no open dataflow, so requesting
     // `installedInProject` would mark rows against whichever one happened to
     // be open last.
+    // dev/142 F3: the page hands THE catalog hook no project id, and that
+    // hook lists the account scope unscoped when it has none.
     const hook = read("pages/agents/useAgentCatalogBrowse.ts");
-    expect(hook).toContain("agentsApi.catalog()");
-    expect(hook).not.toMatch(/agentsApi\.catalog\([^)]+\)/);
+    expect(hook).toContain("useAgentCatalog({");
+    expect(hook).not.toContain("projectId");
+    expect(read("services/agents/useAgentCatalog.ts")).toContain("agentsApi.catalog(id ?? undefined)");
   });
 
   it("shows requirement resolvability, not per-project install state", () => {

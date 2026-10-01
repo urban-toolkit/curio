@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { AgentDelegationEntry } from "../../components/agents/content/AgentDelegationEntry";
-import type { AgentDelegationPart } from "../../api/agentsApi";
+import type { AgentDelegationPart } from "../../services/agents";
 
 const part = (overrides: Partial<AgentDelegationPart> = {}): AgentDelegationPart => ({
   type: "delegation",

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages";
 import {
   DATASET_FORMAT_LABEL,
   DATASET_IMPORT_ACCEPT,

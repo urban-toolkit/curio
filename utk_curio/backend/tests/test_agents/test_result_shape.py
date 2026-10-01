@@ -9,7 +9,7 @@ rows.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import result_shape as rs
+from utk_curio.backend.app.agents.domain import result_shape as rs
 
 BOUNDARIES = {
     "kind": "geotable",

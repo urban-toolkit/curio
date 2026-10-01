@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents.services import (
+from utk_curio.backend.app.agents.application.proposals.mint import (
     _package_install_miss_hint,
     _resolve_catalog_dir_name,
 )
-from utk_curio.backend.app.packages.services import canonical_template_id
+from utk_curio.backend.app.packages.application.templates import canonical_template_id
 
 ROWS = {
     "curio.notes@1": {"dirName": "curio.notes@1", "name": "Simple Notes"},

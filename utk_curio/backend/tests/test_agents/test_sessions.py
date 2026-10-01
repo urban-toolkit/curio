@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import sessions
-from utk_curio.backend.app.agents.sessions import SessionError
+from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.app.agents.repositories.sessions import SessionError
 
 UKEY = "42"
 PID = "proj-1"

@@ -2,7 +2,7 @@
 the backend-owned agent sections from being wiped by a canvas save that omits
 them."""
 
-from utk_curio.backend.app.agents.project_agents import preserve_agent_state
+from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
 
 AGENTS = ["agent.node-explainer@1.0.0"]
 ATTACH = [{"attachmentId": "a1", "coord": "agent.node-explainer@1.0.0", "target": {"kind": "canvas"}}]

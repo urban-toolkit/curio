@@ -10,9 +10,9 @@ import hashlib
 import os
 from typing import Dict, Optional, Tuple
 
-from utk_curio.backend.app.packages.storage import (
-    _user_key_segment,
-    _users_base,
+from utk_curio.backend.app.common.user_storage import (
+    user_key_segment as _user_key_segment,
+    users_base as _users_base,
 )
 
 # In-process model cache: (model_id, token fingerprint) -> (model, processor

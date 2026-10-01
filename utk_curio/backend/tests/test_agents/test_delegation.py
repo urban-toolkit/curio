@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import builtin, delegation
+from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -66,14 +67,14 @@ def _setup(client, token, project_id, monkeypatch, *, install_delegate=True, rep
     ]
 
     def _fake_run(config, messages, **kwargs):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
             return "Title"
         calls.append(messages)
         return script[min(len(calls) - 1, len(script) - 1)]
 
-    monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+    monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
     return att_id, calls
 
 
@@ -286,7 +287,7 @@ class TestDelegateChildRun:
         assert spec["dataflow"]["nodes"][0]["content"] == "print(1)"
 
     def test_child_ledger_pair_and_attribution(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import ledger
+        from utk_curio.backend.app.agents.repositories import ledger
 
         user, token = user_and_token
         key = _user_dir_key(user)
@@ -318,7 +319,7 @@ class TestDelegateChildRun:
         state = {"n": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -328,7 +329,7 @@ class TestDelegateChildRun:
                 raise RuntimeError("child provider down")
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200  # the parent run is NOT an error
         assert r.get_json()["reply"] == "I could not delegate, but here is my answer."
@@ -361,7 +362,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
         models = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -370,7 +371,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
                 return _delegate_tail()
             return "df.sum(axis=0)" if len(models) == 2 and not child_fails else "Here is the plan."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         response = _run(client, token, pid, att_id)
         assert response.status_code == 200, response.get_json()
         turns = client.get(
@@ -412,7 +413,7 @@ class TestTheChildRunsOnItsOwnConfiguration:
     def test_a_broken_choice_does_not_start_the_child_and_the_parent_completes(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.agents.infrastructure import llm_configs
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -447,7 +448,7 @@ class TestADelegateFailureNeverCarriesTheKey:
         state = {"n": 0}
 
         def _fake_run(config_, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
@@ -457,7 +458,7 @@ class TestADelegateFailureNeverCarriesTheKey:
                 raise RuntimeError(f"Error code: 401 - Incorrect API key provided: {key}")
             return _delegate_tail() if state["n"] == 1 else "Answered without the delegate."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         response = _run(client, token, pid, att_id)
         assert response.status_code == 200
         turns = client.get(
@@ -486,7 +487,7 @@ class TestMissingSpecialist:
         assert proposal["tool"] == "project.install"
         assert proposal["pins"] == {"coord": NCB}
         # REQ-ORCH-001: nothing installed by the loop, only the proposal.
-        from utk_curio.backend.app.agents import project_agents
+        from utk_curio.backend.app.agents.repositories import project_agents
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = projects_storage.read_spec(_user_dir_key(user), pid)
@@ -513,7 +514,7 @@ class TestMissingSpecialist:
         )
         assert resp.status_code == 200
         assert resp.get_json()["installedCoord"] == NCB
-        from utk_curio.backend.app.agents import project_agents
+        from utk_curio.backend.app.agents.repositories import project_agents
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = projects_storage.read_spec(_user_dir_key(user), pid)
@@ -554,14 +555,14 @@ class TestDelegationTailAndBudget:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "hi"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _run(client, token, pid, att_id, message="hello")
         assert "delegateRequest" not in calls[0][0]["content"]
 
@@ -608,15 +609,15 @@ class TestDelegateStreamEvents:
             yield script[min(len(calls) - 1, 2)]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "go"}, headers=_auth(token),
@@ -658,14 +659,14 @@ class TestDec047DatasetFinderHandoff:
         script = [_delegate_tail(capability="dataset.fetch.author"), "Awaiting the install review."]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         r = _run(client, token, pid, att_id, message="confirm the NOAA pick")
         assert r.status_code == 200
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
@@ -673,7 +674,7 @@ class TestDec047DatasetFinderHandoff:
         assert proposal["tool"] == "project.install"
         assert proposal["pins"] == {"coord": NB}
         # REQ-ORCH-001: nothing installed, no child ever ran (2 calls only).
-        from utk_curio.backend.app.agents import project_agents
+        from utk_curio.backend.app.agents.repositories import project_agents
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = projects_storage.read_spec(_user_dir_key(user), pid)
@@ -694,14 +695,14 @@ class TestDec047DatasetFinderHandoff:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "dataset.fetch.author — handled by Node Builder" in system
@@ -825,7 +826,7 @@ class TestDelegationTransparency:
         pid = _project(client, token)
         att_id, _ = _setup(client, token, pid, monkeypatch)
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services._delegation_home",
+            'utk_curio.backend.app.agents.application.turns.delegates._delegation_home',
             lambda *a, **k: (None, False),
         )
         body = _run(client, token, pid, att_id).get_json()
@@ -938,14 +939,14 @@ class TestChatContentReviewMint:
         ]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
         # dev/73 roster: the capability is OFFERED in the delegation paragraph.
         assert "node.content.generate — handled by Node Content Builder" in calls[0][0]["content"]
@@ -1013,15 +1014,15 @@ class TestChatContentReviewMintStream:
             yield script[min(len(calls) - 1, 2)]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, 2)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         r = client.post(
             f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
             json={"message": "update n1"}, headers=_auth(token),
@@ -1134,7 +1135,7 @@ class TestMergedAgentModes:
     PLANNER = "agent.dataflow-planner@1.0.0"
 
     def _config(self):
-        from utk_curio.backend.app.agents.providers import ProviderConfig
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 
         return ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m")
 
@@ -1145,7 +1146,7 @@ class TestMergedAgentModes:
             calls.append(messages)
             return "{}"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         status, _, record = delegation.run_delegate(
             key, pid, self.PLANNER, capability, {"keywords": {}}, self._config(),
             parent_execution_id="parent", parent_coord=DF, attachment_id=None,
@@ -1169,7 +1170,7 @@ class TestMergedAgentModes:
         assert "workflow.plan.create" not in offered
 
     def test_a_delegated_mode_runs_its_own_instruction(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import contracts
+        from utk_curio.backend.app.agents.domain import contracts
 
         user, token = user_and_token
         key = _user_dir_key(user)
@@ -1193,8 +1194,8 @@ class TestMergedAgentModes:
         # materialized definition would.
         import hashlib
 
-        from utk_curio.backend.app.agents import services
-        from utk_curio.backend.app.agents.manifest import parse_agent_manifest
+        from utk_curio.backend.app.agents.application.turns import prompts as services
+        from utk_curio.backend.app.agents.domain.manifest import parse_agent_manifest
 
         def sha(text):
             return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -1209,7 +1210,7 @@ class TestMergedAgentModes:
         assert services._prompt_digest(m, capability="dataflow.orchestrate") == sha("instruction")
 
     def test_the_keyword_types_reach_the_keyword_modes_only(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import contracts
+        from utk_curio.backend.app.agents.domain import contracts
 
         user, token = user_and_token
         key = _user_dir_key(user)
@@ -1224,7 +1225,7 @@ class TestMergedAgentModes:
             assert "configurationSha256" not in record["pins"]
 
     def test_edited_keyword_types_change_the_next_run(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import catalog_settings
+        from utk_curio.backend.app.agents.repositories import catalog_settings
 
         user, token = user_and_token
         key = _user_dir_key(user)

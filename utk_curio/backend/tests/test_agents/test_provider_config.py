@@ -23,9 +23,9 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.agents import llm_configs
-from utk_curio.backend.app.agents import provider_config as pc
-from utk_curio.backend.app.agents.providers import ProviderConfig
+from utk_curio.backend.app.agents.infrastructure import llm_configs
+from utk_curio.backend.app.agents.infrastructure import provider_config as pc
+from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 
 USER = "7"
 

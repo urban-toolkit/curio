@@ -11,7 +11,10 @@ import types
 
 import pytest
 
-from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
+from utk_curio.backend.app.agents.infrastructure.providers import (
+    ProviderConfig,
+    run_chat_completion,
+)
 
 
 def _cfg(**kw):
@@ -173,7 +176,7 @@ class TestStreaming:
 
     def test_openai_compatible_streams_deltas(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         seen = {}
 
@@ -198,7 +201,7 @@ class TestStreaming:
 
     def test_anthropic_streams_text_events(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         seen = {}
 
@@ -231,7 +234,7 @@ class TestStreaming:
 
     def test_stopping_iteration_stops_consumption(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         produced = []
 
@@ -260,8 +263,9 @@ class TestMaxOutputTokens:
 
     def test_openai_compatible_run_and_stream(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import (
-            run_chat_completion, stream_chat_completion,
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            run_chat_completion,
+            stream_chat_completion,
         )
 
         seen = {}
@@ -289,7 +293,7 @@ class TestMaxOutputTokens:
 
     def test_anthropic_uses_effective_or_4096(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import run_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_completion
 
         seen = {}
 
@@ -311,8 +315,9 @@ class TestUsageCapture:
 
     def test_openai_non_stream_and_stream_usage(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import (
-            run_chat_completion, stream_chat_completion,
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            run_chat_completion,
+            stream_chat_completion,
         )
 
         usage_obj = t.SimpleNamespace(prompt_tokens=11, completion_tokens=7)
@@ -345,7 +350,7 @@ class TestUsageCapture:
 
     def test_anthropic_stream_usage_from_final_message(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         class FakeStream:
             text_stream = iter(["a"])
@@ -374,7 +379,7 @@ class TestUsageCapture:
 
     def test_missing_usage_leaves_sink_empty(self, monkeypatch):
         import types as t
-        from utk_curio.backend.app.agents.providers import run_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_completion
 
         def _create(**kwargs):
             return t.SimpleNamespace(
@@ -395,8 +400,8 @@ class TestUsageCapture:
 # The typed turn: system slots per provider, cache usage, and the shim
 # ---------------------------------------------------------------------------
 
-from utk_curio.backend.app.agents import contracts
-from utk_curio.backend.app.agents.providers import (
+from utk_curio.backend.app.agents.domain import contracts
+from utk_curio.backend.app.agents.infrastructure.providers import (
     ChatTurn,
     run_chat_turn,
     stream_chat_completion,
@@ -548,7 +553,7 @@ class TestTheShim:
         assert ChatTurn.of(None) == ChatTurn(text="")
 
     def test_the_text_stream_leaves_out_other_events(self, monkeypatch):
-        from utk_curio.backend.app.agents import providers as providers_mod
+        from utk_curio.backend.app.agents.infrastructure import providers as providers_mod
 
         monkeypatch.setattr(providers_mod, "stream_chat_turn",
                             lambda *a, **k: iter(["a", object(), "b"]))
@@ -611,7 +616,10 @@ def _openai_call(call_id, name, arguments):
 
 class TestNativeToolsOnOpenAI:
     def test_tools_and_the_choice_are_sent_and_calls_read_back(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            run_chat_turn,
+        )
 
         message = types.SimpleNamespace(content=None, tool_calls=[
             _openai_call("c1", "node__read", '{"nodeId": "n1"}'),
@@ -627,7 +635,7 @@ class TestNativeToolsOnOpenAI:
         assert turn.tool_calls[1].error.startswith("the arguments are not valid JSON")
 
     def test_a_native_round_is_sent_in_openai_shape(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(content="ok", tool_calls=None))
         run_chat_turn(_cfg(), _NATIVE_ROUND, tools=_TOOLS)
@@ -642,7 +650,7 @@ class TestNativeToolsOnOpenAI:
         ]
 
     def test_without_tools_the_request_carries_none(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(
             content="hi", tool_calls=[_openai_call("c1", "node__read", "{}")]))
@@ -651,7 +659,10 @@ class TestNativeToolsOnOpenAI:
         assert turn.tool_calls == ()
 
     def test_a_streamed_call_is_put_together_by_index(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
 
         def _chunk(text=None, calls=None):
             delta = types.SimpleNamespace(content=text, tool_calls=calls)
@@ -678,7 +689,11 @@ class TestNativeToolsOnOpenAI:
 
     @pytest.mark.parametrize("status", [400, 422])
     def test_a_refusal_of_the_tools_is_typed_and_keyless(self, monkeypatch, status):
-        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+            stream_chat_turn,
+        )
 
         _fake_openai(monkeypatch, error=_Refusal("tools not supported for key sk-secret-000", status))
         config = _cfg(api_key="sk-secret-000")
@@ -689,7 +704,7 @@ class TestNativeToolsOnOpenAI:
             list(stream_chat_turn(config, [{"role": "user", "content": "go"}], tools=_TOOLS))
 
     def test_other_errors_and_requests_without_tools_raise_as_they_are(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         _fake_openai(monkeypatch, error=_Refusal("bad request", 400))
         with pytest.raises(_Refusal):
@@ -731,7 +746,10 @@ class TestNativeToolsOnAnthropic:
         return seen
 
     def test_tools_calls_and_results_in_anthropic_shape(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            run_chat_turn,
+        )
 
         blocks = [types.SimpleNamespace(type="text", text="Reading."),
                   types.SimpleNamespace(type="tool_use", id="t1", name="node__read", input={"nodeId": "n1"})]
@@ -753,7 +771,10 @@ class TestNativeToolsOnAnthropic:
         assert (turn.text, turn.tool_calls) == ("Reading.", (ToolCall("t1", "node__read", {"nodeId": "n1"}),))
 
     def test_a_stream_ends_with_the_calls_of_the_final_message(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
 
         blocks = [types.SimpleNamespace(type="tool_use", id="t1", name="node__read", input={})]
         seen = self._fake(monkeypatch, blocks, stream_text=["Read", "ing."])
@@ -792,7 +813,7 @@ class TestNativeToolsOnGemini:
         return seen
 
     def test_declarations_calls_and_responses_in_gemini_shape(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         call = types.SimpleNamespace(name="delegate", args={
             "capability": "node.content.generate", "inputs": '{"intent": "load", "rows": 3.0}'})
@@ -822,7 +843,8 @@ class TestNativeToolsOnGemini:
         """The real SDK's conversion, offline: every tool the registry offers,
         and a native round, become its protos without complaint."""
         content_types = pytest.importorskip("google.generativeai.types.content_types")
-        from utk_curio.backend.app.agents import providers, tools
+        from utk_curio.backend.app.agents.infrastructure import providers
+        from utk_curio.backend.app.agents.application import tools
 
         specs = tools.native_tools(list(tools.REGISTRY), ["node.content.generate"])
         content_types._make_tools(providers._gemini_tools(specs))
@@ -832,7 +854,10 @@ class TestNativeToolsOnGemini:
         content_types.to_tool_config(providers._gemini_tool_config("none"))
 
     def test_a_refusal_is_read_from_the_code_gemini_errors_carry(self, monkeypatch):
-        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+        )
 
         class InvalidArgument(Exception):
             code = 400
@@ -910,7 +935,10 @@ class TestTheRealSDKs:
     def test_openai_a_call_and_a_native_round(self, monkeypatch):
         httpx = self._http("openai")
 
-        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            run_chat_turn,
+        )
 
         seen = self._openai(monkeypatch, lambda request: httpx.Response(200, json={
             "id": "chatcmpl-1", "object": "chat.completion", "created": 0, "model": "m",
@@ -935,7 +963,10 @@ class TestTheRealSDKs:
 
         httpx = self._http("openai")
 
-        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
 
         def chunk(delta, finish=None):
             return "data: " + _json.dumps({
@@ -960,7 +991,10 @@ class TestTheRealSDKs:
     def test_openai_a_refusal_of_the_tools(self, monkeypatch):
         httpx = self._http("openai")
 
-        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+        )
 
         self._openai(monkeypatch, lambda request: httpx.Response(
             400, json={"error": {"message": "tools is not supported", "type": "invalid_request_error"}}))
@@ -971,7 +1005,10 @@ class TestTheRealSDKs:
     def test_anthropic_a_call_and_a_native_round(self, monkeypatch):
         httpx = self._http("anthropic")
 
-        from utk_curio.backend.app.agents.providers import ToolCall, run_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            run_chat_turn,
+        )
 
         seen = self._anthropic(monkeypatch, lambda request: httpx.Response(200, json={
             "id": "msg_1", "type": "message", "role": "assistant", "model": "c",
@@ -993,7 +1030,10 @@ class TestTheRealSDKs:
 
         httpx = self._http("anthropic")
 
-        from utk_curio.backend.app.agents.providers import ToolCall, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
 
         def event(kind, data):
             return f"event: {kind}\ndata: {_json.dumps({'type': kind, **data})}\n\n"
@@ -1027,7 +1067,11 @@ class TestTheRealSDKs:
     def test_anthropic_a_refusal_of_the_tools(self, monkeypatch):
         httpx = self._http("anthropic")
 
-        from utk_curio.backend.app.agents.providers import NativeToolsRefused, run_chat_turn, stream_chat_turn
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+            stream_chat_turn,
+        )
 
         self._anthropic(monkeypatch, lambda request: httpx.Response(400, json={
             "type": "error", "error": {"type": "invalid_request_error", "message": "tools: bad schema"}}))
@@ -1046,13 +1090,13 @@ class TestReplySchemas:
 
     @staticmethod
     def _schema(flavor):
-        from utk_curio.backend.app.agents import reply_schemas
+        from utk_curio.backend.app.agents.application import reply_schemas
 
         return reply_schemas.autk_reply_schema(flavor).request()
 
     def test_openai_gets_a_strict_response_format(self, monkeypatch):
-        from utk_curio.backend.app.agents import reply_schemas
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.application import reply_schemas
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         seen = _fake_openai(monkeypatch, message=types.SimpleNamespace(content='{"map": null}', tool_calls=None))
         schema = self._schema(reply_schemas.FLAVOR_STRICT)
@@ -1065,8 +1109,8 @@ class TestReplySchemas:
         assert "response_format" not in plain
 
     def test_anthropic_gets_output_config_format(self, monkeypatch):
-        from utk_curio.backend.app.agents import reply_schemas
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.application import reply_schemas
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         seen = {}
 
@@ -1087,8 +1131,11 @@ class TestReplySchemas:
 
     @pytest.mark.parametrize("status", [400, 422])
     def test_a_refusal_of_the_schema_is_typed(self, monkeypatch, status):
-        from utk_curio.backend.app.agents import reply_schemas
-        from utk_curio.backend.app.agents.providers import ReplySchemaRefused, run_chat_turn
+        from utk_curio.backend.app.agents.application import reply_schemas
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ReplySchemaRefused,
+            run_chat_turn,
+        )
 
         _fake_openai(monkeypatch, error=_Refusal("json_schema is not supported", status))
         with pytest.raises(ReplySchemaRefused, match="not supported"):
@@ -1102,8 +1149,8 @@ class TestReplySchemas:
     def test_the_real_sdks_send_it(self, monkeypatch):
         """The OpenAI and Anthropic SDKs serialize the projected schema into
         the request as their APIs define it."""
-        from utk_curio.backend.app.agents import reply_schemas
-        from utk_curio.backend.app.agents.providers import run_chat_turn
+        from utk_curio.backend.app.agents.application import reply_schemas
+        from utk_curio.backend.app.agents.infrastructure.providers import run_chat_turn
 
         sdks = TestTheRealSDKs()
         http = sdks._http("openai")

@@ -1,7 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
-import { SortMode } from "./packageTypes";
+import { SortMode } from "../../../services/packages";
 import styles from "./PackageSearchRow.module.css";
 
 export interface SearchRowSortOption<S extends string = SortMode> {

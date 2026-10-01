@@ -13,7 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from utk_curio.backend.app.agents import catalog_settings, contracts
+from utk_curio.backend.app.agents.repositories import catalog_settings
+from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 URL = "/api/agents/settings"
@@ -95,7 +96,7 @@ class TestReadAndWrite:
         assert setting["value"] == _HAZARDS and setting["isDefault"] is False
         assert _keyword_types(client.get(URL, headers=_auth(token)).get_json())["value"] == _HAZARDS
         # Beside the account's imported-agents.json.
-        from utk_curio.backend.app.agents import imports
+        from utk_curio.backend.app.agents.repositories import imports
 
         path = catalog_settings._path(_user_dir_key(user))
         assert path.parent == imports._imports_path(_user_dir_key(user)).parent
@@ -199,7 +200,7 @@ class TestAttachedRunOrder:
         assert r.status_code == 201, r.get_data(as_text=True)
 
     def test_the_slots_come_in_order(self, client, user_and_token, tmp_curio, monkeypatch, caplog):
-        from utk_curio.backend.app.agents import content
+        from utk_curio.backend.app.agents.domain import content
 
         _, token = user_and_token
         self._upload(client, token)
@@ -217,14 +218,14 @@ class TestAttachedRunOrder:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "Mapped."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         with caplog.at_level("WARNING"):
             r = client.post(f"/api/agents/projects/{pid}/attachments/{att_id}/run",
                             json={"message": "map the floods"}, headers=_auth(token))

@@ -28,7 +28,7 @@ _PROMPT_PATH = (
 
 @pytest.fixture(autouse=True)
 def _fresh_build_jobs():
-    from utk_curio.backend.app.packages import build_jobs
+    from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
     build_jobs.reset_registry()
     yield
@@ -123,7 +123,7 @@ class TestPromptCarriesTheBackendContract:
         assert "eval/exec/compile/__import__/importlib" in text
 
     def test_build_request_contract_teaches_the_backend_keys(self):
-        from utk_curio.backend.app.agents.services import _BUILD_REQUEST_CONTRACT
+        from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
 
         text = json.dumps(_BUILD_REQUEST_CONTRACT)
         for marker in (
@@ -206,7 +206,7 @@ class TestLazyImportContract:
         assert "DECLARED python dependency" not in refusal  # honest: not declared
 
     def test_prompt_and_contract_teach_the_rule(self):
-        from utk_curio.backend.app.agents.services import _BUILD_REQUEST_CONTRACT
+        from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
 
         text = _PROMPT_PATH.read_text(encoding="utf-8")
         assert "Import declared python dependencies INSIDE your handler function" in text

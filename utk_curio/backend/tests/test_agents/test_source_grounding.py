@@ -5,7 +5,7 @@ correction named. Pure — no Flask, no network, no store."""
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import source_grounding as sg
+from utk_curio.backend.app.agents.application import source_grounding as sg
 
 ISSUE_298 = 'import pandas as pd\ndf = pd.read_csv("bras_ibge_data.csv")\nreturn df'
 CATALOG_PATH = "/curio/users/4242/datasets/census-acs@1/census_acs.parquet"

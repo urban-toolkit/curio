@@ -11,7 +11,7 @@ tested here against the real builtin manifest.
 from __future__ import annotations
 
 from utk_curio.backend.app.execution import workflow_spec as ws
-from utk_curio.backend.app.packages import services as pkg_services
+from utk_curio.backend.app.packages.application import templates as pkg_services
 
 BUILTIN = "curio.builtin"
 
@@ -20,10 +20,10 @@ def _templates() -> dict:
     """The builtin package's own templates, read from the shipped manifest."""
     from pathlib import Path
 
-    from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     root = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1"
-    manifest = load_packageage_manifest(root)
+    manifest = load_package_manifest(root)
     return {t.template_id: t for t in manifest.templates}
 
 

@@ -5,17 +5,15 @@ import {
     faChevronRight,
     faCube,
 } from "@fortawesome/free-solid-svg-icons";
-import { packagesApi } from "../../../../api/packagesApi";
+import { packagesApi, toApiPayload, partitionPalettePackageGroups } from "../../../../services/packages";
 import { PaletteDragHint } from "../PaletteDragHint";
-import type { PackagePayload } from "../../../../api/packagesApi";
+import type { PackagePayload } from "../../../../services/packages";
 import { subscribeToRegistry } from "../../../../registry";
-import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
-import { useNodeCatalogDrawer } from "../../../../providers/NodeCatalogDrawerProvider";
+import { usePackagePalette } from "../../../../providers/packages/PackagePaletteContext";
+import { useNodeCatalogDrawer } from "../../../../providers/packages/NodeCatalogDrawerProvider";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { useStarterContext } from "../../../../providers/StarterProvider";
 import { draftFromInstalledPackagePayload } from "../../../../utils/palettePackageFactoryDraft";
-import { toApiPayload } from "../../../../pages/nodes/factoryDraftModel";
-import { partitionPalettePackageGroups } from "../../../../utils/forkPackageLineage";
 import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";

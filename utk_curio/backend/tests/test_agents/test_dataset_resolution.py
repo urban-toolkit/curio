@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import attachments, dataset_resolution as dr
+from utk_curio.backend.app.agents.application import attachments
+from utk_curio.backend.app.agents.application import dataset_resolution as dr
 
 DF = "agent.dataset-finder@1.0.0"
 NB = "agent.node-builder@1.0.0"
@@ -202,7 +203,7 @@ class TestDelegationHome:
                              "agents": list(agents), "agentAttachments": []}}
 
     def test_discovery_homes_at_the_finder(self):
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.turns import delegates as services
 
         spec = self._spec()
         home, created = services._delegation_home(
@@ -219,7 +220,7 @@ class TestDelegationHome:
         assert again["attachmentId"] == home["attachmentId"]
 
     def test_content_generation_keeps_the_node_builder_home(self):
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.turns import delegates as services
 
         spec = self._spec()
         home, _ = services._delegation_home(
@@ -229,7 +230,7 @@ class TestDelegationHome:
         assert home["coord"] == NB
 
     def test_discovery_on_an_incompatible_node_falls_back_to_dev_72(self):
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.turns import delegates as services
 
         spec = self._spec(node_type="curio.builtin/vis-vega")
         home, _ = services._delegation_home(

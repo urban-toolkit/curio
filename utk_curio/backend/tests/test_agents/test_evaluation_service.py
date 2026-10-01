@@ -15,13 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import agent_jobs, testing_provider
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.agents.evaluation import authorization as auth_mod
 from utk_curio.backend.app.agents.evaluation import oracle
 from utk_curio.backend.app.agents.evaluation import records as records_mod
 from utk_curio.backend.app.agents.evaluation import service as evaluation_service
 from utk_curio.backend.app.agents.evaluation.canonical import canonical_graph_from_spec
-from utk_curio.backend.app.agents.evaluation.fixtures import FIXTURE_ROOT, load_fixture
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    FIXTURE_ROOT,
+    load_fixture,
+)
 from utk_curio.backend.tests.test_agents.test_reconstruction_canonical import TEMPLATES
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -64,7 +68,7 @@ def _script_the_model(monkeypatch, fixture=FIXTURE):
     deterministic run has to end in a score, and the score is what the phases
     are carrying.
     """
-    from utk_curio.backend.app.agents import services as services_mod
+    from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
     example = json.loads(fixture.source_path.read_text(encoding="utf-8"))
     graph = canonical_graph_from_spec(example, templates=TEMPLATES)
@@ -105,7 +109,7 @@ def _script_the_model(monkeypatch, fixture=FIXTURE):
         return "# no content for this node\nreturn None"
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+        'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
     )
     monkeypatch.setattr(
         "utk_curio.backend.app.execution.runner._http_exec",
@@ -171,7 +175,10 @@ class TestReadiness:
         }
 
     def test_the_report_prints_a_line_per_configuration(self):
-        from utk_curio.backend.app.agents.evaluation import chat, records as records_mod
+        from utk_curio.backend.app.agents.evaluation import (
+            chat,
+            records as records_mod,
+        )
 
         record = records_mod.EvaluationRecord(
             run_id="r", provider={"model": "scripted", "label": "Scripted"},
@@ -464,7 +471,7 @@ class TestTheRun:
     ):
         """A content write is a decision a person makes; an unattended run
         leaves it and says so."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         calls = []
 
@@ -484,7 +491,7 @@ class TestTheRun:
             )
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
@@ -502,7 +509,7 @@ class TestTheRun:
     def test_a_refusing_model_is_scored_not_crashed_on(
         self, client, account, monkeypatch
     ):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         def _prose(config, messages, **kwargs):
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
@@ -510,7 +517,7 @@ class TestTheRun:
             return "I cannot build that with the templates available."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _prose
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _prose
         )
         record = _run(client, account)
         assert record.phase == "done"
@@ -520,7 +527,7 @@ class TestTheRun:
     def test_a_provider_failure_records_where_it_stopped(
         self, client, account, monkeypatch
     ):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         def _boom(config, messages, **kwargs):
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
@@ -528,7 +535,7 @@ class TestTheRun:
             raise RuntimeError("the endpoint went away")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _boom
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _boom
         )
         record = _run(client, account)
         assert record.phase in ("failed", "done")
@@ -557,7 +564,7 @@ class TestTheRun:
         # would assert nothing.
         import time as _time
 
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         def _slow(config, messages, **kwargs):
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
@@ -566,7 +573,7 @@ class TestTheRun:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -665,7 +672,7 @@ class TestTheAutomatedApprovalIsNarrow:
     def test_no_agents_review_policy_was_widened(self):
         """Nothing global changed: the Dataflow Builder still reviews before
         applying, everywhere."""
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         spec = next(
             s for s in builtin.BUILTIN_AGENTS
@@ -766,7 +773,7 @@ class TestTheTranscriptCarriesTheEvaluation:
     ):
         import time as _time
 
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application.turns import titles as services_mod
 
         def _slow(config, messages, **kwargs):
             if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
@@ -775,7 +782,7 @@ class TestTheTranscriptCarriesTheEvaluation:
             return "I need more time."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _slow
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _slow
         )
         started = client.post(
             "/api/agents/evaluation/runs", json={"fixtureId": FIXTURE.fixture_id},
@@ -958,7 +965,10 @@ class TestTheRunsGraphSurvivesAClientSave:
 
 class TestCachedInputInTheReport:
     def test_the_cli_report_says_how_much_input_was_cached(self):
-        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+        from utk_curio.backend.app.agents.evaluation.report import (
+            AttemptRecord,
+            RunReport,
+        )
 
         report = RunReport(run_id="r", mode="live")
         report.add(AttemptRecord(fixture_id="f", usage={
@@ -968,7 +978,10 @@ class TestCachedInputInTheReport:
         assert "- Cached input: 80 tokens read, 90 written (counted in the input tokens)" in report.as_markdown()
 
     def test_a_provider_that_reports_no_cache_adds_no_line(self):
-        from utk_curio.backend.app.agents.evaluation.report import AttemptRecord, RunReport
+        from utk_curio.backend.app.agents.evaluation.report import (
+            AttemptRecord,
+            RunReport,
+        )
 
         report = RunReport(run_id="r", mode="live")
         report.add(AttemptRecord(fixture_id="f"))

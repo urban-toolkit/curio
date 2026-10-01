@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.manifest import (
+from utk_curio.backend.app.agents.domain.manifest import (
     AgentManifestError,
     load_agent_manifest,
     parse_agent_manifest,

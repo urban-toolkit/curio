@@ -15,12 +15,12 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages.manifest import load_packageage_manifest
-from utk_curio.backend.app.packages.resolver import merge_python_deps
-from utk_curio.backend.app.packages.routes import _manifest_to_payload
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.domain.versions import merge_python_deps
+from utk_curio.backend.app.packages.schemas.responses import package_payload
 
 # The COMMITTED catalog, named directly rather than through
-# ``_catalog_root()``: these assertions are about what the repository ships,
+# ``catalog_root()``: these assertions are about what the repository ships,
 # and the runtime root is relocatable (``CURIO_PACKAGES_ROOT``) so a test
 # session gets its own copy to publish into.
 REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
@@ -37,12 +37,12 @@ def test_the_catalog_is_not_empty():
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_loads(package_root: Path):
-    assert load_packageage_manifest(package_root) is not None
+    assert load_package_manifest(package_root) is not None
 
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_serializes_to_a_catalog_payload(package_root: Path):
-    payload = _manifest_to_payload(load_packageage_manifest(package_root))
+    payload = package_payload(load_package_manifest(package_root))
     assert payload["dirName"] == package_root.name
     assert payload["templates"], "a package with no templates adds nothing to the palette"
 

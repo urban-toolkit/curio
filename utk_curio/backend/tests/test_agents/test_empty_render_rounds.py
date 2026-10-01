@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import result_shape as rs
+from utk_curio.backend.app.agents.domain import result_shape as rs
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
 

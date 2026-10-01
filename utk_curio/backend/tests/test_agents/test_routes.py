@@ -7,7 +7,12 @@ import shutil
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin, ledger, publications, storage
+from utk_curio.backend.app.packages import service as packages_service
+
+from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.repositories import ledger
+from utk_curio.backend.app.agents.repositories import publications
+from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -24,21 +29,22 @@ def _block_closure_repair(monkeypatch):
     Returns ``release()``: the user's own Apply of that reviewed install goes
     through the same function, so a test that walks the migration path lifts
     the block before clicking Apply."""
-    from utk_curio.backend.app.agents import services as agents_services
+    from utk_curio.backend.app.agents.application import errors
+    from utk_curio.backend.app.agents.application import lifecycle
 
-    real = agents_services.install_in_project
+    real = lifecycle.install_in_project
     blocked = [True]
 
     def _refuse(*a, **k):
         if not blocked[0]:
             return real(*a, **k)
-        raise agents_services.AgentServiceError(
+        raise errors.AgentServiceError(
             "requires agent.ghost, which is not available in the catalog or your "
             "imports — nothing was installed", 409,
         )
 
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.install_in_project", _refuse
+        'utk_curio.backend.app.agents.application.lifecycle.install_in_project', _refuse
     )
 
     def release():
@@ -50,7 +56,7 @@ def _block_closure_repair(monkeypatch):
 def _drop_from_lockfile(user, project_id, coord):
     """Simulate a pre-dev/106 project: remove *coord* from ``dataflow.agents``
     directly (the API refuses uninstalling a required dependency)."""
-    from utk_curio.backend.app.agents import project_agents
+    from utk_curio.backend.app.agents.repositories import project_agents
     from utk_curio.backend.app.projects import storage as projects_storage
 
     key = _user_dir_key(user)
@@ -259,7 +265,7 @@ class TestProjectInstall:
         writes = []
         real = projects_storage.write_spec
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.projects_storage.write_spec",
+            'utk_curio.backend.app.projects.storage.write_spec',
             lambda *a, **k: (writes.append(1), real(*a, **k))[1],
         )
         r = client.post(
@@ -489,7 +495,7 @@ class TestAttachments:
 
 class TestMaterialize:
     def test_installing_a_builtin_materializes_its_bytes(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import storage
+        from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -528,7 +534,7 @@ class TestRun:
         return r.get_json()["attachmentId"]
 
     def test_run_dispatches_instruction_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         # A first run also fires the post-reply title call (memo dev/25), so
         # capture every call and assert on the conversation run (the first).
@@ -539,7 +545,7 @@ class TestRun:
             return "hello from the model"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -556,7 +562,7 @@ class TestRun:
         # exactly as every legacy call site did.
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
         instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
-        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents.domain import content as content_mod
 
         # dev/39: the runtime-owned structured-tail instruction composes last,
         # followed by the read tools the chat agent is granted.
@@ -794,7 +800,7 @@ class TestIntent:
         return r.get_json()
 
     def test_card_intent_is_the_prompt_source(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         _, token = user_and_token
         card = self._attach_builtin(client, token, alice_project)
@@ -803,7 +809,7 @@ class TestIntent:
         assert card["intentEdited"] is False
 
     def test_patch_persists_and_null_restores(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         _, token = user_and_token
         att = self._attach_builtin(client, token, alice_project)
@@ -859,7 +865,7 @@ class TestIntent:
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
         att = self._attach_builtin(client, token, alice_project)
         att_id = att["attachmentId"]
@@ -875,8 +881,8 @@ class TestIntent:
         )
         # The edited intent replaces the instruction portion; the preamble
         # still applies, and the dev/39 tail instruction composes last.
-        from utk_curio.backend.app.agents import builtin
-        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.domain import content as content_mod
 
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
         assert calls[0][0]["role"] == "system"
@@ -899,19 +905,26 @@ class TestSession:
         return r.get_json()
 
     def _mock_provider(self, monkeypatch, replies):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = []
 
         def _fake_run(config, messages, **kwargs):
             # Answer the post-first-run title call (memo dev/25) out of band so
             # `replies`/`calls` keep tracking the conversation runs only.
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Session Test Title"
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return calls
 
     def test_runs_persist_and_get_session_returns_history(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -958,7 +971,7 @@ class TestSession:
                 raise RuntimeError("boom")
             return "recovered"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _flaky)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _flaky)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
         r = client.post(
@@ -1009,7 +1022,7 @@ class TestSession:
             assert r.status_code == 404
 
     def test_detach_deletes_transcript_file(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import sessions as sessions_mod
+        from utk_curio.backend.app.agents.repositories import sessions as sessions_mod
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
@@ -1028,7 +1041,7 @@ class TestSession:
         assert not sessions_mod._session_path(ukey, alice_project, session_id).exists()
 
     def test_prune_on_save_deletes_transcript_file(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import sessions as sessions_mod
+        from utk_curio.backend.app.agents.repositories import sessions as sessions_mod
 
         self._mock_provider(monkeypatch, ["a1"])
         user, token = user_and_token
@@ -1085,12 +1098,12 @@ class TestStreamRun:
             yield "lo"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         # The first stream run fires the post-reply title call (memo dev/25);
         # stub the blocking port so it never reaches a real provider.
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1128,7 +1141,7 @@ class TestStreamRun:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1171,12 +1184,12 @@ class TestStreamRun:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         # Stub the blocking port: the first run's title call must not reach a
         # real provider (memo dev/25).
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1210,12 +1223,19 @@ class TestExecutionRecords:
         """Stub the blocking port; ``usage`` (when given) is written into the
         ``usage_out`` sink for conversation runs. Title calls answer out of
         band and report a token cost of their own."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = []
 
         def _fake_run(config, messages, usage_out=None, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 if usage_out is not None:
                     usage_out.update({"inputTokens": 5, "outputTokens": 3})
                 return "Exec Title"
@@ -1224,7 +1244,7 @@ class TestExecutionRecords:
                 usage_out.update(usage)
             return reply
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return calls
 
     def _turns(self, client, token, project_id, att_id):
@@ -1234,7 +1254,14 @@ class TestExecutionRecords:
         ).get_json()["turns"]
 
     def test_run_persists_execution_record_with_pins_and_usage(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         # Read at call time: the suite's conftest stands in for the operator
         # and patches the config module, so an import-time snapshot would see
         # the (empty) shipped defaults.
@@ -1276,7 +1303,7 @@ class TestExecutionRecords:
         assert pins["tools"] == ["dataflow.read", "node.read", "node.runtime.read"]
         # One pin left: the run caps and the budget it used to record are gone.
         assert pins["policy"] == {
-            "maxOutputTokens": services_mod.DEPLOYMENT_MAX_OUTPUT_TOKENS,
+            "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
         }
 
     def test_run_usage_null_when_provider_reports_none(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1297,7 +1324,7 @@ class TestExecutionRecords:
         def _boom(config, messages, **kwargs):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _boom)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _boom)
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
         r = client.post(
@@ -1334,10 +1361,10 @@ class TestExecutionRecords:
                 usage_out.update({"inputTokens": 7, "outputTokens": 9})
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
@@ -1378,7 +1405,7 @@ class TestExecutionRecords:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _flaky
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _flaky
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1512,7 +1539,7 @@ class TestToolGrants:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "never reached",
         )
         user, token = user_and_token
@@ -1535,7 +1562,7 @@ class TestToolGrants:
 
     def test_optional_ungranted_tool_runs_and_pins_no_grant(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1554,8 +1581,8 @@ class TestToolGrants:
         assert turns[1]["execution"]["pins"]["tools"] == []
 
     def test_registered_read_tool_is_granted_and_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import tools as tools_mod
-        from utk_curio.backend.app.agents.tools import ToolContract
+        from utk_curio.backend.app.agents.application import tools as tools_mod
+        from utk_curio.backend.app.agents.application.tools import ToolContract
 
         monkeypatch.setitem(
             tools_mod.REGISTRY,
@@ -1563,7 +1590,7 @@ class TestToolGrants:
             ToolContract(id="ghost.tool", contract_version="1", effect="read", description="d"),
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "ok",
         )
         _, token = user_and_token
@@ -1703,17 +1730,24 @@ class TestRunContext:
         return r.get_json()["attachmentId"]
 
     def _mock_run(self, monkeypatch):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return calls
 
     def test_context_rides_one_message_before_the_user_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -1761,19 +1795,26 @@ class TestRunContext:
         assert not any("[attachment context" in m["content"] for m in calls[0])
 
     def test_context_is_bounded_with_a_visible_marker(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = self._mock_run(monkeypatch)
         _, token = user_and_token
         att_id = self._attach(client, token, alice_project)
-        big = "x" * (services_mod.CONTEXT_MAX_CHARS + 500)
+        big = "x" * (policy.CONTEXT_MAX_CHARS + 500)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "q", "context": big}, headers=_auth(token),
         )
         ctx_msg = calls[0][-2]["content"]
         assert "truncated: context exceeded" in ctx_msg
-        assert len(ctx_msg) < services_mod.CONTEXT_MAX_CHARS + 200
+        assert len(ctx_msg) < policy.CONTEXT_MAX_CHARS + 200
 
     def test_non_string_context_is_a_400(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -1795,10 +1836,10 @@ class TestRunContext:
             yield "ok"
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Title",
         )
         _, token = user_and_token
@@ -1826,7 +1867,8 @@ class TestMaterializationHeal:
     def test_pre_dev38_copy_gains_the_system_asset(self, client, user_and_token, tmp_curio, alice_project):
         import json as _json
 
-        from utk_curio.backend.app.agents import builtin, storage
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -1853,7 +1895,7 @@ class TestMaterializationHeal:
             assert (base / asset.path).is_file()
 
     def test_complete_copy_is_untouched(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import storage
+        from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -1866,15 +1908,22 @@ class TestMaterializationHeal:
         assert (manifest_path.stat().st_mtime_ns, manifest_path.read_bytes()) == before
 
     def test_imported_shadow_is_never_overwritten(self, client, user_and_token, tmp_curio):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         ukey = _user_dir_key(user)
         # An owned imported definition deliberately shadowing a built-in coord.
         coord = _write_def(user, "agent.node-content-builder")
-        services_mod._materialize_builtin(ukey, coord)
-        from utk_curio.backend.app.agents import storage
+        catalog._materialize_builtin(ukey, coord)
+        from utk_curio.backend.app.agents.repositories import storage
 
         kept = storage.load_installed_agent_definition(ukey, coord)
         assert kept.provenance.trust == "imported"  # bytes untouched
@@ -1926,10 +1975,10 @@ class TestToolLoop:
                 yield "It prints 1."
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Loop Title",
         )
         _, token = user_and_token
@@ -1975,16 +2024,23 @@ class TestToolLoop:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             if len(calls) == 1:
                 return '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
             return "Done without it."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
         # Chat agent declares no tools → nothing granted.
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token))
@@ -2011,14 +2067,21 @@ class TestToolLoop:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return f"Round {len(calls)}.\n" + TestToolLoop.TOOL_TAIL  # always wants more
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
         att_id = self._install_attach(
@@ -2051,9 +2114,16 @@ class TestToolLoop:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             if len(calls) == 1:
@@ -2063,7 +2133,7 @@ class TestToolLoop:
                 )
             return "Proposed."
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         user, token = user_and_token
         self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
         att_id = self._install_attach(
@@ -2080,19 +2150,26 @@ class TestToolLoop:
         assert spec["dataflow"]["nodes"][0]["content"] == "original"
 
     def test_grantless_system_turn_is_byte_identical_to_t2(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import builtin
-        from utk_curio.backend.app.agents import content as content_mod
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.domain import content as content_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         user, token = user_and_token
         # No built-in card is both tool-free and delegate-free, so an owned
         # definition that declares neither stands in for a grant-less run.
@@ -2150,14 +2227,21 @@ class TestReviewProposals:
         script = replies or [self._mutate_tail(), "Proposed — review it above."]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="write it"):
@@ -2216,7 +2300,7 @@ class TestReviewProposals:
             yield script[min(len(calls) - 1, 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
@@ -2416,17 +2500,24 @@ class TestStructuredContent:
         return r.get_json()["attachmentId"]
 
     def _mock_run(self, monkeypatch, replies):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Content Title"
             calls.append(messages)
             return replies[len(calls) - 1]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return calls
 
     def _mock_stream(self, monkeypatch, deltas):
@@ -2434,10 +2525,10 @@ class TestStructuredContent:
             yield from deltas
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn",
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda c, m, **kw: "Stream Title",
         )
 
@@ -2602,7 +2693,14 @@ class TestRunsAreRecordedNotRationed:
         return r.get_json()["attachmentId"]
 
     def _mock_run(self, monkeypatch, reply="ok"):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         def _fake_run(config, messages, **kwargs):
             # The usage sink is what the ledger records; a mock that ignores it
@@ -2611,12 +2709,12 @@ class TestRunsAreRecordedNotRationed:
             if sink is not None:
                 sink["inputTokens"] = 12
                 sink["outputTokens"] = 34
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             return reply
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run
         )
 
     def test_many_runs_all_succeed_and_all_count(
@@ -2706,16 +2804,23 @@ class TestOutputCapReachesTheProvider:
             seen.append(max_output_tokens)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake)
         _, token = user_and_token
         att = self._install_and_attach(client, token, alice_project)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att}/run",
             json={"message": "q"}, headers=_auth(token),
         )
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
-        assert seen[0] == services_mod.DEPLOYMENT_MAX_OUTPUT_TOKENS
+        assert seen[0] == policy.DEPLOYMENT_MAX_OUTPUT_TOKENS
 
     def test_the_retired_settings_endpoints_are_gone(self, app):
         # A guard on the removal: re-adding one should be a decision, not a
@@ -2751,7 +2856,7 @@ class TestMaterializePreamble:
     """Install materializes BOTH prompt assets (instruction + system preamble)."""
 
     def test_install_writes_preamble_and_instruction(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import storage as agents_storage
+        from utk_curio.backend.app.agents.repositories import storage as agents_storage
 
         user, token = user_and_token
         coord = "agent.connection-builder@1.0.0"
@@ -2774,9 +2879,9 @@ class TestNodeCreate:
     def _write_builtin_package(self, user_key, templates=None):
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-        d = user_packageages_dir(user_key) / "curio.builtin@1"
+        d = user_packages_dir(user_key) / "curio.builtin@1"
         d.mkdir(parents=True, exist_ok=True)
         manifest = {
             "id": "curio.builtin",
@@ -2855,14 +2960,21 @@ class TestNodeCreate:
         script = replies or [self._create_tail(), "Proposed — review it above."]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build it"):
@@ -3101,14 +3213,14 @@ class TestNodeCreate:
     def test_apply_after_template_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import shutil
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         att_id, _ = self._setup(client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch)
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # The template's package disappears between mint and apply.
-        shutil.rmtree(user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1")
+        shutil.rmtree(user_packages_dir(_user_dir_key(user)) / "curio.builtin@1")
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
             headers=_auth(token),
@@ -3167,9 +3279,9 @@ class TestReuseLadder:
         e.g. one a previous project's Package Builder authored."""
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
-        d = user_packageages_dir(user_key) / dir_name
+        d = user_packages_dir(user_key) / dir_name
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": package_id,
@@ -3242,8 +3354,11 @@ class TestReuseLadder:
             monkeypatch=monkeypatch, replies=["ok"],
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        from utk_curio.backend.app.packages import services as packages_services
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
 
         self._run(client, token, alice_project, att_id)
         system = calls[0][0]["content"]
@@ -3325,7 +3440,7 @@ class TestReuseLadder:
     def test_parameter_refusals_do_not_spend_rounds(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.agents import services as agent_services
+        from utk_curio.backend.app.agents.application import tool_rounds as agent_services
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         assert agent_services.MAX_TOOL_ROUNDS == 3  # the arithmetic below assumes it
@@ -3388,12 +3503,15 @@ class TestReuseLadder:
     ):
         """A refusal that cost real work (a broken catalog) is not a parameter
         error — it keeps spending rounds so a dead store can never loop."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         def boom(*_a, **_k):
             raise RuntimeError("store on fire")
 
-        monkeypatch.setattr(packages_services, "agent_catalog_overview", boom)
+        monkeypatch.setattr(packages_service, "agent_catalog_overview", boom)
         user, token = user_and_token
         att_id, calls = self._setup(
             client, user=user, token=token, project_id=alice_project,
@@ -3421,14 +3539,17 @@ class TestReuseLadder:
     ):
         import json as _json
 
-        from utk_curio.backend.app.packages import services as packages_services
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         # A compute-only package, enlisted: authorable=False → not listable.
-        d = user_packageages_dir(key) / "curio.postits@1"
+        d = user_packages_dir(key) / "curio.postits@1"
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": "curio.postits", "version": "1.0.0", "name": "Post-it Notes",
@@ -3445,7 +3566,7 @@ class TestReuseLadder:
         }), encoding="utf-8")
         (d / "sources").mkdir(exist_ok=True)
         (d / "sources" / "default.py").write_text("def main(): return {}\n")
-        packages_services.install_to_project(key, alice_project, "curio.postits@1")
+        project_packages.install_to_project(key, alice_project, "curio.postits@1")
         # And the real note template sits in the store, not enlisted.
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
 
@@ -3462,7 +3583,7 @@ class TestReuseLadder:
 
         # The line is for note-composing runs only: enlist the note package and
         # it disappears; a Dataflow Builder never sees it.
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         att2, calls2 = self._setup(
             client, user=user, token=token, project_id=alice_project,
             monkeypatch=monkeypatch, replies=["ok"],
@@ -3492,8 +3613,11 @@ class TestReuseLadder:
     def test_a13_default_fills_only_an_omitted_color_on_a_note_template(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.packages import node_appearance
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.domain import node_appearance
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3508,7 +3632,7 @@ class TestReuseLadder:
             ],
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         resp = self._run(client, token, alice_project, att_id)
         spec_nodes_before = None  # proposals only; nothing lands without Apply
         proposals = [p for p in resp.get_json()["content"] if p["type"] == "proposal"]
@@ -3529,13 +3653,16 @@ class TestReuseLadder:
     def test_a13_default_never_touches_other_agents_or_code_templates(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
-        packages_services.install_to_project(key, alice_project, "curio.notes@1")
+        project_packages.install_to_project(key, alice_project, "curio.notes@1")
         # A Researcher creating a CODE node: no default.
         att_id, _ = self._setup(
             client, user=user, token=token, project_id=alice_project,
@@ -3605,13 +3732,13 @@ class TestReuseLadder:
     ):
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         key = _user_dir_key(user)
         # A store-only CODE package: enlistable, but nothing in it renders a note.
-        d = user_packageages_dir(key) / "curio.tools@1"
+        d = user_packages_dir(key) / "curio.tools@1"
         d.mkdir(parents=True, exist_ok=True)
         (d / "manifest.json").write_text(_json.dumps({
             "id": "curio.tools", "version": "1.0.0", "name": "Tools", "publisher": "x",
@@ -3682,7 +3809,10 @@ class TestReuseLadder:
         the package, and the template is then a legal node.create nodeType."""
         import json as _json
 
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3701,7 +3831,7 @@ class TestReuseLadder:
         )
         self._write_store_package(key, "curio.notes@1", "curio.notes", "note-surface", "Note")
         assert "curio.notes/note-surface" not in {
-            t["id"] for t in packages_services.available_templates(key, alice_project)
+            t["id"] for t in packages_templates.available_templates(key, alice_project)
         }
 
         resp = self._run(client, token, alice_project, att_id)
@@ -3721,7 +3851,7 @@ class TestReuseLadder:
 
         # Enlisted: the template the agent wanted to reuse is now instantiable.
         assert "curio.notes/note-surface" in {
-            t["id"] for t in packages_services.available_templates(key, alice_project)
+            t["id"] for t in packages_templates.available_templates(key, alice_project)
         }
 
     def test_run_without_the_install_grant_sees_no_enlist_section(
@@ -3818,8 +3948,11 @@ class TestNodeTemplateCreate:
         assert proposal["pins"] == {"templateSlug": "sentiment-scorer"}
 
     def test_apply_registers_template_installs_and_inserts_node(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import services as packages_services
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3835,17 +3968,17 @@ class TestNodeTemplateCreate:
         assert body["createdTemplate"]["id"] == "curio.agent.sentiment-scorer/sentiment-scorer"
         assert body["createdNode"]["type"] == "curio.agent.sentiment-scorer/sentiment-scorer"
         # Both effects landed: store package + project lockfile + spec node.
-        assert (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
-        assert "curio.agent.sentiment-scorer@1" in packages_services.get_project_lockfile(key, alice_project)
+        assert (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
+        assert "curio.agent.sentiment-scorer@1" in project_packages.get_project_lockfile(key, alice_project)
         nodes = TestNodeCreate()._spec_nodes(user, alice_project)
         assert any(n.get("type") == "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
         # Round-trip (dev/48): the created type is instantiable by plain
         # node.create in a later run — it is now an available template.
-        available = {t["id"] for t in packages_services.available_templates(key, alice_project)}
+        available = {t["id"] for t in packages_templates.available_templates(key, alice_project)}
         assert "curio.agent.sentiment-scorer/sentiment-scorer" in available
 
     def test_factory_failure_at_apply_is_transactional_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -3854,7 +3987,7 @@ class TestNodeTemplateCreate:
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # A colliding store package appears between mint and apply → the
         # installer's collision handling surfaces verbatim.
-        (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
+        (user_packages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
         resp = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
             headers=_auth(token),
@@ -3972,14 +4105,21 @@ class TestDatasetFinderTools:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="find data"):
@@ -4158,14 +4298,21 @@ class TestDataflowPlanMint:
         script = replies or ["Here is the plan.\n" + self._plan_tail()]
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _ukey(self, user):
@@ -4215,7 +4362,7 @@ class TestDataflowPlanMint:
         # probes one for real; the suite's netguard refuses that. Stubbed as
         # the verification tests in this file stub it.
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
         )
         att_id, calls = self._setup(
@@ -4314,8 +4461,8 @@ class TestRosterGrantCoverage:
     """
 
     def test_every_installed_templates_reader_earns_the_roster(self):
-        from utk_curio.backend.app.agents import builtin
-        from utk_curio.backend.app.agents.services import _ROSTER_GRANTS
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.application.turns.roster import _ROSTER_GRANTS
 
         readers = [
             spec for spec in builtin.BUILTIN_AGENTS
@@ -4379,7 +4526,10 @@ class TestSnapshotCostAndCoherence:
 
     def _walks_for_plan_of(self, size, client, user_and_token, tmp_curio,
                            alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         helper = TestDataflowPlanMint()
         user, token = user_and_token
@@ -4393,9 +4543,9 @@ class TestSnapshotCostAndCoherence:
             replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[])],
         )
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
         monkeypatch.setattr(
-            packages_services, "_store_index",
+            store_reads, "_store_index",
             lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
         )
         body = helper._run(client, token, alice_project, att_id).get_json()
@@ -4427,7 +4577,10 @@ class TestSnapshotCostAndCoherence:
         """Both roster sections must describe the same instant: fetched
         separately, a package could appear in one half and be missing from the
         other."""
-        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.application import agent_reads
+        from utk_curio.backend.app.packages.application import project_packages
+        from utk_curio.backend.app.packages.application import store_reads
+        from utk_curio.backend.app.packages.application import templates as packages_templates
 
         user, token = user_and_token
         ladder = TestReuseLadder()
@@ -4441,9 +4594,9 @@ class TestSnapshotCostAndCoherence:
         )
 
         landscapes = {"n": 0}
-        real = packages_services.template_landscape
+        real = agent_reads.template_landscape
         monkeypatch.setattr(
-            packages_services, "template_landscape",
+            packages_service, "template_landscape",
             lambda uk, pid: (landscapes.__setitem__("n", landscapes["n"] + 1), real(uk, pid))[1],
         )
         ladder._run(client, token, alice_project, att_id)
@@ -4599,7 +4752,7 @@ class TestPlanTemplateSpellings:
         was computed over exactly that string. The apply must canonicalise the
         COMPARISON, not the stored value, or an in-flight proposal goes stale
         on deploy day."""
-        from utk_curio.backend.app.agents import attachments
+        from utk_curio.backend.app.agents.application import attachments
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -4694,11 +4847,11 @@ class TestDataflowPlanApply:
         agents key on that type, so add one to the installed manifest."""
         import json as _json
 
-        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.packages.repositories.store import user_packages_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         path = (
-            user_packageages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
+            user_packages_dir(_user_dir_key(user)) / "curio.builtin@1" / "manifest.json"
         )
         manifest = _json.loads(path.read_text(encoding="utf-8"))
         if not any(t["id"] == "data-loading" for t in manifest["templates"]):
@@ -4984,9 +5137,16 @@ class TestSolve:
         return client.post("/api/agents/llm/configs", json=body, headers=_auth(token)).get_json()["config"]["id"]
 
     def _record_models(self, monkeypatch, on_call=None):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
-        inner = services_mod.run_chat_turn
+        inner = providers.run_chat_turn
         seen = []
 
         def _recording(config, messages, **kwargs):
@@ -4995,7 +5155,7 @@ class TestSolve:
                 on_call(len(seen))
             return inner(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _recording)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _recording)
         return seen
 
     def test_each_child_runs_on_and_pins_its_own_configuration(
@@ -5024,7 +5184,7 @@ class TestSolve:
     def test_a_broken_delegate_choice_refuses_before_anything_is_written(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.agents.infrastructure import llm_configs
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -5050,7 +5210,7 @@ class TestSolve:
     def test_a_choice_changed_mid_solve_reaches_the_later_children(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
     ):
-        from utk_curio.backend.app.agents import llm_configs
+        from utk_curio.backend.app.agents.infrastructure import llm_configs
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -5096,16 +5256,23 @@ class TestSolve:
         state = {"n": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             state["n"] += 1
             if state["n"] == 2:
                 raise RuntimeError("child provider down")
             return f"generated-{state['n']}"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         body = self._solve(client, token, alice_project, att_id).get_json()
         statuses = sorted(r["status"] for r in body["results"].values())
         # dev/131: a child failure still isolates — the sibling solved on the
@@ -5193,7 +5360,7 @@ class TestSolve:
             client, user, token, alice_project, monkeypatch, install_ncb=False,
         )
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services._mint_project_install",
+            'utk_curio.backend.app.agents.application.proposals.mint._mint_project_install',
             lambda *a, **k: ("refused", "no saved project spec is available", None),
         )
         body = self._solve(client, token, alice_project, att_id).get_json()
@@ -5278,12 +5445,19 @@ class TestStreamedSolve:
         assert "apply a plan first" in r.get_json()["error"]
 
     def _solve_gen(self, user, project_id, att_id):
-        from utk_curio.backend.app.agents import services as services_mod
-        from utk_curio.backend.app.agents.providers import ProviderConfig
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         config = ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m")
-        return services_mod.solve_attachment_stream(
+        return packages_session.solve_attachment_stream(
             _user_dir_key(user), project_id, att_id, config
         )
 
@@ -5291,7 +5465,14 @@ class TestStreamedSolve:
         import json as _json
         import threading
 
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -5309,12 +5490,12 @@ class TestStreamedSolve:
         gate = threading.Event()
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             gate.wait(timeout=10)  # children hold until the cancel lands
             return "generated"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         gen = self._solve_gen(user, alice_project, att_id)
         events: list = []
         done_evt = threading.Event()
@@ -5331,7 +5512,7 @@ class TestStreamedSolve:
         t.start()
         for _ in range(3):  # the full worker pool is busy
             assert started_count.acquire(timeout=10)
-        services_mod.request_solve_cancel(_user_dir_key(user), alice_project, att_id)
+        packages_session.request_solve_cancel(_user_dir_key(user), alice_project, att_id)
         gate.set()  # in-flight children finish and are KEPT
         assert done_evt.wait(timeout=10)
         t.join(timeout=10)
@@ -5363,7 +5544,7 @@ class TestStreamedSolve:
         # dev/115 (DEC-021 single-process slice): the client's disconnect only
         # UNSUBSCRIBES — the batch runs on as a detached job and finishes on
         # its own; the persisted session is the truth once it has.
-        from utk_curio.backend.app.agents import agent_jobs
+        from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
         job = agent_jobs.latest_job(_user_dir_key(user), att_id)
         assert job is not None
@@ -5399,7 +5580,7 @@ class TestStreamedSolve:
         att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
         import threading
 
-        from utk_curio.backend.app.agents import agent_jobs
+        from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
         key = _user_dir_key(user)
         spec = projects_storage.read_spec(key, alice_project)
@@ -5568,7 +5749,7 @@ class TestPlanCorrectionRounds:
             for i in range(0, len(reply), 9):
                 yield reply[i : i + 9]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -5679,7 +5860,7 @@ class TestPlanToolRequestForm:
     def test_other_tools_params_cap_is_regression_pinned(self):
         import json as _json
 
-        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents.domain import content as content_mod
 
         big = {"toolRequest": {"tool": "node.read", "params": {"x": "y" * 2000}}}
         assert content_mod.parse_parts(_json.dumps(big)) is None
@@ -5784,7 +5965,7 @@ class TestToolRequestRecovery:
     def test_oversized_content_corrects_instead_of_leaking(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # Past PROPOSAL_CONTENT_MAX_CHARS the parser and the mint agree, so the
         # model gets a correctable refusal naming the real field.
-        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents.domain import content as content_mod
 
         user, token = user_and_token
         helper = self._helper()
@@ -5870,7 +6051,7 @@ class TestToolRequestRecovery:
                 yield reply[i:i + 9]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+            'utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "build it"}, headers=_auth(token),
@@ -6007,7 +6188,7 @@ class TestFenceAgnosticPlanRecognition:
             for i in range(0, len(reply), 11):
                 yield reply[i : i + 11]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_turn", _fake_stream)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.stream_chat_turn', _fake_stream)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "plan it"}, headers=_auth(token),
@@ -6036,14 +6217,21 @@ class TestGeneratedContentExtraction:
         state = {"n": 0}
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             state["n"] += 1
             return wrapped
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         body = solve_helper._solve(client, token, alice_project, att_id).get_json()
         assert {r["status"] for r in body["results"].values()} == {"solved"}
         for item in body["appliedContents"]:
@@ -6121,14 +6309,21 @@ class TestDestructiveReplan:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="replace the loader"):
@@ -6222,7 +6417,7 @@ class TestDestructiveReplan:
             headers=_auth(token),
         ).get_json()["attachmentId"]
         # … and a stale nodeRuns entry for it in the builder session.
-        from utk_curio.backend.app.agents import attachments as attachments_mod
+        from utk_curio.backend.app.agents.application import attachments as attachments_mod
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -7001,7 +7196,7 @@ class TestVerifiedDiscovery:
     def test_external_rows_carry_verification_verdicts(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: (
                 {"status": "verified", "httpStatus": 200, "checkedAt": "now",
                  "provider": "socrata", "datasetId": "abcd-1234"}
@@ -7048,7 +7243,7 @@ class TestVerifiedDiscovery:
             },
         }
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: observations.get(url) or {
                 "status": "unverified", "detail": "no probeable URL", "checkedAt": "now",
             },
@@ -7079,21 +7274,28 @@ class TestVerifiedDiscovery:
         assert steps[-1].startswith("Then use Import dataset below")
 
     def test_research_verify_delegates_get_runtime_evidence(self, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: {"status": "unreachable", "httpStatus": 404,
                                "detail": "the endpoint answered 404", "checkedAt": "now"},
         )
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             "4242", "p-any", {}, "research.verify",
             {"url": "https://data.example.gov/resource/fake-0000.json", "question": "does it exist?"},
         )
         assert enriched["verification"]["status"] == "unreachable"
         assert enriched["question"] == "does it exist?"  # model keys survive
         # No URL → no fabricated evidence.
-        assert services_mod._enriched_delegate_inputs(
+        assert delegates._enriched_delegate_inputs(
             "4242", "p-any", {}, "research.verify", {"question": "?"},
         ) == {"question": "?"}
 
@@ -7104,7 +7306,7 @@ class TestVerifiedDiscovery:
             json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token),
         )
         assert r.status_code == 201
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         m = builtin.get_builtin_manifest("agent.node-researcher@1.0.0")
         assert [t.id for t in m.tools] == ["web.search", "web.fetch", "node.read"]
@@ -7253,7 +7455,14 @@ class TestSimulationDriver:
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
 
     def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -7264,18 +7473,18 @@ class TestSimulationDriver:
             replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
         )
         # Service-level: cancel after the first action_result.
-        from utk_curio.backend.app.agents.providers import ProviderConfig
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 
         config = ProviderConfig(api_key="k", api_type="openai_compatible",
                                 base_url="http://x", model="m")
-        gen = services_mod.simulate_stream(
+        gen = simulation.simulate_stream(
             _user_dir_key(user), alice_project, att_id, config, mode="auto",
         )
         seen = []
         for kind, payload in gen:
             seen.append((kind, payload))
             if kind == "action_result":
-                services_mod.request_simulate_cancel(
+                simulation.request_simulate_cancel(
                     _user_dir_key(user), alice_project, att_id
                 )
         done = seen[-1][1]
@@ -7482,23 +7691,30 @@ class TestNodeContextEnrichment:
         assert '"runtimeStatus"' in framed
 
     def test_delegate_inputs_enriched_only_for_content_generation(self, tmp_curio):
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         from utk_curio.backend.app.projects import storage as projects_storage
 
         projects_storage.write_spec("4242", "p-enrich", {"dataflow": {"nodes": [
             {"id": "n1", "type": "t", "goal": "g", "content": ""},
         ], "edges": []}})
         loop_ctx = {"target": {"kind": "node", "targetId": "n1"}}
-        enriched = services_mod._enriched_delegate_inputs(
+        enriched = delegates._enriched_delegate_inputs(
             "4242", "p-enrich", loop_ctx, "node.content.generate", {"intent": "x"}
         )
         assert enriched["nodeContext"]["nodeId"] == "n1"
         assert enriched["intent"] == "x"  # the model's keys survive
         # Other capabilities and explicit model-provided context: untouched.
-        assert services_mod._enriched_delegate_inputs(
+        assert delegates._enriched_delegate_inputs(
             "4242", "p-enrich", loop_ctx, "workflow.plan.create", {"a": 1}
         ) == {"a": 1}
-        assert services_mod._enriched_delegate_inputs(
+        assert delegates._enriched_delegate_inputs(
             "4242", "p-enrich", loop_ctx, "node.content.generate",
             {"nodeContext": {"mine": True}},
         ) == {"nodeContext": {"mine": True}}
@@ -7511,7 +7727,8 @@ class TestBuiltinPromptPropagation:
     COORD = "agent.dataflow-builder@1.0.0"
 
     def _install_with_stale_instruction(self, client, user, token, project_id):
-        from utk_curio.backend.app.agents import builtin, storage
+        from utk_curio.backend.app.agents.domain import builtin
+        from utk_curio.backend.app.agents.repositories import storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
@@ -7535,14 +7752,21 @@ class TestBuiltinPromptPropagation:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         r = client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "clear the canvas"}, headers=_auth(token),
@@ -7560,7 +7784,7 @@ class TestBuiltinPromptPropagation:
         body = {"name": "p2", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         p2 = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         client.post(f"/api/agents/projects/{p2}/install", json={"coord": self.COORD}, headers=_auth(token))
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         on_disk = (base / "prompts" / spec.prompt_file).read_text(encoding="utf-8")
         assert on_disk == builtin.read_prompt_text(self.COORD, "instruction")
@@ -7603,14 +7827,21 @@ class TestBuiltinPromptPropagation:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return "ok"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         client.post(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
             json={"message": "hi"}, headers=_auth(token),
@@ -7750,8 +7981,8 @@ class TestPackageRecommendationTools:
     def _stub_pip(self, monkeypatch):
         # The weather fixture declares real python deps; never shell out to
         # pip inside a test (same posture as test_packages/conftest.py).
-        from utk_curio.backend.app.packages import pip_runner
-        from utk_curio.backend.app.packages.pip_runner import InstallReport
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -7783,14 +8014,21 @@ class TestPackageRecommendationTools:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="what packages do I need"):
@@ -7809,7 +8047,7 @@ class TestPackageRecommendationTools:
         )
 
     def _lockfile(self, client, user, project_id):
-        from utk_curio.backend.app.packages.services import get_project_lockfile
+        from utk_curio.backend.app.packages.application.project_packages import get_project_lockfile
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         with client.application.app_context():
@@ -7857,7 +8095,7 @@ class TestPackageRecommendationTools:
         two together. Reported, not refused: the package IS installed and the
         repair is the user's.
         """
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "import_failures",
@@ -7892,7 +8130,7 @@ class TestPackageRecommendationTools:
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
     ):
         """The success control: a working package must not grow a warning."""
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
         user, token = user_and_token
@@ -7908,7 +8146,7 @@ class TestPackageRecommendationTools:
         assert "importErrors" not in body, body
 
     def test_mint_refuses_builtin_unknown_and_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import install_to_project
+        from utk_curio.backend.app.packages.application.project_packages import install_to_project
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -7947,7 +8185,7 @@ class TestPackageRecommendationTools:
         proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
         # A conflict discovered between mint and apply is the drift analogue.
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.services.agent_resolve_report",
+            'utk_curio.backend.app.packages.service.agent_resolve_report',
             lambda uk, dns: {"packages": [], "conflicts": [{"package": "numpy", "ranges": []}]},
         )
         resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
@@ -7959,7 +8197,7 @@ class TestPackageRecommendationTools:
         assert cards[0]["activeProposal"]["status"] == "stale"
 
     def test_apply_package_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import PackageServiceError
+        from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 
         _, token = user_and_token
         att_id, _ = self._setup(
@@ -7972,7 +8210,7 @@ class TestPackageRecommendationTools:
             raise PackageServiceError("unknown package(s): curio.weather@1", 404)
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.services.agent_resolve_report", _gone,
+            'utk_curio.backend.app.packages.service.agent_resolve_report', _gone,
         )
         resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
         assert resp.status_code == 409
@@ -8058,15 +8296,22 @@ class TestPackageBuilderTools:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
 
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="build a notes package"):
@@ -8077,7 +8322,7 @@ class TestPackageBuilderTools:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8085,8 +8330,8 @@ class TestPackageBuilderTools:
 
     def test_mint_and_apply_full_flow(self, client, user_and_token, tmp_curio,
                                       alice_project, monkeypatch):
-        from utk_curio.backend.app.packages.services import get_project_lockfile
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.application.project_packages import get_project_lockfile
+        from utk_curio.backend.app.packages.repositories.store import package_dir
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -8145,7 +8390,7 @@ class TestPackageBuilderTools:
     def test_apply_refuses_expired_artifact_as_stale(self, client, user_and_token,
                                                      tmp_curio, alice_project,
                                                      monkeypatch):
-        from utk_curio.backend.app.packages import build_staging
+        from utk_curio.backend.app.packages.repositories import staging as build_staging
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -8169,7 +8414,7 @@ class TestPackageBuilderTools:
     def test_insert_node_appearance_round_trip_unit(self):
         # dev/89 typed round-trip: _insert_node persists the canonical
         # metadata.appearance shape; omitting it stays byte-identical.
-        from utk_curio.backend.app.agents.services import _insert_node
+        from utk_curio.backend.app.agents.application.proposals.apply import _insert_node
 
         spec = {"dataflow": {"nodes": [], "edges": []}}
         plain = _insert_node(spec, "a.b/kind@1", "content", None)
@@ -8189,7 +8434,7 @@ class TestPackageBuilderTargetErgonomics:
 
     def test_create_without_target_mints(self, client, user_and_token, tmp_curio,
                                          alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         _, token = user_and_token
@@ -8269,7 +8514,7 @@ class TestBackendDraftEndToEnd:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8277,8 +8522,8 @@ class TestBackendDraftEndToEnd:
 
     def test_full_lane_mint_apply_invoke_tamper(self, client, user_and_token,
                                                 tmp_curio, alice_project, monkeypatch):
-        from utk_curio.backend.app.packages import backend_runtime
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.repositories.store import package_dir
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
@@ -8346,7 +8591,7 @@ class TestRestartHonestyOnApply:
 
     @pytest.fixture(autouse=True)
     def _fresh_build_jobs(self):
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         yield
@@ -8354,7 +8599,7 @@ class TestRestartHonestyOnApply:
 
     def _apply_draft_with_pip(self, client, token, alice_project, monkeypatch,
                               *, installed, skipped, import_errors=None):
-        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
 
         monkeypatch.setattr(
             pip_runner, "install_python_deps",
@@ -8494,7 +8739,7 @@ class TestProviderModels:
         The fallback is a recording now, so a leaked one from a previous test
         would let a case pass without ever having fetched anything.
         """
-        from utk_curio.backend.app.agents import model_catalog
+        from utk_curio.backend.app.agents.repositories import model_catalog
 
         monkeypatch.setattr(model_catalog, "_users_base", lambda: tmp_path)
 
@@ -9063,13 +9308,20 @@ class TestPlanTopologyMint:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            from utk_curio.backend.app.agents import services as services_mod
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            from utk_curio.backend.app.agents.application import catalog
+            from utk_curio.backend.app.agents.application.solve import session as packages_session
+            from utk_curio.backend.app.agents.application.solve import simulation
+            from utk_curio.backend.app.agents.application import spec_reads
+            from utk_curio.backend.app.agents.application.turns import delegates
+            from utk_curio.backend.app.agents.application.turns import policy
+            from utk_curio.backend.app.agents.application.turns import titles
+            from utk_curio.backend.app.agents.infrastructure import providers
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         return att_id, calls
 
     def _run(self, client, token, project_id, att_id, message="fix the cycle"):
@@ -9204,11 +9456,18 @@ class TestPlanTopologyApply:
     def _drift_but_keep_digest(self, user, project_id, att_id, new_edge):
         """The user draws an edge AND the digest is re-pinned (as the per-node
         applies do), so the topology re-check — not the digest — must catch it."""
-        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.application import catalog
+        from utk_curio.backend.app.agents.application.solve import session as packages_session
+        from utk_curio.backend.app.agents.application.solve import simulation
+        from utk_curio.backend.app.agents.application import spec_reads
+        from utk_curio.backend.app.agents.application.turns import delegates
+        from utk_curio.backend.app.agents.application.turns import policy
+        from utk_curio.backend.app.agents.application.turns import titles
+        from utk_curio.backend.app.agents.infrastructure import providers
         spec = self._spec(user, project_id)
         spec["dataflow"]["edges"].append(new_edge)
         record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
-        record["activeProposal"]["baseGraphDigest"] = services_mod._graph_shape_digest(spec)
+        record["activeProposal"]["baseGraphDigest"] = spec_reads._graph_shape_digest(spec)
         self._write_spec(user, project_id, spec)
 
     def _turn_texts(self, client, token, project_id, att_id):

@@ -15,8 +15,10 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import imports, project_agents, storage
-from utk_curio.backend.app.agents.manifest import AgentManifestError
+from utk_curio.backend.app.agents.repositories import imports
+from utk_curio.backend.app.agents.repositories import project_agents
+from utk_curio.backend.app.agents.repositories import storage
+from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
 
 
 @pytest.fixture

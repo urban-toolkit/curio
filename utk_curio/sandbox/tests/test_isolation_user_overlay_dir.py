@@ -130,7 +130,7 @@ class TestTheBackendAndTheSandboxAgree(unittest.TestCase):
         import tempfile
         from unittest import mock
 
-        from utk_curio.backend.app.packages import backend_runtime as rt
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 
         # ``patch.dict`` rather than setting and popping. Both of these are
         # owned by the backend suite's root conftest, which sets them at import
@@ -174,7 +174,7 @@ class TestTheBackendAndTheSandboxAgree(unittest.TestCase):
 
 
 def rt_subdir():
-    from utk_curio.backend.app.packages import backend_runtime as rt
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 
     return rt._USER_NODE_OVERLAY_SUBDIR
 

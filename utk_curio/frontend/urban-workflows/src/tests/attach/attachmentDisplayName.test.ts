@@ -1,7 +1,7 @@
 import {
   attachmentDisplayName,
   TITLE_MAX_CHARS,
-} from "../../components/agents/attach/attachmentDisplayName";
+} from "../../services/agents";
 
 describe("attachmentDisplayName (memo dev/25)", () => {
   it("composes '<name>: <title>' when a conversation title exists", () => {

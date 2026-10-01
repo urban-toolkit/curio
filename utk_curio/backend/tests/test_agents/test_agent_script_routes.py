@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.agents import testing_provider
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 
 
 SCRIPT_URL = "/api/testing/agent-script"

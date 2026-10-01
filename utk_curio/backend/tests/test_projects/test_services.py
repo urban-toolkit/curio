@@ -392,7 +392,7 @@ def test_client_save_cannot_clobber_the_project_lockfile(app, db, user_and_token
     """The reported bug: the Package Builder's promotion wrote the lockfile,
     then a canvas save from a tab whose mirror still said ``[]`` overwrote it.
     Datasets and agents already survived a client save; packages now do too."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import project_packages as packages_services
 
     user, _ = user_and_token
     ukey = services._user_dir_key(user)
@@ -434,7 +434,7 @@ def test_load_serves_the_effective_lockfile_not_the_raw_list(app, db, user_and_t
     list it loads. A clobbered ``[]`` with a package node on the canvas must
     load as the backfilled list the backend itself acts on — otherwise the
     palette shows 0 and the node paints "Loading node…" forever."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import project_packages as packages_services
 
     user, _ = user_and_token
     ukey = services._user_dir_key(user)

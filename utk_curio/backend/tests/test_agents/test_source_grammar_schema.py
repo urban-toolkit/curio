@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.agents import source_grounding as sg
+from utk_curio.backend.app.agents.application import source_grounding as sg
 
 VEGA_SCHEMA = "https://vega.github.io/schema/vega-lite/v6.json"
 

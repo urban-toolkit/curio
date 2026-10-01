@@ -39,7 +39,10 @@ from utk_curio.backend.app.agents.evaluation.canonical import (
     canonical_graph_from_spec,
 )
 from utk_curio.backend.app.agents.evaluation.compare import Universe
-from utk_curio.backend.app.agents.evaluation.fixtures import FIXTURE_ROOT, load_fixture
+from utk_curio.backend.app.agents.evaluation.fixtures import (
+    FIXTURE_ROOT,
+    load_fixture,
+)
 
 from .utils import (
     SCRIPTED_LABEL,

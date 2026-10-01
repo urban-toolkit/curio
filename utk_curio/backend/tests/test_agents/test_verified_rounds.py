@@ -14,7 +14,12 @@ import time
 
 import pytest
 
-from utk_curio.backend.app.agents import services as services_mod
+from utk_curio.backend.app.agents.application.solve import budgets
+from utk_curio.backend.app.agents.application.solve import rounds
+from utk_curio.backend.app.agents.application.solve import session as packages_session
+from utk_curio.backend.app.agents.application.turns import grounding as packages_grounding
+from utk_curio.backend.app.agents.application.turns import titles
+from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.tests.test_agents import test_routes as _tr
 
@@ -74,7 +79,7 @@ def _rounds(app, node, *, replies, exec_fn, start_from_current=False, spec=None,
         return "ok", reply, {"executionId": f"child-{len(delegate_inputs)}"}
 
     with app.test_request_context():
-        gen = services_mod._verified_content_rounds(
+        gen = rounds._verified_content_rounds(
             KEY, PID, spec=spec, node=node, resolution=_Resolution(), config=None,
             parent_execution_id="exec-1", parent_coord="agent.dataflow-builder@1.0.0",
             attachment_id="att-1", exec_fn=exec_fn,
@@ -144,7 +149,7 @@ class TestVerifiedRounds:
             probes.append(url)
             return {"status": "verified", "httpStatus": 200, "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         node = {"id": "n1", "type": CA, "goal": "fetch", "content": ""}
         code = f'import requests\nr = requests.get("{NOAA}", timeout=10)\nr.raise_for_status()\nreturn r.json()'
         exec_fn = _Exec(fail_markers=("raise_for_status",),
@@ -159,13 +164,13 @@ class TestVerifiedRounds:
         assert probes == [NOAA]  # the gate's probe; the evidence re-used the run's cache
         assert "400 Client Error" in inputs[1]["validationError"]
         # A non-HTTP failure adds no URL evidence.
-        assert services_mod._correction_url_evidence(code, "KeyError: 'col'", None) == []
+        assert rounds._correction_url_evidence(code, "KeyError: 'col'", None) == []
 
     def test_generation_error_ends_the_loop_with_a_trail_row(self, app, tmp_curio):
         node = {"id": "n1", "type": CA, "goal": "stats", "content": ""}
         projects_storage.write_spec(KEY, PID, _spec(node))
         with app.test_request_context():
-            gen = services_mod._verified_content_rounds(
+            gen = rounds._verified_content_rounds(
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="c", attachment_id=None, exec_fn=_Exec(),
                 grounding_loop_ctx={"granted": [], "manifest": None},
@@ -211,7 +216,7 @@ class TestFieldFixes20260908:
             probes.append(url)
             return {"status": "verified", "httpStatus": 200, "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         node = self._census_node()
         exec_fn = _Exec(fail_markers=("community area",), stderr=self.DUCK)
         fixed = f'import requests\nr = requests.get("{NOAA}")\nreturn r.json()'
@@ -236,13 +241,13 @@ class TestFieldFixes20260908:
     def test_a_non_loading_node_still_needs_an_http_marker_for_url_evidence(self, app):
         ctx = type("Ctx", (), {"probe": lambda self, u: {"status": "verified"}, "is_data_loading": False})()
         code = f'import requests\nreturn requests.get("{NOAA}").json()'
-        assert services_mod._correction_url_evidence(code, "KeyError: 'col'", ctx) == []
+        assert rounds._correction_url_evidence(code, "KeyError: 'col'", ctx) == []
         ctx.is_data_loading = True
-        assert services_mod._correction_url_evidence(code, "KeyError: 'col'", ctx)[0]["url"] == NOAA
+        assert rounds._correction_url_evidence(code, "KeyError: 'col'", ctx)[0]["url"] == NOAA
 
     def test_the_builders_one_line_decline_is_recorded_in_its_words(self, app, tmp_curio, monkeypatch):
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
         )
         node = self._census_node()
@@ -278,7 +283,7 @@ class TestFieldFixes20260908:
             return {"status": "verified", "httpStatus": 200, "contentType": "application/json",
                     "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         code = ('import requests\nimport pandas as pd\n'
                 f'url = "{NOAA}"\n'
                 'params = {"get": "NAME,B19013_001E", "for": "tract:*"}\n'
@@ -308,12 +313,12 @@ class TestFieldFixes20260908:
         assert probes == [NOAA, composed]
 
     def test_prose_decline_predicate(self):
-        assert services_mod._is_prose_decline("No verified URL covers ACS indicators.")
-        assert not services_mod._is_prose_decline("df = pd.read_csv('x.csv')\nreturn df")
-        assert not services_mod._is_prose_decline("return arg[0]")
-        assert not services_mod._is_prose_decline("import pandas as pd")
-        assert not services_mod._is_prose_decline("")
-        assert not services_mod._is_prose_decline("x " * 300)
+        assert rounds._is_prose_decline("No verified URL covers ACS indicators.")
+        assert not rounds._is_prose_decline("df = pd.read_csv('x.csv')\nreturn df")
+        assert not rounds._is_prose_decline("return arg[0]")
+        assert not rounds._is_prose_decline("import pandas as pd")
+        assert not rounds._is_prose_decline("")
+        assert not rounds._is_prose_decline("x " * 300)
 
 
 class TestConnectionKeys:
@@ -349,7 +354,7 @@ class TestConnectionKeys:
                         "pageTitle": "Missing Key", "checkedAt": "now"}
             return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
                    'r = requests.get(url, params=params)\nreturn r.json()')
         node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
@@ -358,7 +363,7 @@ class TestConnectionKeys:
                         stderr="requests.exceptions.JSONDecodeError: Expecting value")
         events, outcome, inputs = _rounds(
             app, node, replies=[self._fixed()], exec_fn=exec_fn, start_from_current=True,
-            secrets_fn=services_mod._exec_secrets_resolver(KEY),
+            secrets_fn=packages_grounding._exec_secrets_resolver(KEY),
         )
         assert outcome["verdict"] == "pass" and outcome["rounds"] == 2
         # Round 1 (current content, no key named) carried no secrets; round 2 did.
@@ -386,7 +391,7 @@ class TestConnectionKeys:
 
     def test_an_unknown_name_is_refused_before_the_sandbox_with_the_saved_names(self, app, tmp_curio, monkeypatch):
         self._save()
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source',
                             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
         node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
         bad = f'import requests\nreturn requests.get("{NOAA}", params={{"key": curio_secret("noaa")}}).json()'
@@ -400,7 +405,7 @@ class TestConnectionKeys:
         assert "no connection key named 'noaa'" in inputs[1]["validationError"]
 
     def test_a_pasted_key_literal_is_refused_before_the_sandbox(self, app, tmp_curio, monkeypatch):
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source',
                             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
         node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
         pasted = (f'import requests\napi_key = "{self.VALUE}"\n'
@@ -415,7 +420,7 @@ class TestConnectionKeys:
         assert self.VALUE not in outcome["attempts"][0]["detail"]
 
     def test_a_credential_decline_carries_a_concrete_remedy(self, app, tmp_curio, monkeypatch):
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source",
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source',
                             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"})
         current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
                    'r = requests.get(url, params=params)\nreturn r.json()')
@@ -428,7 +433,7 @@ class TestConnectionKeys:
             "kind": "connection-key", "host": "api.noaa.gov", "suggestedName": "noaa",
         }
         assert outcome["attempts"][1]["remedy"]["kind"] == "connection-key"
-        assert "add a connection key for api.noaa.gov" in services_mod._source_missing_remedy(
+        assert "add a connection key for api.noaa.gov" in packages_grounding._source_missing_remedy(
             outcome["evidence"]["remedy"])
         # With a key already saved for the host, the remedy is to Solve again.
         self._save(host="api.noaa.gov")
@@ -456,7 +461,7 @@ class TestConnectionKeys:
                         "finalUrl": f"{url}&key={self.VALUE}", "checkedAt": "now"}
             return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
                    'r = requests.get(url, params=params)\nreturn r.json()')
         round2 = (f'import requests\nurl = "{NOAA}"\napi_key = curio_secret("census")\n'
@@ -470,7 +475,7 @@ class TestConnectionKeys:
                         stderr="Exception: Census API request failed with status code 400: error: invalid 'in' argument")
         events, outcome, inputs = _rounds(
             app, node, replies=[round2, round3], exec_fn=exec_fn, start_from_current=True,
-            secrets_fn=services_mod._exec_secrets_resolver(KEY),
+            secrets_fn=packages_grounding._exec_secrets_resolver(KEY),
         )
         assert outcome["verdict"] == "fail" and outcome["rounds"] == 3
         kinds = [a["kind"] for a in outcome["attempts"]]
@@ -508,7 +513,7 @@ class TestConnectionKeys:
             probes.append(url)
             return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         node = {"id": "n1", "type": DL, "goal": "fetch", "content": ""}
         hosts = ["https://a.example.gov/v1", "https://b.example.gov/v1", "https://c.example.gov/v1"]
         replies = [f'import requests\nr = requests.get("{h}", params={{"q": {i}}})\nreturn r.json()' for i, h in enumerate(hosts)]
@@ -516,7 +521,7 @@ class TestConnectionKeys:
         shared_ctx: dict = {"granted": [], "manifest": None}
         projects_storage.write_spec(KEY, PID, _spec(node))
         with app.test_request_context():
-            gen = services_mod._verified_content_rounds(
+            gen = rounds._verified_content_rounds(
                 KEY, PID, spec=_spec(node), node=node, resolution=_Resolution(), config=None,
                 parent_execution_id="e", parent_coord="agent.dataflow-builder@1.0.0",
                 attachment_id="att-1", exec_fn=exec_fn, grounding_loop_ctx=shared_ctx,
@@ -533,11 +538,11 @@ class TestConnectionKeys:
 
     def test_same_code_ignores_comments_and_spacing_only(self):
         a = 'x = 1\n# c\nreturn x'
-        assert services_mod._same_code(a, 'x = 1\n\n\nreturn x  # done')
-        assert services_mod._same_code(a, 'x  =  1\nreturn x')
-        assert not services_mod._same_code(a, 'x = 2\nreturn x')
-        assert not services_mod._same_code(a, 'x = "# not a comment"\nreturn x')
-        assert not services_mod._same_code("", "")
+        assert rounds._same_code(a, 'x = 1\n\n\nreturn x  # done')
+        assert rounds._same_code(a, 'x  =  1\nreturn x')
+        assert not rounds._same_code(a, 'x = 2\nreturn x')
+        assert not rounds._same_code(a, 'x = "# not a comment"\nreturn x')
+        assert not rounds._same_code("", "")
 
     def test_delivery_code_names_the_key_without_a_keyed_probe(self, app, tmp_curio, monkeypatch):
         self._save(delivery="code")
@@ -547,13 +552,13 @@ class TestConnectionKeys:
             probes.append(kw)
             return {"status": "verified", "httpStatus": 200, "contentType": "application/json", "checkedAt": "now"}
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.verify.verify_external_source", _verify)
+        monkeypatch.setattr('utk_curio.backend.app.agents.application.verify.verify_external_source', _verify)
         current = (f'import requests\nurl = "{NOAA}"\nparams = {{"get": "NAME"}}\n'
                    'r = requests.get(url, params=params)\nreturn r.json()')
         node = {"id": "n1", "type": DL, "goal": "fetch", "content": current}
         exec_fn = _Exec(fail_markers=('params = {"get": "NAME"}\n',), stderr="ValueError: no data")
         events, outcome, inputs = _rounds(app, node, replies=[self._fixed()], exec_fn=exec_fn, start_from_current=True,
-                                          secrets_fn=services_mod._exec_secrets_resolver(KEY))
+                                          secrets_fn=packages_grounding._exec_secrets_resolver(KEY))
         composed = inputs[0]["urlEvidence"][0]
         assert composed["keyed"] == "census" and "keyedVerification" not in composed
         assert "the code does not use it yet" in composed["keyedNote"]
@@ -693,7 +698,7 @@ class TestExecDatasetPaths:
     def test_resolves_the_ids_in_the_code(self, app, monkeypatch):
         calls = self._service(monkeypatch, {"imported.x@1": "/store/x.csv"})
         with app.test_request_context():
-            out = services_mod._exec_dataset_paths(
+            out = packages_grounding._exec_dataset_paths(
                 "proj", 'p = curio_dataset_path("imported.x@1")', "q = curio_dataset_path('imported.x@1')",
                 "no refs here",
             )
@@ -703,9 +708,9 @@ class TestExecDatasetPaths:
     def test_no_ids_no_service_call_and_failures_fail_open(self, app, monkeypatch):
         calls = self._service(monkeypatch, {}, raise_exc=True)
         with app.test_request_context():
-            assert services_mod._exec_dataset_paths("proj", "df = pd.DataFrame()") == {}
+            assert packages_grounding._exec_dataset_paths("proj", "df = pd.DataFrame()") == {}
             assert calls == []
-            assert services_mod._exec_dataset_paths("proj", 'curio_dataset_path("ds")') == {}
+            assert packages_grounding._exec_dataset_paths("proj", 'curio_dataset_path("ds")') == {}
 
 
 TEMPLATES = [
@@ -759,12 +764,12 @@ class TestValidateNodeCarriesDatasetPaths:
         calls = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return replies[min(len(calls) - 1, len(replies) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         exec_payloads = []
 
         def _exec(endpoint, payload):
@@ -847,7 +852,7 @@ class TestVerifiedSolve:
         ca_calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             frame = messages[-1].get("content") or ""
@@ -861,7 +866,7 @@ class TestVerifiedSolve:
             ca_calls.append(frame)
             return ca_script[min(len(ca_calls) - 1, len(ca_script) - 1)]
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         exec_payloads: list = []
         outcomes = exec_outcomes or {}
 
@@ -927,7 +932,7 @@ class TestVerifiedSolve:
     def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.verify.verify_external_source",
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},
         )
         bad = 'import requests\nr = requests.get("https://api.census.gov/data/2020/acs/acs5", timeout=30)\nr.raise_for_status()\nreturn r.json()'
@@ -1107,7 +1112,7 @@ class TestVerifiedSolve:
         user, token = user_and_token
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER])
         checks = itertools.count()
-        monkeypatch.setattr(services_mod, "_batch_deadline_spent", lambda started, deadline_s: next(checks) >= 2)
+        monkeypatch.setattr(packages_session, "_batch_deadline_spent", lambda started, deadline_s: next(checks) >= 2)
         events = self._stream(client, token, ctx)
         done = events[-1][1]
         assert done["results"][ctx["load"]]["status"] == "solved"
@@ -1134,7 +1139,7 @@ class TestVerifiedSolve:
         # a precondition on validation, not a failure of the content.
         user, token = user_and_token
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER])
-        from utk_curio.backend.app.agents import validation as _validation
+        from utk_curio.backend.app.agents.domain import validation as _validation
 
         original = _validation.validate_candidate
 
@@ -1146,7 +1151,7 @@ class TestVerifiedSolve:
                 }}
             return original(user_key, project_id, spec, node_id, candidate, **kw)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.validation.validate_candidate", _bounded)
+        monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
         body = self._solve(client, token, ctx)
         stats = body["results"][ctx["stats"]]
         assert stats["status"] == "skipped" and stats["reason"].startswith("skipped: the upstream slice has 30 nodes")
@@ -1159,15 +1164,15 @@ class TestVerifiedSolve:
 
     def test_solve_batch_deadline_env(self, monkeypatch):
         monkeypatch.delenv("CURIO_SOLVE_BATCH_DEADLINE", raising=False)
-        assert services_mod.solve_batch_deadline_s() == services_mod.DEFAULT_SOLVE_BATCH_DEADLINE_S == 45 * 60
+        assert budgets.solve_batch_deadline_s() == budgets.DEFAULT_SOLVE_BATCH_DEADLINE_S == 45 * 60
         monkeypatch.setenv("CURIO_SOLVE_BATCH_DEADLINE", "600")
-        assert services_mod.solve_batch_deadline_s() == 600
+        assert budgets.solve_batch_deadline_s() == 600
         for bad in ("soon", "0", "-5", " "):
             monkeypatch.setenv("CURIO_SOLVE_BATCH_DEADLINE", bad)
-            assert services_mod.solve_batch_deadline_s() == 45 * 60
-        assert services_mod._batch_deadline_spent(0.0, 1) is True  # monotonic() is far past 1 s
+            assert budgets.solve_batch_deadline_s() == 45 * 60
+        assert packages_session._batch_deadline_spent(0.0, 1) is True  # monotonic() is far past 1 s
         import time as _t
-        assert services_mod._batch_deadline_spent(_t.monotonic(), 3600) is False
+        assert packages_session._batch_deadline_spent(_t.monotonic(), 3600) is False
 
     def test_solve_waves_helper(self):
         spec = {"dataflow": {"nodes": [{"id": n, "type": CA} for n in "abcdex"], "edges": [
@@ -1176,14 +1181,14 @@ class TestVerifiedSolve:
             {"id": "e5", "source": "x", "target": "e"},            # x is NOT a target
             {"id": "e6", "source": "d", "target": "a", "type": "Interaction"},  # ignored
         ]}}
-        assert services_mod._solve_waves(spec, ["d", "c", "b", "a", "e"]) == [["a", "e"], ["c", "b"], ["d"]]
+        assert packages_session._solve_waves(spec, ["d", "c", "b", "a", "e"]) == [["a", "e"], ["c", "b"], ["d"]]
         # A cycle among targets lands in one last wave (the runner refuses it by name).
         cyc = {"dataflow": {"nodes": [{"id": n, "type": CA} for n in "pqr"], "edges": [
             {"id": "e1", "source": "p", "target": "q"}, {"id": "e2", "source": "q", "target": "p"},
             {"id": "e3", "source": "q", "target": "r"},
         ]}}
-        assert services_mod._solve_waves(cyc, ["p", "q", "r"]) == [["p", "q", "r"]]
-        assert services_mod._solve_waves(None, ["a"]) == [["a"]] and services_mod._solve_waves(spec, []) == []
+        assert packages_session._solve_waves(cyc, ["p", "q", "r"]) == [["p", "q", "r"]]
+        assert packages_session._solve_waves(None, ["a"]) == [["a"]] and packages_session._solve_waves(spec, []) == []
 
 
 class TestDetachedSolveJobs(TestVerifiedSolve):
@@ -1194,7 +1199,7 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
         """A batch whose data-loading child blocks on *gate* — the request can
         be dropped while the job is mid-flight."""
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
-        original = services_mod.run_chat_turn
+        original = providers.run_chat_turn
 
         def _blocking(config, messages, **kwargs):
             frame = (messages[-1].get("content") or "") if messages else ""
@@ -1202,14 +1207,14 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
                 gate.wait(timeout=10)
             return original(config, messages, **kwargs)
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _blocking)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _blocking)
         return ctx
 
     def _events(self, r):
         return _tr.TestStreamedSolve()._sse_events(r)
 
     def test_dropping_the_request_does_not_stop_the_batch_and_the_stream_reattaches(self, client, user_and_token, tmp_curio, monkeypatch):
-        from utk_curio.backend.app.agents import agent_jobs
+        from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
         user, token = user_and_token
         gate = threading.Event()
@@ -1257,7 +1262,7 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
         # Simulate a process that died mid-Solve: the session says "solving"
         # under an execution id nobody holds.
-        from utk_curio.backend.app.agents import attachments as att_mod
+        from utk_curio.backend.app.agents.application import attachments as att_mod
 
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
         record = att_mod.get_attachment(spec, ctx["att"])
@@ -1337,12 +1342,12 @@ class TestSolveNode:
         calls: list = []
 
         def _fake_run(config, messages, **kwargs):
-            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+            if messages and messages[0].get("content") == titles.TITLE_PROMPT:
                 return "Title"
             calls.append(messages)
             return script[min(len(calls) - 1, len(script) - 1)] if script else "df = arg[0]\nreturn df"
 
-        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_turn", _fake_run)
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         payloads: list = []
         outcomes = exec_outcomes or {}
 
@@ -1539,10 +1544,11 @@ class TestRunEgressBudget:
     card is checked instead of "refused — budget spent"."""
 
     def test_a_full_card_with_a_redirect_per_row_is_probed_to_the_last_row(self, monkeypatch):
-        from utk_curio.backend.app.agents import content, egress
+        from utk_curio.backend.app.agents.domain import content
+        from utk_curio.backend.app.agents.infrastructure import egress
 
         rows = content._CANDIDATES_MAX_ROWS_PER_LANE
-        assert services_mod._RUN_EGRESS_CALLS == rows * 2
+        assert budgets._RUN_EGRESS_CALLS == rows * 2
         calls: list[str] = []
 
         def _request(method, url, **kw):
@@ -1557,7 +1563,7 @@ class TestRunEgressBudget:
             {"name": f"row {i}", "url": f"https://data{i}.example.gov/api/v1"} for i in range(rows)
         ]}}
         loop_ctx: dict = {}
-        services_mod._verify_candidate_parts([part], loop_ctx)
+        packages_grounding._verify_candidate_parts([part], loop_ctx)
         statuses = [r["verification"]["status"] for r in part["lanes"]["external"]]
         assert statuses == ["verified"] * rows  # the last row too
         assert len(calls) == rows * 2 and loop_ctx["_egress_budget"].used == rows * 2
@@ -1613,7 +1619,7 @@ class TestAttemptTrailCarriesTheCodeAndTheBound:
         )
         assert outcome["stoppedBy"] == "repeat"
         kinds = [a["kind"] for a in outcome["attempts"]]
-        assert kinds.count("repeated-attempt") == services_mod._MAX_REPEATED_ATTEMPTS_HARD
+        assert kinds.count("repeated-attempt") == budgets._MAX_REPEATED_ATTEMPTS_HARD
         assert len(exec_fn.calls) == 1  # a repeat is never run again
         # The correction gets louder rather than the loop getting shorter.
         escalated = [
@@ -1662,21 +1668,21 @@ class TestRepairBudget:
         # affords and the CLOCK is the normal stop.
         monkeypatch.delenv("CURIO_SOLVE_MAX_ATTEMPTS", raising=False)
         monkeypatch.delenv("CURIO_SOLVE_NODE_BUDGET", raising=False)
-        assert services_mod.solve_node_budget_s() == 15 * 60
-        assert services_mod.solve_max_attempts() == services_mod.MAX_SOLVE_ATTEMPTS == 40
-        assert services_mod.solve_correction_rounds() == 39
+        assert budgets.solve_node_budget_s() == 15 * 60
+        assert budgets.solve_max_attempts() == budgets.MAX_SOLVE_ATTEMPTS == 40
+        assert budgets.solve_correction_rounds() == 39
 
     def test_the_env_is_read_and_garbage_falls_back(self, monkeypatch):
         monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", "4")
-        assert services_mod.solve_max_attempts() == 4
-        assert services_mod.solve_correction_rounds() == 3
+        assert budgets.solve_max_attempts() == 4
+        assert budgets.solve_correction_rounds() == 3
         for bad in ("", "   ", "zero", "-3", "0"):
             monkeypatch.setenv("CURIO_SOLVE_MAX_ATTEMPTS", bad)
-            assert services_mod.solve_max_attempts() == 40, bad
+            assert budgets.solve_max_attempts() == 40, bad
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "60")
-        assert services_mod.solve_node_budget_s() == 60
+        assert budgets.solve_node_budget_s() == 60
         monkeypatch.setenv("CURIO_SOLVE_NODE_BUDGET", "nope")
-        assert services_mod.solve_node_budget_s() == 15 * 60
+        assert budgets.solve_node_budget_s() == 15 * 60
 
     def test_it_keeps_trying_while_the_clock_allows(self, app, tmp_curio, monkeypatch):
         # dev/129: twelve distinct failing candidates, a cap of twelve, and a
@@ -1735,4 +1741,4 @@ class TestRepairBudget:
         events, outcome, inputs = _rounds(
             app, node, replies=[f"bad{i}()" for i in range(1, 60)], exec_fn=exec_fn,
         )
-        assert outcome["rounds"] == services_mod.MAX_SOLVE_ATTEMPTS
+        assert outcome["rounds"] == budgets.MAX_SOLVE_ATTEMPTS

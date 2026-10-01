@@ -35,7 +35,10 @@ jest.mock('../../../providers/FlowProvider', () => ({
 }));
 
 // jsdom has no URL.createObjectURL; the export tests only need to know it was asked.
-jest.mock('../../../utils/triggerBlobDownload', () => ({ triggerBlobDownload: jest.fn() }));
+jest.mock('../../../services/packages/packagesBlobTransport', () => ({
+  ...jest.requireActual('../../../services/packages/packagesBlobTransport'),
+  triggerBlobDownload: jest.fn(),
+}));
 
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),

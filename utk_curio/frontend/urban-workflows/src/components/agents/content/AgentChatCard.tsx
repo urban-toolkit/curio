@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentCardPart } from "../../../api/agentsApi";
+import type { AgentCardPart } from "../../../services/agents";
 import styles from "./AgentChatCard.module.css";
 
 /**

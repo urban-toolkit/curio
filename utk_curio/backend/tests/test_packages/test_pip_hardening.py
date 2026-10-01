@@ -25,7 +25,7 @@ import sys
 
 import pytest
 
-from utk_curio.backend.app.packages import bounded_exec, pip_runner
+from utk_curio.backend.app.packages.infrastructure import bounded_exec, pip_runner
 
 
 class _Result:

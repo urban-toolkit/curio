@@ -14,9 +14,12 @@ import types
 
 import pytest
 
-from utk_curio.backend.app.agents import chat_capabilities as cc
-from utk_curio.backend.app.agents import ledger, model_catalog, providers, testing_provider
-from utk_curio.backend.app.agents.providers import ProviderConfig
+from utk_curio.backend.app.agents.infrastructure import chat_capabilities as cc
+from utk_curio.backend.app.agents.repositories import ledger
+from utk_curio.backend.app.agents.repositories import model_catalog
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 
 USER = "7"
 
@@ -172,7 +175,7 @@ class TestItIsAPreference:
     ):
         """Every built-in declares ``structured-output``; the scripted provider
         has none, and a run still answers."""
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.reset()
         spec = next(s for s in builtin.BUILTIN_AGENTS if s.agent_id == "agent.chat-agent")
@@ -200,7 +203,7 @@ class TestItIsAPreference:
 
 class TestCachedInputReachesTheRun:
     def test_a_run_reports_the_providers_cache_counts(self, client, user_and_token, tmp_curio, alice_project):
-        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents.domain import builtin
 
         testing_provider.reset()
         _, token = user_and_token

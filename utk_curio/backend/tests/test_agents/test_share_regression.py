@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import project_agents
+from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.projects.services import _user_dir_key
 
 
@@ -58,7 +58,7 @@ def shared_project_with_agent_state(client, user_and_token, tmp_curio, monkeypat
     """A project with the full agent-private surface: install + attachment
     (edited intent + manual title) + a persisted chat session."""
     monkeypatch.setattr(
-        "utk_curio.backend.app.agents.services.run_chat_turn", lambda c, m, **kw: "ok"
+        'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', lambda c, m, **kw: "ok"
     )
     user, token = user_and_token
     body = {

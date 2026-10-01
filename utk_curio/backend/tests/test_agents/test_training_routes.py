@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import providers, testing_provider
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.agents.evaluation.fixtures import fixture_paths
 from utk_curio.backend.app.agents.training import records as records_mod
 from utk_curio.backend.app.agents.training import service as training_service
@@ -377,7 +378,7 @@ class TestStatusAndCancel:
     def test_a_succeeded_job_records_the_trained_model_with_its_provenance(
         self, client, account, approved_corpus
     ):
-        from utk_curio.backend.app.agents import model_catalog
+        from utk_curio.backend.app.agents.repositories import model_catalog
 
         record = self._start(client, account)
         testing_provider.script_fine_tuning(statuses=["succeeded"])

@@ -22,7 +22,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: { factoryCapabilities: jest.fn(() => Promise.resolve({ catalogPublish: false })) },
 }));
 jest.mock("../../pages/dataCatalog/DataCatalogBrowseDrawer", () => ({

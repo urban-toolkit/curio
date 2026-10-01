@@ -1,0 +1,539 @@
+"""Package-manifest contract and validator (pure; the file read is ``repositories/manifests.py``).
+
+Implements the supported subset of the v2 manifest schema (canonical
+spec: ``docs/schemas/node-package.v4.json``). This is what the palette,
+installer, and resolver consume.
+
+User-facing overview: ``docs/NODE-CATALOG.md``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import (
+    dataclass,
+    field,
+)
+from datetime import (
+    datetime,
+    timezone,
+)
+from pathlib import Path
+
+from utk_curio.backend.app.packages.domain import backend_contract
+from utk_curio.backend.app.packages.domain.package_channel import normalize_distribution_channel
+from utk_curio.backend.app.packages.domain.package_id import (
+    PACKAGE_DIR_RE,
+    PackageId,
+    TEMPLATE_ID_RE,
+)
+
+
+class ManifestError(ValueError):
+    """Raised when a package manifest is malformed or violates the supported schema."""
+
+
+@dataclass(frozen=True)
+class BackendHandlerManifest:
+    """One declared server-side handler (memo dev/91): a named entry point
+    the sandbox may invoke, with its worker-limit tier."""
+
+    name: str
+    timeout_class: str = backend_contract.DEFAULT_TIMEOUT_CLASS
+
+
+@dataclass(frozen=True)
+class BackendManifest:
+    """The package's optional server-side surface (memo dev/91 §2): one
+    entry file under ``backend/`` exposing ``def handle(payload)``, plus the
+    explicit list of handler names the sandbox will accept. Undeclared
+    handlers are unroutable by construction."""
+
+    entry: str
+    handlers: list[BackendHandlerManifest] = field(default_factory=list)
+
+    @property
+    def handler_names(self) -> list[str]:
+        return [h.name for h in self.handlers]
+
+    def timeout_class_for(self, handler: str) -> str | None:
+        for h in self.handlers:
+            if h.name == handler:
+                return h.timeout_class
+        return None
+
+
+def _parse_backend(raw: object, *, where: str, permissions: list[str]) -> BackendManifest | None:
+    """Parse the optional ``backend`` object. Every refusal names the fix
+    (the dev/90 A4/A5 lesson)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{where}.backend must be an object")
+    entry = raw.get("entry")
+    if not isinstance(entry, str) or not entry.strip():
+        raise ManifestError(
+            f"{where}.backend.entry must be a package-relative path like 'backend/handler.py'"
+        )
+    entry = entry.strip()
+    parts = entry.split("/")
+    if (
+        parts[0] != "backend"
+        or len(parts) < 2
+        or not entry.endswith(".py")
+        or any(p in ("", ".", "..") for p in parts)
+    ):
+        raise ManifestError(
+            f"{where}.backend.entry must be a '.py' file under 'backend/' "
+            f"(e.g. 'backend/handler.py'), got {entry!r}"
+        )
+    handlers_raw = raw.get("handlers")
+    if not isinstance(handlers_raw, list) or not handlers_raw:
+        raise ManifestError(
+            f"{where}.backend.handlers must be a non-empty list of "
+            "{{\"name\": ..., \"timeoutClass\"?: ...}} objects"
+        )
+    handlers: list[BackendHandlerManifest] = []
+    seen: set[str] = set()
+    for i, h in enumerate(handlers_raw):
+        h_where = f"{where}.backend.handlers[{i}]"
+        if not isinstance(h, dict):
+            raise ManifestError(f"{h_where} must be an object")
+        name = h.get("name")
+        if not isinstance(name, str) or not backend_contract.HANDLER_NAME_RE.match(name):
+            raise ManifestError(
+                f"{h_where}.name must match {backend_contract.HANDLER_NAME_RE.pattern}"
+            )
+        if name in seen:
+            raise ManifestError(f"{h_where}.name {name!r} is declared twice")
+        seen.add(name)
+        timeout_class = h.get("timeoutClass", backend_contract.DEFAULT_TIMEOUT_CLASS)
+        if timeout_class not in backend_contract.TIMEOUT_CLASSES:
+            raise ManifestError(
+                f"{h_where}.timeoutClass must be one of "
+                f"{backend_contract.TIMEOUT_CLASSES}, got {timeout_class!r}"
+            )
+        handlers.append(BackendHandlerManifest(name=name, timeout_class=timeout_class))
+    if backend_contract.PERMISSION_SERVER_CODE not in permissions:
+        raise ManifestError(
+            f"{where}: a package declaring 'backend' must list the "
+            f"{backend_contract.PERMISSION_SERVER_CODE!r} permission — the install "
+            "review surfaces server-side code to the user before Apply (memo dev/91 §5)"
+        )
+    return BackendManifest(entry=entry, handlers=handlers)
+
+
+def _parse_created_at_from_manifest(raw: object, *, where: str) -> tuple[str | None, int]:
+    """Parse optional top-level ``createdAt`` ISO 8601 instant.
+
+    Returns ``(canonical_iso_with_Z, epoch_ms)`` or ``(None, 0)`` when omitted/blank.
+    Naive timestamps are interpreted as UTC.
+    """
+    if raw is None:
+        return None, 0
+    if isinstance(raw, (int, float, bool)):
+        raise ManifestError(
+            f"{where}.createdAt must be an ISO 8601 instant string when present "
+            f"(got {type(raw).__name__})"
+        )
+    if not isinstance(raw, str):
+        raise ManifestError(f"{where}.createdAt must be a string ISO 8601 instant")
+    s = raw.strip()
+    if not s:
+        return None, 0
+
+    iso_in = s
+    try:
+        if iso_in.endswith("Z") or iso_in.endswith("z"):
+            base = iso_in[:-1]
+            dt = datetime.fromisoformat(base).replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.fromisoformat(iso_in)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+    except ValueError as exc:
+        raise ManifestError(f"{where}.createdAt is not valid ISO 8601: {s!r}") from exc
+
+    utc = dt
+    frac = utc.microsecond
+    canon_body = utc.strftime("%Y-%m-%dT%H:%M:%S")
+    if frac:
+        canon_body += "." + f"{frac:06d}".rstrip("0")
+    canon = canon_body + "Z"
+    return canon, int(utc.timestamp() * 1000)
+
+
+@dataclass(frozen=True)
+class PackageLineageCoord:
+    """A package coordinate ``packageId`` + ``major`` (same as on-disk directory semantics)."""
+
+    package_id: str
+    major: int
+
+
+@dataclass(frozen=True)
+class PackageLineage:
+    """Fork provenance: immediate parent and stable family anchor."""
+
+    forked_from: PackageLineageCoord
+    root: PackageLineageCoord
+
+
+def _parse_lineage_coord(raw: object, *, where: str) -> PackageLineageCoord:
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{where}: expected object, got {type(raw).__name__}")
+    package_id = raw.get("packageId")
+    major = raw.get("major")
+    if not isinstance(package_id, str):
+        raise ManifestError(f"{where}.packageId must be a string")
+    if not isinstance(major, int) or major < 0:
+        raise ManifestError(f"{where}.major must be a non-negative int")
+    dir_name = f"{package_id}@{major}"
+    if not PACKAGE_DIR_RE.match(dir_name):
+        raise ManifestError(
+            f"{where}: invalid coordinate {dir_name!r}; expected '<packageId>@<major>' "
+            f"matching package directory rules"
+        )
+    return PackageLineageCoord(package_id=package_id, major=major)
+
+
+def _parse_lineage(
+    raw_lineage: object,
+    *,
+    where_prefix: str,
+    self_package_id: str,
+    self_major: int,
+) -> PackageLineage | None:
+    if raw_lineage is None:
+        return None
+    if not isinstance(raw_lineage, dict):
+        raise ManifestError(f"{where_prefix}.lineage must be an object")
+    fork_raw = raw_lineage.get("forkedFrom")
+    if fork_raw is None:
+        raise ManifestError(f"{where_prefix}.lineage.forkedFrom is required")
+    forked_from = _parse_lineage_coord(fork_raw, where=f"{where_prefix}.lineage.forkedFrom")
+    root_raw = raw_lineage.get("root")
+    if root_raw is None:
+        root = forked_from
+    else:
+        root = _parse_lineage_coord(root_raw, where=f"{where_prefix}.lineage.root")
+
+    self_coord = PackageLineageCoord(package_id=self_package_id, major=self_major)
+    if forked_from == self_coord:
+        raise ManifestError(f"{where_prefix}.lineage.forkedFrom must differ from this package")
+    if root == self_coord:
+        raise ManifestError(f"{where_prefix}.lineage.root must differ from this package")
+
+    return PackageLineage(forked_from=forked_from, root=root)
+
+
+def parse_cardinality(cardinality: str) -> tuple[int, int | None]:
+    """``(min, max)`` for a schema cardinality string (dev/67-3, DEC-051).
+
+    ``"1"`` → (1, 1); ``"2"`` → (2, 2); ``"n"`` → (0, None);
+    ``"[1,n]"`` → (1, None); ``"[0,2]"`` → (0, 2). ``max is None`` means
+    unbounded. Unparseable strings fail OPEN to (0, None) — the schema owns
+    the grammar; this parser never refuses a manifest.
+    """
+    text = (cardinality or "").strip()
+    if text == "n":
+        return 0, None
+    if text.isdigit():
+        n = int(text)
+        return n, n
+    if text.startswith("[") and text.endswith("]") and "," in text:
+        lo_raw, hi_raw = text[1:-1].split(",", 1)
+        lo_raw, hi_raw = lo_raw.strip(), hi_raw.strip()
+        if lo_raw.isdigit() and (hi_raw == "n" or hi_raw.isdigit()):
+            return int(lo_raw), (None if hi_raw == "n" else int(hi_raw))
+    return 0, None
+
+
+@dataclass(frozen=True)
+class PortDef:
+    types: list[str]
+    cardinality: str = "1"
+
+    @classmethod
+    def from_json(cls, raw: object, *, where: str) -> "PortDef":
+        if not isinstance(raw, dict):
+            raise ManifestError(f"{where}: expected object, got {type(raw).__name__}")
+        types = raw.get("types")
+        if not isinstance(types, list) or not all(isinstance(t, str) for t in types):
+            raise ManifestError(f"{where}.types must be a list of strings")
+        card = raw.get("cardinality", "1")
+        if not isinstance(card, str):
+            raise ManifestError(f"{where}.cardinality must be a string")
+        return cls(types=list(types), cardinality=card)
+
+
+@dataclass(frozen=True)
+class TemplateManifest:
+    template_id: str
+    label: str
+    category: str
+    engine: str  # 'python' | 'javascript'
+    description: str
+    icon: str | None  # legacy free-form icon string (rare; iconRef preferred)
+    icon_ref: str | None  # "<source>:<icon-id>" key for the frontend iconRegistry
+    behavior: str | None  # key into the frontend behaviorRegistry (e.g. "code", "vega")
+    palette_order: int | None
+    input_ports: list[PortDef]
+    output_ports: list[PortDef]
+    editor: str  # 'code' | 'widgets' | 'grammar' | 'none'
+    has_code: bool
+    has_widgets: bool
+    has_grammar: bool
+    grammar_id: str | None  # grammar adapter key (e.g. "vega-lite") when editor=="grammar"
+    badge: str | None  # palette card badge label (e.g. "VEGA", "AUTK", "PACKAGE")
+    source: str | None  # package-relative path to one optional starter file
+    bidirectional: bool  # adds the third "in/out" handle for interaction-loop templates
+    container_style: dict | None  # {"nodeWidth": int?, "nodeHeight": int?, "noContent": bool?, "disablePlay": bool?}
+    has_provenance: bool | None  # explicit override for the provenance editor tab (defaults to true client-side)
+    tutorial_id: str | None  # anchor id for the in-app tutorial system
+    grammar_dir: str | None
+    widget_dir: str | None
+    # memo dev/91: name of a declared backend handler this template's Run
+    # invokes through the package backend sandbox (validated against the
+    # package's ``backend.handlers`` in ``load_package_manifest``).
+    backend_handler: str | None = None
+
+    @classmethod
+    def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
+        if not isinstance(raw, dict):
+            raise ManifestError(f"{where}: expected object")
+        template_id = raw.get("id")
+        if not isinstance(template_id, str) or not TEMPLATE_ID_RE.match(template_id):
+            raise ManifestError(
+                f"{where}.id must match {TEMPLATE_ID_RE.pattern}, got {template_id!r}"
+            )
+        engine = raw.get("engine", "python")
+        if engine not in ("python", "javascript"):
+            raise ManifestError(f"{where}.engine must be 'python' or 'javascript'")
+        editor = raw.get("editor", "code")
+        if editor not in ("code", "widgets", "grammar", "none"):
+            raise ManifestError(f"{where}.editor must be one of code|widgets|grammar|none")
+        in_ports_raw = raw.get("inputPorts", [])
+        out_ports_raw = raw.get("outputPorts", [])
+        if not isinstance(in_ports_raw, list) or not isinstance(out_ports_raw, list):
+            raise ManifestError(f"{where}.inputPorts/outputPorts must be lists")
+        behavior_raw = raw.get("behavior")
+        if behavior_raw is not None and not (isinstance(behavior_raw, str) and behavior_raw):
+            raise ManifestError(f"{where}.behavior must be a non-empty string when present")
+        palette_order_raw = raw.get("paletteOrder")
+        if palette_order_raw is not None and not isinstance(palette_order_raw, int):
+            raise ManifestError(f"{where}.paletteOrder must be an integer when present")
+        container_style_raw = raw.get("containerStyle")
+        if container_style_raw is not None and not isinstance(container_style_raw, dict):
+            raise ManifestError(f"{where}.containerStyle must be an object when present")
+        has_provenance_raw = raw.get("hasProvenance")
+        if has_provenance_raw is not None and not isinstance(has_provenance_raw, bool):
+            raise ManifestError(f"{where}.hasProvenance must be a boolean when present")
+        backend_handler_raw = raw.get("backendHandler")
+        if backend_handler_raw is not None and not (
+            isinstance(backend_handler_raw, str)
+            and backend_contract.HANDLER_NAME_RE.match(backend_handler_raw)
+        ):
+            raise ManifestError(
+                f"{where}.backendHandler must match "
+                f"{backend_contract.HANDLER_NAME_RE.pattern} when present"
+            )
+        return cls(
+            template_id=template_id,
+            label=str(raw.get("label", template_id)),
+            category=str(raw.get("category", "computation")),
+            engine=engine,
+            description=str(raw.get("description", "")),
+            icon=raw.get("icon") if isinstance(raw.get("icon"), str) else None,
+            icon_ref=raw.get("iconRef") if isinstance(raw.get("iconRef"), str) else None,
+            behavior=behavior_raw,
+            palette_order=palette_order_raw,
+            input_ports=[PortDef.from_json(p, where=f"{where}.inputPorts[{i}]")
+                         for i, p in enumerate(in_ports_raw)],
+            output_ports=[PortDef.from_json(p, where=f"{where}.outputPorts[{i}]")
+                          for i, p in enumerate(out_ports_raw)],
+            editor=editor,
+            has_code=bool(raw.get("hasCode", editor == "code")),
+            has_widgets=bool(raw.get("hasWidgets", False)),
+            has_grammar=bool(raw.get("hasGrammar", editor == "grammar")),
+            grammar_id=raw.get("grammarId") if isinstance(raw.get("grammarId"), str) else None,
+            badge=raw.get("badge") if isinstance(raw.get("badge"), str) else None,
+            source=raw.get("source") if isinstance(raw.get("source"), str) else None,
+            bidirectional=bool(raw.get("bidirectional", False)),
+            container_style=container_style_raw,
+            has_provenance=has_provenance_raw,
+            tutorial_id=raw.get("tutorialId") if isinstance(raw.get("tutorialId"), str) else None,
+            grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
+            widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
+            backend_handler=backend_handler_raw,
+        )
+
+
+@dataclass(frozen=True)
+class PackageManifest:
+    package_id: str
+    major: int
+    version: str
+    name: str
+    publisher: str
+    description: str
+    license: str | None
+    templates: list[TemplateManifest] = field(default_factory=list)
+    permissions: list[str] = field(default_factory=list)
+    python_deps: dict[str, str] = field(default_factory=dict)
+    js_deps: dict[str, str] = field(default_factory=dict)
+    package_deps: dict[str, str] = field(default_factory=dict)
+    lineage: PackageLineage | None = None
+    channel: str = "stable"  # ``distribution.channel``; default stable — on catalog payloads
+    read_only: bool = False
+    created_at_iso: str | None = None
+    created_at_ms: int = 0
+    # Optional path (relative to package dir) of a pre-built JS bundle that
+    # registers this package's behavior hooks against `window.curio` at
+    # load time. When set, the frontend injects a <script src=...> for it
+    # before building descriptors. See docs/EXTENDING.md §5 for the
+    # contract package authors follow.
+    behavior_script: str | None = None
+    # memo dev/91: the optional server-side surface — one entry file under
+    # backend/ plus declared handlers, executed ONLY by the package backend
+    # sandbox (never imported into the host process).
+    backend: BackendManifest | None = None
+
+    @property
+    def dir_name(self) -> str:
+        return f"{self.package_id}@{self.major}"
+
+    def canonical_for(self, template_id: str) -> str:
+        return f"{self.package_id}/{template_id}@{self.major}"
+
+
+def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: str) -> PackageManifest:
+    """Validate the supported subset of an already-read ``manifest.json`` object.
+
+    ``manifest_path`` names the file in every refusal; ``dir_name`` is the
+    on-disk ``<packageId>@<major>`` the manifest must agree with (the directory
+    is authoritative for which package is being loaded). The read itself is
+    :func:`~..repositories.manifests.load_package_manifest` (memo dev/143 B2:
+    the file read left the domain).
+    """
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{manifest_path}: top-level must be an object")
+
+    package_id = raw.get("id")
+    if not isinstance(package_id, str) or not PACKAGE_DIR_RE.match(f"{package_id}@0"):
+        raise ManifestError(f"{manifest_path}.id is missing or malformed")
+
+    compatibility = raw.get("compatibility") or {}
+    if not isinstance(compatibility, dict):
+        raise ManifestError(f"{manifest_path}.compatibility must be an object")
+    major = compatibility.get("major")
+    if not isinstance(major, int) or major < 0:
+        raise ManifestError(f"{manifest_path}.compatibility.major must be a non-negative int")
+
+    expected_dir = f"{package_id}@{major}"
+    if dir_name != expected_dir:
+        raise ManifestError(
+            f"directory name {dir_name!r} does not match "
+            f"manifest id/major {expected_dir!r}"
+        )
+    # Belt-and-braces — also confirm the dir name still parses cleanly.
+    PackageId.parse_dir(dir_name)
+
+    version = raw.get("version")
+    if not isinstance(version, str) or not version:
+        raise ManifestError(f"{manifest_path}.version must be a non-empty string")
+
+    templates_raw = raw.get("templates") or []
+    if not isinstance(templates_raw, list) or not templates_raw:
+        raise ManifestError(f"{manifest_path}.templates must be a non-empty list")
+    templates = [
+        TemplateManifest.from_json(t, where=f"{manifest_path}.templates[{i}]")
+        for i, t in enumerate(templates_raw)
+    ]
+
+    deps = raw.get("dependencies") or {}
+    if not isinstance(deps, dict):
+        raise ManifestError(f"{manifest_path}.dependencies must be an object")
+    python_deps = deps.get("python") or {}
+    js_deps = deps.get("js") or {}
+    package_deps = deps.get("packages") or {}
+    for label, val in (("python", python_deps), ("js", js_deps), ("packages", package_deps)):
+        if not isinstance(val, dict):
+            raise ManifestError(f"{manifest_path}.dependencies.{label} must be an object")
+
+    perms = raw.get("permissions") or []
+    if not isinstance(perms, list) or not all(isinstance(p, str) for p in perms):
+        raise ManifestError(f"{manifest_path}.permissions must be a list of strings")
+
+    lineage = _parse_lineage(
+        raw.get("lineage"),
+        where_prefix=str(manifest_path),
+        self_package_id=package_id,
+        self_major=major,
+    )
+
+    read_only_raw = raw.get("readOnly")
+    if read_only_raw is not None and not isinstance(read_only_raw, bool):
+        raise ManifestError(f"{manifest_path}.readOnly must be a boolean")
+    read_only = bool(read_only_raw)
+
+    distribution = raw.get("distribution") or {}
+    if not isinstance(distribution, dict):
+        raise ManifestError(f"{manifest_path}.distribution must be an object")
+    channel = normalize_distribution_channel(distribution.get("channel"))
+
+    created_at_iso, created_at_ms = _parse_created_at_from_manifest(
+        raw.get("createdAt"), where=f"{manifest_path}"
+    )
+
+    behavior_script_raw = raw.get("behaviorScript")
+    if behavior_script_raw is not None and not isinstance(behavior_script_raw, str):
+        raise ManifestError(f"{manifest_path}.behaviorScript must be a string when present")
+    behavior_script = (
+        behavior_script_raw.strip() if isinstance(behavior_script_raw, str) else None
+    ) or None
+
+    backend = _parse_backend(
+        raw.get("backend"), where=str(manifest_path), permissions=list(perms)
+    )
+    # Cross-check (memo dev/91): a template's backendHandler must name a
+    # declared handler — the mismatch cannot survive load, let alone build.
+    declared_handlers = set(backend.handler_names) if backend else set()
+    for t in templates:
+        if t.backend_handler is None:
+            continue
+        if backend is None:
+            raise ManifestError(
+                f"{manifest_path}.templates[{t.template_id!r}].backendHandler "
+                f"requires a top-level 'backend' declaration"
+            )
+        if t.backend_handler not in declared_handlers:
+            raise ManifestError(
+                f"{manifest_path}.templates[{t.template_id!r}].backendHandler "
+                f"{t.backend_handler!r} is not declared in backend.handlers "
+                f"({sorted(declared_handlers)})"
+            )
+
+    return PackageManifest(
+        package_id=package_id,
+        major=major,
+        version=version,
+        name=str(raw.get("name", package_id)),
+        publisher=str(raw.get("publisher", "")),
+        description=str(raw.get("description", "")),
+        license=raw.get("license") if isinstance(raw.get("license"), str) else None,
+        templates=templates,
+        permissions=list(perms),
+        python_deps=dict(python_deps),
+        js_deps=dict(js_deps),
+        package_deps=dict(package_deps),
+        lineage=lineage,
+        channel=channel,
+        read_only=read_only,
+        created_at_iso=created_at_iso,
+        created_at_ms=created_at_ms,
+        behavior_script=behavior_script,
+        backend=backend,
+    )
+

@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_staging` (dev/89 commit 2).
+"""Tests for :mod:`utk_curio.backend.app.packages.repositories.staging` (dev/89 commit 2).
 
 Content-addressed staging: idempotent writes, verify-on-read, loud
 missing/corrupt handling, and TTL expiry.
@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages import build_staging
-from utk_curio.backend.app.packages.build_staging import (
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.repositories.staging import (
     StagingError,
     discard_artifact,
     has_artifact,

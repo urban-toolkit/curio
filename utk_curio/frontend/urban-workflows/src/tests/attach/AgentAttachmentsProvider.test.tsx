@@ -6,11 +6,12 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 const mockPaletteRefresh = jest.fn();
-jest.mock("../../utils/agentCatalogEvents", () => ({
+jest.mock("../../services/agents/agentEvents", () => ({
+  ...jest.requireActual("../../services/agents/agentEvents"),
   notifyAgentCatalogRefresh: () => mockPaletteRefresh(),
 }));
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     listAttachments: jest.fn(),
     attach: jest.fn(),
@@ -36,11 +37,11 @@ jest.mock("../../api/agentsApi", () => ({
   },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents";
 import {
   AgentAttachmentsProvider,
   useAgentAttachmentsContext,
-} from "../../components/agents/attach/AgentAttachmentsProvider";
+} from "../../providers/agents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -486,7 +487,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
   beforeEach(() => {
     events.length = 0;
     const { subscribeAgentCanvasMutations } = jest.requireActual(
-      "../../utils/agentCanvasEvents",
+      "../../services/agents/agentEvents",
     );
     unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
   });
@@ -721,7 +722,7 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
   beforeEach(() => {
     events.length = 0;
     const { subscribeAgentCanvasMutations } = jest.requireActual(
-      "../../utils/agentCanvasEvents",
+      "../../services/agents/agentEvents",
     );
     unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
   });
@@ -978,7 +979,7 @@ describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
   beforeEach(() => {
     events.length = 0;
     const { subscribeAgentCanvasMutations } = jest.requireActual(
-      "../../utils/agentCanvasEvents",
+      "../../services/agents/agentEvents",
     );
     unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
   });

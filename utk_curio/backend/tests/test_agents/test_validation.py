@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import validation
+from utk_curio.backend.app.agents.domain import validation
 
 KEY = "4242"
 PID = "p-validate"

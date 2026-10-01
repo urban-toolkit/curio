@@ -7,7 +7,7 @@ execution-error — de`. Each test states what the old character slice did to it
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import failure_text as ft
+from utk_curio.backend.app.agents.domain import failure_text as ft
 
 # round 1: pandas raised, looking for a column the code guessed.
 PANDAS_KEYERROR = '''Traceback (most recent call last):

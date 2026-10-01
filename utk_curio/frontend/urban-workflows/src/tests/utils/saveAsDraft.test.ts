@@ -28,8 +28,8 @@ import {
   toApiPayload,
   depsToMap,
   type Draft,
-} from "../../pages/nodes/factoryDraftModel";
-import type { PackagePayload } from "../../api/packagesApi";
+} from "../../services/packages";
+import type { PackagePayload } from "../../services/packages";
 
 describe("normalizePackageIdLeaf", () => {
   it("lowercases and strips characters the backend id regex rejects", () => {

@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentDatasetCandidateRow } from "../../../api/agentsApi";
+import type { AgentDatasetCandidateRow } from "../../../services/agents";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 
 type Verification = NonNullable<AgentDatasetCandidateRow["verification"]>;

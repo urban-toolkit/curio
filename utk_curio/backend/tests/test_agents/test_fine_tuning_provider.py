@@ -15,7 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import model_catalog, providers, testing_provider
+from utk_curio.backend.app.agents.repositories import model_catalog
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 

@@ -1,11 +1,14 @@
 import React, { memo, useCallback, useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronLeft, faChevronRight, faRobot } from "@fortawesome/free-solid-svg-icons";
-import { agentsApi, type AgentCard } from "../../../../api/agentsApi";
+import {
+  agentsApi,
+  AGENT_CATALOG_REFRESH_EVENT,
+  type AgentCard,
+} from "../../../../services/agents";
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { PaletteDragHint } from "../PaletteDragHint";
 import { useAgentCatalogDrawerControls } from "../../../../providers/AgentCatalogDrawerProvider";
-import { AGENT_CATALOG_REFRESH_EVENT } from "../../../../utils/agentCatalogEvents";
 import { PaletteAccordion } from "../paletteAccordion";
 import { TOOLS_PALETTE_DROPDOWN_ATTR, TOOLS_PALETTE_PANEL_ATTR } from "../toolsPaletteDismiss";
 import { AgentPaletteRow } from "./AgentPaletteRow";

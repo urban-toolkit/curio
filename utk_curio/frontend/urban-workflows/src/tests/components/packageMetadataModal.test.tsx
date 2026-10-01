@@ -18,11 +18,13 @@ const mockUpdatePackageMetadata = jest.fn();
 const mockRefreshPackageRegistry = jest.fn();
 const mockShowToast = jest.fn();
 
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listInstalled: (...a: unknown[]) => mockListInstalled(...a),
     updatePackageMetadata: (...a: unknown[]) => mockUpdatePackageMetadata(...a),
   },
+}));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: (...a: unknown[]) => mockRefreshPackageRegistry(...a),
 }));
 

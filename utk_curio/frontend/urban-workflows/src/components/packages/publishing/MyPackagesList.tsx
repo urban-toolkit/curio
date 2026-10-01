@@ -5,11 +5,7 @@ import {
   faDownload,
   faTrashCan,
 } from "@fortawesome/free-solid-svg-icons";
-import { PackagePayload } from "../../../api/packagesApi";
-import {
-  formatForkOfSubtitle,
-  partitionInstalledPackagesForCatalogList,
-} from "../../../utils/forkPackageLineage";
+import { PackagePayload, formatForkOfSubtitle, partitionInstalledPackagesForCatalogList } from "../../../services/packages";
 import { CatalogPublishPill } from "../CatalogPublishPill";
 import styles from "./MyPackagesList.module.css";
 import { countLabel } from "../../../utils/countLabel";

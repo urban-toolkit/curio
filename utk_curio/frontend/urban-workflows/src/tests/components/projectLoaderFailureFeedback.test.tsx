@@ -38,7 +38,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: mockLoadTrill }),
 }));
-jest.mock("../../hook/useEnsureWorkflowDeps", () => ({
+jest.mock("../../providers/packages/useEnsureWorkflowDeps", () => ({
   useEnsureWorkflowDeps: () => jest.fn(),
 }));
 jest.mock("../../TrillGenerator", () => ({

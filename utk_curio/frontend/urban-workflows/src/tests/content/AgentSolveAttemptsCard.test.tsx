@@ -10,7 +10,7 @@ import {
   AgentSolveAttemptsCard,
   stoppedByPhrase,
 } from "../../components/agents/content/AgentSolveAttemptsCard";
-import type { AgentSolveAttemptsPart } from "../../api/agentsApi";
+import type { AgentSolveAttemptsPart } from "../../services/agents";
 
 const part = (over: Partial<AgentSolveAttemptsPart> = {}): AgentSolveAttemptsPart => ({
   type: "solveAttempts",

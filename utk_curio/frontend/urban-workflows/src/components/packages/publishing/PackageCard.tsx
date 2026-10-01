@@ -1,9 +1,8 @@
 import React from "react";
-import { PackagePayload } from "../../../api/packagesApi";
+import { PackagePayload, packageInitial, primaryCategory } from "../../../services/packages";
 import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
-import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
 /**

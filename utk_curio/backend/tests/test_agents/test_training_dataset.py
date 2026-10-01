@@ -15,8 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin, content as content_mod
-from utk_curio.backend.app.agents import source_grounding
+from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.domain import content as content_mod
+from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.evaluation import export as export_mod
 from utk_curio.backend.app.agents.evaluation import oracle
 from utk_curio.backend.app.agents.evaluation.fixtures import (
@@ -198,7 +199,7 @@ class TestTheTargetIsTheRuntimesContract:
     def test_the_roster_block_comes_from_the_runtimes_formatter(self):
         """dev/122 §3.2 property 3, and DEC-062: a hand-written roster
         paragraph would be a prompt shape the runtime never sends."""
-        from utk_curio.backend.app.agents import services
+        from utk_curio.backend.app.agents.application.turns import roster as services
 
         rows = [{
             "id": "curio.builtin/data-loading", "label": "Data Loading",

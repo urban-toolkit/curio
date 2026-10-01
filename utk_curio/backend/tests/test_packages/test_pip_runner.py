@@ -18,9 +18,9 @@ from unittest.mock import patch
 
 import pytest
 
-from utk_curio.backend.app.packages import pip_runner
+from utk_curio.backend.app.packages.infrastructure import pip_runner
 
-from utk_curio.backend.app.packages.pip_runner import (
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     PipInstallError,
     _spec_argv,
     install_python_deps,
@@ -63,7 +63,7 @@ def test_install_empty_deps_is_noop():
 def test_install_skips_already_satisfied():
     """A package the runner can resolve via ``importlib.metadata`` is
     skipped — pip is never invoked."""
-    with patch("utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=True), \
+    with patch('utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=True), \
          patch("subprocess.run") as run:
         report = install_python_deps({"torch": ">=2.0", "transformers": ">=4.30"})
     run.assert_not_called()
@@ -72,7 +72,7 @@ def test_install_skips_already_satisfied():
 
 
 def test_install_invokes_pip_for_missing_deps():
-    with patch("utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False), \
+    with patch('utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=False), \
          patch("subprocess.run", return_value=_fake_proc(0, "ok", "")) as run:
         report = install_python_deps({"torch": ">=2.0"})
     assert run.call_count == 1
@@ -86,7 +86,7 @@ def test_install_invokes_pip_for_missing_deps():
 
 def test_install_raises_with_pip_stderr_tail_on_failure():
     big_stderr = "x" * 5000 + "FATAL ERROR HERE"
-    with patch("utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False), \
+    with patch('utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=False), \
          patch("subprocess.run", return_value=_fake_proc(1, "", big_stderr)):
         with pytest.raises(PipInstallError) as exc_info:
             install_python_deps({"torch": ">=2.0"})
@@ -140,9 +140,9 @@ class _FakeProc:
 def test_streaming_path_reports_each_line_and_returns_installed():
     seen: list[str] = []
     with patch(
-        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+        'utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=False
     ), patch(
-        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        'utk_curio.backend.app.packages.infrastructure.pip_runner.subprocess.Popen',
         return_value=_FakeProc(["Collecting inflection", "Successfully installed"]),
     ) as popen:
         report = install_python_deps({"inflection": ""}, on_line=seen.append)
@@ -158,9 +158,9 @@ def test_streaming_path_reports_each_line_and_returns_installed():
 
 def test_streaming_path_raises_with_the_output_tail():
     with patch(
-        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+        'utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=False
     ), patch(
-        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        'utk_curio.backend.app.packages.infrastructure.pip_runner.subprocess.Popen',
         return_value=_FakeProc(["ERROR: could not build wheel"], returncode=1),
     ):
         with pytest.raises(PipInstallError) as exc:
@@ -174,9 +174,9 @@ def test_streaming_path_keeps_only_the_last_40_lines():
     """The tail is capped, so a chatty failure stays a readable error."""
     lines = [f"line-{i}" for i in range(200)]
     with patch(
-        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=False
+        'utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=False
     ), patch(
-        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen",
+        'utk_curio.backend.app.packages.infrastructure.pip_runner.subprocess.Popen',
         return_value=_FakeProc(lines, returncode=2),
     ):
         with pytest.raises(PipInstallError) as exc:
@@ -192,9 +192,9 @@ def test_streaming_path_skips_pip_entirely_when_satisfied():
     """The satisfied short-circuit precedes the branch, so on_line is never called."""
     seen: list[str] = []
     with patch(
-        "utk_curio.backend.app.packages.pip_runner._is_satisfied", return_value=True
+        'utk_curio.backend.app.packages.infrastructure.pip_runner._is_satisfied', return_value=True
     ), patch(
-        "utk_curio.backend.app.packages.pip_runner.subprocess.Popen"
+        'utk_curio.backend.app.packages.infrastructure.pip_runner.subprocess.Popen'
     ) as popen:
         report = install_python_deps({"inflection": ""}, on_line=seen.append)
 
@@ -215,7 +215,7 @@ def test_streaming_path_kills_pip_when_it_overruns(monkeypatch):
     """
     import subprocess
 
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     killed = {"count": 0}
 
@@ -558,7 +558,7 @@ class TestImportFailuresIn:
         interpreter that never imports the overlay - a verdict about the wrong
         environment, in the one place the environment is the whole question.
         """
-        from utk_curio.backend.app.packages import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
         monkeypatch.setenv("CURIO_BACKEND_SANDBOX_PYTHON", r"C:\pinned\python.exe")
         seen = {}

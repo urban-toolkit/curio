@@ -1,0 +1,184 @@
+[
+ {
+  "rule": "/api/packages",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.list_installed_packages"
+ },
+ {
+  "rule": "/api/packages/<dir_name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "packages_api.remove_package"
+ },
+ {
+  "rule": "/api/packages/<dir_name>",
+  "methods": [
+   "PATCH"
+  ],
+  "endpoint": "packages_api.patch_package_metadata"
+ },
+ {
+  "rule": "/api/packages/<dir_name>/archive",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.download_package_archive"
+ },
+ {
+  "rule": "/api/packages/<dir_name>/backend/<handler>",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.invoke_package_backend"
+ },
+ {
+  "rule": "/api/packages/<dir_name>/file/<path:filename>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_package_file"
+ },
+ {
+  "rule": "/api/packages/catalog",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.list_catalog_packages"
+ },
+ {
+  "rule": "/api/packages/catalog/<dir_name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "packages_api.unpublish_from_catalog"
+ },
+ {
+  "rule": "/api/packages/catalog/install",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.install_from_catalog"
+ },
+ {
+  "rule": "/api/packages/defaults",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_defaults_route"
+ },
+ {
+  "rule": "/api/packages/defaults",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.install_to_defaults_route"
+ },
+ {
+  "rule": "/api/packages/defaults/<path:dir_name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "packages_api.uninstall_from_defaults_route"
+ },
+ {
+  "rule": "/api/packages/factory/build",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.factory_build"
+ },
+ {
+  "rule": "/api/packages/factory/capabilities",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.factory_capabilities"
+ },
+ {
+  "rule": "/api/packages/factory/install",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.factory_install"
+ },
+ {
+  "rule": "/api/packages/factory/publish-catalog",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.factory_publish_catalog"
+ },
+ {
+  "rule": "/api/packages/libraries",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.list_libraries_route"
+ },
+ {
+  "rule": "/api/packages/libraries",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.add_library_route"
+ },
+ {
+  "rule": "/api/packages/libraries/<kind>/<path:spec>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "packages_api.remove_library_route"
+ },
+ {
+  "rule": "/api/packages/projects/<project_id>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_project_packages"
+ },
+ {
+  "rule": "/api/packages/projects/<project_id>/<dir_name>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "packages_api.uninstall_from_project_route"
+ },
+ {
+  "rule": "/api/packages/projects/<project_id>/install",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.install_to_project_route"
+ },
+ {
+  "rule": "/api/packages/resolve",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.resolve_deps"
+ },
+ {
+  "rule": "/api/packages/upload",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.upload_package"
+ },
+ {
+  "rule": "/api/packages/workflow-deps/check",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.check_workflow_deps"
+ },
+ {
+  "rule": "/api/packages/workflow-deps/install",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.install_workflow_deps"
+ }
+]

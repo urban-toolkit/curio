@@ -20,7 +20,7 @@ const mockShowToast = jest.fn();
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     checkWorkflowDeps: jest.fn(),
     installWorkflowDeps: jest.fn(),
@@ -30,8 +30,8 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
 
-import { useEnsureWorkflowDeps } from "../../hook/useEnsureWorkflowDeps";
-import { packagesApi } from "../../api/packagesApi";
+import { useEnsureWorkflowDeps } from "../../providers/packages/useEnsureWorkflowDeps";
+import { packagesApi } from "../../services/packages/packagesApi";
 import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
 
 const mockCheck = packagesApi.checkWorkflowDeps as jest.Mock;

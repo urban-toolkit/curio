@@ -14,7 +14,7 @@ import path from "path";
 import {
   restartNotice,
   withRestartNotice,
-} from "../../services/packageRestartCopy";
+} from "../../services/packages";
 
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
@@ -60,7 +60,7 @@ describe("every install surface that can be handed restartRecommended reads it",
   // that receives it and drops it leaves the user with stale imports and no
   // way to know.
   test.each([
-    ["archive sideload", "components/packages/publishing/usePackageArchiveImport.ts"],
+    ["archive sideload", "providers/packages/usePackageArchiveImport.ts"],
     ["Node Catalog page import", "pages/catalog/useNodeCatalogBrowse.ts"],
     ["Node Catalog drawer import", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["Save As, save and install", "components/packages/editing/NodeSaveAsModal.tsx"],

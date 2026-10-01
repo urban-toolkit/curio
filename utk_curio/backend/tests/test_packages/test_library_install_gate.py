@@ -13,10 +13,13 @@ from __future__ import annotations
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.packages import libraries as libs
-from utk_curio.backend.app.packages import pip_runner
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
+from utk_curio.backend.app.packages.application import libraries as libs
+from utk_curio.backend.app.packages.infrastructure import pip_runner
+from utk_curio.backend.app.packages.application import libraries as libs
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
+    InstallReport,
+    UninstallReport,
+)
 
 
 def _auth(token):
@@ -188,7 +191,7 @@ class TestPerUserTreesChangeWhatRefCountingMeans:
     def test_another_users_list_no_longer_blocks_a_removal(
         self, client, db, user_and_token, pip_calls, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
         _, alice_token = user_and_token
         _make_user(db, "bob", "bob-token")
@@ -205,7 +208,7 @@ class TestPerUserTreesChangeWhatRefCountingMeans:
         # question is whether the route got past the ref-count gate at all.
         removed = []
         monkeypatch.setattr(
-            packages_services, "uninstall_user_library",
+            libs, "uninstall_user_library",
             lambda user_key, name: removed.append((user_key, name)),
         )
 
@@ -221,7 +224,7 @@ class TestPerUserTreesChangeWhatRefCountingMeans:
     def test_it_is_not_even_consulted(
         self, client, user_and_token, pip_calls, monkeypatch,
     ):
-        from utk_curio.backend.app.packages import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
         _, token = user_and_token
         client.post("/api/packages/libraries",

@@ -1,16 +1,17 @@
-"""Unit tests for :mod:`utk_curio.backend.app.packages.catalog_family`."""
+"""Unit tests for :mod:`utk_curio.backend.app.packages.domain.catalog_family`."""
 
 from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages.catalog_family import (
+from utk_curio.backend.app.packages.domain.catalog_family import (
     CatalogReleaseTriple,
     catalog_release_collision_groups,
     family_key_for_manifest,
 )
-from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
-from utk_curio.backend.app.packages.package_channel import normalize_distribution_channel
+from utk_curio.backend.app.packages.domain.manifest import ManifestError
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.domain.package_channel import normalize_distribution_channel
 
 
 def test_normalize_distribution_channel():
@@ -31,7 +32,11 @@ def test_catalog_release_collision_groups_finds_duplicate():
 
 
 def test_family_key_for_manifest_fork_and_singleton():
-    from utk_curio.backend.app.packages.manifest import PackageLineage, PackageLineageCoord, PackageManifest
+    from utk_curio.backend.app.packages.domain.manifest import (
+        PackageLineage,
+        PackageLineageCoord,
+        PackageManifest,
+    )
 
     alone = PackageManifest(
         package_id="solo",
@@ -91,4 +96,4 @@ def test_manifest_distribution_wrong_type(tmp_path):
     }
     (d / "manifest.json").write_text(__import__("json").dumps(manifest))
     with pytest.raises(ManifestError, match="distribution must be an object"):
-        load_packageage_manifest(d)
+        load_package_manifest(d)

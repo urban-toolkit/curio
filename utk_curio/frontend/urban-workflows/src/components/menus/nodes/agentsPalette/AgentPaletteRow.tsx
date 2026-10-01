@@ -1,8 +1,7 @@
 import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentCard } from "../../../../api/agentsApi";
-import { AGENT_DRAG_MIME } from "../../../../utils/agentCatalogEvents";
+import { AGENT_DRAG_MIME, type AgentCard } from "../../../../services/agents";
 import { agentCategoryIcon, agentCategoryKey } from "./agentCategoryStyle";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import rowStyles from "./AgentPaletteRow.module.css";

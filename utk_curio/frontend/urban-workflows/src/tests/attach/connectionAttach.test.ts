@@ -14,10 +14,10 @@
 import {
   EDGE_AGENT_BADGES_ATTR,
   pickEdgeAtPoint,
+  composeAgentRunContext,
   type AgentDropTarget,
-} from "../../utils/agentCatalogEvents";
+} from "../../services/agents";
 import { attachAgentOnDrop } from "../../utils/agentDropAttach";
-import { composeAgentRunContext } from "../../components/agents/attach/agentRunContext";
 
 describe("pickEdgeAtPoint", () => {
   const atPoint = (el: Element | null) => {

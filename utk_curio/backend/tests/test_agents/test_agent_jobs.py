@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from utk_curio.backend.app.agents import agent_jobs
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
 
 
 def _gen(items, gate: threading.Event | None = None, fail_after: int | None = None):

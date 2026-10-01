@@ -1,7 +1,6 @@
 import React from "react";
-import { PackagePayload } from "../../api/packagesApi";
+import { PackagePayload, primaryCategory } from "../../services/packages";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import styles from "./PackageBrowseCard.module.css";
 import { countLabel } from "../../utils/countLabel";

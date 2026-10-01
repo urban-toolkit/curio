@@ -40,7 +40,7 @@ import re
 import textwrap
 import time
 
-from utk_curio.backend.app.agents.contracts import EMPTY_RENDER_KIND
+from utk_curio.backend.app.agents.domain.contracts import EMPTY_RENDER_KIND
 from utk_curio.backend.app.projects import storage as projects_storage
 
 _STDERR_TAIL_CHARS = 4000

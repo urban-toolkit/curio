@@ -158,7 +158,7 @@ def execution_outcomes(
     which records ``validated`` for a node that merely could not run (dev/118
     F6) and would credit a reconstruction for work nobody did.
     """
-    from utk_curio.backend.app.packages.services import canonical_template_id
+    from utk_curio.backend.app.packages.service import canonical_template_id
 
     by_id = {str(n.get("id")): n for n in spec_nodes(actual_spec)}
     outcomes: list = []

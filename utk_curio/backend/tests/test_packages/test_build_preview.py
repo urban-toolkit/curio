@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_preview` (dev/89 commit 6):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.preview` (dev/89 commit 6):
 sandbox document generation (CSP, guards, escaping), pinned-runner
 resolution, the five contract states, report validation (registration,
 console errors, dimensions, screenshots), and honest failure modes.
@@ -16,8 +16,8 @@ import pytest
 
 from .conftest import write_fake_tool
 
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_preview import (
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.preview import (
     PREVIEW_STATES,
     PreviewError,
     build_preview_document,
@@ -25,7 +25,7 @@ from utk_curio.backend.app.packages.build_preview import (
     runner_from_env,
     synthetic_fixtures,
 )
-from utk_curio.backend.app.packages.build_workspace import (
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     create_workspace,
     destroy_workspace,
 )

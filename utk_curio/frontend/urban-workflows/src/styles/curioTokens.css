@@ -205,7 +205,7 @@
      a `data` one.
 
      Keys match `primaryCategory()` in
-     components/packages/publishing/packageUtils.ts: data | computation | vis |
+     services/packages/packageListUtils.ts: data | computation | vis |
      package. Guarded by src/tests/styles/nodeCategoryPalette.test.ts.
      ───────────────────────────────────────────────────────────────────── */
   --curio-category-data-fg: #3498db;

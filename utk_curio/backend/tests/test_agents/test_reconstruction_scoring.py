@@ -23,7 +23,10 @@ from utk_curio.backend.app.agents.evaluation.canonical import (
     Sources,
     canonical_graph_from_spec,
 )
-from utk_curio.backend.app.agents.evaluation.compare import Universe, compare_graphs
+from utk_curio.backend.app.agents.evaluation.compare import (
+    Universe,
+    compare_graphs,
+)
 from utk_curio.backend.app.agents.evaluation.report import (
     AttemptRecord,
     Digests,

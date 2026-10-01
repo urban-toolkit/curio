@@ -1,5 +1,5 @@
 import { Node as RFNode } from "reactflow";
-import type { PackageTemplatePayload, PackagePayload } from "../api/packagesApi";
+import type { PackageTemplatePayload, PackagePayload } from "../services/packages/types";
 import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
@@ -18,12 +18,12 @@ import {
   factoryUiMakeId,
   STARTER_CODE,
   toApiPayload,
-} from "../pages/nodes/factoryDraftModel";
+} from "../services/packages/factoryDraft";
 
-/** Matches `PackageId` segment rules (`PACKAGE_DIR_RE` in `utk_curio.backend.app.packages.storage`). */
+/** Matches `PackageId` segment rules (`PACKAGE_DIR_RE` in `utk_curio.backend.app.packages.domain.package_id`). */
 const PACK_ID_SEGMENT_MAX_LEN = 63;
 
-/** Mirrors backend `KIND_ID_RE` (`utk_curio.backend.app.packages.storage`). */
+/** Mirrors backend `KIND_ID_RE` (`utk_curio.backend.app.packages.domain.package_id`). */
 const TEMPLATE_ID_SEGMENT_MAX_LEN = 63;
 
 const WIZARD_CATEGORIES = new Set<string>(["data", "computation", "vis_grammar", "vis_simple", "flow"]);

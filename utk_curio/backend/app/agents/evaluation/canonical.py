@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from utk_curio.backend.app.packages.services import (
+from utk_curio.backend.app.packages.service import (
     canonical_template_id,
     template_is_executable,
 )

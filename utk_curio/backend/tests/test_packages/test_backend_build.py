@@ -10,11 +10,13 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages import backend_policy, backend_runtime, build_jobs
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_pipeline import run_build
-from utk_curio.backend.app.packages.build_staging import read_artifact
-from utk_curio.backend.app.packages.build_workspace import WorkerLimits
+from utk_curio.backend.app.packages.builder import policy as backend_policy
+from utk_curio.backend.app.packages.infrastructure import backend_runtime
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.pipeline import run_build
+from utk_curio.backend.app.packages.repositories.staging import read_artifact
+from utk_curio.backend.app.packages.infrastructure.workspace import WorkerLimits
 
 FAST = WorkerLimits(wall_time_seconds=20.0, cpu_seconds=10)
 
@@ -227,12 +229,12 @@ class TestProbingPhase:
 class TestEntryPin:
     def test_pin_round_trip_and_drift_detection(self, tmp_curio, manifest_dict,
                                                 make_archive):
-        from utk_curio.backend.app.packages.installer import install_packageage_from_archive
-        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.packages.repositories.store import package_dir
 
         archive = make_archive(manifest=_backend_manifest(manifest_dict),
                                extra_files={"backend/handler.py": _OK_HANDLER.encode()})
-        install_packageage_from_archive("guest", archive)
+        install_package_from_archive("guest", archive)
         dir_name = "ai.test.demo@1"
         pinned = backend_runtime.record_entry_pin("guest", dir_name)
         entry = package_dir("guest", dir_name) / "backend" / "handler.py"
@@ -253,13 +255,13 @@ class TestEntryPin:
 
     def test_backendless_install_clears_a_stale_pin(self, tmp_curio, manifest_dict,
                                                     make_archive):
-        from utk_curio.backend.app.packages.installer import install_packageage_from_archive
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
 
         archive = make_archive(manifest=_backend_manifest(manifest_dict),
                                extra_files={"backend/handler.py": _OK_HANDLER.encode()})
-        install_packageage_from_archive("guest", archive)
+        install_package_from_archive("guest", archive)
         assert backend_runtime.record_entry_pin("guest", "ai.test.demo@1")
         plain = make_archive(manifest=manifest_dict())
-        install_packageage_from_archive("guest", plain, replace=True)
+        install_package_from_archive("guest", plain, replace=True)
         assert backend_runtime.record_entry_pin("guest", "ai.test.demo@1") is None
         assert backend_runtime.pinned_entry_digest("guest", "ai.test.demo@1") is None

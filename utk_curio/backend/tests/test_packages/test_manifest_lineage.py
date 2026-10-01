@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages.manifest import (
+from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     PackageLineageCoord,
-    load_packageage_manifest,
 )
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
 
 def _minimal_kinds() -> list[dict]:
@@ -34,7 +34,7 @@ def _minimal_kinds() -> list[dict]:
     ]
 
 
-def _write_packageage_dir(base: Path, package_id: str, major: int, **extra_top: object) -> Path:
+def _write_package_dir(base: Path, package_id: str, major: int, **extra_top: object) -> Path:
     root = base / f"{package_id}@{major}"
     root.mkdir(parents=True)
     manifest: dict = {
@@ -55,26 +55,26 @@ def _write_packageage_dir(base: Path, package_id: str, major: int, **extra_top: 
 
 
 def test_load_without_lineage(tmp_path: Path) -> None:
-    d = _write_packageage_dir(tmp_path, "ai.test.lineage", 1)
-    m = load_packageage_manifest(d)
+    d = _write_package_dir(tmp_path, "ai.test.lineage", 1)
+    m = load_package_manifest(d)
     assert m.lineage is None
 
 
 def test_forked_from_only_root_defaults(tmp_path: Path) -> None:
-    d = _write_packageage_dir(
+    d = _write_package_dir(
         tmp_path,
         "curio.test.fork.package",
         1,
         lineage={"forkedFrom": {"packageId": "ai.upstream.parent", "major": 2}},
     )
-    m = load_packageage_manifest(d)
+    m = load_package_manifest(d)
     assert m.lineage is not None
     assert m.lineage.forked_from == PackageLineageCoord("ai.upstream.parent", 2)
     assert m.lineage.root == m.lineage.forked_from
 
 
 def test_forked_from_and_distinct_root(tmp_path: Path) -> None:
-    d = _write_packageage_dir(
+    d = _write_package_dir(
         tmp_path,
         "curio.test.fork.package",
         1,
@@ -83,7 +83,7 @@ def test_forked_from_and_distinct_root(tmp_path: Path) -> None:
             "root": {"packageId": "ai.upstream.catalog", "major": 1},
         },
     )
-    m = load_packageage_manifest(d)
+    m = load_package_manifest(d)
     assert m.lineage is not None
     assert m.lineage.forked_from == PackageLineageCoord("curio.palette.fork.abc", 1)
     assert m.lineage.root == PackageLineageCoord("ai.upstream.catalog", 1)
@@ -99,26 +99,26 @@ def test_forked_from_and_distinct_root(tmp_path: Path) -> None:
     ],
 )
 def test_lineage_validation_errors(tmp_path: Path, bad_lineage: object) -> None:
-    d = _write_packageage_dir(tmp_path, "curio.test.bad.lineage", 1, lineage=bad_lineage)
+    d = _write_package_dir(tmp_path, "curio.test.bad.lineage", 1, lineage=bad_lineage)
     with pytest.raises(ManifestError):
-        load_packageage_manifest(d)
+        load_package_manifest(d)
 
 
 def test_self_fork_rejected(tmp_path: Path) -> None:
     pid = "curio.test.self.fork"
-    d = _write_packageage_dir(
+    d = _write_package_dir(
         tmp_path,
         pid,
         1,
         lineage={"forkedFrom": {"packageId": pid, "major": 1}},
     )
     with pytest.raises(ManifestError, match="forkedFrom must differ"):
-        load_packageage_manifest(d)
+        load_package_manifest(d)
 
 
 def test_root_equals_self_rejected(tmp_path: Path) -> None:
     pid = "curio.test.root.self"
-    d = _write_packageage_dir(
+    d = _write_package_dir(
         tmp_path,
         pid,
         1,
@@ -128,12 +128,12 @@ def test_root_equals_self_rejected(tmp_path: Path) -> None:
         },
     )
     with pytest.raises(ManifestError, match="root must differ"):
-        load_packageage_manifest(d)
+        load_package_manifest(d)
 
 
 def test_load_optional_created_at_parses_iso_z(tmp_path: Path) -> None:
-    d = _write_packageage_dir(tmp_path, "ai.test.created", 1, createdAt="2024-05-20T08:09:11Z")
-    m = load_packageage_manifest(d)
+    d = _write_package_dir(tmp_path, "ai.test.created", 1, createdAt="2024-05-20T08:09:11Z")
+    m = load_package_manifest(d)
     assert m.created_at_iso is not None and m.created_at_iso.endswith("Z")
     assert m.created_at_ms == int(
         datetime(2024, 5, 20, 8, 9, 11, tzinfo=timezone.utc).timestamp() * 1000
@@ -141,6 +141,6 @@ def test_load_optional_created_at_parses_iso_z(tmp_path: Path) -> None:
 
 
 def test_created_at_invalid_raises(tmp_path: Path) -> None:
-    d = _write_packageage_dir(tmp_path, "ai.test.bad.created", 1, createdAt="not-a-datetime")
+    d = _write_package_dir(tmp_path, "ai.test.bad.created", 1, createdAt="not-a-datetime")
     with pytest.raises(ManifestError, match="createdAt"):
-        load_packageage_manifest(d)
+        load_package_manifest(d)
