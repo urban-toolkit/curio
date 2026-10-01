@@ -29,6 +29,7 @@ from .utils import (
     brush_area,
     capture_node,
     changed_pixels,
+    dismiss_toasts,
     drawing_kept,
     drawing_selector,
     frame_nodes,
@@ -1101,6 +1102,11 @@ class TestWorkflowCanvas:
                 },
             )
 
+        # Before the gesture, while the pointer may still move: an error toast
+        # stays until it is closed (example 17's two refusing nodes leave one
+        # each, over the bar chart), and the frames never sweep, so that a
+        # held hover is not let go.
+        dismiss_toasts(page)
         frame_nodes(page, [step.source, step.target])
         _wait_for_no_node_running(page)
         for node_id in (step.source, step.target):
