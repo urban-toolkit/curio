@@ -176,7 +176,7 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 ### The save-output toggle
 
-Every runnable node has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
+A runnable node that produces a dataset has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
@@ -194,7 +194,7 @@ Every output type a node can declare is saved, not only tables:
 
 A `json` output is stored as plain, uncompressed JSON, readable with `json.load` and exported as is.
 
-Nothing is saved for:
+These nodes have no toggle, and nothing is saved for them:
 
 - **Visualization sinks** (`curio.builtin/vis-vega`, `curio.builtin/vis-simple`), which pass their input straight through.
 - **Dataset-palette nodes**, the loader nodes created by dragging a dataset in.

@@ -555,7 +555,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
-A node can also save its output as a **computed dataset** in your account (the database toggle next to each node's play button), so its result can be reused as an input elsewhere.
+A node can also save its output as a **computed dataset** in your account (the database toggle next to its play button), so its result can be reused as an input elsewhere.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
