@@ -73,9 +73,8 @@ def test_removed_legacy_routes_stay_removed(app):
         "/upload",
         "/datasets",
         "/api/packages/install-deps",
-        # The pre-agent LLM assistance. Its last caller was the node editor's
-        # Explanation tab, replaced by agent.node-explainer - which reads a
-        # richer nodeContext from the backend and shares the same prompt file.
+        # The pre-agent LLM assistance. The Chat agent (agent.chat-agent)
+        # explains a node, from the nodeContext it reads.
         "/llm/chat",
         "/llm/check",
         "/llm/clean",

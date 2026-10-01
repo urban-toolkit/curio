@@ -47,11 +47,11 @@ const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
 const attachment = {
   attachmentId: "a1",
-  coord: "agent.node-explainer@1.0.0",
+  coord: "agent.my-explainer@1.0.0",
   target: { kind: "canvas" as const },
   sessionId: "s1",
   revision: 1,
-  name: "Node Explainer",
+  name: "My Explainer",
   category: "node",
   hooks: ["node"],
   intent: "prompt text",

@@ -1530,19 +1530,12 @@ def save_workflow_test_screenshot(
     afterwards. Under ``--remint-baselines`` an existing baseline is compared
     and, when its screen changed, rewritten (see :func:`_remint`).
 
-    It used to mint implicitly, which meant a first run always passed. Two ways
-    that bites, both seen: a baseline captured against a broken build enshrines
-    the bug as expected output and the suite then *defends* it; and a baseline
-    captured on the wrong machine enshrines that machine. The second is not
-    hypothetical - the macOS captures of the two #333 scenes looked perfect and
-    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
-    because macOS rasterizes text with grayscale antialiasing and the runner uses
-    LCD subpixel.
-
-    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
-    minting in a serial run and refusing under xdist. That was the wrong axis:
-    serialness says nothing about whether a capture deserves to become the
-    reference, and the one that would have broken CI was minted serially.
+    A baseline captured against a broken build enshrines the bug as expected
+    output, and the suite then *defends* it; one captured on another machine
+    enshrines that machine. macOS rasterizes text with grayscale antialiasing
+    and the runner uses LCD subpixel, so the macOS captures of the two #333
+    scenes sat 6.11% and 10.05% from what CI renders, the second past its
+    budget.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits

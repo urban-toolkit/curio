@@ -52,12 +52,12 @@ class TestAttachDetach:
     def test_attach_appends_record(self):
         spec = _spec()
         rec = attachments.attach(
-            spec, "agent.node-explainer@1.0.0", {"kind": "node", "targetId": "n1"},
+            spec, "agent.my-explainer@1.0.0", {"kind": "node", "targetId": "n1"},
             attachment_id="att1", session_id="sess1",
         )
         assert rec == {
             "attachmentId": "att1",
-            "coord": "agent.node-explainer@1.0.0",
+            "coord": "agent.my-explainer@1.0.0",
             "target": {"kind": "node", "targetId": "n1"},
             "sessionId": "sess1",
             "revision": 1,
