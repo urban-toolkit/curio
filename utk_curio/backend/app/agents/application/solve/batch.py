@@ -33,6 +33,7 @@ from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import failure_text
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -704,7 +705,7 @@ class SolveBatch:
                     content=[{
                         "type": "card",
                         "kind": "result",
-                        "title": f"Solve: {solved} of {len(self.targets)} nodes",
+                        "title": f"Solve: {solved} of {count_label(len(self.targets), 'node')}",
                         "lines": lines,
                     }, *attempt_parts, *self.extra_parts],
                     execution=agents_policy._execution_record(

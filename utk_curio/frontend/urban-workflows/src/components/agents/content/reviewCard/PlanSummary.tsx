@@ -1,6 +1,7 @@
 import React from "react";
 
 import type { AgentProposalPart } from "../../../../services/agents";
+import { countLabel } from "../../../../utils/countLabel";
 import styles from "../AgentReviewCard.module.css";
 import { removalsTitle } from "./reviewCardText";
 
@@ -14,7 +15,7 @@ export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => 
   return (
     <>
       <div className={styles.meta}>
-        {plan.nodes.length} nodes · {plan.edgeCount} connections — {plan.goal}
+        {countLabel(plan.nodes.length, "node")} · {countLabel(plan.edgeCount, "connection")} · {plan.goal}
       </div>
       {removes ? (
         <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removes">

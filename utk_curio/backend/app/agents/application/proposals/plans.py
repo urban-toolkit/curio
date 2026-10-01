@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import plan_topology
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -166,9 +167,9 @@ def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> 
     nodes"). Empty when nothing was removed."""
     parts = []
     if n_nodes:
-        parts.append(f"{n_nodes} node{'s' if n_nodes != 1 else ''}")
+        parts.append(count_label(n_nodes, "node"))
     if n_edges:
-        parts.append(f"{n_edges} connection{'s' if n_edges != 1 else ''}")
+        parts.append(count_label(n_edges, "connection"))
     return f", {prefix}" + " and ".join(parts) if parts else ""
 
 
@@ -424,7 +425,7 @@ def _plan_summary(plan: dict) -> str:
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
-    summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
+    summary = f"Apply plan · {count_label(n_nodes, 'node')}, {count_label(n_edges, 'edge')}"
     if remove_nodes or remove_edges:
         # dev/112: removed connections counted too — the user approved edge
         # removals five times without seeing them named.
@@ -1115,7 +1116,7 @@ def apply_plan_edges(
                 "the plan is fully applied.",
                 "Applied: plan connections",
                 [
-                    f"+{applied_now} connections"
+                    f"+{count_label(applied_now, 'connection')}"
                     + (f" · {refused_now} refused" if refused_now else ""),
                     "plan complete",
                     f"proposal {proposal_id[:8]}",
@@ -1501,13 +1502,13 @@ def _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_
     topology = _topology_clause(spec)
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: plan added {len(created_nodes)} nodes and "
-        f"{len(created_edges)} connections{removed_summary}. {topology}",
+        f"Applied: plan added {count_label(len(created_nodes), 'node')} and "
+        f"{count_label(len(created_edges), 'connection')}{removed_summary}. {topology}",
         "Applied: dataflow plan",
         [
-            f"+{len(created_nodes)} nodes · +{len(created_edges)} connections"
-            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else "")
-            + (f" · −{len(removed_edge_ids)} connections" if removed_edge_ids else ""),
+            f"+{count_label(len(created_nodes), 'node')} · +{count_label(len(created_edges), 'connection')}"
+            + (f" · −{count_label(len(remove_node_set), 'node')}" if remove_node_set else "")
+            + (f" · −{count_label(len(removed_edge_ids), 'connection')}" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
             *_attached_agent_lines(*attached_results),
             topology,
