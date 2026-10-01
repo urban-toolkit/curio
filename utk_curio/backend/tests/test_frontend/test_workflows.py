@@ -26,7 +26,9 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_map_drawn,
     at_fraction,
+    bar_boxes,
     brush_area,
+    brush_log,
     brush_mismatches,
     canvas_painted_at_shown_zoom,
     capture_node,
@@ -58,6 +60,7 @@ from .utils import (
     wait_for_node_settled,
     wait_for_node_still,
     wait_for_run_guard_released,
+    watch_brush,
 )
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
@@ -1226,3 +1229,62 @@ class TestWorkflowCanvas:
             <= INTERACTION_RESTORED_RATIO,
         )
         assert restored, f"taking back {where} left {step.target} highlighted"
+
+    @pytest.mark.only_workflows("Interaction_Autark.json")
+    def test_plot_brush_started_between_bars(self, loaded_workflow):
+        """A second brush on the histogram, pressed in the gap between two bars,
+        keeps its rectangle and lights the bars under it.
+
+        The press itself covers no bar, so the plot's selection is empty for a
+        moment, and the pool clears the first brush's rows and sends that back.
+        The brush being drawn must not be taken away by it, even when the
+        pointer holds still before letting go.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+        viewport = page.viewport_size
+        page.set_viewport_size(INTERACTION_VIEWPORT)
+        try:
+            dismiss_toasts(page)
+            frame_nodes(page, ["ia-plot", "ia-map"])
+            _wait_for_no_node_running(page)
+            plot = drawing_selector(page, "ia-plot")
+            assert plot, "ia-plot drew nothing"
+            area = brush_area(page, plot)
+            assert area, "ia-plot has no brush overlay"
+
+            # A first brush, with its rows back through the pool.
+            page.mouse.move(*at_fraction(area, (0.25, 0.5)))
+            page.mouse.down()
+            page.mouse.move(*at_fraction(area, (0.75, 0.5)), steps=8)
+            page.mouse.up()
+            assert brush_mismatches(page, plot) == [], "the first brush did not light its bars"
+
+            # A second one, pressed between the first two bars, over the next three.
+            bars = bar_boxes(page, plot)
+            assert len(bars) > 4, f"ia-plot drew {len(bars)} bars"
+            gap_x = (bars[0]["right"] + bars[1]["left"]) / 2
+            assert bars[1]["left"] - bars[0]["right"] >= 2, "no gap between the first two bars"
+            y = area["y"] + area["height"] / 2
+            end_x = (bars[3]["left"] + bars[3]["right"]) / 2
+            page.mouse.move(gap_x, y)
+            watch_brush(page, plot)
+            page.mouse.down()
+            page.mouse.move(end_x, y, steps=8)
+            page.wait_for_timeout(1500)
+            page.mouse.up()
+            wrong = brush_mismatches(page, plot)
+            log = brush_log(page)
+            down = next(e["t"] for e in log if e["what"] == "mousedown")
+            up = next(e["t"] for e in log if e["what"] == "mouseup")
+            vanished = [e["t"] - down for e in log if down < e["t"] < up and not e["shown"]]
+            assert not vanished, (
+                f"the second brush, pressed between two bars, vanished {vanished[0]} ms "
+                "into the drag, while the pointer was still drawing it")
+            assert wrong is not None, (
+                "the second brush, pressed between two bars, was gone once the pointer let go")
+            assert not wrong, "the second brush lit the wrong bars: " + ", ".join(
+                f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
+        finally:
+            if viewport:
+                page.set_viewport_size(viewport)
