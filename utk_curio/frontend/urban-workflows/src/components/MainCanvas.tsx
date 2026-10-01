@@ -191,9 +191,6 @@ export function MainCanvas() {
     // canvas as read-only and the lock/proposal flow does nothing.
     const isSharedView = viewerMode === "shared" && !collab.enabled;
 
-    // Refs used inside callbacks so the callbacks don't need to list them as deps
-    const selectedEdgeIdRef = useRef<string>("");
-
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
     const [floatingPanels, setFloatingPanels] = useState<any>({});
@@ -359,34 +356,14 @@ export function MainCanvas() {
         markDirty();
     }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
+    // The Delete key reaches these through React Flow, which sends the
+    // selected edges plus every edge attached to a deleted node first, then
+    // the nodes (#155). Both are applied as sent.
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
-        const allowedChanges: NodeChange[] = [];
-        const currentEdges = reactFlow.getEdges();
         let dirty = false;
 
         for (const change of changes) {
-            let allowed = true;
-
-            if (change.type === "remove") {
-                // Removing a wired node is refused on purpose. Say how much is
-                // in the way: the old copy told the user to "remove the edges"
-                // without saying how many there were or which, so on a busy
-                // canvas it read as the key simply not working.
-                const attached = currentEdges.filter(
-                    (edge) => edge.source === change.id || edge.target === change.id,
-                );
-                if (attached.length > 0) {
-                    const count = attached.length;
-                    showToast(
-                        `This node still has ${count} connection${count === 1 ? "" : "s"}. ` +
-                        `Select ${count === 1 ? "it" : "them"} and press Delete or Backspace, ` +
-                        "then remove the node.",
-                        "warning"
-                    );
-                    allowed = false;
-                }
-                if (allowed) dirty = true;
-            }
+            if (change.type === "remove") dirty = true;
 
             if (
                 change.type === "position" &&
@@ -399,50 +376,21 @@ export function MainCanvas() {
                     patch: { position: change.position },
                 });
             }
-
-            if (allowed) allowedChanges.push(change);
         }
 
         if (dirty) markDirty();
-        onNodesDelete(allowedChanges);
-        return onNodesChange(allowedChanges);
-    }, [reactFlow, showToast, onNodesDelete, onNodesChange, markDirty]);
+        onNodesDelete(changes);
+        return onNodesChange(changes);
+    }, [onNodesDelete, onNodesChange, markDirty]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-        let selected = "";
-        const allowedChanges: EdgeChange[] = [];
-        const prevSelectedId = selectedEdgeIdRef.current;
-
-        for (const change of changes) {
-            if (change.type === "select" && change.selected === true) {
-                selectedEdgeIdRef.current = change.id;
-                selected = change.id;
-            } else if (change.type === "select") {
-                selectedEdgeIdRef.current = "";
-            }
-        }
-
-        let dirty = false;
-        for (const change of changes) {
-            if (
-                change.type === "remove" &&
-                (selected === change.id || prevSelectedId === change.id)
-            ) {
-                allowedChanges.push(change);
-                dirty = true;
-            } else if (change.type !== "remove") {
-                allowedChanges.push(change);
-            }
-        }
-
-        if (dirty) markDirty();
-        return onEdgesChange(allowedChanges);
+        if (changes.some((change) => change.type === "remove")) markDirty();
+        return onEdgesChange(changes);
     }, [onEdgesChange, markDirty]);
 
     const handleEdgesDelete = useCallback((edges: Edge[]) => {
-        const allowedEdges = edges.filter(edge => selectedEdgeIdRef.current === edge.id);
-        if (allowedEdges.length > 0) markDirty();
-        return onEdgesDelete(allowedEdges);
+        if (edges.length > 0) markDirty();
+        return onEdgesDelete(edges);
     }, [onEdgesDelete, markDirty]);
 
     const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
