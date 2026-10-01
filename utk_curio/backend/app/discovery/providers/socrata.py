@@ -17,6 +17,7 @@ import json
 import re
 
 from utk_curio.backend.app.discovery.domain.errors import ProviderError, ResourceNotFound
+from utk_curio.backend.app.discovery.domain.parameters import ParameterError
 from utk_curio.backend.app.discovery.domain.resource import (
     DownloadTarget,
     DiscoveryField,
@@ -35,6 +36,21 @@ RESOURCE_ID_RE = re.compile(r"^[a-z0-9]{4}-[a-z0-9]{4}$")
 _URL_ID_RE = re.compile(r"/(?:resource|api/views|d)/([a-z0-9]{4}-[a-z0-9]{4})\b")
 
 _EXT = {"csv": "csv", "geojson": "geojson", "json": "json"}
+
+#: SODA answers 1,000 rows to a request that names no ``$limit``, export
+#: endpoints included, so every export names one. Version 2.1 endpoints take
+#: any limit; the byte cap is what bounds the download.
+EXPORT_LIMIT = 2_147_483_647
+
+#: Column types an area applies to: a point is tested with ``within_box``, a
+#: shape with ``intersects``.
+_POINT_TYPES = frozenset({"point", "location"})
+_SHAPE_TYPES = frozenset({"multipoint", "line", "multiline", "linestring", "multilinestring",
+                          "polygon", "multipolygon"})
+_COLUMN_RE = re.compile(r"^[a-z_][a-z0-9_]{0,63}$")
+
+#: The parameters this provider reads.
+PARAMETER_IDS = ("area",)
 
 _SAMPLE_KEYS_MAX = 12
 
@@ -115,6 +131,8 @@ class SocrataProvider(BaseProvider):
         if not RESOURCE_ID_RE.match(resource_id):
             return None
         classification = entry.get("classification") or {}
+        types = [str(t).strip().lower() for t in (resource.get("columns_datatype") or [])]
+        has_geometry = any(t in _POINT_TYPES or t in _SHAPE_TYPES for t in types)
         return DiscoveryResource(
             source_id=self.manifest.id,
             resource_id=resource_id,
@@ -128,6 +146,9 @@ class SocrataProvider(BaseProvider):
             formats=tuple(self.manifest.capabilities.formats),
             updated_at=str(resource.get("updatedAt") or "") or None,
             landing_url=str(entry.get("permalink") or "") or None,
+            # An area narrows a dataset that has a location column, and only
+            # such a dataset is offered one.
+            parameter_ids=("area",) if has_geometry else (),
         )
 
     def describe(self, resource_id: str) -> DiscoveryResourceDetail:
@@ -157,26 +178,68 @@ class SocrataProvider(BaseProvider):
                 formats=tuple(self.manifest.capabilities.formats),
                 updated_at=_iso(rows_updated),
                 landing_url=f"{self.base}/d/{resource_id}",
+                parameter_ids=("area",) if _has_geometry(payload.get("columns")) else (),
             ),
             fields=fields,
             license=str(((payload.get("license") or {}) or {}).get("name") or ""),
         )
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget:
+    def download_url(self, resource_id: str, fmt: str | None, *, values: dict | None = None) -> DownloadTarget:
         resource_id = self.validate_resource_id(resource_id)
         chosen = self.pick_format(fmt)
         ext = _EXT.get(chosen)
         if ext is None:
             raise self.unsupported(f"{chosen} export")
-        # No $limit: Socrata's bulk export endpoint returns the whole dataset,
-        # and the byte cap is what bounds it. A row limit here would silently
-        # truncate a dataset and hand the user a partial file that looks whole.
-        url = self.assert_on_base(f"{self.base}/resource/{resource_id}.{ext}")
+        query = f"$limit={EXPORT_LIMIT}"
+        area = (values or {}).get("area")
+        if area:
+            query += f"&$where={self.q(self._area_clause(resource_id, area['box']))}"
+        url = self.assert_on_base(f"{self.base}/resource/{resource_id}.{ext}?{query}")
         return DownloadTarget(
             url=url,
             declared_format=chosen,
             filename_hint=f"{resource_id}.{ext}",
         )
+
+    def _area_clause(self, resource_id: str, box: list[float]) -> str:
+        """The SoQL ``$where`` that keeps the rows inside *box*.
+
+        Read off the dataset's first location column: a point or location
+        column takes ``within_box``, a line or polygon column ``intersects``.
+        """
+        payload = _json(self.transport.json_get(f"{self.base}/api/views/{resource_id}.json"))
+        for column in (payload.get("columns") or []) if isinstance(payload, dict) else []:
+            if not isinstance(column, dict):
+                continue
+            name = str(column.get("fieldName") or "")
+            kind = str(column.get("dataTypeName") or "").strip().lower()
+            if not _COLUMN_RE.match(name):
+                continue
+            if kind in _POINT_TYPES:
+                return _point_clause(name, box)
+            if kind in _SHAPE_TYPES:
+                return _shape_clause(name, box)
+        raise ParameterError(
+            f"{resource_id} on {self.manifest.name} has no location column, so it cannot be narrowed to an area"
+        )
+
+def _has_geometry(columns) -> bool:
+    return any(
+        isinstance(c, dict)
+        and str(c.get("dataTypeName") or "").strip().lower() in (_POINT_TYPES | _SHAPE_TYPES)
+        for c in (columns or [])
+    )
+
+
+def _point_clause(column: str, box: list[float]) -> str:
+    west, south, east, north = box
+    return f"within_box({column}, {north}, {west}, {south}, {east})"
+
+
+def _shape_clause(column: str, box: list[float]) -> str:
+    west, south, east, north = box
+    ring = f"{west} {south}, {east} {south}, {east} {north}, {west} {north}, {west} {south}"
+    return f"intersects({column}, 'POLYGON(({ring}))')"
 
 
 def _json(body):

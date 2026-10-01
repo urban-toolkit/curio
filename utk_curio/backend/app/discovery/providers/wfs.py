@@ -178,21 +178,41 @@ class WfsProvider(BaseProvider):
             extra={"crs": match["crs"], "bbox": match["bbox"]} if match["bbox"] else {},
         )
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget:
+    def download_url(self, resource_id: str, fmt: str | None, *, values: dict | None = None) -> DownloadTarget:
         resource_id = self.validate_resource_id(resource_id)
         chosen = self.pick_format(fmt)
         if chosen != "geojson":
             raise self.unsupported(f"{chosen} export")
-        url = self.assert_on_base(
+        url = (
             f"{self.base}?service=WFS&request=GetFeature"
             f"&version={self.version}&typeName={self.q(resource_id)}"
             f"&outputFormat={self.q(self.output_format)}&srsName=EPSG:4326"
         )
+        area = (values or {}).get("area")
+        if area:
+            url += f"&bbox={self.q(_wfs_bbox(area['box'], self.version))}"
+        url = self.assert_on_base(url)
         return DownloadTarget(
             url=url,
             declared_format="geojson",
             filename_hint=f"{resource_id.replace(':', '_')}.geojson",
         )
+
+
+#: The parameters this provider reads.
+PARAMETER_IDS = ("area",)
+
+
+def _wfs_bbox(box: list[float], version: str) -> str:
+    """The GetFeature ``bbox`` for a WGS84 box.
+
+    WFS 1.1 and 2.0 read EPSG:4326 latitude first when the CRS is named by its
+    URN; 1.0 reads it longitude first and takes no CRS in the value.
+    """
+    west, south, east, north = box
+    if version.startswith("1.0"):
+        return f"{west},{south},{east},{north}"
+    return f"{south},{west},{north},{east},urn:ogc:def:crs:EPSG::4326"
 
 
 def _parse_capabilities(xml_text: str) -> list[dict]:

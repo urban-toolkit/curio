@@ -300,6 +300,14 @@
         "null"
       ]
     },
+    "parameters": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/parameter"
+      },
+      "description": "What a person answers before an add, such as an area or a date range. The page draws one form from these, and the server checks every answer against them."
+    },
     "resources": {
       "type": "array",
       "minItems": 1,
@@ -398,6 +406,14 @@
           "options": {
             "type": "object",
             "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet."
+          },
+          "parameters": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/$defs/parameter"
+            },
+            "description": "This resource's own parameters, replacing the source's entries with the same id."
           }
         }
       }
@@ -432,5 +448,127 @@
         ]
       }
     }
-  ]
+  ],
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "label"
+      ],
+      "additionalProperties": false,
+      "description": "One question a person answers before adding a resource. A resource's entry replaces the source's entry with the same id.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]{0,31}$",
+          "description": "A short camelCase name, unique in its list."
+        },
+        "type": {
+          "enum": [
+            "area",
+            "dateRange",
+            "choice",
+            "number",
+            "integer",
+            "boolean",
+            "text",
+            "url"
+          ],
+          "description": "area: a box or named areas; dateRange: a start and an end date; choice: one or more listed values; number and integer: within min and max; boolean; text: matching pattern; url: an https link."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the form calls it."
+        },
+        "description": {
+          "type": "string",
+          "description": "A sentence under the field."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether an add needs an answer. Default false."
+        },
+        "default": {
+          "description": "The answer when none is given; checked like an answer."
+        },
+        "min": {
+          "type": "number",
+          "description": "number and integer: the smallest answer."
+        },
+        "max": {
+          "type": "number",
+          "description": "number and integer: the largest answer."
+        },
+        "step": {
+          "type": "number",
+          "description": "number and integer: the field's step."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "number and integer: shown after the field, such as m."
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "description": "choice: the values offered.",
+          "items": {
+            "type": "object",
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "multiple": {
+          "type": "boolean",
+          "description": "choice: whether several values may be picked."
+        },
+        "pattern": {
+          "type": "string",
+          "description": "text: a regular expression the whole answer must match."
+        },
+        "accepts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "box",
+              "names"
+            ]
+          },
+          "description": "area: box is [west, south, east, north] in WGS84; names is a place and named OpenStreetMap areas inside it. Default [\"box\"]."
+        },
+        "maxAreaKm2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "area: the largest box an add may cover, in square kilometres."
+        },
+        "minDate": {
+          "type": "string",
+          "format": "date",
+          "description": "dateRange: the earliest date."
+        },
+        "maxDate": {
+          "type": "string",
+          "format": "date",
+          "description": "dateRange: the latest date."
+        }
+      }
+    }
+  }
 }

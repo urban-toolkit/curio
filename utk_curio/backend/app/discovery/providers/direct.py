@@ -74,7 +74,7 @@ class DirectProvider(BaseProvider):
             license=self.manifest.license,
         )
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget:
+    def download_url(self, resource_id: str, fmt: str | None, *, values: dict | None = None) -> DownloadTarget:
         url = self.validate_resource_id(resource_id)
         name = _filename(url)
         guessed = _format_of(name)

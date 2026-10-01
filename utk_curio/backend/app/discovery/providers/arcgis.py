@@ -159,7 +159,7 @@ class ArcgisProvider(BaseProvider):
             license=str(attributes.get("license") or ""),
         )
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget:
+    def download_url(self, resource_id: str, fmt: str | None, *, values: dict | None = None) -> DownloadTarget:
         resource_id = self.validate_resource_id(resource_id)
         chosen = self.pick_format(fmt)
         ext = _EXT.get(chosen)

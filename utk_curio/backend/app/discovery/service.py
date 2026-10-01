@@ -27,6 +27,7 @@ from utk_curio.backend.app.discovery.domain.errors import (
     ResourceNotFound,
     SourceNotFound,
 )
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.domain.resource import (
     DiscoveryField,
@@ -182,16 +183,9 @@ class DiscoveryService:
         if manifest.is_storage:
             return self._storage_listing(manifest, q=q, rescan=rescan)
         page = self._browse.search(manifest, _query(q, fmt, limit, cursor))
-        held = self._held_index()
+        held = self._held_formats()
         return search_payload(
-            [
-                resource_row(
-                    r,
-                    source_name=manifest.name,
-                    already_held_dataset_id=held.get((manifest.dir_name, r.resource_id)),
-                )
-                for r in page.resources
-            ],
+            [self._resource_row(manifest, r, held) for r in page.resources],
             sources=[{"sourceId": manifest.id, "status": "ok", "count": len(page.resources)}],
             next_cursor=page.next_cursor,
             total_hint=page.total_hint,
@@ -207,7 +201,6 @@ class DiscoveryService:
             manifests = [m for m in manifests if m.provider.type == provider]
         if not include_storage:
             manifests = [m for m in manifests if not m.is_storage]
-        names = {m.id: m.name for m in manifests}
         portals = [m for m in manifests if not m.is_storage]
         query = _query(q, fmt, limit, None)
         storage_pages = []
@@ -237,19 +230,10 @@ class DiscoveryService:
                 })
         rows, legs = self._browse.search_all(portals, query, extra_pages=storage_pages)
         legs = sorted(legs + storage_legs, key=lambda leg: leg["sourceId"])
-        held = self._held_index()
-        dirs = {m.id: m.dir_name for m in manifests}
+        held = self._held_formats()
+        by_id = {m.id: m for m in manifests}
         return search_payload(
-            [
-                resource_row(
-                    r,
-                    source_name=names.get(r.source_id, ""),
-                    already_held_dataset_id=held.get(
-                        (dirs.get(r.source_id, ""), r.resource_id)
-                    ),
-                )
-                for r in rows
-            ],
+            [self._resource_row(by_id[r.source_id], r, held) for r in rows if r.source_id in by_id],
             sources=legs,
             # A fan-out has no coherent cursor: five portals paginate
             # independently and interleaving them past page one would repeat
@@ -263,9 +247,13 @@ class DiscoveryService:
             detail = self._storage_detail(manifest, resource_id)
         else:
             detail = self._browse.describe(manifest, resource_id)
-        held = self._held_index().get((manifest.dir_name, resource_id))
+        formats = self._held_formats().get((manifest.dir_name, resource_id), {})
         return resource_detail_row(
-            detail, source_name=manifest.name, already_held_dataset_id=held
+            detail,
+            source_name=manifest.name,
+            already_held_dataset_id=next(iter(formats.values()), None),
+            held_formats=formats,
+            parameters=_parameters_for(manifest, detail.resource),
         )
 
     # ── storage ────────────────────────────────────────────────────────────
@@ -281,13 +269,9 @@ class DiscoveryService:
             return search_payload([], sources=[blocked])
         state = self._listing(manifest, rescan=rescan)
         view = state.view()
-        held = self._held_index()
+        held = self._held_formats()
         rows = [
-            resource_row(
-                r,
-                source_name=manifest.name,
-                already_held_dataset_id=held.get((manifest.dir_name, r.resource_id)),
-            )
+            self._resource_row(manifest, r, held)
             for r in (view.resources if view is not None else [])
             if _storage_matches(r, q)
         ]
@@ -371,25 +355,36 @@ class DiscoveryService:
         service = DatasetCatalogService(self.user)
         return service._mutations._install_imported_path(path, filename, fmt, **kwargs)
 
-    def _held_index(self) -> dict[tuple[str, str], str]:
-        """What this account already downloaded, for a whole page of rows.
+    def _resource_row(self, manifest: DiscoverySourceManifest, resource, held) -> dict[str, Any]:
+        """One row: what it is, which formats this account holds, and what an
+        add of it asks."""
+        formats = held.get((manifest.dir_name, resource.resource_id), {})
+        return resource_row(
+            resource,
+            source_name=manifest.name,
+            already_held_dataset_id=next(iter(formats.values()), None),
+            held_formats=formats,
+            parameters=_parameters_for(manifest, resource),
+        )
 
-        Resolved here rather than per row: the question is one walk of the
-        user's store, and asking it once per result turned it into twenty.
+    def _held_formats(self) -> dict[tuple[str, str], dict[str, str]]:
+        """What this account holds from any source, by resource and format.
+
+        One store walk per page of rows, not one per row.
         """
         from utk_curio.backend.app.datasets.repositories.user_store import (
             UserDatasetRepository,
         )
 
-        return UserDatasetRepository(self.user).discovery_resource_index()
+        return UserDatasetRepository(self.user).discovery_resource_formats()
 
-    def _find_held(self, source_id, resource_id, fmt):
+    def _find_held(self, source_id, resource_id, fmt, parameters_hash=None):
         from utk_curio.backend.app.datasets.repositories.user_store import (
             UserDatasetRepository,
         )
 
         return UserDatasetRepository(self.user).find_by_discovery_resource(
-            source_id, resource_id, fmt
+            source_id, resource_id, fmt, parameters_hash=parameters_hash
         )
 
     def _find_by_content(self, content_sha256):
@@ -401,15 +396,24 @@ class DiscoveryService:
 
     def start_acquire(
         self, dir_name: str, resource_id: str, *, fmt=None, title=None, refresh=False,
-        filters=None, files=None,
+        filters=None, files=None, parameters=None,
     ) -> dict[str, Any]:
         """Begin a download, or answer immediately if we already hold it.
 
         Returns either ``{dataset, alreadyPresent: True}`` - no job, no request
         - or ``{jobId, status}``. The caller distinguishes them by which keys
         are present, and the route turns that into a 200 or a 202.
+
+        *parameters* are the answers to what the resource declares (an area, a
+        date range). They are checked here, before a job exists, and they are
+        part of what "already held" means: the same resource for another area
+        is another dataset.
         """
         manifest = self._catalog.get_manifest(dir_name)
+        values = P.validate_values(
+            manifest.declared_parameters(_base_resource_id(manifest, resource_id)), parameters
+        )
+        values_hash = P.values_hash(values) if values else None
         narrowed = False
         if manifest.is_storage:
             # Refuses an id the manifest does not declare, or a narrowing it
@@ -420,7 +424,9 @@ class DiscoveryService:
             fmt = None
         elif filters or files is not None:
             raise CapabilityUnsupported(f"{manifest.name} is not narrowed by field or file")
-        held = None if narrowed else self._acquire.already_held(manifest, resource_id, fmt)
+        held = None if narrowed else self._acquire.already_held(
+            manifest, resource_id, fmt, parameters_hash=values_hash
+        )
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
@@ -500,6 +506,7 @@ class DiscoveryService:
                             fmt=fmt,
                             title=title,
                             refresh=refresh,
+                            parameters=values,
                             progress=_progress,
                             cancelled=lambda: job.cancelled,
                         )
@@ -682,6 +689,25 @@ def _storage_matches(resource, text: str) -> bool:
         + [str(v) for row in resource.fields for v in row.get("values", [])]
     ).lower()
     return all(word in haystack for word in needle.split())
+
+
+def _parameters_for(manifest: DiscoverySourceManifest, resource) -> tuple:
+    """The parameters an add of *resource* takes: what the manifest declares
+    for it, narrowed to the ones the provider says apply to this row."""
+    declared = manifest.declared_parameters(_base_resource_id(manifest, resource.resource_id))
+    applies = getattr(resource, "parameter_ids", None)
+    if applies is None:
+        return declared
+    return tuple(spec for spec in declared if spec.id in applies)
+
+
+def _base_resource_id(manifest: DiscoverySourceManifest, resource_id: str) -> str | None:
+    """The declared resource a row comes from: a storage row's id may carry a
+    split value or a file after the resource's own id."""
+    if not manifest.resources:
+        return None
+    base = resource_id.split("@", 1)[0].split("/", 1)[0]
+    return base if manifest.resource(base) is not None else None
 
 
 def _iso(ts: float | None) -> str | None:

@@ -27,10 +27,18 @@
     },
     "status": 200
   },
-  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv": {
+  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv?$limit=2147483647": {
     "file": "download/crimes.csv",
     "headers": {
       "Content-Length": "44",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv?$limit=2147483647&$where=within_box%28location%2C%2041.89%2C%20-87.64%2C%2041.875%2C%20-87.62%29": {
+    "file": "download/crimes_loop.csv",
+    "headers": {
+      "Content-Length": "34",
       "Content-Type": "text/csv"
     },
     "status": 200
@@ -622,6 +630,13 @@
     "status": 200
   },
   "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetFeature&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo&outputFormat=application%2Fjson&srsName=EPSG:4326": {
+    "file": "download/paraciclo.geojson",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetFeature&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo&outputFormat=application%2Fjson&srsName=EPSG:4326&bbox=-23.57%2C-46.66%2C-23.54%2C-46.62%2Curn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A4326": {
     "file": "download/paraciclo.geojson",
     "headers": {
       "Content-Type": "application/json"

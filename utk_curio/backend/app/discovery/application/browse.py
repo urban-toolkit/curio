@@ -83,9 +83,15 @@ class DiscoveryBrowse:
         self._spend(manifest)
         return self._provider(manifest).describe(resource_id)
 
-    def download_target(self, manifest: DiscoverySourceManifest, resource_id: str, fmt: str | None):
+    def download_target(
+        self,
+        manifest: DiscoverySourceManifest,
+        resource_id: str,
+        fmt: str | None,
+        values: dict | None = None,
+    ):
         self._spend(manifest)
-        return self._provider(manifest).download_url(resource_id, fmt)
+        return self._provider(manifest).download_url(resource_id, fmt, values=values or {})
 
     # ── every source ───────────────────────────────────────────────────────
 

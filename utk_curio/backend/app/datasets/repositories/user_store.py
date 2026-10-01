@@ -67,7 +67,11 @@ class UserDatasetRepository:
         self.user = user
 
     def find_by_discovery_resource(
-        self, source_id: str, resource_id: str, fmt: str | None = None
+        self,
+        source_id: str,
+        resource_id: str,
+        fmt: str | None = None,
+        parameters_hash: str | None = None,
     ) -> dict[str, Any] | None:
         """A dataset this account already downloaded from that portal resource.
 
@@ -77,7 +81,10 @@ class UserDatasetRepository:
         point is to answer BEFORE downloading anything.
 
         ``fmt`` narrows it: the same resource downloaded as CSV and as GeoJSON
-        is two datasets, and holding one is not holding the other.
+        is two datasets, and holding one is not holding the other. So does
+        ``parameters_hash``: the same resource for another area or other dates
+        is another dataset, and a download with no parameters matches only one
+        that had none.
         """
         if self.user is None or not source_id or not resource_id:
             return None
@@ -90,6 +97,8 @@ class UserDatasetRepository:
             if discovered.get("narrowed"):
                 continue
             if fmt and item.get("format") != fmt:
+                continue
+            if (discovered.get("parametersHash") or None) != (parameters_hash or None):
                 continue
             # Added again after the source changed: the latest one is held.
             if found is None or _added_at(item) > _added_at(found):
@@ -135,12 +144,36 @@ class UserDatasetRepository:
         for item in self.list_items():
             discovered = item.get("discoverySource") or {}
             source_id, resource_id = discovered.get("sourceId"), discovered.get("resourceId")
-            if not source_id or not resource_id or discovered.get("narrowed"):
+            if not source_id or not resource_id or not _whole(discovered):
                 continue
             held = latest.get((source_id, resource_id))
             if held is None or _added_at(item) > _added_at(held):
                 latest[(source_id, resource_id)] = item
         return {key: item["id"] for key, item in latest.items()}
+
+    def discovery_resource_formats(self) -> dict[tuple[str, str], dict[str, str]]:
+        """The same walk, by format: ``(sourceId, resourceId) -> {format: datasetId}``.
+
+        What a row needs to say "you hold the CSV" while still offering the
+        GeoJSON: holding one format is not holding the other.
+        """
+        latest: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        if self.user is None:
+            return {}
+        for item in self.list_items():
+            discovered = item.get("discoverySource") or {}
+            source_id, resource_id = discovered.get("sourceId"), discovered.get("resourceId")
+            fmt = item.get("format")
+            if not source_id or not resource_id or not fmt or not _whole(discovered):
+                continue
+            by_format = latest.setdefault((source_id, resource_id), {})
+            held = by_format.get(fmt)
+            if held is None or _added_at(item) > _added_at(held):
+                by_format[fmt] = item
+        return {
+            key: {fmt: item["id"] for fmt, item in by_format.items()}
+            for key, by_format in latest.items()
+        }
 
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
@@ -210,6 +243,12 @@ class UserDatasetRepository:
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin="computed"))
         return items
+
+
+def _whole(discovered: dict[str, Any]) -> bool:
+    """Whether a download is the resource itself, rather than a pick from it:
+    part of a storage row, or the answers to a source's parameters."""
+    return not discovered.get("narrowed") and not discovered.get("parametersHash")
 
 
 def _added_at(item: dict[str, Any]) -> str:

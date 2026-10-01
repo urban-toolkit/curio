@@ -48,7 +48,12 @@ class DiscoveryProvider(Protocol):
 
     def describe(self, resource_id: str) -> DiscoveryResourceDetail: ...
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget: ...
+    def download_url(
+        self, resource_id: str, fmt: str | None, *, values: dict | None = None
+    ) -> DownloadTarget:
+        """*values* are the answers to the parameters the manifest declares, already
+        checked; a provider reads only the ids it lists in ``PARAMETER_IDS``."""
+        ...
 
 
 class BaseProvider:

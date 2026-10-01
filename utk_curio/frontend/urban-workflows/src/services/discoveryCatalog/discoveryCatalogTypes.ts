@@ -130,6 +130,43 @@ export interface DiscoverySourceCapabilities {
 }
 
 /** One resource a storage manifest declares, before any scan. */
+/** The type of one declared parameter: what its field asks for. */
+export type DiscoveryParameterType =
+  | "area"
+  | "dateRange"
+  | "choice"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "text"
+  | "url";
+
+/** One question a source asks before an add (`domain/parameters.py`). */
+export interface DiscoveryParameter {
+  id: string;
+  type: DiscoveryParameterType;
+  label: string;
+  description: string;
+  required: boolean;
+  default?: unknown;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  minDate?: string;
+  maxDate?: string;
+  options?: { value: string; label: string }[];
+  multiple?: boolean;
+  /** area: `box` is [west, south, east, north]; `names` is named OSM areas. */
+  accepts?: ("box" | "names")[];
+  maxAreaKm2?: number;
+}
+
+/** An area answer: a WGS84 box, or named OpenStreetMap areas. */
+export type DiscoveryAreaValue =
+  | { box: [number, number, number, number]; label?: string }
+  | { names: { geocodeArea: string; areas: string[] } };
+
 export interface DiscoveryDeclaredResource {
   resourceId: string;
   name: string;
@@ -143,6 +180,8 @@ export interface DiscoveryDeclaredResource {
   datasets: string;
   splitBy: string[];
   fields: { name: string; type: string }[];
+  /** What an add of it asks: the source's parameters, with its own over them. */
+  parameters?: DiscoveryParameter[];
 }
 
 export interface DiscoverySourceRow {
@@ -166,6 +205,8 @@ export interface DiscoverySourceRow {
   kind: DiscoverySourceKind;
   /** A storage source's declared resources; empty for a portal. */
   resources: DiscoveryDeclaredResource[];
+  /** What an add asks, for every resource of the source. */
+  parameters?: DiscoveryParameter[];
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -269,6 +310,11 @@ export interface DiscoveryResource {
   /** Set when this account already downloaded this resource, so the row links
    *  to the dataset instead of offering a second copy. */
   alreadyHeldDatasetId: string | null;
+  /** The datasets held from this row, by format. Holding the CSV is not
+   *  holding the GeoJSON. */
+  heldFormats?: Record<string, string>;
+  /** What an add of this row asks, such as an area. */
+  parameters?: DiscoveryParameter[];
   /** Storage rows only, null for a portal's. */
   kind?: DiscoveryResourceKind | null;
   fileCount?: number | null;

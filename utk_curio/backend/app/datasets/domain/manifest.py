@@ -121,9 +121,15 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         if not isinstance(discovery_source, dict):
             raise ManifestError(f"{where}.discoverySource must be an object when present")
         # Bounded: every value in it came off a remote portal, and a manifest is
-        # read on every catalog listing.
+        # read on every catalog listing. ``parameters`` (the answers a download
+        # was narrowed by, such as an area's box) keeps its shape, bounded the
+        # way a collection block is.
         discovery_source = {
-            str(k)[:64]: (v if isinstance(v, (int, float, bool)) else str(v)[:512])
+            str(k)[:64]: (
+                _bounded(v, depth=1) if k == "parameters" and isinstance(v, dict)
+                else v if isinstance(v, (int, float, bool))
+                else str(v)[:512]
+            )
             for k, v in list(discovery_source.items())[:16]
             if v is not None
         }

@@ -40,6 +40,7 @@ from utk_curio.backend.app.discovery.domain.formats import (
     refuse_archives,
     resolve_format,
 )
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure import ratelimit
 from utk_curio.backend.app.discovery.infrastructure.transport import (
@@ -78,9 +79,14 @@ class DiscoveryAcquire:
     # ── the check that avoids the network entirely ─────────────────────────
 
     def already_held(
-        self, manifest: DiscoverySourceManifest, resource_id: str, fmt: str | None
+        self,
+        manifest: DiscoverySourceManifest,
+        resource_id: str,
+        fmt: str | None,
+        *,
+        parameters_hash: str | None = None,
     ) -> dict[str, Any] | None:
-        return self._find_held(manifest.dir_name, resource_id, fmt)
+        return self._find_held(manifest.dir_name, resource_id, fmt, parameters_hash)
 
     # ── the work ───────────────────────────────────────────────────────────
 
@@ -92,20 +98,28 @@ class DiscoveryAcquire:
         fmt: str | None = None,
         title: str | None = None,
         refresh: bool = False,
+        parameters: dict[str, Any] | None = None,
         progress: Callable[[int, int | None], None] | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Download and register. Returns ``{dataset, alreadyPresent, unchanged}``."""
+        """Download and register. Returns ``{dataset, alreadyPresent, unchanged}``.
+
+        *parameters* are answers already checked against the manifest
+        (``service.start_acquire``): the provider narrows the download by them,
+        and the dataset records them.
+        """
         if not manifest.capabilities.download:
             raise CapabilityUnsupported(f"{manifest.name} does not offer downloads")
 
-        held = self.already_held(manifest, resource_id, fmt)
+        values = dict(parameters or {})
+        values_hash = P.values_hash(values) if values else None
+        held = self.already_held(manifest, resource_id, fmt, parameters_hash=values_hash)
         if held is not None and not refresh:
             # The whole point of recording the resource id: this path issues no
             # request at all, so re-clicking Download costs a portal nothing.
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
-        target = self._download_target(manifest, resource_id, fmt)
+        target = self._download_target(manifest, resource_id, fmt, values)
         if not target or not target.url:
             raise ResourceNotFound(f"{resource_id} has no download URL")
 
@@ -152,7 +166,9 @@ class DiscoveryAcquire:
             # Held again, now that the real format is known: a caller who asked
             # for no particular format may already hold what the portal chose.
             if not refresh:
-                held = self.already_held(manifest, resource_id, fmt_detected)
+                held = self.already_held(
+                    manifest, resource_id, fmt_detected, parameters_hash=values_hash
+                )
                 if held is not None:
                     return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
@@ -183,6 +199,9 @@ class DiscoveryAcquire:
                     "finalUrl": getattr(result, "final_url", target.url),
                     "fetchedAt": _iso_now(),
                     "contentSha256": result.sha256,
+                    # What the download was narrowed by, so the Data Catalog
+                    # can say it and an identical add finds it held.
+                    **({"parameters": values, "parametersHash": values_hash} if values else {}),
                 },
             )
         except _Cancelled:

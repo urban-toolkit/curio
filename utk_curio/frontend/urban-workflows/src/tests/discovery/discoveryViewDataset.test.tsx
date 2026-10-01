@@ -84,6 +84,7 @@ const heldRow = {
   sizeHint: null,
   acquirable: true,
   alreadyHeldDatasetId: 'imported.xdeadbeef',
+  heldFormats: { csv: 'imported.xdeadbeef' },
 };
 
 const searchResponse = {

@@ -260,6 +260,8 @@ def acquire_discovery_resource(source_dir: str, resource_id: str):
         # A storage row only: keep some field values, or some of its files.
         filters=body.get("filters") or None,
         files=body.get("files"),
+        # The answers to what the resource declares, such as an area.
+        parameters=body.get("parameters"),
     )
     return jsonify(payload), (200 if payload.get("alreadyPresent") else 202)
 

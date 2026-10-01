@@ -56,7 +56,7 @@ class TestEveryShippedSource:
         assert set(row) == {
             "sourceId", "dirName", "name", "version", "description", "publisher",
             "homepage", "license", "tags", "iconUrl", "provider", "baseUrl",
-            "auth", "capabilities", "kind", "resources", "createdAt", "updatedAt",
+            "auth", "capabilities", "kind", "resources", "parameters", "createdAt", "updatedAt",
         }
         assert set(row["auth"]) == {
             "mode", "required", "usesToken", "secretId", "present", "helpUrl",

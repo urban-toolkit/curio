@@ -123,13 +123,19 @@ class TestSocrata:
         assert "case_number" in field_names, field_names[:10]
         assert detail.resource.updated_at, "rowsUpdatedAt should become a date"
 
-    def test_the_export_url_is_the_bulk_endpoint(self):
+    def test_the_export_url_is_the_bulk_endpoint_with_a_limit(self):
+        """SODA answers 1,000 rows to an export that names no ``$limit``: the
+        Chicago crimes export came back with exactly 1,000 of its 8.6 million
+        rows on 2026-10-01. So the export names one, and the byte cap is what
+        bounds the download."""
+        from utk_curio.backend.app.discovery.providers.socrata import EXPORT_LIMIT
+
         provider, _, _ = _provider("source.cityofchicago.data-portal@1")
         target = provider.download_url("ijzp-q8t2", "csv")
-        assert target.url == "https://data.cityofchicago.org/resource/ijzp-q8t2.csv"
-        # No $limit: that would silently truncate a dataset and hand the user a
-        # partial file that looks whole. The byte cap is what bounds it.
-        assert "$limit" not in target.url
+        assert target.url == (
+            f"https://data.cityofchicago.org/resource/ijzp-q8t2.csv?$limit={EXPORT_LIMIT}"
+        )
+        assert EXPORT_LIMIT >= 2**31 - 1
 
     @pytest.mark.parametrize("bad", ["ijzp_q8t2", "IJZP-Q8T2", "ijzp-q8t2x", "abc-defg-hij"])
     def test_the_4x4_grammar_is_enforced(self, bad):

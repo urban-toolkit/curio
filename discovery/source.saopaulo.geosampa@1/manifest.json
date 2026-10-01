@@ -24,6 +24,12 @@
     "allowOffBaseDistributions": false
   },
   "limits": { "requestsPerMinute": 20 },
+  "parameters": [
+    {
+      "id": "area", "type": "area", "label": "Area", "accepts": ["box"],
+      "description": "Keep only the features inside a box. Leave it empty for the whole layer."
+    }
+  ],
   "createdAt": "2026-09-23T00:00:00Z",
   "updatedAt": "2026-09-23T00:00:00Z"
 }

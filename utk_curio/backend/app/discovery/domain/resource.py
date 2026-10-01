@@ -41,6 +41,10 @@ class DiscoveryResource:
     file_count: int | None = None
     fields: tuple[dict[str, Any], ...] = ()
     samples: tuple[str, ...] = ()
+    #: Which of the source's parameters an add of this row can take, by id.
+    #: None means all of them. A Socrata dataset with no location column, for
+    #: one, takes no area.
+    parameter_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

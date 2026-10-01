@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -112,7 +113,7 @@ class TestProvenance:
         assert discovered["sourceId"] == CHICAGO
         assert discovered["sourceName"] == "City of Chicago Data Portal"
         assert discovered["resourceId"] == "ijzp-q8t2"
-        assert discovered["resourceUrl"].endswith("ijzp-q8t2.csv")
+        assert urlsplit(discovered["resourceUrl"]).path.endswith("/resource/ijzp-q8t2.csv")
         assert len(discovered["contentSha256"]) == 64
         assert discovered["fetchedAt"]
 

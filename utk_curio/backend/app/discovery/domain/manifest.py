@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.source_id import SourceId
 from utk_curio.backend.app.discovery.domain.templates import (
     CAPTURE_NAME_RE,
@@ -48,6 +49,14 @@ STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 #: ``providers`` so that reading a manifest never drags in a transport.
 #: ``providers/__init__.py`` asserts the two agree.
 PROVIDER_TYPES = PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES
+
+#: The parameter ids each provider reads, by provider type. A manifest may
+#: declare only these, so a declared question can never be silently ignored.
+#: ``providers/__init__.py`` asserts each module's ``PARAMETER_IDS`` agrees.
+PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
+    "socrata": ("area",),
+    "wfs": ("area",),
+}
 
 AUTH_MODES = ("public", "optional-token", "required-token")
 
@@ -199,6 +208,9 @@ class ResourceSpec:
     time: str | None = None
     #: A table joined onto a collection's rows: ``{"path", "on"}``.
     metadata: dict[str, str] | None = None
+    #: What a person answers before adding this resource. Replaces the
+    #: source's entry with the same id; see ``domain/parameters.py``.
+    parameters: tuple[P.ParameterSpec, ...] = ()
 
     @property
     def is_collection(self) -> bool:
@@ -232,6 +244,8 @@ class DiscoverySourceManifest:
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     created_at: str | None = None
     updated_at: str | None = None
+    #: What a person answers before an add, for every resource of the source.
+    parameters: tuple[P.ParameterSpec, ...] = ()
 
     @property
     def dir_name(self) -> str:
@@ -246,6 +260,11 @@ class DiscoverySourceManifest:
             if spec.id == resource_id:
                 return spec
         return None
+
+    def declared_parameters(self, resource_id: str | None = None) -> tuple[P.ParameterSpec, ...]:
+        """The parameters a resource takes: the source's, and its own over them."""
+        spec = self.resource(resource_id) if resource_id else None
+        return P.merge(self.parameters, spec.parameters if spec else ())
 
 
 def _require_str(raw: object, field_name: str) -> str:
@@ -453,6 +472,23 @@ def _parse_resources(raw: object, *, provider: ProviderSpec) -> tuple[ResourceSp
     return tuple(out)
 
 
+def _parse_parameters(raw: object, *, where: str) -> tuple[P.ParameterSpec, ...]:
+    try:
+        return P.parse_parameters(raw, where=where)
+    except P.ManifestParameterError as exc:
+        raise ManifestError(str(exc)) from exc
+
+
+def _check_parameter_ids(provider_type: str, specs, where: str) -> None:
+    allowed = PROVIDER_PARAMETER_IDS.get(provider_type, ())
+    unread = sorted(spec.id for spec in specs if spec.id not in allowed)
+    if unread:
+        raise ManifestError(
+            f"{where}: a {provider_type} source reads no parameter named {', '.join(unread)}"
+            + (f"; it reads {', '.join(allowed)}" if allowed else "; it takes none")
+        )
+
+
 def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
     if not isinstance(raw, dict):
         raise ManifestError(f"manifest.{where} must be an object")
@@ -578,6 +614,7 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
         fps=fps,
         time=time_field,
         metadata=metadata,
+        parameters=_parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters"),
     )
 
 
@@ -672,6 +709,10 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DiscoverySourceManife
 
     provider = _parse_provider(raw.get("provider"))
     resources = _parse_resources(raw.get("resources"), provider=provider)
+    source_parameters = _parse_parameters(raw.get("parameters"), where="manifest.parameters")
+    _check_parameter_ids(provider.type, source_parameters, "manifest.parameters")
+    for spec in resources:
+        _check_parameter_ids(provider.type, spec.parameters, f"manifest.resources[{spec.id}].parameters")
     if provider.is_storage:
         capabilities = _storage_capabilities(raw.get("capabilities"), resources)
     else:
@@ -696,6 +737,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DiscoverySourceManife
         requests_per_minute=rpm,
         created_at=str(raw.get("createdAt") or "") or None,
         updated_at=str(raw.get("updatedAt") or "") or None,
+        parameters=source_parameters,
     )
 
 
@@ -742,6 +784,7 @@ def build_manifest_dict(manifest: DiscoverySourceManifest) -> dict[str, Any]:
         },
         "createdAt": manifest.created_at or None,
         "updatedAt": manifest.updated_at or None,
+        "parameters": [P.declaration_dict(spec) for spec in manifest.parameters],
     }
 
 
@@ -765,6 +808,8 @@ def _resource_dict(spec: ResourceSpec) -> dict[str, Any]:
         out["time"] = spec.time
     if spec.metadata:
         out["metadata"] = dict(spec.metadata)
+    if spec.parameters:
+        out["parameters"] = [P.declaration_dict(p) for p in spec.parameters]
     return out
 
 

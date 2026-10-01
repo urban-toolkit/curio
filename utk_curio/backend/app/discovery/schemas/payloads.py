@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest, ResourceSpec
 from utk_curio.backend.app.discovery.domain.resource import (
     DiscoveryResource,
@@ -64,14 +65,22 @@ def source_row(
         # by searching it. The root of a folder is NOT sent: it is a path on
         # the server, and the resources say everything a user acts on.
         "kind": "storage" if manifest.is_storage else "portal",
-        "resources": [declared_resource_row(spec) for spec in manifest.resources],
+        "resources": [
+            declared_resource_row(spec, source_parameters=manifest.parameters)
+            for spec in manifest.resources
+        ],
+        # What a person answers before an add, for every resource of the
+        # source. A declared resource's row carries its own merged list.
+        "parameters": [P.parameter_row(spec) for spec in manifest.parameters],
         "createdAt": manifest.created_at,
         "updatedAt": manifest.updated_at,
     }
 
 
-def declared_resource_row(spec: ResourceSpec) -> dict[str, Any]:
-    """What a storage manifest says about one resource, before any scan."""
+def declared_resource_row(
+    spec: ResourceSpec, *, source_parameters: tuple[P.ParameterSpec, ...] = ()
+) -> dict[str, Any]:
+    """What a manifest says about one declared resource, before any scan."""
     return {
         "resourceId": spec.id,
         "name": spec.name,
@@ -88,6 +97,7 @@ def declared_resource_row(spec: ResourceSpec) -> dict[str, Any]:
             {"name": capture.name, "type": capture.type}
             for capture in spec.template.captures
         ],
+        "parameters": [P.parameter_row(p) for p in P.merge(source_parameters, spec.parameters)],
     }
 
 
@@ -101,6 +111,8 @@ def resource_row(
     source_name: str = "",
     acquirable: bool = True,
     already_held_dataset_id: str | None = None,
+    held_formats: dict[str, str] | None = None,
+    parameters: tuple[P.ParameterSpec, ...] = (),
 ) -> dict[str, Any]:
     """One search result.
 
@@ -121,6 +133,11 @@ def resource_row(
         "sizeHint": resource.size_hint,
         "acquirable": bool(acquirable),
         "alreadyHeldDatasetId": already_held_dataset_id,
+        # The datasets held from it, by format: holding the CSV is not
+        # holding the GeoJSON, and the row offers the one not yet held.
+        "heldFormats": dict(held_formats or {}),
+        # What a person answers before an add of this row.
+        "parameters": [P.parameter_row(p) for p in parameters],
         "kind": resource.kind,
         "fileCount": resource.file_count,
         "fieldValues": [dict(row) for row in resource.fields],
@@ -134,12 +151,16 @@ def resource_detail_row(
     source_name: str = "",
     acquirable: bool = True,
     already_held_dataset_id: str | None = None,
+    held_formats: dict[str, str] | None = None,
+    parameters: tuple[P.ParameterSpec, ...] = (),
 ) -> dict[str, Any]:
     row = resource_row(
         detail.resource,
         source_name=source_name,
         acquirable=acquirable,
         already_held_dataset_id=already_held_dataset_id,
+        held_formats=held_formats,
+        parameters=parameters,
     )
     row["fields"] = [
         {"name": f.name, "type": f.type, "description": f.description}

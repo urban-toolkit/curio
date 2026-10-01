@@ -80,16 +80,27 @@ export function DiscoveryResourceRow({
   const [format, setFormat] = React.useState<string>(resource.formats[0] ?? "");
   const [adding, setAdding] = React.useState(false);
   const [filesOpen, setFilesOpen] = React.useState(false);
-  const held = Boolean(resource.alreadyHeldDatasetId);
+  // A portal row is held one format at a time: holding the CSV is not holding
+  // the GeoJSON, so the row offers the format picked and not yet held. A
+  // storage row has one format, and is held as a whole.
+  const heldFormats = resource.heldFormats ?? {};
+  const heldId = storage ? resource.alreadyHeldDatasetId : heldFormats[format] ?? null;
+  const held = Boolean(heldId);
+  const heldList = storage
+    ? []
+    : resource.formats.filter((f) => heldFormats[f]).map((f) => f.toUpperCase());
   const running = job != null && (job.status === "queued" || job.status === "running");
   // Part of a row, added from the Add dialog or the Files list, is not the
   // row: the row stays offered whole.
   const narrowedJob = Boolean(
     (job?.dataset as { discoverySource?: { narrowed?: boolean } } | null | undefined)?.discoverySource?.narrowed,
   );
-  const finished = job?.status === "completed" && !narrowedJob;
+  // A finished download counts for the format it fetched only.
+  const jobFormat = (job?.dataset as { format?: string } | null | undefined)?.format;
+  const finished =
+    job?.status === "completed" && !narrowedJob && (Boolean(storage) || !jobFormat || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
-  const landedAt = (finished ? job?.datasetId : null) ?? resource.alreadyHeldDatasetId;
+  const landedAt = (finished ? job?.datasetId : null) ?? heldId;
   const kind = resource.kind ?? null;
   const splitBy = storage?.declared?.splitBy ?? [];
   const perFile = storage?.declared?.datasets === "per-file";
@@ -131,7 +142,11 @@ export function DiscoveryResourceRow({
           {resource.formats.map((f) => (
             <CatalogFormatBadge key={f} label={f.toUpperCase()} formatKey={f} />
           ))}
-          {held ? <span className={styles.held}>In your Data Catalog</span> : null}
+          {storage ? (
+            held ? <span className={styles.held}>In your Data Catalog</span> : null
+          ) : heldList.length > 0 ? (
+            <span className={styles.held}>In your Data Catalog as {heldList.join(", ")}</span>
+          ) : null}
           {resource.landingUrl ? (
             <a
               className={styles.landing}

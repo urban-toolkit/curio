@@ -218,7 +218,7 @@ class CkanProvider(BaseProvider):
             license=str(package.get("license_title") or ""),
         )
 
-    def download_url(self, resource_id: str, fmt: str | None) -> DownloadTarget:
+    def download_url(self, resource_id: str, fmt: str | None, *, values: dict | None = None) -> DownloadTarget:
         package, match = self._package_and_file(resource_id)
         url = str(match.get("url") or "")
         if not url:

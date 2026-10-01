@@ -15,6 +15,7 @@ from __future__ import annotations
 from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
 from utk_curio.backend.app.discovery.domain.manifest import (
     PORTAL_PROVIDER_TYPES,
+    PROVIDER_PARAMETER_IDS,
     PROVIDER_TYPES,
     STORAGE_PROVIDER_TYPES,
     DiscoverySourceManifest,
@@ -62,6 +63,13 @@ assert set(STORAGE_PROVIDERS) == set(STORAGE_PROVIDER_TYPES), (
     f"{sorted(set(STORAGE_PROVIDERS) ^ set(STORAGE_PROVIDER_TYPES))}"
 )
 assert set(PROVIDERS) | set(STORAGE_PROVIDERS) == set(PROVIDER_TYPES)
+
+# What a manifest may declare and what the provider reads are the same list.
+_MODULES = {"socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct}
+for _type, _module in _MODULES.items():
+    assert tuple(getattr(_module, "PARAMETER_IDS", ())) == PROVIDER_PARAMETER_IDS.get(_type, ()), (
+        f"{_type}: PARAMETER_IDS and PROVIDER_PARAMETER_IDS disagree"
+    )
 
 
 def build_provider(manifest: DiscoverySourceManifest, transport: DiscoveryTransport) -> DiscoveryProvider:

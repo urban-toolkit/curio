@@ -142,3 +142,51 @@ def test_a_storage_source_is_required_to_declare_resources(schema):
     assert list(validator.iter_errors(raw))
     with pytest.raises(M.ManifestError):
         M._parse_manifest(raw, where="manifest.json")
+
+
+class TestParameters:
+    """``parameters``, at the source and on a resource, as the validator reads it."""
+
+    def _parameter(self, schema):
+        return schema["$defs"]["parameter"]
+
+    def test_both_places_refer_to_the_one_declaration(self, schema):
+        source = schema["properties"]["parameters"]["items"]
+        resource = schema["properties"]["resources"]["items"]["properties"]["parameters"]["items"]
+        assert source == resource == {"$ref": "#/$defs/parameter"}
+
+    def test_the_type_enum_is_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import parameters as P
+
+        assert self._parameter(schema)["properties"]["type"]["enum"] == list(P.PARAMETER_TYPES)
+
+    def test_the_area_forms_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import parameters as P
+
+        assert self._parameter(schema)["properties"]["accepts"]["items"]["enum"] == list(P.AREA_FORMS)
+
+    def test_the_id_pattern_and_the_list_bound_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import parameters as P
+
+        assert self._parameter(schema)["properties"]["id"]["pattern"] == P._ID_RE.pattern
+        assert schema["properties"]["parameters"]["maxItems"] == P.MAX_PARAMETERS
+        assert self._parameter(schema)["properties"]["options"]["maxItems"] == P.MAX_OPTIONS
+
+    def test_every_key_the_validator_writes_is_declared(self, schema):
+        """Derived, not restated: one maximal declaration of each type, read
+        and written back by the validator, names every key it knows."""
+        from utk_curio.backend.app.discovery.domain import parameters as P
+
+        maximal = [
+            {"id": "a", "type": "area", "label": "A", "description": "d", "required": True,
+             "accepts": ["box", "names"], "maxAreaKm2": 4},
+            {"id": "b", "type": "dateRange", "label": "B", "minDate": "2020-01-01", "maxDate": "2030-01-01"},
+            {"id": "c", "type": "choice", "label": "C", "options": [{"value": "x", "label": "X"}],
+             "multiple": True, "default": ["x"]},
+            {"id": "d", "type": "number", "label": "D", "min": 0, "max": 9, "step": 1, "unit": "m"},
+            {"id": "e", "type": "text", "label": "E", "pattern": "[a-z]+"},
+        ]
+        written: set[str] = set()
+        for spec in P.parse_parameters(maximal, where="parameters"):
+            written |= set(P.declaration_dict(spec))
+        assert set(self._parameter(schema)["properties"]) == written

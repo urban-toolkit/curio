@@ -74,12 +74,12 @@ describe('DiscoveryResourceRow', () => {
     const onViewDataset = jest.fn();
     render(
       <DiscoveryResourceRow
-        resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef' })}
+        resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef', heldFormats: { geojson: 'imported.xdeadbeef' } })}
         onDownload={jest.fn()}
         onViewDataset={onViewDataset}
       />
     );
-    expect(screen.getByText('In your Data Catalog')).toBeInTheDocument();
+    expect(screen.getByText('In your Data Catalog as GEOJSON')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View dataset' }));
     expect(onViewDataset).toHaveBeenCalledWith('imported.xdeadbeef');
     expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
@@ -91,7 +91,7 @@ describe('DiscoveryResourceRow', () => {
     // details opens the modal and stays put.
     render(
       <DiscoveryResourceRow
-        resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef' })}
+        resource={resource({ alreadyHeldDatasetId: 'imported.xdeadbeef', heldFormats: { geojson: 'imported.xdeadbeef' } })}
         onViewDataset={jest.fn()}
       />
     );
@@ -220,6 +220,47 @@ describe('DiscoveryResourceRow: a download in flight', () => {
         onDownload={jest.fn()}
       />
     );
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+});
+
+describe('a row held in one format (#477)', () => {
+  const twoFormats = (over: Partial<DiscoveryResource> = {}) =>
+    resource({
+      formats: ['csv', 'geojson'],
+      alreadyHeldDatasetId: 'imported.xcsv',
+      heldFormats: { csv: 'imported.xcsv' },
+      ...over,
+    });
+
+  test('offers the held format as a dataset and the other as a download', () => {
+    const onDownload = jest.fn();
+    render(<DiscoveryResourceRow resource={twoFormats()} onDownload={onDownload} onViewDataset={jest.fn()} />);
+    expect(screen.getByText('In your Data Catalog as CSV')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'geojson' } });
+    expect(screen.queryByRole('button', { name: 'View dataset' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ resourceId: 'abcd-1234' }), 'geojson');
+  });
+
+  test('a finished CSV download does not stand for the GeoJSON', () => {
+    const job = {
+      jobId: 'j1', status: 'completed', bytesRead: 10, totalBytes: 10, stageMessage: '', error: null,
+      datasetId: 'imported.xcsv', dataset: { id: 'imported.xcsv', format: 'csv' },
+      alreadyPresent: false, unchanged: false, sourceId: 'source.a.portal@1', resourceId: 'abcd-1234',
+    } as DiscoveryAcquireJob;
+    render(
+      <DiscoveryResourceRow
+        resource={twoFormats({ alreadyHeldDatasetId: null, heldFormats: {} })}
+        job={job}
+        onDownload={jest.fn()}
+        onViewDataset={jest.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'geojson' } });
     expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
   });
 });
