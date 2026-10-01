@@ -1698,6 +1698,32 @@ CLOSEUP_PIXEL_THRESHOLD = 5
 CLOSEUP_MAX_DIFF_RATIO = 0.02
 
 
+# Sets the canvas viewport's inline will-change; "" hands it back to the stylesheet.
+_VIEWPORT_WILL_CHANGE_JS = """(value) => {
+    const viewport = document.querySelector('.react-flow__viewport');
+    if (viewport) viewport.style.willChange = value;
+}"""
+
+
+@contextmanager
+def canvas_painted_at_shown_zoom(page: Page):
+    """The canvas without its ``will-change`` hint while inside, for strict captures.
+
+    The canvas viewport is a ``will-change: transform`` layer (MainCanvas.css),
+    which Chrome may keep painted at the zoom it had before the last fit
+    (#533): example 09's close-up came out soft on main, its text and the
+    map's tile seams 2.62% off the baseline (run 36791096981). Without the hint
+    a node is painted at the zoom it is shown at. Turning the hint back on
+    starts a fresh layer, so every capture compared against another one, on
+    disk or in memory, belongs inside one block.
+    """
+    page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "auto")
+    try:
+        yield
+    finally:
+        page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "")
+
+
 def save_node_closeup(
     page: Page,
     workflow_filepath: str,
@@ -1717,18 +1743,19 @@ def save_node_closeup(
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
-    frame_nodes(page, [node_id])
-    return save_workflow_test_screenshot(
-        page,
-        workflow_filepath,
-        test_name=test_name,
-        pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
-        max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
-        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
-        fit_reactflow=False,
-        sweep_toasts=sweep_toasts,
-        closeup=True,
-    )
+    with canvas_painted_at_shown_zoom(page):
+        frame_nodes(page, [node_id])
+        return save_workflow_test_screenshot(
+            page,
+            workflow_filepath,
+            test_name=test_name,
+            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
+            max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
+            clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+            fit_reactflow=False,
+            sweep_toasts=sweep_toasts,
+            closeup=True,
+        )
 
 
 def park_pointer(page: Page) -> None:
@@ -2016,9 +2043,10 @@ def save_interaction_frame(
     Neither refits the canvas nor moves the pointer, and never sweeps toasts
     (that parks the pointer too): a held hover has to still be held when the
     shutter fires. Compared at ``CLOSEUP_PIXEL_THRESHOLD`` against
-    ``CLOSEUP_MAX_DIFF_RATIO``, like a close-up. *interaction* names the
-    frame's place in its pair (step, phase, role, node) for the CI report's
-    Interaction pairs.
+    ``CLOSEUP_MAX_DIFF_RATIO``, like a close-up, so it is taken inside the
+    caller's ``canvas_painted_at_shown_zoom`` block, with the captures it is
+    compared against in memory. *interaction* names the frame's place in its
+    pair (step, phase, role, node) for the CI report's Interaction pairs.
     """
     return save_workflow_test_screenshot(
         page,
