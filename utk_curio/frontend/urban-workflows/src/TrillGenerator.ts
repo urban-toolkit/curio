@@ -305,6 +305,16 @@ export class TrillGenerator {
                 trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
             }
 
+            // #412: a renamed node header (the header's rename and the config
+            // modal both write data.packageTemplateLabel) persists at
+            // metadata.packageTemplateLabel.
+            if(typeof node.data.packageTemplateLabel === "string" && node.data.packageTemplateLabel.trim()){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
+            }
+
             if(typeof node.data.title === "string" && node.data.title)
                 trill_node.title = node.data.title;
 

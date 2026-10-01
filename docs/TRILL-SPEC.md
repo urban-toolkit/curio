@@ -44,6 +44,10 @@ document. It is absent on presentation-only templates. `title` and
 accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
 supply either.
 
+`metadata.packageTemplateLabel` is the node's header when the user has renamed
+it. It is written only when non-blank; without it the header shows the
+template's label.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

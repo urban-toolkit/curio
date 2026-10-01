@@ -61,6 +61,9 @@ type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
+    // #412: a renamed node header (metadata.packageTemplateLabel), which the
+    // header reads through resolveNodeDisplayLabel.
+    packageTemplateLabel?: string;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -224,6 +227,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.simpleVis != undefined)
                 nodeMeta.simpleVis = node.metadata.simpleVis;
 
+            // #412: and so does a renamed node header.
+            if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
+                nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -380,6 +387,7 @@ export function useCode(): IUseCode {
             comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
+            packageTemplateLabel = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -425,6 +433,7 @@ export function useCode(): IUseCode {
                 comments,
                 spatialJoin,
                 simpleVis,
+                packageTemplateLabel,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

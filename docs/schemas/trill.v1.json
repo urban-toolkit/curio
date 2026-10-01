@@ -253,6 +253,11 @@
             "imageColumn": { "type": "string", "minLength": 1 }
           }
         },
+        "packageTemplateLabel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The node's renamed header (#412). Absent means the header shows its template's label."
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },
