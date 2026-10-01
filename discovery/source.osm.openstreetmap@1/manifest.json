@@ -3,7 +3,7 @@
   "name": "OpenStreetMap",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each building, road, park and water row is one OpenStreetMap way or relation, with its tags and its id.",
+  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each building, road, park and water row is one OpenStreetMap way or relation, with its tags and its id; heights, widths, speeds and counts are numbers.",
   "publisher": "OpenStreetMap contributors",
   "homepage": "https://www.openstreetmap.org",
   "license": "ODbL 1.0",

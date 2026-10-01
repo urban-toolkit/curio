@@ -5,8 +5,9 @@ so far: autk-db's ``loadOsm``, run in Node by ``providers/autark_osm.py``,
 writes one GeoJSON file per Autark layer, one feature per OpenStreetMap way or
 relation, in autk-db's workspace CRS (EPSG:3395). Here each layer is moved to
 WGS84, as GeoJSON requires, with its features and properties as Autark built
-them, and installed: one layer as an ordinary dataset, several as one
-``osm.x`` layer group, the group an uploaded ``.pbf`` forms.
+them, its numeric tags written as numbers (``domain/osm_values.py``), and
+installed: one layer as an ordinary dataset, several as one ``osm.x`` layer
+group, the group an uploaded ``.pbf`` forms.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from utk_curio.backend.app.common.user_storage import user_key_segment, users_ba
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
+from utk_curio.backend.app.discovery.domain.osm_values import with_numbers
 from utk_curio.backend.app.discovery.infrastructure import ratelimit
 
 #: autk-db keeps every layer in this CRS (World Mercator).
@@ -160,7 +162,7 @@ class ServiceAcquire:
             group_id = f"osm.x{uuid.uuid4().hex[:8]}" if len(filled) > 1 else None
             items = []
             for layer in filled:
-                collection = to_wgs84(json.loads(layer.path.read_text(encoding="utf-8")))
+                collection = with_numbers(to_wgs84(json.loads(layer.path.read_text(encoding="utf-8"))))
                 blob = json.dumps(collection, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
                 items.append(
                     self._install_bytes(

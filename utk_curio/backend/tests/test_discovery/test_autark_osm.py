@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import shutil
 import stat
 import time
@@ -34,6 +35,9 @@ GOLF = {"names": {"geocodeArea": "Illinois", "areas": ["Golf"]}}
 # A box inside Golf, [west, south, east, north]: about 1.8 km2.
 GOLF_BOX = {"box": [-87.8, 42.05, -87.78, 42.06], "label": "Golf"}
 NOWHERE = {"names": {"geocodeArea": "Illinois", "areas": ["Nowhere Land"]}}
+# A box across Chicago's Loop to Lake Shore Drive, about 0.27 km2: roads with
+# speeds, lane counts and clearances.
+LOOP_BOX = {"box": [-87.6295, 41.8805, -87.615, 41.8825], "label": "The Loop"}
 
 ROOT_AUTK_DB = Path(__file__).resolve().parents[4] / "node_modules" / "@urban-toolkit" / "autk-db"
 needs_node = pytest.mark.skipif(
@@ -301,6 +305,43 @@ class TestItBecomesDatasets:
                 assert {kind for kind, _ in elements} == {"way"}
         parks = json.loads(Path(members["parks"]["path"]).read_text())["features"]
         assert {f["properties"]["osm_type"] for f in parks} == {"way", "relation"}
+
+    def test_numeric_tags_are_numbers(self, client, auth, live):
+        """Roads across the Loop: the speeds, lane counts and clearances its
+        ways carry land as numbers, in km/h and metres, and read as numeric
+        columns; other tags stay text."""
+        gpd = pytest.importorskip("geopandas")
+        import pandas as pd
+
+        job = wait_for(client, auth, acquire(client, auth, OSM, "roads", parameters={"area": LOOP_BOX})
+                       .get_json()["jobId"], timeout=120)
+        assert job["status"] == "completed", job
+        frame = gpd.read_file(job["dataset"]["path"])
+        for column in ("maxspeed", "lanes", "lanes:forward", "lanes:backward", "maxheight", "layer", "width"):
+            assert pd.api.types.is_numeric_dtype(frame[column]), column
+        assert set(frame["ref"].dropna()) == {"US 41"}
+
+        rows = frame.set_index("osm_id")
+        tags = {e["id"]: e["tags"] for answer in _recorded_answers() for e in answer
+                if e["type"] == "way" and e["id"] in rows.index}
+        assert len(tags) == len(rows)
+        checked = 0
+        for osm_id, way in tags.items():
+            if way.get("maxspeed", "").endswith(" mph"):
+                assert rows.at[osm_id, "maxspeed"] == round(int(way["maxspeed"].split()[0]) * 1.609344, 2)
+                checked += 1
+            if "lanes" in way:
+                assert rows.at[osm_id, "lanes"] == int(way["lanes"])
+                checked += 1
+            if "maxheight" in way:
+                feet_inches = re.fullmatch(r"(\d+)'(\d+)\"", way["maxheight"])
+                if feet_inches:
+                    feet, inches = map(int, feet_inches.groups())
+                    assert rows.at[osm_id, "maxheight"] == round(feet * 0.3048 + inches * 0.0254, 2)
+                else:
+                    assert pd.isna(rows.at[osm_id, "maxheight"]), way["maxheight"]
+                checked += 1
+        assert checked >= 20
 
     def test_the_same_add_again_runs_nothing(self, client, auth, live, monkeypatch):
         first = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF})
