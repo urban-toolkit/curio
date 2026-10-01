@@ -27,6 +27,7 @@ from .utils import (
     assert_autark_map_drawn,
     at_fraction,
     brush_area,
+    capture_node,
     changed_pixels,
     drawing_kept,
     drawing_selector,
@@ -1108,6 +1109,7 @@ class TestWorkflowCanvas:
         assert drawing, f"{where}: its target {step.target} drew nothing"
         keep_drawing(page, drawing)
         before = wait_for_node_still(page, step.target)
+        source_before = capture_node(page, step.source)
         frame("before", "source")
         frame("before", "target")
 
@@ -1136,9 +1138,11 @@ class TestWorkflowCanvas:
             page, step.target,
             lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
         )
+        # The source's own change says whether the gesture landed at all.
         assert reached, (
             f"{where} left {step.target} as it was "
-            f"({changed_pixels(before, after)} pixels changed)"
+            f"({changed_pixels(before, after)} pixels changed; the source "
+            f"changed by {changed_pixels(source_before, capture_node(page, step.source))})"
         )
         wait_for_node_still(page, step.target)
         assert drawing_kept(page, drawing), (
