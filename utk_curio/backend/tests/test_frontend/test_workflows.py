@@ -28,6 +28,7 @@ from .utils import (
     at_fraction,
     brush_area,
     brush_mismatches,
+    canvas_painted_at_shown_zoom,
     capture_node,
     changed_pixels,
     dismiss_toasts,
@@ -1073,8 +1074,11 @@ class TestWorkflowCanvas:
         viewport = self.page.viewport_size
         self.page.set_viewport_size(INTERACTION_VIEWPORT)
         try:
-            for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
-                self._interact(step, request.function.__name__)
+            # Every capture of a step, framed or in memory, with the canvas
+            # painted the same way (see canvas_painted_at_shown_zoom).
+            with canvas_painted_at_shown_zoom(self.page):
+                for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
+                    self._interact(step, request.function.__name__)
         finally:
             if viewport:
                 self.page.set_viewport_size(viewport)
