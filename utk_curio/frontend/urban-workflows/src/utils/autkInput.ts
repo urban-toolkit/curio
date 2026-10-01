@@ -264,10 +264,11 @@ export function autkSourcesFrom(
 
   if (read.skipped?.length) problems.push(`Left out: ${read.skipped.join(", ")}.`);
 
-  // `upstream` names the node's own input. It is added only when the document
-  // reads it, as the Vega-Lite node attaches geometry only when the spec draws it.
+  // `upstream` names the node's own input when that input is a single frame.
+  // It is added only when the document reads it, as the Vega-Lite node attaches
+  // geometry only when the spec draws it. Several layers keep their own names.
   const refs = new Set(documentTableRefs(spec));
-  if (opts.alias !== false && refs.has(AUTK_UPSTREAM_LAYER)
+  if (opts.alias !== false && read.frames.length === 1 && refs.has(AUTK_UPSTREAM_LAYER)
       && !sources.some((s) => s.outputTableName === AUTK_UPSTREAM_LAYER)) {
     if (sources.length > 0) sources.unshift({ ...sources[0], outputTableName: AUTK_UPSTREAM_LAYER });
     else if (unusable.length > 0 && !unusable.includes(AUTK_UPSTREAM_LAYER)) unusable.push(AUTK_UPSTREAM_LAYER);

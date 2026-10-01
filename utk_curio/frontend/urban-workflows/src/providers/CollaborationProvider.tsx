@@ -33,6 +33,7 @@ import {
     subscribe as subscribeProject,
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
+import { collabSocketTarget } from "../utils/collabSocketTarget";
 
 const BACKEND_URL = backendUrl();
 const NAMESPACE = "/collab";
@@ -376,8 +377,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 // No token → don't even try; backend would refuse the handshake.
                 return;
             }
-            const url = `${BACKEND_URL}${NAMESPACE}`;
+            const { url, path } = collabSocketTarget(BACKEND_URL, NAMESPACE);
             const s = io(url, {
+                path,
                 auth: { token },
                 transports: ["websocket", "polling"],
                 reconnection: true,
