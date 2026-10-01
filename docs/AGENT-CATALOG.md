@@ -187,8 +187,6 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 
 **Add configuration** opens the editor, and **Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key), **Make default** and **Remove**; an account holds up to 32. The **Default** badge marks your default, **Chosen for** lists the agents chosen to run on a configuration, and **Trained** marks one made from a model trained in Curio (see [Model training](#model-training)). The **Deployment default** row is the operator's own configuration: read-only, shown when the operator configured one, and the one that answers while you have no default of your own. Its **Make default**, or removing your own default, goes back to it.
 
-Below the configurations, API Settings also holds two tokens that are not for agents. The **HuggingFace token** unlocks *gated* models in the Street Vision node, and Hugging Face sources in the Discovery Catalog send it too; public models need none. The **Socrata app token** is sent to Socrata portals by the Discovery Catalog; see [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens).
-
 ### Agent models
 
 **Agent models**, below the configurations, lists the ten catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:

@@ -76,8 +76,22 @@ Two things a deployment should know:
   confirmed, so a blind request to an internal service is not *prevented*, only
   its response is withheld. Closing that needs connection-factory work.
 
-Rate limiting is per user, per portal, and **in-process**; requests to buckets
-and repositories are not counted. Under several
+Two sources reach OpenStreetMap:
+
+- **Place search**, for the area of a download, asks Nominatim
+  (`https://nominatim.openstreetmap.org`) through the same policy: at most one
+  request a second for the whole server, each answer kept for a day, with a
+  User-Agent naming Curio.
+- **OpenStreetMap downloads** run Node.js from the backend, with autk-db from
+  the repo-root `node_modules`, and autk-db sends its requests to
+  `https://overpass-api.de` itself. They do not pass the address policy above.
+  No value a user types becomes part of a URL: the area and the layers go in the
+  request body, and a name with a quote, bracket, backslash or line break is
+  refused. One
+  download runs for at most 15 minutes and writes at most 512 MiB.
+
+Rate limiting is per user, per source, and **in-process**; requests to buckets
+and repositories are not counted, and an OpenStreetMap download counts once. Under several
 workers the effective rate is the configured rate times the worker count. It is
 a politeness mechanism toward portals you do not own and a brake on accidental
 loops, not a guarantee you can make to a third party.

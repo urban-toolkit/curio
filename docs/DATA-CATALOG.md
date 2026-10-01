@@ -2,7 +2,7 @@
 
 The Data Catalog is where Curio's **datasets** live: files shipped with your deployment, files you import from your machine, and the outputs your own dataflows compute.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals and storage you take datasets from.
+Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage and services you take datasets from.
 
 This guide is in seven parts, plus operator notes:
 
@@ -321,7 +321,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
-| `discoverySource` | | Where a Discovery Catalog download came from: the source (`sourceId`, `sourceName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). |
+| `discoverySource` | | Where a Discovery Catalog download came from: the source (`sourceId`, `sourceName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A download narrowed by its answers, such as an area, records them as `parameters`, with their `parametersHash`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). |
 | `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind`, the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |

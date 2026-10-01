@@ -1,6 +1,6 @@
 # Discovery Catalog
 
-The Discovery Catalog is where Curio lists the **open data portals** and the **storage** it can reach: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories. You search a portal and download a dataset, or open a storage source and add one of the resources it declares. Either way it lands in your Data Catalog.
+The Discovery Catalog is where Curio lists the **open data portals**, the **storage** and the **services** it can reach: folders on the Curio machine, public S3 buckets, Hugging Face dataset repositories, and OpenStreetMap. You search a portal and download a dataset, open a storage source and add one of the resources it declares, or tell a service where and what and download its answer. Either way it lands in your Data Catalog.
 
 Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Discovery Catalog the portals and storage you take datasets from.
 
@@ -9,11 +9,11 @@ This guide is in eight parts, plus operator notes:
 - [1. What is the Discovery Catalog?](#1-what-is-the-discovery-catalog): sources, what ships, and where things are stored.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the two pages, the action matrix, and walkthroughs.
 - [3. Using a discovered dataset in a dataflow](#3-using-a-discovered-dataset-in-a-dataflow): tables and collections are Data Catalog datasets.
-- [4. Downloading and adding](#4-downloading-and-adding): progress, formats, limits, what is copied and what is referenced.
-- [5. API tokens](#5-api-tokens): sources that take a token, and where to set yours.
+- [4. Downloading and adding](#4-downloading-and-adding): what a download asks, progress, formats, limits, what is copied and what is referenced.
+- [5. API tokens](#5-api-tokens): sources that take a key, and where to set yours.
 - [6. The Dataset Finder](#6-the-dataset-finder): letting an agent search the portals for you.
 - [7. Importing, publishing, and sharing](#7-importing-publishing-and-sharing): how sources are added.
-- [8. The manifest](#8-the-manifest): the fields a source declares, and how a storage source declares its files.
+- [8. The manifest](#8-the-manifest): the fields a source declares, what it asks before a download, and how a storage source declares its files.
 - [Operator notes](#operator-notes): adding your own sources, mounting folders, and the cache limit.
 
 ---
@@ -22,10 +22,11 @@ This guide is in eight parts, plus operator notes:
 
 ### Concept
 
-The unit of this catalog is a **source**. A source is not a dataset. There are two kinds:
+The unit of this catalog is a **source**. A source is not a dataset. There are three kinds:
 
 - **A portal**, such as a city's open data site. Its datasets are found live, when you search it, and you download the ones you want.
 - **A storage source**: a folder on the Curio machine, a public S3 bucket, or a Hugging Face dataset repository. Its manifest declares its **resources**, and how the files of each are organized, the way a portal's manifest declares its endpoints. Curio lists what the manifest declares and never guesses a layout.
+- **A service**, such as OpenStreetMap. It has nothing to browse: you say where (an area) and what (one of the resources its manifest declares, such as Buildings), and it answers with one download.
 
 A storage resource is one of two things:
 
@@ -52,6 +53,7 @@ discovery/
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
 | Direct URL | none | Public. Nothing to browse: it downloads one file from an https link |
+| OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water and land surface for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
@@ -73,7 +75,7 @@ discovery/
 There are two pages, plus an agent that works on the canvas:
 
 - **The `/catalog/discovery` page** lists the sources. Reach it from `/projects` and the **Discovery Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
-- **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
+- **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu, or **Add by link** for Direct URL. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. Direct URL's page has a **Link to a file** field. A service's page lists what it can be asked for, a row each. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
 - **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
 
 On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
@@ -87,7 +89,9 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Search every portal** | The `/catalog/discovery` search box | Nothing | Results from every portal that can be searched, and the storage sources' matching resources, tagged by source. |
 | **Browse datasets** | Card, drawer, or right-click menu | Nothing | The source's page, searching that portal only. |
 | **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
-| **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. |
+| **Add by link** | Direct URL's card, drawer, or right-click menu | Nothing | Direct URL's page, with its **Link to a file** field. |
+| **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. A row that needs an answer first, such as a service row's area, opens the **Download** dialog. |
+| **Narrow…** | A portal row that can download part of itself | Nothing until you download | The **Download** dialog, to download only the rows inside an area. |
 | **Cancel** | The row's progress bar | Nothing is kept | The download stops. |
 | **View dataset** | A row marked **In your Data Catalog** | Nothing | The dataset's details, over the page. |
 | **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
@@ -106,9 +110,15 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone.
 
+**I want only the rows inside an area.** On a Chicago Data Portal or GeoSampa row, click **Narrow…**, set the **Area**, and click **Download**. A dataset with no location column offers no **Narrow…**.
+
+**I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area. **All layers** adds buildings, roads, parks, water and surface as one group.
+
+**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
+
 **A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **API Settings**, and save. See [part 5](#5-api-tokens).
 
-**I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
+**I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, lists what the download was narrowed by (its **Area**, for one), and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
 **I have a folder of orthorectified images, by year.** Its manifest declares one `rasters` resource, `orthos/{year:int}/{tile}.tif`. The catalog lists one row with the years it covers; **Add to Data Catalog**, keeping only the years you want, gives one collection with each tile's footprint. On the canvas, a Vega-Lite map draws the footprints and **Mosaic Rasters** joins one year's tiles into one raster: see [example 18](examples/18-storage-orthorectified-imagery.md).
 
@@ -136,16 +146,41 @@ Downloading or adding does not add the dataset to a dataflow. Add it from the Da
 
 ## 4. Downloading and adding
 
+### What a download asks
+
+A source's manifest declares what it asks before a download, and the **Download** dialog asks it: an **Area**, dates, choices, numbers or a link. **Name in your Data Catalog** is the dataset's title. The dialog says what is missing or out of range, for example *"Area is needed."*, and downloads only once every answer is right.
+
+The **Area** offers the ways the source takes:
+
+| Way | What you do | What it sends |
+|---|---|---|
+| **Place** | Type a place, click **Search** or press Enter, and pick a match | The match's box, with its name |
+| **Coordinates** | Type **West**, **South**, **East** and **North**, in degrees | That box |
+| **A dataset's extent** | Pick a dataset with a location from your Data Catalog | The box around it, with its name |
+| **Named areas** | Type a place in **Within**, a name in **Find areas**, click **Search**, and pick the boundaries found | The boundaries' names inside the place |
+
+A box is shown under the field with its size, and refused when it is larger than the source allows. Place search is OpenStreetMap's Nominatim: it searches when you click **Search** and not as you type, and the results credit © OpenStreetMap contributors.
+
+A portal row whose area is optional downloads all of itself from **Download**, and part of itself from **Narrow…**. A service row's **Download** opens the dialog first, and its dataset is named after its area unless you type a name.
+
+### Progress
+
 While a download or an add runs, its row shows a progress bar and **Cancel**. The bar fills when the size is known, counts files when a resource has many, and shows what the work is doing otherwise.
 
 - **Two at a time.** Each account runs at most two downloads, adds and **Cache files** at once.
 - **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
-- **Downloading again.** A row marked **In your Data Catalog** has already been downloaded. Its button is **View dataset**, and nothing is fetched again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
+- **Downloading again.** A row marked **In your Data Catalog as CSV** has been downloaded in that format; picking CSV offers **View dataset**, and nothing is fetched again, while another format still downloads. A download narrowed by an area is held for that area: the same answers again fetch nothing and keep the dataset you have, and another area downloads again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
 - **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
 
 When a download fails, the row says why in the server's own words, for example that the file is an archive or larger than the limit.
+
+### Downloading from OpenStreetMap
+
+- **Autark loads it.** Each resource is one of Autark's layers, loaded with the same code an Autark map uses: **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area). One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
+- **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Roads, parks and water are cut at the box around the area, and at the area's own outline when **Surface** is loaded with them, as in **All layers**. A building that crosses the edge is kept whole.
+- **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
 
 ### Adding from a storage source
 
@@ -161,9 +196,9 @@ When a download fails, the row says why in the server's own words, for example t
 
 ## 5. API tokens
 
-Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
+Some sources take an API key. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
 
-A token belongs to your account. Set it in **API Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source, below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A key belongs to your account. Set it in **API Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in its row under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. Each row says which sources use it, links to where you get one, and has its own **Save**; **Remove saved key** clears a saved one. A row reads *(saved - leave blank to keep)* when you saved a key, and *(inherited - leave blank to use it)* when whoever runs this Curio set one for everyone. Your own key overrides the inherited one. A source's **Add yours in API Settings** opens API Settings at its row.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
@@ -215,22 +250,41 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `description`, `publisher`, `homepage`, `license`, `tags` | | Shown on the card and in the details. |
 | `icon` | | A `.png` file in the source's folder, at most 256 KiB. Without one, the card shows the catalog's source glyph. |
-| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. |
-| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. |
+| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`. |
+| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests. |
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `discovery/` may give one relative to the repository. |
 | `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository. |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
-| `auth.secretId`, `auth.headerName`, `auth.scheme`, `auth.valuePrefix` | With a token | Which account credential to send, in which header, and what comes before it (`Bearer ` for Hugging Face). Curio knows `socrata.app-token` and `huggingface.token`, and `scheme` is always `header`. |
+| `auth.secretId`, `auth.headerName`, `auth.scheme`, `auth.valuePrefix` | With a token | Which account credential to send, in which header, and what comes before it (`Bearer ` for Hugging Face). Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`, and `scheme` is always `header`. |
 | `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
-| `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage source's formats follow from its resources, and a storage manifest that declares them is refused. |
+| `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage or service source's formats follow from its resources, and a manifest of either that declares them is refused. |
 | `capabilities.maxDownloadBytes` | | A download limit below the 64 MiB default. |
 | `capabilities.allowOffBaseDistributions` | | Lets a download come from a host other than `baseUrl`, for a CKAN portal whose files live on each publisher's own site. Off by default. |
 | `limits.requestsPerMinute` | | Requests per minute to a portal, per user. Default 30. A storage source's requests are not counted. |
 | `limits.maxFiles` | | A storage source: how many matched files it lists and adds at once. Default and most 200,000. |
-| `resources` | For storage | The resources a storage source declares, below. |
+| `resources` | For storage and services | What a storage or service source offers, below. |
+| `parameters` | | What a download asks, below. A resource's own `parameters` replace the source's entries with the same `id`. |
+
+### Parameters
+
+Each entry of `parameters` is one question the **Download** dialog asks, and the server checks every answer against it.
+
+| Field | What it declares |
+|---|---|
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`; none for the others. |
+| `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), or `url` (https). |
+| `label`, `description` | What the dialog says. |
+| `required` | Whether the download needs an answer. |
+| `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
+| `accepts` | For an `area`: `box`, `names`, or both. `socrata` and `wfs` take a box; `autark-osm` takes both. |
+| `maxAreaKm2` | For an `area`: the largest box, in km². |
+
+A Socrata dataset takes an area when it has a point, location, line or polygon column, and keeps the rows inside the box. A WFS layer takes it as its `bbox`.
 
 ### Resources
+
+A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, `kind` `table`, `format` `geojson`, and, for `autark-osm`, `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`). A service resource has no `path`.
 
 A storage source's `resources` say how its files are organized. `provider` says where they are.
 
