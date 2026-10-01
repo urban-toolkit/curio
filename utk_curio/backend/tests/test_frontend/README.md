@@ -342,7 +342,8 @@ Two families of baseline live in that folder:
   (test_workflows.py) also gets
   `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
   frames its two nodes together, captures both, does its gesture (a hover held
-  on a Vega mark, or a double-click pick on an Autark map), and captures both
+  on a Vega mark, a double-click pick on an Autark map, or a drag across a
+  Vega-Lite interval or an Autark plot's brush), and captures both
   again without moving the pointer (`save_interaction_frame`, compared like a
   close-up). The test asserts
   that the target changed and kept its drawing (a highlight, not a redraw), and

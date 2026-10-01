@@ -25,6 +25,8 @@ from .utils import (
     _wait_for_no_node_running,
     _wait_for_reactflow_ready,
     assert_autark_map_drawn,
+    at_fraction,
+    brush_area,
     changed_pixels,
     drawing_kept,
     drawing_selector,
@@ -119,23 +121,32 @@ EXPECTED_EMPTY = {
 class Interaction:
     """A gesture on one drawn node, and the node it should light up.
 
-    *gesture* is ``hover``, the pointer held over a mark of a Vega chart, or
-    ``pick``, a double-click on an Autark map (a pick toggles, so a second one
-    on the same spot takes it back). The mark is the marked pixel of the
-    source's drawing nearest *at*, given as fractions of the part of that
-    drawing in view.
+    *gesture* is one of:
+    - ``hover``, the pointer held over a mark of a Vega chart;
+    - ``pick``, a double-click on an Autark map (a pick toggles, so a second
+      one on the same spot takes it back);
+    - ``brush``, a drag across a Vega interval selection or an Autark plot's
+      brush, from ``span[0]`` to ``span[1]`` as fractions of the area the
+      marks take.
+    The mark is the marked pixel of the source's drawing nearest *at*, given as
+    fractions of the part of that drawing in view.
     """
     slug: str
     source: str
     target: str
     gesture: str
     at: tuple = (0.5, 0.5)
+    span: tuple = ((0.25, 0.25), (0.75, 0.75))
 
 
-GESTURES = ("hover", "pick")
+GESTURES = ("hover", "pick", "brush")
 
 VEGA_AUTARK_BARS = "node12"
 VEGA_AUTARK_MAP = "13d263ce-2e82-4e87-bc69-117b06a8a65b"
+EXAMPLE_17_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
+EXAMPLE_17_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
+EXAMPLE_09_SCATTER = "3334485c-50ad-4adf-9574-45f8a9704860"
+EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
 
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
@@ -145,6 +156,21 @@ INTERACTIONS = {
     "Interaction_Vega_Autark.json": (
         Interaction("bar-hover", source=VEGA_AUTARK_BARS, target=VEGA_AUTARK_MAP, gesture="hover"),
         Interaction("map-pick", source=VEGA_AUTARK_MAP, target=VEGA_AUTARK_BARS, gesture="pick"),
+    ),
+    # The same pair joined directly, with no Data Pool between them.
+    "17-autark-geodataframe-maps.json": (
+        Interaction("bar-hover", source=EXAMPLE_17_BARS, target=EXAMPLE_17_MAP, gesture="hover"),
+        Interaction("map-pick", source=EXAMPLE_17_MAP, target=EXAMPLE_17_BARS, gesture="pick"),
+    ),
+    # A Vega-Lite interval brush on a scatter, and an Autark map, through a pool.
+    "09-heterogeneous-data-linked-views.json": (
+        Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
+        Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick"),
+    ),
+    # Autark to Autark: a histogram brush and a building map, through a pool.
+    "Interaction_Autark.json": (
+        Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
+        Interaction("map-pick", source="ia-map", target="ia-plot", gesture="pick"),
     ),
 }
 
@@ -183,15 +209,21 @@ def test_interaction_table_matches_the_dataflows():
             assert _linked(spec, step.source, step.target), (
                 f"{where}: no Interaction edge joins {step.source} and {step.target}")
             source = json.loads(nodes[step.source].content or "{}")
+            selects = [p.get("select") for p in source.get("params") or []]
             if step.gesture == "pick":
                 layers = (source.get("map") or {}).get("layerRefs") or []
                 assert any(layer.get("isPick") for layer in layers), (
                     f"{where}: {step.source} has no isPick layer to pick")
-            else:
-                ons = [(p.get("select") or {}).get("on") for p in source.get("params") or []
-                       if isinstance(p.get("select"), dict)]
+            elif step.gesture == "hover":
+                ons = [s.get("on") for s in selects if isinstance(s, dict)]
                 assert "pointerover" in ons, (
                     f"{where}: {step.source} has no selection made on pointerover")
+            else:
+                intervals = [s for s in selects
+                             if s == "interval" or (isinstance(s, dict) and s.get("type") == "interval")]
+                events = (source.get("plot") or {}).get("events") or []
+                assert intervals or any(e.startswith("brush") for e in events), (
+                    f"{where}: {step.source} has no interval selection or plot brush")
 
 
 class TestWorkflowCanvas:
@@ -1080,13 +1112,24 @@ class TestWorkflowCanvas:
         frame("before", "target")
 
         source_drawing = drawing_selector(page, step.source)
-        point = mark_point(page, source_drawing, step.at) if source_drawing else None
-        assert point, f"{where}: no mark near {step.at} of what {step.source} drew"
-        if step.gesture == "hover":
-            page.mouse.move(point["x"], point["y"])
+        assert source_drawing, f"{where}: {step.source} drew nothing"
+        on_vega = source_drawing.startswith("#vega")
+        if step.gesture == "brush":
+            area = brush_area(page, source_drawing)
+            assert area, f"{where}: no marks on {step.source} to brush across"
+            page.mouse.move(*at_fraction(area, step.span[0]))
+            page.mouse.down()
+            page.mouse.move(*at_fraction(area, step.span[1]), steps=8)
+            page.mouse.up()
         else:
-            page.mouse.dblclick(point["x"], point["y"])
-            # A pick stays, so the pair can be framed again, as it was.
+            point = mark_point(page, source_drawing, step.at)
+            assert point, f"{where}: no mark near {step.at} of what {step.source} drew"
+            if step.gesture == "hover":
+                page.mouse.move(point["x"], point["y"])
+            else:
+                page.mouse.dblclick(point["x"], point["y"])
+        if step.gesture != "hover":
+            # A pick or a brush stays, so the pair can be framed again, as it was.
             frame_nodes(page, [step.source, step.target])
 
         after, reached = wait_for_node_capture(
@@ -1104,15 +1147,19 @@ class TestWorkflowCanvas:
         frame("after", "target")
         frame("after", "source")
 
-        # Take it back. Vega-Lite clears a point selection on a double-click
-        # anywhere in the view, its padding too; the pointer leaving the canvas,
-        # or moving over that padding, keeps it (CI run 36790868222). A pick on
-        # the same spot takes the pick back.
-        if step.gesture == "hover":
+        # Take it back. Vega-Lite clears a point or interval selection on a
+        # double-click anywhere in the view, its padding too; the pointer
+        # leaving the canvas, or moving over that padding, keeps it (CI run
+        # 36790868222). A pick on the same spot takes the pick back, and a
+        # click on a d3 brush's overlay, away from the brush, clears it.
+        if on_vega:
             box = page.locator(source_drawing).first.bounding_box()
             page.mouse.dblclick(box["x"] + box["width"] - 2, box["y"] + 2)
-        else:
+        elif step.gesture == "pick":
             page.mouse.dblclick(point["x"], point["y"])
+        else:
+            area = brush_area(page, source_drawing)
+            page.mouse.click(*at_fraction(area, (0.97, 0.5)))
         frame_nodes(page, [step.source, step.target])
         _, restored = wait_for_node_capture(
             page, step.target,

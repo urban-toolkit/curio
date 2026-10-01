@@ -19,7 +19,6 @@
  "test_canvas_delete_key_e2e": 30.4,
  "test_catalog_destructive_confirms_e2e": 53.0,
  "test_catalog_detail_export_e2e": 4.1,
- "test_chart_map_link_e2e": 13.7,
  "test_computed_dataset_persists_e2e": 29.1,
  "test_computed_json_output_e2e": 13.5,
  "test_dashboard_page_e2e": 88.6,
