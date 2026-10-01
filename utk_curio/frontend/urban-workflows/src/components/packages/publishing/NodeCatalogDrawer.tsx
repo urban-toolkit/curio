@@ -9,6 +9,7 @@ import {
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import {
+  isNewerPackageVersion,
   matchesSearch,
   restartNotice,
   sortPackages,
@@ -97,9 +98,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
-    installCandidate, conflictReport, effectiveProjectId, ensureProjectId,
+    installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
+    probeUpdate: onUpdate,
     confirmInstall: confirmCatalogInstall,
     cancelInstall,
     uninstallFromProject: performUninstall,
@@ -354,13 +356,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                       isInstalled
                       hasUpdate={
                         catalogByDir.get(pkg.dirName) != null
-                        && catalogByDir.get(pkg.dirName)!.version !== pkg.version
+                        && isNewerPackageVersion(catalogByDir.get(pkg.dirName)!.version, pkg.version)
                       }
                       catalogRow={catalogByDir.get(pkg.dirName)}
                       busy={anyBusy}
                       cardActionDir={cardActionDir}
                       onOpenDetails={setDetailPkg}
                       onInstall={(p) => void onInstall(p)}
+                      onUpdate={(p) => void onUpdate(p)}
                       onUninstall={(p) => onUninstall(p)}
                       hasProject={Boolean(projectId)}
                     />
@@ -393,7 +396,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                         isInstalled
                         && userStoreRow != null
                         && catalogRow != null
-                        && catalogRow.version !== userStoreRow.version;
+                        && isNewerPackageVersion(catalogRow.version, userStoreRow.version);
                       return (
                         <PackageCard
                           key={pkg.dirName}
@@ -407,6 +410,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           // live in the Node Catalog page's detail drawer.
                           onOpenDetails={setDetailPkg}
                           onInstall={(p) => void onInstall(p)}
+                          onUpdate={(p) => void onUpdate(p)}
                           onUninstall={(p) => onUninstall(p)}
                           hasProject={Boolean(projectId)}
                         />
@@ -445,6 +449,8 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           busy={anyBusy}
           onCancel={cancelInstall}
           onConfirm={() => void confirmCatalogInstall()}
+          confirmLabel={installMode === "update" ? "Update" : undefined}
+          busyLabel={installMode === "update" ? "Updating…" : undefined}
         />
       ) : null}
 

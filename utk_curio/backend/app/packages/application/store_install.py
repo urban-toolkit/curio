@@ -469,7 +469,11 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> Inst
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
-    return install_package_from_directory(user_key, src, replace=replace)
+    result = install_package_from_directory(user_key, src, replace=replace)
+    # Same as the first copy in _ensure_user_store_install: a replaced backend
+    # entry keeps its old pin otherwise, and every invocation is refused.
+    packages_backend_runtime.record_entry_pin(user_key, dir_name)
+    return result
 
 
 def remove_package(user_key: str, dir_name: str) -> None:

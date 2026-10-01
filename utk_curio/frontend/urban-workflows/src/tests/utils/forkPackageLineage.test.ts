@@ -4,6 +4,7 @@ import {
   findForkFamilyRootPaletteGroup,
   forkFamilyKeyFromPaletteGroup,
   formatForkOfSubtitle,
+  isNewerPackageVersion,
   lineageCoordKey,
   packageCoordinateKey,
   partitionInstalledPackagesForCatalogList,
@@ -35,6 +36,14 @@ describe("forkPackageLineage", () => {
   test("comparePackageVersionDescending", () => {
     expect(comparePackageVersionDescending("2.0.0", "1.0.0")).toBeLessThan(0);
     expect(comparePackageVersionDescending("1.10.0", "1.2.0")).toBeLessThan(0);
+  });
+
+  test("isNewerPackageVersion: an update is only a higher version (#434)", () => {
+    expect(isNewerPackageVersion("1.1.0", "1.0.0")).toBe(true);
+    expect(isNewerPackageVersion("1.10.0", "1.9.0")).toBe(true);
+    // A catalog that went back a version, or never moved, offers no update.
+    expect(isNewerPackageVersion("1.0.0", "1.1.0")).toBe(false);
+    expect(isNewerPackageVersion("1.0.0", "1.0.0")).toBe(false);
   });
 
   test("partitionPackagesByForkFamily groups by root only when 2+ members", () => {
