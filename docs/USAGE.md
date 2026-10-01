@@ -233,13 +233,13 @@ npm run build
 
 ## LLM configurations
 
-Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) answer with an **LLM configuration** set up in **AI Settings**: the one chosen for the agent, else your default.
+Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) answer with an **LLM configuration** set up in **API Settings**: the one chosen for the agent, else your default.
 
 Curio ships no endpoint of its own. Until you add a configuration, or the operator of your Curio sets a Deployment default, the AI surfaces report that no LLM configuration answers.
 
 ### Your configurations
 
-**AI Settings** is reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header. Its **LLM configurations** table lists yours, each a label, an endpoint and a model, and **Add configuration** opens the editor. **Agent models**, below the table, chooses the configuration each agent runs on. Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
+**API Settings** is reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header. Its **LLM configurations** table lists yours, each a label, an endpoint and a model, and **Add configuration** opens the editor. **Agent models**, below the table, chooses the configuration each agent runs on. Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
 
 Keys are write-only: once saved, a key is never shown again, and the table says only whether one is saved. Keys are kept per account in a file readable by the server only; they are not encrypted at rest.
 
@@ -252,7 +252,7 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-Below the configurations, **Save tokens** stores a HuggingFace token (for gated models in the Street Vision node, and for Hugging Face sources in the Discovery Catalog) and a Socrata app token for the Discovery Catalog.
+API Settings groups keys by the catalog that uses them. The **Agent Catalog** part holds the LLM configurations above and the connection keys below. The **Discovery Catalog** part has one row per key a source can send, such as the Socrata app token and the Hugging Face token (which Street Vision's gated models use too). Each row says which sources send it, and has its own **Save** and **Remove saved key**.
 
 ### Connection keys
 
@@ -287,7 +287,7 @@ leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in AI Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
 The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
@@ -581,7 +581,7 @@ Agents are AI assistants you attach to your dataflow. The catalog lists ten:
 **Chat**, which explains a node or the whole dataflow, diagnoses errors and
 helps you define what to build, and nine that build dataflows and nodes, find
 data, connect nodes, research, and recommend or author packages. Each agent
-answers with the LLM configuration chosen for it in **AI Settings** above, else
+answers with the LLM configuration chosen for it in **API Settings** above, else
 your default.
 
 There are two scopes:

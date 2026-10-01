@@ -2,10 +2,12 @@ import React from "react";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
- * AI Settings is the account's credentials screen: its LLM configurations
- * (tested in llmConfigsSection.test.tsx), the per-person HuggingFace and
- * Socrata tokens, and the connection keys a node reaches by name. The tokens
- * keep a Save of their own; nothing here saves a model or an LLM key.
+ * API Settings is the account's keys screen, in two parts. The Agent Catalog's:
+ * its LLM configurations (tested in llmConfigsSection.test.tsx) and the
+ * connection keys a node reaches by name. The Discovery Catalog's: one row per
+ * key a source can send (the HuggingFace and Socrata tokens among them), drawn
+ * from the server's list. Each key row has a Save of its own; nothing here
+ * saves a model or an LLM key.
  */
 
 const SIGNED_IN = { is_guest: false };
@@ -57,36 +59,62 @@ jest.mock("../../api/connectionKeysApi", () => ({
   },
 }));
 
+// The Discovery Catalog's key rows, as `GET /api/discovery/keys` lists them.
 // Spread requireActual rather than replacing the module: a partial mock that
-// enumerates exports breaks the moment someone adds one. Only getPublicConfig
-// is used by the modal.
-let mockPublicConfig: Record<string, unknown> = {};
-jest.mock("../../utils/authApi", () => ({
-  ...jest.requireActual("../../utils/authApi"),
-  authApi: {
-    ...jest.requireActual("../../utils/authApi").authApi,
-    getPublicConfig: jest.fn(() => Promise.resolve(mockPublicConfig)),
-  },
-}));
+// enumerates exports breaks the moment someone adds one.
+type Row = Record<string, unknown>;
+const HF_ROW = (over: Row = {}): Row => ({
+  slot: "huggingface.token", label: "Hugging Face token", field: "huggingface_token",
+  helpUrl: "https://huggingface.co/settings/tokens", placeholder: "hf_...", note: null,
+  present: false, inherited: false, sources: [], alsoUsedBy: ["Street Vision's gated models"], ...over,
+});
+const SOCRATA_ROW = (over: Row = {}): Row => ({
+  slot: "socrata.app-token", label: "Socrata app token", field: "socrata_app_token",
+  helpUrl: "https://evergreen.data.socrata.com/signup", placeholder: "Your app token",
+  note: "Socrata portals answer without one; a token raises the rate limit.",
+  present: false, inherited: false,
+  sources: [{ name: "City of Chicago Data Portal", dirName: "source.cityofchicago.data-portal@1" }],
+  alsoUsedBy: [], ...over,
+});
+let mockKeyRows: Row[] = [];
+const mockListKeys = jest.fn(() => Promise.resolve({ keys: mockKeyRows }));
+jest.mock("../../services/discoveryCatalog", () => {
+  const actual = jest.requireActual("../../services/discoveryCatalog");
+  return {
+    ...actual,
+    discoveryCatalogApi: { ...actual.discoveryCatalogApi, listKeys: () => mockListKeys() },
+  };
+});
 
-import AiSettingsModal from "../../components/AiSettingsModal";
+import ApiSettingsModal from "../../components/ApiSettingsModal";
 
-const open = () => render(<AiSettingsModal isOpen onClose={jest.fn()} />);
+const open = () => render(<ApiSettingsModal isOpen onClose={jest.fn()} />);
 const keysSection = () => within(screen.getByTestId("connection-keys-section"));
-const saveTokens = () => screen.getByRole("button", { name: "Save tokens" });
+const HF_ID = "#api-settings-key-huggingface-token";
+const SOCRATA_ID = "#api-settings-key-socrata-app-token";
+const rowOf = (slot: string) => within(document.querySelector(`[data-key-slot="${slot}"]`) as HTMLElement);
+// The rows arrive with the key list, so a test that starts from one waits for it.
+const findRow = async (slot: string) =>
+  within(
+    await waitFor(() => {
+      const el = document.querySelector(`[data-key-slot="${slot}"]`) as HTMLElement | null;
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }),
+  );
 
 beforeEach(() => {
   mockUser = { ...SIGNED_IN };
   mockSharedGuest = false;
   mockAuthOn = true;
-  mockPublicConfig = {};
+  mockKeyRows = [HF_ROW(), SOCRATA_ROW()];
   jest.clearAllMocks();
 });
 
-describe("AI Settings", () => {
+describe("API Settings", () => {
   it("renders its title and the LLM configurations first", async () => {
     open();
-    expect(screen.getByRole("heading", { name: "AI Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "API Settings" })).toBeInTheDocument();
     expect(await screen.findByTestId("llm-configs-section")).toBeInTheDocument();
   });
 
@@ -94,49 +122,59 @@ describe("AI Settings", () => {
     open();
     // The single-provider form is gone: an API key and a model belong to a
     // configuration, edited in the section above.
-    expect(document.querySelector("#ai-settings-api-key")).toBeNull();
-    expect(document.querySelector("#ai-settings-model")).toBeNull();
+    expect(document.querySelector("#api-settings-api-key")).toBeNull();
+    expect(document.querySelector("#api-settings-model")).toBeNull();
     expect(screen.queryByText(/answers every AI surface/)).toBeNull();
   });
 
   it("renders nothing when closed", () => {
-    const { container } = render(<AiSettingsModal isOpen={false} onClose={jest.fn()} />);
+    const { container } = render(<ApiSettingsModal isOpen={false} onClose={jest.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("groups its keys by the catalog that uses them", async () => {
+    open();
+    expect(screen.getByRole("heading", { name: "Agent Catalog" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Discovery Catalog" })).toBeInTheDocument();
   });
 });
 
-describe("AI Settings: the HuggingFace token", () => {
-  const field = () => document.querySelector("#ai-settings-hf-token") as HTMLInputElement;
+describe("API Settings: the HuggingFace token", () => {
+  const field = () => document.querySelector(HF_ID) as HTMLInputElement;
 
-  it("is a masked field with its own Save, disabled until something is typed", () => {
+  it("is a masked field with its own Save, disabled until something is typed", async () => {
     open();
+    await waitFor(() => expect(field()).not.toBeNull());
     expect(field().type).toBe("password");
     expect(field().placeholder).toBe("hf_...");
-    expect(saveTokens()).toBeDisabled();
+    const save = rowOf("huggingface.token").getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    fireEvent.change(field(), { target: { value: "hf_abc" } });
+    expect(save).toBeEnabled();
   });
 
-  it("says a token is saved without ever showing it", () => {
-    mockUser = { ...SIGNED_IN, has_huggingface_token: true };
+  it("says a token is saved without ever showing it", async () => {
+    mockKeyRows = [HF_ROW({ present: true }), SOCRATA_ROW()];
     open();
+    await waitFor(() => expect(field()).not.toBeNull());
     expect(field().value).toBe("");
     expect(field().placeholder).toContain("unchanged");
   });
 
   it("saves only what was typed", async () => {
     open();
+    await waitFor(() => expect(field()).not.toBeNull());
     fireEvent.change(field(), { target: { value: "hf_abc" } });
-    fireEvent.click(saveTokens());
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "hf_abc", socrataAppToken: undefined }),
-    );
-    expect(await screen.findByText("Tokens saved.")).toBeInTheDocument();
+    fireEvent.click(rowOf("huggingface.token").getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "hf_abc" }));
+    expect(await rowOf("huggingface.token").findByText("Saved.")).toBeInTheDocument();
   });
 
   it("removing it clears the HuggingFace box", async () => {
-    mockUser = { ...SIGNED_IN, has_huggingface_token: true };
+    mockKeyRows = [HF_ROW({ present: true }), SOCRATA_ROW()];
     open();
-    fireEvent.click(screen.getAllByRole("button", { name: /Remove saved token/ })[0]);
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "" }));
+    fireEvent.click(await (await findRow("huggingface.token")).findByRole("button", { name: "Remove saved key" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "" }));
   });
 
   it("is not offered to a guest on a Curio with sign-in", () => {
@@ -144,28 +182,27 @@ describe("AI Settings: the HuggingFace token", () => {
     mockSharedGuest = true;
     open();
     expect(field()).toBeNull();
-    expect(screen.getByText("Personal tokens cannot be saved on a shared guest account.")).toBeInTheDocument();
+    expect(screen.getByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
   });
 
   it("the local guest saves its own, and is told the account is shared", async () => {
-    // Without --deploy the shared guest is the one local user, and AI Settings
+    // Without --deploy the shared guest is the one local user, and API Settings
     // is the only place a HuggingFace token is set.
     mockUser = { is_guest: true };
     mockSharedGuest = true;
     mockAuthOn = false;
     open();
-    expect(screen.getByText(/tokens saved here are shared too/)).toBeInTheDocument();
+    expect(screen.getByText(/keys saved here are shared too/)).toBeInTheDocument();
+    await waitFor(() => expect(field()).not.toBeNull());
     fireEvent.change(field(), { target: { value: "hf_local" } });
-    fireEvent.click(saveTokens());
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith({ huggingfaceToken: "hf_local", socrataAppToken: undefined }),
-    );
+    fireEvent.click(rowOf("huggingface.token").getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "hf_local" }));
     // The panels that run on the account's models stay off for a guest.
     expect(screen.queryByText("Evaluation mode")).toBeNull();
   });
 });
 
-describe("AI Settings: Connection keys (dev/116)", () => {
+describe("API Settings: Connection keys (dev/116)", () => {
   const CENSUS = {
     name: "census", host: "api.census.gov", delivery: "query:key",
     use: 'api_key = curio_secret("census")', createdAt: 1, lastUsedAt: null,
@@ -185,8 +222,9 @@ describe("AI Settings: Connection keys (dev/116)", () => {
     await waitFor(() => expect(section).toHaveTextContent("Connection keys (1)"));
     expect(section).not.toHaveAttribute("open");
     expect(screen.queryByRole("button", { name: "Save key" })).toBeNull();
-    // The tokens' Save stays the only /save/i button while collapsed.
-    expect(screen.getAllByRole("button", { name: /save/i })).toHaveLength(1);
+    // While collapsed, the only Save buttons are the source keys' own, one per row.
+    await waitFor(() => expect(document.querySelector(HF_ID)).not.toBeNull());
+    expect(screen.getAllByRole("button", { name: /save/i })).toHaveLength(mockKeyRows.length);
   });
 
   it("lists refs only — never a value — and the key field is masked and write-only", async () => {
@@ -206,7 +244,7 @@ describe("AI Settings: Connection keys (dev/116)", () => {
   });
 
   it("a focus from a card opens the section with the host filled and a name suggested", async () => {
-    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }} />);
+    render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }} />);
     expect(screen.getByTestId("connection-keys-section")).toHaveAttribute("open");
     expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe("api.census.gov");
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("census");
@@ -215,7 +253,7 @@ describe("AI Settings: Connection keys (dev/116)", () => {
 
   it("saving sends host, value and delivery, then clears the key field and shows the use line", async () => {
     mockPut.mockResolvedValue({ key: CENSUS });
-    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov" }} />);
+    render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "api.census.gov" }} />);
     fireEvent.change(screen.getByLabelText("Sent as"), { target: { value: "query" } });
     fireEvent.change(screen.getByLabelText("Parameter name"), { target: { value: "key" } });
     fireEvent.change(screen.getByLabelText("Key"), { target: { value: "s3cr3t-value" } });
@@ -231,7 +269,7 @@ describe("AI Settings: Connection keys (dev/116)", () => {
     const conflict = Object.assign(new Error("'census' is saved for api.census.gov; pass replace to bind it to other.gov"), { status: 409 });
     mockPut.mockRejectedValueOnce(conflict).mockResolvedValueOnce({ key: { ...CENSUS, host: "other.gov" } });
     mockRemove.mockResolvedValue({ deleted: "census" });
-    render(<AiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "other.gov", suggestedName: "census" }} />);
+    render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "connection-keys", host: "other.gov", suggestedName: "census" }} />);
     fireEvent.change(screen.getByLabelText("Key"), { target: { value: "s3cr3t-value" } });
     fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/pass replace/));
@@ -257,74 +295,63 @@ describe("AI Settings: Connection keys (dev/116)", () => {
   });
 });
 
-describe("AI Settings: the data-portal token", () => {
+describe("API Settings: the data-portal token", () => {
   /**
-   * A third credential on this screen, and the first that is not about AI at
-   * all: the Discovery Catalog sends it to Socrata portals. It lives here
-   * because this is the account's one credentials surface - the Agent
-   * Catalog's account policy was deliberately moved INTO this modal rather
-   * than living in a second one holding half the answer.
+   * A key that is not about AI at all: the Discovery Catalog sends it to
+   * Socrata portals. It lives here because this is the account's one keys
+   * surface.
    *
    * It follows the same rules as the HuggingFace token beside it: stored on
    * the user's row, reported as a boolean, blank means keep, and there is an
    * explicit way to remove it.
    */
-  const field = () =>
-    document.querySelector("#ai-settings-socrata-token") as HTMLInputElement;
+  const field = () => document.querySelector(SOCRATA_ID) as HTMLInputElement;
+  const label = () => document.querySelector(`label[for="${SOCRATA_ID.slice(1)}"]`);
 
-  it("is offered, and marked optional when none is saved", () => {
+  it("is offered, and marked optional when none is saved", async () => {
     open();
-    expect(field()).toBeInTheDocument();
+    await waitFor(() => expect(field()).toBeInTheDocument());
     expect(field().type).toBe("password");
     // Scoped to the label: the "Get a Socrata app token" link repeats the
     // words, and matching either would not prove the field is labelled.
-    expect(
-      document.querySelector('label[for="ai-settings-socrata-token"]')
-    ).toBeInTheDocument();
+    expect(label()).toBeInTheDocument();
+    expect(label()!.textContent).toContain("(optional)");
   });
 
-  it("says a token is saved without ever showing it", () => {
-    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+  it("says a token is saved without ever showing it", async () => {
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
     open();
-    expect(screen.getByText(/\(saved - leave blank to keep\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/\(saved - leave blank to keep\)/)).toBeInTheDocument();
     expect(field().value).toBe("");
     expect(field().placeholder).toContain("unchanged");
   });
 
   it("saves what was typed", async () => {
     open();
+    await waitFor(() => expect(field()).not.toBeNull());
     fireEvent.change(field(), { target: { value: "tok-123" } });
-    fireEvent.click(saveTokens());
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ socrataAppToken: "tok-123" })
-      )
-    );
+    fireEvent.click(rowOf("socrata.app-token").getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "tok-123" }));
   });
 
   it("leaves a saved token alone when the box is blank", async () => {
     // Blank means keep: saving the HuggingFace token must not touch it.
-    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
     open();
-    fireEvent.change(document.querySelector("#ai-settings-hf-token") as HTMLInputElement, {
-      target: { value: "hf_abc" },
-    });
-    fireEvent.click(saveTokens());
+    await waitFor(() => expect(document.querySelector(HF_ID)).not.toBeNull());
+    fireEvent.change(document.querySelector(HF_ID) as HTMLInputElement, { target: { value: "hf_abc" } });
+    fireEvent.click(rowOf("huggingface.token").getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
-    expect(mockUpdate.mock.calls[0][0].socrataAppToken).toBeUndefined();
+    expect(mockUpdate.mock.calls[0][0]).not.toHaveProperty("socrata_app_token");
   });
 
   it("offers a way to remove one, which is how blank-means-keep stays escapable", async () => {
-    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
     open();
-    const remove = screen
-      .getAllByRole("button", { name: /Remove saved token/ })
-      .at(-1)!;
+    const remove = await (await findRow("socrata.app-token")).findByRole("button", { name: "Remove saved key" });
     fireEvent.change(field(), { target: { value: "typed-but-unsaved" } });
     fireEvent.click(remove);
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith({ socrataAppToken: "" })
-    );
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "" }));
     // The Socrata box is the one cleared, not the HuggingFace one.
     await waitFor(() => expect(field().value).toBe(""));
   });
@@ -338,18 +365,17 @@ describe("AI Settings: the data-portal token", () => {
   });
 });
 
-
-describe("AI Settings: a deployment-supplied portal token", () => {
+describe("API Settings: a deployment-supplied portal token", () => {
   /**
    * A user who sets nothing uses what the operator configured, and setting
    * their own overrides it. An operator running Curio for a class raises the
    * rate limit for everyone with one environment variable.
    */
   const label = () =>
-    document.querySelector('label[for="ai-settings-socrata-token"]')!.textContent ?? "";
+    document.querySelector(`label[for="${SOCRATA_ID.slice(1)}"]`)?.textContent ?? "";
 
   it("says the box is optional when nothing is configured", async () => {
-    mockPublicConfig = { has_default_socrata_app_token: false };
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ inherited: false })];
     open();
     await waitFor(() => expect(label()).toContain("(optional)"));
   });
@@ -357,24 +383,56 @@ describe("AI Settings: a deployment-supplied portal token", () => {
   it("says it is inherited when the install supplies one", async () => {
     // "(optional)" would be misleading: leaving the box blank already
     // authenticates you.
-    mockPublicConfig = { has_default_socrata_app_token: true };
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ inherited: true })];
     open();
     await waitFor(() => expect(label()).toContain("inherited"));
     expect(screen.getByText(/Leave this blank to use it/)).toBeInTheDocument();
   });
 
   it("a token you saved yourself takes precedence in the copy", async () => {
-    mockUser = { ...SIGNED_IN, has_socrata_app_token: true };
-    mockPublicConfig = { has_default_socrata_app_token: true };
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true, inherited: true })];
     open();
     await waitFor(() => expect(label()).toContain("saved"));
     expect(label()).not.toContain("inherited");
   });
 
-  it("an unreadable config reports nothing rather than claiming inheritance", async () => {
-    const { authApi } = require("../../utils/authApi");
-    (authApi.getPublicConfig as jest.Mock).mockRejectedValueOnce(new Error("offline"));
+  it("an unreadable key list reports nothing rather than claiming inheritance", async () => {
+    mockListKeys.mockRejectedValueOnce(new Error("offline"));
     open();
-    await waitFor(() => expect(label()).toContain("(optional)"));
+    expect(await screen.findByText("offline")).toBeInTheDocument();
+    expect(screen.queryByText(/inherited/)).toBeNull();
+    expect(document.querySelector(SOCRATA_ID)).toBeNull();
+  });
+});
+
+describe("API Settings: the Discovery Catalog's keys", () => {
+  it("draws a row for every key the server lists, including one this screen has never heard of", async () => {
+    mockKeyRows = [
+      HF_ROW(),
+      { slot: "mapillary.token", label: "Mapillary client token", field: "mapillary_access_token",
+        helpUrl: "https://www.mapillary.com/dashboard/developers", placeholder: "MLY|...", note: null,
+        present: false, inherited: false, sources: [{ name: "Mapillary", dirName: "source.mapillary.imagery@1" }],
+        alsoUsedBy: [] },
+    ];
+    open();
+    const field = await waitFor(() => {
+      const el = document.querySelector("#api-settings-key-mapillary-token") as HTMLInputElement;
+      expect(el).not.toBeNull();
+      return el;
+    });
+    fireEvent.change(field, { target: { value: "MLY|abc" } });
+    fireEvent.click(rowOf("mapillary.token").getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ mapillary_access_token: "MLY|abc" }));
+  });
+
+  it("says which sources and features send each key", async () => {
+    open();
+    expect(await (await findRow("socrata.app-token")).findByText(/Used by City of Chicago Data Portal\./)).toBeInTheDocument();
+    expect(rowOf("huggingface.token").getByText(/Used by Street Vision's gated models\./)).toBeInTheDocument();
+  });
+
+  it("a source's key link opens on that key's row", async () => {
+    render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "source-key", slot: "socrata.app-token" }} />);
+    await waitFor(() => expect(document.querySelector(SOCRATA_ID)).toHaveFocus());
   });
 });

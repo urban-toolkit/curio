@@ -129,12 +129,12 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
                 type="button"
                 className={styles.inlineLink}
                 onClick={() => {
-                  // Close first: AI Settings opens as its own modal.
+                  // Close first: API Settings opens as its own modal.
                   onClose();
                   requestAgentModel(agent.id);
                 }}
               >
-                Change in AI Settings
+                Change in API Settings
               </button>
             </>
           ) : null}

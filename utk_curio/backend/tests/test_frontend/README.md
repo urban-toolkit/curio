@@ -800,8 +800,8 @@ invisible and a click would look unmotivated.
 
 ### The agent scenes need a provider
 
-`aisettings` adds an LLM configuration (a base URL, an API key and a model) in
-AI Settings on camera, and `agentrun` then asks that endpoint a real question.
+`apisettings` adds an LLM configuration (a base URL, an API key and a model) in
+API Settings on camera, and `agentrun` then asks that endpoint a real question.
 Curio ships no provider of its own and the tour's account starts with no
 configuration, so this is load-bearing rather than decorative.
 
@@ -862,7 +862,7 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
-| `agents` | AI Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
+| `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
 | `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
 
 ### What it produces

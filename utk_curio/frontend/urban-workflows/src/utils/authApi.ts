@@ -78,7 +78,7 @@ export interface UserData {
   type: string | null;
   is_guest: boolean;
   /** Whether a HuggingFace token is stored. The token itself never leaves the
-   * server; this is what AI Settings shows instead. */
+   * server; this is what API Settings shows instead. */
   has_huggingface_token?: boolean;
   /** Whether a Socrata app token is stored, for the Discovery Catalog. Same
    * rule: a boolean, never the value. */
@@ -94,9 +94,6 @@ export interface PublicConfig {
   shared_guest_username: string;
   enable_collab: boolean;
   default_save_node_output: boolean;
-  /** Whether this install supplies a Socrata app token that users inherit.
-   * A boolean; the token itself never leaves the server. */
-  has_default_socrata_app_token?: boolean;
 }
 
 export const authApi = {
@@ -138,12 +135,13 @@ export const authApi = {
     return apiFetch("/api/auth/me");
   },
 
+  /** Profile fields, and account keys by their column name (an API Settings
+   *  row's `field`). */
   patchMe(data: {
     name?: string;
     email?: string;
     type?: string;
-    huggingface_token?: string;
-    socrata_app_token?: string;
+    [keyField: string]: string | undefined;
   }): Promise<UserData> {
     return apiFetch("/api/auth/me", {
       method: "PATCH",

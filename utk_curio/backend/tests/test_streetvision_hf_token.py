@@ -5,7 +5,7 @@ your own HuggingFace account. It used to be a single operator secret in a bare
 ``HUGGINGFACE_TOKEN`` env var, which could not represent a per-account
 entitlement and was invisible to the people it applied to. It is now:
 
-- an account setting, edited in AI Settings (``user.huggingface_token``),
+- an account setting, edited in API Settings (``user.huggingface_token``),
   with no deployment-wide fallback,
 - resolved in the request and handed down, because model loading runs on a
   detached worker thread with no request context,
@@ -70,7 +70,7 @@ class TestResolution:
 
     def test_there_is_no_deployment_fallback(self, monkeypatch):
         # A deployment-wide variable left over from an older release is not
-        # read: the token is an AI Settings value, per account.
+        # read: the token is an API Settings value, per account.
         monkeypatch.setenv("CURIO_DEFAULT_HUGGINGFACE_TOKEN", "hf_deployment")
         _fake_user(monkeypatch, None)
         assert hf.resolve_hf_token() is None

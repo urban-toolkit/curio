@@ -86,9 +86,9 @@ def put_catalog_settings():
 @require_auth
 @_map_agent_errors
 def list_provider_models():
-    """The models AI Settings can offer for the endpoint being configured.
+    """The models API Settings can offer for the endpoint being configured.
 
-    POST rather than GET because AI Settings needs this *before* the user saves:
+    POST rather than GET because API Settings needs this *before* the user saves:
     they type a base URL and a key, then want to pick a model from what that
     endpoint actually has. A GET reading the stored config could only ever list
     models for the previous configuration.

@@ -97,7 +97,7 @@ variables the backend reads at start:
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
 
 With a model and an endpoint or a key set, the Deployment default is a
-read-only row in every user's AI Settings, and it answers for any user who has not chosen a default of their
+read-only row in every user's API Settings, and it answers for any user who has not chosen a default of their
 own. With an endpoint or a key set, users are also offered **This Curio
 install**: a configuration of their own that runs on the deployment's endpoint
 with its key and a model they choose. The key never reaches a browser.

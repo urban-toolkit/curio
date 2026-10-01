@@ -28,7 +28,7 @@ See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-str
    unlock by accepting a licence on your own HuggingFace account. Public
    models need none.
 
-   Set your own in **AI Settings** in the Curio header. Each account sets its
+   Set your own in **API Settings** in the Curio header. Each account sets its
    own.
 
 A GPU is *not* required, but with one you'll see roughly 10× faster inference.

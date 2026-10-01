@@ -11,7 +11,6 @@ from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     CURIO_ENV,
     CURIO_SHARED_GUEST_USERNAME,
-    DEFAULT_SOCRATA_APP_TOKEN,
     ENABLE_COLLAB,
 )
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
@@ -146,7 +145,7 @@ def me_patch_route():
     if retired:
         return jsonify({"error": (
             f"{', '.join(retired)} are not account fields: LLM settings are LLM "
-            "configurations, managed in AI Settings (/api/agents/llm)."
+            "configurations, managed in API Settings (/api/agents/llm)."
         )}), 400
     data = UserPatchIn(
         name=body.get("name"),
@@ -174,10 +173,5 @@ def public_config_route():
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
             "enable_collab": ENABLE_COLLAB,
             "default_save_node_output": CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-            # Whether this install supplies a Socrata app token that users
-            # inherit. A boolean, never the token: the settings screen needs to
-            # know whether leaving the box blank still authenticates, which is
-            # the same thing the LLM panel says about the deployment default.
-            "has_default_socrata_app_token": bool(DEFAULT_SOCRATA_APP_TOKEN),
         }
     ), 200

@@ -105,7 +105,7 @@ def _delegate_capabilities(nodes) -> list[str]:
 def _check_delegate_llms(user_key: str, project_id: str, manifest, config: ProviderConfig,
                          capabilities: list[str]) -> None:
     """Resolve the LLM configuration of each delegate a run always relies on,
-    BEFORE anything is written, so a broken choice in AI Settings refuses the
+    BEFORE anything is written, so a broken choice in API Settings refuses the
     run once, with its remedy, instead of failing every node. Raises
     ``ProviderConfigError``. A delegate that does not resolve at all is left
     to the run, which reports a missing specialist its own way."""

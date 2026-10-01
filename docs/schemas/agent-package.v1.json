@@ -283,7 +283,7 @@
     },
     "providerRequirements": {
       "type": "object",
-      "description": "Provider capability requirements (e.g. 'structured-output', 'code-generation'), a preference: an agent runs on the LLM configuration its user chose for it in AI Settings, outside the manifest. Credentials and configurations never belong here.",
+      "description": "Provider capability requirements (e.g. 'structured-output', 'code-generation'), a preference: an agent runs on the LLM configuration its user chose for it in API Settings, outside the manifest. Credentials and configurations never belong here.",
       "properties": {
         "capabilities": {
           "type": "array",

@@ -154,6 +154,10 @@ class DiscoveryService:
     def _credential_for(self, manifest: DiscoverySourceManifest) -> str | None:
         return credentials.credential_header(self.user, manifest)
 
+    def key_rows(self) -> list[dict[str, Any]]:
+        """API Settings' Discovery Catalog section: every key slot, booleans only."""
+        return credentials.key_rows(self.user, self._catalog.manifests())
+
     def _credential_present(self, secret_id: str | None) -> bool:
         return credentials.has_token(self.user, secret_id)
 

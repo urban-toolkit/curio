@@ -14,7 +14,7 @@ because of it, and ``report.json`` says so in a field.
 the same visible-opt-in posture as the browser matrix's ``CURIO_E2E_EXTERNAL``.
 
 *It never reads a key.* Provider and model are whatever the evaluation account
-already saved in AI Settings. This module records the provider type, the base
+already saved in API Settings. This module records the provider type, the base
 URL's HOST and the model name -- never a credential -- and every transcript
 byte it writes goes through :func:`report.scrub` first.
 

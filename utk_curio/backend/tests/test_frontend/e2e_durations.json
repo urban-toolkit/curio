@@ -4,7 +4,7 @@
  "test_agent_connection_affordances_e2e": 1.2,
  "test_agent_palette_unsaved_dataflow_e2e": 7.7,
  "test_agent_runs_e2e": 3.9,
- "test_ai_settings_e2e": 8.1,
+ "test_api_settings_e2e": 8.1,
  "test_alive": 2.5,
  "test_arrow_artifacts_e2e": 16.3,
  "test_autark_grammar_edit_e2e": 10.8,

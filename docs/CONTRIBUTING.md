@@ -306,7 +306,7 @@ See [AGENT-CATALOG.md](AGENT-CATALOG.md#5-measuring-the-agents-against-the-shipp
 for what the score means, and [ARCHITECTURE.md](ARCHITECTURE.md#evaluation-and-training)
 for how an evaluation runs.
 
-The same fixtures drive **Model training** (AI Settings → Model training). Its
+The same fixtures drive **Model training** (API Settings → Model training). Its
 whole lane (the capability probe, the training set, consent, the job, the
 evaluation gate, activation and rollback) runs offline against the scripted
 provider, so none of these tests costs money or waits on a fine-tune:
@@ -334,7 +334,7 @@ pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
        utk_curio/backend/tests/test_projects/test_routes.py
 ```
 
-**Evaluation mode** (AI Settings → Evaluation mode) runs an example through the
+**Evaluation mode** (API Settings → Evaluation mode) runs an example through the
 real lifecycle on the configuration the user's Dataflow Builder runs on. Its
 whole orchestration (the isolated project, the required-closure install, the
 narrow automated approval, the phases, the record) is covered offline against

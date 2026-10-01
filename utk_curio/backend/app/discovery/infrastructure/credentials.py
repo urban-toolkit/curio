@@ -22,22 +22,60 @@ another feature, as ``huggingface.token`` does.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from typing import Any, Iterable
 
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 
-#: manifest ``auth.secretId`` -> the ``User`` column that holds it.
-SLOT_COLUMNS: dict[str, str] = {
-    "socrata.app-token": "socrata_app_token",
+
+@dataclass(frozen=True)
+class KeySlot:
+    """One per-account key a source can send, and how API Settings shows it."""
+
+    #: The ``User`` column that holds it, which is also the field
+    #: ``PATCH /api/auth/me`` takes it under.
+    column: str
+    label: str
+    help_url: str | None = None
+    placeholder: str | None = None
+    #: A sentence API Settings shows under the field.
+    note: str | None = None
+    #: The deployment-wide fallback, read at call time so a test can set one.
+    #: A user's own key always wins; this is what everyone else inherits,
+    #: exactly as ``DEFAULT_LLM_API_KEY`` works.
+    default_env: str | None = None
+    #: Other parts of Curio that read the same column, named for a person.
+    also_used_by: tuple[str, ...] = ()
+
+
+#: manifest ``auth.secretId`` -> the slot. API Settings draws one row per
+#: entry, so a key a new source needs is a line here, a column and a migration.
+SLOTS: dict[str, KeySlot] = {
+    "socrata.app-token": KeySlot(
+        column="socrata_app_token",
+        label="Socrata app token",
+        help_url="https://evergreen.data.socrata.com/signup",
+        placeholder="Your app token",
+        note="Socrata portals answer without one; a token raises the rate limit.",
+        default_env="CURIO_DEFAULT_SOCRATA_APP_TOKEN",
+    ),
     # The same column Street Vision reads for gated models: one Hugging Face
     # token per account, whichever part of Curio asks for it.
-    "huggingface.token": "huggingface_token",
+    "huggingface.token": KeySlot(
+        column="huggingface_token",
+        label="Hugging Face token",
+        help_url="https://huggingface.co/settings/tokens",
+        placeholder="hf_...",
+        also_used_by=("Street Vision's gated models",),
+    ),
 }
 
-#: manifest ``auth.secretId`` -> the deployment-wide fallback, read at call
-#: time so a test can set one. A user's own token always wins; this is what
-#: everyone else inherits, exactly as ``DEFAULT_LLM_API_KEY`` works.
+#: manifest ``auth.secretId`` -> the ``User`` column that holds it.
+SLOT_COLUMNS: dict[str, str] = {slot: spec.column for slot, spec in SLOTS.items()}
+
+#: manifest ``auth.secretId`` -> the deployment-wide fallback's variable.
 SLOT_DEFAULTS: dict[str, str] = {
-    "socrata.app-token": "CURIO_DEFAULT_SOCRATA_APP_TOKEN",
+    slot: spec.default_env for slot, spec in SLOTS.items() if spec.default_env
 }
 
 #: What a client is told about each slot, keyed the same way. Booleans only.
@@ -104,3 +142,31 @@ def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
     if not token:
         return None
     return f"{auth.header_name}:{auth.value_prefix or ''}{token}"
+
+
+def key_rows(user, manifests: Iterable[DiscoverySourceManifest]) -> list[dict[str, Any]]:
+    """What API Settings lists: every slot, who sends it, and booleans only.
+
+    ``present`` says whether THIS account saved one; ``inherited`` whether the
+    deployment supplies one everybody gets. Neither carries a value.
+    """
+    manifests = list(manifests)
+    rows = []
+    for slot, spec in SLOTS.items():
+        sources = sorted(
+            ({"name": m.name, "dirName": m.dir_name} for m in manifests if m.auth.secret_id == slot),
+            key=lambda row: row["name"].lower(),
+        )
+        rows.append({
+            "slot": slot,
+            "label": spec.label,
+            "field": spec.column,
+            "helpUrl": spec.help_url,
+            "placeholder": spec.placeholder,
+            "note": spec.note,
+            "present": own_token(user, slot) is not None,
+            "inherited": bool(spec.default_env and os.environ.get(spec.default_env)),
+            "sources": sources,
+            "alsoUsedBy": list(spec.also_used_by),
+        })
+    return rows

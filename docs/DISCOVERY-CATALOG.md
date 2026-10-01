@@ -61,7 +61,7 @@ discovery/
 | Layer | On disk | Written by |
 |---|---|---|
 | **Sources**, the portals and storage this install can reach | `<repo_root>/discovery/<sourceId>@<major>/`, or `$CURIO_DISCOVERY_ROOT` when set, and `.curio/discovery/` for an operator's own | The operator. Nothing in the app writes here. |
-| **Your token**, for sources that take one | Your account | You, in **AI Settings**. |
+| **Your token**, for sources that take one | Your account | You, in **API Settings**. |
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
 | **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
@@ -96,7 +96,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
-| **Set a token** | **AI Settings** | Your account | The source's card reads **Token set**. |
+| **Set a token** | **API Settings** | Your account | The source's card reads **Token set**. |
 
 ### Workflows
 
@@ -106,7 +106,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone.
 
-**A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **AI Settings**, and save. See [part 5](#5-api-tokens).
+**A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **API Settings**, and save. See [part 5](#5-api-tokens).
 
 **I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
@@ -163,7 +163,7 @@ When a download fails, the row says why in the server's own words, for example t
 
 Some sources take an API token. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
 
-A token belongs to your account. Set it in **AI Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source, below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
+A token belongs to your account. Set it in **API Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in the **Socrata app token** field for a Socrata portal, or the **HuggingFace token** field for a Hugging Face source, below your LLM configurations. Leave the field blank to keep a saved token; **Remove saved token** clears it. The field's label says whether a token is saved, and the Socrata field also says when one is inherited from whoever runs this Curio. Your own token overrides the inherited one.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 

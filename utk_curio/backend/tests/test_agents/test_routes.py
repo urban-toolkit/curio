@@ -8690,7 +8690,7 @@ class TestRestartHonestyOnApply:
 
 
 class TestProviderModels:
-    """The model list AI Settings offers instead of a free-text box.
+    """The model list API Settings offers instead of a free-text box.
 
     Typing a model name from memory is how a wrong one gets saved, and a wrong
     model only shows up much later as a failed agent run. So the panel asks the

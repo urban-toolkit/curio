@@ -262,7 +262,7 @@ def run_scripted_turn(
     if not enabled():
         raise TestingProviderUnavailable(
             'The "testing" LLM provider is only available when CURIO_TESTING is set. '
-            "Configure a real provider in AI Settings."
+            "Configure a real provider in API Settings."
         )
 
     with _lock:

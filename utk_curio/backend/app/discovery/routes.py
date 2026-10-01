@@ -126,6 +126,18 @@ def list_discovery_catalog():
     return jsonify(payload), 200
 
 
+@discovery_bp.route("/keys", methods=["GET"])
+@require_auth
+@_map_discovery_errors
+def list_discovery_keys():
+    """The key slots API Settings lists, and which sources send each.
+
+    Booleans only: whether this account saved one, and whether the deployment
+    supplies one. A key's value never leaves the server.
+    """
+    return jsonify({"keys": _service().key_rows()}), 200
+
+
 @discovery_bp.route("/sources/<source_dir>", methods=["GET"])
 @require_auth
 @_map_discovery_errors

@@ -97,6 +97,30 @@ export interface DiscoverySourceAuth {
   helpUrl: string | null;
 }
 
+/** One key slot, as API Settings lists it (`GET /api/discovery/keys`). */
+export interface DiscoveryKeyRow {
+  /** The manifest's `auth.secretId`. */
+  slot: string;
+  label: string;
+  /** The field `PATCH /api/auth/me` takes the key under. */
+  field: string;
+  helpUrl: string | null;
+  placeholder: string | null;
+  note: string | null;
+  /** This account saved one. */
+  present: boolean;
+  /** The deployment supplies one everybody gets. */
+  inherited: boolean;
+  /** The sources on this Curio that send it. */
+  sources: { name: string; dirName: string }[];
+  /** Other parts of Curio that read the same key. */
+  alsoUsedBy: string[];
+}
+
+export interface DiscoveryKeysResponse {
+  keys: DiscoveryKeyRow[];
+}
+
 export interface DiscoverySourceCapabilities {
   search: boolean;
   describe: boolean;

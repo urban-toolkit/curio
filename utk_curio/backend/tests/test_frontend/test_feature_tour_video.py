@@ -33,7 +33,7 @@ Scene ids, in order: see ``SCENES`` at the bottom of this file.
 
 The AI provider:
 
-The ``aisettings`` scene types a base URL, an API key and a model into AI
+The ``apisettings`` scene types a base URL, an API key and a model into AI
 Settings on camera, and ``agentrun`` then asks a real question of that endpoint.
 Curio ships no provider of its own, and the account the tour signs up starts
 with none, so this is not decoration: without it every agent surface refuses to
@@ -127,7 +127,7 @@ CARD = 'article:not([role="status"])'
 # The AI provider the tour configures on camera
 # ---------------------------------------------------------------------------
 #
-# Typed into AI Settings by ``scene_aisettings`` rather than pre-set with the
+# Typed into API Settings by ``scene_apisettings`` rather than pre-set with the
 # launcher's --llm-* flags, because adding an LLM configuration through the
 # interface is one of the things the video exists to show. The account the tour
 # signs up starts with none, which is also why the panel's "No LLM configuration
@@ -517,20 +517,20 @@ def _editor_field(page, label):
     return page.locator(_EDITOR).get_by_label(label)
 
 
-def _open_ai_settings(ctx: Ctx) -> None:
-    """Open AI Settings from whichever entry point this page has.
+def _open_api_settings(ctx: Ctx) -> None:
+    """Open API Settings from whichever entry point this page has.
 
     Two exist, and which one is available depends on where the tour is: the
     header button lives in ``GlobalPageHeader``, which renders on /projects and
     /catalog/* but *not* on the canvas, where the Agent Catalog drawer's cog is
     the only route (``docs/AGENT-CATALOG.md``, The provider).
 
-    Handling both is what lets ``aisettings`` be re-recorded alongside the canvas
+    Handling both is what lets ``apisettings`` be re-recorded alongside the canvas
     scenes: ``CURIO_TOUR_SCENES`` picks one landing page for the whole subset, so
     a scene that only knew the header could never share a run with them.
     """
     page, tour = ctx.page, ctx.tour
-    header_button = page.get_by_role("button", name="AI Settings", exact=True)
+    header_button = page.get_by_role("button", name="API Settings", exact=True)
     if header_button.count():
         tour.click(header_button.first)
     else:
@@ -540,9 +540,9 @@ def _open_ai_settings(ctx: Ctx) -> None:
             "LLM configurations are account settings, so they sit with the agents they answer.",
             hold=2600,
         )
-        tour.click(drawer.get_by_role("button", name=re.compile("AI Settings")).first)
+        tour.click(drawer.get_by_role("button", name=re.compile("API Settings")).first)
     expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
+        page.get_by_role("heading", name="API Settings", level=2)
     ).to_be_visible(timeout=15000)
 
 
@@ -814,7 +814,7 @@ def scene_projects(ctx: Ctx) -> None:
     tour.hush()
 
 
-def scene_ai_settings(ctx: Ctx) -> None:
+def scene_api_settings(ctx: Ctx) -> None:
     """Add an LLM configuration, for real, before anything needs it.
 
     Placed before the canvas because the account the tour just signed up has no
@@ -824,7 +824,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
     """
     page, tour = ctx.page, ctx.tour
     tour.chapter(
-        "02", "AI Settings",
+        "02", "API Settings",
         "Your default LLM configuration answers every AI surface in Curio.",
     )
     if not LLM_API_KEY:
@@ -833,7 +833,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
             f"filling it in. Put one in {PROVIDER_FILE} or "
             "CURIO_TOUR_LLM_API_KEY to record the agent scenes for real."
         )
-        _open_ai_settings(ctx)
+        _open_api_settings(ctx)
         tour.say(
             "Point Curio at a provider",
             "OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint.",
@@ -843,7 +843,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
         tour.click(page.get_by_role("button", name="Close", exact=True))
         return
 
-    _open_ai_settings(ctx)
+    _open_api_settings(ctx)
     tour.say(
         "Per-account, not per-dataflow",
         "Name as many endpoints as you like; your default answers the agents and chat.",
@@ -934,7 +934,7 @@ def scene_ai_settings(ctx: Ctx) -> None:
     tour.hush()
     tour.click(page.get_by_role("button", name="Close", exact=True).last)
     expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
+        page.get_by_role("heading", name="API Settings", level=2)
     ).to_have_count(0, timeout=15000)
     # If the drawer was the way in (canvas), put it back so the next scene
     # starts on a clean canvas rather than behind a panel it did not open.
@@ -1330,12 +1330,12 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     _add_agent(ctx, drawer, AGENT_BUILDER, hold=1800)
     tour.hush()
 
-    settings = drawer.get_by_role("button", name=re.compile("AI Settings"))
+    settings = drawer.get_by_role("button", name=re.compile("API Settings"))
     if settings.count():
         tour.focus(settings.first, hold=1500)
         tour.say(
             "The provider lives one click away",
-            "On the canvas this cog is the only route to AI Settings.",
+            "On the canvas this cog is the only route to API Settings.",
             hold=2600,
         )
         tour.hush()
@@ -1460,7 +1460,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         # an error bubble, and filming that is worse than filming nothing.
         _log("[tour] no provider key configured; skipping the live agent run")
         tour.say(
-            "Add an LLM configuration in AI Settings to run it",
+            "Add an LLM configuration in API Settings to run it",
             "Curio ships no endpoint of its own, so nothing is called until you set one.",
             hold=3000,
         )
@@ -1501,7 +1501,7 @@ def scene_agent_run(ctx: Ctx) -> None:
 
     if reply is not None:
         tour.say(
-            "Answered by the endpoint configured in AI Settings",
+            "Answered by the endpoint configured in API Settings",
             "No key, no answer - Curio ships no provider of its own.",
             hold=3200,
         )
@@ -1522,7 +1522,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         raise AssertionError(
             "the agent run failed, so this scene would record a broken agent: "
             f"HTTP {first.status} from {first.url}\n{body}\n"
-            "Check the provider in AI Settings - a rejected key, an unreachable "
+            "Check the provider in API Settings - a rejected key, an unreachable "
             "base URL and a model the endpoint does not serve all land here."
         )
     assert run_calls, "the agent run made no request at all"
@@ -1530,7 +1530,7 @@ def scene_agent_run(ctx: Ctx) -> None:
     # a status, so check the surface the viewer is actually looking at too.
     blocked = panel.get_by_text(re.compile("No AI provider is configured", re.I))
     assert blocked.count() == 0, (
-        "the agent surface reports no configured provider; AI Settings did "
+        "the agent surface reports no configured provider; API Settings did "
         "not take effect for this account"
     )
 
@@ -2273,7 +2273,7 @@ def scene_jupyter(ctx: Ctx) -> None:
         tour.click(export)
     _log(f"[tour] exported {download.value.suggested_filename}")
     tour.hush()
-    # The next scene (aisettings) opens its panel from the projects page.
+    # The next scene (apisettings) opens its panel from the projects page.
     page.goto(f"{ctx.frontend}/projects")
     page.wait_for_load_state("domcontentloaded")
     wait_for_projects_page(page, timeout=30000)
@@ -2350,7 +2350,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("signup", scene_signup),
     ("projects", scene_projects),
     ("jupyter", scene_jupyter),
-    ("aisettings", scene_ai_settings),
+    ("apisettings", scene_api_settings),
     ("canvas", scene_canvas),
     ("datacatalog", scene_data_catalog),
     ("build", scene_build),
@@ -2385,7 +2385,7 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
 
 
 #: Scenes that assume a dataflow canvas is already open. Used only to decide
-#: where a partial re-record has to start from. ``aisettings`` is deliberately
+#: where a partial re-record has to start from. ``apisettings`` is deliberately
 #: absent: it runs on /projects, where the header that opens the panel lives.
 CANVAS_SCENES = {
     "datacatalog", "build", "saveload", "lineage", "nodecatalog", "libraries",

@@ -323,3 +323,46 @@ class TestTheDeploymentFallback:
         # No FixtureMissing means the gate let it through to the provider.
         with pytest.raises(T.FixtureMissing):
             browse.search(manifest, SearchQuery(text="whatever"))
+
+
+class TestTheKeysApiSettingsLists:
+    """``GET /api/discovery/keys``: one row per slot, booleans only."""
+
+    def _rows(self, client, auth):
+        res = client.get("/api/discovery/keys", headers=auth)
+        assert res.status_code == 200, res.get_data(as_text=True)
+        return {row["slot"]: row for row in res.get_json()["keys"]}
+
+    def test_every_slot_is_listed_and_its_field_is_the_column_patch_takes(self, client, auth, shipped_root):
+        rows = self._rows(client, auth)
+        assert set(rows) == set(credentials.SLOTS)
+        for slot, row in rows.items():
+            assert row["field"] == credentials.SLOT_COLUMNS[slot]
+            assert row["label"]
+
+    def test_presence_is_this_accounts_own_and_a_boolean(self, client, auth, shipped_root, monkeypatch):
+        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+        assert self._rows(client, auth)["socrata.app-token"]["present"] is False
+        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET})
+        row = self._rows(client, auth)["socrata.app-token"]
+        assert row["present"] is True and row["inherited"] is False
+
+    def test_a_deployment_key_is_reported_as_inherited_not_as_present(self, client, auth, shipped_root, monkeypatch):
+        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        row = self._rows(client, auth)["socrata.app-token"]
+        assert row["inherited"] is True and row["present"] is False
+
+    def test_each_row_names_the_sources_that_send_it(self, client, auth, shipped_root):
+        rows = self._rows(client, auth)
+        assert {"name": "City of Chicago Data Portal", "dirName": "source.cityofchicago.data-portal@1"} in (
+            rows["socrata.app-token"]["sources"]
+        )
+        assert rows["huggingface.token"]["alsoUsedBy"] == ["Street Vision's gated models"]
+
+    def test_a_saved_value_never_appears(self, client, auth, shipped_root):
+        client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET, "huggingface_token": SECRET})
+        body = client.get("/api/discovery/keys", headers=auth).get_data(as_text=True)
+        assert SECRET not in body
+
+    def test_it_needs_a_signed_in_caller(self, client, shipped_root):
+        assert client.get("/api/discovery/keys").status_code == 401

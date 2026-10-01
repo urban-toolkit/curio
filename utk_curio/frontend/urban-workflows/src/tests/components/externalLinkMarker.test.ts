@@ -7,7 +7,7 @@ import path from "path";
  * The arrow is how the app tells you a click leaves the page. It used to be
  * applied by hand, so the same portal homepage carried it on the source
  * page and not in the drawer beside it, a downloaded dataset's resource link
- * had none, and AI Settings used "→" for its three key links.
+ * had none, and API Settings used "→" for its three key links.
  *
  * Read from disk, like the other convention tests in this directory: the claim
  * is about every file, not about one rendered tree.
@@ -61,7 +61,7 @@ describe("external links", () => {
   });
 
   test("the other arrow is gone", () => {
-    const src = fs.readFileSync(path.join(SRC, "components/AiSettingsModal.tsx"), "utf8");
+    const src = fs.readFileSync(path.join(SRC, "components/ApiSettingsModal.tsx"), "utf8");
     expect(src).not.toContain("→");
   });
 });

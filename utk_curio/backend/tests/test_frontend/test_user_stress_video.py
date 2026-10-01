@@ -77,7 +77,7 @@ from .utils import (
 )
 
 # The tour module owns the shared canvas choreography (menus, Play All, fitView,
-# the agent drag, the AI Settings panel). Importing it rather than restating it
+# the agent drag, the API Settings panel). Importing it rather than restating it
 # keeps this file about the *exploration* - and means a change to the app that
 # breaks a gesture breaks it in one place.
 from .test_feature_tour_video import (  # noqa: E402
@@ -102,7 +102,7 @@ from .test_feature_tour_video import (  # noqa: E402
     _open_agent_drawer,
     _play_all,
     _reset_zoom,
-    scene_ai_settings,
+    scene_api_settings,
 )
 
 
@@ -1498,7 +1498,7 @@ class TestSessionExtending:
             _sign_up(s, name="Marcus Oyelaran", username="marcus_oyelaran")
             wait_for_projects_page(page, timeout=30000)
 
-        with s.step("Add an LLM configuration in AI Settings",
+        with s.step("Add an LLM configuration in API Settings",
                     "Curio ships no endpoint; nothing AI works until this is set."):
             if not LLM_API_KEY:
                 s.record(
@@ -1511,7 +1511,7 @@ class TestSessionExtending:
                         "CURIO_TOUR_LLM_API_KEY"
                     ),
                 )
-            scene_ai_settings(ctx)
+            scene_api_settings(ctx)
             s.note(f"provider configured: {LLM_BASE_URL} model={LLM_MODEL}")
 
         with s.step("Open a dataflow and build something worth packaging",

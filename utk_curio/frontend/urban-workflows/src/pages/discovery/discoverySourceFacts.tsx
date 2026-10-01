@@ -1,5 +1,7 @@
 import React from "react";
 
+import { requestSourceKey } from "../../components/connectionKeys/connectionKeysRequest";
+import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { DISCOVERY_PROVIDER_LABEL, type DiscoverySourceRow } from "../../services/discoveryCatalog";
 
 /**
@@ -64,7 +66,16 @@ export function discoverySourceAccessItems(source: DiscoverySourceRow): React.Re
     </li>,
     <li key="slot">
       Credential: <code>{auth.secretId}</code>
-      {auth.present ? " (set on your account)" : " (not set)"}
+      {auth.present ? " (set on your account)" : " (not set)"}{" "}
+      {auth.secretId ? (
+        <button
+          type="button"
+          className={browseStyles.linkButton}
+          onClick={() => requestSourceKey(auth.secretId as string)}
+        >
+          {auth.present ? "Change it in API Settings" : "Add yours in API Settings"}
+        </button>
+      ) : null}
     </li>,
     auth.helpUrl ? (
       <li key="help">

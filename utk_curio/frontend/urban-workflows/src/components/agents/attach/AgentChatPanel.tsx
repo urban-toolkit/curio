@@ -308,7 +308,7 @@ export const AgentChatPanel: React.FC<{
     // would restart the fallback timer against a panel nobody can see.
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
-      // An open modal owns Escape. AI Settings and agent import are raised
+      // An open modal owns Escape. API Settings and agent import are raised
       // over this panel, and this listener is on window in the bubble phase,
       // so the modal cannot stop it firing. It has to stand down itself, or
       // dismissing the dialog closed the chat behind it as well.

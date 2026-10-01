@@ -116,11 +116,11 @@ def readiness(user) -> dict:
     """Whether an evaluation can run at all, and which configurations would answer.
 
     The run attaches the Dataflow Builder, so its configuration is the one an
-    attached Dataflow Builder resolves: its choice in AI Settings, else the
+    attached Dataflow Builder resolves: its choice in API Settings, else the
     account's default, else the deployment default (``curio.py start
     --llm-provider/--llm-base-url/--llm-model``). ``source`` says which,
     because a model configured on the command line is as real as one chosen in
-    AI Settings. ``configurations`` lists every distinct configuration the run
+    API Settings. ``configurations`` lists every distinct configuration the run
     and the agents it requires use.
     """
     from utk_curio.backend.app.agents.infrastructure.provider_config import storage_key

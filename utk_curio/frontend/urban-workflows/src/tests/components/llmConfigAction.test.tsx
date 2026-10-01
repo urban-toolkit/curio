@@ -12,12 +12,12 @@ import {
  * Settings on that agent's row.
  */
 
-it("opens AI Settings on the agent the refusal names", () => {
+it("opens API Settings on the agent the refusal names", () => {
   const asked: ConnectionKeysFocus[] = [];
   const listener = (event: Event) => asked.push((event as CustomEvent<ConnectionKeysFocus>).detail);
   window.addEventListener(CONNECTION_KEYS_EVENT, listener);
   render(<LlmConfigAction remedy={{ kind: "llm-config", agentId: "agent.node-content-builder" }} />);
-  fireEvent.click(screen.getByRole("button", { name: "Open AI Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open API Settings" }));
   expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-content-builder" }]);
   window.removeEventListener(CONNECTION_KEYS_EVENT, listener);
 });

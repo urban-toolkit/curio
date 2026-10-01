@@ -189,7 +189,7 @@ class TestLiveRunnerRefusals:
         )
         with pytest.raises(live_mod.LiveEvalRefused) as refusal:
             run.provider_record()
-        assert "AI Settings" in str(refusal.value)
+        assert "API Settings" in str(refusal.value)
 
     def test_the_provider_record_keeps_the_host_and_never_a_key(self):
         class _Client(live_mod.HttpClient):

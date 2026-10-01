@@ -1,4 +1,4 @@
-"""Playwright E2E: AI Settings keeps named LLM configurations, and no key ever
+"""Playwright E2E: API Settings keeps named LLM configurations, and no key ever
 reaches the page.
 
 Covers the panel's lasting promises:
@@ -22,7 +22,7 @@ exercise ``/api/agents/llm``, and the run uses the scripted provider.
 Run::
 
     CURIO_TESTING=1 pytest \
-        utk_curio/backend/tests/test_frontend/test_ai_settings_e2e.py -v
+        utk_curio/backend/tests/test_frontend/test_api_settings_e2e.py -v
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ SAVED = "(saved - leave blank to keep)"
 
 @pytest.fixture()
 def signed_in(app_frontend: "FrontendPage", current_server: str, page, request):
-    """Sign in and land on the projects page, whose header opens AI Settings.
+    """Sign in and land on the projects page, whose header opens API Settings.
 
     The header button is the entry point that exists on /projects; on the canvas
     the only route is the Agent Catalog drawer's cog, which is more machinery
@@ -69,9 +69,9 @@ def signed_in(app_frontend: "FrontendPage", current_server: str, page, request):
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
-        name="AI Settings User",
-        username=f"aisettings_{abs(hash(request.node.name)) % 10**8}",
-        project_name="AiSettings",
+        name="API Settings User",
+        username=f"apisettings_{abs(hash(request.node.name)) % 10**8}",
+        project_name="ApiSettings",
     )
     page.goto(f"{app_frontend.base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
@@ -79,10 +79,10 @@ def signed_in(app_frontend: "FrontendPage", current_server: str, page, request):
     return SimpleNamespace(page=page, token=login["token"], backend=current_server)
 
 
-def _open_ai_settings(page):
-    page.get_by_role("button", name="AI Settings", exact=True).first.click()
+def _open_api_settings(page):
+    page.get_by_role("button", name="API Settings", exact=True).first.click()
     expect(
-        page.get_by_role("heading", name="AI Settings", level=2)
+        page.get_by_role("heading", name="API Settings", level=2)
     ).to_be_visible(timeout=15000)
     # The table has loaded once its Add button is there.
     expect(_section(page).get_by_role("button", name="Add configuration")).to_be_visible(
@@ -91,8 +91,8 @@ def _open_ai_settings(page):
 
 
 @pytest.fixture()
-def ai_settings(signed_in):
-    _open_ai_settings(signed_in.page)
+def api_settings(signed_in):
+    _open_api_settings(signed_in.page)
     return signed_in
 
 
@@ -167,7 +167,7 @@ def _listing(session) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
+def test_anthropic_is_no_longer_declared_unlistable(api_settings):
     """The exact copy from the issue must be gone, and the reason must be real.
 
     A fresh account has no key and nothing recorded for Anthropic, so there is
@@ -175,7 +175,7 @@ def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
     claimed the *provider* published no list, which was untrue; the honest
     answer names the missing key, which the user can act on.
     """
-    page = ai_settings.page
+    page = api_settings.page
     editor = _open_editor(page)
     _tab(editor, "Anthropic").click()
 
@@ -204,7 +204,7 @@ def test_anthropic_is_no_longer_declared_unlistable(ai_settings):
     assert editor.get_by_label("Model").evaluate("el => el.tagName") == "INPUT"
 
 
-def test_a_replay_is_labelled_as_one(ai_settings):
+def test_a_replay_is_labelled_as_one(api_settings):
     """A recording must never read as the present tense.
 
     Reaching the replay path for real needs a prior successful listing, which
@@ -212,7 +212,7 @@ def test_a_replay_is_labelled_as_one(ai_settings):
     the panel's honesty about *which* source answered, which is exactly what a
     stub can establish.
     """
-    page = ai_settings.page
+    page = api_settings.page
 
     def _stub(route):
         route.fulfill(
@@ -242,8 +242,8 @@ def test_a_replay_is_labelled_as_one(ai_settings):
     expect(editor.get_by_text(re.compile("Add an API key above", re.I))).to_be_visible()
 
 
-def test_a_live_listing_is_offered_as_suggestions_not_a_replay(ai_settings):
-    page = ai_settings.page
+def test_a_live_listing_is_offered_as_suggestions_not_a_replay(api_settings):
+    page = api_settings.page
 
     def _stub(route):
         route.fulfill(
@@ -281,8 +281,8 @@ def test_a_live_listing_is_offered_as_suggestions_not_a_replay(ai_settings):
 # ---------------------------------------------------------------------------
 
 
-def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(ai_settings):
-    page = ai_settings.page
+def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
+    page = api_settings.page
     config = _add_configuration(
         page, label="Work Gemini", tab="Gemini", key=KEY, model="gemini-2.0-flash",
     )
@@ -295,7 +295,7 @@ def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(ai_settings
     expect(row).to_contain_text("saved")
     expect(page.get_by_test_id("llm-active")).to_contain_text("Work Gemini")
 
-    listing = _listing(ai_settings)
+    listing = _listing(api_settings)
     [saved] = [c for c in listing["configs"] if c["id"] == config["id"]]
     assert saved["hasApiKey"] and listing["default"] == config["id"], listing
     assert KEY not in json.dumps(listing)
@@ -308,8 +308,8 @@ def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(ai_settings
     assert not any(KEY in value for value in values)
 
 
-def test_the_editor_says_saved_only_on_the_configurations_own_endpoint(ai_settings):
-    page = ai_settings.page
+def test_the_editor_says_saved_only_on_the_configurations_own_endpoint(api_settings):
+    page = api_settings.page
     _add_configuration(
         page, label="Work Gemini", tab="Gemini", key=KEY, model="gemini-2.0-flash",
     )
@@ -330,7 +330,7 @@ def test_the_editor_says_saved_only_on_the_configurations_own_endpoint(ai_settin
         expect(_key_box(editor)).to_have_value("")
 
 
-def test_moving_a_configuration_never_carries_its_key(ai_settings):
+def test_moving_a_configuration_never_carries_its_key(api_settings):
     """The defect under the cosmetics.
 
     With one key per account, switching provider and saving kept the Gemini
@@ -338,7 +338,7 @@ def test_moving_a_configuration_never_carries_its_key(ai_settings):
     configuration moved without a new key now drops the old one: a provider
     that needs a key refuses the save, and a keyless server saves without one.
     """
-    page = ai_settings.page
+    page = api_settings.page
     config = _add_configuration(
         page, label="Work Gemini", tab="Gemini", key=KEY, model="gemini-2.0-flash",
     )
@@ -360,7 +360,7 @@ def test_moving_a_configuration_never_carries_its_key(ai_settings):
     )
     assert answered.value.status == 400, answered.value.text()
     expect(editor.get_by_role("alert")).to_contain_text("API key")
-    [kept] = [c for c in _listing(ai_settings)["configs"] if c["id"] == config["id"]]
+    [kept] = [c for c in _listing(api_settings)["configs"] if c["id"] == config["id"]]
     assert kept["apiType"] == "gemini" and kept["hasApiKey"], kept
 
     # A keyless server takes the move, and the key stays behind.
@@ -376,7 +376,7 @@ def test_moving_a_configuration_never_carries_its_key(ai_settings):
     assert moved.value.status == 200, moved.value.text()
     expect(_editor(page)).to_be_hidden(timeout=15000)
     expect(_row(page, "Work Gemini")).to_contain_text("none", timeout=15000)
-    [now] = [c for c in _listing(ai_settings)["configs"] if c["id"] == config["id"]]
+    [now] = [c for c in _listing(api_settings)["configs"] if c["id"] == config["id"]]
     assert now["baseUrlHost"] == "localhost:11434" and now["hasApiKey"] is False, now
 
 
@@ -404,7 +404,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
     )
 
     page = session.page
-    _open_ai_settings(page)
+    _open_api_settings(page)
     make_default = _section(page).get_by_role("button", name="Make Scripted B the default")
     with page.expect_response(
         lambda r: r.url.endswith("/api/agents/llm/default") and r.request.method == "PUT",
@@ -468,7 +468,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
         )["config"]
 
     page = session.page
-    _open_ai_settings(page)
+    _open_api_settings(page)
     models = page.get_by_test_id("agent-models-section")
     for agent, label in (("Dataflow Builder", "Scripted A"), ("Node Content Builder", "Scripted B")):
         with page.expect_response(
@@ -481,7 +481,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
 
     page.reload()
     wait_for_projects_page(page, timeout=15000)
-    _open_ai_settings(page)
+    _open_api_settings(page)
     models = page.get_by_test_id("agent-models-section")
     expect(models.get_by_label("Dataflow Builder", exact=True)).to_have_value(made["Scripted A"]["id"])
     expect(models.get_by_label("Node Content Builder", exact=True)).to_have_value(made["Scripted B"]["id"])

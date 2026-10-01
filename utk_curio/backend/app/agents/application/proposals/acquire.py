@@ -224,7 +224,7 @@ def _mint_discovery_acquire(
         return (
             "refused",
             f"{exc} - ask the user to add the {manifest.auth.secret_id} token in "
-            f"AI Settings{f' ({help_url})' if help_url else ''}. Never ask them "
+            f"API Settings{f' ({help_url})' if help_url else ''}. Never ask them "
             "to paste it to you.",
             None,
         )

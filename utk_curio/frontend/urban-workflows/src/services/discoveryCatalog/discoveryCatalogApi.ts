@@ -7,6 +7,7 @@ import type {
   DiscoveryAcquireJob,
   DiscoveryAcquireStart,
   DiscoveryCollectionStatus,
+  DiscoveryKeysResponse,
   DiscoveryResourceDetail,
   DiscoverySearchQuery,
   DiscoverySearchResponse,
@@ -33,6 +34,12 @@ function query(params: DiscoveryCatalogQuery): string {
 export const discoveryCatalogApi = {
   listCatalog(params: DiscoveryCatalogQuery = {}): Promise<DiscoveryCatalogResponse> {
     return apiFetch<DiscoveryCatalogResponse>(`/api/discovery/catalog${query(params)}`);
+  },
+
+  /** The key slots API Settings lists, and the sources that send each one.
+   *  Booleans only: a key's value never comes back. */
+  listKeys(): Promise<DiscoveryKeysResponse> {
+    return apiFetch<DiscoveryKeysResponse>("/api/discovery/keys");
   },
 
   getSource(dirName: string): Promise<DiscoverySourceRow> {

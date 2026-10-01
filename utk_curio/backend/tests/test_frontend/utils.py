@@ -4176,7 +4176,7 @@ SCRIPTED_LABEL = "Scripted"
 def use_scripted_llm(backend_url: str, token: str) -> dict:
     """Make a scripted LLM configuration this user's default, and return it.
 
-    Goes through the real AI Settings routes (``/api/agents/llm``) rather than a
+    Goes through the real API Settings routes (``/api/agents/llm``) rather than a
     test-only shortcut, so the resolution path under test is the production one.
     """
     listing = api_json(f"{backend_url}/api/agents/llm", token)

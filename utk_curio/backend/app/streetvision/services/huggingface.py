@@ -63,7 +63,7 @@ def resolve_user_key() -> str:
 
 
 def resolve_hf_token() -> Optional[str]:
-    """The caller's own HuggingFace token, saved in AI Settings, or None.
+    """The caller's own HuggingFace token, saved in API Settings, or None.
 
     Gated models are a per-person entitlement - you accept a model's licence
     with your own HuggingFace account - so there is no deployment-wide token.
@@ -115,7 +115,7 @@ def search_models(
     With *token*, the search runs as that account and so can see the gated
     models it has accepted licences for. Without one it lists public models
     only, which is the right answer for an anonymous caller and the wrong one
-    for a signed-in user who saved a token in AI Settings.
+    for a signed-in user who saved a token in API Settings.
     """
     from huggingface_hub import HfApi  # light dep; bundled with transformers
 
