@@ -687,7 +687,7 @@ only when auth is on and the everyday single-user install keeps working.
 The sandbox's own `POST /install` route is gone. Nothing in Curio called it,
 and it was a second, unrecorded path to `pip install` inside the interpreter
 that executes node code. Library installs go through the backend's
-`packages/pip_runner.py`, which is auth-gated and records what it installed per
+`packages/infrastructure/pip_runner.py`, which is auth-gated and records what it installed per
 user.
 
 **Per-user node libraries.** Under isolation, a package's declared

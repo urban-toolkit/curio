@@ -206,7 +206,7 @@ Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`
 
 #### How the install/uninstall flow handles them
 
-- **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/pip_runner.py`](../utk_curio/backend/app/packages/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
+- **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/infrastructure/pip_runner.py`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
 - **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
@@ -307,7 +307,7 @@ Spatial Join is simpler: a single handler at the end of [`api/routes.py`](../utk
 
 ### 4.5 Shipping the package
 
-The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/seed.py`](../utk_curio/backend/app/packages/seed.py)), and Street Vision is in neither set. Users opt in by clicking **Add to project** in the catalog. Generally:
+The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)), and Street Vision is in neither set. Users opt in by clicking **Add to project** in the catalog. Generally:
 
 - **Bundled-and-auto-installed** → only for `curio.builtin@1`. Anything every user must have.
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
@@ -317,7 +317,7 @@ The Street Vision package is bundled in-repo under [`packages/`](../packages/) b
 
 When you install a package that ships its own custom node UIs, Curio needs to find a way to load the behavior JavaScript without rebuilding the main app. The mechanism in place today:
 
-1. **The package directory contains both the manifest *and* a pre-built `scripts/behaviors.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py)), so the bundle survives the catalog install round-trip.
+1. **The package directory contains both the manifest *and* a pre-built `scripts/behaviors.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py)), so the bundle survives the catalog install round-trip.
 2. **The manifest declares the bundle via `behaviorScript: "scripts/behaviors.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
 3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response, and the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('street-view-fetcher')`, the key is registered.
 
@@ -463,7 +463,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
      ...
    }
    ```
-   `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
+   `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
 
 6. **Wire up the build.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list. `scripts/new_package.py --with-ui` prints the row ready to paste:
    ```js
