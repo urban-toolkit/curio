@@ -33,7 +33,7 @@ Scene ids, in order: see ``SCENES`` at the bottom of this file.
 
 The AI provider:
 
-The ``apisettings`` scene types a base URL, an API key and a model into AI
+The ``apisettings`` scene types a base URL, an API key and a model into API
 Settings on camera, and ``agentrun`` then asks a real question of that endpoint.
 Curio ships no provider of its own, and the account the tour signs up starts
 with none, so this is not decoration: without it every agent surface refuses to

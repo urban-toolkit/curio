@@ -486,7 +486,7 @@ def activate(user, user_key: str, job_id: str) -> dict:
 def rollback(user, user_key: str, job_id: str) -> dict:
     """Restore the Dataflow Builder's choice this activation replaced. Refused
     once that choice has been changed by hand since, because rolling back would
-    undo the change. The trained configuration stays, to use or remove in AI
+    undo the change. The trained configuration stays, to use or remove in API
     Settings."""
     from utk_curio.backend.app.agents.infrastructure import llm_configs
     from utk_curio.backend.app.agents.infrastructure.provider_config import deployment_config

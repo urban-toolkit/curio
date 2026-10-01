@@ -84,7 +84,7 @@ loops, not a guarantee you can make to a third party.
 
 ### LLM configurations
 
-Curio ships no LLM endpoint. Users add their own LLM configurations in AI
+Curio ships no LLM endpoint. Users add their own LLM configurations in API
 Settings; the deployment can offer its own on top, through environment
 variables the backend reads at start:
 

@@ -8,7 +8,7 @@ import {
 
 /**
  * A run refused because no LLM configuration answers an agent carries
- * `remedy: {kind: "llm-config", agentId}`; the one button for it opens AI
+ * `remedy: {kind: "llm-config", agentId}`; the one button for it opens API
  * Settings on that agent's row.
  */
 

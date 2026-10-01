@@ -26,7 +26,7 @@ export interface EvaluationReadiness {
   configured: boolean;
   /** Populated when it is not configured: what to do about it. */
   reason: string;
-  /** Where the Dataflow Builder's configuration came from: its choice in AI
+  /** Where the Dataflow Builder's configuration came from: its choice in API
    * Settings, the account's default configuration, the deployment default
    * (the start command), or the guest configuration. */
   source: "assigned" | "default" | "deployment" | "guest" | "none";

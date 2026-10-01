@@ -148,7 +148,7 @@ class LiveRun:
         if not active.get("source"):
             raise LiveEvalRefused(
                 "no LLM configuration answers a run on the evaluation account ("
-                f"{active.get('error') or 'none is configured'}); add one in AI "
+                f"{active.get('error') or 'none is configured'}); add one in API "
                 "Settings first. Nothing is guessed and no key is read by this tool."
             )
         return ProviderRecord(

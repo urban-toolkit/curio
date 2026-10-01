@@ -203,7 +203,7 @@ def _delegate_confirmed_fetch(
     never raising: a selection is recorded whether or not a build can start.
 
     The build runs on the BUILDER's LLM configuration, resolved once it is
-    picked: the selection was posted to the Dataset Finder, whose choice in AI
+    picked: the selection was posted to the Dataset Finder, whose choice in API
     Settings says nothing about what builds the node.
     """
 

@@ -41,7 +41,7 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
   // the Prompts heading - nowhere near the button, and without the server's
   // reason (#275).
   const [exportError, setExportError] = useState<string | null>(null);
-  // What this agent runs on, read-only here: the choice is made in AI
+  // What this agent runs on, read-only here: the choice is made in API
   // Settings. `choosable` is false for a guest on a hosted Curio.
   const [model, setModel] = useState<{ text: string; choosable: boolean } | null>(null);
 

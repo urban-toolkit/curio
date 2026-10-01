@@ -128,7 +128,7 @@ class TestHuggingFaceToken:
         ] is False
 
     def test_the_local_guest_saves_its_own(self, client, monkeypatch):
-        # Without --deploy the shared guest is the one local user, so AI
+        # Without --deploy the shared guest is the one local user, so API
         # Settings is where it sets the token.
         from utk_curio.backend import config
 
