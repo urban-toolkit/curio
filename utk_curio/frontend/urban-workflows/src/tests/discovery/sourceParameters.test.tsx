@@ -250,7 +250,7 @@ describe('what an add or a download sends', () => {
     );
     fireEvent.click(screen.getAllByRole('button', { name: 'Download' }).at(-1)!);
     expect(onDownload).toHaveBeenLastCalledWith(
-      expect.objectContaining({ resourceId: 'abcd-1234' }), 'csv', { area: { box: LOOP } },
+      expect.objectContaining({ resourceId: 'abcd-1234' }), 'csv', { area: { box: LOOP } }, 'Crimes',
     );
   });
 

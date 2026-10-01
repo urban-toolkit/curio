@@ -14,6 +14,7 @@ from flask import current_app
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
+from utk_curio.backend.app.discovery.application.service_acquire import ServiceAcquire
 from utk_curio.backend.app.discovery.application.storage_acquire import (
     Cancelled as StorageCancelled,
     StorageAcquire,
@@ -37,6 +38,7 @@ from utk_curio.backend.app.discovery.domain.resource import (
 )
 from utk_curio.backend.app.discovery.infrastructure import credentials, ratelimit
 from utk_curio.backend.app.discovery.infrastructure import transport as transport_mod
+from utk_curio.backend.app.discovery.providers.autark_osm import Cancelled as ServiceCancelled
 from utk_curio.backend.app.discovery.schemas.payloads import (
     resource_detail_row,
     resource_row,
@@ -103,6 +105,12 @@ class DiscoveryService:
             import_layers=self._import_layers,
             find_held=self._find_held,
         )
+        self._service_acquire = ServiceAcquire(
+            user_key=self.user_key,
+            service_for=self._service_for,
+            install_bytes=self._install_bytes,
+            find_held=self._find_held,
+        )
 
     # ── collaborators ──────────────────────────────────────────────────────
 
@@ -119,6 +127,11 @@ class DiscoveryService:
         from utk_curio.backend.app.discovery.providers import build_storage
 
         return build_storage(manifest, self._transport_for(manifest))
+
+    def _service_for(self, manifest: DiscoverySourceManifest):
+        from utk_curio.backend.app.discovery.providers import build_service
+
+        return build_service(manifest)
 
     def _listing_scope(self, manifest: DiscoverySourceManifest) -> str:
         """Whose listing this is: every user's for a public source, this
@@ -189,6 +202,8 @@ class DiscoveryService:
         manifest = self._catalog.get_manifest(dir_name)
         if manifest.is_storage:
             return self._storage_listing(manifest, q=q, rescan=rescan)
+        if manifest.is_service:
+            return self._service_listing(manifest, q=q)
         page = self._browse.search(manifest, _query(q, fmt, limit, cursor))
         held = self._held_formats()
         return search_payload(
@@ -207,11 +222,20 @@ class DiscoveryService:
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
         if not include_storage:
-            manifests = [m for m in manifests if not m.is_storage]
-        portals = [m for m in manifests if not m.is_storage]
+            # A storage or service source is added from its own page, with its
+            # own form; a caller that wants portals only gets portals.
+            manifests = [m for m in manifests if not m.is_storage and not m.is_service]
+        portals = [m for m in manifests if not m.is_storage and not m.is_service]
         query = _query(q, fmt, limit, None)
         storage_pages = []
         storage_legs = []
+        for manifest in (m for m in manifests if m.is_service):
+            # A service searches what it declares, with no network.
+            found = [r for r in self._service_for(manifest).rows() if _storage_matches(r, query.text)]
+            if query.fmt:
+                found = [r for r in found if query.fmt in r.formats]
+            storage_pages.append(SearchPage(resources=tuple(found)))
+            storage_legs.append({"sourceId": manifest.id, "status": "ok", "count": len(found)})
         for manifest in (m for m in manifests if m.is_storage):
             # A storage source searches what it declares, from the listing's
             # summary. It never waits here: a source being scanned for the
@@ -252,6 +276,8 @@ class DiscoveryService:
         manifest = self._catalog.get_manifest(dir_name)
         if manifest.is_storage:
             detail = self._storage_detail(manifest, resource_id)
+        elif manifest.is_service:
+            detail = self._service_detail(manifest, resource_id)
         else:
             detail = self._browse.describe(manifest, resource_id)
         formats = self._held_formats().get((manifest.dir_name, resource_id), {})
@@ -342,6 +368,33 @@ class DiscoveryService:
             raise SourceNotFound(f"{manifest.name} is still being scanned; try again shortly")
         raise SourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
 
+    # ── services ───────────────────────────────────────────────────────────
+
+    def _service_listing(self, manifest: DiscoverySourceManifest, *, q: str) -> dict[str, Any]:
+        """A service source's rows: what its manifest declares, with no network."""
+        held = self._held_formats()
+        rows = [
+            self._resource_row(manifest, r, held)
+            for r in self._service_for(manifest).rows()
+            if _storage_matches(r, q)
+        ]
+        return search_payload(rows, sources=[{"sourceId": manifest.id, "status": "ok", "count": len(rows)}])
+
+    def _service_detail(self, manifest: DiscoverySourceManifest, resource_id: str) -> DiscoveryResourceDetail:
+        spec = manifest.resource(resource_id)
+        if spec is None:
+            raise ResourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
+        return DiscoveryResourceDetail(
+            resource=self._service_for(manifest).row(spec),
+            license=manifest.license,
+            extra={"kind": spec.kind, **({"layers": list(spec.options["layers"])} if "layers" in spec.options else {})},
+        )
+
+    def _install_bytes(self, blob, filename, fmt, **kwargs):
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        return DatasetCatalogService(self.user)._mutations._install_imported_bytes(blob, filename, fmt, **kwargs)
+
     def _import_layers(self, fmt, blob, filename, **kwargs):
         from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
@@ -431,6 +484,12 @@ class DiscoveryService:
             fmt = None
         elif filters or files is not None:
             raise CapabilityUnsupported(f"{manifest.name} is not narrowed by field or file")
+        elif manifest.is_service:
+            spec = manifest.resource(resource_id)
+            if spec is None:
+                raise ResourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
+            # What it lands as is the manifest's to say, not the caller's.
+            fmt = spec.dataset_format
         held = None if narrowed else self._acquire.already_held(
             manifest, resource_id, fmt, parameters_hash=values_hash
         )
@@ -478,7 +537,9 @@ class DiscoveryService:
                     )
                     job.status = "running"
                     job.stage_message = (
-                        "Reading the files…" if manifest.is_storage else "Contacting the portal…"
+                        "Reading the files…" if manifest.is_storage
+                        else f"Contacting {manifest.name}…" if manifest.is_service
+                        else "Contacting the portal…"
                     )
 
                     def _progress(written: int, total: int | None) -> None:
@@ -493,7 +554,17 @@ class DiscoveryService:
                     def _stage(message: str) -> None:
                         job.stage_message = message
 
-                    if manifest.is_storage:
+                    if manifest.is_service:
+                        result = worker._service_acquire.acquire(
+                            manifest,
+                            resource_id,
+                            title=title,
+                            refresh=refresh,
+                            parameters=values,
+                            stage=_stage,
+                            cancelled=lambda: job.cancelled,
+                        )
+                    elif manifest.is_storage:
                         result = worker._storage_acquire.acquire(
                             manifest,
                             resource_id,
@@ -527,7 +598,7 @@ class DiscoveryService:
                         unchanged=result["unchanged"],
                         stage_message="Added to your Data Catalog",
                     )
-                except (_Cancelled, StorageCancelled):
+                except (_Cancelled, StorageCancelled, ServiceCancelled):
                     job_store.jobs.finish(job, "cancelled", stage_message="Cancelled")
                 except DiscoveryError as exc:
                     # A typed failure is the user's answer, verbatim: "that file is

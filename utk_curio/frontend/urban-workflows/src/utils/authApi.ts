@@ -83,6 +83,8 @@ export interface UserData {
   /** Whether a Socrata app token is stored, for the Discovery Catalog. Same
    * rule: a boolean, never the value. */
   has_socrata_app_token?: boolean;
+  has_google_maps_api_key?: boolean;
+  has_mapillary_access_token?: boolean;
 }
 
 export interface PublicConfig {

@@ -13,7 +13,9 @@ import {
   acquireKey,
   discoveryCatalogApi,
   declaredResourceFor,
+  downloadBody,
   isLinkSource,
+  isServiceSource,
   isStorageSource,
   notifyDatasetCatalogRefresh,
   unsearchableReason,
@@ -251,17 +253,10 @@ export const DiscoverySourceDetail: React.FC = () => {
                 iconUrl={source.iconUrl}
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
                 onViewDataset={(id) => openDatasetDetails(id)}
-                onDownload={(r, fmt, parameters) =>
-                  // The portal's own title, or the dataset lands named after
-                  // the remote FILE - "ijzp-q8t2.csv" rather than "Crimes -
-                  // 2001 to Present", which is unreadable in the Data Catalog
-                  // and cannot be searched for by the name it was found under.
-                  void acquisition.start(decoded, r.resourceId, {
-                    format: fmt,
-                    title: r.name,
-                    ...(parameters ? { parameters } : {}),
-                  })
+                onDownload={(r, fmt, parameters, title) =>
+                  void acquisition.start(decoded, r.resourceId, downloadBody(source, r, fmt, parameters, title))
                 }
+                service={isServiceSource(source)}
                 onCancel={(r) => acquisition.cancel(decoded, r.resourceId)}
                 onDismiss={(r) => acquisition.dismiss(decoded, r.resourceId)}
                 storage={

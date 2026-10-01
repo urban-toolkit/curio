@@ -28,6 +28,10 @@ class User(db.Model):
     # The slot registry in discovery/infrastructure/credentials.py maps a
     # manifest's auth.secretId onto this column.
     socrata_app_token = db.Column(db.String(255), nullable=True)
+    # Two street-level imagery keys for the Discovery Catalog, each billed or
+    # rate-limited per person, so neither has a deployment-wide fallback.
+    google_maps_api_key = db.Column(db.String(255), nullable=True)
+    mapillary_access_token = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

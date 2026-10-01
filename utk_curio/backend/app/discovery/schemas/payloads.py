@@ -61,10 +61,11 @@ def source_row(
             "formats": list(manifest.capabilities.formats),
             "maxDownloadBytes": manifest.capabilities.max_download_bytes,
         },
-        # ``storage`` sources declare their resources; a ``portal``'s are found
-        # by searching it. The root of a folder is NOT sent: it is a path on
-        # the server, and the resources say everything a user acts on.
-        "kind": "storage" if manifest.is_storage else "portal",
+        # ``storage`` and ``service`` sources declare their resources; a
+        # ``portal``'s are found by searching it. The root of a folder is NOT
+        # sent: it is a path on the server, and the resources say everything a
+        # user acts on.
+        "kind": "storage" if manifest.is_storage else "service" if manifest.is_service else "portal",
         "resources": [
             declared_resource_row(spec, source_parameters=manifest.parameters)
             for spec in manifest.resources
@@ -95,7 +96,7 @@ def declared_resource_row(
         "splitBy": list(spec.split_by),
         "fields": [
             {"name": capture.name, "type": capture.type}
-            for capture in spec.template.captures
+            for capture in (spec.template.captures if spec.template else ())
         ],
         "parameters": [P.parameter_row(p) for p in P.merge(source_parameters, spec.parameters)],
     }

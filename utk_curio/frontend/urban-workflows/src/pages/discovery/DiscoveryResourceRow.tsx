@@ -37,7 +37,7 @@ export interface DiscoveryResourceRowProps {
   iconUrl?: string | null;
   /** *parameters* are the answers to what the row asks, when it was narrowed
    *  before its download (an area, say). */
-  onDownload?: (resource: Row, format: string, parameters?: Record<string, unknown>) => void;
+  onDownload?: (resource: Row, format: string, parameters?: Record<string, unknown>, title?: string) => void;
   /** The download in flight or just finished for this row, if any. */
   job?: DiscoveryAcquireJob;
   onCancel?: (resource: Row) => void;
@@ -49,6 +49,9 @@ export interface DiscoveryResourceRowProps {
   /** Present on a storage source's rows, which are added rather than
    *  downloaded, and can be narrowed or opened file by file. */
   storage?: StorageRowContext;
+  /** A service source's row: downloaded once its questions are answered, and
+   *  named after the place unless the person names it. */
+  service?: boolean;
 }
 
 const SampleThumb: React.FC<{ path: string; name: string }> = ({ path, name }) => {
@@ -78,6 +81,7 @@ export function DiscoveryResourceRow({
   onDismiss,
   onViewDataset,
   storage,
+  service = false,
 }: DiscoveryResourceRowProps) {
   const [format, setFormat] = React.useState<string>(resource.formats[0] ?? "");
   const [adding, setAdding] = React.useState(false);
@@ -295,10 +299,11 @@ export function DiscoveryResourceRow({
           resource={resource}
           splitBy={[]}
           verb="download"
+          titleFromPlace={service}
           onCancel={() => setNarrowing(false)}
           onAdd={(body) => {
             setNarrowing(false);
-            onDownload?.(resource, format, body.parameters);
+            onDownload?.(resource, format, body.parameters, body.title);
           }}
         />
       ) : null}

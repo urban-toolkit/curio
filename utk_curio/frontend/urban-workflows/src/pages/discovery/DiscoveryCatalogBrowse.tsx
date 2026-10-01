@@ -15,6 +15,8 @@ import { useToastContext } from "../../providers/ToastProvider";
 import {
   acquireKey,
   declaredResourceFor,
+  downloadBody,
+  isServiceSource,
   isStorageSource,
   notifyDatasetCatalogRefresh,
   partialFailureMessage,
@@ -353,18 +355,17 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
                 }
                 onViewDataset={(id) => openDatasetDetails(id)}
                 storage={storageContext(sourcesById.get(resource.sourceId), resource.resourceId)}
-                onDownload={(r, fmt, parameters) => {
+                service={isServiceSource(sourcesById.get(resource.sourceId) ?? { kind: "portal" })}
+                onDownload={(r, fmt, parameters, title) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
-                  const dir = sourcesById.get(r.sourceId)?.dirName;
-                  // ``title``: see DiscoverySourceDetail - without it the
-                  // dataset is named after the remote file, not the resource.
-                  if (dir)
-                    void acquisition.start(dir, r.resourceId, {
-                      format: fmt,
-                      title: r.name,
-                      ...(parameters ? { parameters } : {}),
-                    });
+                  const source = sourcesById.get(r.sourceId);
+                  if (source)
+                    void acquisition.start(
+                      source.dirName,
+                      r.resourceId,
+                      downloadBody(source, r, fmt, parameters, title),
+                    );
                 }}
                 onCancel={(r) => {
                   const dir = sourcesById.get(r.sourceId)?.dirName;

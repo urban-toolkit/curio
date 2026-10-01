@@ -74,6 +74,7 @@
         "type": {
           "enum": [
             "arcgis",
+            "autark-osm",
             "ckan",
             "direct",
             "folder",
@@ -85,7 +86,7 @@
         },
         "baseUrl": {
           "type": "string",
-          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own (a 'direct' resource id IS the URL), and 'folder', which has a root instead."
+          "description": "https, no trailing slash. Required for every type except 'direct', which has no portal of its own (a 'direct' resource id IS the URL), and 'folder', which has a root instead. An 'autark-osm' source names https://overpass-api.de, where autk-db sends its queries."
         },
         "options": {
           "type": "object",
@@ -146,6 +147,7 @@
               "type": {
                 "enum": [
                   "arcgis",
+                  "autark-osm",
                   "ckan",
                   "s3",
                   "socrata",
@@ -161,6 +163,25 @@
             "required": [
               "baseUrl"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "autark-osm"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "baseUrl": {
+                "const": "https://overpass-api.de"
+              }
+            }
           }
         }
       ]
@@ -312,14 +333,13 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 64,
-      "description": "A storage source's files, as the datasets they form. Required for 'folder', 's3' and 'huggingface'; refused for a portal. Each entry's path is a template relative to the root whose captures become columns.",
+      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface' and 'autark-osm'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
       "items": {
         "type": "object",
         "required": [
           "id",
           "name",
-          "kind",
-          "path"
+          "kind"
         ],
         "additionalProperties": true,
         "properties": {
@@ -405,7 +425,23 @@
           },
           "options": {
             "type": "object",
-            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet."
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads.",
+            "properties": {
+              "layers": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "buildings",
+                    "parks",
+                    "roads",
+                    "surface",
+                    "water"
+                  ]
+                }
+              }
+            }
           },
           "parameters": {
             "type": "array",
@@ -445,7 +481,68 @@
       "then": {
         "required": [
           "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "required": [
+                "path"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "const": "autark-osm"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
         ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "required": [
+                "format",
+                "options"
+              ],
+              "not": {
+                "required": [
+                  "path"
+                ]
+              },
+              "properties": {
+                "kind": {
+                  "const": "table"
+                },
+                "format": {
+                  "const": "geojson"
+                },
+                "options": {
+                  "required": [
+                    "layers"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     }
   ],

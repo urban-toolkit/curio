@@ -267,13 +267,15 @@ class CredentialedTransport:
         )
 
 
-def build_transport(*, budget=None) -> DiscoveryTransport:
-    """The transport this process should use.
+def fixture_root() -> str | None:
+    """The recorded-response corpus this process should answer from, or None.
 
     Double-gated exactly as ``app/testing/routes.py`` is: a fixture corpus is
     honoured only when the process declares itself a test rig AND is not a
     production deployment. Checked at call time rather than import, so a stray
     env var on a real deployment cannot quietly start serving stale fixtures.
+    The OpenStreetMap loader, which sends its requests from Node, asks the same
+    question.
     """
     from utk_curio.backend import config
 
@@ -284,7 +286,16 @@ def build_transport(*, budget=None) -> DiscoveryTransport:
                 f"{ENV_FIXTURES} is set but this process is not a test rig - "
                 "refusing to serve recorded responses"
             )
-        return FixtureDiscoveryTransport(fixtures.strip())
+        return fixtures.strip()
+    return None
+
+
+def build_transport(*, budget=None) -> DiscoveryTransport:
+    """The transport this process should use: the corpus ``fixture_root`` names,
+    or the network."""
+    fixtures = fixture_root()
+    if fixtures:
+        return FixtureDiscoveryTransport(fixtures)
     return HttpDiscoveryTransport(budget=budget)
 
 

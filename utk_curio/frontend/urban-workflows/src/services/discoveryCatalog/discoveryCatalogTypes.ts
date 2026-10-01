@@ -8,7 +8,7 @@
  */
 
 /** Matches `PROVIDER_TYPES` in `discovery/domain/manifest.py`: the portal
- *  types, then the storage types. */
+ *  types, then the storage types, then the service types. */
 export type DiscoveryProviderType =
   | "socrata"
   | "ckan"
@@ -17,13 +17,19 @@ export type DiscoveryProviderType =
   | "direct"
   | "folder"
   | "s3"
-  | "huggingface";
+  | "huggingface"
+  | "autark-osm";
 
 /** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
 export const STORAGE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["folder", "s3", "huggingface"];
 
-/** A `portal` is searched for its datasets; a `storage` source declares them. */
-export type DiscoverySourceKind = "portal" | "storage";
+/** Matches `SERVICE_PROVIDER_TYPES`: sources told where and what, which answer
+ *  with one download. */
+export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["autark-osm"];
+
+/** A `portal` is searched for its datasets; a `storage` source declares them;
+ *  a `service` declares what it can be asked for. */
+export type DiscoverySourceKind = "portal" | "storage" | "service";
 
 /** Matches `RESOURCE_KINDS`. `table` is copied; every other kind is a
  *  collection, referenced where its files are. */
@@ -77,6 +83,7 @@ export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   folder: "Folder",
   s3: "S3 bucket",
   huggingface: "Hugging Face",
+  "autark-osm": "OpenStreetMap (Autark)",
 };
 
 export const DISCOVERY_AUTH_LABEL: Record<DiscoveryAuthMode, string> = {
@@ -244,6 +251,32 @@ export interface DiscoveryCatalogQuery {
 
 export function isStorageSource(source: Pick<DiscoverySourceRow, "kind">): boolean {
   return source.kind === "storage";
+}
+
+export function isServiceSource(source: Pick<DiscoverySourceRow, "kind">): boolean {
+  return source.kind === "service";
+}
+
+/**
+ * What a row's Download sends. A portal's dataset takes the row's name, or it
+ * would land named after the remote file ("ijzp-q8t2.csv" rather than
+ * "Crimes - 2001 to Present"). A service's is named after the place it covers
+ * ("Parks, Golf (Illinois)") unless the person typed a name.
+ */
+export function downloadBody(
+  source: Pick<DiscoverySourceRow, "kind"> | undefined,
+  row: { name: string },
+  format: string,
+  parameters?: Record<string, unknown>,
+  title?: string,
+): DiscoveryAcquireBody {
+  const service = source ? isServiceSource(source) : false;
+  const name = title?.trim() || (service ? undefined : row.name);
+  return {
+    format,
+    ...(name ? { title: name } : {}),
+    ...(parameters ? { parameters } : {}),
+  };
 }
 
 /** The declared resource a storage row belongs to. A row's id is the

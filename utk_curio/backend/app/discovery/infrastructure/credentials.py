@@ -68,6 +68,24 @@ SLOTS: dict[str, KeySlot] = {
         placeholder="hf_...",
         also_used_by=("Street Vision's gated models",),
     ),
+    "google.maps-key": KeySlot(
+        column="google_maps_api_key",
+        label="Google Maps API key",
+        help_url="https://developers.google.com/maps/documentation/streetview/get-api-key",
+        placeholder="AIza...",
+        note=(
+            "Needs the Street View Static API enabled, and Google bills its "
+            "requests to you. Google's terms allow storing only panorama IDs: "
+            "images downloaded with your key are yours to keep within those terms."
+        ),
+    ),
+    "mapillary.token": KeySlot(
+        column="mapillary_access_token",
+        label="Mapillary access token",
+        help_url="https://www.mapillary.com/dashboard/developers",
+        placeholder="MLY|...",
+        note="Mapillary images are CC BY-SA 4.0: each one keeps its creator for attribution.",
+    ),
 }
 
 #: manifest ``auth.secretId`` -> the ``User`` column that holds it.

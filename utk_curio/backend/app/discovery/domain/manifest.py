@@ -45,10 +45,14 @@ PORTAL_PROVIDER_TYPES = ("socrata", "ckan", "arcgis", "wfs", "direct")
 #: Storage: files listed and read in place, organized by ``resources``.
 STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 
+#: Services: told where and what, they answer with one download. Nothing to
+#: browse, so their ``resources`` are declared, like storage's, with no path.
+SERVICE_PROVIDER_TYPES = ("autark-osm",)
+
 #: Provider implementations that exist. Kept here rather than imported from
 #: ``providers`` so that reading a manifest never drags in a transport.
 #: ``providers/__init__.py`` asserts the two agree.
-PROVIDER_TYPES = PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES
+PROVIDER_TYPES = PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES + SERVICE_PROVIDER_TYPES
 
 #: The parameter ids each provider reads, by provider type. A manifest may
 #: declare only these, so a declared question can never be silently ignored.
@@ -56,7 +60,28 @@ PROVIDER_TYPES = PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES
 PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "socrata": ("area",),
     "wfs": ("area",),
+    "autark-osm": ("area",),
 }
+
+#: The forms of an area each provider can send. A manifest may not offer a
+#: form its provider would have to drop.
+PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
+    "socrata": ("box",),
+    "wfs": ("box",),
+    "autark-osm": ("names",),
+}
+
+#: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.
+AUTARK_OSM_LAYERS = ("buildings", "roads", "parks", "water", "surface")
+
+#: Where autk-db sends its Overpass queries. Fixed inside autk-db, so an
+#: ``autark-osm`` manifest names it, so the source says where requests go,
+#: and cannot choose another.
+AUTARK_OVERPASS_BASE = "https://overpass-api.de"
+
+#: What a service resource can be, and the file format it lands as.
+SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {"autark-osm": ("table",)}
+SERVICE_FORMATS: dict[str, tuple[str, ...]] = {"autark-osm": ("geojson",)}
 
 AUTH_MODES = ("public", "optional-token", "required-token")
 
@@ -71,7 +96,7 @@ AUTH_SCHEMES = ("header",)
 #: slot would be a manifest inventing somewhere for a secret to live. Declared
 #: here rather than imported from that module because a manifest must be
 #: readable without the ORM; ``test_credentials.py`` asserts the two agree.
-KNOWN_SECRET_SLOTS = ("socrata.app-token", "huggingface.token")
+KNOWN_SECRET_SLOTS = ("socrata.app-token", "huggingface.token", "google.maps-key", "mapillary.token")
 
 #: The formats this catalog can hand to the Data Catalog's importer. A subset
 #: of the Data Catalog's own SUPPORTED_FORMATS: multi-file and archive formats
@@ -150,6 +175,10 @@ class ProviderSpec:
     def is_storage(self) -> bool:
         return self.type in STORAGE_PROVIDER_TYPES
 
+    @property
+    def is_service(self) -> bool:
+        return self.type in SERVICE_PROVIDER_TYPES
+
 
 @dataclass(frozen=True)
 class AuthSpec:
@@ -187,13 +216,17 @@ class CapabilitySpec:
 
 @dataclass(frozen=True)
 class ResourceSpec:
-    """One declared resource of a storage source."""
+    """One declared resource of a storage or a service source.
+
+    A service resource has no ``path`` or ``template``: it names what to ask
+    the service for, in ``options``.
+    """
 
     id: str
     name: str
     kind: str
-    path: str
-    template: Template
+    path: str = ""
+    template: Template | None = None
     description: str = ""
     #: ``one``, ``per-file``, or ``per:<field>[,<field>]``.
     datasets: str = "one"
@@ -254,6 +287,10 @@ class DiscoverySourceManifest:
     @property
     def is_storage(self) -> bool:
         return self.provider.is_storage
+
+    @property
+    def is_service(self) -> bool:
+        return self.provider.is_service
 
     def resource(self, resource_id: str) -> ResourceSpec | None:
         for spec in self.resources:
@@ -321,6 +358,11 @@ def _parse_provider(raw: object) -> ProviderSpec:
                 )
             if not base_url.startswith("https://"):
                 raise ManifestError("manifest.provider.baseUrl must be https")
+        if kind == "autark-osm" and base_url != AUTARK_OVERPASS_BASE:
+            raise ManifestError(
+                f"manifest.provider.baseUrl must be {AUTARK_OVERPASS_BASE}: autk-db sends "
+                "its Overpass queries there itself"
+            )
     if kind == "s3":
         prefix = options.get("prefix", "")
         if not isinstance(prefix, str) or prefix.startswith("/") or ".." in prefix.split("/"):
@@ -445,11 +487,12 @@ def _parse_capabilities(raw: object) -> CapabilitySpec:
 
 
 def _parse_resources(raw: object, *, provider: ProviderSpec) -> tuple[ResourceSpec, ...]:
-    """The ``resources`` block: required for storage, refused for a portal."""
-    if not provider.is_storage:
+    """The ``resources`` block: required for storage and services, refused for
+    a portal."""
+    if not provider.is_storage and not provider.is_service:
         if raw not in (None, []):
             raise ManifestError(
-                f"manifest.resources only applies to a storage source; "
+                f"manifest.resources only applies to a storage or service source; "
                 f"a {provider.type} portal's datasets are discovered live"
             )
         return ()
@@ -457,6 +500,9 @@ def _parse_resources(raw: object, *, provider: ProviderSpec) -> tuple[ResourceSp
         raise ManifestError(
             "manifest.resources must list at least one resource: a storage source "
             "declares how its files are organized"
+            if provider.is_storage
+            else f"manifest.resources must list at least one resource: a {provider.type} "
+            "source declares what it can be asked for"
         )
     if len(raw) > MAX_RESOURCES:
         raise ManifestError(f"manifest.resources is limited to {MAX_RESOURCES} entries")
@@ -464,7 +510,10 @@ def _parse_resources(raw: object, *, provider: ProviderSpec) -> tuple[ResourceSp
     out = []
     for index, entry in enumerate(raw):
         where = f"resources[{index}]"
-        spec = _parse_resource(entry, where=where)
+        if provider.is_service:
+            spec = _parse_service_resource(entry, where=where, provider_type=provider.type)
+        else:
+            spec = _parse_resource(entry, where=where)
         if spec.id in seen:
             raise ManifestError(f"manifest.{where}.id {spec.id!r} is used twice")
         seen.add(spec.id)
@@ -487,6 +536,65 @@ def _check_parameter_ids(provider_type: str, specs, where: str) -> None:
             f"{where}: a {provider_type} source reads no parameter named {', '.join(unread)}"
             + (f"; it reads {', '.join(allowed)}" if allowed else "; it takes none")
         )
+    forms = PROVIDER_AREA_FORMS.get(provider_type, ())
+    for spec in specs:
+        unsent = [form for form in spec.accepts if form not in forms] if spec.type == "area" else []
+        if unsent:
+            raise ManifestError(
+                f"{where}: {spec.id} accepts {', '.join(unsent)}, which a {provider_type} "
+                f"source cannot send; it sends {', '.join(forms)}"
+            )
+
+
+def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> ResourceSpec:
+    """One thing a service can be asked for: no path, its request in ``options``."""
+    if not isinstance(raw, dict):
+        raise ManifestError(f"manifest.{where} must be an object")
+    resource_id = _require_str(raw.get("id"), f"{where}.id")
+    if not _RESOURCE_ID_RE.match(resource_id):
+        raise ManifestError(
+            f"manifest.{where}.id must be lowercase letters, digits and dashes, got {resource_id!r}"
+        )
+    storage_only = sorted(
+        key for key in ("path", "datasets", "extensions", "fps", "time", "metadata") if key in raw
+    )
+    if storage_only:
+        raise ManifestError(
+            f"manifest.{where}: {', '.join(storage_only)} only applies to a storage resource; "
+            f"a {provider_type} resource is asked for, not listed"
+        )
+    kind = _require_str(raw.get("kind"), f"{where}.kind").lower()
+    kinds = SERVICE_RESOURCE_KINDS[provider_type]
+    if kind not in kinds:
+        raise ManifestError(f"manifest.{where}.kind must be one of {list(kinds)} for {provider_type}")
+    fmt = _require_str(raw.get("format"), f"{where}.format").lower()
+    formats = SERVICE_FORMATS[provider_type]
+    if fmt not in formats:
+        raise ManifestError(f"manifest.{where}.format must be one of {list(formats)} for {provider_type}")
+    options = raw.get("options") or {}
+    if not isinstance(options, dict):
+        raise ManifestError(f"manifest.{where}.options must be an object")
+    if provider_type == "autark-osm":
+        layers = options.get("layers")
+        if (
+            not isinstance(layers, list)
+            or not layers
+            or len(set(layers)) != len(layers)
+            or any(layer not in AUTARK_OSM_LAYERS for layer in layers)
+        ):
+            raise ManifestError(
+                f"manifest.{where}.options.layers must list Autark layers without repeats, "
+                f"from {list(AUTARK_OSM_LAYERS)}"
+            )
+    return ResourceSpec(
+        id=resource_id,
+        name=_require_str(raw.get("name"), f"{where}.name"),
+        kind=kind,
+        description=str(raw.get("description") or ""),
+        format=fmt,
+        options=dict(options),
+        parameters=_parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters"),
+    )
 
 
 def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
@@ -619,7 +727,7 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
 
 
 def _storage_capabilities(raw: object, resources: tuple[ResourceSpec, ...]) -> CapabilitySpec:
-    """A storage source's capabilities follow from what it declares.
+    """A storage or service source's capabilities follow from what it declares.
 
     Its formats are the formats of its resources, so a manifest does not list
     them a second time. Search filters the declared resources and needs no
@@ -630,7 +738,7 @@ def _storage_capabilities(raw: object, resources: tuple[ResourceSpec, ...]) -> C
     raw = raw or {}
     if "formats" in raw:
         raise ManifestError(
-            "manifest.capabilities.formats is derived from resources for a storage source"
+            "manifest.capabilities.formats is derived from resources for a storage or service source"
         )
     base = _parse_capabilities({k: v for k, v in raw.items() if k != "formats"})
     formats = tuple(dict.fromkeys(spec.dataset_format for spec in resources))
@@ -713,7 +821,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DiscoverySourceManife
     _check_parameter_ids(provider.type, source_parameters, "manifest.parameters")
     for spec in resources:
         _check_parameter_ids(provider.type, spec.parameters, f"manifest.resources[{spec.id}].parameters")
-    if provider.is_storage:
+    if provider.is_storage or provider.is_service:
         capabilities = _storage_capabilities(raw.get("capabilities"), resources)
     else:
         capabilities = _parse_capabilities(raw.get("capabilities"))
@@ -773,8 +881,12 @@ def build_manifest_dict(manifest: DiscoverySourceManifest) -> dict[str, Any]:
             "search": manifest.capabilities.search,
             "describe": manifest.capabilities.describe,
             "download": manifest.capabilities.download,
-            # A storage source's formats follow from its resources.
-            **({} if manifest.is_storage else {"formats": list(manifest.capabilities.formats)}),
+            # A storage or service source's formats follow from its resources.
+            **(
+                {}
+                if manifest.is_storage or manifest.is_service
+                else {"formats": list(manifest.capabilities.formats)}
+            ),
             "maxDownloadBytes": manifest.capabilities.max_download_bytes,
             "allowOffBaseDistributions": manifest.capabilities.allow_off_base_distributions,
         },
@@ -789,6 +901,19 @@ def build_manifest_dict(manifest: DiscoverySourceManifest) -> dict[str, Any]:
 
 
 def _resource_dict(spec: ResourceSpec) -> dict[str, Any]:
+    if spec.template is None:
+        # A service resource: what to ask for, never a path.
+        service: dict[str, Any] = {
+            "id": spec.id,
+            "name": spec.name,
+            "description": spec.description,
+            "kind": spec.kind,
+            "format": spec.format,
+            "options": dict(spec.options),
+        }
+        if spec.parameters:
+            service["parameters"] = [P.declaration_dict(p) for p in spec.parameters]
+        return service
     out: dict[str, Any] = {
         "id": spec.id,
         "name": spec.name,

@@ -35,6 +35,9 @@ export interface DiscoveryAddDialogProps {
   parameters?: DiscoveryParameter[];
   /** "download" for a portal row narrowed before its download. */
   verb?: "add" | "download";
+  /** A service row: the dataset is named after the place unless a name is
+   *  typed, so the field starts empty. */
+  titleFromPlace?: boolean;
   onAdd: (body: DiscoveryAcquireBody) => void;
   onCancel: () => void;
 }
@@ -98,6 +101,7 @@ export function DiscoveryAddDialog({
   splitBy,
   parameters: declared,
   verb = "add",
+  titleFromPlace = false,
   onAdd,
   onCancel,
 }: DiscoveryAddDialogProps) {
@@ -108,7 +112,7 @@ export function DiscoveryAddDialog({
   const [choices, setChoices] = React.useState<Record<string, Choice>>(() =>
     Object.fromEntries(fields.map((field) => [field.name, initialChoice(field)])),
   );
-  const [title, setTitle] = React.useState(resource.name);
+  const [title, setTitle] = React.useState(titleFromPlace ? "" : resource.name);
 
   const empty = Object.values(choices).some((c) => c.kind === "values" && c.kept.size === 0);
   const problem =
@@ -154,6 +158,7 @@ export function DiscoveryAddDialog({
         <input
           className={styles.input}
           value={title}
+          placeholder={titleFromPlace ? `${resource.name}, and the place it covers` : undefined}
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
@@ -212,8 +217,9 @@ export function DiscoveryAddDialog({
         // A field with nothing kept, or a range that cannot hold a value,
         // selects no file; the warning says so.
         if (empty || problem || parameterIssue) return;
+        const named = title.trim() || (titleFromPlace ? "" : resource.name);
         onAdd({
-          title: title.trim() || resource.name,
+          ...(named ? { title: named } : {}),
           ...(narrowed ? { filters } : {}),
           ...(asked ? { parameters: answers } : {}),
         });

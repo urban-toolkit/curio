@@ -325,6 +325,39 @@ class TestTheDeploymentFallback:
             browse.search(manifest, SearchQuery(text="whatever"))
 
 
+@pytest.mark.parametrize("slot", sorted(credentials.SLOTS))
+class TestEverySlotIsAnAccountSetting:
+    """Each slot API Settings lists is a field PATCH /api/auth/me takes, saved
+    on the account, reported as a boolean, and refused out loud for a guest."""
+
+    def test_it_saves_and_reports_only_a_boolean(self, client, auth, slot):
+        column = credentials.SLOT_COLUMNS[slot]
+        res = client.patch("/api/auth/me", headers=auth, json={column: SECRET})
+        assert res.status_code == 200, res.get_data(as_text=True)
+        body = res.get_json()
+        assert body[f"has_{column}"] is True
+        assert SECRET not in json.dumps(body)
+        res = client.patch("/api/auth/me", headers=auth, json={column: ""})
+        assert res.get_json()[f"has_{column}"] is False
+
+    def test_a_guest_is_refused_out_loud(self, app, db, client, slot):
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        column = credentials.SLOT_COLUMNS[slot]
+        guest = User(username="guest1", name="Guest", email="g@test.com", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-token"))
+        db.session.commit()
+        res = client.patch(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer guest-token"},
+            json={column: SECRET},
+        )
+        assert res.status_code == 403
+        assert getattr(db.session.get(User, guest.id), column) is None
+
+
 class TestTheKeysApiSettingsLists:
     """``GET /api/discovery/keys``: one row per slot, booleans only."""
 

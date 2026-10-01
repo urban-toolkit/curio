@@ -17,11 +17,12 @@ from utk_curio.backend.app.discovery.domain.manifest import (
     PORTAL_PROVIDER_TYPES,
     PROVIDER_PARAMETER_IDS,
     PROVIDER_TYPES,
+    SERVICE_PROVIDER_TYPES,
     STORAGE_PROVIDER_TYPES,
     DiscoverySourceManifest,
 )
 from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransport
-from utk_curio.backend.app.discovery.providers import arcgis, ckan, direct, socrata, wfs
+from utk_curio.backend.app.discovery.providers import arcgis, autark_osm, ckan, direct, socrata, wfs
 from utk_curio.backend.app.discovery.providers.base import BaseProvider, DiscoveryProvider
 from utk_curio.backend.app.discovery.providers.folder import FolderStorage
 from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
@@ -44,6 +45,12 @@ STORAGE_PROVIDERS: dict[str, type] = {
     HuggingFaceStorage.type: HuggingFaceStorage,
 }
 
+#: Services: told where and what, they answer with one download. Their
+#: resources are declared; nothing is searched or listed.
+SERVICE_PROVIDERS: dict[str, type] = {
+    autark_osm.AutarkOsmService.type: autark_osm.AutarkOsmService,
+}
+
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.
 #: ``direct`` is absent on purpose: it would claim every https URL and shadow
 #: every other refinement, and the generic probe already handles an
@@ -62,10 +69,17 @@ assert set(STORAGE_PROVIDERS) == set(STORAGE_PROVIDER_TYPES), (
     f"storage registry and STORAGE_PROVIDER_TYPES disagree: "
     f"{sorted(set(STORAGE_PROVIDERS) ^ set(STORAGE_PROVIDER_TYPES))}"
 )
-assert set(PROVIDERS) | set(STORAGE_PROVIDERS) == set(PROVIDER_TYPES)
+assert set(SERVICE_PROVIDERS) == set(SERVICE_PROVIDER_TYPES), (
+    f"service registry and SERVICE_PROVIDER_TYPES disagree: "
+    f"{sorted(set(SERVICE_PROVIDERS) ^ set(SERVICE_PROVIDER_TYPES))}"
+)
+assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) == set(PROVIDER_TYPES)
 
 # What a manifest may declare and what the provider reads are the same list.
-_MODULES = {"socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct}
+_MODULES = {
+    "socrata": socrata, "ckan": ckan, "arcgis": arcgis, "wfs": wfs, "direct": direct,
+    "autark-osm": autark_osm,
+}
 for _type, _module in _MODULES.items():
     assert tuple(getattr(_module, "PARAMETER_IDS", ())) == PROVIDER_PARAMETER_IDS.get(_type, ()), (
         f"{_type}: PARAMETER_IDS and PROVIDER_PARAMETER_IDS disagree"
@@ -96,7 +110,19 @@ def build_storage(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
     return cls(manifest, transport)
 
 
+def build_service(manifest: DiscoverySourceManifest):
+    """Construct the service a manifest names, answering from the recorded
+    corpus when the transport would."""
+    from utk_curio.backend.app.discovery.infrastructure.transport import fixture_root
+
+    cls = SERVICE_PROVIDERS.get(manifest.provider.type)
+    if cls is None:
+        raise CapabilityUnsupported(f"{manifest.name} is not a service source")
+    return cls(manifest, fixtures=autark_osm.fixtures_for(fixture_root()))
+
+
 __all__ = [
-    "PROVIDERS", "STORAGE_PROVIDERS", "RECOGNISERS", "build_provider", "build_storage",
-    "DiscoveryProvider", "BaseProvider", "StorageProvider",
+    "PROVIDERS", "STORAGE_PROVIDERS", "SERVICE_PROVIDERS", "RECOGNISERS", "build_provider",
+    "build_storage", "build_service", "DiscoveryProvider", "BaseProvider", "StorageProvider",
 ]
+
