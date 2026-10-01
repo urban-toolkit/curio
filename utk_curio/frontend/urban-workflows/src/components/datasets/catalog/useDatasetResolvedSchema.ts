@@ -12,6 +12,10 @@ export interface ResolvedDatasetSchema {
   unsupportedMessage: string | null;
 }
 
+/** Rows the preview reads to infer a schema-less dataset's fields. One row
+ * could not show a null, nor type a column whose first cell is empty (#444). */
+const SCHEMA_SAMPLE_ROWS = 100;
+
 const EMPTY: ResolvedDatasetSchema = {
   fields: [],
   geometryType: null,
@@ -60,7 +64,7 @@ export function useDatasetResolvedSchema(
     let cancelled = false;
     setResolved({ ...EMPTY, fetching: true });
     void datasetCatalogApi
-      .preview(dataset.id, { dataflowId, liveOutputs, offset: 0, rowLimit: 1 })
+      .preview(dataset.id, { dataflowId, liveOutputs, offset: 0, rowLimit: SCHEMA_SAMPLE_ROWS })
       .then((response) => {
         if (cancelled) return;
         if (response.unsupported) {
@@ -77,7 +81,6 @@ export function useDatasetResolvedSchema(
           ? bundleParts.map((part, index) => ({
               name: part.label || `Part ${index + 1}`,
               type: (part.format || "json").toUpperCase(),
-              nullable: true,
             }))
           : response.schema?.fields || [];
         setResolved({
