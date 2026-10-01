@@ -34,6 +34,8 @@ from .utils import (
     dismiss_toasts,
     drawing_kept,
     drawing_selector,
+    AUTK_PLOT_HIGHLIGHT,
+    _LIT_MARKS_JS,
     frame_nodes,
     keep_drawing,
     lit_marks,
@@ -1170,11 +1172,16 @@ class TestWorkflowCanvas:
             page, step.target,
             lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
         )
-        # The source's own change says whether the gesture landed at all.
+        # The source's own change says whether the gesture landed at all, and an
+        # Autark plot's lit marks whether the selection reached it unseen.
+        lit = None if reached else page.evaluate(
+            _LIT_MARKS_JS, {"selector": drawing, "highlight": AUTK_PLOT_HIGHLIGHT})
         assert reached, (
             f"{where} left {step.target} as it was "
             f"({changed_pixels(before, after)} pixels changed; the source "
-            f"changed by {changed_pixels(source_before, capture_node(page, step.source))})"
+            f"changed by {changed_pixels(source_before, capture_node(page, step.source))}"
+            + (f"; {lit['lit']} of its {lit['total']} plot marks lit" if lit and lit['total'] else "")
+            + ")"
         )
         wait_for_node_still(page, step.target)
         assert drawing_kept(page, drawing), (
