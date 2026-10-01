@@ -182,9 +182,15 @@ INTERACTIONS = {
         Interaction("map-pick", source=EXAMPLE_17_MAP, target=EXAMPLE_17_BARS, gesture="pick"),
     ),
     # A Vega-Lite interval brush on a scatter, and an Autark map, through a pool.
+    # A pick lights one point of 6,085, and most tracts' points are in the
+    # scatter's dense band, drawn under thousands of others: in a sweep of 80
+    # picks across the map, most changed fewer pixels than a gesture has to
+    # (CI run 36809892522). This one, near the map's left edge, lights a tract
+    # with gt_65 232, right of the band, where its point is alone (52 pixels).
     "09-heterogeneous-data-linked-views.json": (
         Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
-        Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick"),
+        Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick",
+                    at=(0.05, 0.56)),
     ),
     # Autark to Autark: a histogram brush and a building map, through a pool.
     # No pick the other way: at the pair's 86% zoom a building is a few
