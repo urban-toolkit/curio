@@ -156,9 +156,10 @@ REGISTRY: dict[str, ToolContract] = {
         effect="read",
         description=(
             'Search the web for factual verification. Params: {"q": "<query>"}. '
-            "Returns bounded {title, url, snippet} rows when this deployment "
-            "has a search provider configured — otherwise an honest "
-            '"not configured" error. At most 4 web calls per run.'
+            "Returns bounded {title, url, snippet} rows from this deployment's "
+            "search provider (DuckDuckGo unless the operator named another), "
+            "or an error that says why it could not search. At most 4 web "
+            "calls per run."
         ),
         parameters=_object({"q": _text("The search query.")}, "q"),
     ),
@@ -1108,8 +1109,9 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     template = os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
     if "{q}" not in template:
         return "error", (
-            "web search is not configured for this deployment "
-            "(set CURIO_SEARCH_URL) - verify direct URLs with web.fetch instead"
+            "web search is not configured for this deployment: "
+            "CURIO_SEARCH_URL (--agent-search-url) has no {q} where the query "
+            "goes - verify direct URLs with web.fetch instead"
         )
     try:
         # dev/90 A2: the provider host is OPERATOR configuration, so it is
