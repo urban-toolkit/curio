@@ -370,6 +370,10 @@ def test_openstreetmap_asks_for_an_area_and_lands_autarks_layer(
     expect(details.get_by_text("Downloaded from")).to_be_visible(timeout=15000)
     expect(details.get_by_role("link", name="OpenStreetMap")).to_be_visible(timeout=15000)
     expect(details.get_by_text("-87.8000, 42.0500, -87.7800, 42.0600")).to_be_visible(timeout=15000)
+    # Each row names its OpenStreetMap element: the schema lists the columns.
+    schema = details.get_by_role("region", name="Schema")
+    for column in ("osm_type", "osm_id"):
+        expect(schema.get_by_text(column, exact=True)).to_be_visible(timeout=15000)
 
 def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     app_frontend: "FrontendPage", current_server: str, page
