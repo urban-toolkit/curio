@@ -192,12 +192,12 @@ INTERACTIONS = {
     # An Autark scatter's 2D brush and an Autark map, through a pool. The
     # roads crowd the right of the plot (intercept 27 to 35 of 0 to 35, most
     # of them above an angle of 0), so the brush spans that crowd across and
-    # its upper two thirds down, and has to light at least half the roads.
-    # A pick takes one road.
+    # its upper two thirds down, and has to light at least half the roads. It
+    # gets no road pick: a road is a few pixels, and the one point it lights
+    # (1 of 8524, CI run 36805909584) hides under the others.
     "08-autark-spatial-join-regression.json": (
         Interaction("scatter-brush", source=EXAMPLE_08_SCATTER, target=EXAMPLE_08_MAP,
                     gesture="brush", span=((0.70, 0.02), (0.995, 0.70)), min_lit=0.5),
-        Interaction("map-pick", source=EXAMPLE_08_MAP, target=EXAMPLE_08_SCATTER, gesture="pick"),
     ),
 }
 
