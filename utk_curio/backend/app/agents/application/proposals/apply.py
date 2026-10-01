@@ -151,11 +151,13 @@ def _apply_node_content_write(
             if not any(st in ("pending", "failed") for st in runs.values()):
                 session["phase"] = "ready"
     projects_storage.write_spec(user_key, project_id, spec)
+    # A proposal minted before #506 carries no name; its id is all there is.
+    node_name = proposal.get("nodeName") or f"node {node_id}"
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: node content updated ({node_id}).",
+        f"Applied: {node_name} content updated.",
         "Applied: node content updated",
-        [f"node {node_id}", f"proposal {proposal_id[:8]}"],
+        [node_name, f"proposal {proposal_id[:8]}"],
     )
     return {
         "attachmentId": attachment_id,

@@ -551,6 +551,15 @@ def _mint_plan_from_params(
     return agents_plans._mint_dataflow_plan(user_key, project_id, loop_ctx, plan)
 
 
+def _node_display_name(node: dict, entry: dict | None) -> str:
+    """The words a card uses for an existing node: "Python Computation node",
+    or "Python Computation node · Load boundaries" when the node has a title."""
+    label = (entry or {}).get("label")
+    name = f"{label} node" if isinstance(label, str) and label.strip() else "node"
+    title = node.get("title")
+    return name + (f" · {title}" if isinstance(title, str) and title.strip() else "")
+
+
 def _mint_node_content_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -594,7 +603,10 @@ def _mint_node_content_write(
         return agents_tool_rounds._refuse_params(refusal)
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
     proposal_id = uuid.uuid4().hex
-    summary = f"Replace the content of node {node_id!r}"
+    # The node as the user knows it, the way node.create names one: its kind,
+    # and its title when it has one. The id is for the pins (#506).
+    node_name = _node_display_name(node, entry)
+    summary = f"Replace the content of the {node_name}"
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.content.write",
@@ -606,6 +618,7 @@ def _mint_node_content_write(
         "proposalId": proposal_id,
         "tool": "node.content.write",
         "nodeId": node_id,
+        "nodeName": node_name,
         "content": proposed,
         "contentSha256": basis,
         "summary": summary,
