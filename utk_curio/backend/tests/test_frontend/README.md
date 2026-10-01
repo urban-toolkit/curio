@@ -348,7 +348,10 @@ Two families of baseline live in that folder:
   close-up). The test asserts
   that the target changed and kept its drawing (a highlight, not a redraw), and
   that taking the gesture back restores it. The CI report shows these frames as
-  Interaction pairs;
+  Interaction pairs. Re-mint them with the workflow's whole class selected
+  (`remint_filter="TestWorkflowCanvas and <workflow>"`), as CI runs them: the
+  class's earlier tests can move the pair by a fraction of a pixel, which shifts
+  the node's text and borders past the 2% budget;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
