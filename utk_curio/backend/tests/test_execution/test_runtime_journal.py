@@ -377,7 +377,7 @@ class TestTheOutcomeKind:
     and the corrections differ — so the kind travels as a field, not as prose
     the harness would have to match."""
 
-    EMPTY = ("rendered nothing — 12 rows arrived and no mark was drawn: an "
+    EMPTY = ("rendered nothing:12 rows arrived and no mark was drawn: an "
              "encoding, a transform or a scale domain removed every row.")
 
     def test_the_kind_rides_the_record_and_the_failure_projection(self, tmp_curio):
@@ -473,7 +473,7 @@ class TestTwoOriginsNeverEraseEachOther:
             started_at="2026-09-11T00:00:00Z", duration_ms=1,
         )
         runtime_journal.record_browser_execution(
-            KEY, PID, "vega-a", status="error", message="rendered nothing — 0 rows",
+            KEY, PID, "vega-a", status="error", message="rendered nothing:0 rows",
             kind="empty-render:no-input-rows",
         )
         failure = runtime_journal.last_failure(KEY, PID, "vega-a")
@@ -587,7 +587,7 @@ class TestTheReadEndpoint:
             started_at="2026-09-11T01:00:00Z", duration_ms=5,
         )
         runtime_journal.record_browser_execution(
-            key, pid, "n1", status="error", message="rendered nothing — 0 rows",
+            key, pid, "n1", status="error", message="rendered nothing:0 rows",
             kind="empty-render:no-input-rows",
         )
         body = client.get(
