@@ -1960,10 +1960,13 @@ def at_fraction(area: dict, fraction) -> tuple[float, float]:
 #: as getComputedStyle reads it.
 AUTK_PLOT_HIGHLIGHT = "rgb(93, 173, 226)"
 
-# The bars of an Autark plot lit where its brush is not, or under its brush and
-# not lit; null when the plot holds no brush. The brush and the bars share one
-# group, so their page boxes compare as autk-plot's own hit test does. A bar that
-# only touches an edge of the brush could go either way, so it is left out.
+# The marks of an Autark plot lit where its brush is not, or under its brush and
+# not lit; null when the plot holds no brush. The brush and the marks share one
+# group, so their page boxes compare as autk-plot's own hit test does. A mark
+# that only touches an edge of the brush could go either way, so it is left
+# out. Under means inside the brush both across and down: a scatter's brush is
+# 2D (example 08), and a histogram's x brush spans the plot's full height, so
+# its bars come out as they would compared across only.
 _BRUSH_MISMATCHES_JS = """({ selector, highlight }) => {
     const el = document.querySelector(selector);
     const brush = el && el.querySelector('.autkBrush rect.selection');
@@ -1974,7 +1977,8 @@ _BRUSH_MISMATCHES_JS = """({ selector, highlight }) => {
     for (const mark of el.querySelectorAll('.autkMark')) {
         const r = mark.getBoundingClientRect();
         if (Math.abs(r.right - b.left) < 1 || Math.abs(r.left - b.right) < 1) continue;
-        const under = r.right > b.left && r.left < b.right;
+        if (Math.abs(r.bottom - b.top) < 1 || Math.abs(r.top - b.bottom) < 1) continue;
+        const under = r.right > b.left && r.left < b.right && r.bottom > b.top && r.top < b.bottom;
         const lit = getComputedStyle(mark).fill === highlight;
         if (under !== lit) wrong.push({ label: (mark.__data__ || {}).label ?? null, lit });
     }
@@ -1991,6 +1995,28 @@ def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> li
         wrong = page.evaluate(_BRUSH_MISMATCHES_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
         if not wrong or time.monotonic() >= deadline:
             return wrong
+        page.wait_for_timeout(300)
+
+
+# How many of an Autark plot's marks there are, and how many show its highlight.
+_LIT_MARKS_JS = """({ selector, highlight }) => {
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    const marks = [...el.querySelectorAll('.autkMark')];
+    return { total: marks.length,
+             lit: marks.filter((m) => getComputedStyle(m).fill === highlight).length };
+}"""
+
+
+def lit_marks(page: Page, selector: str, *, at_least: float, timeout_ms: int = 5000) -> dict | None:
+    """``{total, lit}``: the marks of the Autark plot in *selector*, and how many
+    show its highlight, asked until *at_least* of them do, for up to *timeout_ms*."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        counts = page.evaluate(_LIT_MARKS_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
+        enough = bool(counts and counts["total"] and counts["lit"] >= at_least * counts["total"])
+        if enough or time.monotonic() >= deadline:
+            return counts
         page.wait_for_timeout(300)
 
 
