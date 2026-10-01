@@ -2181,8 +2181,12 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "data_export whatever the input was, so three exports from one "
          "dataflow collided under one name. The payload already declares its "
          "shape and the input already has a name, so the node decides both and "
-         "shows the result.",
-    tests=["src/tests/utils/dataExportTarget.test.ts"],
+         "shows the result. The node is that one button: no code, widgets or "
+         "provenance tabs, and no play button.",
+    tests=[
+        "src/tests/utils/dataExportTarget.test.ts",
+        "src/tests/adapters/node/behaviors.test.tsx",
+    ],
     # The one node carrying a Download button, so the clip cannot land on one
     # of the example's six.
     clip_selector='.react-flow__node:has(button[aria-label^="Download"])',
@@ -2193,24 +2197,22 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     example="dataflows/DefaultWorkflow.json",
 )
 def data_export_is_one_button(ctx: Ctx) -> None:
-    ctx.say("Data Export", "An Export format dropdown, and a run, for one file.")
+    ctx.say("Data Export", "One button, and nothing else on the node.")
     node = _add_builtin_node(ctx, "#tile-data-export", (260, 200))
     node.scroll_into_view_if_needed()
     ctx.focus(node, hold=1000)
 
-    # The control lives in the widgets pane, and the kind declares
-    # ``editor: "code"``, so the code tab is the one selected on arrival. The
-    # tabs are icon-only, hence the event key rather than a name.
-    ctx.click(node.locator('[data-rr-ui-event-key="widgets"]'), hold=400)
+    # The whole node is the button (#226): no tabs, no play button.
+    expect(node.locator('[data-rr-ui-event-key]')).to_have_count(0)
+    expect(node.locator("svg.fa-circle-play")).to_have_count(0)
 
     # Unconnected: one button, disabled, saying why rather than offering a
     # format for data that is not there.
     expect(node.get_by_role("button", name=re.compile("^Download"))).to_be_visible(timeout=20000)
     expect(node.get_by_text("Connect a dataset to export it")).to_be_visible()
 
-    # Park the pointer off the node: the tab click leaves a hover tooltip over
-    # the footer, and a tooltip that may or may not have faded is 3% of a 3%
-    # budget.
+    # Park the pointer off the node, so no hover tooltip sits in the frame:
+    # one that may or may not have faded is 3% of a 3% budget.
     ctx.page.mouse.move(5, 5)
     ctx.beat(400)
     ctx.capture("data-export-unconnected")
