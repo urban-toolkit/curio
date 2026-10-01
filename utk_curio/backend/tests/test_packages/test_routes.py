@@ -668,6 +668,89 @@ def test_factory_build_preserves_unedited_sources(client, user_and_token, tmp_cu
     )
 
 
+def test_save_as_into_an_installed_package_keeps_everything_it_does_not_change(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """#432: Save as package node into an existing package rebuilt it from the
+    modal's draft, which models only a package's sources and a few manifest
+    keys, and the installer then replaced the directory. README, LICENSE,
+    ``scripts/``, ``backend/``, ``behaviorScript``, template keys like
+    ``badge``, and every declared range were lost.
+
+    The id is deliberately one the shared catalog does not hold: for a package
+    that is also in the catalog, the next listing re-copies the catalog version
+    over any saved change (#564), which would hide what this test checks.
+    """
+    from utk_curio.backend.app.packages.application import provisioning
+    from utk_curio.backend.app.packages.domain import backend_contract as bc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    # The package carries a backend, so its deps route to an overlay: keep pip off the network.
+    monkeypatch.setattr(provisioning, "_overlay_import_failures", lambda *a, **k: {})
+    monkeypatch.setattr(backend_runtime, "build_overlay", lambda *a, **k: {"libs": [], "bytes": 0})
+
+    manifest = {
+        "id": "ai.test.saveinto", "version": "1.0.0", "name": "Save into", "publisher": "Tests",
+        "description": "d", "license": "MIT",
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "permissions": [bc.PERMISSION_SERVER_CODE],
+        "behaviorScript": "scripts/behaviors.js",
+        "dependencies": {"packages": {}, "python": {"numpy": ">=1.24", "rasterio": ">=1.3"}, "js": {}},
+        "templates": [{
+            "id": "demo", "label": "Demo", "category": "computation", "engine": "python",
+            "editor": "code", "hasCode": True, "inputPorts": [],
+            "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/demo.py", "badge": "NEW", "grammarId": "demo-grammar",
+        }],
+        "backend": {"entry": "backend/handler.py",
+                    "handlers": [{"name": "count", "timeoutClass": "quick"}]},
+    }
+    base_files = {
+        "sources/demo.py": "import numpy\nreturn arg\n",
+        "README.md": "# Save into\n",
+        "LICENSE": "MIT License\n",
+        "scripts/behaviors.js": "/* the package's own interface */\n",
+        "backend/handler.py": "import rasterio\nHANDLERS = {}\n",
+    }
+    user, token = user_and_token
+    assert _upload(client, token, _zip({"manifest.json": json.dumps(manifest), **base_files})).status_code == 201
+
+    # What NodeSaveAsModal sends for an installed target: the modelled manifest
+    # keys, the existing template with a placeholder body, the canvas node as a
+    # new template, and no README or LICENSE text.
+    modelled = {k: manifest[k] for k in (
+        "id", "version", "name", "publisher", "description", "license",
+        "compatibility", "permissions", "dependencies")}
+    existing = {k: v for k, v in manifest["templates"][0].items() if k not in ("badge", "grammarId")}
+    added = {**existing, "id": "added", "label": "Added", "source": "sources/added.py"}
+    save_as = {
+        "manifest": {**modelled, "templates": [existing, added]},
+        "sources": {
+            "demo": {"filename": "demo.py", "code": _STARTER_CODE_SENTINEL},
+            "added": {"filename": "added.py", "code": "import shapely\nreturn arg\n"},
+        },
+        "readme": "", "license_text": "", "replace": True,
+    }
+    resp = client.post("/api/packages/factory/install", data=json.dumps(save_as), headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    root = package_dir(_user_dir_key(user), "ai.test.saveinto@1")
+    for rel, body in base_files.items():
+        assert (root / rel).read_text() == body, f"{rel} did not survive the save"
+    assert (root / "sources" / "added.py").read_text() == "import shapely\nreturn arg\n"
+    saved = json.loads((root / "manifest.json").read_text())
+    assert saved["behaviorScript"] == "scripts/behaviors.js"
+    assert saved["backend"] == manifest["backend"]
+    by_id = {t["id"]: t for t in saved["templates"]}
+    assert set(by_id) == {"demo", "added"}
+    assert by_id["demo"]["badge"] == "NEW" and by_id["demo"]["grammarId"] == "demo-grammar"
+    # Declared ranges stay; a name only the new node imports arrives at "*";
+    # a name only a carried-forward file imports (backend/) is still declared.
+    assert saved["dependencies"]["python"] == {"numpy": ">=1.24", "rasterio": ">=1.3", "shapely": "*"}
+
+
 def test_factory_install_creates_package(client, user_and_token, tmp_curio):
     _, token = user_and_token
     resp = client.post(
