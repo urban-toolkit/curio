@@ -229,7 +229,7 @@ def _node(doc: dict) -> dict:
 def _attachment(**over) -> dict:
     record = {
         "attachmentId": "a" * 32,
-        "coord": "agent.node-explainer@1.0.0",
+        "coord": "agent.my-explainer@1.0.0",
         "target": {"kind": "node", "targetId": "n1"},
         "sessionId": "b" * 32,
         "revision": 1,
@@ -410,9 +410,9 @@ WRITER_SHAPES = {
     "agent-minimal edge": _flow(nodes=[AGENT_NODE], edges=[AGENT_EDGE]),
     "all three agent sections": _flow(
         nodes=[AGENT_NODE],
-        agents=["agent.node-explainer@1.0.0"],
+        agents=["agent.my-explainer@1.0.0"],
         agentAttachments=[FULL_ATTACHMENT],
-        agentDefaults={"agent.node-explainer@1.0.0": {"model": "x"}},
+        agentDefaults={"agent.my-explainer@1.0.0": {"model": "x"}},
     ),
     "canvas-scoped attachment": _flow(
         agentAttachments=[_attachment(target={"kind": "canvas"})]

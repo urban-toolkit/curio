@@ -291,7 +291,6 @@ class TemplateManifest:
     bidirectional: bool  # adds the third "in/out" handle for interaction-loop templates
     container_style: dict | None  # {"nodeWidth": int?, "nodeHeight": int?, "noContent": bool?, "disablePlay": bool?}
     has_provenance: bool | None  # explicit override for the provenance editor tab (defaults to true client-side)
-    tutorial_id: str | None  # anchor id for the in-app tutorial system
     grammar_dir: str | None
     widget_dir: str | None
     # memo dev/91: name of a declared backend handler this template's Run
@@ -363,7 +362,6 @@ class TemplateManifest:
             bidirectional=bool(raw.get("bidirectional", False)),
             container_style=container_style_raw,
             has_provenance=has_provenance_raw,
-            tutorial_id=raw.get("tutorialId") if isinstance(raw.get("tutorialId"), str) else None,
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
             backend_handler=backend_handler_raw,

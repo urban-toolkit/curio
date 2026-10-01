@@ -11,7 +11,7 @@ import { NodeAgentBadges } from "../../components/agents/attach/NodeAgentBadges"
 function attachment(over: Partial<any>): any {
   return {
     attachmentId: "att-1",
-    coord: "agent.node-explainer@1.0.0",
+    coord: "agent.my-explainer@1.0.0",
     target: { kind: "node", targetId: "n1" },
     sessionId: "s1",
     revision: 1,
@@ -19,7 +19,7 @@ function attachment(over: Partial<any>): any {
     intentEdited: false,
     title: null,
     titleEdited: false,
-    name: "Node Explainer",
+    name: "My Explainer",
     category: "node",
     hooks: ["node"],
     ...over,

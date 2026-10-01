@@ -48,8 +48,6 @@ export interface PackageTemplatePayload {
   } | null;
   /** When false, suppresses the provenance editor tab; null = client default (true). */
   hasProvenance: boolean | null;
-  /** Anchor id for the in-app tutorial system. */
-  tutorialId: string | null;
   /** dev/91: declared backend handler this template's Run invokes through
    * the package backend sandbox (null/absent = ordinary execution). */
   backendHandler?: string | null;

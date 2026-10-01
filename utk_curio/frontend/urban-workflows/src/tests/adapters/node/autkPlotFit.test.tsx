@@ -35,9 +35,6 @@ jest.mock('../../../services/api', () => ({
 jest.mock('../../../JavaScriptInterpreter', () => ({
   JavaScriptInterpreter: class { },
 }));
-jest.mock('../../../adapters/autkGrammarAdapter', () => ({
-  autkGrammarAdapter: { getDefaultSpec: () => '{"plot":{}}' },
-}));
 
 // What autk-plot does with the plot target: an inline SVG straight inside it.
 const mockRunSpecs: any[] = [];

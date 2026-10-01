@@ -19,18 +19,21 @@ import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
 import styles from "./ToolsMenu.module.css";
 
+/** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
+export function paletteTileId(nodeType: NodeTemplateId): string {
+    return `tile-${nodeType.replace(/^[^/]*\//, "").replace(/@\d+$/, "")}`;
+}
+
 const DraggableTool = memo(function DraggableTool({
     nodeType,
     icon,
     tooltip,
-    tutorialID,
     badge,
     tooltipPlacement = "right",
 }: {
     nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
-    tutorialID?: string;
     badge?: string;
     tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
@@ -41,7 +44,7 @@ const DraggableTool = memo(function DraggableTool({
             overlay={<Tooltip>{tooltip}</Tooltip>}
         >
             <div
-                id={tutorialID}
+                id={paletteTileId(nodeType)}
                 // The tile is an icon and a drag source: nothing in it was text,
                 // so it had no accessible name at all and the hover tooltip was
                 // its only label. `title` matches how the dataset and agent drag
@@ -87,7 +90,6 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
                     nodeType={desc.id}
                     icon={desc.icon}
                     tooltip={desc.label}
-                    tutorialID={desc.tutorialId}
                     badge={desc.badge}
                     tooltipPlacement={tooltipPlacement}
                 />

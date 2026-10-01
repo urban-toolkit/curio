@@ -1440,10 +1440,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
     // Regression for #248. autk-db's loadOsm walks autoLoadLayers.layers in
     // order and lets a per-layer failure propagate, so a throw partway leaves
-    // the earlier tables registered and the later ones absent. Both loaders used
-    // to publish whatever getLayerTables() held, so the node that actually
-    // failed went green and the breakage surfaced two nodes downstream as
-    // "Table table_osm_roads not found" from a spatialQuery.
+    // the earlier tables registered and the later ones absent. Both loaders
+    // check getLayersMetadata() against the tables the spec asks for, so the
+    // node that ran the load fails, instead of a spatialQuery two nodes
+    // downstream reporting "Table table_osm_roads not found".
     test('data-only node: a SHORT load fails the node and names the missing table (#248)', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>

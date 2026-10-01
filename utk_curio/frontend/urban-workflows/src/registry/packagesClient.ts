@@ -81,7 +81,6 @@ interface RawPackageTemplate {
     disablePlay?: boolean;
   } | null;
   hasProvenance: boolean | null;
-  tutorialId: string | null;
   /** dev/91: declared backend handler name (sandbox route dispatch). */
   backendHandler?: string | null;
 }
@@ -265,7 +264,6 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     hasWidgets: template.hasWidgets,
     hasGrammar: template.hasGrammar,
     ...(template.hasProvenance !== null ? { hasProvenance: template.hasProvenance } : {}),
-    ...(template.tutorialId ? { tutorialId: template.tutorialId } : {}),
     ...(template.backendHandler ? { backendHandler: template.backendHandler } : {}),
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),

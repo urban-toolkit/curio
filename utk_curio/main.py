@@ -342,8 +342,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     if guest_llm_api_key:
         os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
 
-    # The agents' web-search tool. Unset, the tool is unavailable: an agent
-    # never reaches an endpoint the operator did not name.
+    # The agents' web-search tool. Unset, it uses DuckDuckGo's keyless Instant
+    # Answer API (DEFAULT_SEARCH_URL in agents/application/tools.py).
     if agent_search_url:
         os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
 

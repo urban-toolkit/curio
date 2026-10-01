@@ -65,7 +65,7 @@ packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into
 `uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once**,
 not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
 `required: true` on `bld_height` tells the runtime to drop any OSM building that has no `properties.height`
-tag rather than substitute a synthetic default and over-extrude its shadow.
+tag.
 
 ```json
 "compute": [{
@@ -104,7 +104,7 @@ Two iteration modes are supported on the same `fromFeature` shape:
 - `"batched"`: the runtime stacks every source feature's values into uniform arrays and dispatches
   exactly once. The WGSL is responsible for looping over `num_features` and combining contributions
   however the analysis requires (here: per-hour union of shadows → boolean "any shadow", then accumulate
-  sunlight only when none). One dispatch, correct semantics, ~100× faster on Loop-scale data.
+  sunlight only when none). One dispatch, correct semantics.
 
 For the sunlight question, `"batched"` is the right mode, because the shader needs to answer "is *any* building
 shading this road right now" per hour, which is a union the runtime can't compute by post-summation.
@@ -112,14 +112,12 @@ shading this road right now" per hour, which is a union the runtime can't comput
 ### AABB simplification & feature cap
 
 Each batched matrix entry is reduced to a per-source AABB before being packed (4 corners × 2 floats = 8
-f32 per source feature), not the full polygon outline. Full outlines on Chicago-Loop-scale data exceed
-WebGPU's 64 KB uniform buffer cap on DX12; AABBs fit ~2 KB per 1000 buildings and project to a conservative
-shadow envelope (correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
+f32 per source feature), not the full polygon outline. AABBs project to a conservative shadow envelope
+(correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
 
-The runtime also caps the source feature count at **1500** to stay well under the uniform buffer limit. If
-the source layer has more, the excess is dropped (in source order) with a console warning. Combined with
-the `required: true` filter on `bld_height`, the surviving features are the OSM buildings that both have a
-tagged height and fit in the cap, the ones whose shadows actually matter for the analysis.
+The runtime also caps the source feature count at **2000**. If the source layer has more, the excess is
+dropped (in source order) with a console warning. The `required: true` filter on `bld_height` runs first,
+so the cap counts only buildings with a tagged height.
 
 ### Shader sketch
 

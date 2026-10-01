@@ -673,7 +673,7 @@ class TestSessionFirstHour:
             for template_id in PALETTE_ICON_CLASS:
                 info = palette_tile_identity(page, template_id)
                 if not info.get("found"):
-                    wrong_tile.append(f"{template_id}: no tile at that position")
+                    wrong_tile.append(f"{template_id}: no tile with that id")
                     continue
                 if not info.get("iconOk"):
                     wrong_tile.append(
@@ -687,7 +687,7 @@ class TestSessionFirstHour:
                         f"{template_id} (id={info.get('id')!r}, "
                         f"role={info.get('role')!r})"
                     )
-            # A mismatch here means the positional lookup is wrong, which would
+            # A mismatch here means the tile lookup is wrong, which would
             # misattribute every later finding - so it fails the step rather than
             # being filed as an application defect.
             assert not wrong_tile, (
@@ -700,14 +700,11 @@ class TestSessionFirstHour:
                     f"{len(nameless)} palette tiles have no accessible name",
                     severity="warning",
                     detail_full=(
-                        "ToolsMenu.tsx:44 renders each tile as "
-                        "<div id={tutorialID}> with no aria-label, no title "
-                        "attribute and no text content; the only label is a "
-                        "react-bootstrap tooltip that appears on hover. "
-                        "packages/curio.builtin@1/manifest.json gives no "
-                        "tutorialId to data-export, data-summary, js-computation "
-                        "or spatial-join, so those four have no id either - "
-                        "nothing in the DOM names them.\n\nTiles with no name:\n  "
+                        "ToolsMenu.tsx's DraggableTool renders these tiles "
+                        "with no aria-label, no title attribute and no text "
+                        "content; the only label is a react-bootstrap tooltip "
+                        "that appears on hover, so nothing in the DOM names "
+                        "them.\n\nTiles with no name:\n  "
                         + "\n  ".join(nameless)
                     ),
                 )

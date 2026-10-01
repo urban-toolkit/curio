@@ -205,6 +205,27 @@ describe("renderOutcome", () => {
     expect(outcome.message.endsWith("…")).toBe(true);   // clipped, not dumped
   });
 
+  it("every message leads with \"rendered nothing:\" and holds no dash (#478)", () => {
+    const messages = {
+      "no-layers": renderOutcome({
+        layersRequested: 1, layersDrawn: 0, requestedRefs: ["a"], availableRefs: ["b"],
+      }).message,
+      "empty-source": renderOutcome({ sourceRows: 0 }).message,
+      "no-input-rows": renderOutcome({ rowsIn: 0 }).message,
+      "no-input-rows, known problem": renderOutcome({ rowsIn: 0, inputProblem: "x." }).message,
+      "all null": renderOutcome({ rowsIn: 2, usableRows: 0, usableFields: ["v"] }).message,
+      "all null, known reason": renderOutcome({
+        rowsIn: 2, usableRows: 0, usableFields: ["v"], explanation: "why",
+      }).message,
+      "no mark": renderOutcome({ rowsIn: 2, drawn: 0 }).message,
+      "no mark, known reason": renderOutcome({ rowsIn: 2, drawn: 0, explanation: "why" }).message,
+    };
+    const wrong = Object.entries(messages).filter(
+      ([, message]) => !message.startsWith("rendered nothing: ") || /[–—]/.test(message),
+    );
+    expect(wrong).toEqual([]);
+  });
+
   it("counts the names it does not show rather than dumping them", () => {
     const outcome = renderOutcome({
       layersRequested: 1,

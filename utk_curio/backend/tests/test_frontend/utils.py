@@ -1530,19 +1530,12 @@ def save_workflow_test_screenshot(
     afterwards. Under ``--remint-baselines`` an existing baseline is compared
     and, when its screen changed, rewritten (see :func:`_remint`).
 
-    It used to mint implicitly, which meant a first run always passed. Two ways
-    that bites, both seen: a baseline captured against a broken build enshrines
-    the bug as expected output and the suite then *defends* it; and a baseline
-    captured on the wrong machine enshrines that machine. The second is not
-    hypothetical - the macOS captures of the two #333 scenes looked perfect and
-    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
-    because macOS rasterizes text with grayscale antialiasing and the runner uses
-    LCD subpixel.
-
-    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
-    minting in a serial run and refusing under xdist. That was the wrong axis:
-    serialness says nothing about whether a capture deserves to become the
-    reference, and the one that would have broken CI was minted serially.
+    A baseline captured against a broken build enshrines the bug as expected
+    output, and the suite then *defends* it; one captured on another machine
+    enshrines that machine. macOS rasterizes text with grayscale antialiasing
+    and the runner uses LCD subpixel, so the macOS captures of the two #333
+    scenes sat 6.11% and 10.05% from what CI renders, the second past its
+    budget.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
@@ -2111,6 +2104,81 @@ def watch_brush(page: Page, selector: str) -> None:
 
 def brush_log(page: Page) -> list[dict]:
     return page.evaluate("() => window.__curioBrushLog || []")
+
+
+# Every lit or unlit an Autark plot's bars go through from now on, per bar, left
+# to right, kept on window.__curioBarFills[selector] with the page's mousedowns
+# and mouseups. autk-plot colours a mark through its inline style, and one task
+# can restyle a bar more than once, so each change is read from the mutation
+# record's old value rather than from the style the observer finds afterwards.
+_WATCH_BAR_FILLS_JS = """({ selector, highlight }) => {
+    const el = document.querySelector(selector);
+    if (!el) return 0;
+    const marks = Array.from(el.querySelectorAll('.autkMark'))
+        .map((mark) => [mark.getBoundingClientRect().left, mark])
+        .sort((a, b) => a[0] - b[0]).map(([, mark]) => mark);
+    const probe = document.createElement('div');
+    const litIn = (style) => { probe.setAttribute('style', style || ''); return probe.style.fill === highlight; };
+    const litNow = (mark) => getComputedStyle(mark).fill === highlight;
+    const all = window.__curioBarFills = window.__curioBarFills || {};
+    const t0 = window.__curioBarFillsT0 = window.__curioBarFillsT0 ?? performance.now();
+    const now = () => Math.round(performance.now() - t0);
+    const states = marks.map((mark) => [{ t: now(), lit: litNow(mark) }]);
+    all[selector] = { states, marks, labels: marks.map((m) => (m.__data__ || {}).label ?? null) };
+    const index = new Map(marks.map((mark, i) => [mark, i]));
+    const observer = new MutationObserver((records) => {
+        const t = now();
+        const olds = new Map();
+        for (const record of records) {
+            const i = index.get(record.target);
+            if (i === undefined) continue;
+            if (!olds.has(i)) olds.set(i, []);
+            olds.get(i).push(litIn(record.oldValue));
+        }
+        for (const [i, before] of olds) {
+            for (const lit of [...before.slice(1), litNow(marks[i])]) {
+                if (states[i][states[i].length - 1].lit !== lit) states[i].push({ t, lit });
+            }
+        }
+    });
+    for (const mark of marks) {
+        observer.observe(mark, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+    }
+    window.__curioBarFillsObservers = window.__curioBarFillsObservers || {};
+    window.__curioBarFillsObservers[selector]?.disconnect();
+    window.__curioBarFillsObservers[selector] = observer;
+    if (!window.__curioBarFillsPointer) {
+        window.__curioBarFillsPointer = [];
+        for (const type of ['mousedown', 'mouseup']) {
+            window.addEventListener(type, () => window.__curioBarFillsPointer.push({ t: now(), type }), true);
+        }
+    }
+    return marks.length;
+}"""
+
+_BAR_FILL_LOG_JS = """(selector) => {
+    const watched = (window.__curioBarFills || {})[selector];
+    if (!watched) return null;
+    return { states: watched.states, labels: watched.labels,
+             connected: watched.marks.every((mark) => mark.isConnected),
+             pointer: window.__curioBarFillsPointer || [] };
+}"""
+
+
+def watch_bar_fills(page: Page, selector: str) -> None:
+    """Start logging each lit and unlit of the plot's bars (see :func:`bar_fill_log`)."""
+    count = page.evaluate(_WATCH_BAR_FILLS_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
+    assert count, f"no bars in {selector}"
+
+
+def bar_fill_log(page: Page, selector: str) -> dict | None:
+    """``{states, labels, connected, pointer}`` since :func:`watch_bar_fills`.
+
+    ``states[i]`` lists bar *i*'s lit state, left to right, each with its time
+    in ms: the state when the watch began, then one entry per change.
+    ``connected`` is False if the plot replaced its bars since. ``pointer``
+    holds the page's mousedowns and mouseups on the same clock."""
+    return page.evaluate(_BAR_FILL_LOG_JS, selector)
 
 
 def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> list | None:
@@ -2843,9 +2911,9 @@ def upload_workflow(
         timeout=60000,
     )
     # hide the tools menu bar so it doesn't interfere with the test
-    # get parent of #step-loading
-    step_loading = page.locator("#step-loading")
-    tools_menu_bar = step_loading.locator("..")
+    # get parent of #tile-data-loading
+    loading_tile = page.locator("#tile-data-loading")
+    tools_menu_bar = loading_tile.locator("..")
     if tools_menu_bar.count() >= 1:
         page.evaluate(
             "element => { element.style.display = 'none'; }",
@@ -3158,7 +3226,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     """Drag *source* onto the canvas and return the id of the node it created.
 
     *source* is a locator for anything draggable that the canvas accepts: a
-    built-in palette tile (``#step-transformation``), a package palette row
+    built-in palette tile (``#tile-data-transformation``), a package palette row
     (``[data-pkg-template-id="..."]``), or a dataset row/card
     (``[data-dataset-id="..."]``). *at* is an offset from the pane's top-left
     corner; the pane centre is used when omitted.
