@@ -79,7 +79,7 @@ PACKAGE_NAME = "E2E Roundtrip"
 # kind" by matching the node's label against the target package's kinds.
 HEAD_LABEL = "E2E Head"
 
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 LOADER_TYPE = "curio.builtin/data-loading"
 

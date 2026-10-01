@@ -2773,9 +2773,9 @@ def upload_workflow(
         timeout=60000,
     )
     # hide the tools menu bar so it doesn't interfere with the test
-    # get parent of #step-loading
-    step_loading = page.locator("#step-loading")
-    tools_menu_bar = step_loading.locator("..")
+    # get parent of #tile-data-loading
+    loading_tile = page.locator("#tile-data-loading")
+    tools_menu_bar = loading_tile.locator("..")
     if tools_menu_bar.count() >= 1:
         page.evaluate(
             "element => { element.style.display = 'none'; }",
@@ -3088,7 +3088,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     """Drag *source* onto the canvas and return the id of the node it created.
 
     *source* is a locator for anything draggable that the canvas accepts: a
-    built-in palette tile (``#step-transformation``), a package palette row
+    built-in palette tile (``#tile-data-transformation``), a package palette row
     (``[data-pkg-template-id="..."]``), or a dataset row/card
     (``[data-dataset-id="..."]``). *at* is an offset from the pane's top-left
     corner; the pane centre is used when omitted.

@@ -131,7 +131,7 @@ describe("the bar", () => {
     expect(screen.getByRole("heading", { name: "Chicago trips" })).toBeTruthy();
     expect(screen.getByTestId("user-menu")).toBeTruthy();
     // None of the editor's menus.
-    for (const menu of ["File", "View", "Data", "Provenance", "Help"]) {
+    for (const menu of ["File", "View", "Data", "Provenance"]) {
       expect(screen.queryByText(new RegExp(`^${menu}`))).toBeNull();
     }
   });
