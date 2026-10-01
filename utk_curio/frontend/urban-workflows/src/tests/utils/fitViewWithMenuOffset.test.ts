@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { fitViewWithMenuOffset, MENU_BAR_ATTR } from '../../utils/fitViewWithMenuOffset';
+import {
+  CANVAS_TITLE_ATTR,
+  fitViewWithMenuOffset,
+  MENU_BAR_ATTR,
+} from '../../utils/fitViewWithMenuOffset';
 import { getViewportForBounds } from 'reactflow';
 
 // react-flow's geometry helpers are mocked: getNodesBounds/getViewportForBounds
@@ -202,6 +206,34 @@ describe('fitViewWithMenuOffset', () => {
       'utf8',
     );
     expect(upMenu).toContain(`${MENU_BAR_ATTR}="true"`);
+    expect(upMenu).toContain(`${CANVAS_TITLE_ATTR}="true"`);
+  });
+
+  // The category chips hang under the dataflow title, below the bar; a fitted
+  // top node sat partly under them, which is #493 again one row lower.
+  test('the title and its chips push the fit below them, not just the bar', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+    menuBar(65);
+    const title = document.createElement('div');
+    title.setAttribute(CANVAS_TITLE_ATTR, 'true');
+    title.getBoundingClientRect = () => ({ top: 80, bottom: 108 }) as DOMRect;
+    const chips = document.createElement('div');
+    chips.setAttribute('data-curio-category-chips', 'true');
+    chips.getBoundingClientRect = () => ({ top: 104, bottom: 124 }) as DOMRect;
+    title.appendChild(chips);
+    document.body.appendChild(title);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(heightArg).toBe(600 - 124);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 124, zoom: 1 }, undefined);
   });
 
   test('with an open dock, fits against the VISIBLE width and shifts past the dock', () => {
