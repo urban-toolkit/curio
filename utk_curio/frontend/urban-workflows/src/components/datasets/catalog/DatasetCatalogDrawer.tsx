@@ -7,8 +7,8 @@ import {
   DATASET_IMPORT_ACCEPT,
   DatasetSortMode,
   isInThisDataflow,
-  pendingInstallsNotYetListed,
 } from "../../../services/datasetCatalog";
+import { drawerPendingInstalls } from "../../../services/datasetCatalog/pendingInstallView";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
@@ -78,15 +78,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [presented, pinned, onRequestClose]);
 
-  // In-flight installs without a real installed row yet → "Installing…" cards.
-  // Match against genuinely-installed items only (an un-installed hub/computed row
-  // sharing the id must not suppress the placeholder while the install runs).
-  const installingRows = useMemo(() => {
-    const installed = items.filter(
-      (it) => it.installed === true || (it.origin !== "hub" && it.origin !== "computed"),
-    );
-    return pendingInstallsNotYetListed(pendingInstalls, installed);
-  }, [pendingInstalls, items]);
+  // In-flight installs without a real row yet → "Installing…" cards.
+  const installingRows = useMemo(
+    () => drawerPendingInstalls(pendingInstalls, items, tab),
+    [pendingInstalls, items, tab],
+  );
 
   const handleDrawerTransitionEnd = useCallback(
     (e: React.TransitionEvent<HTMLElement>) => {

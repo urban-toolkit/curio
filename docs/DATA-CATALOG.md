@@ -88,7 +88,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 - **The `/catalog/data` page** is the library view, for your whole account. Reach it from `/projects` and the **Data Catalog** tab. You can browse, filter by status, format and origin, preview, import, publish, open a dataset's details, and add a dataset to all your projects. You **cannot add a dataset to just one dataflow from here**: that is the drawer's job.
 - **The Data Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data → Data Catalog**, or from the left Tools panel's **Data Catalog** dropdown and **Browse Data Catalog +**. Everything scoped to the open dataflow happens here: adding, removing, importing, and deleting. Its tabs are **Browse all** (the default), **In project**, and **Computed**.
-- **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas. It sits below the built-in nodes and the **Node Catalog** dropdown.
+- **The Data palette**, the **Data Catalog** dropdown in the left Tools panel, holds the datasets already added to this dataflow, ready to drag onto the canvas, and under **Saved outputs** the outputs this dataflow's nodes saved. It sits below the built-in nodes and the **Node Catalog** dropdown.
 
 ### Action matrix
 
@@ -113,7 +113,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want a dataset in all my projects, present and future.** On `/catalog/data`, click the dataset's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it. **Remove from all projects** undoes it and keeps the dataset.
 
-**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button) and run it: the output is saved as a computed dataset. Open the drawer's **Computed** tab and click **Add to project** on it, in this dataflow or another one.
+**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
 
 **I want to remove a dataset from one dataflow but keep it.** Use **Remove from project** in the drawer. Only the dataflow's ref goes, with one exception: your own upload is deleted when no other dataflow uses it, and the confirmation says so before anything is deleted.
 
@@ -147,7 +147,7 @@ The generated code names the dataset with `curio_dataset_path("<datasetId>")`, o
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
-A node tied to a dataset shows a pill on its title bar: **DATASET** on a node created by dropping a dataset on empty canvas, **OUTPUT** when it produced one. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
+A node tied to a dataset shows a pill on its title bar: **DATASET** when it reads one dropped on the canvas or onto the node, **OUTPUT** when it produced one. Clicking a pill reveals the dataset's row in the palette. Palette rows and drawer cards carry a **connection badge** such as `1↑ 2↓`: one upstream producer and two downstream consumers.
 
 ### Collections
 
@@ -176,7 +176,7 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 ### The save-output toggle
 
-Every runnable node has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
+A runnable node that produces a dataset has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
@@ -194,7 +194,7 @@ Every output type a node can declare is saved, not only tables:
 
 A `json` output is stored as plain, uncompressed JSON, readable with `json.load` and exported as is.
 
-Nothing is saved for:
+These nodes have no toggle, and nothing is saved for them:
 
 - **Visualization sinks** (`curio.builtin/vis-vega`, `curio.builtin/vis-simple`), which pass their input straight through.
 - **Dataset-palette nodes**, the loader nodes created by dragging a dataset in.

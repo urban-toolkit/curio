@@ -2041,35 +2041,25 @@ class TestSessionAbuse:
             s.tour.beat(900)
             remaining = {n["id"] for n in canvas_nodes(page)}
             if s.state["middle"] in remaining:
-                # Not a defect: MainCanvas.handleNodesChange refuses a "remove"
-                # change for any node that still has an edge, and says so in a
-                # toast. Bisected against the shipped test (which never wires its
-                # nodes): unconnected nodes delete on Delete *and* Backspace, a
-                # connected one is refused on both. What is worth recording is
-                # whether the user is actually told why.
+                # Delete removes a wired node together with its edges (#155),
+                # so a node still on the canvas is a defect. Record what the
+                # toast region said, in case the app explained itself.
                 said = " ".join(
                     (page.locator('[aria-label="Notifications"] .toast')
                      .first.text_content() or "").split()
                 ) if page.locator(
                     '[aria-label="Notifications"] .toast'
                 ).count() else ""
-                if "cannot be removed" in said.lower():
-                    s.note(
-                        "Delete on a wired node is refused by design, and the "
-                        f"app explains it: {said[:200]!r}"
-                    )
-                else:
-                    s.record(
-                        "absent",
-                        "Delete on a wired node did nothing and said nothing",
-                        severity="bug",
-                        detail_full=(
-                            "MainCanvas.handleNodesChange refuses the remove and "
-                            "is supposed to showToast('Connected boxes cannot be "
-                            "removed...'), but no such toast was on screen. "
-                            f"Toast region held: {said[:300]!r}"
-                        ),
-                    )
+                s.record(
+                    "absent",
+                    "Delete on a wired node did not remove it",
+                    severity="bug",
+                    detail_full=(
+                        "Delete should remove the selected node and every edge "
+                        "attached to it. The node is still on the canvas. "
+                        f"Toast region held: {said[:300]!r}"
+                    ),
+                )
                 dismiss_toasts(page)
             else:
                 play_node(page, s.state["tail"])
