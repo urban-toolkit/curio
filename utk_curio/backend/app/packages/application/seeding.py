@@ -307,6 +307,39 @@ def _store_copy_is_stale(src: Path, dest: Path, fixture_mtime: float) -> bool:
     return catalog != installed
 
 
+def _refresh_decision(
+    src: Path, dest: Path, fixture_mtime: float, record: seed_state.PackageSeedRecord | None,
+) -> tuple[bool, str]:
+    """Should the seeder replace the store copy at *dest* with the catalog's?
+
+    Only when the catalog moved and the user did not (#564). Both make the two
+    copies differ, so the difference alone cannot say which happened; the
+    seed-state record says where the copy came from:
+
+    * a copy the catalog wrote, whose map still has the recorded digest, is
+      untouched and is refreshed when the catalog moves (#194);
+    * a copy the catalog wrote and something changed since, or a copy holding
+      the user's own content, is the user's and is left alone. **Update**
+      replaces it with the catalog's copy and puts it back on this track;
+    * a copy with no origin on record predates the record. It keeps the old
+      rule, which reverted every difference on every listing, so a difference
+      it still has is the catalog's.
+    """
+    rec = record or seed_state.PackageSeedRecord()
+    if rec.catalog_copy is not None:
+        installed = _integrity_map(dest)
+        if installed is None or seed_state.copy_digest(installed) != rec.catalog_copy:
+            return False, "changed-since-catalog-copy"
+    elif rec.installed_at is not None:
+        return False, "user-content"
+    stale = _store_copy_is_stale(src, dest, fixture_mtime)
+    if stale:
+        return True, "catalog-content-advanced"
+    if rec.catalog_copy is None:
+        return False, "unrecorded-content-identical"
+    return False, "content-identical"
+
+
 def _sweep_seed_staging(dest_base: Path) -> None:
     """Remove staging trees left by a swap that was killed mid-flight.
 
@@ -520,18 +553,25 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
             do_seed, reason = True, "forced-by-env"
         elif dest.exists() and not is_builtin:
             # A package the store already holds. The only question here is
-            # whether an upgrade moved the catalog underneath it (#194): the
-            # mtime rules below are for deciding whether to INSTALL something,
-            # and ``untracked-existing-copy`` in particular declines to touch a
-            # copy that arrived through the catalog drawer rather than the
-            # seeder — which is every package this branch sees.
+            # whether an upgrade moved the catalog underneath a copy nobody
+            # changed (#194, #564): the mtime rules below are for deciding
+            # whether to INSTALL something, and ``untracked-existing-copy`` in
+            # particular declines to touch a copy that arrived through the
+            # catalog drawer rather than the seeder, which is every package
+            # this branch sees.
             #
             # Nothing else can happen to it here. It is never removed, and a
             # package the user uninstalled is absent from the store, so it is
             # not a candidate at all and cannot be resurrected.
-            stale = _store_copy_is_stale(src, dest, fixture_mtime)
-            do_seed = stale
-            reason = "catalog-content-advanced" if stale else "content-identical"
+            do_seed, reason = _refresh_decision(src, dest, fixture_mtime, record)
+            if reason == "unrecorded-content-identical":
+                # Identical to the catalog, so it is the catalog's copy: record
+                # it as one, the way ``untracked-existing-copy`` is adopted below.
+                installed = _integrity_map(dest)
+                if installed is not None:
+                    seed_state.mark_catalog_copy(
+                        user_key, src.name, seed_state.copy_digest(installed),
+                    )
         elif is_builtin and not dest.exists():
             # The user cannot opt out of the default node kinds, so a
             # tombstone must never suppress the built-in. (Nothing can
@@ -570,7 +610,11 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
             continue
         if not _swap_in_package(src, dest, dest_base):
             continue
-        seed_state.mark_seeded(user_key, src.name, fixture_mtime)
+        swapped = _integrity_map(dest)
+        seed_state.mark_seeded(
+            user_key, src.name, fixture_mtime,
+            catalog_copy=seed_state.copy_digest(swapped) if swapped is not None else None,
+        )
         seeded.append(src.name)
         log.info("Seeded dev package %s into %s (%s)", src.name, dest_base, reason)
     return seeded

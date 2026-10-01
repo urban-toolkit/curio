@@ -719,51 +719,189 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
 
 
 # ---------------------------------------------------------------------------
-# An upgrade reaches a package the user already installed (#194).
+# An upgrade reaches a package the user already installed (#194), and never
+# replaces a change the user made to it (#564).
 #
 # A fix can ship inside a package at an unchanged version — the catalog under
 # <repo_root>/packages moves, the coordinate does not. Installing is copy-once,
-# so before this the user kept whatever they first copied, indefinitely. These
-# two tests pin the rule and its limit: a stale copy refreshes, a copy the user
-# deliberately removed does not come back.
+# so before #194 the user kept whatever they first copied, indefinitely. The
+# refresh cannot tell that apart from the user changing their copy, because
+# both make the two differ, so the seed-state record says where the copy came
+# from. These tests pin the rule and its limits: a copy nobody changed
+# refreshes, a copy the user changed is kept, a copy from before the record
+# keeps the old rule once, and a copy the user removed does not come back.
 # ---------------------------------------------------------------------------
+
+PROBE_DIR = "ai.utk.uhvi@1"
+
 
 def _probe_file(user_key: str, dir_name: str, rel: str = "manifest.json") -> Path:
     return user_packages_dir(user_key) / dir_name / rel
 
 
-def test_a_stale_installed_package_is_refreshed_from_the_catalog(
-    tmp_curio, real_fixtures_root,
-):
-    """The #194 delivery bug, at the unit layer."""
-    dir_name = "ai.utk.uhvi@1"
-    install_package_from_directory("guest", real_fixtures_root / dir_name)
-    assert dir_name in _installed_names()
+def _store_digest(user_key: str, dir_name: str) -> str:
+    raw = json.loads(_probe_file(user_key, dir_name, "integrity.json").read_text(encoding="utf-8"))
+    return seed_state.copy_digest(raw["sha256"])
 
-    probe = _probe_file("guest", dir_name)
-    catalog_bytes = (real_fixtures_root / dir_name / "manifest.json").read_bytes()
-    assert probe.read_bytes() == catalog_bytes, "install did not copy faithfully"
 
-    # Diverge the store copy the way an UPGRADE diverges it, which means leaving
-    # it internally consistent: an older copy's files and its own
-    # ``integrity.json`` agree with each other, they are simply an older pair
-    # than the catalog's. Editing the file alone would leave the store's map
-    # still quoting the original hash — a damaged copy, not an out-of-date one,
-    # and the refresh is right to decline that. Getting this wrong made an
-    # earlier version of this test pass for the wrong reason.
+def _diverge_store_copy(probe: Path) -> None:
+    """Change the store copy and leave it internally consistent.
+
+    An older copy's files and its own ``integrity.json`` agree with each other,
+    they are simply an older pair than the catalog's. Editing the file alone
+    would leave the store's map still quoting the original hash: a damaged
+    copy, not an out-of-date one, and the refresh is right to decline that.
+    Getting this wrong made an earlier version of these tests pass for the
+    wrong reason.
+    """
     from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
 
-    probe.write_bytes(catalog_bytes + b"\n")
+    probe.write_bytes(probe.read_bytes() + b"\n")
     refresh_package_integrity(probe.parent)
-    seed_state.clear("guest", dir_name)
+
+
+@pytest.fixture()
+def movable_catalog(tmp_path, monkeypatch, real_fixtures_root) -> Path:
+    """The probe package in a catalog this test may change, the way a release does."""
+    from utk_curio.backend.app.packages.repositories import catalog_dir
+
+    root = tmp_path / "catalog"
+    shutil.copytree(real_fixtures_root / PROBE_DIR, root / PROBE_DIR)
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: root)
+    return root
+
+
+def _ship_an_upgrade(catalog_root: Path) -> bytes:
+    """The catalog's manifest changes at an unchanged version, and the release
+    refreshes its committed integrity map with it. Answers the new bytes."""
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+
+    manifest = catalog_root / PROBE_DIR / "manifest.json"
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+    refresh_package_integrity(manifest.parent)
+    return manifest.read_bytes()
+
+
+def test_a_stale_installed_package_is_refreshed_from_the_catalog(
+    tmp_curio, movable_catalog,
+):
+    """The #194 delivery bug, at the unit layer: the catalog moves, and the
+    copy nobody changed follows it."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    assert probe.read_bytes() == (movable_catalog / PROBE_DIR / "manifest.json").read_bytes(), (
+        "install did not copy faithfully"
+    )
+
+    upgraded = _ship_an_upgrade(movable_catalog)
+    assert probe.read_bytes() != upgraded
+
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == upgraded, (
+        "a stale installed package was not refreshed, so a fix shipped inside "
+        "a package at an unchanged version never reaches an existing install"
+    )
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+@pytest.mark.parametrize("legacy_record", [None, {"seededAt": 1.0, "fixtureMtime": 1.0}],
+                         ids=["no-record", "old-seeder-record"])
+def test_a_copy_from_before_the_record_is_refreshed_once_then_recorded(
+    tmp_curio, real_fixtures_root, legacy_record,
+):
+    """A copy with no origin on record keeps the old rule. Before #564 every
+    listing reverted any difference, so a difference it still has is the
+    catalog's, not the user's. The pass that refreshes it records it."""
+    install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    catalog_bytes = (real_fixtures_root / PROBE_DIR / "manifest.json").read_bytes()
+    _diverge_store_copy(probe)
+    seed_state.put("guest", PROBE_DIR, legacy_record)
     assert probe.read_bytes() != catalog_bytes
 
     seed_dev_packages(user_key="guest")
 
-    assert probe.read_bytes() == catalog_bytes, (
-        "a stale installed package was not refreshed, so a fix shipped inside "
-        "a package at an unchanged version never reaches an existing install"
+    assert probe.read_bytes() == catalog_bytes
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+def test_a_copy_from_before_the_record_that_matches_the_catalog_is_adopted(
+    tmp_curio, real_fixtures_root,
+):
+    """Identical to the catalog, so it is the catalog's copy: recorded as one in
+    place, and from then on a catalog change reaches it."""
+    install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    seed_state.clear("guest", PROBE_DIR)
+
+    seeded = seed_dev_packages(user_key="guest")
+
+    assert PROBE_DIR not in seeded, "adoption re-copied the package"
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+def test_a_copy_the_user_replaced_is_kept_when_the_catalog_moves(
+    tmp_curio, movable_catalog, tmp_path,
+):
+    """An upload, a factory install or a promotion over a catalog copy writes
+    the user's own content, and the next catalog change must not undo it."""
+    from utk_curio.backend.app.packages.application.store_install import (
+        install_package_from_archive,
     )
+    from utk_curio.backend.app.packages.repositories.archive import zip_package_tree
+
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    mine = tmp_path / "mine" / PROBE_DIR
+    shutil.copytree(movable_catalog / PROBE_DIR, mine)
+    (mine / "README.md").write_text("my own notes\n", encoding="utf-8")
+    install_package_from_archive("guest", zip_package_tree(mine), replace=True)
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    readme = _probe_file("guest", PROBE_DIR, "README.md")
+    assert readme.is_file() and readme.read_text(encoding="utf-8") == "my own notes\n", (
+        "the catalog's copy replaced the user's"
+    )
+
+
+def test_a_catalog_copy_changed_in_place_is_kept_when_the_catalog_moves(
+    tmp_curio, movable_catalog,
+):
+    """Whatever changed it, a catalog copy whose map no longer has the recorded
+    digest is not the catalog's any more."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    _diverge_store_copy(probe)
+    changed = probe.read_bytes()
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == changed
+
+
+def test_a_failed_dependency_install_leaves_no_record_behind(
+    tmp_curio, real_fixtures_root, monkeypatch,
+):
+    """The rollback deletes the copy, so it deletes the record that describes it."""
+    from utk_curio.backend.app.packages.application import provisioning
+    from utk_curio.backend.app.packages.application.store_install import (
+        _ensure_user_store_install,
+    )
+    from utk_curio.backend.app.packages.domain.errors import PackageServiceError
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
+
+    def _fail(*_a, **_kw):
+        raise PipInstallError("ERROR: No matching distribution found")
+
+    monkeypatch.setattr(provisioning, "provision_python_deps", _fail)
+
+    with pytest.raises(PackageServiceError):
+        _ensure_user_store_install("guest", PROBE_DIR)
+
+    assert PROBE_DIR not in _installed_names()
+    assert PROBE_DIR not in _state()
 
 
 def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
