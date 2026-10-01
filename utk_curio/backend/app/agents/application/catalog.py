@@ -14,11 +14,13 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain.manifest import AGENT_CATEGORIES
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
+from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
 from utk_curio.backend.app.agents.repositories import catalog_settings
 from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
+from utk_curio.backend.app.common.safe_paths import PathTraversalError
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -152,7 +154,11 @@ def read_definition_bundle_anywhere(user_key: str, coord: str) -> dict | None:
     the built-in roster (so a stale materialized copy does not win over the
     current prompts), then a built-in's store copy, then the published catalog.
     """
-    store = storage.read_definition_bundle(user_key, coord)
+    try:
+        store = storage.read_definition_bundle(user_key, coord)
+    except (AgentManifestError, PathTraversalError):
+        # A name no agent directory can have: no definition in the store.
+        store = None
     if store is not None:
         trust = ((store.get("manifest") or {}).get("provenance") or {}).get("trust")
         if trust != "built-in":
