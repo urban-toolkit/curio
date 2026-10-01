@@ -53,8 +53,7 @@
           ]
         }
       ],
-      "paletteOrder": 0,
-      "tutorialId": "step-loading"
+      "paletteOrder": 0
     },
     {
       "category": "data",
@@ -79,8 +78,7 @@
       "label": "Data Export",
       "behavior": "data-export",
       "outputPorts": [],
-      "paletteOrder": 1,
-      "tutorialId": "step-export"
+      "paletteOrder": 1
     },
     {
       "category": "data",
@@ -114,8 +112,7 @@
           ]
         }
       ],
-      "paletteOrder": 3,
-      "tutorialId": "step-transformation"
+      "paletteOrder": 3
     },
     {
       "bidirectional": true,
@@ -148,8 +145,7 @@
           ]
         }
       ],
-      "paletteOrder": 13,
-      "tutorialId": "step-pool"
+      "paletteOrder": 13
     },
     {
       "category": "computation",
@@ -189,8 +185,7 @@
           ]
         }
       ],
-      "paletteOrder": 2,
-      "tutorialId": "step-analysis"
+      "paletteOrder": 2
     },
     {
       "category": "computation",
@@ -221,8 +216,7 @@
           ]
         }
       ],
-      "paletteOrder": 10,
-      "tutorialId": "step-summary"
+      "paletteOrder": 10
     },
     {
       "category": "computation",
@@ -262,8 +256,7 @@
           ]
         }
       ],
-      "paletteOrder": 11,
-      "tutorialId": "step-js"
+      "paletteOrder": 11
     },
     {
       "badge": "VEGA",
@@ -299,8 +292,7 @@
           ]
         }
       ],
-      "paletteOrder": 7,
-      "tutorialId": "step-vega"
+      "paletteOrder": 7
     },
     {
       "bidirectional": true,
@@ -342,8 +334,7 @@
           ]
         }
       ],
-      "paletteOrder": 8,
-      "tutorialId": "step-image"
+      "paletteOrder": 8
     },
     {
       "badge": "AUTK",
@@ -382,8 +373,7 @@
           ]
         }
       ],
-      "paletteOrder": 6,
-      "tutorialId": "step-utk"
+      "paletteOrder": 6
     },
     {
       "category": "data",
@@ -417,8 +407,7 @@
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 4,
-      "tutorialId": "step-spatial-join"
+      "paletteOrder": 4
     },
     {
       "category": "flow",
@@ -463,8 +452,7 @@
           ]
         }
       ],
-      "paletteOrder": 9,
-      "tutorialId": "step-merge"
+      "paletteOrder": 9
     }
   ],
   "version": "1.0.2"

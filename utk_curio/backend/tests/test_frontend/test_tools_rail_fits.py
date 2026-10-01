@@ -45,7 +45,7 @@ RUN_ALL = '#tools-menu button[title="Run all nodes"]'
 #: CSS-Modules hashes `.menuStyle` into something opaque, so a `[class*=…]`
 #: selector matches nothing in a real build.
 TILE_BLOCK_JS = """() => {
-    const tile = document.querySelector('#step-loading');
+    const tile = document.querySelector('#tile-data-loading');
     const rail = document.querySelector('#tools-menu');
     if (!tile || !rail) return null;
     let el = tile;

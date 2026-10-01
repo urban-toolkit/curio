@@ -54,7 +54,7 @@ NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
 #: The catalog PAGES' detail drawer. Publishing lives here and nowhere else.
 BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
-LOADING_TILE = "#step-loading"
+LOADING_TILE = "#tile-data-loading"
 LOADING_TYPE = "curio.builtin/data-loading"
 
 #: A node body that outputs a frame, so running it with save-output on leaves a

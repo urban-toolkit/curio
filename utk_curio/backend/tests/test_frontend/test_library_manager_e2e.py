@@ -61,7 +61,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 LIB = "titlecase"
-ANALYSIS_TILE = "#step-analysis"
+ANALYSIS_TILE = "#tile-computation-analysis"
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 
 SPEC_PLACEHOLDER = "e.g. numpy or scikit-learn==1.4.0"

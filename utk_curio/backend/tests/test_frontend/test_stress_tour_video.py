@@ -786,7 +786,7 @@ def chapter_canvas(run: StressRun) -> None:
         reset_zoom(page)
         sources = [
             (template, builtin_tile(page, template))
-            for template, _ in stress.BUILTIN_TILES
+            for template in stress.BUILTIN_TILES
         ]
         placed = _drop_grid(run, sources)
         run.state["placed"] = dict(placed)
@@ -2608,22 +2608,6 @@ def chapter_views(run: StressRun) -> None:
         else:
             run.note("no Share control found on the canvas",
                      step="Share the dataflow read-only")
-
-    with run.step("The in-app tutorial walks the palette"):
-        tour.click(menu(page, "Help"), force=True)
-        tour.click(page.get_by_role("button", name="Tutorial", exact=True).first)
-        page.wait_for_timeout(2000)
-        run.snap("intro-tutorial")
-        for index in range(9):
-            nxt = page.locator(".introjs-nextbutton")
-            if not nxt.count() or not nxt.first.is_visible():
-                break
-            nxt.first.click()
-            page.wait_for_timeout(900)
-        done = page.locator(".introjs-donebutton, .introjs-skipbutton")
-        if done.count():
-            done.first.click()
-        page.wait_for_timeout(1200)
 
     tour.chapter("That is the tour", "Curio",
                  "Every surface, every node, every agent.")

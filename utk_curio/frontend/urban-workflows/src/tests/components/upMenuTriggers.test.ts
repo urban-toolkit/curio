@@ -22,7 +22,7 @@ const CSS = fs.readFileSync(
 );
 
 describe("the top bar's menu buttons", () => {
-  it.each(["File", "View", "Data", "Provenance", "Help"])(
+  it.each(["File", "View", "Data", "Provenance"])(
     "%s is named after its menu and draws its arrow",
     (menu) => {
       const button = new RegExp(
@@ -32,6 +32,11 @@ describe("the top bar's menu buttons", () => {
       expect(UP_MENU).toMatch(button);
     },
   );
+
+  it("have no Help menu and no tour", () => {
+    expect(UP_MENU).not.toContain('aria-label="Help menu"');
+    expect(UP_MENU).not.toContain("intro.js");
+  });
 
   it("write no arrow character", () => {
     expect(UP_MENU).not.toContain("⏷");
