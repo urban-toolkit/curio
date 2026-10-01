@@ -425,6 +425,99 @@ class TestPublish:
         assert not any(a["id"] == "agent.my-custom" for a in cat)
 
 
+class TestUnpublishKeepsAddersCopies:
+    """#438: adding a published agent copies it into the adder's store, as the
+    Data Catalog does with a shared dataset and the Node Catalog with a
+    package, so its publisher's Unpublish no longer breaks it for everyone who
+    added it. Ownership of the publication is the publisher record, since every
+    adder now holds a copy."""
+
+    COORD = "agent.shared-helper@1.0.0"
+
+    @staticmethod
+    def _make_user(db, username, token):
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        u = User(username=username, name=username.title(), email=f"{username}@test.com")
+        db.session.add(u)
+        db.session.flush()
+        db.session.add(UserSession(user_id=u.id, token=token))
+        db.session.commit()
+        return u
+
+    def _publish_as_alice(self, client, token):
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={
+                "manifest": {
+                    "id": "agent.shared-helper", "name": "Shared helper", "category": "canvas",
+                    "version": "1.0.0",
+                    "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
+                    "compatibleTargets": [{"kind": "canvas", "requires": []}],
+                    "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
+                    "provenance": {"publisher": "alice", "trust": "imported"},
+                },
+                "prompts": {"prompts/instruction.txt": "You help with shared things."},
+            },
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        r = client.post("/api/agents/publications", json={"coord": self.COORD}, headers=_auth(token))
+        assert r.status_code == 201, r.get_data(as_text=True)
+
+    def _bob_adds_and_attaches(self, client, db):
+        self._make_user(db, "bob", "bob-token")
+        project = client.post(
+            "/api/projects",
+            json={"name": "b", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth("bob-token"),
+        ).get_json()["id"]
+        r = client.post(f"/api/agents/projects/{project}/install",
+                        json={"coord": self.COORD}, headers=_auth("bob-token"))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        r = client.post(f"/api/agents/projects/{project}/attachments",
+                        json={"coord": self.COORD, "target": {"kind": "canvas"}}, headers=_auth("bob-token"))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        return project, r.get_json()["attachmentId"]
+
+    def test_an_adder_keeps_running_the_agent_after_its_publisher_unpublishes(
+        self, client, db, user_and_token, tmp_curio, monkeypatch,
+    ):
+        sent = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
+            lambda config, messages, usage_out=None, **kw: sent.append(messages) or "ok",
+        )
+        _, alice = user_and_token
+        self._publish_as_alice(client, alice)
+        project, att_id = self._bob_adds_and_attaches(client, db)
+
+        r = client.delete(f"/api/agents/publications/{self.COORD}", headers=_auth(alice))
+        assert r.status_code == 200, r.get_data(as_text=True)
+
+        r = client.post(f"/api/agents/projects/{project}/attachments/{att_id}/run",
+                        json={"message": "hi"}, headers=_auth("bob-token"))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert any("You help with shared things." in str(m) for m in sent[0])
+        imports = client.get("/api/agents/imports", headers=_auth("bob-token")).get_json()["agents"]
+        assert all(a["id"] != "agent.shared-helper" or a["publishable"] is False for a in imports)
+
+    def test_an_adder_can_neither_unpublish_nor_republish_it(
+        self, client, db, user_and_token, tmp_curio,
+    ):
+        _, alice = user_and_token
+        self._publish_as_alice(client, alice)
+        self._bob_adds_and_attaches(client, db)
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth("bob-token"))
+
+        r = client.delete(f"/api/agents/publications/{self.COORD}", headers=_auth("bob-token"))
+        assert r.status_code == 403, r.get_data(as_text=True)
+        r = client.post("/api/agents/publications", json={"coord": self.COORD}, headers=_auth("bob-token"))
+        assert r.status_code == 400, r.get_data(as_text=True)
+        assert publications.is_published(self.COORD)
+
+
 class TestAttachments:
     def test_attach_canvas_then_list_then_detach(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -1922,7 +2015,7 @@ class TestMaterializationHeal:
         ukey = _user_dir_key(user)
         # An owned imported definition deliberately shadowing a built-in coord.
         coord = _write_def(user, "agent.node-content-builder")
-        catalog._materialize_builtin(ukey, coord)
+        catalog._materialize_definition(ukey, coord)
         from utk_curio.backend.app.agents.repositories import storage
 
         kept = storage.load_installed_agent_definition(ukey, coord)
