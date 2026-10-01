@@ -57,12 +57,16 @@
     },
     {
       "category": "data",
-      "description": "The Export box is responsible for getting data from the dataflow to the outside world.",
-      "editor": "code",
+      "containerStyle": {
+        "nodeHeight": 170,
+        "nodeWidth": 320
+      },
+      "description": "One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.",
+      "editor": "none",
       "engine": "python",
-      "hasCode": true,
+      "hasCode": false,
       "hasGrammar": false,
-      "hasWidgets": true,
+      "hasWidgets": false,
       "iconRef": "fa-solid:download",
       "id": "data-export",
       "inputPorts": [

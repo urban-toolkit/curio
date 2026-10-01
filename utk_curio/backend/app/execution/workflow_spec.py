@@ -58,14 +58,11 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # executability whenever it is reachable; do not grow them.
 PY_CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
-    "DATA_EXPORT", "COMPUTATION_ANALYSIS",
+    "COMPUTATION_ANALYSIS",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
-# Subset of CODE_TYPES whose frontend component passes ``code={true}``
-# to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
-# The remaining CODE_TYPES member (DATA_EXPORT) uses ``code={false}`` and has
-# no code tab.
+# The CODE_TYPES that render a "code" tab with a Monaco editor: all of them.
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS",
