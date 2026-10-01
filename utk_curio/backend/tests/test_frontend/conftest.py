@@ -199,11 +199,6 @@ def pytest_generate_tests(metafunc):
     """
     if "loaded_workflow" in metafunc.fixturenames:
         files = load_workflow_files_from_folder()
-        # A test for a few workflows only (``only_workflows``) is never
-        # collected for the rest, so selecting it loads nothing it skips.
-        only = metafunc.definition.get_closest_marker("only_workflows")
-        if only is not None:
-            files = [f for f in files if os.path.basename(f) in only.args]
         # Example 10 (street-vision) drives external services — HuggingFace CV
         # inference + street-view APIs via the non-builtin curio.streetvision
         # package — so it can't run offline/deterministically. Skip it at
@@ -268,9 +263,36 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
-        "only_workflows(*basenames): a test_workflows test collected for these "
-        "workflows only",
+        "only_workflows(*basenames): a test_workflows test deselected for every "
+        "other workflow",
     )
+    config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
+
+
+class _OnlyWorkflows:
+    """Deselects an ``only_workflows`` test for every workflow it does not name.
+
+    After pytest has put the items in order, never by parametrizing the test
+    over fewer workflows: pytest orders a test with fewer parameters than its
+    class's others ahead of them, so test_node_interaction ran its gestures
+    before test_node_type_and_content looked at the nodes unrun (CI run
+    36794470794). Selecting the test alone still loads only those workflows.
+    """
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_collection_modifyitems(self, config, items):
+        kept, dropped = [], []
+        for item in items:
+            only = item.get_closest_marker("only_workflows")
+            params = getattr(getattr(item, "callspec", None), "params", {}) or {}
+            workflow = params.get("loaded_workflow")
+            if only is not None and workflow is not None and os.path.basename(str(workflow)) not in only.args:
+                dropped.append(item)
+            else:
+                kept.append(item)
+        if dropped:
+            config.hook.pytest_deselected(items=dropped)
+            items[:] = kept
 
 
 def pytest_collection_modifyitems(config, items):
