@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/trill.v1.json",
   "title": "Curio Trill Dataflow Specification (v1)",
-  "description": "Schema for a Curio dataflow document, saved on disk as '.curio/users/<userKey>/projects/<projectId>/spec.trill.json' and shipped in-repo as the examples under 'docs/examples/'. A trill document is a graph: 'dataflow.nodes' are the boxes on the canvas and 'dataflow.edges' the wires between them, plus two optional provenance sections and three backend-owned agent sections. Field names are camelCase except the historical snake_case 'provenance_id'. NODES ARE DEFINED BY PACKAGE MANIFESTS, NOT HERE: a node's 'type' is a coordinate into a manifest's 'templates[].id' (see docs/schemas/node-package.v4.json), and this schema validates only the SHAPE of that coordinate, never whether it resolves. Everything a template decides - which handle ids exist, which port types are compatible, whether the node has code at all, whether it can carry an interaction edge - lives in the manifest and depends on which packages are installed, so it is deliberately unconstrained here; 'scripts/validate_trill.py' and the cross-schema test in test_trill_schema.py cover resolution. This schema is the canonical spec for the format; the backend performs no validation of its own (projects/storage.py reads and writes it as opaque JSON), which makes this document the only written contract. Every object is intentionally open ('additionalProperties: true') because five independent writers emit overlapping but different key sets: TrillGenerator.generateTrill (the canvas), agents/services.py (agent-applied graph edits, which emit deliberately minimal nodes), datasets/application/mutations.py, useDatasetCatalogDrawer.ts, and testing/routes.py. Fields marked deprecated are still accepted on read by hook/useCode.ts but are never written by current code. NOT part of this format: 'graph_preview' (derived server-side in projects/services.py and returned only by the project-list API), the sibling 'manifest.json' written alongside the spec, and agent transcripts and the usage ledger (they live under .curio/users/<userKey>/agents/). User-facing overview: docs/TRILL-SPEC.md.",
+  "description": "Schema for a Curio dataflow document, saved on disk as '.curio/users/<userKey>/projects/<projectId>/spec.trill.json' and shipped in-repo as the examples under 'docs/examples/'. A trill document is a graph: 'dataflow.nodes' are the boxes on the canvas and 'dataflow.edges' the wires between them, plus two optional provenance sections and three backend-owned agent sections. Field names are camelCase except the historical snake_case 'provenance_id'. NODES ARE DEFINED BY PACKAGE MANIFESTS, NOT HERE: a node's 'type' is a coordinate into a manifest's 'templates[].id' (see docs/schemas/node-package.v4.json), and this schema validates only the SHAPE of that coordinate, never whether it resolves. Everything a template decides - which handle ids exist, which port types are compatible, whether the node has code at all, whether it can carry an interaction edge - lives in the manifest and depends on which packages are installed, so it is deliberately unconstrained here; 'scripts/validate_trill.py' and the cross-schema test in test_trill_schema.py cover resolution. This schema is the canonical spec for the format; the backend performs no validation of its own (projects/storage.py reads and writes it as opaque JSON), which makes this document the only written contract. Every object is intentionally open ('additionalProperties: true') because five independent writers emit overlapping but different key sets: TrillGenerator.generateTrill (the canvas), agents/application/proposals/ (agent-applied graph edits, which emit deliberately minimal nodes), datasets/application/mutations.py, useDatasetCatalogDrawer.ts, and testing/routes.py. Fields marked deprecated are still accepted on read by hook/useCode.ts but are never written by current code. NOT part of this format: 'graph_preview' (derived server-side in projects/services.py and returned only by the project-list API), the sibling 'manifest.json' written alongside the spec, and agent transcripts and the usage ledger (they live under .curio/users/<userKey>/agents/). User-facing overview: docs/TRILL-SPEC.md.",
   "$comment": "Conventions follow docs/schemas/agent-package.v1.json (Draft 2020-12, raw-GitHub $id, prose descriptions, open objects) with two deliberate departures: this schema uses $defs, which the agent schema does not, because dataflowProvenance.versions recurses and several shapes are referenced twice; and it uses dependentRequired for the dashboard coordinate pairs. This schema is also the source of the Trill block in llm-prompts/default_preamble.txt: scripts/generate_contracts.py projects the fields contracts.TRILL_PROMPT_FIELDS names, so a change here reaches the prompt when the outputs are regenerated.",
   "type": "object",
   "required": ["dataflow"],
@@ -80,7 +80,7 @@
         "packages": {
           "type": "array",
           "uniqueItems": true,
-          "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
+          "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/domain/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
           "items": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]@(?:0|[1-9][0-9]{0,3})$",
@@ -110,12 +110,12 @@
         "agents": {
           "type": "array",
           "uniqueItems": true,
-          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
+          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/repositories/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
           "items": { "$ref": "#/$defs/agentCoord" }
         },
         "agentAttachments": {
           "type": "array",
-          "description": "Live agent attachments: which installed agent is bound to which node, edge, or the canvas as a whole, and the state of its current run. BACKEND-OWNED and STRIPPED ON SHARE, exactly like 'agents'. Attachments whose target node or edge has been deleted are pruned on save by agents/attachments.py:prune_orphaned_attachments.",
+          "description": "Live agent attachments: which installed agent is bound to which node, edge, or the canvas as a whole, and the state of its current run. BACKEND-OWNED and STRIPPED ON SHARE, exactly like 'agents'. Attachments whose target node or edge has been deleted are pruned on save by agents/application/attachments.py:prune_orphaned_attachments.",
           "items": { "$ref": "#/$defs/agentAttachment" }
         },
         "agentDefaults": {
@@ -128,7 +128,7 @@
     },
     "node": {
       "type": "object",
-      "description": "One box on the canvas. Only 'id', 'type', 'x' and 'y' are required, because the agent apply path in agents/services.py writes deliberately minimal nodes - '{id, type, content, goal, x, y}' with no 'in', 'out' or 'metadata' - even though every node in every committed example carries all eight.",
+      "description": "One box on the canvas. Only 'id', 'type', 'x' and 'y' are required, because the agent apply path in agents/application/proposals/ writes deliberately minimal nodes - '{id, type, content, goal, x, y}' with no 'in', 'out' or 'metadata' - even though every node in every committed example carries all eight.",
       "required": ["id", "type", "x", "y"],
       "additionalProperties": true,
       "dependentRequired": {
@@ -435,7 +435,7 @@
     },
     "agentAttachment": {
       "type": "object",
-      "description": "One agent bound to one target, plus the state of its current run. Minted in agents/attachments.py:attach; 'revision' provides optimistic concurrency.",
+      "description": "One agent bound to one target, plus the state of its current run. Minted in agents/application/attachments.py:attach; 'revision' provides optimistic concurrency.",
       "required": ["attachmentId", "coord", "target", "sessionId", "revision"],
       "additionalProperties": true,
       "properties": {
@@ -445,7 +445,7 @@
         "sessionId": { "type": "string", "description": "Id of the conversation session backing this attachment, a uuid4 hex string. The transcript itself lives outside the spec." },
         "revision": { "type": "integer", "minimum": 1, "description": "Bumped on every mutation; a client must send the revision it read or lose the write." },
         "intent": { "type": "string", "description": "The user's stated intent for this attachment. Removed from the record when cleared rather than set empty." },
-        "title": { "type": "string", "maxLength": 40, "description": "Short display title. Capped at TITLE_MAX_CHARS in agents/attachments.py, which truncates rather than rejecting on the auto-titling path." },
+        "title": { "type": "string", "maxLength": 40, "description": "Short display title. Capped at TITLE_MAX_CHARS in agents/application/attachments.py, which truncates rather than rejecting on the auto-titling path." },
         "titleEdited": { "type": "boolean", "description": "True once a human has renamed the attachment, which stops auto-titling from overwriting it. Only ever written as true." },
         "activeProposal": { "$ref": "#/$defs/agentProposal" },
         "queuedProposals": {
@@ -456,7 +456,7 @@
         "planProposal": { "$ref": "#/$defs/agentProposal" },
         "builderSession": {
           "type": "object",
-          "description": "Run state for a multi-step builder agent: which phase it is in, per-node status, and cancellation flags. Internal to agents/services.py and deliberately unconstrained - its key set changes with the agent implementation.",
+          "description": "Run state for a multi-step builder agent: which phase it is in, per-node status, and cancellation flags. Internal to agents/application/ and deliberately unconstrained - its key set changes with the agent implementation.",
           "additionalProperties": true
         }
       }
@@ -470,7 +470,7 @@
         "kind": {
           "type": "string",
           "enum": ["node", "canvas", "connection"],
-          "description": "Mirrors _TARGET_KINDS in agents/attachments.py."
+          "description": "Mirrors _TARGET_KINDS in agents/application/attachments.py."
         },
         "targetId": {
           "type": "string",
@@ -619,12 +619,12 @@
     "nodeTypeRef": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,5}/[a-z][a-z0-9-]{0,62}(?:@(?:0|[1-9][0-9]{0,3}))?$",
-      "description": "A node template coordinate: '<packageId>/<templateId>' or '<packageId>/<templateId>@<major>', where packageId is two to six dot-separated kebab segments. THIS IS A REFERENCE INTO A PACKAGE MANIFEST, and this schema checks its shape only - whether the template actually exists depends on which packages are installed, so resolution is a job for scripts/validate_trill.py and the cross-schema test, not for validation. The unversioned form resolves at load time to the highest installed major; the versioned form pins one. Both are written: palette-dragged nodes persist the versioned form and there is no load-time normalizer, so the two coexist in real specs and any comparison against an unversioned set must normalize first (packages/spec_packages.py:unversioned_node_type). Deliberately a pattern and never an enum, because packages are user-installable - the frontend's own NodeType enum is already missing a built-in template that the examples use. Mirrors _NODE_TYPE_VERSIONED_RE and _NODE_TYPE_UNVERSIONED_RE in packages/spec_packages.py; the templateId half is the same grammar as templates[].id in docs/schemas/node-package.v4.json."
+      "description": "A node template coordinate: '<packageId>/<templateId>' or '<packageId>/<templateId>@<major>', where packageId is two to six dot-separated kebab segments. THIS IS A REFERENCE INTO A PACKAGE MANIFEST, and this schema checks its shape only - whether the template actually exists depends on which packages are installed, so resolution is a job for scripts/validate_trill.py and the cross-schema test, not for validation. The unversioned form resolves at load time to the highest installed major; the versioned form pins one. Both are written: palette-dragged nodes persist the versioned form and there is no load-time normalizer, so the two coexist in real specs and any comparison against an unversioned set must normalize first (packages/domain/spec_packages.py:unversioned_node_type). Deliberately a pattern and never an enum, because packages are user-installable - the frontend's own NodeType enum is already missing a built-in template that the examples use. Mirrors _NODE_TYPE_VERSIONED_RE and _NODE_TYPE_UNVERSIONED_RE in packages/domain/spec_packages.py; the templateId half is the same grammar as templates[].id in docs/schemas/node-package.v4.json."
     },
     "agentCoord": {
       "type": "string",
       "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*@\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
-      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
+      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/repositories/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/domain/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
     },
     "portType": {
       "type": "string",

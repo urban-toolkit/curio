@@ -675,6 +675,19 @@ class TestEmptyUpstreamWaits:
         assert body["builderSession"]["phase"] == "applied"
         assert helper._node_content(ctx, ctx["stats"]) == ""
 
+    def test_the_session_says_the_dependent_waits_upstream(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The strip's "waiting upstream" pill reads the waiting summary's kind.
+        The summary found that kind in the reason's wording, so when the wording
+        changed (an em dash became a colon) every upstream wait read as a retry."""
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch,
+                            dl_replies=["No catalog dataset covers the tract heat data."])
+        body = helper._solve(client, token, ctx)
+        waiting = {w["nodeId"]: w for w in body["waiting"]}
+        assert waiting[ctx["stats"]]["kind"] == "upstream"
+        assert waiting[ctx["load"]]["kind"] == "retry"
+
 
 class TestExecDatasetPaths:
     def _service(self, monkeypatch, resolved, raise_exc=False):

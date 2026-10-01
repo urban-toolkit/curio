@@ -9236,6 +9236,16 @@ class TestReadDefinition:
         assert r.status_code == 404
         assert "agent.nope@1.0.0" in r.get_json()["error"]
 
+    def test_a_malformed_coordinate_is_404_not_500(self, client, user_and_token, tmp_curio):
+        """A name no agent directory can have names no definition. The user-store
+        read refused it before the published-catalog read was reached, and that
+        read's refusal was caught by names the module never imported, so the
+        route answered 500 either way."""
+        _, token = user_and_token
+        r = client.get("/api/agents/definitions/not-a-coordinate", headers=_auth(token))
+        assert r.status_code == 404
+        assert "not-a-coordinate" in r.get_json()["error"]
+
     def test_an_exported_builtin_round_trips_through_upload(self, client, user_and_token, tmp_curio):
         """What Export writes for a built-in, Import accepts - under a new id."""
         _, token = user_and_token

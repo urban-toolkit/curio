@@ -450,7 +450,9 @@ class SolveBatch:
             # is not a target) — this node waits, pending with the reason;
             # Retry runs it once the upstream is solved or filled.
             reason = f"waiting: {raw_detail[:240]}" if raw_detail else "waiting: an upstream node has no content yet"
-            self.results[node_id] = {"status": "pending", "reason": reason, **trail}
+            # The session summary reads what the node waits on from here, not
+            # from the reason's wording.
+            self.results[node_id] = {"status": "pending", "reason": reason, "waitingOn": "upstream", **trail}
             return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
         if kind == "precondition":
             # dev/118 (DEC-075): the runner refused the SLICE (the 25-node

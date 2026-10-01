@@ -34,8 +34,11 @@ from .utils import (
     dismiss_toasts,
     drawing_kept,
     drawing_selector,
+    AUTK_PLOT_HIGHLIGHT,
+    _LIT_MARKS_JS,
     frame_nodes,
     keep_drawing,
+    lit_marks,
     mark_point,
     park_pointer,
     save_interaction_frame,
@@ -134,6 +137,11 @@ class Interaction:
       marks take.
     The mark is the marked pixel of the source's drawing nearest *at*, given as
     fractions of the part of that drawing in view.
+
+    *min_lit* is the share of an Autark plot's marks a brush on it has to
+    light. A brush that lights most of a plot makes its pair's after frames
+    far from the before ones, so an interaction that stops reaching fails by
+    much more than the budget.
     """
     slug: str
     source: str
@@ -141,6 +149,7 @@ class Interaction:
     gesture: str
     at: tuple = (0.5, 0.5)
     span: tuple = ((0.25, 0.25), (0.75, 0.75))
+    min_lit: float = 0.0
 
 
 GESTURES = ("hover", "pick", "brush")
@@ -151,6 +160,8 @@ EXAMPLE_17_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
 EXAMPLE_17_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
 EXAMPLE_09_SCATTER = "3334485c-50ad-4adf-9574-45f8a9704860"
 EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
+EXAMPLE_08_SCATTER = "niteroi-plot"
+EXAMPLE_08_MAP = "niteroi-map"
 
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
@@ -177,6 +188,16 @@ INTERACTIONS = {
     # of six probes landed on none (CI run 36796749223).
     "Interaction_Autark.json": (
         Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
+    ),
+    # An Autark scatter's 2D brush and an Autark map, through a pool. The
+    # roads crowd the right of the plot (intercept 27 to 35 of 0 to 35, most
+    # of them above an angle of 0), so the brush spans that crowd across and
+    # its upper two thirds down, and has to light at least half the roads. It
+    # gets no road pick: a road is a few pixels, and the one point it lights
+    # (1 of 8524, CI run 36805909584) hides under the others.
+    "08-autark-spatial-join-regression.json": (
+        Interaction("scatter-brush", source=EXAMPLE_08_SCATTER, target=EXAMPLE_08_MAP,
+                    gesture="brush", span=((0.70, 0.02), (0.995, 0.70)), min_lit=0.5),
     ),
 }
 
@@ -1151,23 +1172,35 @@ class TestWorkflowCanvas:
             page, step.target,
             lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
         )
-        # The source's own change says whether the gesture landed at all.
+        # The source's own change says whether the gesture landed at all, and an
+        # Autark plot's lit marks whether the selection reached it unseen.
+        lit = None if reached else page.evaluate(
+            _LIT_MARKS_JS, {"selector": drawing, "highlight": AUTK_PLOT_HIGHLIGHT})
         assert reached, (
             f"{where} left {step.target} as it was "
             f"({changed_pixels(before, after)} pixels changed; the source "
-            f"changed by {changed_pixels(source_before, capture_node(page, step.source))})"
+            f"changed by {changed_pixels(source_before, capture_node(page, step.source))}"
+            + (f"; {lit['lit']} of its {lit['total']} plot marks lit" if lit and lit['total'] else "")
+            + ")"
         )
         wait_for_node_still(page, step.target)
         assert drawing_kept(page, drawing), (
             f"{where} redrew {step.target} instead of highlighting it"
         )
         if step.gesture == "brush" and not on_vega:
-            # The bars lit are the ones under the brush, once the selection has
+            # The marks lit are the ones under the brush, once the selection has
             # come back to the plot through the pool (#536).
             wrong = brush_mismatches(page, source_drawing)
             assert wrong is not None, f"{where} left no brush on {step.source}"
-            assert not wrong, f"{where} lit the wrong bars: " + ", ".join(
+            assert not wrong, f"{where} lit the wrong marks: " + ", ".join(
                 f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
+        if step.min_lit:
+            counts = lit_marks(page, source_drawing, at_least=step.min_lit)
+            assert counts and counts["total"], f"{where}: {step.source} shows no plot marks"
+            assert counts["lit"] >= step.min_lit * counts["total"], (
+                f"{where} lit {counts['lit']} of {step.source}'s {counts['total']} marks, "
+                f"under the {step.min_lit:.0%} the step is meant to cover"
+            )
         frame("after", "target")
         frame("after", "source")
 
@@ -1182,8 +1215,10 @@ class TestWorkflowCanvas:
         elif step.gesture == "pick":
             page.mouse.dblclick(point["x"], point["y"])
         else:
+            # Away from the brush: a click inside it starts a move instead.
             area = brush_area(page, source_drawing)
-            page.mouse.click(*at_fraction(area, (0.97, 0.5)))
+            reaches_right = max(step.span[0][0], step.span[1][0]) > 0.9
+            page.mouse.click(*at_fraction(area, (0.03 if reaches_right else 0.97, 0.5)))
         frame_nodes(page, [step.source, step.target])
         _, restored = wait_for_node_capture(
             page, step.target,
