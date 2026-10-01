@@ -379,6 +379,9 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
             copied=False,
             import_errors=packages_provisioning._declared_import_failures(user_key, dir_name),
         )
+    # Before the copy, not in provision_python_deps: a refusal there leaves
+    # the files in the store, and the next call takes the branch above (#451).
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
@@ -462,6 +465,7 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> Inst
     user's store through the same validator, size caps and integrity writer the
     sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404."""
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
