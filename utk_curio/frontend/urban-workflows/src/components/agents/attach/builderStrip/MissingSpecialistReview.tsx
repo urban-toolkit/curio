@@ -14,7 +14,7 @@ export const MissingSpecialistReview: React.FC<{
   onDismiss?: () => void;
 }> = ({ review, reviewBusy, solving, onApply, onDismiss }) => (
   <div className={styles.actions} role="group" aria-label="Missing specialist">
-    <span className={styles.reviewSummary}>Solve needs a specialist — {review.summary}</span>
+    <span className={styles.reviewSummary}>Solve needs a specialist: {review.summary}</span>
     {onApply ? (
       <button type="button" className={styles.solve} disabled={reviewBusy || solving} onClick={onApply}>
         {reviewBusy ? "Adding…" : "Add to project"}

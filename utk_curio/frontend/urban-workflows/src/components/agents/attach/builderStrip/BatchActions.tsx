@@ -27,7 +27,7 @@ export const BatchActions: React.FC<{
       title={
         solveDisabledReason ??
         (phase === "interrupted"
-          ? "A new execution linked to the interrupted one — nothing is replayed"
+          ? "A new execution linked to the interrupted one; nothing is replayed"
           : "Data-loading nodes run in the sandbox and are fixed before their code is written")
       }
       onClick={onSolve}
@@ -45,7 +45,7 @@ export const BatchActions: React.FC<{
         type="button"
         className={styles.run}
         disabled={cancelling}
-        title="Ends the session after the current node finishes — a running fetch cannot be aborted. Everything already written stays."
+        title="Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written stays."
         onClick={onCancel}
       >
         {cancelling ? "Stopping…" : "Stop"}

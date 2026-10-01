@@ -27,10 +27,10 @@ export const PHASE_RANK: Record<string, number> = {
 export const STATUS_LABEL: Record<string, string> = {
   solving: "solving",
   generating: "generating…",
-  verifying: "verifying — running in the sandbox…",
-  fixing: "fixing — the run failed, correcting…",
+  verifying: "verifying: running in the sandbox…",
+  fixing: "fixing: the run failed, correcting…",
   verified: "solved ✓ verified",
-  written: "written — no code to run; renders in the browser or its own service",
+  written: "written: no code to run; renders in the browser or its own service",
   solved: "solved",
   failed: "failed",
   skipped: "skipped",
@@ -49,7 +49,7 @@ export function batchDetailFor(entries: Array<[string, string]>, solveWave: Agen
   const nodesDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
   const waveDetail =
     solveWave && solveWave.of > 1
-      ? `wave ${solveWave.wave} of ${solveWave.of} — ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
+      ? `wave ${solveWave.wave} of ${solveWave.of}: ${solveWave.nodeIds.length} node${solveWave.nodeIds.length === 1 ? "" : "s"}`
       : null;
   return [waveDetail, nodesDetail].filter(Boolean).join(" · ") || undefined;
 }
@@ -60,22 +60,22 @@ function plural(n: number, noun: string): string {
 
 /** dev/131: how the last session ended, as the strip's one honest line. */
 export function sessionEndingText(endedBy: string, unresolved: number): string {
-  const pending = unresolved ? ` — ${plural(unresolved, "node")} still pending.` : ".";
+  const pending = unresolved ? `: ${plural(unresolved, "node")} still pending.` : ".";
   return endedBy === "complete"
-    ? "Finished — nothing left to do."
+    ? "Finished: nothing left to do."
     : endedBy === "stopped"
       ? `Stopped by you${pending}`
       : endedBy === "budget"
         ? `Out of time for this session${pending}`
         : endedBy === "blocked"
-          ? "Stopped — a specialist must be installed first."
+          ? "Stopped: a specialist must be installed first."
           : "";
 }
 
 /** dev/131: the pass line while the session runs. */
 export function passLineText(pass: number, unresolved: number, userBlocked: number): string {
   return (
-    `Managing the dataflow — pass ${pass}` +
+    `Managing the dataflow: pass ${pass}` +
     (unresolved ? ` · ${plural(unresolved, "node")} left` : "") +
     (userBlocked ? ` · waiting for you on ${plural(userBlocked, "node")}` : "")
   );

@@ -136,7 +136,7 @@ class SolveBatch:
         self.session_deadline_s = agents_budgets.solve_session_deadline_s()
         self.session_wait_s = agents_budgets.solve_session_wait_s()
         self.deadline_reason = (
-            f"the batch's time budget ({max(1, self.deadline_s // 60)} min) was spent — "
+            f"the batch's time budget ({max(1, self.deadline_s // 60)} min) was spent; "
             "Retry continues from here"
         )
         # dev/114: ONE grounding base per batch (catalog paths, mission + plan
@@ -322,7 +322,7 @@ class SolveBatch:
         # there was never anything to write.
         node = self.nodes_by_id.get(node_id) or {}
         reason = (
-            f"{node.get('type')} is wired, not written — this kind has no "
+            f"{node.get('type')} is wired, not written: this kind has no "
             "content to author; it renders or forwards its input"
         )
         result = {"status": "solved",
@@ -361,9 +361,9 @@ class SolveBatch:
             return self._verified_not_executable(node_id, outcome, evidence, trail)
         if outcome.get("verdict") == "infrastructure":
             reason = (
-                "not verified — sandbox unreachable: "
+                "not verified (sandbox unreachable): "
                 + str(evidence.get("detail") or "")[:160]
-                + " — nothing was run or written; Retry when the sandbox is back"
+                + "; nothing was run or written; Retry when the sandbox is back"
             )[:300]
             self.results[node_id] = {"status": "pending", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
@@ -373,7 +373,7 @@ class SolveBatch:
             # none). Nothing was generated or written, so this is PENDING
             # with the reason, never a failure of content.
             reason = (
-                "awaiting your dataset selection — "
+                "awaiting your dataset selection: "
                 + str(evidence.get("detail") or "")[:240]
             )[:300]
             remedy = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
@@ -405,14 +405,14 @@ class SolveBatch:
         candidate = outcome.get("candidate") or ""
         if evidence.get("documentUnchecked") and not evidence.get("documentPassive"):
             reason = (
-                "written nothing — " + str(evidence["documentUnchecked"])[:200]
+                "written nothing: " + str(evidence["documentUnchecked"])[:200]
                 + "; Play the dataflow to see whether it renders"
             )[:300]
             self.results[node_id] = {"status": "pending", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
         verification = (
             {"status": "document-valid",
-             "reason": f"{evidence['documentValidated']} document validated — not executed"}
+             "reason": f"{evidence['documentValidated']} document validated, not executed"}
             if evidence.get("documentValidated") else
             {"status": "not-executable", "reason": str(evidence.get("detail") or "")[:300]}
         )
@@ -449,14 +449,14 @@ class SolveBatch:
             # dev/118 live fix: the upstream has no content (it failed, or
             # is not a target) — this node waits, pending with the reason;
             # Retry runs it once the upstream is solved or filled.
-            reason = f"waiting — {raw_detail[:240]}" if raw_detail else "waiting — an upstream node has no content yet"
+            reason = f"waiting: {raw_detail[:240]}" if raw_detail else "waiting: an upstream node has no content yet"
             self.results[node_id] = {"status": "pending", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "pending", "reason": reason, **trail}
         if kind == "precondition":
             # dev/118 (DEC-075): the runner refused the SLICE (the 25-node
             # bound, a cycle) — a bound on validation, not a failure of the
             # content: skipped, with the bound named.
-            reason = f"skipped — {raw_detail[:240]}" if raw_detail else "skipped — validation refused the slice"
+            reason = f"skipped: {raw_detail[:240]}" if raw_detail else "skipped: validation refused the slice"
             self.results[node_id] = {"status": "skipped", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "skipped", "reason": reason, **trail}
         # dev/127: a refusal's head names the literal; a traceback is read
@@ -482,7 +482,7 @@ class SolveBatch:
         )
         bound = agents_rounds._stopped_by_clause(outcome.get("stoppedBy"))
         err = (
-            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound} — "
+            f"not fixed after {rounds} attempt{'s' if rounds != 1 else ''}{bound}: "
             f"{kind}: {detail[:200 - len(remedy)] if remedy else detail}{remedy}"
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
@@ -511,7 +511,7 @@ class SolveBatch:
             # dev/118 (DEC-075): written like before, and SAID to be unexecuted.
             result["verification"] = {
                 "status": "not-executable",
-                "reason": f"{node.get('type')} has no code the sandbox could run — written, not executed",
+                "reason": f"{node.get('type')} has no code the sandbox could run; written, not executed",
             }
         self.results[node_id] = result
         self.applied_contents.append({"nodeId": node_id, "content": text_out})
@@ -649,12 +649,12 @@ class SolveBatch:
                 rounds = outcome.get("rounds") or 0
                 line += f" · {outcome['verdict']} after {rounds} round{'s' if rounds != 1 else ''}"
             if outcome.get("reason") and outcome["status"] in ("pending", "skipped"):
-                line += f" — {str(outcome['reason'])[:120]}"
+                line += f": {str(outcome['reason'])[:120]}"
             lines.append(line)
             if outcome.get("verdict") == "fail":
                 for attempt in (outcome.get("attempts") or [])[:3]:
                     why = agents_rounds._attempt_why(attempt, limit=160)
-                    lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} — {why}")
+                    lines.append(f"  round {attempt.get('round')}: {attempt.get('kind')} ({why})")
                     if attempt.get("endpointEvidence"):
                         lines.append(f"    endpoint: {str(attempt['endpointEvidence'])[:200]}")
         lines = lines[:24]
@@ -678,11 +678,11 @@ class SolveBatch:
                 attempt_parts.append(part)
         if len(trailed) > agents_budgets._MAX_ATTEMPT_PARTS:
             lines.append(
-                f"{len(trailed) - agents_budgets._MAX_ATTEMPT_PARTS} more node(s) have attempt trails — "
+                f"{len(trailed) - agents_budgets._MAX_ATTEMPT_PARTS} more node(s) have attempt trails; "
                 "open each node's agent to read them"
             )
         if cancelled:
-            lines.append(f"cancelled — {len(self.unstarted)} node(s) not attempted")
+            lines.append(f"cancelled: {len(self.unstarted)} node(s) not attempted")
         if self.batch_reason:
             # ONE reason line for the batch (not six identical ones).
             lines.append(f"reason: {self.batch_reason}")
@@ -701,7 +701,7 @@ class SolveBatch:
                         if self.mode == "propose"
                         else f"Solved {solved} of {len(self.targets)} plan nodes."
                     )
-                    + (f" Cancelled — {len(self.unstarted)} not attempted." if cancelled else ""),
+                    + (f" Cancelled: {len(self.unstarted)} not attempted." if cancelled else ""),
                     content=[{
                         "type": "card",
                         "kind": "result",
@@ -768,14 +768,14 @@ class SolveBatch:
             if status == "proposed" and part is not None:
                 self.extra_parts.append(part)
                 reason = (
-                    f"specialist not installed — {specialist} ({resolution.coord}) is not "
-                    "installed in this project; an install proposal awaits review below — "
+                    f"specialist not installed: {specialist} ({resolution.coord}) is not "
+                    "installed in this project; an install proposal awaits review below; "
                     "Apply it, then Retry"
                 )
             else:
                 # dev/106: an unminted proposal is never claimed (the
                 # refusal text says what to do instead).
-                reason = f"specialist not installed — {text}"
+                reason = f"specialist not installed: {text}"
         else:
             reason = "no installed agent declares node.content.generate"
         self.batch_reason = reason

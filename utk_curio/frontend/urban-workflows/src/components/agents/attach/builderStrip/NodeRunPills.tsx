@@ -38,7 +38,7 @@ export const NodeRunPills: React.FC<{
               aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
               title={
                 needsUser
-                  ? "This node is waiting for you to confirm a source — open its Dataset Finder first"
+                  ? "This node is waiting for you to confirm a source: open its Dataset Finder first"
                   : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
               }
               disabled={needsUser || solveRunning || nodeSolving === nodeId}

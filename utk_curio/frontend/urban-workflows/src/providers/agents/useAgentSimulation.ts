@@ -47,7 +47,7 @@ export function useAgentSimulation(opts: {
             const edges = payload.createdEdges as Array<{ id: string; source: string; target: string }>;
             notifyAgentCanvasMutation({ kind: "edges-created", batchId: `sim:${edges.map((e) => e.id).join(",")}`, edges });
           } else if (name === "stage") {
-            narrate(`${String(payload.action)}${payload.label ? ` — ${String(payload.label)}` : ""}`);
+            narrate(`${String(payload.action)}${payload.label ? `: ${String(payload.label)}` : ""}`);
           } else if (name === "node_executed") {
             narrate(`executing upstream ${Number(payload.index) + 1}/${String(payload.total)}`);
           } else if (name === "generation_round") {

@@ -348,7 +348,7 @@ export const AgentBuilderStrip: React.FC<{
         <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
       ) : null}
       {!simBusy && pauseReason ? (
-        <div className={styles.hint}>Paused — {pauseReason.message} (Resume continues from here.)</div>
+        <div className={styles.hint}>Paused: {pauseReason.message} (Resume continues from here.)</div>
       ) : null}
       {notice ? <div className={styles.hint}>{notice}</div> : null}
       {error ? (

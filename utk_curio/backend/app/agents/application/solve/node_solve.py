@@ -189,7 +189,7 @@ def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
     a simple view, a spatial join) or presentation content with no validator. No round, no
     sandbox, no generation — nothing this loop could verify; say so and change nothing."""
     reason = (
-        f"{label!r} ({node.get('type')}) is wired, not written — this kind has no "
+        f"{label!r} ({node.get('type')}) is wired, not written: this kind has no "
         "content to author; it renders or forwards its input"
         if kind == workflow_spec.CONTENT_KIND_NONE else
         f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "

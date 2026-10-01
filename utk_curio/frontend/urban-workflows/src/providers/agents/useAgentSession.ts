@@ -137,7 +137,7 @@ export function useAgentSession(
     (attachmentId: string, e: unknown) => {
       const msg = e instanceof Error ? e.message : "run failed";
       const body = (e as { body?: { resetAt?: string; remedy?: AgentRemedy } } | null)?.body;
-      const reset = body?.resetAt ? ` — resets ${new Date(body.resetAt).toLocaleString()}` : "";
+      const reset = body?.resetAt ? ` (resets ${new Date(body.resetAt).toLocaleString()})` : "";
       appendTurns(attachmentId, [{
         role: "agent", text: `(error) ${msg}${reset}`, error: true,
         ...(body?.remedy ? { remedy: body.remedy } : {}),
