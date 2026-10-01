@@ -684,9 +684,7 @@ changes what the next one's nodes import, and the disk it costs has no owner.
 Without auth the one local user *is* the shared guest, so that rule applies
 only when auth is on and the everyday single-user install keeps working.
 
-The sandbox's own `POST /install` route is gone. Nothing in Curio called it,
-and it was a second, unrecorded path to `pip install` inside the interpreter
-that executes node code. Library installs go through the backend's
+The sandbox has no install route. Library installs go through the backend's
 `packages/infrastructure/pip_runner.py`, which is auth-gated and records what it installed per
 user.
 
@@ -1550,11 +1548,11 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/utils/renderOutcome.ts` | The empty-render decision every browser renderer calls (see [Render Outcomes](#render-outcomes)) |
 | `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
 | `src/ConnectionValidator.ts` | Edge validation logic |
-| `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `evaluationApi`, `trainingApi`); `authApi` lives at `src/utils/authApi.ts`; the packages client moved to `src/services/packages/` (memo dev/143) |
+| `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `evaluationApi`, `trainingApi`); `authApi` lives at `src/utils/authApi.ts` and the packages client in `src/services/packages/` |
 | `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` — THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe — the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime — the registry consumes the layer, never the reverse |
 | `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport` — the one sideload pathway — and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
-| `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog — a rendering surface over `usePackageCatalog({ kind: "project" })` since dev/143; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
-| `src/services/agents/` | The agents service layer (memo dev/142, re-derived on this branch): `agentsApi` + `agentStream` (the only two agent transports), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
+| `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog: a rendering surface over `usePackageCatalog({ kind: "project" })`; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
+| `src/services/agents/` | The agents service layer (memo dev/142): `agentsApi` + `agentStream` (the only two agent transports), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
 | `src/providers/agents/` | `AgentAttachmentsProvider` composing `useAgentSession`, `useAgentProposals`, `useAgentSolve`, `useAgentSimulation` and `useAgentNodeRuns`; imported from its barrel, `providers/agents` |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
@@ -1572,7 +1570,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/packages/repositories/archive.py` + `application/store_install.py` | The `.curio.zip` format (member safety, integrity hashing) and catalog-source-dir → archive → user-store copy |
 | `backend/app/packages/infrastructure/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
 | `backend/app/packages/domain/versions.py` + `application/resolution.py` | `merge_python_deps` (conflict-aware union across packages) and the package DAG over the store |
-| `backend/app/packages/service.py` | The facade every packages route and every other feature calls (mirrors `datasets/service.py`, `agents/service.py`); re-exports the use cases under `application/` (`store_install`, `project_packages`, `defaults_install`, `prune`, `templates`, `agent_reads`, …) and the cross-feature surface (spec readers, ids, manifest read, store paths, the runtime seams). The B1 shims and the `services.py` / `storage` / `manifest` / `resolver` / `installer` compatibility modules are gone since dev/143 B5; `tests/test_packages/test_layering.py` enforces the layers |
+| `backend/app/packages/service.py` | The facade every packages route and every other feature calls (mirrors `datasets/service.py`, `agents/service.py`); re-exports the use cases under `application/` (`store_install`, `project_packages`, `defaults_install`, `prune`, `templates`, `agent_reads`, …) and the cross-feature surface (spec readers, ids, manifest read, store paths, the runtime seams). `tests/test_packages/test_layering.py` enforces the layers |
 | `backend/app/packages/routes/` | `/api/packages/*` endpoints by resource (`store`, `catalog`, `factory`, `dependencies`, `projects`, `defaults`, `libraries`, `backend`) under one blueprint and one `_map_package_errors`; the route table is a contract test (`tests/test_packages/route_table.json`) |
 | `backend/app/packages/application/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
 | `backend/app/datasets/service.py` | `DatasetCatalogService`, the façade every dataset route calls |
@@ -1589,7 +1587,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
 | `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
-| `backend/app/agents/service.py` | The facade every agent route and every other feature calls (mirrors `datasets/service.py`, `packages/service.py`); re-exports the use cases under `application/` (the old `services.py` is gone since dev/142 was re-derived on this branch; `tests/test_agents/test_layering.py` enforces the layering) |
+| `backend/app/agents/service.py` | The facade every agent route and every other feature calls (mirrors `datasets/service.py`, `packages/service.py`); re-exports the use cases under `application/` (`tests/test_agents/test_layering.py` enforces the layering) |
 | `backend/app/agents/application/lifecycle.py` | Import/remove, seed, install with its `requiresAgents` closure, uninstall, publish/unpublish |
 | `backend/app/agents/application/catalog.py` | Catalog reads: facets, cards, definition bundles, the three listings, the choosable agents, the catalog settings listing |
 | `backend/app/agents/application/attachment_management.py` | Attach, detach, intent/title edits, session read/clear |
