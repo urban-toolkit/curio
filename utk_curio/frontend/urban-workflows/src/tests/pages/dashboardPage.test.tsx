@@ -41,6 +41,8 @@ jest.mock("reactflow", () => ({
   },
   ConnectionMode: { Loose: "loose" },
   useReactFlow: () => mockReactFlowInstance,
+  // useViewportMotionHint reads the flow's wrapper from the store.
+  useStoreApi: () => ({ getState: () => ({ domNode: null }) }),
 }));
 jest.mock("reactflow/dist/style.css", () => ({}), { virtual: true });
 jest.mock("../../components/UniversalNode", () => ({ __esModule: true, default: () => null }));
