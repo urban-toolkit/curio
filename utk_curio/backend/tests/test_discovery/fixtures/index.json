@@ -43,6 +43,34 @@
     },
     "status": 200
   },
+  "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&is_pano=true&start_captured_at=2023-01-01T00%3A00%3A00Z&limit=2000": {
+    "file": "mapillary/03.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&limit=2000": {
+    "file": "mapillary/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/images?image_ids=1008112840327216%2C1020162146004439%2C1247565019285675%2C1262669307756764%2C1268008964105904%2C137275552708784&fields=id%2Cthumb_256_url": {
+    "file": "mapillary/04.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/map_features?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Cobject_value%2Cobject_type%2Cgeometry%2Cfirst_seen_at%2Clast_seen_at&limit=2000": {
+    "file": "mapillary/05.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
   "https://hub.arcgis.com/api/v3/datasets/a971ab89a5ca4da2ae44b5f55b06edfd": {
     "file": "arcgis/02.json",
     "headers": {
@@ -439,6 +467,102 @@
   },
   "https://portal.test/timeout.csv": {
     "error": "timeout"
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-lhZc-BAgmEK33PqsLVwc_kO61aLgHxVh2N6NGxVn5Cu9pZ99kLMSK6cRbHQao8FR58m3v5VfoIGcu0Um1BPV1XtHGsSg-sgdQGswl8RNWe4EqgB91F_TdCWaNl9q2CXyNM-FHGb10bxQd-3v7Qw?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdrQGenJDBez0nQ7aZINOs1dPa8uMnD-Pcsx7l-irVsNhbOKdHO3rpUxHAbuD8IB3cc&ccb=10-5&oh=00_AQMfIW24VduZYlfcl0YJO-yTipk0Ir5eeC8bb0V5rqc8wQ&oe=6AE6584A&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-lhZc-BAgmEK33PqsLVwc_kO61aLgHxVh2N6NGxVn5Cu9pZ99kLMSK6cRbHQao8FR58m3v5VfoIGcu0Um1BPV1XtHGsSg-sgdQGswl8RNWe4EqgB91F_TdCWaNl9q2CXyNM-FHGb10bxQd-3v7Qw?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdrQGenJDBez0nQ7aZINOs1dPa8uMnD-Pcsx7l-irVsNhbOKdHO3rpUxHAbuD8IB3cc&ccb=10-5&oh=00_AQNSDGPXXcnVzCjCim0UEeLNt47srh7yFbDxro-qS_yfXA&oe=6AE6584A&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-oRJWNaxpQXDCfRwKlc0mnFLR9HpUkKLtMopDjvTNvpGhQGZPsN0-8VhMlyCmBu3oasTATRQ7i7DwhZW1WVTlAyAGaboh7uN7CLLCcJndi8E3hFRakB3iQcsQU3hsEeoPgAdc_SN8fbw8eN6NSvkM?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdpGm1xDJkCQw1TQnUdsvPLtWi-uGAsyDk6xrNMOCRGtKAT3E6OnkYe-F2EfhpSOsXQ&ccb=10-5&oh=00_AQMVSprmUU1-W1J7O-XMSlpE_NNeIqObZkH0hFk7Al9Ikg&oe=6AE6573C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-oRJWNaxpQXDCfRwKlc0mnFLR9HpUkKLtMopDjvTNvpGhQGZPsN0-8VhMlyCmBu3oasTATRQ7i7DwhZW1WVTlAyAGaboh7uN7CLLCcJndi8E3hFRakB3iQcsQU3hsEeoPgAdc_SN8fbw8eN6NSvkM?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdpGm1xDJkCQw1TQnUdsvPLtWi-uGAsyDk6xrNMOCRGtKAT3E6OnkYe-F2EfhpSOsXQ&ccb=10-5&oh=00_AQNflo_RQ1Yv4mtg9ZTN1FRyxp9EGgmpohYQVP-GbapScA&oe=6AE6573C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An8u02QY5Nw560hoTaMjvcwQSvYFM0dHuzRj0DvBvamF5Ww7_sQNOlM58UzboXt8zxM4kLju11QwaZOBrmI9SOULppickovSTOsd3MVmfa4_XE1WF2iEG1lukRBFdTg7OMeqm0amXPe7W7BDN6hvmGQ?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdrCVJFdpKRWLIJTXlurfykK4lA9Ardt8LvvsvbZHjm8ac4mCjeUvCkTR_n07Ih8E8E&ccb=10-5&oh=00_AQOlGB4qZ4ZbD6Gx524B6tFnd4ILrWNM7XGBbU9Fz9899Q&oe=6AE64C74&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An8u02QY5Nw560hoTaMjvcwQSvYFM0dHuzRj0DvBvamF5Ww7_sQNOlM58UzboXt8zxM4kLju11QwaZOBrmI9SOULppickovSTOsd3MVmfa4_XE1WF2iEG1lukRBFdTg7OMeqm0amXPe7W7BDN6hvmGQ?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdrCVJFdpKRWLIJTXlurfykK4lA9Ardt8LvvsvbZHjm8ac4mCjeUvCkTR_n07Ih8E8E&ccb=10-5&oh=00_AQNe8BY-ldNmgr6SkfO1WW3FyJ8zRNkJDdkCh_5Jp0mg0g&oe=6AE64C74&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_1JJ1izAsR8McOb8zJ-WKlpoHBThZIUcCV_TU32ClCACSuWa0LZrSu43pACaFIxMhN6872eeU_bZbm751-yzTDPm_Qd8cUdcT84ogHJNA5B6EgnE7JVUQPs4L9dLjF_YNGkZiVwl3nfTiI9-HF9V4?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdqwIsrpVpRX_Dsp1PSjhauME0dimbnAAvretxSpOfk-nRc7ks86rcQnZtzZmE8KsHY&ccb=10-5&oh=00_AQMOmX0vjpSVCFjX7wmGc0IzFJYwfMQp9khmfcLnYuQTRg&oe=6AE66A8C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_1JJ1izAsR8McOb8zJ-WKlpoHBThZIUcCV_TU32ClCACSuWa0LZrSu43pACaFIxMhN6872eeU_bZbm751-yzTDPm_Qd8cUdcT84ogHJNA5B6EgnE7JVUQPs4L9dLjF_YNGkZiVwl3nfTiI9-HF9V4?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdqwIsrpVpRX_Dsp1PSjhauME0dimbnAAvretxSpOfk-nRc7ks86rcQnZtzZmE8KsHY&ccb=10-5&oh=00_AQMJejoo3_Hw1crFYoB0kkwTbIlCEU-AN4c8_nHvfTwiIQ&oe=6AE66A8C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_ep5apGTVSNopGiqd9U2qLDfkg3-RcZ4-5yhlzUuxjQGaysMTKYHwPhx20HoqMBPr0VDzO3-zs-35Z8CIh65924y6WxCEUbnCEyvmaEk_ztA50e_fddSi2LM9-fDPIt85v1CnpvmQjhbzJqrK6tA?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdpUL_lIHEKDpbtw98b4HZzUzkdE6pgpCb60p_frtSyHdhd_JpCmWD-EM_c4lBQN3Lo&ccb=10-5&oh=00_AQMOZwUOtZQcSZQmtU-RE8qY_nutSwCBnSCrpL0ecwW6Hg&oe=6AE65496&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_ep5apGTVSNopGiqd9U2qLDfkg3-RcZ4-5yhlzUuxjQGaysMTKYHwPhx20HoqMBPr0VDzO3-zs-35Z8CIh65924y6WxCEUbnCEyvmaEk_ztA50e_fddSi2LM9-fDPIt85v1CnpvmQjhbzJqrK6tA?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdpUL_lIHEKDpbtw98b4HZzUzkdE6pgpCb60p_frtSyHdhd_JpCmWD-EM_c4lBQN3Lo&ccb=10-5&oh=00_AQOVvdLMfoTIcbE73XWKtMkCmFOTu_2KvrvgSX5GbUAcEg&oe=6AE65496&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_zF1xGCmUyLreecS-Oze55PwPqzKpg4dkJk73LmdSPL_QbX4SlZpuu0uwzAzhHB1r6ruZO5z8yPgzS8qN5m7JsKHAU2pL14693xYsVcDsa_fbS6ynbHYiIZ5F9eli5UziPSctPniTvJIwZkttVZ-E?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdqUyHV1-wHf1ZwKn0w3znqfwMsinQ6lBDm4v5H1O5Yz2CxZPIosuQCg1w_PJgdKnrA&ccb=10-5&oh=00_AQNMQ_QogvZEmWvvM02QI8jh_WNQqjEWMqQN4W3ccXNxlg&oe=6AE666BD&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_zF1xGCmUyLreecS-Oze55PwPqzKpg4dkJk73LmdSPL_QbX4SlZpuu0uwzAzhHB1r6ruZO5z8yPgzS8qN5m7JsKHAU2pL14693xYsVcDsa_fbS6ynbHYiIZ5F9eli5UziPSctPniTvJIwZkttVZ-E?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdqUyHV1-wHf1ZwKn0w3znqfwMsinQ6lBDm4v5H1O5Yz2CxZPIosuQCg1w_PJgdKnrA&ccb=10-5&oh=00_AQNHIYyQ_C-5gU2r4AsIXWjLff8PeobiFhq3S3qHLp81Xw&oe=6AE666BD&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
   },
   "https://sentinel-cogs.s3.us-west-2.amazonaws.com/?list-type=2&max-keys=1000&prefix=sentinel-s2-l2a-cogs%2F16%2FT%2FDM%2F2024%2F7%2F": {
     "file": "s3/01.xml",

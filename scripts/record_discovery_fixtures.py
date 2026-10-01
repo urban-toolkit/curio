@@ -86,6 +86,26 @@ SYNTHETIC_HEADS = {
 #: What the index probes with, restated here only to spell the fixture key.
 PROBE_RANGE = "bytes=0-65535"
 
+#: Services asked over HTTP: each request is recorded as the service sends it,
+#: with the answers a person gives, normalized as the app normalizes them.
+#: Images are not: each image URL is indexed to the synthetic JPEG, so the
+#: corpus holds Mapillary's answers and none of its photos. Needs the
+#: recorder's own token in CURIO_MAPILLARY_TOKEN; it is sent as a header and
+#: appears in no recorded URL or body.
+LINCOLN_PARK = [-87.642, 41.918, -87.639, 41.92]
+SERVICE_PLAN = {
+    "source.mapillary.imagery@1": {
+        "slug": "mapillary",
+        "token_env": "CURIO_MAPILLARY_TOKEN",
+        "asks": [
+            ("images", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}, "size": "256", "maxImages": 6}),
+            ("images", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}, "size": "256", "maxImages": 6,
+                        "imageType": "panoramas", "captured": {"start": "2023-01-01"}}),
+            ("map-features", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}}),
+        ],
+    },
+}
+
 
 class RecordingTransport:
     """Wraps the real transport and writes what it sees."""
@@ -164,6 +184,61 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
                 }
 
 
+class ServiceRecordingTransport(RecordingTransport):
+    """Records a service's API answers; indexes each image it downloads to the
+    synthetic JPEG instead of fetching it."""
+
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        blob = (FIXTURES / SYNTHETIC_HEADS["jpg"]).read_bytes()
+        self.index[url] = {
+            "file": SYNTHETIC_HEADS["jpg"],
+            "status": 200,
+            "headers": {"Content-Type": "image/jpeg", "Content-Length": str(len(blob))},
+        }
+        sink(blob)
+        return egress.DownloadResult(
+            url=url, final_url=url, status=200, content_type="image/jpeg",
+            bytes_written=len(blob), sha256="", headers={},
+        )
+
+
+def record_services(slug_filter: str | None, index: dict) -> None:
+    import os
+    import tempfile
+    from urllib.parse import urlsplit
+
+    from utk_curio.backend.app.discovery.domain import parameters as P
+    from utk_curio.backend.app.discovery.infrastructure.transport import CredentialedTransport
+    from utk_curio.backend.app.discovery.providers import build_service
+
+    for dir_name, plan in SERVICE_PLAN.items():
+        if slug_filter and plan["slug"] != slug_filter:
+            continue
+        manifest = load_source_manifest(REPO / "discovery" / dir_name)
+        token = os.environ.get(plan["token_env"])
+        if not token:
+            print(f"!!  {manifest.name}: set {plan['token_env']} to record it - skipped")
+            continue
+        print(f"\n==  {manifest.name}  ({plan['slug']})")
+        credential = f"{manifest.auth.header_name}:{manifest.auth.value_prefix or ''}{token}"
+        transport = CredentialedTransport(
+            ServiceRecordingTransport(plan["slug"], index), credential,
+            hosts=(urlsplit(manifest.provider.base_url).hostname,),
+        )
+        service = build_service(manifest, transport)
+        for resource_id, raw in plan["asks"]:
+            values = P.validate_values(manifest.declared_parameters(resource_id), raw)
+            with tempfile.TemporaryDirectory() as tmp:
+                answer = service.load(manifest.resource(resource_id), values, Path(tmp))
+            count = len(answer.images) if hasattr(answer, "images") else sum(layer.features for layer in answer)
+            print(f"    {resource_id}: {count} recorded")
+        for entry in index.values():
+            assert token not in json.dumps(entry), "a recorded entry holds the token"
+
+
 def record(slug_filter: str | None) -> None:
     index_path = FIXTURES / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.is_file() else {}
@@ -199,6 +274,7 @@ def record(slug_filter: str | None) -> None:
                 print(f"    describe failed: {type(exc).__name__}: {exc}")
 
     record_storage(slug_filter, index)
+    record_services(slug_filter, index)
 
     FIXTURES.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -208,6 +284,6 @@ def record(slug_filter: str | None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--only", help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface)"
+        "--only", help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary)"
     )
     record(parser.parse_args().only)
