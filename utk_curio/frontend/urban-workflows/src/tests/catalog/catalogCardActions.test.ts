@@ -78,6 +78,14 @@ describe("catalog card actions", () => {
     ]);
   });
 
+  test("a link-only source offers Add by link, then its details", () => {
+    // Its page takes the link, so it has a page to open even though it has
+    // nothing to browse (#439).
+    expect(
+      discoverySourceCardActions({ browsable: false, byLink: true }).map((a) => a.id),
+    ).toEqual(["add-by-link", "view-details"]);
+  });
+
   test("publishing is never a menu row", () => {
     // `CatalogPublishPill` puts a confirmation in front of Publish and
     // Unpublish because both write to the whole deployment's catalog. A menu

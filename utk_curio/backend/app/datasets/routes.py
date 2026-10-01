@@ -117,6 +117,15 @@ def preview_dataset(dataset_id: str):
     return jsonify(payload), 200
 
 
+@datasets_bp.route("/datasets/<dataset_id>/extent", methods=["GET"])
+@require_auth
+@_map_catalog_errors
+def dataset_extent(dataset_id: str):
+    """``{datasetId, title, box}``: the WGS84 box the dataset covers, or a null
+    box when it has no geometry."""
+    return jsonify(_service().extent(dataset_id)), 200
+
+
 @datasets_bp.route("/datasets/<dataset_id>/usage", methods=["GET"])
 @require_auth
 @_map_catalog_errors

@@ -9,6 +9,7 @@ import {
 import {
   DISCOVERY_AUTH_LABEL,
   DISCOVERY_PROVIDER_LABEL,
+  isLinkSource,
   unsearchableReason,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
@@ -108,7 +109,7 @@ const DiscoveryDrawerContent: React.FC<{
         ) : null
       }
       primaryAction={
-        blocked ? (
+        blocked && !isLinkSource(source) ? (
           <p className={styles.drawerNote}>{blocked}</p>
         ) : (
           <button
@@ -116,7 +117,7 @@ const DiscoveryDrawerContent: React.FC<{
             className={styles.addToPaletteBtn}
             onClick={() => onBrowse(source)}
           >
-            Browse datasets
+            {isLinkSource(source) ? "Add by link" : "Browse datasets"}
           </button>
         )
       }

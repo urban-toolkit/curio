@@ -178,6 +178,9 @@ export interface DatasetDiscoverySource {
   fingerprint?: string;
   /** The person downloaded the file and imported it; Curio did not fetch it. */
   manual?: boolean;
+  /** The answers the download was narrowed by, such as an area, by id. */
+  parameters?: Record<string, unknown>;
+  parametersHash?: string;
 }
 
 /** A collection's kind. Mirrors the Discovery Catalog's collection `RESOURCE_KINDS`. */

@@ -155,6 +155,13 @@ class DiscoveryService:
     def _credential_for(self, manifest: DiscoverySourceManifest) -> str | None:
         return credentials.credential_header(self.user, manifest)
 
+    def search_places(self, q: str) -> dict[str, Any]:
+        """Places for the area field: names in, boxes and OSM area names out."""
+        from utk_curio.backend.app.discovery.application import places
+
+        transport = self._transport or transport_mod.build_transport(budget=self._budget)
+        return {"places": places.search_places(transport, q)}
+
     def key_rows(self) -> list[dict[str, Any]]:
         """API Settings' Discovery Catalog section: every key slot, booleans only."""
         return credentials.key_rows(self.user, self._catalog.manifests())

@@ -35,7 +35,9 @@ export interface DiscoveryResourceRowProps {
    *  page. Omitted on a single-source page, where it would repeat. */
   showSource?: boolean;
   iconUrl?: string | null;
-  onDownload?: (resource: Row, format: string) => void;
+  /** *parameters* are the answers to what the row asks, when it was narrowed
+   *  before its download (an area, say). */
+  onDownload?: (resource: Row, format: string, parameters?: Record<string, unknown>) => void;
   /** The download in flight or just finished for this row, if any. */
   job?: DiscoveryAcquireJob;
   onCancel?: (resource: Row) => void;
@@ -79,6 +81,12 @@ export function DiscoveryResourceRow({
 }: DiscoveryResourceRowProps) {
   const [format, setFormat] = React.useState<string>(resource.formats[0] ?? "");
   const [adding, setAdding] = React.useState(false);
+  // A portal row that asks something optional (an area) downloads whole in one
+  // click, and is narrowed first from its own dialog.
+  const [narrowing, setNarrowing] = React.useState(false);
+  const parameters = resource.parameters ?? [];
+  const asksSomething = parameters.length > 0;
+  const mustAsk = parameters.some((p) => p.required);
   const [filesOpen, setFilesOpen] = React.useState(false);
   // A portal row is held one format at a time: holding the CSV is not holding
   // the GeoJSON, so the row offers the format picked and not yet held. A
@@ -109,7 +117,7 @@ export function DiscoveryResourceRow({
 
   const add = () => {
     if (!storage) return;
-    if (narrowableFields(resource, splitBy).length > 0) setAdding(true);
+    if (narrowableFields(resource, splitBy).length > 0 || asksSomething) setAdding(true);
     else storage.onAdd(resource, { title: resource.name });
   };
 
@@ -230,15 +238,27 @@ export function DiscoveryResourceRow({
                 Add to Data Catalog
               </button>
             ) : (
-              <button
-                type="button"
-                className={styles.download}
-                disabled={!onDownload || !resource.acquirable}
-                title={onDownload ? undefined : "Downloading is not available here"}
-                onClick={() => onDownload?.(resource, format)}
-              >
-                Download
-              </button>
+              <>
+                {asksSomething && onDownload && resource.acquirable ? (
+                  <button
+                    type="button"
+                    className={styles.filesToggle}
+                    title="Download only part of it, such as the rows inside an area"
+                    onClick={() => setNarrowing(true)}
+                  >
+                    Narrow…
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.download}
+                  disabled={!onDownload || !resource.acquirable}
+                  title={onDownload ? undefined : "Downloading is not available here"}
+                  onClick={() => (mustAsk ? setNarrowing(true) : onDownload?.(resource, format))}
+                >
+                  Download
+                </button>
+              </>
             )}
           </>
         )}
@@ -266,6 +286,19 @@ export function DiscoveryResourceRow({
           onAdd={(body) => {
             setAdding(false);
             storage.onAdd(resource, body);
+          }}
+        />
+      ) : null}
+
+      {narrowing && !storage ? (
+        <DiscoveryAddDialog
+          resource={resource}
+          splitBy={[]}
+          verb="download"
+          onCancel={() => setNarrowing(false)}
+          onAdd={(body) => {
+            setNarrowing(false);
+            onDownload?.(resource, format, body.parameters);
           }}
         />
       ) : null}

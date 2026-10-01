@@ -162,6 +162,21 @@ export interface DiscoveryParameter {
   maxAreaKm2?: number;
 }
 
+/** One answer of the place search: its box, and its own OSM name. */
+export interface DiscoveryPlace {
+  name: string;
+  label: string;
+  /** [west, south, east, north], WGS84. */
+  box: number[];
+  kind: string;
+  /** An administrative boundary, which is what a named area must be. */
+  boundary: boolean;
+}
+
+export interface DiscoveryPlacesResponse {
+  places: DiscoveryPlace[];
+}
+
 /** An area answer: a WGS84 box, or named OpenStreetMap areas. */
 export type DiscoveryAreaValue =
   | { box: [number, number, number, number]; label?: string }
@@ -250,9 +265,17 @@ export function isSearchable(source: DiscoverySourceRow): boolean {
 }
 
 /** Why a source cannot be searched, phrased for a user. Null when it can. */
+/** A source with nothing to search, whose page adds a file by its link. */
+export function isLinkSource(source: DiscoverySourceRow): boolean {
+  return source.provider === "direct";
+}
+
 export function unsearchableReason(source: DiscoverySourceRow): string | null {
+  if (isLinkSource(source)) {
+    return `${source.name} has nothing to browse: it adds a file by its link.`;
+  }
   if (!source.capabilities.search) {
-    return `${source.name} has nothing to browse - paste a link to a file instead.`;
+    return `${source.name} has nothing to browse.`;
   }
   if (source.auth.required && !source.auth.present) {
     return `${source.name} needs a token before it can be searched.`;
@@ -375,6 +398,8 @@ export interface DiscoveryAcquireBody {
   refresh?: boolean;
   filters?: Record<string, DiscoveryFieldFilter>;
   files?: string[];
+  /** The answers to what the resource declares, such as an area. */
+  parameters?: Record<string, unknown>;
 }
 
 /** Where a collection's files are, from `GET /collections/<id>`. */

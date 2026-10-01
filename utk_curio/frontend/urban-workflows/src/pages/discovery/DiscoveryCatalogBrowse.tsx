@@ -19,6 +19,7 @@ import {
   notifyDatasetCatalogRefresh,
   partialFailureMessage,
   scanningMessage,
+  isLinkSource,
   unsearchableReason,
   useDiscoveryAcquire,
   useDiscoveryCatalog,
@@ -176,6 +177,7 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   const runSourceAction = (id: CatalogCardActionId, source: DiscoverySourceRow) => {
     switch (id) {
       case "browse-datasets":
+      case "add-by-link":
         openSource(source);
         return;
       case "view-details":
@@ -351,7 +353,7 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
                 }
                 onViewDataset={(id) => openDatasetDetails(id)}
                 storage={storageContext(sourcesById.get(resource.sourceId), resource.resourceId)}
-                onDownload={(r, fmt) => {
+                onDownload={(r, fmt, parameters) => {
                   // A federated row carries the source ID; the API wants the
                   // versioned dirName, which only the roster knows.
                   const dir = sourcesById.get(r.sourceId)?.dirName;
@@ -361,6 +363,7 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
                     void acquisition.start(dir, r.resourceId, {
                       format: fmt,
                       title: r.name,
+                      ...(parameters ? { parameters } : {}),
                     });
                 }}
                 onCancel={(r) => {
@@ -427,6 +430,7 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
           ariaLabel="Source actions"
           items={discoverySourceCardActions({
             browsable: unsearchableReason(contextMenu.source) == null,
+            byLink: isLinkSource(contextMenu.source),
           })}
           onSelect={(id) => runSourceAction(id as CatalogCardActionId, contextMenu.source)}
           onDismiss={() => setContextMenu(null)}

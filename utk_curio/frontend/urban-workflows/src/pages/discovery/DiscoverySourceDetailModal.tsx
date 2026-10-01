@@ -5,6 +5,7 @@ import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeade
 import {
   DISCOVERY_AUTH_LABEL,
   DISCOVERY_PROVIDER_LABEL,
+  isLinkSource,
   unsearchableReason,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
@@ -51,13 +52,13 @@ export const DiscoverySourceDetailModal: React.FC<DiscoverySourceDetailModalProp
         actions={
           // The drawer's primary action. A source that cannot be searched says
           // why in the body instead, as the drawer does.
-          blocked ? null : (
+          blocked && !isLinkSource(source) ? null : (
             <button
               type="button"
               className={styles.exportButton}
               onClick={() => onBrowse(source)}
             >
-              Browse datasets
+              {isLinkSource(source) ? "Add by link" : "Browse datasets"}
             </button>
           )
         }

@@ -13,6 +13,7 @@ import {
   acquireKey,
   discoveryCatalogApi,
   declaredResourceFor,
+  isLinkSource,
   isStorageSource,
   notifyDatasetCatalogRefresh,
   unsearchableReason,
@@ -21,6 +22,7 @@ import {
   useStorageListing,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
+import { DiscoveryLinkForm } from "./DiscoveryLinkForm";
 import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
 import { DiscoverySourceIcon } from "./DiscoverySourceIcon";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
@@ -168,7 +170,13 @@ export const DiscoverySourceDetail: React.FC = () => {
         </div>
       </CatalogDetailHeader>
 
-      {blocked ? (
+      {isLinkSource(source) ? (
+        <DiscoveryLinkForm
+          source={source}
+          acquisition={acquisition}
+          onViewDataset={(id) => openDatasetDetails(id)}
+        />
+      ) : blocked ? (
         <div className={styles.empty}>{blocked}</div>
       ) : (
         <>
@@ -243,7 +251,7 @@ export const DiscoverySourceDetail: React.FC = () => {
                 iconUrl={source.iconUrl}
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
                 onViewDataset={(id) => openDatasetDetails(id)}
-                onDownload={(r, fmt) =>
+                onDownload={(r, fmt, parameters) =>
                   // The portal's own title, or the dataset lands named after
                   // the remote FILE - "ijzp-q8t2.csv" rather than "Crimes -
                   // 2001 to Present", which is unreadable in the Data Catalog
@@ -251,6 +259,7 @@ export const DiscoverySourceDetail: React.FC = () => {
                   void acquisition.start(decoded, r.resourceId, {
                     format: fmt,
                     title: r.name,
+                    ...(parameters ? { parameters } : {}),
                   })
                 }
                 onCancel={(r) => acquisition.cancel(decoded, r.resourceId)}

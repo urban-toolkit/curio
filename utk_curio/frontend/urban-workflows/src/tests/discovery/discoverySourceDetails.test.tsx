@@ -69,6 +69,16 @@ const linkOnly = source({
   capabilities: { ...source().capabilities, search: false },
 });
 
+const tokenBlocked = source({
+  sourceId: 'source.c.portal',
+  dirName: 'source.c.portal@1',
+  name: 'Gamma Portal',
+  auth: {
+    mode: 'required-token', required: true, usesToken: true,
+    secretId: 'socrata.app-token', present: false, helpUrl: null,
+  },
+});
+
 let location = '';
 const LocationProbe: React.FC = () => {
   const loc = useLocation();
@@ -80,8 +90,8 @@ function renderPage() {
   apiFetch.mockImplementation((path: string) =>
     path.includes('/api/discovery/catalog')
       ? Promise.resolve({
-          sources: [source(), linkOnly],
-          facets: { provider: { socrata: 1, direct: 1 }, auth: {} },
+          sources: [source(), linkOnly, tokenBlocked],
+          facets: { provider: { socrata: 2, direct: 1 }, auth: {} },
         })
       : Promise.reject(new Error(`unexpected call: ${path}`))
   );
@@ -174,6 +184,26 @@ describe('a Discovery Catalog source has a details view', () => {
     expect(dialog.getByText(/has nothing to browse/)).toBeInTheDocument();
   });
 
+  test("a link-only source's Add by link opens the page that takes the link (#439)", async () => {
+    renderPage();
+    fireEvent.click(
+      within(await card('source.b.direct@1')).getByRole('button', { name: 'View details' })
+    );
+    fireEvent.click(within(detailsDialog()).getByRole('button', { name: 'Add by link' }));
+
+    expect(location).toBe('/catalog/discovery/source.b.direct%401');
+  });
+
+  test("a link-only source's drawer offers Add by link", async () => {
+    renderPage();
+    fireEvent.click(await card('source.b.direct@1'));
+    const drawer = document.querySelector('[data-curio-drawer-ctas]') as HTMLElement;
+    expect(within(drawer).queryByRole('button', { name: 'Browse datasets' })).toBeNull();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Add by link' }));
+
+    expect(location).toBe('/catalog/discovery/source.b.direct%401');
+  });
+
   test('closing it leaves the page as it was', async () => {
     renderPage();
     fireEvent.click(
@@ -200,14 +230,27 @@ describe('a Discovery Catalog card answers a right-click', () => {
     expect(within(detailsDialog()).getByRole('heading', { name: 'Alpha Portal' })).toBeInTheDocument();
   });
 
-  test('a source with nothing to browse offers only its details', async () => {
+  test('a source that cannot be searched offers only its details', async () => {
     renderPage();
-    fireEvent.contextMenu(await card('source.b.direct@1'));
+    fireEvent.contextMenu(await card('source.c.portal@1'));
 
     const menu = screen.getByRole('menu', { name: 'Source actions' });
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'View details',
     ]);
+  });
+
+  test('a link-only source offers Add by link, then its details', async () => {
+    renderPage();
+    fireEvent.contextMenu(await card('source.b.direct@1'));
+
+    const menu = screen.getByRole('menu', { name: 'Source actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Add by link',
+      'View details',
+    ]);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Add by link' }));
+    expect(location).toBe('/catalog/discovery/source.b.direct%401');
   });
 
   test('Browse datasets from the menu goes to the portal page', async () => {

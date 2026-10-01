@@ -3,6 +3,7 @@ import React from "react";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import {
   DISCOVERY_PROVIDER_LABEL,
+  isLinkSource,
   unsearchableReason,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
@@ -148,7 +149,7 @@ export function DiscoverySourceCard({
           >
             View details
           </button>
-          {unsearchableReason(source) == null ? (
+          {unsearchableReason(source) == null || isLinkSource(source) ? (
             <button
               className={styles.linkButton}
               type="button"
@@ -157,7 +158,7 @@ export function DiscoverySourceCard({
                 onBrowse();
               }}
             >
-              Browse datasets
+              {isLinkSource(source) ? "Add by link" : "Browse datasets"}
             </button>
           ) : null}
         </div>

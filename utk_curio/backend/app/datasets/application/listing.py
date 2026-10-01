@@ -693,6 +693,19 @@ class CatalogListing:
             "parts": parts,
         }
 
+    def extent(self, dataset_id: str) -> dict[str, Any]:
+        """The WGS84 box a dataset covers, or ``{"box": None}`` when it has none.
+
+        What the Discovery Catalog's area field offers as "the extent of a
+        dataset in your Data Catalog".
+        """
+        from utk_curio.backend.app.datasets.application.extent import dataset_extent
+
+        item = self._owner.get_dataset(dataset_id)
+        resolved = self._paths._resolve_item_path(item)
+        box = dataset_extent(Path(resolved), str(item.get("format") or "")) if resolved else None
+        return {"datasetId": dataset_id, "title": item.get("title") or dataset_id, "box": box}
+
     def download_target(
         self,
         dataset_id: str,

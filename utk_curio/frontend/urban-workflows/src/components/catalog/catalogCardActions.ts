@@ -33,6 +33,7 @@ export type CatalogCardActionId =
   | "remove-from-all-projects"
   | "update-all-projects"
   | "browse-datasets"
+  | "add-by-link"
   | "view-details";
 
 export interface CatalogCardAction {
@@ -90,12 +91,17 @@ export function packageCardActions(state: {
 export function discoverySourceCardActions(state: {
   /** Searchable by this account: `unsearchableReason` found nothing. */
   browsable: boolean;
+  /** A link-only source (Direct URL): its page takes a link instead. */
+  byLink?: boolean;
 }): CatalogCardAction[] {
   // A source that cannot be searched gets a sentence in the drawer's primary
   // slot, not a button, so the menu offers no primary either - the same rule
-  // as an installed, current package.
-  const primary: CatalogCardAction[] = state.browsable
-    ? [{ id: "browse-datasets", label: "Browse datasets" }]
-    : [];
+  // as an installed, current package. A link-only source has a page to open
+  // all the same: the one that takes the link.
+  const primary: CatalogCardAction[] = state.byLink
+    ? [{ id: "add-by-link", label: "Add by link" }]
+    : state.browsable
+      ? [{ id: "browse-datasets", label: "Browse datasets" }]
+      : [];
   return [...primary, VIEW_DETAILS];
 }

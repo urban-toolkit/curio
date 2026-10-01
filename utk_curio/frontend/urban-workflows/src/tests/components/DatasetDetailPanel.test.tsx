@@ -36,7 +36,11 @@ jest.mock("../../components/datasets/catalog/DatasetDataflowUsage", () => ({
   DatasetDataflowUsageSection: () => null,
 }));
 
-import { DatasetDetailPanel } from "../../components/datasets/catalog/DatasetDetailPanel";
+import {
+  DatasetDetailPanel,
+  parameterLabel,
+  parameterText,
+} from "../../components/datasets/catalog/DatasetDetailPanel";
 import { useDatasetLineage } from "../../services/datasetLineage/useDatasetLineage";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 import type {
@@ -521,5 +525,41 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     renderWithRouter(catalogItem({ origin: "imported" }));
 
     expect(screen.queryByText("Downloaded from")).not.toBeInTheDocument();
+  });
+
+  it("lists what a narrowed download was narrowed by", () => {
+    renderWithRouter(catalogItem({
+      origin: "imported",
+      discoverySource: {
+        ...discoverySource,
+        parameters: {
+          area: { box: [-87.64, 41.875, -87.62, 41.89], label: "The Loop" },
+          maxImages: 20,
+        },
+        parametersHash: "0123456789abcdef",
+      },
+    }));
+
+    expect(screen.getByText("Area")).toBeInTheDocument();
+    expect(screen.getByText("The Loop (-87.6400, 41.8750, -87.6200, 41.8900)")).toBeInTheDocument();
+    expect(screen.getByText("Max images")).toBeInTheDocument();
+    expect(screen.getByText("20")).toBeInTheDocument();
+  });
+});
+
+describe("what a dataset says it was narrowed by, as text", () => {
+  it("reads a parameter id as a label", () => {
+    expect(parameterLabel("area")).toBe("Area");
+    expect(parameterLabel("maxImages")).toBe("Max images");
+  });
+
+  it("reads a box, named areas, dates and values", () => {
+    expect(parameterText({ box: [-87.64, 41.875, -87.62, 41.89] })).toBe("-87.6400, 41.8750, -87.6200, 41.8900");
+    expect(parameterText({ names: { geocodeArea: "Chicago", areas: ["Loop", "Near North Side"] } }))
+      .toBe("Loop, Near North Side in Chicago");
+    expect(parameterText({ start: "2024-01-01", end: "2024-06-30" })).toBe("2024-01-01 to 2024-06-30");
+    expect(parameterText(["0", "90"])).toBe("0, 90");
+    expect(parameterText(true)).toBe("Yes");
+    expect(parameterText(false)).toBe("No");
   });
 });

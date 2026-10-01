@@ -8,6 +8,7 @@ import type {
   DiscoveryAcquireStart,
   DiscoveryCollectionStatus,
   DiscoveryKeysResponse,
+  DiscoveryPlacesResponse,
   DiscoveryResourceDetail,
   DiscoverySearchQuery,
   DiscoverySearchResponse,
@@ -34,6 +35,14 @@ function query(params: DiscoveryCatalogQuery): string {
 export const discoveryCatalogApi = {
   listCatalog(params: DiscoveryCatalogQuery = {}): Promise<DiscoveryCatalogResponse> {
     return apiFetch<DiscoveryCatalogResponse>(`/api/discovery/catalog${query(params)}`);
+  },
+
+  /** Places for an area field, from OpenStreetMap's geocoder (one request a
+   *  second leaves the server; answers are kept for a day). */
+  searchPlaces(q: string, signal?: AbortSignal): Promise<DiscoveryPlacesResponse> {
+    return apiFetch<DiscoveryPlacesResponse>(`/api/discovery/places?q=${encodeURIComponent(q)}`, {
+      signal,
+    });
   },
 
   /** The key slots API Settings lists, and the sources that send each one.

@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DiscoveryCatalogBrowse } from '../../pages/discovery/DiscoveryCatalogBrowse';
 import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
@@ -158,6 +158,29 @@ describe('DiscoveryCatalogBrowse', () => {
     expect(tile.queryByRole('button', { name: 'Browse datasets' })).toBeNull();
     expect(tile.queryByRole('button', { name: 'Open' })).toBeNull();
     expect(tile.getByRole('button', { name: 'View details' })).toBeInTheDocument();
+  });
+
+  test('a link-only source offers Add by link, which opens its page', async () => {
+    apiFetch.mockResolvedValue(
+      response([
+        source({
+          name: 'Direct URL',
+          provider: 'direct',
+          capabilities: { ...source().capabilities, search: false },
+        }),
+      ])
+    );
+    render(
+      <MemoryRouter initialEntries={['/catalog/discovery']}>
+        <Routes>
+          <Route path="/catalog/discovery" element={<DiscoveryCatalogBrowse />} />
+          <Route path="/catalog/discovery/:sourceDir" element={<div>source page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await screen.findAllByText('Alpha datasets.');
+    fireEvent.click(within(card('source.a.portal@1')).getByRole('button', { name: 'Add by link' }));
+    expect(screen.getByText('source page')).toBeInTheDocument();
   });
 
   test('a source that needs a token it does not have offers no browse either', async () => {

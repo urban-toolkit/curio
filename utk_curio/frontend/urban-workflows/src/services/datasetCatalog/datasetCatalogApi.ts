@@ -161,6 +161,11 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}${queryString(query)}`);
   },
 
+  /** The WGS84 box a dataset covers, or a null box when it has no location. */
+  extent(datasetId: string): Promise<{ datasetId: string; title: string; box: number[] | null }> {
+    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/extent`);
+  },
+
   preview(datasetId: string, query: DatasetPreviewQuery = {}): Promise<DatasetPreviewResponse> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${previewQueryString(query)}`);
   },

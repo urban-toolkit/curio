@@ -126,6 +126,18 @@ def list_discovery_catalog():
     return jsonify(payload), 200
 
 
+@discovery_bp.route("/places", methods=["GET"])
+@require_auth
+@_map_discovery_errors
+def search_discovery_places():
+    """Places for an area field, from OpenStreetMap's geocoder.
+
+    ``?q=``. Each place has its box and its own OSM name; at most one request
+    a second leaves this server, and answers are kept for a day.
+    """
+    return jsonify(_service().search_places(request.args.get("q") or "")), 200
+
+
 @discovery_bp.route("/keys", methods=["GET"])
 @require_auth
 @_map_discovery_errors

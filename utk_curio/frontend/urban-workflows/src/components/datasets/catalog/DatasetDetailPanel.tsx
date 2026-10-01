@@ -259,6 +259,33 @@ const LineageMainSection: React.FC<{
   );
 };
 
+
+/** A parameter's id as a label: "area" is "Area", "maxImages" is "Max images". */
+export function parameterLabel(id: string): string {
+  const words = id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a download was narrowed by, as text: a place or a box, dates, values. */
+export function parameterText(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const v = value as Record<string, unknown>;
+    if (Array.isArray(v.box)) {
+      const box = (v.box as number[]).map((n) => n.toFixed(4)).join(", ");
+      return v.label ? `${String(v.label)} (${box})` : box;
+    }
+    if (v.names && typeof v.names === "object") {
+      const names = v.names as { geocodeArea?: string; areas?: string[] };
+      return `${(names.areas ?? []).join(", ")} in ${names.geocodeArea ?? ""}`;
+    }
+    if ("start" in v || "end" in v) return `${String(v.start ?? "")} to ${String(v.end ?? "")}`.trim();
+    return JSON.stringify(v);
+  }
+  if (Array.isArray(value)) return value.map(String).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
 export interface DatasetDetailPanelProps {
   dataset: DatasetCatalogItem | null;
   loading?: boolean;
@@ -614,6 +641,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                     <dd>{discovered.sourcePath}</dd>
                   </div>
                 ) : null}
+                {Object.entries(discovered.parameters ?? {}).map(([id, value]) => (
+                  <div key={id}>
+                    <dt>{parameterLabel(id)}</dt>
+                    <dd>{parameterText(value)}</dd>
+                  </div>
+                ))}
                 {discovered.fetchedAt ? (
                   <div>
                     <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
