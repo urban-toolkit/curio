@@ -22,11 +22,11 @@ import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",
-  coord: "agent.node-explainer@1.0.0",
+  coord: "agent.my-explainer@1.0.0",
   target: { kind: "canvas" as const },
   sessionId: "s1234567890",
   revision: 1,
-  name: "Node Explainer",
+  name: "My Explainer",
   category: "node",
   hooks: ["node"],
   intent: "Explain the selected node's code and outputs.",
@@ -77,7 +77,7 @@ describe("an agent's link to a Curio page", () => {
 describe("AgentChatPanel", () => {
   it("renders the concept header: name and target", () => {
     renderPanel();
-    expect(screen.getByText("Node Explainer")).toBeInTheDocument();
+    expect(screen.getByText("My Explainer")).toBeInTheDocument();
     expect(screen.getByText(/attached to canvas/i)).toBeInTheDocument();
   });
 
@@ -320,9 +320,9 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     renderPanel({ attachment: titled, onSaveTitle: jest.fn() });
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
-    ).toHaveTextContent("Node Explainer: Dataset Import Help");
+    ).toHaveTextContent("My Explainer: Dataset Import Help");
     expect(
-      screen.getByRole("dialog", { name: "Chat with Node Explainer: Dataset Import Help" }),
+      screen.getByRole("dialog", { name: "Chat with My Explainer: Dataset Import Help" }),
     ).toBeInTheDocument();
   });
 
@@ -330,13 +330,13 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     const first = renderPanel({ onSaveTitle: jest.fn() });
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
-    ).toHaveTextContent(/^Node Explainer$/);
+    ).toHaveTextContent(/^My Explainer$/);
     first.unmount();
     renderPanel({ attachment: titled });
     expect(
       screen.queryByRole("button", { name: "Rename conversation title" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Node Explainer: Dataset Import Help")).toBeInTheDocument();
+    expect(screen.getByText("My Explainer: Dataset Import Help")).toBeInTheDocument();
   });
 
   it("a single click swaps only the custom portion for an input, prefix fixed", () => {
@@ -346,7 +346,7 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     expect(input).toHaveValue("Dataset Import Help");
     expect(input).toHaveAttribute("maxlength", "40");
     // The template-name prefix stays as static text, not inside the input.
-    expect(screen.getByText("Node Explainer:")).toBeInTheDocument();
+    expect(screen.getByText("My Explainer:")).toBeInTheDocument();
   });
 
   it("Enter commits the trimmed title and shows it optimistically", async () => {
@@ -361,7 +361,7 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     expect(onSaveTitle).toHaveBeenCalledWith("Renamed Chat");
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
-    ).toHaveTextContent("Node Explainer: Renamed Chat");
+    ).toHaveTextContent("My Explainer: Renamed Chat");
   });
 
   it("blur commits too, and Enter + blur together save only once", async () => {
@@ -397,7 +397,7 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
-    ).toHaveTextContent("Node Explainer: Dataset Import Help");
+    ).toHaveTextContent("My Explainer: Dataset Import Help");
   });
 
   it("empty and unchanged submits are cancels — nothing is saved", () => {
@@ -431,7 +431,7 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     expect(screen.getByText("rename failed")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
-    ).toHaveTextContent("Node Explainer: Dataset Import Help");
+    ).toHaveTextContent("My Explainer: Dataset Import Help");
   });
 });
 

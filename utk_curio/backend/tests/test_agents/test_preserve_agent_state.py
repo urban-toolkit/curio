@@ -4,8 +4,8 @@ them."""
 
 from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
 
-AGENTS = ["agent.node-explainer@1.0.0"]
-ATTACH = [{"attachmentId": "a1", "coord": "agent.node-explainer@1.0.0", "target": {"kind": "canvas"}}]
+AGENTS = ["agent.my-explainer@1.0.0"]
+ATTACH = [{"attachmentId": "a1", "coord": "agent.my-explainer@1.0.0", "target": {"kind": "canvas"}}]
 
 
 def _existing():

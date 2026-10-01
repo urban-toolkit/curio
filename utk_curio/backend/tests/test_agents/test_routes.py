@@ -67,7 +67,7 @@ def _drop_from_lockfile(user, project_id, coord):
     projects_storage.write_spec(key, project_id, spec)
 
 
-def _write_def(user, agent_id="agent.node-explainer", version="1.0.0"):
+def _write_def(user, agent_id="agent.my-explainer", version="1.0.0"):
     """Materialize a valid agent definition in the user's FS store."""
     user_key = _user_dir_key(user)
     d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
@@ -76,7 +76,7 @@ def _write_def(user, agent_id="agent.node-explainer", version="1.0.0"):
         json.dumps(
             {
                 "id": agent_id,
-                "name": "Node Explainer",
+                "name": "My Explainer",
                 "category": "node",
                 "version": version,
                 "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
@@ -114,7 +114,7 @@ class TestMyImports:
         listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         assert [a["dirName"] for a in listed] == [coord]
         card = listed[0]
-        assert card["id"] == "agent.node-explainer"
+        assert card["id"] == "agent.my-explainer"
         assert card["capabilities"] == ["node.explain"]
         assert card["hooks"] == ["node"]
         assert card["imported"] is True
@@ -9217,7 +9217,7 @@ class TestReadDefinition:
         coord = _write_def(user)
         r = client.get(f"/api/agents/definitions/{coord}", headers=_auth(token))
         assert r.status_code == 200
-        assert r.get_json()["manifest"]["id"] == "agent.node-explainer"
+        assert r.get_json()["manifest"]["id"] == "agent.my-explainer"
 
     def test_a_published_only_definition_is_readable(self, client, user_and_token, tmp_curio):
         user, token = user_and_token

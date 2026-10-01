@@ -29,17 +29,17 @@ describe("agentsApi", () => {
   });
 
   it("import() POSTs the coord", () => {
-    agentsApi.import("agent.node-explainer@1.0.0");
+    agentsApi.import("agent.my-explainer@1.0.0");
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/imports", {
       method: "POST",
-      body: JSON.stringify({ coord: "agent.node-explainer@1.0.0" }),
+      body: JSON.stringify({ coord: "agent.my-explainer@1.0.0" }),
     });
   });
 
   it("removeImport() DELETEs an escaped coord", () => {
-    agentsApi.removeImport("agent.node-explainer@1.0.0");
+    agentsApi.removeImport("agent.my-explainer@1.0.0");
     expect(mockFetch).toHaveBeenCalledWith(
-      "/api/agents/imports/agent.node-explainer%401.0.0",
+      "/api/agents/imports/agent.my-explainer%401.0.0",
       { method: "DELETE" },
     );
   });
@@ -86,10 +86,10 @@ describe("agentsApi", () => {
   });
 
   it("attach() POSTs coord + target", () => {
-    agentsApi.attach("p1", "agent.node-explainer@1.0.0", { kind: "canvas" });
+    agentsApi.attach("p1", "agent.my-explainer@1.0.0", { kind: "canvas" });
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments", {
       method: "POST",
-      body: JSON.stringify({ coord: "agent.node-explainer@1.0.0", target: { kind: "canvas" } }),
+      body: JSON.stringify({ coord: "agent.my-explainer@1.0.0", target: { kind: "canvas" } }),
     });
   });
 
