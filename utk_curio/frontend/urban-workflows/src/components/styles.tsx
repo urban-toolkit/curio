@@ -85,7 +85,7 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
-import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
@@ -853,7 +853,7 @@ export const NodeContainer = ({
                                     )}
                                 </Col> : null
                             }
-                            {!disablePlay && !datasetPaletteNode ? (
+                            {showsSaveOutputToggle(data, !!disablePlay) ? (
                                 <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
                                     <SaveOutputToggle
                                         variant="node"
