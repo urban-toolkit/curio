@@ -439,6 +439,21 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(options.datasetSource.datasetId).toBe("osm.x1");
 });
 
+test("dragging a Discovery OpenStreetMap group reads its GeoJSON layers as GeoJSON", () => {
+  // A Discovery download lands each Autark layer as a GeoJSON file in one osm.x group.
+  const members = [
+    makeDataset({ id: "golf.buildings", title: "OpenStreetMap, Golf (buildings)", origin: "imported", format: "geojson", path: "/store/golf.buildings@1/data/osm_buildings.geojson", layerName: "buildings", groupId: "osm.x2" }),
+    makeDataset({ id: "golf.roads", title: "OpenStreetMap, Golf (roads)", origin: "imported", format: "geojson", path: "/store/golf.roads@1/data/osm_roads.geojson", layerName: "roads", groupId: "osm.x2" }),
+  ];
+  const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+  const options = buildDatasetLoaderNodeOptions(createOsmGroupDragPayload(group), { x: 0, y: 0 });
+
+  expect(options.code).toContain('layers["buildings"] = gpd.read_file(curio_dataset_path("golf.buildings"))');
+  expect(options.code).toContain('layers["roads"] = gpd.read_file(curio_dataset_path("golf.roads"))');
+  expect(options.code).not.toContain("read_parquet");
+  expect(options.code).toContain("return layers");
+});
+
 test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {
   const members = [
     makeDataset({ id: "loop.points", title: "chicago_loop (points)", format: "parquet", path: "/a.parquet", layerName: "points", groupId: "osm.x9" }),

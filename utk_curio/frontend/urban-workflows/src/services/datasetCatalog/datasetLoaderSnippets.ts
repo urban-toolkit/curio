@@ -126,10 +126,12 @@ function bundleLoaderCode(locationExpr: string): string {
 }
 
 /**
- * Loader for a multilayer OSM PBF group: reads every extracted layer's
- * GeoParquet into one ``layers`` dict keyed by layer name, so a single node
- * represents the full multilayer import. GeoParquet is read with
- * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``.
+ * Loader for a multilayer OSM group: reads every layer into one ``layers``
+ * dict keyed by layer name, so a single node represents the full multilayer
+ * import. An uploaded ``.pbf``'s layers are GeoParquet, read with
+ * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``;
+ * a Discovery download's layers are GeoJSON, read with ``gpd.read_file`` as a
+ * single GeoJSON dataset is.
  */
 export function osmGroupLoaderSnippet(
   layers: DatasetGroupLayerRef[],
@@ -137,15 +139,21 @@ export function osmGroupLoaderSnippet(
   const readerLines = layers.map((layer, index) => {
     const key = layer.layerName || layer.title || `layer_${index}`;
     const path = layer.path || layer.uri || "<dataset-path>";
-    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${pathExpr(path, layer.id)})`;
+    const reader = layer.format === "geojson" || layer.format === "shp" ? "gpd.read_file" : "_curio_read_layer";
+    return `layers[${JSON.stringify(key)}] = ${reader}(${pathExpr(path, layer.id)})`;
   });
+  const readsParquet = readerLines.some((line) => line.includes("_curio_read_layer("));
   const code = [
-    "def _curio_read_layer(path):",
-    "    try:",
-    "        return gpd.read_parquet(path)",
-    "    except Exception:",
-    "        return pd.read_parquet(path)",
-    "",
+    ...(readsParquet
+      ? [
+          "def _curio_read_layer(path):",
+          "    try:",
+          "        return gpd.read_parquet(path)",
+          "    except Exception:",
+          "        return pd.read_parquet(path)",
+          "",
+        ]
+      : []),
     "layers = {}",
     ...readerLines,
   ].join("\n");
