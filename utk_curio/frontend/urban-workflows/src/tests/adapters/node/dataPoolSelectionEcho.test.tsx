@@ -99,3 +99,65 @@ test("a selection and another pool's propagation are echoes; new data is not", a
   await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(4));
   expect(outputCallback.mock.calls[3][2]).toBeUndefined();
 });
+
+// Building parts as an Autark data node hands them on: one feature per part,
+// each carrying the building_id of the building it came from (#536).
+function buildingParts() {
+  const part = (building_id: number, height_m: number, x: number) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]] },
+    properties: { building_id, height_m },
+  });
+  return {
+    dataType: "geodataframe",
+    layerName: "table_osm_buildings",
+    layerType: "buildings",
+    data: {
+      type: "FeatureCollection",
+      features: [part(7, 12, 0), part(7, 30, 1), part(9, 150, 2), part(11, 20, 3), part(11, 45, 4)],
+    },
+  };
+}
+
+// What an Autark plot or map sends: rows of its input.
+const autkRows = (rows: number[]) => [
+  {
+    details: {
+      autk_selection: {
+        type: VisInteractionType.POINT,
+        data: rows,
+        priority: 1,
+        source: "AUTK_GRAMMAR",
+        layerRef: "table_osm_buildings",
+      },
+    },
+    priority: 1,
+  },
+];
+
+test.each([
+  ["one part", [2], ["0", "0", "1", "0", "0"]],
+  ["parts of two buildings, not their other parts", [0, 3], ["1", "0", "0", "1", "0"]],
+])("a selection of building parts flags those rows: %s", async (_, rows, flags) => {
+  const outputCallback = jest.fn();
+  const base = {
+    nodeId: "pool-1",
+    nodeType: "curio.builtin/data-pool@1",
+    outputCallback,
+    propagationCallback: jest.fn(),
+    interactionsCallback: jest.fn(),
+  };
+  const input = buildingParts();
+  const { rerender } = renderHook(
+    ({ d }: { d: NodeBehaviorData }) => useDataPoolBehavior(d, nodeState()),
+    { initialProps: { d: { ...base, input } as unknown as NodeBehaviorData } },
+  );
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    rerender({ d: { ...base, input, interactions: autkRows(rows) } as unknown as NodeBehaviorData });
+  });
+  await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(2));
+  const [, echoed] = outputCallback.mock.calls[1];
+  expect(echoed.data.features.map((f: any) => f.properties.interacted)).toEqual(flags);
+});

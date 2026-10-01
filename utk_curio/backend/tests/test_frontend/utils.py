@@ -1792,40 +1792,50 @@ _DRAWING_KEPT_JS = """(selector) => {
     return !!kept && kept.isConnected && document.querySelector(selector) === kept;
 }"""
 
+# Defines readMarks(el): a canvas's pixels, read through toDataURL (which a
+# WebGPU map canvas answers as a 2D chart does), with where each one sits in
+# the page and whether it is marked: opaque and saturated, so a bar or a
+# polygon rather than an edge, an axis or the background.
+_CANVAS_MARKS_JS = """
+    const readMarks = async (el) => {
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const img = new Image();
+        img.src = el.toDataURL('image/png');
+        await img.decode();
+        const w = img.width, h = img.height;
+        if (!w || !h) return null;
+        const scratch = document.createElement('canvas');
+        scratch.width = w;
+        scratch.height = h;
+        const ctx = scratch.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const px = ctx.getImageData(0, 0, w, h).data;
+        const box = el.getBoundingClientRect();
+        const marked = (x, y) => {
+            const i = (y * w + x) * 4;
+            const hi = Math.max(px[i], px[i + 1], px[i + 2]);
+            const lo = Math.min(px[i], px[i + 1], px[i + 2]);
+            return px[i + 3] >= 250 && hi > 0 && (hi - lo) / hi > 0.3;
+        };
+        return { w, h, box, sx: box.width / w, sy: box.height / h, marked };
+    };
+"""
+
 # A marked pixel of a canvas the page shows, in page coordinates: the one
 # nearest a point given as fractions of the part of the canvas in view. A node
 # can show less of its drawing than the canvas holds (an Autark map's canvas
 # is 400 px tall in a 281 px body), and overlays sit on top of it, so what is in
-# view is asked of elementFromPoint. Marked means opaque and saturated, and so
-# is every pixel around it: 7x7 where the marks are that wide, as a map's
-# polygons are, else 3x3, as a bar is. So the point is inside a bar or a
-# polygon, not on an edge, an axis or the background. Read through toDataURL,
-# which a WebGPU map canvas answers as a 2D chart does.
-_MARK_POINT_JS = """async ({ selector, at }) => {
+# view is asked of elementFromPoint. Every pixel around the one chosen is
+# marked too: 7x7 where the marks are that wide, as a map's polygons are, else
+# 3x3, as a bar is, so the point is well inside its mark.
+_MARK_POINT_JS = "async ({ selector, at }) => {" + _CANVAS_MARKS_JS + """
     const el = document.querySelector(selector);
     if (!el) return null;
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const img = new Image();
-    img.src = el.toDataURL('image/png');
-    await img.decode();
-    const w = img.width, h = img.height;
-    if (!w || !h) return null;
-    const scratch = document.createElement('canvas');
-    scratch.width = w;
-    scratch.height = h;
-    const ctx = scratch.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, w, h).data;
-    const box = el.getBoundingClientRect();
-    const sx = box.width / w, sy = box.height / h;
+    const marks = await readMarks(el);
+    if (!marks) return null;
+    const { w, h, box, sx, sy, marked } = marks;
     const onPage = (x, y) => [box.left + (x + 0.5) * sx, box.top + (y + 0.5) * sy];
     const shown = (x, y) => document.elementFromPoint(...onPage(x, y)) === el;
-    const marked = (x, y) => {
-        const i = (y * w + x) * 4;
-        const hi = Math.max(px[i], px[i + 1], px[i + 2]);
-        const lo = Math.min(px[i], px[i + 1], px[i + 2]);
-        return px[i + 3] >= 250 && hi > 0 && (hi - lo) / hi > 0.3;
-    };
     const inside = (x, y, r) => {
         for (let dy = -r; dy <= r; dy++) {
             for (let dx = -r; dx <= r; dx++) if (!marked(x + dx, y + dy)) return false;
@@ -1862,6 +1872,32 @@ _MARK_POINT_JS = """async ({ selector, at }) => {
     return null;
 }"""
 
+# Where a brush gesture drags, in page coordinates: an Autark plot's d3 brush
+# overlay, or, on a Vega canvas, the box its marks take.
+_BRUSH_AREA_JS = "async (selector) => {" + _CANVAS_MARKS_JS + """
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    const asBox = (r) => ({ x: r.left, y: r.top, width: r.width, height: r.height });
+    const overlay = el.querySelector('rect.overlay');
+    if (overlay) return asBox(overlay.getBoundingClientRect());
+    if (el.tagName !== 'CANVAS') return asBox(el.getBoundingClientRect());
+    const marks = await readMarks(el);
+    if (!marks) return null;
+    const { w, h, box, sx, sy, marked } = marks;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (marked(x, y)) {
+                x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+                x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+            }
+        }
+    }
+    if (x1 < 0) return null;
+    return { x: box.left + x0 * sx, y: box.top + y0 * sy,
+             width: (x1 - x0 + 1) * sx, height: (y1 - y0 + 1) * sy };
+}"""
+
 
 def drawing_selector(page: Page, node_id: str) -> str | None:
     """The selector of the element *node_id* draws into, or None before it drew."""
@@ -1881,6 +1917,54 @@ def mark_point(page: Page, selector: str, at=(0.5, 0.5)) -> dict | None:
     """``{x, y}`` in the page: the marked pixel of *selector*'s canvas nearest *at*
     of the part in view."""
     return page.evaluate(_MARK_POINT_JS, {"selector": selector, "at": list(at)})
+
+
+def brush_area(page: Page, selector: str) -> dict | None:
+    """``{x, y, width, height}`` in the page: where a brush on *selector* drags."""
+    return page.evaluate(_BRUSH_AREA_JS, selector)
+
+
+def at_fraction(area: dict, fraction) -> tuple[float, float]:
+    """The page point at *fraction* ``(fx, fy)`` of *area*."""
+    return (area["x"] + fraction[0] * area["width"], area["y"] + fraction[1] * area["height"])
+
+
+#: An autk-plot mark's fill when it is selected (PlotStyle.highlight, #5dade2),
+#: as getComputedStyle reads it.
+AUTK_PLOT_HIGHLIGHT = "rgb(93, 173, 226)"
+
+# The bars of an Autark plot lit where its brush is not, or under its brush and
+# not lit; null when the plot holds no brush. The brush and the bars share one
+# group, so their page boxes compare as autk-plot's own hit test does. A bar that
+# only touches an edge of the brush could go either way, so it is left out.
+_BRUSH_MISMATCHES_JS = """({ selector, highlight }) => {
+    const el = document.querySelector(selector);
+    const brush = el && el.querySelector('.autkBrush rect.selection');
+    if (!brush || brush.style.display === 'none') return null;
+    const b = brush.getBoundingClientRect();
+    if (!b.width) return null;
+    const wrong = [];
+    for (const mark of el.querySelectorAll('.autkMark')) {
+        const r = mark.getBoundingClientRect();
+        if (Math.abs(r.right - b.left) < 1 || Math.abs(r.left - b.right) < 1) continue;
+        const under = r.right > b.left && r.left < b.right;
+        const lit = getComputedStyle(mark).fill === highlight;
+        if (under !== lit) wrong.push({ label: (mark.__data__ || {}).label ?? null, lit });
+    }
+    return wrong;
+}"""
+
+
+def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> list | None:
+    """The bars of the Autark plot in *selector* whose highlight disagrees with
+    its brush, once the selection coming back through a Data Pool has landed:
+    asked until there are none, for up to *timeout_ms*. None when no brush shows."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        wrong = page.evaluate(_BRUSH_MISMATCHES_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
+        if not wrong or time.monotonic() >= deadline:
+            return wrong
+        page.wait_for_timeout(300)
 
 
 def capture_node(page: Page, node_id: str):
