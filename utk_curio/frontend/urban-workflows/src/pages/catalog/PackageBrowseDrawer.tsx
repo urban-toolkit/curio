@@ -32,6 +32,8 @@ export interface PackageBrowseDrawerProps {
   publishingDir?: string | null;
   showPublish: boolean;
   onInstall: (pkg: PackagePayload) => void;
+  /** Update all projects: replace the store copy with the catalog row it is handed. */
+  onUpdate: (pkg: PackagePayload) => void;
   onViewDetails?: (pkg: PackagePayload) => void;
   onPublish?: (dirName: string) => void;
   onUnpublish?: (dirName: string) => void;
@@ -64,6 +66,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   isPublished,
   publishingDir,
   onInstall,
+  onUpdate,
   onViewDetails,
   onPublish,
   onUnpublish,
@@ -138,7 +141,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
             type="button"
             className={browseStyles.addToPaletteBtn}
             disabled={busy}
-            onClick={() => onInstall(catalogRow ?? pkg)}
+            onClick={() => onUpdate(catalogRow ?? pkg)}
           >
             Update all projects
           </button>

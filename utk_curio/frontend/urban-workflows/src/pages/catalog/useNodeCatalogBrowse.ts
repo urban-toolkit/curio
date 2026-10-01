@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PackagePayload, SortMode } from "../../services/packages";
 import {
+  isNewerPackageVersion,
   matchesSearch,
   primaryCategory,
   sortPackages,
@@ -50,6 +51,7 @@ export function useNodeCatalogBrowse() {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     reload,
@@ -57,6 +59,7 @@ export function useNodeCatalogBrowse() {
     dismissActionError,
     dismissInstallSummary,
     probeInstall: onInstall,
+    probeUpdate: onUpdate,
     confirmInstall,
     cancelInstall,
     publish: onPublish,
@@ -66,7 +69,7 @@ export function useNodeCatalogBrowse() {
   const updateCandidates = useMemo(() => {
     return installed.filter((row) => {
       const catRow = catalogByDir.get(row.dirName);
-      return catRow != null && catRow.version !== row.version;
+      return catRow != null && isNewerPackageVersion(catRow.version, row.version);
     });
   }, [installed, catalogByDir]);
 
@@ -166,10 +169,7 @@ export function useNodeCatalogBrowse() {
   const selectedHasUpdate =
     selectedPkg != null &&
     defaults.has(selectedPkg.dirName) &&
-    installedByDir.get(selectedPkg.dirName) != null &&
-    catalogByDir.get(selectedPkg.dirName) != null &&
-    catalogByDir.get(selectedPkg.dirName)!.version !==
-      installedByDir.get(selectedPkg.dirName)!.version;
+    updateCandidateDirs.has(selectedPkg.dirName);
 
   return {
     search,
@@ -187,6 +187,7 @@ export function useNodeCatalogBrowse() {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     dismissInstallSummary,
@@ -204,6 +205,7 @@ export function useNodeCatalogBrowse() {
     updatesCount,
     selectedHasUpdate,
     onInstall,
+    onUpdate,
     importing,
     onImportArchive,
     confirmInstall,
