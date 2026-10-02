@@ -362,7 +362,7 @@ def _is_untouched_catalog_copy(dir_name: str, dest: Path) -> bool:
         return False
     try:
         return _build_integrity(dest) == installed
-    except Exception:  # noqa: BLE001 — a copy we cannot hash is not provably untouched
+    except Exception:  # noqa: BLE001: a copy we cannot hash is not provably untouched
         log.warning("Could not hash store package %s", dest, exc_info=True)
         return False
 

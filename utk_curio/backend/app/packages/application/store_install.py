@@ -282,7 +282,7 @@ def install_package_from_archive(
                         user_key, dir_name,
                         catalog_copy=seed_state.copy_digest(integrity) if from_catalog else None,
                     )
-                except Exception:  # noqa: BLE001 — bookkeeping is best-effort
+                except Exception:  # noqa: BLE001: bookkeeping is best-effort
                     log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
             return InstallResult(
@@ -310,7 +310,7 @@ def uninstall_package(user_key: str, dir_name: str) -> bool:
         shutil.rmtree(target)
         try:
             seed_state.mark_uninstalled(user_key, dir_name)
-        except Exception:  # noqa: BLE001 — never block uninstall on bookkeeping
+        except Exception:  # noqa: BLE001: never block uninstall on bookkeeping
             log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
     return True
 
