@@ -511,9 +511,9 @@ describe("a Discovery download's group drops as its layers' format (#586)", () =
     // The DATASET pill reads the format from the node's datasetSource.
     const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
     expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoJSON");
-    // The layers still load through their own ids.
+    // The layers still load through their own ids, read as the GeoJSON they are (#579).
     expect(options.datasetRefs).toEqual(["imported.xpoints", "imported.xpolygons"]);
-    expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_dataset_path("imported.xpoints"))');
+    expect(options.code).toContain('layers["points"] = gpd.read_file(curio_dataset_path("imported.xpoints"))');
 
     // Only when every layer was downloaded: otherwise it is an OSM PBF import.
     const mixed = downloaded();
