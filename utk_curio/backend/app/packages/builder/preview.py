@@ -69,7 +69,7 @@ _REPORT_PATH = "preview/report.json"
 #: against every process of the same user: under the default address-space and
 #: process-count bounds Chromium cannot start. CPU, wall time, file size and
 #: open files bound it as they bound every worker.
-PREVIEW_LIMITS = WorkerLimits(memory_bytes=0, max_processes=0)
+PREVIEW_LIMITS = WorkerLimits()
 
 
 class PreviewError(ValueError):
