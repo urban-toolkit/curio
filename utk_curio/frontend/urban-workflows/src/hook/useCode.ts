@@ -13,6 +13,8 @@ import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
 import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
+import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
+import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -67,6 +69,9 @@ type CreateCodeNodeOptions = {
     // #412: a renamed node header (metadata.packageTemplateLabel), which the
     // header reads through resolveNodeDisplayLabel.
     packageTemplateLabel?: string;
+    // #412: the rest of what the node settings modal saved
+    // (metadata.packageTemplateConfig), which the editor tabs read.
+    packageTemplateConfig?: Partial<CanvasTemplateConfig>;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -237,6 +242,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
                 nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
 
+            // #412: and the rest of the node settings config, with fresh port ids.
+            if(node.metadata != undefined && node.metadata.packageTemplateConfig != undefined)
+                nodeMeta.packageTemplateConfig = canvasTemplateConfigFromSpec(node.metadata.packageTemplateConfig);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -395,6 +404,7 @@ export function useCode(): IUseCode {
             spatialJoin = undefined,
             simpleVis = undefined,
             packageTemplateLabel = undefined,
+            packageTemplateConfig = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -441,6 +451,7 @@ export function useCode(): IUseCode {
                 spatialJoin,
                 simpleVis,
                 packageTemplateLabel,
+                packageTemplateConfig,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

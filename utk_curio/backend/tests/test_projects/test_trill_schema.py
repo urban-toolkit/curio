@@ -299,6 +299,16 @@ REJECTED = {
     "unknown dataset origin": lambda d: d["dataflow"].update(
         datasets=[{"datasetId": "d1", "origin": "elsewhere"}]
     ),
+    # The node settings config is stored without the editor's port row ids and
+    # without the code copy, which the node's content already holds (#412).
+    "node settings port carrying its editor row id": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={
+            "inputPorts": [{"id": "k3j9x0a1", "types": ["DATAFRAME"], "cardinality": "1"}]
+        }
+    ),
+    "node settings carrying a code copy": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={"hasCode": True, "sourceCode": "return arg"}
+    ),
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
@@ -488,6 +498,33 @@ WRITER_SHAPES = {
                         "title": "ACS",
                         "format": "csv",
                         "origin": "imported",
+                    },
+                },
+            }
+        ]
+    ),
+    # Written by TrillGenerator from the node settings modal (#412).
+    "node settings config": _flow(
+        nodes=[
+            {
+                **AGENT_NODE,
+                "metadata": {
+                    "packageTemplateLabel": "Clean the parcels",
+                    "packageTemplateConfig": {
+                        "label": "Clean the parcels",
+                        "category": "computation",
+                        "engine": "python",
+                        "editor": "code",
+                        "description": "Drops parcels without a zoning code",
+                        "hasCode": True,
+                        "hasWidgets": False,
+                        "hasGrammar": False,
+                        "hasProvenance": False,
+                        "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                        "outputPorts": [
+                            {"types": ["DATAFRAME", "JSON"], "cardinality": "[1,n]"}
+                        ],
+                        "sourceFilename": "clean.py",
                     },
                 },
             }
