@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import {
   discoverySourceCardActions,
   type CatalogCardActionId,
@@ -35,9 +36,9 @@ type SortMode = "name" | "provider";
  * The account-scope Discovery Catalog under `/catalog/discovery`.
  *
  * The fourth peer of `/catalog/nodes`, `/catalog/data` and `/catalog/agents`:
- * same three-column grid from `CatalogBrowseLayout.module.css`, same header
- * anatomy (crumb, kind icon + h1 + count, intro, search), same filter bar, same
- * card grid, same right-hand detail drawer.
+ * same three-column grid from `CatalogBrowseLayout.module.css`, same rail
+ * (`CatalogRail`), same header (`CatalogPageHeader`: kind icon + h1 + count,
+ * then search), same card grid, same right-hand detail drawer.
  *
  * What differs is the UNIT. The other three list things you can put on a
  * canvas; this lists *portals*, and the datasets inside one are discovered
@@ -163,106 +164,78 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
         .filter(Boolean)
         .join(" ")}
     >
-      <aside className={browseStyles.categoryRail}>
-        <p className={browseStyles.railLabel}>By provider</p>
-        <button
-          className={`${browseStyles.railButton} ${provider === "" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setProvider("")}
-        >
-          <span>All portals</span>
-          <span className={browseStyles.railCountBadge}>{total}</span>
-        </button>
-        {PROVIDER_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${provider === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setProvider((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{providerCounts[value] ?? 0}</span>
-          </button>
-        ))}
-
-        <div className={browseStyles.railDivider} />
-        <p className={browseStyles.railLabel}>By access</p>
-        {AUTH_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${auth === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setAuth((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{authCounts[value] ?? 0}</span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter portals"
+        all={{
+          label: "All portals",
+          count: total,
+          active: provider === "" && auth === "",
+          onClick: () => {
+            setProvider("");
+            setAuth("");
+          },
+        }}
+        sections={[
+          {
+            key: "provider",
+            label: "By provider",
+            entries: PROVIDER_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: providerCounts[value] ?? 0,
+              active: provider === value,
+              onClick: () => setProvider((prev) => (prev === value ? "" : value)),
+            })),
+          },
+          {
+            key: "access",
+            label: "By access",
+            entries: AUTH_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: authCounts[value] ?? 0,
+              active: auth === value,
+              onClick: () => setAuth((prev) => (prev === value ? "" : value)),
+            })),
+          },
+        ]}
+      />
 
       <main className={browseStyles.browseMain}>
-        <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Discovery Catalog</p>
-          <div className={browseStyles.titleRow}>
-            <CatalogKindIcon kind="source" size="md" title="Discovery Catalog" />
-            <h1>Discovery Catalog</h1>
-            <span className={browseStyles.titleCount}>
-              {searching ? results.data.resources.length : sources.length}
-            </span>
-          </div>
-          <p className={browseStyles.pageIntro}>
-            Data portals and storage this deployment can reach. Type to search{" "}
-            <strong>all of them at once</strong>, or open one to browse it. What you
-            download lands in your <strong>Data Catalog</strong> and behaves like any
-            other dataset.
-          </p>
-          <div className={browseStyles.headerTools}>
-            <input
-              className={browseStyles.hubSearch}
-              type="search"
-              placeholder="Search every portal…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search every portal"
-            />
-          </div>
-        </section>
-
-        <div className={browseStyles.filterBar}>
-          <button
-            className={`${browseStyles.chip} ${provider === "" && auth === "" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => {
-              setProvider("");
-              setAuth("");
-            }}
-          >
-            All
-          </button>
-          {PROVIDER_FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              className={`${browseStyles.chip} ${provider === value ? browseStyles.chipActive : ""}`}
-              type="button"
-              onClick={() => setProvider((prev) => (prev === value ? "" : value))}
+        <CatalogPageHeader
+          kind="source"
+          iconTitle="Discovery Catalog"
+          title="Discovery Catalog"
+          count={searching ? results.data.resources.length : sources.length}
+          intro={
+            <>
+              Data portals and storage this deployment can reach. Type to search{" "}
+              <strong>all of them at once</strong>, or open one to browse it. What you
+              download lands in your <strong>Data Catalog</strong> and behaves like any
+              other dataset.
+            </>
+          }
+          viewTools={
+            <select
+              className={browseStyles.sortSelect}
+              aria-label="Sort portals"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
             >
-              {/* One dot colour for every portal: on this page every card IS a
-                  portal, so a per-provider hue would carry no information. See
-                  --curio-kind-source-fg. */}
-              <span className={`${browseStyles.chipDot} ${browseStyles.chipDotDefault}`} />
-              {label}
-            </button>
-          ))}
-          <span className={browseStyles.filterSpacer} />
-          <select
-            className={browseStyles.sortSelect}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="name">Sort: Name</option>
-            <option value="provider">Sort: Provider</option>
-          </select>
-        </div>
+              <option value="name">Sort: Name</option>
+              <option value="provider">Sort: Provider</option>
+            </select>
+          }
+        >
+          <input
+            className={browseStyles.hubSearch}
+            type="search"
+            placeholder="Search every portal…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search every portal"
+          />
+        </CatalogPageHeader>
 
         {error ? (
           <div className={browseStyles.browseBanner} role="alert">

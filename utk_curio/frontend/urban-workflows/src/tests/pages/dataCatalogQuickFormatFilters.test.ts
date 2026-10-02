@@ -8,6 +8,10 @@ import type { DatasetFormat } from "../../services/datasetCatalog";
  * row off a hardcoded ``["geojson", "csv", "json"]``. So the chips advertised
  * JSON with zero datasets while hiding Parquet and GeoTIFF, which the rail beside
  * them was counting.
+ *
+ * The chip row is gone; this function now picks the rail's own format rows, so
+ * the same rules hold there: populated formats in the rail's order, plus the
+ * selected one.
  */
 describe("quickFormatFilters", () => {
   // The counts the shipped `datasets/` folder actually produces, so this case is
