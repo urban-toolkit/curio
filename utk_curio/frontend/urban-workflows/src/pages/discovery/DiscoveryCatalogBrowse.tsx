@@ -1,41 +1,32 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import {
   discoverySourceCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
+import { useDatasetDetails } from "../../components/datasets/catalog/datasetDetailsContext";
 import {
-  useDatasetDetails,
-  viewDatasetDetailsToast,
-} from "../../components/datasets/catalog/datasetDetailsContext";
-import { useToastContext } from "../../providers/ToastProvider";
-import {
-  acquireKey,
-  declaredResourceFor,
-  downloadBody,
-  isServiceSource,
   isStorageSource,
-  notifyDatasetCatalogRefresh,
   partialFailureMessage,
   scanningMessage,
   isLinkSource,
   unsearchableReason,
-  useDiscoveryAcquire,
   useDiscoveryCatalog,
   useDiscoverySearch,
-  type DiscoveryAcquireBody,
   type DiscoveryAuthMode,
   type DiscoveryProviderType,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
 import { AUTH_FILTERS, PROVIDER_FILTERS } from "./discoveryBrowseConstants";
 import { DiscoverySourceCard } from "./DiscoverySourceCard";
-import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
+import { DiscoveryFederatedRows } from "./DiscoveryFederatedRows";
 import { DiscoveryCatalogBrowseDrawer } from "./DiscoveryCatalogBrowseDrawer";
 import { DiscoverySourceDetailModal } from "./DiscoverySourceDetailModal";
+import { useDiscoveryAcquisition } from "./useDiscoveryAcquisition";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import resultStyles from "./DiscoveryCatalogBrowse.module.css";
 
@@ -45,9 +36,9 @@ type SortMode = "name" | "provider";
  * The account-scope Discovery Catalog under `/catalog/discovery`.
  *
  * The fourth peer of `/catalog/nodes`, `/catalog/data` and `/catalog/agents`:
- * same three-column grid from `CatalogBrowseLayout.module.css`, same header
- * anatomy (crumb, kind icon + h1 + count, intro, search), same filter bar, same
- * card grid, same right-hand detail drawer.
+ * same three-column grid from `CatalogBrowseLayout.module.css`, same rail
+ * (`CatalogRail`), same header (`CatalogPageHeader`: kind icon + h1 + count,
+ * then search), same card grid, same right-hand detail drawer.
  *
  * What differs is the UNIT. The other three list things you can put on a
  * canvas; this lists *portals*, and the datasets inside one are discovered
@@ -89,7 +80,6 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   // A downloaded resource opens in the Data Catalog's details modal, over this
   // page, rather than sending you to the dataset's own route.
   const { openDatasetDetails } = useDatasetDetails();
-  const { showToast } = useToastContext();
 
   // The roster is always loaded: the rail counts and the source names shown
   // beside federated rows both come from it, and it is disk-backed and cheap.
@@ -101,26 +91,10 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   // it. Idle lists the portals; a query fans out across them.
   const searching = search.trim().length > 0;
   const results = useDiscoverySearch({ q: searching ? search : "", provider });
-  const acquisition = useDiscoveryAcquire((job) => {
-    notifyDatasetCatalogRefresh();
-    // Reported like an import into the Data Catalog, which is what it is.
-    if (job.datasetId) {
-      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
-      if (job.alreadyPresent && job.unchanged) {
-        showToast(
-          `Nothing has changed in ${title} since it was added.`,
-          "info",
-          viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-        );
-        return;
-      }
-      const fromStorage = data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s));
-      showToast(
-        `${fromStorage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
-        "success",
-        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-      );
-    }
+  const viewModel = (modelId: string) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`);
+  const acquisition = useDiscoveryAcquisition({
+    isStorage: (job) => data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s)),
+    onViewModel: viewModel,
   });
 
   const sources = useMemo(() => {
@@ -149,17 +123,6 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
     () => new Map(data.sources.map((s) => [s.sourceId, s])),
     [data.sources]
   );
-  // A storage source's rows are added rather than downloaded, and can be
-  // narrowed or opened file by file.
-  const storageContext = (source: DiscoverySourceRow | undefined, resourceId: string) =>
-    source && isStorageSource(source)
-      ? {
-          dirName: source.dirName,
-          declared: declaredResourceFor(source, resourceId),
-          onAdd: (r: { resourceId: string }, body: DiscoveryAcquireBody) =>
-            void acquisition.start(source.dirName, r.resourceId, body),
-        }
-      : undefined;
   const partialFailure = useMemo(
     () =>
       partialFailureMessage(
@@ -201,106 +164,78 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
         .filter(Boolean)
         .join(" ")}
     >
-      <aside className={browseStyles.categoryRail}>
-        <p className={browseStyles.railLabel}>By provider</p>
-        <button
-          className={`${browseStyles.railButton} ${provider === "" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setProvider("")}
-        >
-          <span>All portals</span>
-          <span className={browseStyles.railCountBadge}>{total}</span>
-        </button>
-        {PROVIDER_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${provider === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setProvider((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{providerCounts[value] ?? 0}</span>
-          </button>
-        ))}
-
-        <div className={browseStyles.railDivider} />
-        <p className={browseStyles.railLabel}>By access</p>
-        {AUTH_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${auth === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setAuth((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{authCounts[value] ?? 0}</span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter portals"
+        all={{
+          label: "All portals",
+          count: total,
+          active: provider === "" && auth === "",
+          onClick: () => {
+            setProvider("");
+            setAuth("");
+          },
+        }}
+        sections={[
+          {
+            key: "provider",
+            label: "By provider",
+            entries: PROVIDER_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: providerCounts[value] ?? 0,
+              active: provider === value,
+              onClick: () => setProvider((prev) => (prev === value ? "" : value)),
+            })),
+          },
+          {
+            key: "access",
+            label: "By access",
+            entries: AUTH_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: authCounts[value] ?? 0,
+              active: auth === value,
+              onClick: () => setAuth((prev) => (prev === value ? "" : value)),
+            })),
+          },
+        ]}
+      />
 
       <main className={browseStyles.browseMain}>
-        <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Discovery Catalog</p>
-          <div className={browseStyles.titleRow}>
-            <CatalogKindIcon kind="source" size="md" title="Discovery Catalog" />
-            <h1>Discovery Catalog</h1>
-            <span className={browseStyles.titleCount}>
-              {searching ? results.data.resources.length : sources.length}
-            </span>
-          </div>
-          <p className={browseStyles.pageIntro}>
-            Data portals and storage this deployment can reach. Type to search{" "}
-            <strong>all of them at once</strong>, or open one to browse it. What you
-            download lands in your <strong>Data Catalog</strong> and behaves like any
-            other dataset.
-          </p>
-          <div className={browseStyles.headerTools}>
-            <input
-              className={browseStyles.hubSearch}
-              type="search"
-              placeholder="Search every portal…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search every portal"
-            />
-          </div>
-        </section>
-
-        <div className={browseStyles.filterBar}>
-          <button
-            className={`${browseStyles.chip} ${provider === "" && auth === "" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => {
-              setProvider("");
-              setAuth("");
-            }}
-          >
-            All
-          </button>
-          {PROVIDER_FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              className={`${browseStyles.chip} ${provider === value ? browseStyles.chipActive : ""}`}
-              type="button"
-              onClick={() => setProvider((prev) => (prev === value ? "" : value))}
+        <CatalogPageHeader
+          kind="source"
+          iconTitle="Discovery Catalog"
+          title="Discovery Catalog"
+          count={searching ? results.data.resources.length : sources.length}
+          intro={
+            <>
+              Data portals and storage this deployment can reach. Type to search{" "}
+              <strong>all of them at once</strong>, or open one to browse it. What you
+              download lands in your <strong>Data Catalog</strong> and behaves like any
+              other dataset.
+            </>
+          }
+          viewTools={
+            <select
+              className={browseStyles.sortSelect}
+              aria-label="Sort portals"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
             >
-              {/* One dot colour for every portal: on this page every card IS a
-                  portal, so a per-provider hue would carry no information. See
-                  --curio-kind-source-fg. */}
-              <span className={`${browseStyles.chipDot} ${browseStyles.chipDotDefault}`} />
-              {label}
-            </button>
-          ))}
-          <span className={browseStyles.filterSpacer} />
-          <select
-            className={browseStyles.sortSelect}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="name">Sort: Name</option>
-            <option value="provider">Sort: Provider</option>
-          </select>
-        </div>
+              <option value="name">Sort: Name</option>
+              <option value="provider">Sort: Provider</option>
+            </select>
+          }
+        >
+          <input
+            className={browseStyles.hubSearch}
+            type="search"
+            placeholder="Search every portal…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search every portal"
+          />
+        </CatalogPageHeader>
 
         {error ? (
           <div className={browseStyles.browseBanner} role="alert">
@@ -339,44 +274,13 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
               .filter(Boolean)
               .join(" ")}
           >
-            {results.data.resources.map((resource) => (
-              <DiscoveryResourceRow
-                key={`${resource.sourceId}:${resource.resourceId}`}
-                resource={resource}
-                showSource
-                iconUrl={sourcesById.get(resource.sourceId)?.iconUrl ?? null}
-                job={
-                  acquisition.jobs[
-                    acquireKey(
-                      sourcesById.get(resource.sourceId)?.dirName ?? resource.sourceId,
-                      resource.resourceId
-                    )
-                  ]
-                }
-                onViewDataset={(id) => openDatasetDetails(id)}
-                storage={storageContext(sourcesById.get(resource.sourceId), resource.resourceId)}
-                service={isServiceSource(sourcesById.get(resource.sourceId) ?? { kind: "portal" })}
-                onDownload={(r, fmt, parameters, title) => {
-                  // A federated row carries the source ID; the API wants the
-                  // versioned dirName, which only the roster knows.
-                  const source = sourcesById.get(r.sourceId);
-                  if (source)
-                    void acquisition.start(
-                      source.dirName,
-                      r.resourceId,
-                      downloadBody(source, r, fmt, parameters, title),
-                    );
-                }}
-                onCancel={(r) => {
-                  const dir = sourcesById.get(r.sourceId)?.dirName;
-                  if (dir) acquisition.cancel(dir, r.resourceId);
-                }}
-                onDismiss={(r) => {
-                  const dir = sourcesById.get(r.sourceId)?.dirName;
-                  if (dir) acquisition.dismiss(dir, r.resourceId);
-                }}
-              />
-            ))}
+            <DiscoveryFederatedRows
+              resources={results.data.resources}
+              sourcesById={sourcesById}
+              acquisition={acquisition}
+              onViewDataset={(id) => openDatasetDetails(id)}
+              onViewModel={viewModel}
+            />
             {!results.loading && results.searched && results.data.resources.length === 0 ? (
               <div className={browseStyles.empty}>
                 No portal returned anything for “{search}”.

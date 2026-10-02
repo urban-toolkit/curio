@@ -18,6 +18,7 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faBrain,
+    faCloudArrowDown,
     faCubes,
     faDatabase,
     faFileImport,
@@ -40,6 +41,7 @@ import { useToastContext } from "../../../providers/ToastProvider";
 import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
+import { useDiscoveryCatalogDrawer } from "../../../providers/discoveryCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 import {
@@ -119,6 +121,7 @@ export default function UpMenu() {
     const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
     const { openModelCatalogDrawer } = useModelCatalogDrawer();
+    const { openDiscoveryCatalogDrawer } = useDiscoveryCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -550,6 +553,16 @@ export default function UpMenu() {
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faBrain} />
                                 <button className={styles.noStyleButton}>Model Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openDiscoveryCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCloudArrowDown} />
+                                <button className={styles.noStyleButton}>Discovery Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}

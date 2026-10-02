@@ -36,7 +36,7 @@ function routeApi(rows: ModelRow[], extra: { license?: string } = {}) {
 }
 
 /** The card for one model. Scoped because a runtime or origin label appears
- *  in the rail, the chips and the card alike. */
+ *  in the rail and the card alike. */
 function card(id: string): HTMLElement {
   const el = document.querySelector(`.cardGrid [data-model-id="${id}"]`);
   if (!el) throw new Error(`no card for ${id}`);
@@ -104,15 +104,21 @@ describe('ModelCatalogBrowse', () => {
     expect(card('model.curio.ddrnet23-slim').className).toMatch(/cardActive/);
   });
 
-  test('the runtime and origin chips narrow the grid', async () => {
+  test('the runtime and origin rows on the rail narrow the grid', async () => {
+    // The page's filters are the shared rail's rows now; its chip row, which
+    // repeated them, is gone.
     routeApi([shippedModel(), downloadedModel()]);
     renderPage();
     await screen.findAllByText('SegFormer B0 (ADE20K)');
-    fireEvent.click(document.querySelector('[data-curio-runtime-chip="transformers"]') as HTMLElement);
+    const row = (section: string, value: string) =>
+      document.querySelector(
+        `[data-curio-rail-section="${section}"][data-curio-rail-value="${value}"]`
+      ) as HTMLElement;
+    fireEvent.click(row('runtime', 'transformers'));
     expect(document.querySelector('.cardGrid [data-model-id="model.curio.ddrnet23-slim"]')).toBeNull();
     expect(card('imported.xabc123def456')).toBeInTheDocument();
 
-    fireEvent.click(document.querySelector('[data-curio-origin-chip="shipped"]') as HTMLElement);
+    fireEvent.click(row('origin', 'shipped'));
     expect(screen.getByText('No models match the current filters.')).toBeInTheDocument();
   });
 

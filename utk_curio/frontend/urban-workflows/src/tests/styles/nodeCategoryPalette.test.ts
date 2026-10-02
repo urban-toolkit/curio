@@ -87,10 +87,12 @@ describe("node category palette", () => {
     });
   });
 
-  it("keys the catalog filter chips to the same palette", () => {
+  it("keys the Node Catalog rail's category dots to the same palette", () => {
+    // The filter chips carried these dots until the chip row was removed; the
+    // rail's category rows carry them now, beside the card strips they key.
     const css = read("pages/catalog/CatalogBrowseLayout.module.css");
     for (const key of KEYS) {
-      const rule = css.match(new RegExp("\\.chipDot_" + key + "\\s*\\{([^}]*)\\}"));
+      const rule = css.match(new RegExp("\\.categoryDot_" + key + "\\s*\\{([^}]*)\\}"));
       expect(rule).not.toBeNull();
       expect((rule as RegExpMatchArray)[1]).toContain(
         "var(--curio-category-" + key + "-fg)"

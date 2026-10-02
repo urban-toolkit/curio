@@ -3,16 +3,16 @@
  *
  * It reuses `.cardGrid` for the scroll behaviour, gutters and scrollbar - the
  * shared stylesheet owns all of that - and overrides only the track, because
- * results are rows rather than tiles.
+ * results are rows rather than tiles. A bordered box hugs its rows rather than
+ * stretching to the bottom of the column, and scrolls once it reaches it.
  */
 .resultList {
   display: block;
+  flex: 0 1 auto;
   background: var(--curio-card-bg);
   border: 1px solid var(--curio-border);
   border-radius: var(--curio-radius-lg);
   padding: 0;
-  margin: var(--catalogBrowseCardGridPadding, 24px);
-  height: auto;
-  max-height: calc(100vh - 290px);
+  margin: var(--catalogBrowseCardGridPadding, 16px);
   overflow: hidden auto;
 }
