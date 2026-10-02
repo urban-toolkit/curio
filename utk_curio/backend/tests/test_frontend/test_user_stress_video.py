@@ -1185,17 +1185,14 @@ class TestSessionRealData:
             clear_canvas_overlays(page)
             export_id = grid_drop(s, "data-export", 2, 1)
             connect_nodes(page, transform_id, export_id)
-            set_node_code(
-                page, export_id,
-                "df = arg\n"
-                "print('exporting', len(df), 'rows')\n"
-                "df.to_csv('curio_usertest_export.csv', index=False)\n"
-                "print('wrote curio_usertest_export.csv')\n",
+            # The node is one Download button (#226). With no input yet it runs
+            # the transform first, then downloads.
+            button = node_locator(page, export_id).get_by_role(
+                "button", name=re.compile(r"^Download")
             )
-            run_and_report(
-                s, export_id, label="the data export",
-                node_type="curio.builtin/data-export",
-            )
+            with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
+                s.tour.click(button)
+            s.note(f"the data export downloaded {download.value.suggested_filename!r}")
 
         with s.step("Run the whole graph from scratch",
                     "Play All, in topological order.", chapter="All of it"):
