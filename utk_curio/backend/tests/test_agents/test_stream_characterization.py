@@ -38,6 +38,9 @@ def _names(events) -> list[str]:
 
 
 # ── goldens (recorded 2026-09-29 on enh/agent-catalog at 62ed60b4, before B3 was re-derived here) ──
+# solve_batch_two_waves' "passes" edited by hand from 2 to 1 for issue #583: the
+# session makes one pass there, and the payload used to count the turn that
+# found nothing left as a second one.
 
 GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                                  'error',
@@ -116,7 +119,7 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
                                      'node_verdict',
                                      'node_result',
                                      'done'],
-                           'passes': 2,
+                           'passes': 1,
                            'results': {'load': {'attempts': ['pass'],
                                                 'rounds': 1,
                                                 'status': 'solved',

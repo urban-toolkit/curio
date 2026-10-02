@@ -164,9 +164,20 @@ class TestASessionPassCarriesTheErrorForward:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         import utk_curio.backend.tests.test_agents.test_verified_rounds as vr
+        from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
 
         helper = vr.TestVerifiedSolve()
         user, token = user_and_token
+        # The session is bounded by passes here, not by the suite's one-second
+        # clock (conftest). That clock starts when the batch is built, so on a
+        # slow runner pass 1 alone outlived it and pass 2, which this test is
+        # about, never ran (issue #583). The bound lets pass 1 exhaust its
+        # rounds, the weak passes the session allows, and one turn more, so it
+        # is the weak-pass limit and not the clock that stops the spin below.
+        monkeypatch.setattr(
+            SolveBatch, "_session_deadline_passed",
+            lambda self: self.pass_no > 1 + budgets._MAX_WEAK_PASSES + 1,
+        )
         # Every candidate fails at run time: pass 1 exhausts its rounds, and
         # later passes keep attempting — the owner's requirement — rather than
         # ending the session after one pass.

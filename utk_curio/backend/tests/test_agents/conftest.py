@@ -73,8 +73,11 @@ def _pinned_repair_budget(monkeypatch):
     # dev/131: Solve became a SESSION that keeps making passes until the user
     # stops it or fifteen minutes pass. Every test written before it asserts on
     # ONE pass, and a session that waits for a user who is not there would hang
-    # the suite — so the session budget is one second and its inter-pass wait is
-    # one second here. dev/131's own tests set both explicitly.
+    # the suite, so the session budget is one second and its inter-pass wait is
+    # one second here. The clock starts when the batch is built, so how many
+    # passes fit in that second depends on the machine: a test that needs a
+    # later pass bounds its session by pass count instead, by patching
+    # ``SolveBatch._session_deadline_passed`` (issue #583).
     monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "1")
     monkeypatch.setenv("CURIO_SOLVE_SESSION_WAIT", "1")
 
