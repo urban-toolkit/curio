@@ -480,7 +480,12 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
             html = fh.read()
         if base_path or backend_tag or extra_head:
             tags = base_tag + backend_tag + extra_head
-            html, found = re.subn(r"<base\b[^>]*>", tags, html, count=1)
+            # Replacement FUNCTION, not a replacement string: `re.sub` expands
+            # escapes in a string replacement, and an embedded payload is full
+            # of `<`. As a string this raises "bad escape \u" from inside
+            # the request handler, which the browser sees as the connection
+            # dropping on a page that was working a moment ago.
+            html, found = re.subn(r"<base\b[^>]*>", lambda m: tags, html, count=1)
             if not found:
                 html, found = re.subn(r"<head\b[^>]*>", lambda m: m.group(0) + tags, html, count=1)
             if not found:
