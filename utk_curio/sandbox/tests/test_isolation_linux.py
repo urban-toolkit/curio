@@ -760,6 +760,147 @@ def test_the_writer_is_configured_for_a_capped_child(isolated):
     )
 
 
+#: glibc's own arena limit on a 64-core host, eight per core. Set for the
+#: zygote, which the children inherit it from, so a four-core runner allows
+#: what a deployment's host does.
+MANY_CORE_ARENA_MAX = 8 * 64
+
+
+@pytest.fixture
+def isolated_deployed(request, workspace, monkeypatch):
+    """A zygote at the budget and wall allowance a deployment runs with.
+
+    Parametrize indirectly with ``"many-core"`` to give it a 64-core host's
+    malloc arena limit (``MANY_CORE_ARENA_MAX``).
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner, supervisor
+
+    if getattr(request, "param", None) == "many-core":
+        monkeypatch.setenv("MALLOC_ARENA_MAX", str(MANY_CORE_ARENA_MAX))
+    monkeypatch.setenv("CURIO_EXEC_SOCKET", str(workspace / "zygote.sock"))
+    monkeypatch.setenv("CURIO_EXEC_TIMEOUT", str(supervisor.DEFAULT_WALL_TIMEOUT_SECONDS))
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(supervisor.DEFAULT_LIMITS["memory_mb"]))
+    config = runner.IsolationConfig.from_environment()
+    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
+    try:
+        yield config
+    finally:
+        lifecycle.shutdown()
+
+
+#: Starts *threads* threads that each malloc and stay alive, then counts the
+#: process's malloc arenas from glibc's own report (one ``<heap nr=...>`` each).
+_COUNT_MALLOC_ARENAS = r'''
+    import ctypes, os, re, tempfile, threading
+    libc = ctypes.CDLL("libc.so.6")
+    libc.malloc.restype = ctypes.c_void_p
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    libc.free.argtypes = [ctypes.c_void_p]
+    libc.fopen.restype = ctypes.c_void_p
+    libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    libc.fclose.argtypes = [ctypes.c_void_p]
+    libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+    ready = threading.Barrier(THREADS + 1)
+    done = threading.Event()
+    def work():
+        block = libc.malloc(4096)
+        ready.wait()
+        done.wait()
+        libc.free(block)
+    threads = [threading.Thread(target=work) for _ in range(THREADS)]
+    for thread in threads:
+        thread.start()
+    ready.wait()
+    path = os.path.join(tempfile.mkdtemp(), "arenas.xml")
+    handle = libc.fopen(path.encode(), b"w")
+    libc.malloc_info(0, handle)
+    libc.fclose(handle)
+    done.set()
+    for thread in threads:
+        thread.join()
+    with open(path, encoding="utf-8") as fh:
+        report = fh.read()
+    return {"arenas": len(re.findall(r"<heap nr=", report)), "cpus": os.cpu_count()}
+'''
+
+
+@pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
+def test_threads_share_a_bounded_number_of_malloc_arenas(isolated_deployed):
+    """However many threads a node's libraries start, the arenas are capped.
+
+    glibc gives each thread that mallocs an arena of its own, up to eight per
+    core, and each reserves 64 MiB of the address space RLIMIT_AS counts.
+    Counted from glibc's own ``malloc_info`` rather than inferred from VmSize,
+    with twice the cap's threads alive at once.
+    """
+    from utk_curio.sandbox.isolation import child
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    cap = child.malloc_arena_cap(isolated_deployed.limits["memory_mb"])
+    threads = max(64, 2 * cap)
+    result = run_isolated(
+        isolated_deployed, _COUNT_MALLOC_ARENAS.replace("THREADS", str(threads))
+    )
+    assert result["stderr"] == "", result["stderr"]
+    seen = load_from_duckdb(result["output"]["path"])
+    assert seen["arenas"] <= cap, (
+        f"{threads} threads made {seen['arenas']} malloc arenas on {seen['cpus']} "
+        f"cores, above the cap of {cap} for a "
+        f"{isolated_deployed.limits['memory_mb']}MB budget"
+    )
+
+
+DDRNET = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+    "models", "model.curio.ddrnet23-slim@1",
+)
+
+#: Example 10's shipped model, run once at its own input size with *THREADS*
+#: intra-op threads, as ``curio_segment`` runs it.
+_RUN_DDRNET = r'''
+    import json, os
+    import numpy as np
+    import onnxruntime as ort
+    folder = curio_model("model.curio.ddrnet23-slim")
+    with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = THREADS
+    session = ort.InferenceSession(
+        os.path.join(folder, manifest["entry"]), sess_options=options,
+        providers=["CPUExecutionProvider"],
+    )
+    size = manifest["input"]
+    pixels = np.zeros((1, 3, int(size["height"]), int(size["width"])), dtype=np.uint8)
+    scores = session.run(None, {session.get_inputs()[0].name: pixels})[0]
+    return "x".join(str(n) for n in scores.shape)
+'''
+
+
+@pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
+def test_the_street_vision_model_runs_on_a_many_core_host(isolated_deployed):
+    """Example 10's Image Segmentation, at the default budget, on 64 cores.
+
+    onnxruntime starts a thread per physical core, and each took a malloc
+    arena of its own: at 64 threads the session reserved the whole budget and
+    failed at creation with ``std::bad_alloc``. On a deployment the same run
+    failed on a model buffer (``BFCArena ... Failed to allocate memory for
+    requested buffer of size 67108864``). The threads are the library's own
+    choice and stay as they are; the cap on arenas is what keeps them inside
+    the budget.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated_deployed,
+        _RUN_DDRNET.replace("THREADS", "64"),
+        models={"model.curio.ddrnet23-slim": os.path.abspath(DDRNET)},
+    )
+    assert result["stderr"] == "", result["stderr"][-2000:]
+    # 19 Cityscapes classes over the model's 128x256 output grid.
+    assert load_from_duckdb(result["output"]["path"]) == "1x19x128x256"
+
+
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 

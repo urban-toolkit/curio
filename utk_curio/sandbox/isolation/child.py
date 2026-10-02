@@ -167,6 +167,45 @@ def _address_space_baseline_bytes():
         return None
 
 
+#: What one glibc malloc arena reserves: HEAP_MAX_SIZE, twice the 32 MiB
+#: ceiling of the mmap threshold on a 64-bit build.
+MALLOC_ARENA_MB = 64
+
+#: The share of the budget the child's malloc arenas may reserve between them.
+MALLOC_ARENA_SHARE = 4
+
+
+def malloc_arena_cap(memory_mb):
+    """How many malloc arenas a child with *memory_mb* of budget may hold."""
+    return max(2, int(memory_mb) // MALLOC_ARENA_SHARE // MALLOC_ARENA_MB)
+
+
+def _cap_malloc_arenas(memory_mb):
+    """Bound glibc's malloc arenas, so threads cannot spend the budget on them.
+
+    glibc gives every thread that mallocs an arena of its own, up to eight per
+    core, and each one reserves ``MALLOC_ARENA_MB`` of address space up front.
+    RLIMIT_AS counts the reservation, not what is used. A node's libraries
+    start threads by the core: onnxruntime one per physical core, so at 64
+    threads, as on a 64-core host, its session could not even be created
+    inside the default budget.
+
+    With the cap, threads beyond it share the arenas there are. The thread
+    count is the library's own, as before; only where their small allocations
+    come from changes. Returns the cap, or None where glibc's ``mallopt`` is
+    not there to set it.
+    """
+    import ctypes
+
+    M_ARENA_MAX = -8
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+    except OSError:
+        return None
+    cap = malloc_arena_cap(memory_mb)
+    return cap if libc.mallopt(M_ARENA_MAX, cap) == 1 else None
+
+
 def _apply_rlimits(limits):
     """Cap memory, CPU, processes, file size, fds, and core dumps.
 
