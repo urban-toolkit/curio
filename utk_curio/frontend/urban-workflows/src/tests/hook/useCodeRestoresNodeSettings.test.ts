@@ -31,13 +31,17 @@ function generateCodeNodeSource(): string {
     return USE_CODE.slice(start, end);
 }
 
-const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel"];
+const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "dataPool"];
 
 describe("per-node settings survive a load", () => {
     test.each(RESTORED_KEYS)(
         "loadTrill reads metadata.%s off the spec",
         (key) => {
-            expect(USE_CODE).toContain(`nodeMeta.${key} = node.metadata.${key}`);
+            // Copied as is, or handed to one converter: `nodeMeta.k =
+            // node.metadata.k` or `nodeMeta.k = fromSpec(node.metadata.k)`.
+            expect(USE_CODE).toMatch(
+                new RegExp(`nodeMeta\\.${key} = (\\w+\\()?node\\.metadata\\.${key}\\b`),
+            );
         },
     );
 
@@ -61,5 +65,6 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/spatialJoin\?: \{ nameProperty\?: string; output\?: "points" \| "polygons" \};/);
         expect(typeBlock).toMatch(/simpleVis\?: \{ imageColumn\?: string \};/);
         expect(typeBlock).toMatch(/packageTemplateLabel\?: string;/);
+        expect(typeBlock).toMatch(/dataPool\?: \{ insideChart\?: string; betweenCharts\?: string \};/);
     });
 });

@@ -299,6 +299,13 @@ REJECTED = {
     "unknown dataset origin": lambda d: d["dataflow"].update(
         datasets=[{"datasetId": "d1", "origin": "elsewhere"}]
     ),
+    # The value the old widget built from "Merge (AND)", which matched no mode (#581).
+    "data pool mode that is no resolution type": lambda d: _node(d)["metadata"].update(
+        dataPool={"betweenCharts": "MERGE_(AND)"}
+    ),
+    "data pool setting the pool does not have": lambda d: _node(d)["metadata"].update(
+        dataPool={"propagate": "MERGE_OR"}
+    ),
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
@@ -320,6 +327,9 @@ ACCEPTED = {
     ),
     "empty graph": lambda d: d["dataflow"].update(nodes=[], edges=[]),
     "fractional coordinates": lambda d: _node(d).update(x=12.5, y=-3.25),
+    "data pool modes": lambda d: _node(d)["metadata"].update(
+        dataPool={"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"}
+    ),
 }
 
 
@@ -803,6 +813,25 @@ class TestSchemaMatchesConstants:
             "MULTIPLE is a display-only label in styles.tsx and is never "
             "serialized onto a node"
         )
+
+    def test_the_data_pool_modes_mirror_the_frontend_enum(self):
+        """metadata.dataPool's modes are exactly ResolutionType (#581)."""
+        source = os.path.join(
+            REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src", "constants.ts"
+        )
+        with open(source, encoding="utf-8") as fh:
+            text = fh.read()
+        block = re.search(r"export enum ResolutionType\s*\{(.*?)\}", text, re.S)
+        assert block, "could not find the ResolutionType enum in constants.ts"
+        modes = set(re.findall(r'=\s*"([A-Z_]+)"', block.group(1)))
+        assert modes, "parsed no members out of ResolutionType"
+
+        declared = DEFS["nodeMetadata"]["properties"]["dataPool"]["properties"]
+        for member in ("insideChart", "betweenCharts"):
+            assert set(declared[member]["enum"]) == modes, (
+                f"metadata.dataPool.{member} must list ResolutionType: "
+                f"{sorted(declared[member]['enum'])} vs {sorted(modes)}"
+            )
 
     def test_the_port_types_extend_the_manifest_schema_by_exactly_default(self):
         """The manifest's port enum declares capability; this one records state.

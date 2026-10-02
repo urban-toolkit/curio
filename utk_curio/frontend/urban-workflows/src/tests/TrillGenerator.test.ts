@@ -419,3 +419,36 @@ describe("TrillGenerator Spatial Join settings (#262)", () => {
     expect(byId["sj-2"].metadata).toBeUndefined();
   });
 });
+
+describe("TrillGenerator Data Pool conflict modes (#581)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists the chosen modes at metadata.dataPool, and only a mode that is not Overwrite", () => {
+    const pool = (nodeId: string, dataPool?: unknown) => ({
+      type: "CURIO_UNIVERSAL_NODE",
+      position: { x: 0, y: 0 },
+      data: { nodeId, nodeType: "curio.builtin/data-pool", ...(dataPool ? { dataPool } : {}) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [
+        pool("both", { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" }),
+        pool("between", { insideChart: "OVERWRITE", betweenCharts: "MERGE_AND" }),
+        // The defaults, an untouched pool, and a value that is no mode.
+        pool("defaults", { insideChart: "OVERWRITE", betweenCharts: "OVERWRITE" }),
+        pool("untouched"),
+        pool("junk", { betweenCharts: "MERGE_(AND)" }),
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["both"].metadata.dataPool).toEqual({ insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" });
+    expect(byId["between"].metadata.dataPool).toEqual({ betweenCharts: "MERGE_AND" });
+    expect(byId["defaults"].metadata).toBeUndefined();
+    expect(byId["untouched"].metadata).toBeUndefined();
+    expect(byId["junk"].metadata).toBeUndefined();
+  });
+});
