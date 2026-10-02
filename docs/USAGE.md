@@ -15,6 +15,7 @@
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
 - [Discovery Catalog](#discovery-catalog)
+- [Model Catalog](#model-catalog)
 - [Agent Catalog](#agent-catalog)
 - [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
@@ -252,7 +253,7 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-API Settings groups keys by the catalog that uses them. The **Agent Catalog** part holds the LLM configurations above and the connection keys below. The **Discovery Catalog** part has one row per key a source can send, such as the Socrata app token and the Hugging Face token (which Street Vision's gated models use too). Each row says which sources send it, and has its own **Save** and **Remove saved key**.
+API Settings groups keys by the catalog that uses them. The **Agent Catalog** part holds the LLM configurations above and the connection keys below. The **Discovery Catalog** part has one row per key a source can send: the Socrata app token, the Hugging Face token, the Google Maps API key and the Mapillary access token. Each row says which sources send it, and has its own **Save** and **Remove saved key**. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
 
 ### Connection keys
 
@@ -569,11 +570,19 @@ For the full guide, covering the storage layers, the action matrix, computed dat
 
 ## Discovery Catalog
 
-The Data Catalog holds datasets you already have; the **Discovery Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are. And it lists **services**: OpenStreetMap downloads buildings, roads, parks, water and land surface for an area you give, as a box or as named areas, loaded by Autark.
+The Data Catalog holds datasets you already have; the **Discovery Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are. And it lists **services**: OpenStreetMap downloads buildings, roads, parks, water and land surface for an area you give, as a box or as named areas, loaded by Autark; Mapillary and Google Street View download street-level images for a box, with your own key. **Hugging Face models** lists image segmentation models, and adding one puts it in your Model Catalog.
 
 Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`CURIO_DISCOVERY_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
 
-For the full guide, covering searching, downloading, storage sources, collections, API tokens, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
+For the full guide, covering searching, downloading, storage sources, collections, street-level images, models, API tokens step by step, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
+
+## Model Catalog
+
+The **Model Catalog** holds the trained models your nodes can run. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio; models you add from the Discovery Catalog's **Hugging Face models** land here too. An **Image Segmentation** node, from the Street Vision package, runs the model its code names with `curio_model("<id>")`: drag a model from **Models** in the left Tools panel onto the node to change it.
+
+Shipped models are folders under `<repo_root>/models/`, relocated with **`CURIO_MODELS_ROOT`**; models you add are yours, under `.curio/users/<user-key>/models/`.
+
+For the full guide, covering runtimes, libraries, the manifest, and sharing a dataflow that names a model, see [docs/MODEL-CATALOG.md](MODEL-CATALOG.md).
 
 ## Agent Catalog
 

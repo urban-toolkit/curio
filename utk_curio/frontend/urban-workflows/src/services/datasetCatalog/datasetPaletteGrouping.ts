@@ -3,6 +3,7 @@ import type {
   DatasetDragPayload,
   DatasetGroupLayerRef,
 } from "./datasetCatalogTypes";
+import { layerGroupKind } from "./datasetCatalogTypes";
 import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 
 /**
@@ -146,22 +147,24 @@ export function osmGroupLayerRefs(
 }
 
 /**
- * Drag payload for a multilayer OSM PBF group parent. Dropping it creates a
- * single node representing the *whole* import: the loader reads every layer, and
- * the node references the real per-layer dataset ids (via ``groupLayers``) so the
- * saved spec never carries the synthetic group id. The group id is kept only as
- * the drag's identity/linkage marker.
+ * Drag payload for a multilayer group parent (an OSM PBF or a GeoPackage
+ * import). Dropping it creates a single node representing the *whole* import:
+ * the loader reads every layer, and the node references the real per-layer
+ * dataset ids (via ``groupLayers``) so the saved spec never carries the
+ * synthetic group id. The group id is kept only as the drag's identity/linkage
+ * marker, and its prefix gives the payload's format and ``curio://`` scheme.
  */
 export function createOsmGroupDragPayload(
   group: DatasetPaletteGroup,
 ): DatasetDragPayload {
   const layers = osmGroupLayerRefs(group);
+  const kind = layerGroupKind(group.groupId);
   return {
     datasetId: group.groupId,
     title: group.title,
-    uri: `curio://osm/${group.groupId}`,
+    uri: `curio://${kind}/${group.groupId}`,
     path: null,
-    format: "osm",
+    format: kind,
     origin: "imported",
     loaderSnippet: osmGroupLoaderSnippet(layers),
     groupLayers: layers,

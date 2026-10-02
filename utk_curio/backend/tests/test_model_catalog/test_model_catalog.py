@@ -239,8 +239,12 @@ class TestANodeReachesIt:
 
 class TestItShips:
     def test_the_image_and_the_wheel_carry_models(self):
-        assert "COPY models/ models/" in (REPO / "Dockerfile").read_text(encoding="utf-8")
-        assert "recursive-include models" in (REPO / "MANIFEST.in").read_text(encoding="utf-8")
+        # Read as the shipped sources' packaging checks read theirs: a built
+        # image does not carry its own Dockerfile.
+        from utk_curio.backend.tests.test_discovery.test_shipped_sources import _packaging_file
+
+        assert "COPY models/ models/" in _packaging_file("Dockerfile")
+        assert "recursive-include models" in _packaging_file("MANIFEST.in")
 
     def test_an_isolated_child_reaches_models_only_as_staged_links(self):
         from utk_curio.sandbox.isolation import hardening

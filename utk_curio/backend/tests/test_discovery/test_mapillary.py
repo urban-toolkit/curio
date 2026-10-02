@@ -332,6 +332,18 @@ class TestItBecomesACollection:
         assert frame["path"].notna().all()
         assert all(Path(p).is_file() for p in frame["path"])
 
+    def test_the_browser_sees_its_photos(self, client, keyed):
+        """The media route serves a downloaded collection's files: the details'
+        thumbnails and Simple View's cards are drawn from it."""
+        import pandas as pd
+
+        dataset = self._add(client, keyed)
+        file_id = pd.read_parquet(dataset["path"])["file_id"].iloc[0]
+        for variant in ("thumb", "original"):
+            res = client.get(f"/api/datasets/{dataset['id']}/media/{file_id}?variant={variant}", headers=keyed)
+            assert res.status_code == 200, (variant, res.get_data(as_text=True))
+            assert res.mimetype == "image/jpeg"
+
     def test_it_records_what_it_was_asked(self, client, keyed):
         provenance = self._add(client, keyed)["discoverySource"]
         assert provenance["sourceId"] == SOURCE and provenance["resourceId"] == "images"

@@ -4,11 +4,10 @@ A download is a job rather than a request because a 64 MiB file from a
 municipal portal can outlast any comfortable request timeout, and because the
 page wants a progress bar rather than a spinner.
 
-Modelled on ``streetvision/jobs.py``, which is the existing precedent, with
-three things that store does not have and this one needs:
+Three things it holds to:
 
 - **records are keyed by (user, job)**, and ``get`` returns nothing for a
-  foreign job. ``streetvision``'s ``get_job(job_id)`` returns anyone's;
+  foreign job, so guessing an id reaches nothing;
 - **cancellation**, checked between chunks, so a user who started a download of
   something enormous is not stuck watching it;
 - **a TTL sweep**, so finished records do not accumulate for the life of the

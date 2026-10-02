@@ -657,6 +657,7 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
         "paths": resolved,
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
+        "models": answer.get("models") or {},
     }
 
 
@@ -727,6 +728,7 @@ def execute_workflow_programmatically(
                 "dataset_paths": resolution["paths"],
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
+                "models": resolution["models"],
             },
             headers=sandbox_auth_header(),
             timeout=120,
