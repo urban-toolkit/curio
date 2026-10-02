@@ -88,6 +88,23 @@ def test_it_serves_the_spec_without_a_token(client, user_and_token, tmp_curio):
     assert "outputs" in body
 
 
+def test_it_carries_the_descriptors_a_tile_needs_to_render(client, user_and_token, tmp_curio):
+    # Curio bundles node implementations but not node descriptors: the only
+    # thing that registers a node type is the package loader, fed by
+    # GET /api/packages, and `curio.builtin` is a real package in the owner's
+    # store rather than a bundle constant. Without these a standalone page shows
+    # "Loading node..." on every tile, however much data it carries.
+    _, token = user_and_token
+    pid = _create(client, token)
+
+    body = client.get(f"/api/projects/{pid}/dashboard").get_json()
+
+    registry = body["registry"]
+    ids = [p.get("packageId") for p in registry["packages"]]
+    assert "curio.builtin" in ids, ids
+    assert isinstance(registry["starters"], list)
+
+
 def test_the_payload_carries_no_rows_when_nothing_was_saved(client, user_and_token, tmp_curio):
     _, token = user_and_token
     pid = _create(client, token)

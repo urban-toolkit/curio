@@ -1060,11 +1060,41 @@ def _dashboard_envelope_reader():
     return read
 
 
+def _dashboard_registry(project_id: str) -> dict:
+    """The node descriptors and starter bodies a tile needs to render at all.
+
+    Not an optimisation. Curio's bundle ships node *implementations* but not node
+    *descriptors*: the only thing that calls ``registerNode`` is the package
+    loader, fed by ``GET /api/packages``, and ``curio.builtin`` is a real package
+    in the owner's store rather than a bundle constant. A page without this
+    renders every tile as "Loading node...", data or no data.
+
+    Read from the project OWNER's store, because that is whose packages the
+    dataflow was authored against, and a visitor holding a link may have no
+    store of their own.
+    """
+    from utk_curio.backend.app.packages.application import catalog as packages_catalog
+    from utk_curio.backend.app.packages.application import starters as packages_starters
+    from utk_curio.backend.app.packages.application import seeding as packages_seeding
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    if project is None:
+        return {"packages": [], "starters": []}
+    ukey = _owner_user_dir_key(project)
+    packages_seeding.ensure_user_seeded(ukey)
+    return {
+        "packages": packages_catalog.installed_package_payloads(ukey),
+        "starters": packages_starters.generate_package_starters(ukey),
+    }
+
+
 def build_standalone_dashboard(
     project_id: str,
     *,
     limit_bytes: Optional[int] = None,
     fetch_envelope=None,
+    registry=None,
 ) -> dict:
     """Everything the page at ``/dashboard/<id>`` needs, with nothing left to fetch.
 
@@ -1091,7 +1121,9 @@ def build_standalone_dashboard(
         },
         limit_bytes=limit_bytes if limit_bytes is not None else DEFAULT_PAYLOAD_LIMIT_BYTES,
     )
-    return payload.to_dict()
+    body = payload.to_dict()
+    body["registry"] = registry if registry is not None else _dashboard_registry(project_id)
+    return body
 
 
 # ---------------------------------------------------------------------------
