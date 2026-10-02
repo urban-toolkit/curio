@@ -65,7 +65,12 @@ def source_row(
         # ``portal``'s are found by searching it. The root of a folder is NOT
         # sent: it is a path on the server, and the resources say everything a
         # user acts on.
-        "kind": "storage" if manifest.is_storage else "service" if manifest.is_service else "portal",
+        # A ``model`` source is searched like a portal and adds to the Model
+        # Catalog.
+        "kind": (
+            "storage" if manifest.is_storage else "service" if manifest.is_service
+            else "model" if manifest.is_model else "portal"
+        ),
         "resources": [
             declared_resource_row(spec, source_parameters=manifest.parameters)
             for spec in manifest.resources
@@ -114,6 +119,7 @@ def resource_row(
     already_held_dataset_id: str | None = None,
     held_formats: dict[str, str] | None = None,
     parameters: tuple[P.ParameterSpec, ...] = (),
+    already_held_model_id: str | None = None,
 ) -> dict[str, Any]:
     """One search result.
 
@@ -143,6 +149,8 @@ def resource_row(
         "fileCount": resource.file_count,
         "fieldValues": [dict(row) for row in resource.fields],
         "samples": list(resource.samples),
+        # A model row's twin of alreadyHeldDatasetId: held in the Model Catalog.
+        "alreadyHeldModelId": already_held_model_id,
     }
 
 
@@ -154,6 +162,7 @@ def resource_detail_row(
     already_held_dataset_id: str | None = None,
     held_formats: dict[str, str] | None = None,
     parameters: tuple[P.ParameterSpec, ...] = (),
+    already_held_model_id: str | None = None,
 ) -> dict[str, Any]:
     row = resource_row(
         detail.resource,
@@ -162,6 +171,7 @@ def resource_detail_row(
         already_held_dataset_id=already_held_dataset_id,
         held_formats=held_formats,
         parameters=parameters,
+        already_held_model_id=already_held_model_id,
     )
     row["fields"] = [
         {"name": f.name, "type": f.type, "description": f.description}

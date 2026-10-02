@@ -20,7 +20,8 @@ export type DiscoveryProviderType =
   | "huggingface"
   | "autark-osm"
   | "mapillary"
-  | "google-streetview";
+  | "google-streetview"
+  | "huggingface-models";
 
 /** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
 export const STORAGE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = ["folder", "s3", "huggingface"];
@@ -34,8 +35,9 @@ export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = [
 ];
 
 /** A `portal` is searched for its datasets; a `storage` source declares them;
- *  a `service` declares what it can be asked for. */
-export type DiscoverySourceKind = "portal" | "storage" | "service";
+ *  a `service` declares what it can be asked for; a `model` source is searched
+ *  for models, which it adds to the Model Catalog. */
+export type DiscoverySourceKind = "portal" | "storage" | "service" | "model";
 
 /** Matches `RESOURCE_KINDS`. `table` is copied; every other kind is a
  *  collection, referenced where its files are. */
@@ -46,9 +48,11 @@ export type DiscoveryResourceKind =
   | "images"
   | "videos"
   | "media"
-  | "audio";
+  | "audio"
+  | "model";
 
-/** Matches `KIND_LABEL` in `discovery/application/scan.py`. */
+/** Matches `KIND_LABEL` in `discovery/application/scan.py`, and a model
+ *  source's rows. */
 export const DISCOVERY_RESOURCE_KIND_LABEL: Record<DiscoveryResourceKind, string> = {
   table: "Table",
   rasters: "Rasters",
@@ -57,6 +61,7 @@ export const DISCOVERY_RESOURCE_KIND_LABEL: Record<DiscoveryResourceKind, string
   videos: "Videos",
   media: "Photos and videos",
   audio: "Audio",
+  model: "Model",
 };
 
 /** Matches `AUTH_MODES`. */
@@ -92,6 +97,7 @@ export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   "autark-osm": "OpenStreetMap (Autark)",
   mapillary: "Mapillary",
   "google-streetview": "Google Street View",
+  "huggingface-models": "Hugging Face models",
 };
 
 export const DISCOVERY_AUTH_LABEL: Record<DiscoveryAuthMode, string> = {
@@ -265,6 +271,10 @@ export function isServiceSource(source: Pick<DiscoverySourceRow, "kind">): boole
   return source.kind === "service";
 }
 
+export function isModelSource(source: Pick<DiscoverySourceRow, "kind">): boolean {
+  return source.kind === "model";
+}
+
 /**
  * What a row's Download sends. A portal's dataset takes the row's name, or it
  * would land named after the remote file ("ijzp-q8t2.csv" rather than
@@ -374,6 +384,8 @@ export interface DiscoveryResource {
   /** Set when this account already downloaded this resource, so the row links
    *  to the dataset instead of offering a second copy. */
   alreadyHeldDatasetId: string | null;
+  /** A model row's twin: the Model Catalog model this account added from it. */
+  alreadyHeldModelId?: string | null;
   /** The datasets held from this row, by format. Holding the CSV is not
    *  holding the GeoJSON. */
   heldFormats?: Record<string, string>;
@@ -538,6 +550,10 @@ export interface DiscoveryAcquireJob {
   error: string | null;
   datasetId: string | null;
   dataset: Record<string, unknown> | null;
+  /** A model source's add: the Model Catalog model, in place of a dataset. */
+  model?: { id: string; name?: string; [key: string]: unknown } | null;
+  /** What installing that model's libraries reported. */
+  dependencies?: { importErrors?: Record<string, string>; dependencyError?: string } | null;
   alreadyPresent: boolean;
   unchanged: boolean;
   sourceId: string;

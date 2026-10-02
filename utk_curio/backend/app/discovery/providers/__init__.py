@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
 from utk_curio.backend.app.discovery.domain.manifest import (
+    MODEL_PROVIDER_TYPES,
     PORTAL_PROVIDER_TYPES,
     PROVIDER_PARAMETER_IDS,
     PROVIDER_TYPES,
@@ -55,6 +56,13 @@ SERVICE_PROVIDERS: dict[str, type] = {
     google_streetview.GoogleStreetViewService.type: google_streetview.GoogleStreetViewService,
 }
 
+#: Models: searched like a portal, added to the Model Catalog.
+from utk_curio.backend.app.discovery.providers.huggingface_models import HuggingFaceModels  # noqa: E402
+
+MODEL_PROVIDERS: dict[str, type] = {
+    HuggingFaceModels.type: HuggingFaceModels,
+}
+
 #: The modules that can recognise a URL, in the order ``verify.py`` tries them.
 #: ``direct`` is absent on purpose: it would claim every https URL and shadow
 #: every other refinement, and the generic probe already handles an
@@ -77,7 +85,11 @@ assert set(SERVICE_PROVIDERS) == set(SERVICE_PROVIDER_TYPES), (
     f"service registry and SERVICE_PROVIDER_TYPES disagree: "
     f"{sorted(set(SERVICE_PROVIDERS) ^ set(SERVICE_PROVIDER_TYPES))}"
 )
-assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) == set(PROVIDER_TYPES)
+assert set(MODEL_PROVIDERS) == set(MODEL_PROVIDER_TYPES), (
+    f"model registry and MODEL_PROVIDER_TYPES disagree: "
+    f"{sorted(set(MODEL_PROVIDERS) ^ set(MODEL_PROVIDER_TYPES))}"
+)
+assert set(PROVIDERS) | set(STORAGE_PROVIDERS) | set(SERVICE_PROVIDERS) | set(MODEL_PROVIDERS) == set(PROVIDER_TYPES)
 
 # What a manifest may declare and what the provider reads are the same list.
 _MODULES = {
@@ -114,6 +126,14 @@ def build_storage(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
     return cls(manifest, transport)
 
 
+def build_model_provider(manifest: DiscoverySourceManifest, transport: DiscoveryTransport):
+    """Construct the model source a manifest names."""
+    cls = MODEL_PROVIDERS.get(manifest.provider.type)
+    if cls is None:
+        raise CapabilityUnsupported(f"{manifest.name} is not a model source")
+    return cls(manifest, transport)
+
+
 def build_service(manifest: DiscoverySourceManifest, transport: DiscoveryTransport | None = None):
     """Construct the service a manifest names, answering from the recorded
     corpus when the transport would.
@@ -135,7 +155,8 @@ def build_service(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
 
 
 __all__ = [
-    "PROVIDERS", "STORAGE_PROVIDERS", "SERVICE_PROVIDERS", "RECOGNISERS", "build_provider",
-    "build_storage", "build_service", "DiscoveryProvider", "BaseProvider", "StorageProvider",
+    "PROVIDERS", "STORAGE_PROVIDERS", "SERVICE_PROVIDERS", "MODEL_PROVIDERS", "RECOGNISERS",
+    "build_provider", "build_storage", "build_service", "build_model_provider",
+    "DiscoveryProvider", "BaseProvider", "StorageProvider",
 ]
 

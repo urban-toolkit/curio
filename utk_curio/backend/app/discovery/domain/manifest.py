@@ -49,10 +49,16 @@ STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 #: browse, so their ``resources`` are declared, like storage's, with no path.
 SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary", "google-streetview")
 
+#: Models: searched like a portal, added to the Model Catalog rather than the
+#: Data Catalog.
+MODEL_PROVIDER_TYPES = ("huggingface-models",)
+
 #: Provider implementations that exist. Kept here rather than imported from
 #: ``providers`` so that reading a manifest never drags in a transport.
 #: ``providers/__init__.py`` asserts the two agree.
-PROVIDER_TYPES = PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES + SERVICE_PROVIDER_TYPES
+PROVIDER_TYPES = (
+    PORTAL_PROVIDER_TYPES + STORAGE_PROVIDER_TYPES + SERVICE_PROVIDER_TYPES + MODEL_PROVIDER_TYPES
+)
 
 #: The parameter ids each provider reads, by provider type. A manifest may
 #: declare only these, so a declared question can never be silently ignored.
@@ -202,6 +208,10 @@ class ProviderSpec:
     def is_service(self) -> bool:
         return self.type in SERVICE_PROVIDER_TYPES
 
+    @property
+    def is_model(self) -> bool:
+        return self.type in MODEL_PROVIDER_TYPES
+
 
 @dataclass(frozen=True)
 class AuthSpec:
@@ -316,6 +326,10 @@ class DiscoverySourceManifest:
     @property
     def is_service(self) -> bool:
         return self.provider.is_service
+
+    @property
+    def is_model(self) -> bool:
+        return self.provider.is_model
 
     def resource(self, resource_id: str) -> ResourceSpec | None:
         for spec in self.resources:
@@ -886,6 +900,11 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DiscoverySourceManife
         _check_parameter_ids(provider.type, spec.parameters, f"manifest.resources[{spec.id}].parameters")
     if provider.is_storage or provider.is_service:
         capabilities = _storage_capabilities(raw.get("capabilities"), resources)
+    elif provider.is_model:
+        if raw.get("capabilities") not in (None, {}):
+            raise ManifestError("manifest.capabilities is fixed for a model source: it is searched and adds models")
+        # Searched, described, and added to the Model Catalog: one "format".
+        capabilities = CapabilitySpec(formats=("model",))
     else:
         capabilities = _parse_capabilities(raw.get("capabilities"))
 

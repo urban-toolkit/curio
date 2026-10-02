@@ -80,6 +80,7 @@
             "folder",
             "google-streetview",
             "huggingface",
+            "huggingface-models",
             "mapillary",
             "s3",
             "socrata",
@@ -92,7 +93,7 @@
         },
         "options": {
           "type": "object",
-          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main). 'mapillary': imageHosts, the hosts its images come from (a parent domain covers its subdomains)."
+          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main). 'mapillary': imageHosts, the hosts its images come from (a parent domain covers its subdomains). 'huggingface-models': pipelineTag, the Hub task searched (default image-segmentation)."
         },
         "root": {
           "type": "string",
@@ -152,6 +153,7 @@
                   "autark-osm",
                   "ckan",
                   "google-streetview",
+                  "huggingface-models",
                   "mapillary",
                   "s3",
                   "socrata",

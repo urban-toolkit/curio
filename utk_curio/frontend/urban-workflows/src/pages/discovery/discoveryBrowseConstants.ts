@@ -16,7 +16,7 @@ import {
 export const PROVIDER_FILTERS: { value: DiscoveryProviderType; label: string }[] = (
   [
     "socrata", "ckan", "arcgis", "wfs", "direct", "folder", "s3", "huggingface",
-    "autark-osm", "mapillary", "google-streetview",
+    "autark-osm", "mapillary", "google-streetview", "huggingface-models",
   ] as DiscoveryProviderType[]
 ).map((value) => ({ value, label: DISCOVERY_PROVIDER_LABEL[value] }));
 

@@ -109,6 +109,9 @@ class TestEveryShippedSource:
         elif manifest.is_service:
             # A service's images land as one collection, as a bucket's do.
             allowed = M.DISCOVERY_ACQUIRABLE_FORMATS + ("collection",)
+        elif manifest.is_model:
+            # A model source adds to the Model Catalog, and nothing else.
+            allowed = ("model",)
         else:
             allowed = M.DISCOVERY_ACQUIRABLE_FORMATS
         assert set(formats) <= set(allowed)

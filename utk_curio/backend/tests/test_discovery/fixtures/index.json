@@ -85,10 +85,71 @@
     },
     "status": 200
   },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/config.json": {
+    "file": "huggingface-models/04-config.json",
+    "headers": {
+      "Content-Length": "6957",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/onnx/model.onnx": {
+    "file": "huggingface-models/synthetic-segmentation.onnx",
+    "headers": {
+      "Content-Length": "29677",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/preprocessor_config.json": {
+    "file": "huggingface-models/05-preprocessor_config.json",
+    "headers": {
+      "Content-Length": "373",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
   "https://huggingface.co/api/datasets/huggingface/documentation-images/tree/main/transformers/tasks?recursive=true&expand=false": {
     "file": "huggingface/01.json",
     "headers": {
       "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/Xenova/segformer-b0-finetuned-ade-512-512?blobs=true": {
+    "file": "huggingface-models/03.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/openmmlab/upernet-convnext-small?blobs=true": {
+    "file": "huggingface-models/09.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/openmmlab/upernet-convnext-tiny?blobs=true": {
+    "file": "huggingface-models/06.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=segformer": {
+    "file": "huggingface-models/01.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Link": "<https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=segformer&cursor=eyIkb3IiOlt7ImRvd25sb2FkcyI6MzIwNiwiX2lkIjp7IiRndCI6IjY0NTE3OTIzNDFmM2M3NjliOTE2NWE1MSJ9fSx7ImRvd25sb2FkcyI6eyIkbHQiOjMyMDZ9fSx7ImRvd25sb2FkcyI6bnVsbH1dLCJzZWFyY2hTZXF1ZW5jZVRva2VuIjoiQ0tuc25BSWFDU0VBQUFBQUFBeXBRQm9PV2d4a1VYa2pRZlBIYWJrV1dsRWlEbG9NWkZGNUkwSHp4Mm01RmxwUiJ9>; rel=\"next\""
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=upernet": {
+    "file": "huggingface-models/02.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Link": "<https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=upernet&cursor=eyIkb3IiOlt7ImRvd25sb2FkcyI6MTcsIl9pZCI6eyIkZ3QiOiI2OWRjY2Y4YjY2MmJmMjg1NmMyODYwZDkifX0seyJkb3dubG9hZHMiOnsiJGx0IjoxN319LHsiZG93bmxvYWRzIjpudWxsfV0sInNlYXJjaFNlcXVlbmNlVG9rZW4iOiJDUERWdkFFYUNTRUFBQUFBQUFBeFFCb09XZ3hwM00rTFppdnloV3dvWU5raURsb01hZHpQaTJZcjhvVnNLR0RaIn0%3D>; rel=\"next\""
     },
     "status": 200
   },
@@ -420,6 +481,30 @@
       "Content-Type": "application/octet-stream"
     },
     "status": 206
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/config.json": {
+    "file": "huggingface-models/07-config.json",
+    "headers": {
+      "Content-Length": "8755",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/model.safetensors": {
+    "file": "huggingface-models/synthetic.safetensors",
+    "headers": {
+      "Content-Length": "10",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/preprocessor_config.json": {
+    "file": "huggingface-models/08-preprocessor_config.json",
+    "headers": {
+      "Content-Length": "372",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
   },
   "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.9105%2C-87.6315&radius=60&source=outdoor": {
     "file": "google-streetview/metadata-denied-01.json",

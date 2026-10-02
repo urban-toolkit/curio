@@ -24,6 +24,7 @@ import {
   useStorageListing,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
+import { notifyModelCatalogRefresh } from "../../services/modelCatalog";
 import { DiscoveryLinkForm } from "./DiscoveryLinkForm";
 import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
 import { DiscoverySourceIcon } from "./DiscoverySourceIcon";
@@ -75,7 +76,26 @@ export const DiscoverySourceDetail: React.FC = () => {
   // A finished download is a new Data Catalog dataset, so every surface that
   // lists datasets - in this tab and in any other - has to be told. Skipping
   // this is how the download succeeds and the dataset appears to be missing.
+  const viewModel = (modelId: string) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`);
   const acquisition = useDiscoveryAcquire((job) => {
+    // A model source's add lands in the Model Catalog, which is told instead.
+    if (job.model?.id) {
+      notifyModelCatalogRefresh();
+      const name = job.model.name || job.model.id;
+      const view = { action: { label: "View model", onClick: () => viewModel(job.model!.id) } };
+      if (job.alreadyPresent) {
+        showToast(`${name} is already in your Model Catalog.`, "info", view);
+      } else if (job.dependencies?.dependencyError) {
+        showToast(
+          `Added ${name} to your Model Catalog, but its libraries did not install: ${job.dependencies.dependencyError}`,
+          "warning",
+          view,
+        );
+      } else {
+        showToast(`Added ${name} to your Model Catalog.`, "success", view);
+      }
+      return;
+    }
     notifyDatasetCatalogRefresh();
     // Reported like an import into the Data Catalog, which is what it is.
     if (job.datasetId) {
@@ -253,6 +273,7 @@ export const DiscoverySourceDetail: React.FC = () => {
                 iconUrl={source.iconUrl}
                 job={acquisition.jobs[acquireKey(decoded, resource.resourceId)]}
                 onViewDataset={(id) => openDatasetDetails(id)}
+                onViewModel={viewModel}
                 onDownload={(r, fmt, parameters, title) =>
                   void acquisition.start(decoded, r.resourceId, downloadBody(source, r, fmt, parameters, title))
                 }
