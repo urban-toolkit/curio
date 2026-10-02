@@ -65,8 +65,8 @@ module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir }) => ({
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
     // Lets the package's sources import from Curio's own src tree via
-    // relative paths (used by streetvision behavior files for the
-    // `NodeBehaviorHook` type import — erased at runtime).
+    // relative paths (a behavior file's `NodeBehaviorHook` type import,
+    // erased at runtime).
     modules: [path.resolve(__dirname, "node_modules")],
   },
   module: {

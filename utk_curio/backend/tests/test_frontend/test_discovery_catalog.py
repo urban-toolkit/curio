@@ -411,6 +411,7 @@ EXAMPLE_STORAGE_ROWS = {
     "dashcam": "Dashcam frames",
     "survey": "Street survey",
     "noise": "Noise recordings",
+    "mapillary": "Mapillary street photos",
 }
 
 

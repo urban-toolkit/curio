@@ -1,16 +1,16 @@
 # Discovery Catalog
 
-The Discovery Catalog is where Curio lists the **open data portals**, the **storage** and the **services** it can reach: folders on the Curio machine, public S3 buckets, Hugging Face dataset repositories, and OpenStreetMap. You search a portal and download a dataset, open a storage source and add one of the resources it declares, or tell a service where and what and download its answer. Either way it lands in your Data Catalog.
+The Discovery Catalog is where Curio lists the **open data portals**, the **storage**, the **services** and the **models** it can reach: folders on the Curio machine, public S3 buckets, Hugging Face dataset repositories, OpenStreetMap, street-level images from Mapillary and Google Street View, and image segmentation models on Hugging Face. You search a portal and download a dataset, open a storage source and add one of the resources it declares, tell a service where and what and download its answer, or add a model. A dataset lands in your Data Catalog, and a model in your Model Catalog.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Discovery Catalog the portals and storage you take datasets from.
+Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Discovery Catalog the portals, storage, services and models you take datasets and models from.
 
 This guide is in eight parts, plus operator notes:
 
 - [1. What is the Discovery Catalog?](#1-what-is-the-discovery-catalog): sources, what ships, and where things are stored.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the two pages, the action matrix, and walkthroughs.
 - [3. Using a discovered dataset in a dataflow](#3-using-a-discovered-dataset-in-a-dataflow): tables and collections are Data Catalog datasets.
-- [4. Downloading and adding](#4-downloading-and-adding): what a download asks, progress, formats, limits, what is copied and what is referenced.
-- [5. API tokens](#5-api-tokens): sources that take a key, and where to set yours.
+- [4. Downloading and adding](#4-downloading-and-adding): what a download asks, progress, formats, limits, what is copied and what is referenced, street-level images, and models.
+- [5. API tokens](#5-api-tokens): sources that take a key, how to set yours step by step, and what a card says.
 - [6. The Dataset Finder](#6-the-dataset-finder): letting an agent search the portals for you.
 - [7. Importing, publishing, and sharing](#7-importing-publishing-and-sharing): how sources are added.
 - [8. The manifest](#8-the-manifest): the fields a source declares, what it asks before a download, and how a storage source declares its files.
@@ -22,11 +22,12 @@ This guide is in eight parts, plus operator notes:
 
 ### Concept
 
-The unit of this catalog is a **source**. A source is not a dataset. There are three kinds:
+The unit of this catalog is a **source**. A source is not a dataset. There are four kinds:
 
 - **A portal**, such as a city's open data site. Its datasets are found live, when you search it, and you download the ones you want.
 - **A storage source**: a folder on the Curio machine, a public S3 bucket, or a Hugging Face dataset repository. Its manifest declares its **resources**, and how the files of each are organized, the way a portal's manifest declares its endpoints. Curio lists what the manifest declares and never guesses a layout.
-- **A service**, such as OpenStreetMap. It has nothing to browse: you say where (an area) and what (one of the resources its manifest declares, such as Buildings), and it answers with one download.
+- **A service**, such as OpenStreetMap, Mapillary or Google Street View. It has nothing to browse: you say where (an area) and what (one of the resources its manifest declares, such as Buildings or Street-level images), and it answers with one download.
+- **A model source**, **Hugging Face models**. You search it as you search a portal, and **Add to Model Catalog** puts a model in your [Model Catalog](MODEL-CATALOG.md), for a node to run.
 
 A storage resource is one of two things:
 
@@ -57,6 +58,9 @@ discovery/
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
+| Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
+| Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |
+| Hugging Face models | Hugging Face | Public; a token opens the gated models your account can read. Image segmentation models a node can run |
 
 ### Storage layers
 
@@ -66,7 +70,9 @@ discovery/
 | **Your token**, for sources that take one | Your account | You, in **API Settings**. |
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
+| **A service's images**, from Mapillary or Google Street View | Your Data Catalog store, with the collection | **Download**. |
 | **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
+| **Added models** | Your Model Catalog store, `.curio/users/<user-key>/models/` | **Add to Model Catalog**. |
 
 ---
 
@@ -100,6 +106,8 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
+| **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
+| **View model** | A row marked **In your Model Catalog** | Nothing | The model's details, in the Model Catalog. |
 | **Set a token** | **API Settings** | Your account | The source's card reads **Token set**. |
 
 ### Workflows
@@ -114,9 +122,15 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags, its `osm_id`, and a `building_id` naming the building it belongs to. **All layers** adds buildings, roads, parks, water and surface as one group.
 
+**I want street-level photos of an area.** Set your Mapillary access token ([part 5](#5-api-tokens)), open the Mapillary card's page, and click **Download** on **Street-level images**. Set the **Area**, and if you like **Taken between**, **Images** (all, panoramas only, or no panoramas), **Size** and **Most images**. The photos land as one collection of images, each row with its photographer (`creator`), `captured_at`, `compass_angle`, `is_pano`, `sequence` and position. **Map features** downloads the signs and objects Mapillary detected in a box, as a table of points. [Example 10](examples/10-street-vision-cv-analysis.md) segments a set of these photos.
+
+**I want Google Street View images.** Set your Google Maps API key, with the Street View Static API enabled on it ([part 5](#5-api-tokens)). Open the Google Street View card's page and click **Download** on **Street View images**. Set the **Area**, the **Spacing** of the points Curio asks for a panorama, the **Headings**, **Field of view**, **Pitch** and **Size** of each image, and **Most images**. The images land as one collection, a row per panorama and heading, each with its `pano_id`, `heading`, the month it was `captured`, and its position. Google bills each request to your key.
+
+**I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Models** in the left rail onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
+
 **I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
 
-**A portal needs a token.** Get one from the portal (the source's **View details** links to its instructions), paste it into **API Settings**, and save. See [part 5](#5-api-tokens).
+**A source needs a token.** Get one from the source (its **View details** links to its instructions), paste it into **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
 
 **I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, lists what the download was narrowed by (its **Area**, for one), and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
@@ -196,6 +210,20 @@ What each layer holds:
 
 A way that is tagged as an area but does not close is a line.
 
+### Downloading street-level images
+
+- **Mapillary.** A box of at most 25 km². Photos are taken from across the box, newest first, up to **Most images** (at most 1,000). Each one is CC BY-SA 4.0 and keeps its photographer in `creator`, so a figure made from them can credit each photo. Your token goes to Mapillary's API only, never to the hosts the photos come from.
+- **Google Street View.** A box of at most 2 km². Curio asks Google for the panorama nearest each point of a grid with the **Spacing** you set, and keeps each panorama once, outdoor ones only unless you say otherwise. Then it downloads one image per panorama and heading. An image Google answers with its no-image placeholder is skipped. Your key is added to each request as Google's `key` parameter when the request is sent; the URLs a dataset records never hold it. Google's terms allow storing only panorama IDs: images downloaded with your key are yours to keep within those terms.
+- **Both** land as a collection of images whose files are copied to your Data Catalog store. Downloading again with the same answers fetches nothing and keeps the dataset you have.
+
+### Adding a model
+
+- **What Curio runs.** Semantic segmentation models, as ONNX graphs or as Transformers checkpoints with safetensors weights. A model with only `.bin` weights is refused, since loading those runs code from the model; so is a model of another task, one whose `config.json` names no labels, and one larger than 2 GB. The row says why.
+- **The files.** Curio downloads the model's files as they are at the commit the Hub lists, with its `config.json` and `preprocessor_config.json`, which say how to read an image and what each class is called.
+- **Libraries.** A Transformers model needs `torch`, `transformers` and `safetensors`, which Curio installs when the model is added, the way a node package's libraries install. When they do not install, the model is kept and the message says why. An account that may not install libraries cannot add a Transformers model; an ONNX model needs nothing more.
+- **Gated models.** A model whose page asks you to accept its terms downloads once you have accepted them on Hugging Face and saved your Hugging Face token.
+- **Adding again.** A row marked **In your Model Catalog** offers **View model**; adding it again keeps the model you have.
+
 ### Adding from a storage source
 
 - **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it, in whatever letter case they are named, and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. A CSV declared with `options` is read with them and lands as Parquet. Several files land as one Parquet table, with a column per path field and a `source_file` column; a file's own column of the same name keeps its name, and the added one ends in `_from_path`. Geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system. GeoPackage and PBF files are added one at a time, with `"datasets": "per-file"`.
@@ -210,9 +238,23 @@ A way that is tagged as an area but does not close is a line.
 
 ## 5. API tokens
 
-Some sources take an API key. The City of Chicago portal and the Hugging Face source answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private dataset repositories your account can read.
+Some sources take an API key. Mapillary and Google Street View need one. The City of Chicago portal and the Hugging Face sources answer without one, and a token raises your rate limit. A Hugging Face token also opens the gated and private repositories your account can read.
 
-A key belongs to your account. Set it in **API Settings** (the button in the page header, or in the Agent Catalog drawer's header on the canvas), in its row under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. Each row says which sources use it, links to where you get one, and has its own **Save**; **Remove saved key** clears a saved one. A row reads *(saved - leave blank to keep)* when you saved a key, and *(inherited - leave blank to use it)* when whoever runs this Curio set one for everyone. Your own key overrides the inherited one. A source's **Add yours in API Settings** opens API Settings at its row.
+### Set a key, step by step
+
+1. **Get the key** from the service. Each row in API Settings links to where you get one, and so does the source's **View details**.
+   - **Mapillary access token**: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token**. It starts with `MLY|`.
+   - **Google Maps API key**: in the [Google Cloud console](https://developers.google.com/maps/documentation/streetview/get-api-key), create an API key and enable the **Street View Static API** for its project. Google bills its requests to you.
+   - **Hugging Face token**: at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), create a token with read access.
+   - **Socrata app token**: sign up at [evergreen.data.socrata.com](https://evergreen.data.socrata.com/signup) and create an app token.
+2. **Open API Settings**: the button in the page header, or in the Agent Catalog drawer's header on the canvas. A source's **Add yours in API Settings** opens it at that source's row.
+3. **Find the row** under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The row says which sources use it.
+4. **Paste the key** into the row's field and click the row's **Save**. The field then reads *(saved - leave blank to keep)*.
+5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set**, and its rows download.
+
+### Your key and your account
+
+A key belongs to your account, and is sent only to the source's own address. **Remove saved key** clears a saved one. A row reads *(inherited - leave blank to use it)* when whoever runs this Curio set one for everyone; your own key overrides the inherited one.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
@@ -264,12 +306,14 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `description`, `publisher`, `homepage`, `license`, `tags` | | Shown on the card and in the details. |
 | `icon` | | A `.png` file in the source's folder, at most 256 KiB. Without one, the card shows the catalog's source glyph. |
-| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`. |
-| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests. |
+| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`, `mapillary`, or `google-streetview`. A model source: `huggingface-models`. |
+| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests; `https://graph.mapillary.com` for `mapillary`; `https://maps.googleapis.com` for `google-streetview`. |
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `discovery/` may give one relative to the repository. |
-| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository. |
+| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
-| `auth.secretId`, `auth.headerName`, `auth.scheme`, `auth.valuePrefix` | With a token | Which account credential to send, in which header, and what comes before it (`Bearer ` for Hugging Face). Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`, and `scheme` is always `header`. |
+| `auth.secretId`, `auth.scheme` | With a token | Which account credential to send, and how. Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`. `scheme` is `header` (the default) or `query`, for an API that documents no other way. |
+| `auth.headerName`, `auth.valuePrefix` | With `header` | The header, and what comes before the credential in it (`Bearer ` for Hugging Face, `OAuth ` for Mapillary). |
+| `auth.paramName` | With `query` | The query parameter, `key` for Google. It is added when a request is sent, and no URL Curio records holds it. |
 | `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
 | `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage or service source's formats follow from its resources, and a manifest of either that declares them is refused. |
@@ -286,19 +330,19 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 
 | Field | What it declares |
 |---|---|
-| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`; none for the others. |
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; none for the others. |
 | `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), or `url` (https). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
-| `accepts` | For an `area`: `box`, `names`, or both. `socrata` and `wfs` take a box; `autark-osm` takes both. |
+| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary` and `google-streetview` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
 
 A Socrata dataset takes an area when it has a point, location, line or polygon column, and keeps the rows inside the box. A WFS layer takes it as its `bbox`.
 
 ### Resources
 
-A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, `kind` `table`, `format` `geojson`, and, for `autark-osm`, `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`). A service resource has no `path`.
+A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`; an `images` resource lands as a collection. For `autark-osm`, `options.layers` names the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`). For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
 
 A storage source's `resources` say how its files are organized. `provider` says where they are.
 
@@ -396,6 +440,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 ## See also
 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): where downloads land, and how a dataset reaches a dataflow.
+- [`docs/MODEL-CATALOG.md`](MODEL-CATALOG.md): where added models land, and how a node runs one.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the Dataset Finder and the other agents.
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#discovery-catalog): how search and downloads work, and how to add a provider.

@@ -227,10 +227,40 @@ class TestDerivedFiles:
         assert original.status_code == 200 and original.mimetype == "image/jpeg"
         assert media(client, auth, dataset["id"], f"{video_id}@999").status_code == 404
 
-    def test_only_a_video_or_recording_has_derived_files(self, client, auth, app, shipped_root):
+    def test_an_overlay_a_node_wrote_is_served_to_its_owner_only(
+        self, client, auth, app, shipped_root, user_and_token, db
+    ):
+        """What Image Segmentation writes beside a photo: served by its id,
+        to the account whose node wrote it, as the old overlay route was."""
+        from PIL import Image
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.users.models import User, UserSession
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         photo = file_id_of(index, "IMG_0001.jpg")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], photo, 0, "png", kind="image")
+        Image.new("RGB", (64, 48), (30, 200, 30)).save(row["path"], "PNG")
+        overlay = client.get(row["image_url"], headers=auth)
+        assert overlay.status_code == 200 and overlay.mimetype == "image/png"
+        assert client.get(row["image_url"]).status_code == 401
+        bob = User(username="bob_overlay", name="Bob", email="bob_overlay@test.com")
+        db.session.add(bob)
+        db.session.flush()
+        db.session.add(UserSession(user_id=bob.id, token="bob-overlay-token"))
+        db.session.commit()
+        assert client.get(row["image_url"], headers={"Authorization": "Bearer bob-overlay-token"}).status_code == 404
+        # One never written is not found either.
         assert media(client, auth, dataset["id"], f"{photo}@500").status_code == 404
+
+    def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
+        dataset, index = collection(client, auth, "orthos")
+        assert media(client, auth, dataset["id"], f"{index['file_id'].iloc[0]}@0").status_code == 404
 
 
 class TestExecutionResolution:

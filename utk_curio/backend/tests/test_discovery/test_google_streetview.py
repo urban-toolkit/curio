@@ -275,6 +275,17 @@ class TestItBecomesACollection:
         assert set(index["pano_id"]) == {f"CurioFixturePano{n:02d}" for n in range(1, 6)}
         assert SECRET not in json.dumps(job) and SECRET not in Path(dataset["path"]).read_bytes().decode("latin-1")
 
+    def test_the_browser_sees_its_images(self, client, keyed):
+        import pandas as pd
+
+        res = acquire(client, keyed, SOURCE, "images", parameters=WRITTEN)
+        dataset = wait_for(client, keyed, res.get_json()["jobId"], timeout=60)["dataset"]
+        file_id = pd.read_parquet(dataset["path"])["file_id"].iloc[0]
+        for variant in ("thumb", "original"):
+            res = client.get(f"/api/datasets/{dataset['id']}/media/{file_id}?variant={variant}", headers=keyed)
+            assert res.status_code == 200, (variant, res.get_data(as_text=True))
+            assert res.mimetype == "image/jpeg"
+
     def test_a_refused_key_fails_the_job_with_googles_reason(self, client, keyed):
         res = acquire(client, keyed, SOURCE, "images", parameters=DENIED)
         job = wait_for(client, keyed, res.get_json()["jobId"], timeout=60)

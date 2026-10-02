@@ -8,7 +8,8 @@
 - [Node catalog](NODE-CATALOG.md): add, share, and publish node packages, and save a canvas node as one
 - [Data catalog](DATA-CATALOG.md): import, reuse, and publish datasets, including your nodes' outputs
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
-- [Discovery Catalog](DISCOVERY-CATALOG.md): search open data portals, and open folders, buckets and repositories, and bring their datasets into your Data Catalog
+- [Discovery Catalog](DISCOVERY-CATALOG.md): search open data portals, open folders, buckets and repositories, ask services such as OpenStreetMap and Mapillary for an area, and bring their datasets into your Data Catalog and their models into your Model Catalog
+- [Model catalog](MODEL-CATALOG.md): the trained models your nodes run, and how a node runs one
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 
@@ -41,7 +42,7 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 | 07 | [Autark GPU shader](examples/07-autark-gpu-shader.md) | `autk-grammar` with a WGSL shadow-accumulation shader (minutes of shadow per road); thematic map + brushable histogram | Chicago Loop solstice shadows | 🔴 |
 | 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | `autk-grammar` loads roads from PBF, a Python node samples a 24-band LST raster, then GPU per-road OLS regression + linked scatter | Niterói per-road warming trend (2001 to 2024) | 🔴 |
 | 09 | [Heterogeneous data + linked views](examples/09-heterogeneous-data-linked-views.md) | Python UTCI pipeline fanned out via `Data Pool`; `autk-grammar` map + Vega-Lite scatter with bidirectional brushing | Milan urban heat exposure (UTCI) | 🔴 |
-| 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `curio.streetvision@1` Fetcher → HF Inference → Simple View, joined against `Data Loading` → `Data Transformation` polygons via `Spatial Join` → Vega-Lite map + bars | Chicago Lincoln Park greenery audit | 🔴 |
+| 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `Data Loading` (Mapillary photos) → `Image Segmentation` (DDRNet23-Slim) → `Simple View`, joined against `Data Loading` → `Data Transformation` neighborhood polygons via `Spatial Join` → Vega-Lite map + bars; the same photos → `Image Segmentation` with a Hugging Face model → `Simple View` → `Spatial Join` → Vega-Lite bars | Chicago Lincoln Park greenery audit | 🔴 |
 | 11 | [Autark PBF loading](examples/11-autark-pbf-loading.md) | Single `autk-grammar` node loading OSM layers from a local `.pbf` file; all parsing in the browser via DuckDB-WASM | Lower Manhattan (Battery Park City + Financial District) | 🟢 |
 | 12 | [Vega-Lite GeoDataFrame maps](examples/12-vega-lite-geodataframe-maps.md) | A `GeoDataFrame` drawn straight by `mark: "geoshape"`, with no converter node; polygons plus a second `centroid` geometry column | Chicago ZIP boundaries | 🟢 |
 | 13 | [Vega-Lite geometry columns](examples/13-vega-lite-geometry-columns.md) | Which column holds the geometry: renamed columns, several at once, none at all, and the two states where the node refuses to guess | Chicago ZIP boundaries | 🟡 |

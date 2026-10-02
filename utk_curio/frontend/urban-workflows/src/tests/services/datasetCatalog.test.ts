@@ -19,6 +19,7 @@ import {
   nodeLinkedDatasetIds,
   isNodeLinkedToAnyDataset,
   DATASET_DRAG_MIME,
+  DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   type DatasetPaletteGroup,
 } from "../../services/datasetCatalog";
@@ -437,6 +438,40 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(options.code).toContain("return layers");
   // The linkage marker still points at the group for palette↔canvas focus.
   expect(options.datasetSource.datasetId).toBe("osm.x1");
+});
+
+describe("a layer group's drag payload takes its kind from the group id (#440)", () => {
+  function groupOf(groupId: string): DatasetPaletteGroup {
+    const members = [
+      makeDataset({ id: "imported.parks_parks", title: "parks (parks)", origin: "imported", format: "parquet", path: "/store/imported.parks_parks@1/data/parks.parquet", layerName: "parks", groupId }),
+      makeDataset({ id: "imported.parks_trails", title: "parks (trails)", origin: "imported", format: "parquet", path: "/store/imported.parks_trails@1/data/trails.parquet", layerName: "trails", groupId }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  }
+
+  test("a GeoPackage group drops as a GeoPackage dataset, not an OSM PBF", () => {
+    const payload = createOsmGroupDragPayload(groupOf("gpkg.x1"));
+    expect(payload.format).toBe("gpkg");
+    expect(payload.uri).toBe("curio://gpkg/gpkg.x1");
+
+    // The DATASET pill's tooltip reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(options.datasetSource.format).toBe("gpkg");
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoPackage");
+    // The layers still load through their own ids.
+    expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
+    expect(options.code).toContain('layers["parks"] = _curio_read_layer(curio_dataset_path("imported.parks_parks"))');
+    expect(options.code).toContain('layers["trails"] = _curio_read_layer(curio_dataset_path("imported.parks_trails"))');
+  });
+
+  test("an OSM group still drops as an OSM PBF dataset", () => {
+    const payload = createOsmGroupDragPayload(groupOf("osm.x1"));
+    expect(payload.format).toBe("osm");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("OSM PBF");
+  });
 });
 
 test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {

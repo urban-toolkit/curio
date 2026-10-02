@@ -185,6 +185,31 @@ class TestItLandsInTheModelCatalog:
         assert manifest["entry"] == "files/onnx/model.onnx"
         assert manifest["input"]["mean"] and manifest["input"]["std"]
 
+    def test_an_added_model_runs_in_a_node(self, app, client, auth, live, user_and_token, tmp_path):
+        """The whole route: what an add writes is what ``curio_segment`` reads,
+        on two of example 10's photos. The graph is the synthetic stand-in, so
+        the classes are noise; their shares still have to cover the image."""
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+        from utk_curio.sandbox.util.vision import make_curio_segment
+
+        model = self._add(client, auth, ONNX_REPO)["model"]
+        user, _ = user_and_token
+        folder = ModelCatalogService(user).resolve_dir(model["id"])
+        repo = Path(__file__).resolve().parents[4]
+        sample = "data.curio.mapillary-sample"
+        index = repo / "datasets" / f"{sample}@1" / "data" / "index.parquet"
+        storage = repo / "docs" / "examples" / "data" / "storage"
+        helpers = make_collection_helpers(
+            lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path)
+        )
+        photos = helpers["curio_collection"](sample).head(2)
+        out = make_curio_segment(helpers["curio_derived_file"])(photos, str(folder), None)
+        shares = out[[f"{label}_pct" for label in model["labels"]]]
+        assert shares.sum(axis=1).between(99.5, 100.5).all()
+        assert out["dominant_class"].isin(model["labels"]).all()
+        assert out["overlay_url"].notna().all() and out["segment_error"].isna().all()
+
     def test_a_transformers_checkpoint(self, client, auth, live):
         model = self._add(client, auth, TRANSFORMERS_REPO)["model"]
         assert model["runtime"] == "transformers" and model["license"] == "mit"
