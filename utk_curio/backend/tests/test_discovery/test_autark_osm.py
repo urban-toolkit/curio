@@ -25,6 +25,7 @@ import pytest
 from utk_curio.backend.app.discovery.application.service_acquire import place_label, to_wgs84
 from utk_curio.backend.app.discovery.domain import manifest as M
 from utk_curio.backend.app.discovery.domain import osm_values
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
 from utk_curio.backend.app.discovery.providers import autark_osm, build_service
@@ -90,13 +91,54 @@ class TestTheManifest:
         manifest = load_source_manifest(SHIPPED_ROOT / OSM)
         assert manifest.is_service and not manifest.is_storage
         assert manifest.capabilities.formats == ("geojson",)
-        layers = {spec.id: spec.options["layers"] for spec in manifest.resources}
+        layers = {spec.id: spec.options["layers"] for spec in manifest.resources if "layers" in spec.options}
         for layer in M.AUTARK_OSM_LAYERS:
             assert layers[layer] == [layer]
         assert layers["all-layers"] == list(M.AUTARK_OSM_LAYERS)
         (area,) = manifest.declared_parameters("parks")
         assert area.required and area.accepts == ("box", "names")
         assert area.max_area_km2 == 25
+
+    def test_it_ships_points_of_interest_and_features_by_tag(self):
+        manifest = load_source_manifest(SHIPPED_ROOT / OSM)
+        poi = manifest.resource("points-of-interest")
+        assert poi.options["tags"] == [f"{key}=*" for key in sorted(
+            ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic"])]
+        assert poi.tag_entries({}) == poi.options["tags"]
+        by_tag = manifest.resource("features-by-tag")
+        area, tags = manifest.declared_parameters("features-by-tag")
+        assert area.id == "area" and tags.id == "tags" and tags.type == "tags" and tags.required
+        assert {"amenity", "shop", "highway"} <= set(tags.suggestions)
+        assert by_tag.tag_entries({"tags": ["shop=*"]}) == ["shop=*"]
+        assert manifest.resource("parks").tag_entries({}) is None
+
+    @pytest.mark.parametrize("resource, says", [
+        ({"options": {"layers": ["parks"], "tags": ["amenity=*"]}}, "declares options.layers and options.tags"),
+        ({"options": {}}, "must declare one of"),
+        ({"options": {"tags": []}}, "1 to 16 tags"),
+        ({"options": {"tags": ["amenity"]}}, "is not a tag"),
+        ({"options": {}, "parameters": [{"id": "tags", "type": "tags", "label": "Tags"}]}, "required parameter of type tags"),
+        ({"options": {}, "parameters": [{"id": "tags", "type": "text", "label": "Tags", "required": True}]},
+         "required parameter of type tags"),
+    ])
+    def test_a_resource_asks_for_layers_or_tags(self, resource, says):
+        raw = _osm_manifest(resources=[{"id": "x", "name": "X", "kind": "table", "format": "geojson", **resource}])
+        with pytest.raises(M.ManifestError, match=says):
+            M._parse_manifest(raw, where="manifest.json")
+
+    def test_preset_tags_are_normalized(self):
+        raw = _osm_manifest(resources=[{"id": "x", "name": "X", "kind": "table", "format": "geojson",
+                                         "options": {"tags": ["shop=*", "amenity=cafe", "shop=books"]}}])
+        (resource,) = M._parse_manifest(raw, where="manifest.json").resources
+        assert resource.options["tags"] == ["amenity=cafe", "shop=*"]
+
+    def test_tags_are_asked_by_a_resource_not_the_source(self):
+        raw = _osm_manifest(parameters=[
+            {"id": "area", "type": "area", "label": "Area", "accepts": ["names"]},
+            {"id": "tags", "type": "tags", "label": "Tags"},
+        ])
+        with pytest.raises(M.ManifestError, match="tags is declared on the resource"):
+            M._parse_manifest(raw, where="manifest.json")
 
     def test_a_minimal_one_parses(self):
         parsed = M._parse_manifest(_osm_manifest(), where="manifest.json")
@@ -148,6 +190,8 @@ class TestTheManifest:
         schema = json.loads((Path(__file__).resolve().parents[4] / "docs/schemas/discovery-source.v1.json").read_text())
         options = schema["properties"]["resources"]["items"]["properties"]["options"]
         assert options["properties"]["layers"]["items"]["enum"] == sorted(M.AUTARK_OSM_LAYERS)
+        assert options["properties"]["tags"]["items"]["pattern"] == P.TAG_ENTRY_RE.pattern
+        assert options["properties"]["tags"]["maxItems"] == P.MAX_TAGS
         provider_rules = schema["properties"]["provider"]["allOf"]
         assert {"properties": {"baseUrl": {"const": M.AUTARK_OVERPASS_BASE}}} in [r["then"] for r in provider_rules]
 
@@ -160,15 +204,29 @@ class TestTheManifest:
         raw["resources"][0]["path"] = "parks.geojson"
         assert list(validator.iter_errors(raw))
 
+    def test_the_schema_takes_one_of_layers_or_tags(self):
+        jsonschema = pytest.importorskip("jsonschema")
+        schema = json.loads((Path(__file__).resolve().parents[4] / "docs/schemas/discovery-source.v1.json").read_text())
+        validator = jsonschema.Draft202012Validator(schema)
+        raw = json.loads((SHIPPED_ROOT / OSM / "manifest.json").read_text())
+        poi = next(r for r in raw["resources"] if r["id"] == "points-of-interest")
+        poi["options"]["layers"] = ["parks"]
+        assert list(validator.iter_errors(raw))
+        poi["options"] = {"tags": ['name="x"']}
+        assert list(validator.iter_errors(raw))
+
 
 class TestItsRowsNeedNoNetwork:
     def test_the_page_lists_what_the_manifest_declares(self, client, auth, live):
         body = client.get(f"/api/discovery/sources/{OSM}/search", headers=auth).get_json()
         rows = {r["resourceId"]: r for r in body["resources"]}
-        assert list(rows) == ["buildings", "roads", "parks", "water", "surface", "all-layers"]
+        assert list(rows) == ["buildings", "roads", "parks", "water", "surface",
+                              "points-of-interest", "features-by-tag", "all-layers"]
         assert rows["parks"]["formats"] == ["geojson"]
         assert rows["parks"]["parameters"][0]["accepts"] == ["box", "names"]
-        assert body["sources"] == [{"sourceId": "source.osm.openstreetmap", "status": "ok", "count": 6}]
+        assert [p["id"] for p in rows["features-by-tag"]["parameters"]] == ["area", "tags"]
+        assert rows["features-by-tag"]["parameters"][1]["suggestions"][:2] == ["amenity", "shop"]
+        assert body["sources"] == [{"sourceId": "source.osm.openstreetmap", "status": "ok", "count": 8}]
 
     def test_the_source_row_says_service(self, client, auth, live):
         row = client.get(f"/api/discovery/sources/{OSM}", headers=auth).get_json()
@@ -189,6 +247,8 @@ class TestItsRowsNeedNoNetwork:
         detail = client.get(f"/api/discovery/sources/{OSM}/resources/all-layers", headers=auth).get_json()
         assert detail["extra"]["layers"] == list(M.AUTARK_OSM_LAYERS)
         assert detail["license"] == "ODbL 1.0"
+        poi = client.get(f"/api/discovery/sources/{OSM}/resources/points-of-interest", headers=auth).get_json()
+        assert "amenity=*" in poi["extra"]["tags"] and "layers" not in poi["extra"]
 
 
 class TestTheAnswersAreChecked:
@@ -207,6 +267,17 @@ class TestTheAnswersAreChecked:
         res = acquire(client, auth, OSM, "parks",
                       parameters={"area": {"names": {"geocodeArea": "Illinois", "areas": ['Golf"];out;']}}})
         assert res.status_code == 400
+
+    def test_features_by_tag_needs_its_tags(self, client, auth, live):
+        res = acquire(client, auth, OSM, "features-by-tag", parameters={"area": LOOP_BOX})
+        assert res.status_code == 400
+        assert "Tags is required" in res.get_json()["error"]
+
+    @pytest.mark.parametrize("entry", ['name="x"', "amenity", "a[b]=c", "name=a\\b"])
+    def test_a_tag_that_would_break_the_query_is_refused(self, client, auth, live, entry):
+        res = acquire(client, auth, OSM, "features-by-tag", parameters={"area": LOOP_BOX, "tags": [entry]})
+        assert res.status_code == 400
+        assert "is not a tag" in res.get_json()["error"]
 
 
 @needs_node
@@ -383,6 +454,79 @@ class TestItBecomesDatasets:
         assert job["status"] == "failed"
         assert "more than 0 MB of GeoJSON" in job["error"]
 
+    def _tag_download(self, client, auth, resource, values, title_prefix):
+        """Download a tag resource; its datasets by layer name, checked as one group."""
+        job = wait_for(client, auth, acquire(client, auth, OSM, resource, parameters=values)
+                       .get_json()["jobId"], timeout=120)
+        assert job["status"] == "completed", job
+        listing = client.get("/api/datasets/catalog", headers=auth).get_json()["items"]
+        members = [d for d in listing if (d.get("discoverySource") or {}).get("resourceId") == resource]
+        assert len({d.get("groupId") for d in members}) == 1
+        for dataset in members:
+            assert dataset["title"] == f"{title_prefix} ({dataset['layerName']})"
+        return {d["layerName"]: json.loads(Path(d["path"]).read_text())["features"] for d in members}
+
+    def _assert_layers(self, layers, expected):
+        assert set(layers) == {geometry for geometry, elements in expected.items() if elements}
+        for geometry, features in layers.items():
+            assert {(f["properties"]["osm_type"], f["properties"]["osm_id"]) for f in features} == expected[geometry]
+            for feature in features:
+                assert (feature["properties"]["osm_type"] == "node") == (geometry == "points")
+                assert "__autk_layer" not in feature["properties"]
+
+    def test_points_of_interest_land_as_points_lines_and_polygons(self, client, auth, live):
+        layers = self._tag_download(client, auth, "points-of-interest", {"area": LOOP_BOX},
+                                    "Points of interest, The Loop")
+        preset = load_source_manifest(SHIPPED_ROOT / OSM).resource("points-of-interest").options["tags"]
+        self._assert_layers(layers, _mock_tag_layers("loop-points-of-interest", preset))
+        parking = next(f for f in layers["polygons"] if f["properties"]["osm_id"] == 7101)
+        assert parking["properties"]["capacity"] == 120
+        assert next(f for f in layers["points"] if f["properties"]["osm_id"] == 7001)["geometry"]["type"] == "Point"
+
+    def test_features_by_tag_land_as_points_lines_and_polygons(self, client, auth, live):
+        tags = ["railway=*", "highway=*"]
+        layers = self._tag_download(client, auth, "features-by-tag", {"area": LOOP_BOX, "tags": tags},
+                                    "Features tagged highway=*, railway=*, The Loop")
+        self._assert_layers(layers, _mock_tag_layers("loop-streets-and-rails", tags))
+        # A closed service road is a line; a pedestrian area=yes plaza is a polygon.
+        assert ("way", 7404) in {(f["properties"]["osm_type"], f["properties"]["osm_id"]) for f in layers["polylines"]}
+        assert [f["properties"]["osm_id"] for f in layers["polygons"]] == [7403]
+        # The crossing is a vertex of State Street and keeps its own tags.
+        crossing = next(f for f in layers["points"] if f["properties"]["osm_id"] == 7402)
+        assert crossing["properties"]["highway"] == "crossing"
+        state_street = next(f for f in layers["polylines"] if f["properties"]["osm_id"] == 7401)
+        assert (state_street["properties"]["lanes"], state_street["properties"]["maxspeed"]) == (4, 48.28)
+
+    def test_points_of_interest_for_named_areas_stay_inside_them(self, client, auth, live):
+        """The mock answers Golf's tag query only when it names Golf's boundary
+        relation, as autk-db asks since the named-area scoping fix."""
+        layers = self._tag_download(client, auth, "points-of-interest", {"area": GOLF},
+                                    "Points of interest, Golf (Illinois)")
+        preset = load_source_manifest(SHIPPED_ROOT / OSM).resource("points-of-interest").options["tags"]
+        self._assert_layers(layers, _mock_tag_layers("golf-points-of-interest", preset))
+
+    def test_the_same_tags_in_another_order_run_nothing(self, client, auth, live, monkeypatch):
+        values = {"area": LOOP_BOX, "tags": ["highway=*", "railway=*"]}
+        first = wait_for(client, auth, acquire(client, auth, OSM, "features-by-tag", parameters=values)
+                         .get_json()["jobId"], timeout=120)
+        assert first["status"] == "completed", first
+
+        def no_second_run(*_a, **_k):
+            raise AssertionError("the loader ran for an add already held")
+
+        monkeypatch.setattr(autark_osm.AutarkOsmService, "load", no_second_run)
+        again = acquire(client, auth, OSM, "features-by-tag",
+                        parameters={"area": LOOP_BOX, "tags": ["railway=*", "highway=*", "highway=primary"]})
+        assert again.status_code == 200
+        assert again.get_json()["alreadyPresent"] is True
+
+    def test_tags_with_no_feature_say_so(self, client, auth, live):
+        job = wait_for(client, auth, acquire(client, auth, OSM, "features-by-tag",
+                                             parameters={"area": LOOP_BOX, "tags": ["man_made=lighthouse"]})
+                       .get_json()["jobId"], timeout=120)
+        assert job["status"] == "failed"
+        assert "OpenStreetMap has no features tagged man_made=lighthouse in The Loop" in job["error"]
+
 
 def _fake_node(tmp_path: Path, body: str) -> str:
     """A stand-in for ``node``: called as ``<it> autark_osm.mjs`` with the request on stdin."""
@@ -439,6 +583,46 @@ class TestTheLoaderContract:
         node = _fake_node(tmp_path, f"cat > '{seen}'\necho '__CURIO_OSM_RESULT__ {{\"ok\":true,\"layers\":[]}}'\n")
         service.load(service.manifest.resource("parks"), {"area": GOLF_BOX}, tmp_path, node=node)
         assert json.loads(seen.read_text())["queryArea"] == {"bbox": GOLF_BOX["box"]}
+
+    def test_tags_are_sent_as_one_autk_db_tag_set(self, tmp_path, service):
+        if not ROOT_AUTK_DB.is_dir():
+            pytest.skip("the repo-root autk-db is needed to resolve its entry")
+        seen = tmp_path / "request.json"
+        node = _fake_node(tmp_path, f"cat > '{seen}'\necho '__CURIO_OSM_RESULT__ {{\"ok\":true,\"layers\":[]}}'\n")
+        values = {"area": GOLF_BOX, "tags": ["amenity=cafe", "shop=*"]}
+        service.load(service.manifest.resource("features-by-tag"), values, tmp_path, node=node)
+        request = json.loads(seen.read_text())
+        assert request["layers"] == []
+        assert request["tagSets"] == [
+            {"name": "tags", "tags": [{"key": "amenity", "value": "cafe"}, {"key": "shop"}]},
+        ]
+        service.load(service.manifest.resource("points-of-interest"), {"area": GOLF_BOX}, tmp_path, node=node)
+        (tag_set,) = json.loads(seen.read_text())["tagSets"]
+        assert [tag["key"] for tag in tag_set["tags"]] == sorted(
+            ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic"])
+        service.load(service.manifest.resource("parks"), {"area": GOLF_BOX}, tmp_path, node=node)
+        assert json.loads(seen.read_text())["tagSets"] == []
+
+    def test_a_tag_entry_is_checked_before_node_starts(self, tmp_path, service):
+        if not ROOT_AUTK_DB.is_dir():
+            pytest.skip("the repo-root autk-db is needed to resolve its entry")
+        ran = tmp_path / "ran"
+        node = _fake_node(tmp_path, f"touch '{ran}'\necho '__CURIO_OSM_RESULT__ {{\"ok\":true,\"layers\":[]}}'\n")
+        with pytest.raises(DiscoveryError, match="is not a tag"):
+            service.load(service.manifest.resource("features-by-tag"),
+                         {"area": GOLF_BOX, "tags": ['name="x"];out;']}, tmp_path, node=node)
+        assert not ran.exists()
+
+    def test_a_layer_it_was_not_asked_for_is_refused(self, tmp_path, service):
+        if not ROOT_AUTK_DB.is_dir():
+            pytest.skip("the repo-root autk-db is needed to resolve its entry")
+        work = tmp_path / "work"
+        work.mkdir()
+        (work / "x.geojson").write_text("{}")
+        answer = json.dumps({"ok": True, "layers": [{"layer": "lines", "file": str(work / "x.geojson"), "features": 1}]})
+        node = _fake_node(tmp_path, f"cat > /dev/null\necho '__CURIO_OSM_RESULT__ {answer}'\n")
+        with pytest.raises(DiscoveryError, match="not asked for: lines"):
+            service.load(service.manifest.resource("points-of-interest"), {"area": GOLF_BOX}, work, node=node)
 
     def test_its_stages_reach_the_job(self, tmp_path, service):
         if not ROOT_AUTK_DB.is_dir():
@@ -604,6 +788,38 @@ def _mock_buildings() -> dict[tuple[str, int], dict[str, str]]:
         return kept("building") or kept("building:part") or tags.get("type") == "building"
 
     return _mock_elements("golf-buildings", building)
+
+
+#: autk-db's closed-way rule for tag sets: a closed way is a polygon unless it
+#: says area=no, or is one of these without area=yes.
+LINEAR_KEYS = ("highway", "barrier", "railway", "waterway")
+
+
+def _tag_geometry(element: dict) -> str | None:
+    """The layer autk-db puts a matching element in, or None for a relation it leaves out."""
+    tags = element.get("tags") or {}
+    if element["type"] == "node":
+        return "points"
+    if element["type"] == "relation":
+        return "polygons" if tags.get("type") == "multipolygon" else None
+    nodes = element["nodes"]
+    closed = len(nodes) > 3 and nodes[0] == nodes[-1]
+    linear = tags.get("area") == "no" or (any(k in tags for k in LINEAR_KEYS) and tags.get("area") != "yes")
+    return "polygons" if closed and not linear else "polylines"
+
+
+def _mock_tag_layers(rule: str, entries: list[str]) -> dict[str, set[tuple[str, int]]]:
+    """The elements of a mock answer with any of the tag entries, by the layer each lands in."""
+    filters = [P.parse_tag_entry(entry) for entry in entries]
+    layers: dict[str, set[tuple[str, int]]] = {"points": set(), "polylines": set(), "polygons": set()}
+    for element in overpass_mock.rule(rule)["elements"]:
+        tags = element.get("tags") or {}
+        if not any(key in tags and (value is None or tags[key] == value) for key, value in filters):
+            continue
+        geometry = _tag_geometry(element)
+        if geometry:
+            layers[geometry].add((element["type"], element["id"]))
+    return layers
 
 
 def _mock_parks() -> dict[tuple[str, int], dict[str, str]]:

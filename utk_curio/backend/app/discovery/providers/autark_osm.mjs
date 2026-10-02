@@ -3,20 +3,21 @@
 // Run by providers/autark_osm.py as `node autark_osm.mjs`, with one JSON object
 // on stdin:
 //
-//   { autkDbUrl, queryArea, layers, outDir, userAgent, fixtures }
+//   { autkDbUrl, queryArea, layers, tagSets, outDir, userAgent, fixtures }
 //
 // It calls autk-db's own loadOsm, the loader an Autark map node runs, so a
 // download and a map get the same features from the same code. Each layer is
 // written as autk-db's getLayer returns it with `osmElements`, to
-// <outDir>/<layer>.geojson: one feature per way or relation, with `osm_type`,
-// `osm_id` and, for a building, the `building_id` of the building it belongs
-// to. Its coordinates are in autk-db's workspace CRS (EPSG:3395), and the
-// Python side moves them to WGS84.
+// <outDir>/<layer>.geojson, or <outDir>/<tagSet>_<layer>.geojson for a tag
+// set's points, polylines and polygons: one feature per node, way or relation,
+// with `osm_type`, `osm_id` and, for a building, the `building_id` of the
+// building it belongs to. Its coordinates are in autk-db's workspace CRS
+// (EPSG:3395), and the Python side moves them to WGS84.
 //
 // stdout carries two kinds of line for Python, and autk-db's own logging:
 //
 //   __CURIO_OSM_STAGE__ <phase>       autk-db's onProgress phases
-//   __CURIO_OSM_RESULT__ <json>       last: {ok, layers: [{layer, file, features}]} or {ok: false, error}
+//   __CURIO_OSM_RESULT__ <json>       last: {ok, layers: [{layer, tagSet?, file, features}]} or {ok: false, error}
 //
 // With `fixtures` set (tests only), fetch answers from recorded Overpass
 // responses instead of the network, else from the mock answers beside them
@@ -136,15 +137,17 @@ async function main() {
   const timings = await db.loadOsm({
     queryArea: input.queryArea,
     autoLoadLayers: { layers: input.layers },
+    ...(input.tagSets?.length ? { tagSets: input.tagSets } : {}),
     onProgress: (phase) => process.stdout.write(STAGE + phase + '\n'),
   });
 
   const layers = [];
   for (const entry of timings.layers) {
     const collection = await db.getLayer(entry.layerName, { osmElements: true });
-    const file = path.join(input.outDir, `${entry.layerType}.geojson`);
+    const name = entry.tagSet ? `${entry.tagSet}_${entry.layerType}` : entry.layerType;
+    const file = path.join(input.outDir, `${name}.geojson`);
     await writeFile(file, JSON.stringify(collection));
-    layers.push({ layer: entry.layerType, file, features: collection.features.length });
+    layers.push({ layer: entry.layerType, ...(entry.tagSet ? { tagSet: entry.tagSet } : {}), file, features: collection.features.length });
   }
   done({ ok: true, layers });
 }

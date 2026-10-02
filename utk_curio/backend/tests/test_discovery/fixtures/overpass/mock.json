@@ -3,6 +3,437 @@
  "answers": [
   {
    "when": [
+    "->.tagHits",
+    "(41.8805,-87.6295,41.8825,-87.615)",
+    "node[\"amenity\"]"
+   ],
+   "elements": [
+    {
+     "type": "node",
+     "id": 7001,
+     "lat": 41.881,
+     "lon": -87.628,
+     "tags": {
+      "amenity": "cafe",
+      "name": "Loop Cafe"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7002,
+     "lat": 41.8815,
+     "lon": -87.627,
+     "tags": {
+      "shop": "books",
+      "name": "Loop Books"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7003,
+     "lat": 41.882,
+     "lon": -87.6233,
+     "tags": {
+      "tourism": "attraction",
+      "name": "Cloud Sculpture"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7004,
+     "lat": 41.8812,
+     "lon": -87.62,
+     "tags": {
+      "amenity": "bench"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7005,
+     "lat": 41.8818,
+     "lon": -87.619,
+     "tags": {
+      "historic": "memorial",
+      "name": "Loop Memorial"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7101,
+     "nodes": [
+      71010,
+      71011,
+      71012,
+      71013,
+      71010
+     ],
+     "geometry": [
+      {
+       "lat": 41.8806,
+       "lon": -87.626
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.6255
+      },
+      {
+       "lat": 41.881,
+       "lon": -87.6255
+      },
+      {
+       "lat": 41.881,
+       "lon": -87.626
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.626
+      }
+     ],
+     "tags": {
+      "amenity": "parking",
+      "name": "Loop Parking",
+      "capacity": "120"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7102,
+     "nodes": [
+      71020,
+      71021,
+      71022,
+      71023,
+      71020
+     ],
+     "geometry": [
+      {
+       "lat": 41.8808,
+       "lon": -87.618
+      },
+      {
+       "lat": 41.8808,
+       "lon": -87.616
+      },
+      {
+       "lat": 41.8822,
+       "lon": -87.616
+      },
+      {
+       "lat": 41.8822,
+       "lon": -87.618
+      },
+      {
+       "lat": 41.8808,
+       "lon": -87.618
+      }
+     ],
+     "tags": {
+      "leisure": "park",
+      "name": "Loop Park"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7103,
+     "nodes": [
+      71030,
+      71031
+     ],
+     "geometry": [
+      {
+       "lat": 41.881,
+       "lon": -87.6175
+      },
+      {
+       "lat": 41.8815,
+       "lon": -87.6165
+      }
+     ],
+     "tags": {
+      "leisure": "track"
+     }
+    },
+    {
+     "type": "relation",
+     "id": 7201,
+     "members": [
+      {
+       "type": "way",
+       "ref": 7202,
+       "role": "outer"
+      }
+     ],
+     "tags": {
+      "type": "multipolygon",
+      "amenity": "college",
+      "name": "Loop College"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7202,
+     "nodes": [
+      72020,
+      72021,
+      72022,
+      72023,
+      72020
+     ],
+     "geometry": [
+      {
+       "lat": 41.8815,
+       "lon": -87.625
+      },
+      {
+       "lat": 41.8815,
+       "lon": -87.624
+      },
+      {
+       "lat": 41.8823,
+       "lon": -87.624
+      },
+      {
+       "lat": 41.8823,
+       "lon": -87.625
+      },
+      {
+       "lat": 41.8815,
+       "lon": -87.625
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "when": [
+    "->.tagHits",
+    "(41.8805,-87.6295,41.8825,-87.615)",
+    "node[\"highway\"]",
+    "node[\"railway\"]"
+   ],
+   "elements": [
+    {
+     "type": "way",
+     "id": 7401,
+     "nodes": [
+      74010,
+      7402,
+      74012
+     ],
+     "geometry": [
+      {
+       "lat": 41.8806,
+       "lon": -87.6278
+      },
+      {
+       "lat": 41.8815,
+       "lon": -87.6278
+      },
+      {
+       "lat": 41.8824,
+       "lon": -87.6278
+      }
+     ],
+     "tags": {
+      "highway": "primary",
+      "name": "State Street",
+      "lanes": "4",
+      "maxspeed": "30 mph"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7402,
+     "lat": 41.8815,
+     "lon": -87.6278,
+     "tags": {
+      "highway": "crossing",
+      "crossing": "traffic_signals"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7403,
+     "nodes": [
+      74030,
+      74031,
+      74032,
+      74033,
+      74030
+     ],
+     "geometry": [
+      {
+       "lat": 41.8806,
+       "lon": -87.623
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.622
+      },
+      {
+       "lat": 41.8812,
+       "lon": -87.622
+      },
+      {
+       "lat": 41.8812,
+       "lon": -87.623
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.623
+      }
+     ],
+     "tags": {
+      "highway": "pedestrian",
+      "area": "yes",
+      "name": "Loop Plaza"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7404,
+     "nodes": [
+      74040,
+      74041,
+      74042,
+      74043,
+      74040
+     ],
+     "geometry": [
+      {
+       "lat": 41.8806,
+       "lon": -87.621
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.6205
+      },
+      {
+       "lat": 41.881,
+       "lon": -87.6205
+      },
+      {
+       "lat": 41.881,
+       "lon": -87.621
+      },
+      {
+       "lat": 41.8806,
+       "lon": -87.621
+      }
+     ],
+     "tags": {
+      "highway": "service"
+     }
+    },
+    {
+     "type": "way",
+     "id": 7405,
+     "nodes": [
+      74050,
+      74051
+     ],
+     "geometry": [
+      {
+       "lat": 41.8806,
+       "lon": -87.6265
+      },
+      {
+       "lat": 41.8824,
+       "lon": -87.6265
+      }
+     ],
+     "tags": {
+      "railway": "subway",
+      "layer": "-1"
+     }
+    },
+    {
+     "type": "node",
+     "id": 7406,
+     "lat": 41.8811,
+     "lon": -87.6266,
+     "tags": {
+      "railway": "station",
+      "name": "Loop Station"
+     }
+    }
+   ]
+  },
+  {
+   "when": [
+    "->.tagHits",
+    "relation[\"name\"=\"Golf\"]",
+    "node[\"amenity\"]"
+   ],
+   "elements": [
+    {
+     "type": "node",
+     "id": 8001,
+     "lat": 42.0586,
+     "lon": -87.7917,
+     "tags": {
+      "amenity": "place_of_worship",
+      "name": "St. Golf Chapel"
+     }
+    },
+    {
+     "type": "node",
+     "id": 8002,
+     "lat": 42.0565,
+     "lon": -87.7955,
+     "tags": {
+      "shop": "convenience"
+     }
+    },
+    {
+     "type": "way",
+     "id": 8101,
+     "nodes": [
+      81010,
+      81011,
+      81012,
+      81013,
+      81010
+     ],
+     "geometry": [
+      {
+       "lat": 42.059,
+       "lon": -87.799
+      },
+      {
+       "lat": 42.059,
+       "lon": -87.794
+      },
+      {
+       "lat": 42.0615,
+       "lon": -87.794
+      },
+      {
+       "lat": 42.0615,
+       "lon": -87.799
+      },
+      {
+       "lat": 42.059,
+       "lon": -87.799
+      }
+     ],
+     "tags": {
+      "leisure": "golf_course",
+      "name": "Golf Club"
+     }
+    }
+   ]
+  },
+  {
+   "when": [
+    "->.tagHits",
+    "(41.8805,-87.6295,41.8825,-87.615)",
+    "node[\"man_made\"=\"lighthouse\"]"
+   ],
+   "elements": []
+  },
+  {
+   "when": [
     "->.boundaryWays1",
     "relation[\"name\"=\"Golf\"]"
    ],

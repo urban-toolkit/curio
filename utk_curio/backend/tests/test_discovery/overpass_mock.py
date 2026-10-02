@@ -101,7 +101,59 @@ GOLF_BUILDINGS = [
 # Way 304 shares its first and fourth corners with way 303's east side.
 GOLF_BUILDINGS[3]["nodes"] = [3031, 3041, 3042, 3032, 3031]
 
+def node(node_id: int, lon: float, lat: float, tags: dict) -> dict:
+    return {"type": "node", "id": node_id, "lat": lat, "lon": lon, "tags": tags}
+
+
+#: The box the tag tests ask for, [west, south, east, north]: Chicago's Loop.
+LOOP_BOX = [-87.6295, 41.8805, -87.615, 41.8825]
+#: How autk-db writes that box into a query: (south,west,north,east).
+LOOP_FILTER = "(41.8805,-87.6295,41.8825,-87.615)"
+
+COLLEGE_OUTER = square(7202, (-87.625, 41.8815, -87.624, 41.8823), 72020)
+LOOP_POINTS_OF_INTEREST = [
+    node(7001, -87.628, 41.881, {"amenity": "cafe", "name": "Loop Cafe"}),
+    node(7002, -87.627, 41.8815, {"shop": "books", "name": "Loop Books"}),
+    node(7003, -87.6233, 41.882, {"tourism": "attraction", "name": "Cloud Sculpture"}),
+    node(7004, -87.62, 41.8812, {"amenity": "bench"}),
+    node(7005, -87.619, 41.8818, {"historic": "memorial", "name": "Loop Memorial"}),
+    square(7101, (-87.626, 41.8806, -87.6255, 41.881), 71010,
+           {"amenity": "parking", "name": "Loop Parking", "capacity": "120"}),
+    square(7102, (-87.618, 41.8808, -87.616, 41.8822), 71020, {"leisure": "park", "name": "Loop Park"}),
+    way(7103, [(-87.6175, 41.881), (-87.6165, 41.8815)], 71030, {"leisure": "track"}),
+    multipolygon(7201, COLLEGE_OUTER, {"amenity": "college", "name": "Loop College"}),
+    COLLEGE_OUTER,
+]
+
+STATE_STREET = way(7401, [(-87.6278, 41.8806), (-87.6278, 41.8815), (-87.6278, 41.8824)], 74010,
+                   {"highway": "primary", "name": "State Street", "lanes": "4", "maxspeed": "30 mph"})
+# Its middle vertex is a tagged crossing, which Overpass also lists as a node.
+STATE_STREET["nodes"] = [74010, 7402, 74012]
+LOOP_STREETS_AND_RAILS = [
+    STATE_STREET,
+    node(7402, -87.6278, 41.8815, {"highway": "crossing", "crossing": "traffic_signals"}),
+    square(7403, (-87.623, 41.8806, -87.622, 41.8812), 74030,
+           {"highway": "pedestrian", "area": "yes", "name": "Loop Plaza"}),
+    square(7404, (-87.621, 41.8806, -87.6205, 41.881), 74040, {"highway": "service"}),
+    way(7405, [(-87.6265, 41.8806), (-87.6265, 41.8824)], 74050, {"railway": "subway", "layer": "-1"}),
+    node(7406, -87.6266, 41.8811, {"railway": "station", "name": "Loop Station"}),
+]
+
+GOLF_POINTS_OF_INTEREST = [
+    node(8001, -87.7917, 42.0586, {"amenity": "place_of_worship", "name": "St. Golf Chapel"}),
+    node(8002, -87.7955, 42.0565, {"shop": "convenience"}),
+    square(8101, (-87.799, 42.059, -87.794, 42.0615), 81010, {"leisure": "golf_course", "name": "Golf Club"}),
+]
+
 RULES: list[dict] = [
+    {"name": "loop-points-of-interest", "when": ["->.tagHits", LOOP_FILTER, 'node["amenity"]'],
+     "elements": LOOP_POINTS_OF_INTEREST},
+    {"name": "loop-streets-and-rails", "when": ["->.tagHits", LOOP_FILTER, 'node["highway"]', 'node["railway"]'],
+     "elements": LOOP_STREETS_AND_RAILS},
+    {"name": "golf-points-of-interest", "when": ["->.tagHits", 'relation["name"="Golf"]', 'node["amenity"]'],
+     "elements": GOLF_POINTS_OF_INTEREST},
+    # A tag nothing in the Loop has.
+    {"name": "loop-no-lighthouse", "when": ["->.tagHits", LOOP_FILTER, 'node["man_made"="lighthouse"]'], "elements": []},
     {"name": "golf-boundary", "when": ["->.boundaryWays1", 'relation["name"="Golf"]'], "elements": GOLF_BOUNDARY},
     {"name": "golf-parks-and-water", "when": ['"leisure"', 'relation["name"="Golf"]'], "elements": GOLF_PARKS_AND_WATER},
     {"name": "golf-roads", "when": ['way["highway"]["area"!="yes"]', 'relation["name"="Golf"]'], "elements": GOLF_ROADS},

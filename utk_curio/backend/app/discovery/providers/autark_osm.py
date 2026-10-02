@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, ProviderError
 from utk_curio.backend.app.discovery.domain.manifest import (
     DiscoverySourceManifest,
@@ -31,7 +32,11 @@ from utk_curio.backend.app.discovery.domain.manifest import (
 )
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
 
-PARAMETER_IDS = ("area",)
+PARAMETER_IDS = ("area", "tags")
+
+#: The one tag set a tag resource asks autk-db for, and the layers it can come back as.
+TAG_SET = "tags"
+TAG_GEOMETRIES = ("points", "polylines", "polygons")
 
 SCRIPT = Path(__file__).with_suffix(".mjs")
 
@@ -99,7 +104,7 @@ class AutarkOsmService:
         cancelled: Callable[[], bool] | None = None,
         node: str = "node",
     ) -> list[LoadedLayer]:
-        """Run autk-db's ``loadOsm`` for *spec*'s layers over the area in *values*."""
+        """Run autk-db's ``loadOsm`` for *spec*'s layers, or its tags, over the area in *values*."""
         from utk_curio.sandbox.util.node_runtime import (
             OVERPASS_USER_AGENT,
             ROOT_NODE_MODULES,
@@ -117,6 +122,18 @@ class AutarkOsmService:
             query_area = {"bbox": [float(v) for v in area["box"]]}
         else:
             raise DiscoveryError("OpenStreetMap needs an area: named areas inside a place, or a box")
+        tags = spec.tag_entries(values)
+        tag_sets: list[dict[str, Any]] = []
+        if tags is not None:
+            # Checked again here, whatever the manifest or the request said:
+            # each entry becomes an Overpass selector inside autk-db.
+            filters = []
+            for entry in tags:
+                key, value = P.parse_tag_entry(entry)
+                filters.append({"key": key} if value is None else {"key": key, "value": value})
+            if not filters:
+                raise DiscoveryError("OpenStreetMap needs one or more tags, as key=value or key=*")
+            tag_sets = [{"name": TAG_SET, "tags": filters}]
         autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", ROOT_NODE_MODULES)
         if autk_db is None:
             raise ProviderError(
@@ -125,7 +142,8 @@ class AutarkOsmService:
         request = {
             "autkDbUrl": autk_db,
             "queryArea": query_area,
-            "layers": list(spec.options["layers"]),
+            "layers": list(spec.options.get("layers") or []),
+            "tagSets": tag_sets,
             "outDir": str(out_dir),
             "userAgent": OVERPASS_USER_AGENT,
             "fixtures": str(self.fixtures) if self.fixtures else None,
@@ -211,6 +229,10 @@ class AutarkOsmService:
             LoadedLayer(layer=str(entry["layer"]), path=Path(entry["file"]), features=int(entry["features"]))
             for entry in result.get("layers") or []
         ]
+        asked = TAG_GEOMETRIES if tags is not None else tuple(spec.options.get("layers") or ())
+        unasked = sorted({layer.layer for layer in layers} - set(asked))
+        if unasked:
+            raise ProviderError(f"the OpenStreetMap loader returned layers it was not asked for: {', '.join(unasked)}")
         written = sum(layer.path.stat().st_size for layer in layers if layer.path.is_file())
         if written > MAX_OUTPUT_BYTES:
             raise DiscoveryError(
