@@ -300,6 +300,15 @@
             "sourceFilename": { "type": "string" }
           }
         },
+        "dataPool": {
+          "type": "object",
+          "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",
+          "additionalProperties": false,
+          "properties": {
+            "insideChart": { "type": "string", "enum": ["OVERWRITE", "MERGE_AND", "MERGE_OR"] },
+            "betweenCharts": { "type": "string", "enum": ["OVERWRITE", "MERGE_AND", "MERGE_OR"] }
+          }
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },

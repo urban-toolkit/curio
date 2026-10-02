@@ -5,8 +5,21 @@ import {
   DatasetGroupLayerRef,
   DatasetLoaderSnippet,
 } from "./datasetCatalogTypes";
+import { AUTARK_LAYER_TYPES } from "../../utils/autarkLayerTypes";
 
 type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
+
+/**
+ * The Autark layer a dataset downloaded from the Discovery Catalog is, when its
+ * layer is one (an OpenStreetMap download's `buildings`). A GeoPackage layer
+ * may have any name, so the name alone decides nothing. KEEP IN SYNC with
+ * `autark_layer_type` in the backend generator.
+ */
+function autarkLayerType(dataset: DatasetLike): string | null {
+  if (!("discoverySource" in dataset) || !dataset.discoverySource) return null;
+  const layer = dataset.layerName;
+  return typeof layer === "string" && AUTARK_LAYER_TYPES.has(layer) ? layer : null;
+}
 
 function datasetPath(dataset: DatasetLike): string {
   return dataset.path || dataset.uri || "<dataset-path>";
@@ -162,6 +175,7 @@ function snippetForFormat(
   format: DatasetFormat,
   path: string,
   datasetId?: string | null,
+  layerType?: string | null,
 ): DatasetLoaderSnippet {
   const expr = pathExpr(path, datasetId);
   if (format === "csv") {
@@ -174,11 +188,16 @@ function snippetForFormat(
     };
   }
   if (format === "geojson" || format === "shp") {
+    // A layer type is set as the frame's metadata, so an Autark node draws the
+    // frame as that layer.
+    const typed = layerType && AUTARK_LAYER_TYPES.has(layerType)
+      ? `\ngdf.metadata = {"layerType": ${JSON.stringify(layerType)}}`
+      : "";
     return {
       language: "python",
       imports: ["import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)`,
+      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)${typed}`,
       returnVariable: "gdf",
     };
   }
@@ -280,7 +299,7 @@ function snippetForFormat(
 
 export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnippet {
   if (dataset.loaderSnippet) return dataset.loaderSnippet;
-  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset));
+  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {

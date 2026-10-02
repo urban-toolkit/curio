@@ -25,8 +25,8 @@ export interface ModelCatalogBrowseCardProps {
  *
  * Structurally identical to `DiscoverySourceCard`, `DataCatalogBrowseCard` and
  * their peers, and painted from the same stylesheet: strip header, body, tag
- * row, meta row, actions. The strip carries the runtime as its badge and the
- * origin as its status.
+ * row, meta row, actions. The strip carries the runtime as its badge; the
+ * origin is the card's status, at the start of its actions row.
  */
 export function ModelCatalogBrowseCard({
   model,
@@ -65,9 +65,6 @@ export function ModelCatalogBrowseCard({
               {MODEL_RUNTIME_LABEL[model.runtime] ?? model.runtime}
             </span>
           }
-          trailing={
-            <span className={styles.stripBadgePopular}>{MODEL_ORIGIN_LABEL[model.origin]}</span>
-          }
         />
       </div>
 
@@ -100,7 +97,11 @@ export function ModelCatalogBrowseCard({
         {/* "View details" is the peers' one way in. Delete is a decision about
             the account, so it lives in the drawer and the menu, as the other
             catalogs' account-level actions do. */}
-        <div className={styles.cardActionsLeft} />
+        <div className={styles.cardActionsLeft}>
+          <span className={`${styles.cardStatus} ${styles.cardStatusMuted}`}>
+            {MODEL_ORIGIN_LABEL[model.origin]}
+          </span>
+        </div>
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

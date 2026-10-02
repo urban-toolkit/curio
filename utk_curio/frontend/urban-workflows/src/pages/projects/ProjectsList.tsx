@@ -7,10 +7,7 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { projectActions, type ProjectActionId } from "./projectActions";
 import { notebookToTrill } from "../../NotebookConvertor";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
-import {
-  CatalogItemStripHeader,
-  CatalogKindIcon,
-} from "../../components/catalog/CatalogKindVisuals";
+import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import {
   catalogIsFresh,
   catalogRelativeTime,
@@ -21,6 +18,8 @@ import VersionBadge from "../../components/VersionBadge";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { CatalogBrowseDrawerBody } from "../catalog/CatalogBrowseDrawerBody";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import shellStyles from "../catalog/CatalogMasterPage.module.css";
 import styles from "./ProjectsBrowseLayout.module.css";
 import ConfirmDialog from "../../components/ConfirmDialog";
@@ -32,7 +31,6 @@ import { countLabel } from "../../utils/countLabel";
 import {
   FACET_SECTIONS,
   OWNER_YOURS,
-  SOURCE_LABELS,
   allCategoryValues,
   facetEntries,
   facetValues,
@@ -69,15 +67,6 @@ function nodeCount(project: ProjectSummary): number {
 function edgeCount(project: ProjectSummary): number {
   return project.graph_preview?.edges.length ?? 0;
 }
-
-/** The filter bar's quick chips: the source entries, as the Data Catalog's
- *  chip row mirrors its rail. */
-const QUICK_SOURCES: { key: FacetKey; value: string; label: string }[] = [
-  { key: "source", value: SOURCE_LABELS.use_case, label: SOURCE_LABELS.use_case },
-  { key: "source", value: SOURCE_LABELS.example, label: SOURCE_LABELS.example },
-  { key: "source", value: SOURCE_LABELS.test, label: SOURCE_LABELS.test },
-  { key: "owner", value: OWNER_YOURS, label: "Yours" },
-];
 
 /** What a card shows: where it came from and what it is about. */
 function cardChips(project: ProjectSummary): string[] {
@@ -348,135 +337,94 @@ const ProjectsList: React.FC = () => {
         {/* The catalogs' rail, with the sections the owner chose. Its source,
             tags and data types are computed by the server; city, topic and
             complexity are what each dataflow says it is. */}
-        <aside className={browseStyles.categoryRail} aria-label="Filter dataflows">
-          <div className={styles.railTop} />
-          <button
-            className={joined(browseStyles.railButton, !filtering && browseStyles.railButtonActive)}
-            type="button"
-            onClick={() => setSelection({})}
-          >
-            <span>All dataflows</span>
-            <span className={browseStyles.railCountBadge}>{allCount}</span>
-          </button>
-          <button
-            className={joined(
-              browseStyles.railButton,
-              selection.owner === OWNER_YOURS && browseStyles.railButtonActive,
-            )}
-            type="button"
-            onClick={() => toggleFacet("owner", OWNER_YOURS)}
-          >
-            <span>Your dataflows</span>
-            <span className={browseStyles.railCount}>{yoursCount}</span>
-          </button>
-          {railSections.map((section) => (
-            <React.Fragment key={section.key}>
-              <div className={browseStyles.railDivider} />
-              <p className={browseStyles.railLabel}>{section.label}</p>
-              {section.entries.map((entry) => (
-                <button
-                  key={entry.value}
-                  className={joined(
-                    browseStyles.railButton,
-                    selection[section.key] === entry.value && browseStyles.railButtonActive,
-                  )}
-                  type="button"
-                  onClick={() => toggleFacet(section.key, entry.value)}
+        <CatalogRail
+          ariaLabel="Filter dataflows"
+          all={{
+            label: "All dataflows",
+            count: allCount,
+            active: !filtering,
+            onClick: () => setSelection({}),
+          }}
+          scope={{
+            label: "Your dataflows",
+            count: yoursCount,
+            active: selection.owner === OWNER_YOURS,
+            onClick: () => toggleFacet("owner", OWNER_YOURS),
+          }}
+          sections={railSections.map((section) => ({
+            key: section.key,
+            label: section.label,
+            entries: section.entries.map((entry) => ({
+              value: entry.value,
+              label: entry.value,
+              count: entry.count,
+              active: selection[section.key] === entry.value,
+              onClick: () => toggleFacet(section.key, entry.value),
+            })),
+          }))}
+        />
+
+        <main className={browseStyles.browseMain}>
+          <CatalogPageHeader
+            kind="dataflow"
+            iconTitle="Dataflows"
+            title="Projects"
+            count={filtered.length}
+            intro="Your projects. Open one to keep working on it, or start a new one."
+            viewTools={
+              <>
+                <select
+                  className={browseStyles.sortSelect}
+                  aria-label="Sort projects"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as ProjectSort)}
                 >
-                  <span>{entry.value}</span>
-                  <span className={browseStyles.railCount}>{entry.count}</span>
-                </button>
-              ))}
-            </React.Fragment>
-          ))}
-        </aside>
-
-        <main className={styles.main}>
-          <section className={browseStyles.browseHeader}>
-            <p className={browseStyles.crumb}>Projects</p>
-            <div className={browseStyles.titleRow}>
-              <CatalogKindIcon kind="dataflow" size="md" title="Dataflows" />
-              <h1>Projects</h1>
-              <span className={browseStyles.titleCount}>{filtered.length}</span>
-            </div>
-            <p className={browseStyles.pageIntro}>
-              Your projects. Open one to keep working on it, or start a new one.
-            </p>
-            <div className={browseStyles.headerTools}>
-              <input
-                className={browseStyles.hubSearch}
-                type="search"
-                placeholder="Search projects…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <button
-                type="button"
-                className={browseStyles.publishButton}
-                onClick={() => importNotebookRef.current?.click()}
-              >
-                Import Jupyter notebook
-              </button>
-              <button
-                type="button"
-                className={browseStyles.primaryHeaderButton}
-                onClick={() => navigate("/dataflow/new")}
-              >
-                + New Dataflow
-              </button>
-            </div>
-          </section>
-
-          <div className={browseStyles.filterBar}>
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <div className={styles.viewSwitch}>
+                  {(["grid", "list"] as ViewMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={joined(
+                        styles.viewButton,
+                        viewMode === mode && styles.viewButtonActive
+                      )}
+                      type="button"
+                      onClick={() => setViewMode(mode)}
+                    >
+                      {mode === "grid" ? "Grid" : "List"}
+                    </button>
+                  ))}
+                </div>
+              </>
+            }
+          >
+            <input
+              className={browseStyles.hubSearch}
+              type="search"
+              placeholder="Search projects…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
             <button
-              className={joined(browseStyles.chip, !filtering && browseStyles.chipActive)}
               type="button"
-              onClick={() => setSelection({})}
+              className={browseStyles.publishButton}
+              onClick={() => importNotebookRef.current?.click()}
             >
-              All
+              Import Jupyter notebook
             </button>
-            {QUICK_SOURCES.map((chip) => (
-              <button
-                key={chip.label}
-                className={joined(
-                  browseStyles.chip,
-                  selection[chip.key] === chip.value && browseStyles.chipActive,
-                )}
-                type="button"
-                onClick={() => toggleFacet(chip.key, chip.value)}
-              >
-                {chip.label}
-              </button>
-            ))}
-            <span className={browseStyles.filterSpacer} />
-            <select
-              className={browseStyles.sortSelect}
-              aria-label="Sort projects"
-              value={sort}
-              onChange={(e) => setSort(e.target.value as ProjectSort)}
+            <button
+              type="button"
+              className={browseStyles.primaryHeaderButton}
+              onClick={() => navigate("/dataflow/new")}
             >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <div className={styles.viewSwitch}>
-              {(["grid", "list"] as ViewMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  className={joined(
-                    styles.viewButton,
-                    viewMode === mode && styles.viewButtonActive
-                  )}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                >
-                  {mode === "grid" ? "Grid" : "List"}
-                </button>
-              ))}
-            </div>
-          </div>
+              + New Dataflow
+            </button>
+          </CatalogPageHeader>
 
           {filtered.length === 0 ? (
             <div className={browseStyles.empty}>

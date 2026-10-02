@@ -160,6 +160,11 @@ class SolveBatch:
         # the session ended.
         self.ended_by = "complete"
         self.pass_no = 0
+        # The passes that actually ran, which the done payload reports.
+        # ``pass_no`` numbers the loop's turns instead: it is bumped before the
+        # stop, budget and nothing-left checks, and on a turn that only waits,
+        # so it ran one ahead of the passes made whenever the session ended.
+        self.passes_run = 0
         self.attempted_signature: dict[str, tuple] = {}
         self.resolution = None
         self.goals: list[str] = []
@@ -740,7 +745,7 @@ class SolveBatch:
             payload = self.finish()
             # dev/131: every session ends in exactly one of three ways, and says so.
             payload["endedBy"] = self.ended_by
-            payload["passes"] = self.pass_no
+            payload["passes"] = self.passes_run
             payload["waiting"] = agents_session._session_waiting_summary(
                 self.results,
                 [nid for nid, r in self.results.items() if (r or {}).get("status") in ("pending", "failed")],
@@ -888,6 +893,7 @@ class SolveBatch:
         ]
 
     def _run_pass(self, pass_spec: dict, pass_targets: list[str]):
+        self.passes_run += 1
         self.spec = pass_spec
         self.current["spec"] = pass_spec
         self.nodes_by_id = {

@@ -18,11 +18,16 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from io import BytesIO
 from typing import TYPE_CHECKING
 
+import allure
 import pytest
 
 from .utils import (
+    _AUTK_MAP_PIXELS_JS,
+    changed_pixels,
     node_locator,
     play_node,
     read_node_error_text,
@@ -70,6 +75,28 @@ DF_WITH_GEOMETRY = (
     "return pd.DataFrame(gdf)\n"
 )
 
+# Three footprints as a table holds them, every row with every column: one with
+# a height, one with only building:levels (its height null), one with neither.
+# 2 km squares, so they fill much of the view autk-map opens on (its camera
+# starts 10 km above the data).
+_FOOTPRINTS = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import box\n"
+    "\n"
+    "gdf = gpd.GeoDataFrame(\n"
+    '    {"building": ["yes", "yes", "yes"],\n'
+    '     "height": [30.0, None, None],\n'
+    '     "building:levels": [None, 8.0, None]},\n'
+    "    geometry=[box(-87.700, 41.870, -87.676, 41.888),\n"
+    "              box(-87.670, 41.870, -87.646, 41.888),\n"
+    "              box(-87.640, 41.870, -87.616, 41.888)],\n"
+    '    crs="EPSG:4326",\n'
+    ")\n"
+)
+# The line a Discovery OpenStreetMap Buildings download's loader ends with.
+TYPED_BUILDINGS = _FOOTPRINTS + 'gdf.metadata = {"layerType": "buildings"}\nreturn gdf\n'
+UNTYPED_BUILDINGS = _FOOTPRINTS + "return gdf\n"
+
 _GRAMMAR_EDITOR_JS = """(nodeId) => {
     const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
     const ed = editors.find((e) => {
@@ -81,28 +108,38 @@ _GRAMMAR_EDITOR_JS = """(nodeId) => {
 }"""
 
 
-def _spec(loader_code: str, autark_content: str) -> dict:
-    node = lambda node_id, node_type, x, content: {  # noqa: E731
-        "id": node_id, "type": node_type, "x": x, "y": 0, "content": content,
+def _pairs_spec(pairs: list[tuple[str, str, str, str]]) -> dict:
+    """One Data Loading node feeding one Autark node per row of *pairs*:
+    ``(loader_id, loader_code, autark_id, autark_content)``."""
+    node = lambda node_id, node_type, x, y, content: {  # noqa: E731
+        "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
         "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
     }
+    nodes, edges = [], []
+    for row, (loader_id, loader_code, autark_id, autark_content) in enumerate(pairs):
+        nodes += [
+            node(loader_id, "curio.builtin/data-loading", 0, 520 * row, loader_code),
+            node(autark_id, "curio.builtin/autk-grammar", 645, 520 * row, autark_content),
+        ]
+        edges.append({
+            "id": f"reactflow__edge-{loader_id}out-{autark_id}in",
+            "source": loader_id,
+            "target": autark_id,
+        })
     return {
         "dataflow": {
             "name": "Autark input",
             "task": "",
             "timestamp": 1789193389280,
             "provenance_id": "Autark input",
-            "nodes": [
-                node(LOADER_ID, "curio.builtin/data-loading", 0, loader_code),
-                node(AUTK_ID, "curio.builtin/autk-grammar", 645, autark_content),
-            ],
-            "edges": [{
-                "id": f"reactflow__edge-{LOADER_ID}out-{AUTK_ID}in",
-                "source": LOADER_ID,
-                "target": AUTK_ID,
-            }],
+            "nodes": nodes,
+            "edges": edges,
         }
     }
+
+
+def _spec(loader_code: str, autark_content: str) -> dict:
+    return _pairs_spec([(LOADER_ID, loader_code, AUTK_ID, autark_content)])
 
 
 def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> None:
@@ -119,8 +156,8 @@ def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> N
         project_spec=spec,
     )
     require_owner_view(page)
-    for node_id in (LOADER_ID, AUTK_ID):
-        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+    for node in spec["dataflow"]["nodes"]:
+        node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
 
 
 def _require_webgpu(page) -> None:
@@ -207,3 +244,76 @@ def test_a_dataframe_with_a_geometry_column_is_drawn(
     status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)
     detail = read_node_error_text(node_locator(page, AUTK_ID)) if status == "error" else ""
     assert status == "done", f"the map did not draw: {detail}"
+
+
+def _map_image(page, node_id: str):
+    import base64
+
+    from PIL import Image
+
+    url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+    if not url:
+        return None
+    return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
+
+
+def _footprints_drawn(page, node_id: str, *, timeout: float = 30000):
+    """The map canvas once the footprints show: more than 5% of it unlike its
+    corner, which is background. (Three flat boxes hold too few colours for
+    ``assert_autark_map_drawn``, which is made for whole maps.)"""
+    deadline = time.monotonic() + timeout / 1000
+    image, drawn = None, 0.0
+    while True:
+        image = _map_image(page, node_id)
+        if image is not None:
+            background = image.getpixel((0, 0))
+            unlike = sum(1 for pixel in image.getdata()
+                         if max(abs(a - b) for a, b in zip(pixel, background)) > 6)
+            drawn = unlike / (image.width * image.height)
+        if drawn > 0.05 or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    assert image is not None, f"Autark node {node_id} has no map canvas"
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    allure.attach(buffer.getvalue(), name=f"{node_id}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+    assert drawn > 0.05, f"Autark node {node_id}: only {drawn:.1%} of its map canvas shows anything"
+    return image
+
+
+def test_a_frame_that_names_its_layer_buildings_draws_every_building(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """A Discovery OpenStreetMap Buildings download's loader names the frame's
+    layer (``gdf.metadata``), and the map draws it as buildings, not as the
+    polygons it draws the same rows as without it. Every building stands: the
+    one with only building:levels, whose height the table holds as null, and
+    the one with no height at all."""
+    typed_map, untyped_map = "autk-buildings-typed", "autk-buildings-untyped"
+    culled: list[str] = []
+    page.on("console", lambda message: culled.append(message.text)
+            if "no valid height metadata" in message.text or "Invalid Building Layer" in message.text
+            else None)
+    _open(page, app_frontend, current_server, username="autark_input_buildings", spec=_pairs_spec([
+        ("loader-buildings-typed", TYPED_BUILDINGS, typed_map, MAP_ON_UPSTREAM),
+        ("loader-buildings-untyped", UNTYPED_BUILDINGS, untyped_map, MAP_ON_UPSTREAM),
+    ]))
+    _require_webgpu(page)
+
+    run_all_and_wait(page, timeout_ms=180000)
+    drawn = {}
+    for node_id in (typed_map, untyped_map):
+        status = wait_for_node_settled(page, node_id, node_type="autk-grammar", timeout_ms=120000)
+        detail = read_node_error_text(node_locator(page, node_id)) if status == "error" else ""
+        assert status == "done", f"{node_id} did not draw: {detail}"
+        drawn[node_id] = _footprints_drawn(page, node_id)
+
+    # autk-map says so when it drops a building for want of a height.
+    assert culled == [], culled
+    # The same rows, the same camera: only the layer they are drawn as differs
+    # (autk-map's buildings colour and shading against its polygons colour).
+    typed, untyped = drawn[typed_map], drawn[untyped_map]
+    share = changed_pixels(untyped, typed, threshold=6) / (typed.width * typed.height)
+    assert share > 0.01, (
+        f"the map drew the frame named buildings as it drew the plain one: {share:.2%} of its pixels differ"
+    )

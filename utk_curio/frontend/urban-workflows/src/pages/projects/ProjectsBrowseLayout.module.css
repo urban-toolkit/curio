@@ -2,32 +2,17 @@
    /projects in the shape of the catalog browse pages:
    category rail | project cards | detail drawer.
 
-   The page grid, rail, header band, filter bar and drawer shell are reused
+   The page grid, rail, header band, main column and drawer shell are reused
    from ../catalog/CatalogBrowseLayout.module.css. This file holds only what is
    specific to projects.
 
    Colours and geometry come from ../../styles/curioTokens.css. The card grid
    also inherits the --catalogBrowseCard* variables declared on `.page` in the
-   catalog layout, so gaps and padding change on all three browse pages at once.
+   catalog layout, so gaps, padding and the column width change on every
+   browse page at once.
    ───────────────────────────────────────────────────────────── */
 
-/* The rail's first group (All / Your dataflows) has no label above it, so it
-   takes the gap a first label would have left. */
-.railTop {
-  height: 12px;
-  flex-shrink: 0;
-}
-
-.main {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* The card area owns the scroll so the header and filter bar stay put. Same
+/* The card area owns the scroll so the header stays put. Same
    effect as the catalog's card grid, without pinning a viewport calc that
    breaks whenever the header's height changes. The scrollbar treatment is the
    catalog's, driven by the same inherited variables — the two pages used to
@@ -36,7 +21,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--catalogBrowseCardGridPadding, 24px);
+  padding: var(--catalogBrowseCardGridPadding, 16px);
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--catalogBrowseCardGridScrollbarThumb, rgba(30, 31, 35, 0.22))
@@ -65,10 +50,11 @@
   background-clip: padding-box;
 }
 
+/* The catalogs' column rule, from the same variable. */
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--catalogBrowseCardGridGap, 20px);
+  grid-template-columns: repeat(auto-fill, minmax(var(--catalogBrowseCardMinWidth, 220px), 1fr));
+  gap: var(--catalogBrowseCardGridGap, 16px);
   /* Pack rows to the top so a short filtered list does not stretch. */
   align-content: start;
 }
@@ -82,20 +68,21 @@
 .viewSwitch {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 
-/* Same shape as .chip in the catalog filter bar — this sits in that same bar. */
+/* Sits beside the sort at the end of the header's intro row, so it takes the
+   sort's height and corner. */
 .viewButton {
-  height: 26px;
+  height: 28px;
   border: 1px solid var(--curio-border);
-  border-radius: var(--curio-radius-pill);
+  border-radius: var(--curio-radius-lg);
   background: transparent;
   color: var(--curio-text-secondary);
   padding: 0 12px;
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -146,10 +133,10 @@
    be decoration that read as information. The thumbnail below still colours
    its nodes by type. */
 .cardStrip {
-  min-height: 32px;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  padding: 4px 12px;
+  padding: 3px 12px;
   flex-shrink: 0;
   background: var(--curio-kind-dataflow-fg);
 }

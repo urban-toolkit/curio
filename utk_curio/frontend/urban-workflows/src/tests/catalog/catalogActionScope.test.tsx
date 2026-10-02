@@ -126,8 +126,9 @@ describe("the browse cards are informational, and the drawer acts", () => {
     // button left names the label it removed.
     expect(/>\s*Add to all projects\s*</.test(card)).toBe(false);
     expect(card).not.toContain("onInstall");
-    // It says where it is, once, in the strip - not again down in the actions.
-    expect(card).toContain("In all projects");
+    // It says where it is, once, as the card's status at the start of the
+    // actions row - not again in the strip or under another name.
+    expect(card.match(/✓ In all projects/g) ?? []).toHaveLength(1);
     expect(/>\s*In defaults\s*</.test(card)).toBe(false);
   });
 
@@ -146,7 +147,10 @@ describe("the browse cards are informational, and the drawer acts", () => {
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
-    expect(src).toMatch(/stripBadgePopular/);
+    // One status slot, the shared one, and no longer in the strip: on a card a
+    // grid column wide the strip's status ran over its format or category pill.
+    expect(src).toMatch(/[sS]tyles\.cardStatus\b/);
+    expect(src).not.toContain("trailing=");
   });
 });
 
@@ -337,8 +341,10 @@ describe("the catalog pages import, not just the drawers", () => {
 
   test.each(PAGES)("the %s page puts it in the header tools row", (_k, rel) => {
     // Beside the search box, the arrangement the Projects page already used.
+    // The tools are the children of the shared header, which lays them out at
+    // the end of the title row.
     const src = read(rel);
-    const tools = src.slice(src.indexOf("headerTools"), src.indexOf("filterBar"));
+    const tools = src.slice(src.indexOf("<CatalogPageHeader"), src.indexOf("</CatalogPageHeader>"));
     expect(tools).toContain("hubSearch");
     expect(tools).toContain("CatalogHeaderImport");
     // Search first, import second.
@@ -400,7 +406,8 @@ describe("the catalog pages import, not just the drawers", () => {
     // An agent package is a manifest plus its prompt files across two
     // directories; one file input cannot express that.
     const page = read("pages/agents/AgentCatalogBrowse.tsx");
-    const tools = page.slice(page.indexOf("headerTools"), page.indexOf("filterBar"));
+    const tools = page.slice(page.indexOf("<CatalogPageHeader"), page.indexOf("</CatalogPageHeader>"));
+    expect(tools).toContain("CatalogHeaderImport");
     expect(tools).not.toContain("accept=");
     expect(page).toContain("AgentImportModal");
   });
@@ -732,7 +739,7 @@ describe("a dataflow with no project yet is not reported as empty", () => {
   });
 });
 
-// ── The left rail leads the same way on all three pages ─────────────────────
+// ── The left rail leads the same way on every page ──────────────────────────
 
 describe("every catalog page's rail opens with the same section", () => {
   const PAGES: [string, string][] = [
@@ -741,33 +748,55 @@ describe("every catalog page's rail opens with the same section", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx"],
   ];
 
-  test.each(PAGES)("the %s rail has a By status section", (_k, rel) => {
+  /** Every browse page, Projects, Discovery and Models included. */
+  const BROWSE_PAGES: [string, string][] = [
+    ...PAGES,
+    ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
+    ["model", "pages/models/ModelCatalogBrowse.tsx"],
+    ["projects", "pages/projects/ProjectsList.tsx"],
+  ];
+
+  test.each(BROWSE_PAGES)("the %s page renders the shared rail, not its own", (_k, rel) => {
+    // Each page used to write its rail out by hand, and the five had drifted:
+    // reset rows on some sections and not others, a total inside "By
+    // provider", an unlabelled first group on one page only.
+    const src = read(rel);
+    expect(src).toContain("<CatalogRail");
+    expect(src).not.toContain("categoryRail");
+    expect(src).not.toContain("railDivider");
+  });
+
+  test.each(PAGES)("the %s rail offers the all-projects scope right under All", (_k, rel) => {
     // The Data rail opened straight into "By format". Its account-level scope
     // existed only as a chip down in the filter bar, so the three catalogs
-    // disagreed about where you look for the same kind of filter.
-    expect(read(rel)).toContain("By status");
+    // disagreed about where you look for the same kind of filter. The scope is
+    // the rail's `scope` row now, which CatalogRail renders second, after "All".
+    expect(read(rel)).toMatch(/scope=\{\{\s*label: "In all projects"/);
   });
 
-  test.each(PAGES)("the %s rail's status section is first", (_k, rel) => {
+  test("the rail renders All, then the scope row, then the sections", () => {
+    const src = read("pages/catalog/CatalogRail.tsx");
+    const body = src.slice(src.indexOf("export const CatalogRail"));
+    const all = body.indexOf("row={all}");
+    const scope = body.indexOf("row={scope}");
+    const sections = body.indexOf("visibleRailSections(sections)");
+    expect(all).toBeGreaterThan(-1);
+    expect(scope).toBeGreaterThan(all);
+    expect(sections).toBeGreaterThan(scope);
+  });
+
+  test.each(BROWSE_PAGES)("the %s rail has no per-section reset row", (_k, rel) => {
+    // "All <items>" at the top clears every filter, and a selected row clears
+    // itself on a second click, so a reset per section only repeated them.
     const src = read(rel);
-    const rail = src.slice(src.indexOf("categoryRail"));
-    const status = rail.indexOf("By status");
-    expect(status).toBeGreaterThan(-1);
-    // No other rail heading precedes it.
-    const firstLabel = rail.indexOf("railLabel}>");
-    expect(rail.slice(firstLabel, firstLabel + 40)).toContain("By status");
+    for (const reset of ["All formats", "All origins", "All categories"]) {
+      expect(src).not.toContain(reset);
+    }
   });
 
-  test.each(PAGES)("the %s rail offers the all-projects scope", (_k, rel) => {
-    expect(read(rel)).toContain("In all projects");
-  });
-
-  test("the data rail does not label two buttons 'All datasets'", () => {
-    // The format section's reset used that name too; it only clears the format
-    // facet, so it says so.
+  test("the data rail labels one button 'All datasets'", () => {
     const src = read("pages/dataCatalog/DataCatalogBrowse.tsx");
-    expect(src.match(/<span>All datasets<\/span>/g) ?? []).toHaveLength(1);
-    expect(src).toContain("<span>All formats</span>");
+    expect(src.match(/label: "All datasets"/g) ?? []).toHaveLength(1);
   });
 });
 
@@ -1244,9 +1273,13 @@ describe("the four browse pages introduce themselves the same way", () => {
     expect(read(rel)).toContain(opening);
   });
 
-  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel) => {
+  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel, opening) => {
+    // The intro is the shared header's `intro` prop, which every page passes
+    // just before its `viewTools`. The slice must hold the intro itself, or
+    // this would pass on an empty string.
     const src = read(rel);
-    const intro = src.slice(src.indexOf("pageIntro"), src.indexOf("headerTools"));
+    const intro = src.slice(src.indexOf("intro="), src.indexOf("viewTools="));
+    expect(intro).toContain(opening);
     expect(intro).not.toMatch(/dataflow/i);
   });
 

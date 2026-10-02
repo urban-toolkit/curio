@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import {
   modelCardActions,
   type CatalogCardActionId,
@@ -31,8 +32,9 @@ import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
  *
  * The fifth peer of `/catalog/nodes`, `/catalog/data`, `/catalog/agents` and
  * `/catalog/discovery`: the same three-column grid from
- * `CatalogBrowseLayout.module.css`, the same header anatomy, filter bar, card
- * grid, right-hand drawer, right-click menu and details modal.
+ * `CatalogBrowseLayout.module.css`, the same rail (`CatalogRail`), header
+ * (`CatalogPageHeader`), card grid, right-hand drawer, right-click menu and
+ * details modal.
  *
  * What differs is how a model is used. It is not added to a project: a node
  * names it in its code, and dragging a model from a dataflow's Model Catalog
@@ -130,118 +132,79 @@ export const ModelCatalogBrowse: React.FC = () => {
         .filter(Boolean)
         .join(" ")}
     >
-      <aside className={browseStyles.categoryRail}>
-        <p className={browseStyles.railLabel}>By runtime</p>
-        <button
-          className={`${browseStyles.railButton} ${runtime === "" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setRuntime("")}
-        >
-          <span>All models</span>
-          <span className={browseStyles.railCountBadge}>{data.items.length}</span>
-        </button>
-        {RUNTIME_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${runtime === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setRuntime((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{counts.runtimes[value] ?? 0}</span>
-          </button>
-        ))}
-
-        <div className={browseStyles.railDivider} />
-        <p className={browseStyles.railLabel}>By origin</p>
-        {ORIGIN_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            className={`${browseStyles.railButton} ${origin === value ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setOrigin((prev) => (prev === value ? "" : value))}
-          >
-            <span>{label}</span>
-            <span className={browseStyles.railCount}>{counts.origins[value] ?? 0}</span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter models"
+        all={{
+          label: "All models",
+          count: data.items.length,
+          active: runtime === "" && origin === "",
+          onClick: () => {
+            setRuntime("");
+            setOrigin("");
+          },
+        }}
+        sections={[
+          {
+            key: "runtime",
+            label: "By runtime",
+            entries: RUNTIME_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: counts.runtimes[value] ?? 0,
+              active: runtime === value,
+              onClick: () => setRuntime((prev) => (prev === value ? "" : value)),
+            })),
+          },
+          {
+            key: "origin",
+            label: "By origin",
+            entries: ORIGIN_FILTERS.map(({ value, label }) => ({
+              value,
+              label,
+              count: counts.origins[value] ?? 0,
+              active: origin === value,
+              onClick: () => setOrigin((prev) => (prev === value ? "" : value)),
+            })),
+          },
+        ]}
+      />
 
       <main className={browseStyles.browseMain}>
-        <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Model Catalog</p>
-          <div className={browseStyles.titleRow}>
-            <CatalogKindIcon kind="model" size="md" title="Model Catalog" />
-            <h1>Model Catalog</h1>
-            <span className={browseStyles.titleCount}>{models.length}</span>
-          </div>
-          <p className={browseStyles.pageIntro}>
-            Trained models your nodes can run. Models you download from the{" "}
-            <strong>Discovery Catalog</strong> land here too.
-          </p>
-          <div className={browseStyles.headerTools}>
-            <input
-              className={browseStyles.hubSearch}
-              type="search"
-              placeholder="Search models…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search models"
-            />
-          </div>
-        </section>
-
-        <div className={browseStyles.filterBar} data-curio-catalog-filter-bar="true">
-          <button
-            className={`${browseStyles.chip} ${runtime === "" && origin === "" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => {
-              setRuntime("");
-              setOrigin("");
-            }}
-          >
-            All
-          </button>
-          {RUNTIME_FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              data-curio-runtime-chip={value}
-              className={`${browseStyles.chip} ${runtime === value ? browseStyles.chipActive : ""}`}
-              type="button"
-              onClick={() => setRuntime((prev) => (prev === value ? "" : value))}
+        <CatalogPageHeader
+          kind="model"
+          iconTitle="Model Catalog"
+          title="Model Catalog"
+          count={models.length}
+          intro={
+            <>
+              Trained models your nodes can run. Models you download from the{" "}
+              <strong>Discovery Catalog</strong> land here too.
+            </>
+          }
+          viewTools={
+            <select
+              className={browseStyles.sortSelect}
+              value={sort}
+              aria-label="Sort models"
+              onChange={(e) => setSort(e.target.value as ModelSortMode)}
             >
-              {/* One dot colour for every runtime: on this page every card IS a
-                  model, so a per-runtime hue would carry no information. See
-                  --curio-kind-model-fg. */}
-              <span className={`${browseStyles.chipDot} ${browseStyles.chipDotDefault}`} />
-              {label}
-            </button>
-          ))}
-          {ORIGIN_FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              data-curio-origin-chip={value}
-              className={`${browseStyles.chip} ${origin === value ? browseStyles.chipActive : ""}`}
-              type="button"
-              onClick={() => setOrigin((prev) => (prev === value ? "" : value))}
-            >
-              {label}
-            </button>
-          ))}
-          <span className={browseStyles.filterSpacer} />
-          <select
-            className={browseStyles.sortSelect}
-            value={sort}
-            aria-label="Sort models"
-            onChange={(e) => setSort(e.target.value as ModelSortMode)}
-          >
-            {MODEL_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
+              {MODEL_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          <input
+            className={browseStyles.hubSearch}
+            type="search"
+            placeholder="Search models…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search models"
+          />
+        </CatalogPageHeader>
 
         {error ? (
           <div className={browseStyles.browseBanner} role="alert">

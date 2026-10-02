@@ -31,8 +31,49 @@ _socket_path = None
 _READY_TIMEOUT_SECONDS = 180
 
 
+#: What one glibc malloc arena reserves: HEAP_MAX_SIZE, twice the 32 MiB
+#: ceiling of the mmap threshold on a 64-bit build.
+MALLOC_ARENA_MB = 64
+
+#: The share of a child's budget its malloc arenas may reserve between them.
+MALLOC_ARENA_SHARE = 4
+
+
 class ZygoteStartupError(RuntimeError):
     """The zygote could not be started or never became ready."""
+
+
+def malloc_arena_cap(memory_mb):
+    """How many malloc arenas a child with *memory_mb* of budget may hold."""
+    return max(2, int(memory_mb) // MALLOC_ARENA_SHARE // MALLOC_ARENA_MB)
+
+
+def zygote_environment(limits, environ=None):
+    """The zygote's environment: this process's, with its malloc arenas capped.
+
+    glibc gives every thread that mallocs an arena of its own, up to eight per
+    core, and each one reserves ``MALLOC_ARENA_MB`` of address space up front.
+    A child's RLIMIT_AS counts the reservation, not what is used, and a node's
+    libraries start threads by the core: onnxruntime one per physical core. At
+    64 threads, as on a 64-core host, its session could not even be created
+    inside the default budget. With the cap, threads beyond it share the
+    arenas there are; how many threads a library starts is unchanged.
+
+    Set here, before the zygote's first allocation, because glibc settles its
+    arena limit once per process and a forked child inherits what the zygote
+    settled: a ``mallopt`` in the child comes too late. A lower
+    ``MALLOC_ARENA_MAX`` already in the environment stands.
+    """
+    env = dict(os.environ if environ is None else environ)
+    memory_mb = (limits or {}).get("memory_mb")
+    if memory_mb:
+        cap = malloc_arena_cap(memory_mb)
+        try:
+            current = int(env.get("MALLOC_ARENA_MAX", ""))
+        except ValueError:
+            current = 0
+        env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+    return env
 
 
 def ensure_running(config, *, exec_user=None, require_seccomp=True):
@@ -75,6 +116,7 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
                 stdout=subprocess.PIPE,
                 stderr=None,          # inherit, so its errors reach the log
                 text=True,
+                env=zygote_environment(config.limits),
                 # Its own process group, so a signal aimed at the sandbox's
                 # group does not race the zygote's own children.
                 start_new_session=True,
