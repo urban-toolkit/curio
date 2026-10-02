@@ -87,7 +87,7 @@ def solve_node_stream(
         raise AgentServiceError(str(exc), exc.status)
     execution_id = uuid.uuid4().hex
     # Request-context pieces, resolved before the job thread starts.
-    agents_acquire._settle_lake_acquisitions(user_key, project_id)
+    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     base = agents_grounding._solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
     dataset_paths = agents_grounding._resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
     events = _solve_node_events(

@@ -62,7 +62,7 @@ jest.mock("../../services/datasetCatalog", () => {
 import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
-const PORTAL = "/catalog/lakes/lake.a.portal%401";
+const PORTAL = "/catalog/discovery/source.a.portal%401";
 
 const dataset: DatasetCatalogItem = {
   id: "imported.xabc",
@@ -74,9 +74,9 @@ const dataset: DatasetCatalogItem = {
   updatedAt: new Date().toISOString(),
   tags: [],
   installed: false,
-  lakeSource: {
-    lakeId: "lake.a.portal@1",
-    lakeName: "Alpha Portal",
+  discoverySource: {
+    sourceId: "source.a.portal@1",
+    sourceName: "Alpha Portal",
     resourceId: "abcd-1234",
     resourceUrl: "https://alpha.example/d/abcd-1234",
   },

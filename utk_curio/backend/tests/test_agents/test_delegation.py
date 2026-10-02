@@ -343,7 +343,7 @@ class TestDelegateChildRun:
 
 
 class TestTheChildRunsOnItsOwnConfiguration:
-    """A delegate runs on the configuration chosen for it in AI Settings, else
+    """A delegate runs on the configuration chosen for it in API Settings, else
     on its caller's; a broken choice is the child's failure, never the parent's."""
 
     def _config(self, client, token, label, model):

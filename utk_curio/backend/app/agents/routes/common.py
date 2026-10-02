@@ -27,7 +27,7 @@ def _error(message: str, status: int = 400):
 
 
 def _provider_error(exc: ProviderConfigError):
-    """No LLM configuration answers: a 400 whose remedy opens AI Settings."""
+    """No LLM configuration answers: a 400 whose remedy opens API Settings."""
     return jsonify({"error": str(exc), "remedy": exc.remedy}), 400
 
 
@@ -57,7 +57,7 @@ def _map_agent_errors(fn):
     The Data Catalog's ``datasets/routes.py::_map_catalog_errors`` is the model:
     applied BELOW ``require_auth`` so auth failures are not swallowed, mapping
     a missing dataflow to 404 and an unconfigured provider to a 400 that names
-    AI Settings.
+    API Settings.
 
     Deliberately additive rather than a replacement for the per-handler
     ``try/except AgentServiceError``. Those 32 blocks work and are covered;

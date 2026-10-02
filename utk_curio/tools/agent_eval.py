@@ -15,7 +15,7 @@ Curio passes or fails because of these numbers, and the first thing to do with a
 low score is read the transcript the report kept.
 
 The tool never reads a provider key. Which model answers is whatever the
-evaluation account saved in AI Settings; the report records the provider type,
+evaluation account saved in API Settings; the report records the provider type,
 the base URL's host and the model name. Every transcript byte is scrubbed before
 it is written.
 
@@ -143,7 +143,7 @@ def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
     else:
         raise live_mod.LiveEvalRefused(
             "the evaluation account has no LLM configuration to evaluate a model "
-            "on; add one in AI Settings first"
+            "on; add one in API Settings first"
         )
     client.json("/api/agents/llm/assignments", method="PUT", payload={_BUILDER: created["id"]})
     return previous, created["id"]
@@ -229,7 +229,7 @@ def cmd_run(args) -> int:
                     "WARNING: could not restore the Dataflow Builder's configuration "
                     f"({previous_choice or 'none, it followed the default'}) on the "
                     f"evaluation account and remove {temporary_id}: {exc}. Do both "
-                    "in AI Settings.",
+                    "in API Settings.",
                     file=sys.stderr,
                 )
 

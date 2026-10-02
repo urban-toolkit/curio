@@ -285,6 +285,90 @@ class TestKeyedRequests:
                      headers={"X-Api-Key": "s3cr3t-value-0123"})
 
 
+TWO_HOSTS = _resolver({
+    "api.example.org": ["93.184.216.34"],
+    "cdn.example.net": ["93.184.216.35"],
+})
+KEY = {"X-Api-Key": "s3cr3t-value-0123"}
+
+
+class TestASecretStaysOnItsOrigin:
+    """A source's key goes to the source, never to where it redirects."""
+
+    def _redirecting(self, seen, target):
+        def _fn(method, url, headers=None):
+            seen.append((url, dict(headers or {})))
+            if url.startswith("https://api.example.org/"):
+                return _response(status=302, location=target, body=b"")
+            return _response()
+
+        return _fn
+
+    def test_a_redirect_to_another_host_gets_no_key(self):
+        seen = []
+        egress.fetch(
+            "https://api.example.org/file", resolver=TWO_HOSTS,
+            request_fn=self._redirecting(seen, "https://cdn.example.net/signed?sig=1"),
+            headers={"User-Agent": "Curio"}, secret_headers=KEY,
+        )
+        assert seen[0] == ("https://api.example.org/file", {"User-Agent": "Curio", **KEY})
+        assert seen[1] == ("https://cdn.example.net/signed?sig=1", {"User-Agent": "Curio"})
+
+    def test_a_redirect_on_the_same_origin_keeps_it(self):
+        seen = []
+
+        def _fn(method, url, headers=None):
+            seen.append((url, dict(headers or {})))
+            if url.endswith("/a"):
+                return _response(status=302, location="/b", body=b"")
+            return _response()
+
+        egress.fetch("https://api.example.org/a", resolver=TWO_HOSTS, request_fn=_fn,
+                     secret_headers=KEY)
+        assert seen == [("https://api.example.org/a", KEY), ("https://api.example.org/b", KEY)]
+
+    def test_another_port_is_another_origin(self):
+        seen = []
+        egress.fetch(
+            "https://api.example.org/file", resolver=TWO_HOSTS,
+            request_fn=self._redirecting(seen, "https://api.example.org:8443/x"),
+            secret_headers=KEY,
+        )
+        assert seen[1] == ("https://api.example.org:8443/x", {})
+
+    def test_a_download_redirect_to_another_host_gets_no_key(self):
+        seen = []
+
+        def _fn(method, url, **kwargs):
+            seen.append((url, dict(kwargs.get("headers") or {})))
+            if url.startswith("https://api.example.org/"):
+                return 302, {}, "https://cdn.example.net/blob", _NoBody()
+            return 200, {"Content-Length": "3"}, None, iter([b"abc"])
+
+        out = []
+        egress.download(
+            "https://api.example.org/file", sink=out.append, max_bytes=10,
+            request_fn=_fn, resolver=TWO_HOSTS, secret_headers=KEY,
+        )
+        assert seen[0][1] == KEY
+        assert seen[1] == ("https://cdn.example.net/blob", {})
+        assert b"".join(out) == b"abc"
+
+
+class TestFetchReportsTheResponseHeaders:
+    def test_the_result_carries_what_the_server_answered(self):
+        """A paginated listing reads ``Link`` from here."""
+        def _fn(method, url, headers=None):
+            return 200, {"Content-Type": "application/json",
+                         "Link": '<https://api.example.org/p2>; rel="next"'}, b"[]", None
+
+        result = egress.fetch("https://api.example.org/p1", request_fn=_fn, resolver=PUBLIC,
+                              headers={"User-Agent": "Curio"}, secret_headers=KEY)
+        assert result.headers["Link"] == '<https://api.example.org/p2>; rel="next"'
+        assert "X-Api-Key" not in result.headers
+        assert "s3cr3t-value-0123" not in repr(result)
+
+
 # ── The policy moved to common/egress_policy.py; the transport stayed here ──
 
 

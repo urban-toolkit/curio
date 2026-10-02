@@ -135,8 +135,8 @@ def test_dataset_parses_and_yields_expectations(dataset: CatalogDataset):
     elif fmt == "collection":
         import pyarrow.parquet as pq
 
-        from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
-        from utk_curio.backend.app.datalakes.infrastructure.storage import source_dir, storage_root
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.infrastructure.storage import source_dir, storage_root
 
         block = dataset.manifest.collection or {}
         root = storage_root(load_source_manifest(source_dir(block["sourceId"])))

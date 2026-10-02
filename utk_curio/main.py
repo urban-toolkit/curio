@@ -1788,7 +1788,7 @@ def main():
             "Base URL of this Curio's own OpenAI-compatible endpoint (sets "
             "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint. "
             "With this or CURIO_DEFAULT_LLM_API_KEY set, users can add an LLM "
-            "configuration on it ('This Curio install' in AI Settings)."
+            "configuration on it ('This Curio install' in API Settings)."
         ),
     )
     parser.add_argument(

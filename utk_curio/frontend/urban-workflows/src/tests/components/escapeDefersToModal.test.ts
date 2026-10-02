@@ -7,7 +7,7 @@
  * on its own, by asking `modalStackDepth()`.
  *
  * Two of the four already did. The agent chat panel and the fork picker did
- * not, and a modal opened over either one took it down too: AI Settings closed
+ * not, and a modal opened over either one took it down too: API Settings closed
  * the chat panel behind it, and the fork picker collapsed under any dialog
  * raised from the node dock.
  *

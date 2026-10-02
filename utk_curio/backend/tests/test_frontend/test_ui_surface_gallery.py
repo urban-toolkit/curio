@@ -356,7 +356,7 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # AI Settings, captured from the projects page because that is where its
+    # API Settings, captured from the projects page because that is where its
     # header button lives; the canvas reaches the same modal through the
     # drawer's cog.
     try:
@@ -364,10 +364,10 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
             timeout=20000
         )
-        page.get_by_role("button", name="AI Settings", exact=True).click(timeout=15000)
+        page.get_by_role("button", name="API Settings", exact=True).click(timeout=15000)
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=15000)
-        gallery.shot("modal-ai-settings")
+        gallery.shot("modal-api-settings")
     except (PlaywrightTimeoutError, AssertionError) as exc:
-        gallery.miss("modal-ai-settings", str(exc))
+        gallery.miss("modal-api-settings", str(exc))

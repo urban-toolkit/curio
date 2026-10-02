@@ -35,7 +35,7 @@ export interface AgentTurnActions {
   onRecordDatasetSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
   onImportDataset?: (
     file: File,
-    lakeSource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+    discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
   ) => Promise<string | null>;
   onApplyProposal?: (proposalId: string) => Promise<unknown>;
   /** dev/84: a package.install proposal applies THROUGH the install review dialog. */

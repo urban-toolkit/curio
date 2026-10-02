@@ -111,7 +111,7 @@ _PLAN_EXPECTS_MAX_CHARS = 160
 # rendering still goes through the sanitizer).
 _CANDIDATE_LANES = ("external", "catalog")
 _CANDIDATE_SOURCE_TYPES = (
-    "api", "endpoint", "portal", "catalog", "document", "database", "lake",
+    "api", "endpoint", "portal", "catalog", "document", "database", "discovery",
 )
 _CANDIDATES_MAX_ROWS_PER_LANE = 8
 _CANDIDATE_NAME_MAX_CHARS = 120
@@ -1076,13 +1076,13 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
 _CANDIDATES_TOOL = "catalog.search"
 #: Either grant unlocks the candidates schema: a run that can search portals
 #: can fill the external lane even without the Data Catalog tool.
-_LAKE_CANDIDATES_TOOL = "datalake.search"
-_CANDIDATES_TOOLS = (_CANDIDATES_TOOL, _LAKE_CANDIDATES_TOOL)
+_DISCOVERY_CANDIDATES_TOOL = "discovery.search"
+_CANDIDATES_TOOLS = (_CANDIDATES_TOOL, _DISCOVERY_CANDIDATES_TOOL)
 
-#: Appended only for a run holding ``datalake.search``. Kept separate so the
+#: Appended only for a run holding ``discovery.search``. Kept separate so the
 #: base instruction stays byte-identical for every run that cannot use it.
-CANDIDATES_LAKE_ADDENDUM = (
-    "An external row for a dataset you found with datalake.search may also "
+CANDIDATES_DISCOVERY_ADDENDUM = (
+    "An external row for a dataset you found with discovery.search may also "
     'carry "sourceId" and "resourceId", copied exactly from that result. '
     "Include both or neither. A row with both can be downloaded into the Data "
     "Catalog for the user; a row without them is handed to Node Builder "
@@ -1177,11 +1177,11 @@ def tail_instruction(
     if granted_ids & set(_CANDIDATES_TOOLS):
         instruction = f"{instruction}\n\n{CANDIDATES_INSTRUCTION}"
         # Only described to a run that can actually produce them. A run without
-        # the lake tools cannot obtain a sourceId, so telling it about the
+        # the discovery tools cannot obtain a sourceId, so telling it about the
         # fields would invite it to invent a pair the runtime then rejects -
         # and would change the prompt for every existing agent for nothing.
-        if _LAKE_CANDIDATES_TOOL in granted_ids:
-            instruction = f"{instruction}\n{CANDIDATES_LAKE_ADDENDUM}"
+        if _DISCOVERY_CANDIDATES_TOOL in granted_ids:
+            instruction = f"{instruction}\n{CANDIDATES_DISCOVERY_ADDENDUM}"
     return instruction
 
 

@@ -517,8 +517,8 @@ def _mint_proposal(
         return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
-    if tool == "datalake.acquire":
-        return agents_acquire._mint_datalake_acquire(user_key, project_id, loop_ctx, req)
+    if tool == "discovery.acquire":
+        return agents_acquire._mint_discovery_acquire(user_key, project_id, loop_ctx, req)
     if tool == "package.install":
         return _mint_package_install(user_key, project_id, loop_ctx, req)
     if tool == "package.draft.apply":

@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
  * One way into a dataset's details, from anywhere, including a toast.
  *
  * Toasts named a dataset ("Registered bikes.csv in the Data Catalog.", "Added
- * Bike Routes to this project.") and offered no way to it, and a finished lake
+ * Bike Routes to this project.") and offered no way to it, and a finished Discovery Catalog
  * download raised no toast at all where an import did. A toast now carries
  * "View details", which opens the same modal a card does, through the one
  * provider every surface uses.

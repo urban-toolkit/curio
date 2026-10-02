@@ -28,12 +28,14 @@ const GRIDS = [
   "pages/catalog/NodeCatalogBrowse.tsx",
   "pages/dataCatalog/DataCatalogBrowse.tsx",
   "pages/agents/AgentCatalogBrowse.tsx",
+  "pages/models/ModelCatalogBrowse.tsx",
 ];
 
 const CARDS = [
   "pages/catalog/PackageBrowseCard.tsx",
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
+  "pages/models/ModelCatalogBrowseCard.tsx",
 ];
 
 describe("CardContextMenu", () => {
@@ -151,7 +153,7 @@ describe("CardContextMenu", () => {
 });
 
 describe("every browse grid opens one", () => {
-  test("all four grids render the shared menu", () => {
+  test("every listed grid renders the shared menu", () => {
     for (const grid of GRIDS) {
       const tsx = read(grid);
       expect(tsx).toMatch(/<CardContextMenu\b/);
@@ -168,7 +170,7 @@ describe("every browse grid opens one", () => {
     }
   });
 
-  test("the three catalog cards accept the gesture", () => {
+  test("the catalog cards accept the gesture", () => {
     for (const card of CARDS) {
       expect(read(card)).toContain("onContextMenu={onContextMenu}");
     }

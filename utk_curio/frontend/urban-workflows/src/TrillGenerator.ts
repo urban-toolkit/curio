@@ -12,6 +12,7 @@
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
 import type { HandCategories } from "./utils/dataflowCategories";
+import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 
 export class TrillGenerator {
 
@@ -260,6 +261,15 @@ export class TrillGenerator {
                 trill_node.metadata.datasetSource = node.data.datasetSource;
             }
 
+            // The model a Model Catalog drop set, beside datasetRefs, so the
+            // saved dataflow says which model a node runs.
+            if(Array.isArray(node.data.modelRefs) && node.data.modelRefs.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.modelRefs = node.data.modelRefs;
+            }
+
             // dev/89: per-node appearance persists at the canonical
             // metadata.appearance shape — without this, a recolored post-it
             // would lose its color on the next canvas save.
@@ -313,6 +323,18 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
+            }
+
+            // #412: the rest of what the node settings modal saved
+            // (data.packageTemplateConfig) persists at
+            // metadata.packageTemplateConfig, without the code copy and the
+            // port row ids (utils/canvasTemplateConfigSpec).
+            const packageTemplateConfig = canvasTemplateConfigToSpec(node.data.packageTemplateConfig);
+            if(packageTemplateConfig != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateConfig = packageTemplateConfig;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

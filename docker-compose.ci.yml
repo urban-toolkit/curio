@@ -78,13 +78,13 @@ services:
       # which is the bind-mounted workspace the host-side suite already
       # resolves for itself (test_db_paths).
       - CURIO_LAUNCH_CWD=/app
-      # The Data Lake Catalog's recorded portal corpus. The host-side e2e specs
+      # The Discovery Catalog's recorded portal corpus. The host-side e2e specs
       # drive this container with --use-existing, so it is the CONTAINER that
-      # needs this, not the pytest process: without it the lake transport falls
+      # needs this, not the pytest process: without it the discovery transport falls
       # back to real HTTP and those specs would reach live portals. Honoured
       # only alongside --testing on the command below, which is what sets
-      # CURIO_TESTING (see datalakes/infrastructure/transport.py).
-      - CURIO_DATALAKE_FIXTURES=/app/utk_curio/backend/tests/test_datalakes/fixtures
+      # CURIO_TESTING (see discovery/infrastructure/transport.py).
+      - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override

@@ -3,13 +3,13 @@ import CSS from "csstype";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "assets/curio-2.png";
 import { useUserContext } from "../../providers/UserProvider";
-import AiSettingsModal from "../AiSettingsModal";
+import ApiSettingsModal from "../ApiSettingsModal";
 import { ConnectionKeysModalHost } from "../connectionKeys/ConnectionKeysModalHost";
 
 export function GlobalPageHeader() {
   const { user, signout, enableUserAuth } = useUserContext();
   const navigate = useNavigate();
-  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
 
   const initials = user?.name
     ? user.name
@@ -27,13 +27,13 @@ export function GlobalPageHeader() {
       </Link>
       <div style={topBarRightStyle}>
         {/* The account's one credentials surface: its LLM configurations,
-            the HuggingFace token, and the data-portal tokens the Data Lake
+            the HuggingFace token, and the data-portal tokens the Discovery Catalog
             Catalog uses. The name has lagged the contents twice now (it was "LLM
             Settings" before the HuggingFace token); renaming it reaches about
             a hundred references, so it is worth its own change rather than a
             feature's. */}
-        <button style={aiSettingsBtnStyle} type="button" onClick={() => setAiSettingsOpen(true)}>
-          AI Settings
+        <button style={apiSettingsBtnStyle} type="button" onClick={() => setApiSettingsOpen(true)}>
+          API Settings
         </button>
         <div style={avatarStyle}>{initials}</div>
         <div style={userInfoColumnStyle}>
@@ -53,8 +53,8 @@ export function GlobalPageHeader() {
           )}
         </div>
       </div>
-      <AiSettingsModal isOpen={aiSettingsOpen} onClose={() => setAiSettingsOpen(false)} />
-      {/* Opens AI Settings on the section a card asks for, such as an agent's
+      <ApiSettingsModal isOpen={apiSettingsOpen} onClose={() => setApiSettingsOpen(false)} />
+      {/* Opens API Settings on the section a card asks for, such as an agent's
           model from its details. The canvas mounts its own. */}
       <ConnectionKeysModalHost />
     </header>
@@ -88,7 +88,7 @@ const topBarRightStyle: CSS.Properties = {
   gap: "8px",
 };
 
-const aiSettingsBtnStyle: CSS.Properties = {
+const apiSettingsBtnStyle: CSS.Properties = {
   background: "none",
   border: "1px solid #444",
   borderRadius: "4px",

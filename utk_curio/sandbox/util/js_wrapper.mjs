@@ -1,12 +1,13 @@
 // js_wrapper.mjs — static template for JS Computation node execution.
 //
 // Analogous to python_wrapper.txt for Python nodes.
-// Python reads this file, substitutes three placeholders, then pipes the
+// Python reads this file, substitutes four placeholders, then pipes the
 // result to `node --input-type=commonjs` via stdin.  Placeholders (replaced
 // by Python before execution, never present in the running script):
-//   DYNAMIC_IMPORTS  — user import statements rewritten as await import() calls
-//   ARG_JSON         — JSON-serialized input value (embedded as a JS literal)
-//   USER_CODE        — user code indented 4 spaces (body of an async function)
+//   DYNAMIC_IMPORTS      : user import statements rewritten as await import() calls
+//   ARG_JSON             : JSON-serialized input value (embedded as a JS literal)
+//   USER_CODE            : user code indented 4 spaces (body of an async function)
+//   OVERPASS_USER_AGENT  : node_runtime.OVERPASS_USER_AGENT, as a JS string literal
 //
 // The result is written as a single stdout line with a unique prefix so Python
 // can extract it without a temp file.  All other stdout lines are user output.
@@ -16,7 +17,7 @@ if (typeof self === 'undefined') globalThis.self = globalThis;
 const __origFetch = globalThis.fetch;
 globalThis.fetch = (url, opts = {}) => {
   if (typeof url === 'string' && url.includes('overpass-api.de')) {
-    opts = { ...opts, headers: { ...opts.headers, 'User-Agent': 'autk-db/1.3.1' } };
+    opts = { ...opts, headers: { ...opts.headers, 'User-Agent': __OVERPASS_USER_AGENT__ } };
   }
   return __origFetch(url, opts);
 };

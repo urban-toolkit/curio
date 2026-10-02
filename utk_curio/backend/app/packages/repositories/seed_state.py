@@ -27,16 +27,20 @@ seeder refreshes an installed package from the catalog when the two differ
   copy's map still has that digest, nobody has changed it since.
 * ``installedAt`` without ``catalogCopy`` is a copy holding the user's own
   content: an upload, a factory install, a promotion, a metadata edit.
-* A record with neither predates this rule.
+* A record with neither predates this rule, or was lost. Such a copy is
+  refreshed only when it is provably a catalog copy nobody changed: its
+  map is one the catalog shipped (:func:`legacy_catalog_digests`) and its
+  files still match that map.
 
-The schema is intentionally tiny and forward-compatible: unknown keys
-on a per-package record are preserved on rewrite, and a corrupt or
-missing file is treated as "no recorded state" rather than raising.
+The schema is intentionally tiny: only the five known keys survive a
+rewrite, and a corrupt or missing file is treated as "no recorded state"
+rather than raising.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
 import json
 import logging
@@ -103,6 +107,35 @@ def copy_digest(integrity: dict[str, str]) -> str:
     """One digest for a package copy's ``integrity.json`` map."""
     body = json.dumps(integrity, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+_LEGACY_DIGESTS_PATH = Path(__file__).with_name("legacy_catalog_digests.json")
+
+
+@functools.lru_cache(maxsize=1)
+def legacy_catalog_digests() -> dict[str, frozenset[str]]:
+    """Every :func:`copy_digest` a shipped package's ``integrity.json`` has had.
+
+    Read from ``legacy_catalog_digests.json``, generated once from the git
+    history of ``packages/<dir>/integrity.json``. It answers one question for
+    a copy with no origin on record: is this byte for byte a catalog copy
+    from some earlier release? The file is frozen on purpose. Every copy
+    written since the record existed (#564) carries ``catalogCopy`` or
+    ``installedAt`` and never asks; a copy whose record is lost later and
+    whose digest postdates the file is simply kept, which loses nothing.
+    """
+    try:
+        raw = json.loads(_LEGACY_DIGESTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        log.warning("Could not read %s", _LEGACY_DIGESTS_PATH, exc_info=True)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(name): frozenset(d for d in digests if isinstance(d, str))
+        for name, digests in raw.items()
+        if isinstance(digests, list)
+    }
 
 
 def _state_path(user_key: str) -> Path:

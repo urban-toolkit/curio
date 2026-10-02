@@ -15,7 +15,7 @@ shows for a given prop set.
 ``curio.example-ui@1`` is the ONLY package a test may install: it declares no
 python dependencies, so nothing shells out to pip. ``curio.weather@1``,
 ``ai.utk.uhvi@1`` and ``curio.streetvision@1`` pull
-rasterio/geopandas/torch through a synchronous call capped at 30 minutes, and
+rasterio/geopandas/onnxruntime through a synchronous call capped at 30 minutes, and
 the resulting user-store copy makes every later ``curio start`` re-resolve them
 (``main.py`` walks every user store on boot and exits on pip failure).
 

@@ -27,7 +27,7 @@ CATALOG = catalog_datasets()
 IDS = [dataset.dataset_id for dataset in CATALOG]
 
 #: Formats with no single file to download: a bundle is several parts, and a
-#: collection's files stay in its lake source.
+#: collection's files stay in its source.
 NOT_EXPORTABLE = ("bundle", "collection")
 
 

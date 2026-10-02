@@ -42,7 +42,7 @@
 .avatar_evaluate { background: var(--curio-category-agent-evaluate-bg) !important; color: var(--curio-category-agent-evaluate-on-tint); }
 .avatar_package  { background: var(--curio-category-agent-package-bg) !important; color: var(--curio-category-agent-package-on-tint); }
 
-/* Account-policy entry in the header's actions slot: it opens AI Settings,
+/* Account-policy entry in the header's actions slot: it opens API Settings,
    the single account-level place the provider and the agent limits are set. */
 .headerSettingsBtn {
     display: inline-flex;

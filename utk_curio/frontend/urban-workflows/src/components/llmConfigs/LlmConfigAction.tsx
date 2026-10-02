@@ -11,7 +11,7 @@ export function remedyOf(error: unknown): AgentRemedy | null {
 
 /**
  * The one rendering of an `llm-config` remedy: no LLM configuration answers
- * this agent, so the button opens AI Settings on its row in Agent models.
+ * this agent, so the button opens API Settings on its row in Agent models.
  */
 export const LlmConfigAction: React.FC<{ remedy?: AgentRemedy | null; className?: string }> = ({
   remedy,
@@ -24,7 +24,7 @@ export const LlmConfigAction: React.FC<{ remedy?: AgentRemedy | null; className?
       className={`${styles.button}${className ? ` ${className}` : ""}`}
       onClick={() => requestAgentModel(remedy.agentId ?? undefined)}
     >
-      Open AI Settings
+      Open API Settings
     </button>
   );
 };

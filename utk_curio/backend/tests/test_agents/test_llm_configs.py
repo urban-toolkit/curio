@@ -461,7 +461,7 @@ class TestTheAccountRowNoLongerHoldsOne:
         _, token = user_and_token
         response = client.patch("/api/auth/me", json={"llm_model": "gpt-4o"}, headers=_auth(token))
         assert response.status_code == 400
-        assert "AI Settings" in response.get_json()["error"]
+        assert "API Settings" in response.get_json()["error"]
         me = client.get("/api/auth/me", headers=_auth(token)).get_json()
         assert not any(key.startswith(("llm_", "has_llm")) for key in me)
 

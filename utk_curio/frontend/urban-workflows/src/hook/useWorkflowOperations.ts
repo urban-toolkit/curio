@@ -1348,6 +1348,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectId(null);
         setProjectName("");
         setWorkflowName(DEFAULT_WORKFLOW_NAME);
+        // The goal and the description too (#428): only loadParsedTrill sets
+        // them, and File > New does not go through it, so the next dataflow's
+        // first save sent the previous one's. The ref is written here as well,
+        // the way the name and description setters write theirs, so a save
+        // that runs before the next render reads the cleared goal.
+        workflowGoalRef.current = "";
+        setWorkflowGoal("");
+        setWorkflowDescription("");
         setServerCategories({});
         setWorkflowCategories({});
         setProjectDirty(false);
@@ -1355,7 +1363,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodeExecStatus({});
         setDataflowDatasets([]);
         setViewerMode("owner");
-    }, [setWorkflowName]);
+    }, [setWorkflowName, setWorkflowDescription]);
 
     // Both marks return the SAME state object when the node is already in the
     // target status. CodeEditor calls markNodeStale on every keystroke, and an

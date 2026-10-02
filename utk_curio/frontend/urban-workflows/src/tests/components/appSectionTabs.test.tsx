@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the six sections as sibling links', () => {
+  test('renders the seven sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -43,7 +43,8 @@ describe('AppSectionTabs', () => {
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
-      ['Data Lake Catalog', '/catalog/lakes'],
+      ['Discovery Catalog', '/catalog/discovery'],
+      ['Model Catalog', '/catalog/models'],
       ['Monitor', '/monitor'],
     ]);
   });
@@ -52,7 +53,8 @@ describe('AppSectionTabs', () => {
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
-    ['/catalog/lakes', 'Data Lake Catalog'],
+    ['/catalog/discovery', 'Discovery Catalog'],
+    ['/catalog/models', 'Model Catalog'],
     ['/monitor', 'Monitor'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
@@ -66,11 +68,18 @@ describe('AppSectionTabs', () => {
     expect(activeLabels(container)).toEqual(['Data Catalog']);
   });
 
-  test('a portal detail route keeps Data Lake Catalog active', () => {
-    // Same reason the Data Catalog link is not `end`: /catalog/lakes/:sourceDir
+  test('a portal detail route keeps Discovery Catalog active', () => {
+    // Same reason the Data Catalog link is not `end`: /catalog/discovery/:sourceDir
     // is a page WITHIN that section, so the tab has to stay lit on it.
-    const { container } = renderAt('/catalog/lakes/lake.uk.data-gov@1');
-    expect(activeLabels(container)).toEqual(['Data Lake Catalog']);
+    const { container } = renderAt('/catalog/discovery/source.uk.data-gov@1');
+    expect(activeLabels(container)).toEqual(['Discovery Catalog']);
+  });
+
+  test('a model detail route keeps Model Catalog active', () => {
+    // /catalog/models/:modelId is the Model Catalog with that model's details
+    // open, so its link is not `end` either.
+    const { container } = renderAt('/catalog/models/model.curio.ddrnet23-slim');
+    expect(activeLabels(container)).toEqual(['Model Catalog']);
   });
 
   test('the Monitor tab is unconditional', () => {

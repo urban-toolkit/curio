@@ -8,7 +8,7 @@ import styles from "./ModalShell.module.css";
  *
  * Escape must reach exactly one overlay, and two things make that awkward. The
  * catalog drawers listen on `window` too, and a drawer that renders a modal
- * inside itself (the Agent Catalog holds AI Settings and agent import) mounted
+ * inside itself (the Agent Catalog holds API Settings and agent import) mounted
  * first — so its listener runs first and `stopPropagation` from the modal cannot
  * help. `modalStackDepth` lets those drawers stand down instead.
  *

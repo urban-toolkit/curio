@@ -1,5 +1,5 @@
-/* Left rail: built-in nodes, then the three catalog triggers (Node, Data,
-   Agent), then Run all.
+/* Left rail: built-in nodes, then the four catalog triggers (Node, Data,
+   Agent, Model), then Run all.
    Palette panels are absolutely positioned against this dock (see each
    palette's `.panel`), so they open in the strip to its right without
    stretching the rail. `width: max-content` keeps `left: 100%` on those
@@ -43,7 +43,7 @@
 
 /* The tile block is the only part of the rail that grows (two tiles per 45px
    row, and it gains a row with every built-in node), so it is the part that
-   absorbs the cap. The three catalog triggers and Run all stay pinned.
+   absorbs the cap. The catalog triggers and Run all stay pinned.
    `min-height: 0` is load-bearing: a column flex item's automatic minimum is
    its content size, so without it this refuses to shrink and overflows the cap
    instead of scrolling. Scrollbar styling matches paletteShell's `.scroll`. */
