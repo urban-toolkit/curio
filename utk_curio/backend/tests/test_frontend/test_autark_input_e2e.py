@@ -75,6 +75,8 @@ DF_WITH_GEOMETRY = (
 
 # Three footprints as a table holds them, every row with every column: one with
 # a height, one with only building:levels (its height null), one with neither.
+# 2 km squares, so they fill much of the view autk-map opens on (its camera
+# starts 10 km above the data).
 _FOOTPRINTS = (
     "import geopandas as gpd\n"
     "from shapely.geometry import box\n"
@@ -83,9 +85,9 @@ _FOOTPRINTS = (
     '    {"building": ["yes", "yes", "yes"],\n'
     '     "height": [30.0, None, None],\n'
     '     "building:levels": [None, 8.0, None]},\n'
-    "    geometry=[box(-87.6300, 41.8800, -87.6296, 41.8803),\n"
-    "              box(-87.6293, 41.8800, -87.6289, 41.8803),\n"
-    "              box(-87.6286, 41.8800, -87.6282, 41.8803)],\n"
+    "    geometry=[box(-87.700, 41.870, -87.676, 41.888),\n"
+    "              box(-87.670, 41.870, -87.646, 41.888),\n"
+    "              box(-87.640, 41.870, -87.616, 41.888)],\n"
     '    crs="EPSG:4326",\n'
     ")\n"
 )
