@@ -193,6 +193,17 @@ describe("agent category stylesheets", () => {
     }
   });
 
+  it("the Agent Catalog rail keys its category dots to the same family", () => {
+    // The rail's category rows carry a dot beside the card strips it keys, so
+    // each must be the strip's colour: the agent family, not the node one.
+    const css = read("pages/catalog/CatalogBrowseLayout.module.css");
+    for (const key of MANIFEST_CATEGORIES) {
+      const rule = css.match(new RegExp("\\.agentDot_" + key + "\\s*\\{([^}]*)\\}"));
+      expect(rule).not.toBeNull();
+      expect((rule as RegExpMatchArray)[1]).toContain(`var(--curio-category-agent-${key}-fg)`);
+    }
+  });
+
   it("the retired accent stripe is gone from the drawer", () => {
     // PackageCard.module.css no longer defines `.cardAccent`; the family that
     // coloured it would only have painted a stray div in the grid's first slot.
