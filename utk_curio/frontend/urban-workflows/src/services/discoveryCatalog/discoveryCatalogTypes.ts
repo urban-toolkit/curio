@@ -134,8 +134,6 @@ export interface DiscoveryKeyRow {
   inherited: boolean;
   /** The sources on this Curio that send it. */
   sources: { name: string; dirName: string }[];
-  /** Other parts of Curio that read the same key. */
-  alsoUsedBy: string[];
 }
 
 export interface DiscoveryKeysResponse {

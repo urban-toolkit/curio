@@ -101,8 +101,7 @@ _COMPUTE_SECTION = re.compile(r"\"compute\"\s*:")
 _AUTARK = "curio.builtin/autk-grammar"
 _VEGA = "curio.builtin/vis-vega"
 _SPATIAL_JOIN = "curio.builtin/spatial-join"
-_CV_INFERENCE = "curio.streetvision/hf-cv-inference"
-_STREET_VIEW = "curio.streetvision/street-view-fetcher"
+_CV_INFERENCE = "curio.streetvision/image-segmentation"
 _VIDEO_FRAMES = "curio.media/video-frames"
 _SPLIT_AUDIO = "curio.media/split-audio"
 _MOSAIC_RASTERS = "curio.media/mosaic-rasters"
@@ -187,8 +186,8 @@ def derive(spec: object, dataset_kind: Optional[DatasetKind] = None) -> dict[str
             or "geotiff" in formats or "rasters" in kinds or _MOSAIC_RASTERS in types):
         data.add("Rasters")
     if (_PIL.search(code) or _IMAGE_PATH.search(code)
-            or types & {_STREET_VIEW, _VIDEO_FRAMES}
-            or kinds & {"frames", "media", "rasters"}):
+            or types & {_CV_INFERENCE, _VIDEO_FRAMES}
+            or kinds & {"frames", "media", "rasters", "images"}):
         data.add("Imagery")
     if _VIDEO_FRAMES in types or kinds & {"frames", "media"}:
         data.add("Video")

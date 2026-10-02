@@ -1632,7 +1632,7 @@ def street_vision_example_loads_its_boundaries(ctx: Ctx) -> None:
     assert "Saved to file" in text, (
         f"the boundaries loader should have produced an artifact, got {text!r}"
     )
-    # At fit-view this eight-node canvas makes the loader a thumbnail; the
+    # At fit-view this twelve-node canvas makes the loader a thumbnail; the
     # output line is the claim, so frame the node before pinning it.
     frame_node(page, node_id, zoom=1.1)
     ctx.focus(node, hold=1200)

@@ -3510,6 +3510,8 @@ _HEAVY_NODE_TYPES = {
     "DATA_LOADING",
     "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS",
+    # A model over every image of a collection: example 10's 40 photos.
+    "IMAGE_SEGMENTATION",
 }
 
 

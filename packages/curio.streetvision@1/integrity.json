@@ -1,13 +1,7 @@
 {
   "sha256": {
-    "README.md": "1b0bd43d17e058385d1bf9e7f40e683bfd375e4506dd00f1ed9505bcbd78bd47",
-    "manifest.json": "f0b57064401ac63ac481aa59bd685333d0b11091f8732c2162235311eaf43d35",
-    "scripts/behaviors.js": "84d52f8738a136bf1cfa7cc4312bf07cd6ce6c43782acd2f4e42c21e389c4699",
-    "scripts/behaviors.js.map": "e364ea160fe91ba6cd7c64d478ab0a1caa7e8f587aa0fee7a1adefd3abfc73c1",
-    "sources/apiAuth.ts": "296a00d8ba327a333f7c0d8e79b01c8bce8a99c32d4c41fd5c7a11292f280e32",
-    "sources/hfCvInferenceBehavior.tsx": "9b4433c472bbff15c7bff221d275150e58b045021684916493b7bf8fba23d885",
-    "sources/index.tsx": "e949343ecee877b2f2738f308077160916efe7ed537b84fe6a47c2679f5a8cb7",
-    "sources/resultsToFeatureCollection.ts": "868992171a1ef1b41c0eaffe2cfe703b26e77d599278356c9a77a7f3e08b084d",
-    "sources/streetViewFetcherBehavior.tsx": "da36b1914ea4ef6fb53223d6beb0e94d666c2e6b608ea7d4864f00fafb8d370d"
+    "README.md": "b815febc31fc43ff85a52dbfc9ba3cab1f4adccbec39d6c946925caee766220c",
+    "manifest.json": "16bac22580e8c196c962ba16b37392900f423b57cafa644c1d2b18c18a1fb54a",
+    "sources/image-segmentation.py": "45cfd119dd950a03c1a34f754b117782c277d21d93f34b5c908475fb08a028da"
   }
 }

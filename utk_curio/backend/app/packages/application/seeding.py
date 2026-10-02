@@ -101,11 +101,13 @@ _SEED_STAGING_PREFIX = ".seed-staging-"
 #: example's node types and its three nodes sat on "Loading node…" forever with
 #: nothing to say why.
 #:
-#: Membership is about install COST, not trust: ``curio.streetvision`` pulls
-#: torch + transformers + ultralytics, roughly 3 GB on a cold environment. That
-#: is a decision a user should make deliberately, in the catalog, where the
-#: size is stated — not something a project-open request does to them.
-INSTALL_ON_DEMAND_PACKAGE_IDS = frozenset({"curio.streetvision"})
+#: Membership is about install COST, not trust: a package whose libraries run
+#: to gigabytes (torch, say) is a decision a user should make deliberately, in
+#: the catalog, where the size is stated — not something a project-open
+#: request does to them. ``curio.streetvision`` was one until it needed only
+#: onnxruntime; a Transformers model's torch now comes with that model, when
+#: it is added from the Discovery Catalog.
+INSTALL_ON_DEMAND_PACKAGE_IDS: frozenset[str] = frozenset()
 
 
 def example_dep_package_ids() -> tuple[str, ...]:

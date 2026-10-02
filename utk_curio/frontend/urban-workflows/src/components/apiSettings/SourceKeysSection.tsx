@@ -150,7 +150,7 @@ const SourceKeyRow: React.FC<{
 };
 
 function usedByText(row: DiscoveryKeyRow): string {
-  const names = [...row.sources.map((s) => s.name), ...row.alsoUsedBy];
+  const names = row.sources.map((s) => s.name);
   if (!names.length) return "No source on this Curio uses it yet.";
   return `Used by ${listText(names)}.`;
 }

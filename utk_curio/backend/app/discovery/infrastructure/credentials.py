@@ -15,8 +15,7 @@ invent a credential slot would let it invent somewhere for a secret to go.
 
 Adding a slot is a column plus a migration plus one line here - deliberately
 the same cost as adding any other account credential, because that is what it
-is. A slot may also name a column that already holds the account's token for
-another feature, as ``huggingface.token`` does.
+is.
 """
 
 from __future__ import annotations
@@ -44,8 +43,6 @@ class KeySlot:
     #: A user's own key always wins; this is what everyone else inherits,
     #: exactly as ``DEFAULT_LLM_API_KEY`` works.
     default_env: str | None = None
-    #: Other parts of Curio that read the same column, named for a person.
-    also_used_by: tuple[str, ...] = ()
 
 
 #: manifest ``auth.secretId`` -> the slot. API Settings draws one row per
@@ -59,14 +56,11 @@ SLOTS: dict[str, KeySlot] = {
         note="Socrata portals answer without one; a token raises the rate limit.",
         default_env="CURIO_DEFAULT_SOCRATA_APP_TOKEN",
     ),
-    # The same column Street Vision reads for gated models: one Hugging Face
-    # token per account, whichever part of Curio asks for it.
     "huggingface.token": KeySlot(
         column="huggingface_token",
         label="Hugging Face token",
         help_url="https://huggingface.co/settings/tokens",
         placeholder="hf_...",
-        also_used_by=("Street Vision's gated models",),
     ),
     "google.maps-key": KeySlot(
         column="google_maps_api_key",
@@ -193,6 +187,5 @@ def key_rows(user, manifests: Iterable[DiscoverySourceManifest]) -> list[dict[st
             "present": own_token(user, slot) is not None,
             "inherited": bool(spec.default_env and os.environ.get(spec.default_env)),
             "sources": sources,
-            "alsoUsedBy": list(spec.also_used_by),
         })
     return rows

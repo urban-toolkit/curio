@@ -430,7 +430,9 @@ class TestTheKeysApiSettingsLists:
         assert {"name": "City of Chicago Data Portal", "dirName": "source.cityofchicago.data-portal@1"} in (
             rows["socrata.app-token"]["sources"]
         )
-        assert rows["huggingface.token"]["alsoUsedBy"] == ["Street Vision's gated models"]
+        assert {"name": "Hugging Face models", "dirName": "source.huggingface.models@1"} in (
+            rows["huggingface.token"]["sources"]
+        )
 
     def test_a_saved_value_never_appears(self, client, auth, shipped_root):
         client.patch("/api/auth/me", headers=auth, json={"socrata_app_token": SECRET, "huggingface_token": SECRET})
