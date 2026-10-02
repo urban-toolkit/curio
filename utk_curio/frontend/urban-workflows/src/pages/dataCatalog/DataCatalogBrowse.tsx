@@ -17,19 +17,16 @@ import {
 } from "../../services/datasetCatalog";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { DataCatalogBrowseCard } from "./DataCatalogBrowseCard";
 import { DataCatalogBrowseDrawer } from "./DataCatalogBrowseDrawer";
 import {
   useDatasetDetails,
   viewDatasetDetailsToast,
 } from "../../components/datasets/catalog/datasetDetailsContext";
-import {
-  FORMAT_FILTERS,
-  ORIGIN_FILTERS,
-  quickFormatFilters,
-} from "./dataCatalogBrowseConstants";
+import { ORIGIN_FILTERS, quickFormatFilters } from "./dataCatalogBrowseConstants";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   datasetCardActions,
@@ -130,10 +127,9 @@ export const DataCatalogBrowse: React.FC = () => {
     [catalog.facets.format],
   );
 
-  // The chip row is the format rail's non-empty subset, read off the very same
-  // facet counts the rail renders - never a second, hand-maintained list (#232).
-  // `format` is a dependency so the active chip stays pinned when a search
-  // zeroes its count.
+  // The rail's format rows are the formats that hold datasets, read off the
+  // facet counts - never a hand-maintained list (#232). `format` is a
+  // dependency so the selected row stays pinned when a search zeroes its count.
   const quickFormats = useMemo(
     () => quickFormatFilters(catalog.facets.format, format),
     [catalog.facets.format, format],
@@ -289,178 +285,97 @@ export const DataCatalogBrowse: React.FC = () => {
 
   return (
     <div className={[styles.page, drawerSlotOpen ? styles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
-      <aside className={styles.categoryRail}>
-        {/* "By status" leads the rail, as it does on the Node and Agent pages.
-            This one opened straight into "By format": the account-level scope
-            existed only as a chip down in the filter bar, so the three catalogs
-            disagreed about where you look for the same kind of filter. */}
-        <p className={styles.railLabel}>By status</p>
-
-        <button
-          className={`${styles.railButton} ${scope === "" ? styles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setScope("")}
-        >
-          <span>All datasets</span>
-          <span className={styles.railCountBadge}>{catalogFacetDatasetTotal}</span>
-        </button>
-
-        <button
-          className={`${styles.railButton} ${scope === "defaults" ? styles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setScope((prev) => (prev === "defaults" ? "" : "defaults"))}
-        >
-          <span>In all projects</span>
-          <span className={styles.railCount}>{inAllProjectsCount}</span>
-        </button>
-
-        <div className={styles.railDivider} />
-        <p className={styles.railLabel}>By format</p>
-
-        <button
-          className={`${styles.railButton} ${format === "" ? styles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFormat("")}
-        >
-          {/* "All formats", not "All datasets": the status section above owns
-              that label now, and this button only clears the format facet. */}
-          <span>All formats</span>
-          <span className={styles.railCount}>{catalogFacetDatasetTotal}</span>
-        </button>
-
-        {FORMAT_FILTERS.map((key) => (
-          <button
-            key={key}
-            className={`${styles.railButton} ${format === key ? styles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setFormat((prev) => (prev === key ? "" : key))}
-          >
-            <span className={styles.railFormatItem}>
-              <i className={`${styles.dot} ${styles[`dot_${key}`] || ""}`} />
-              {DATASET_FORMAT_LABEL[key]}
-            </span>
-            <span className={styles.railCount}>{catalog.facets.format[key] ?? 0}</span>
-          </button>
-        ))}
-
-        <div className={styles.railDivider} />
-        <p className={styles.railLabel}>By origin</p>
-
-        <button
-          className={`${styles.railButton} ${origin === "" ? styles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setOrigin("")}
-        >
-          <span>All origins</span>
-        </button>
-
-        {ORIGIN_FILTERS.map((key) => (
-          <button
-            key={key}
-            className={`${styles.railButton} ${origin === key ? styles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setOrigin((prev) => (prev === key ? "" : key))}
-          >
-            <span>{DATASET_ORIGIN_LABEL[key]}</span>
-            <span className={styles.railCount}>
-              {key === "imported"
-                ? facetImportedTotal(catalog.facets.origin)
-                : catalog.facets.origin[key] ?? 0}
-            </span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter datasets"
+        all={{
+          label: "All datasets",
+          count: catalogFacetDatasetTotal,
+          active: scope === "" && format === "" && origin === "",
+          onClick: () => {
+            setScope("");
+            setFormat("");
+            setOrigin("");
+          },
+        }}
+        scope={{
+          label: "In all projects",
+          count: inAllProjectsCount,
+          active: scope === "defaults",
+          onClick: () => setScope((prev) => (prev === "defaults" ? "" : "defaults")),
+        }}
+        sections={[
+          {
+            key: "format",
+            label: "By format",
+            entries: quickFormats.map((key) => ({
+              value: key,
+              label: DATASET_FORMAT_LABEL[key],
+              count: catalog.facets.format[key] ?? 0,
+              active: format === key,
+              onClick: () => setFormat((prev) => (prev === key ? "" : key)),
+              dotClassName: styles[`dot_${key}`] ?? "",
+            })),
+          },
+          {
+            key: "origin",
+            label: "By origin",
+            entries: ORIGIN_FILTERS.map((key) => ({
+              value: key,
+              label: DATASET_ORIGIN_LABEL[key],
+              count:
+                key === "imported"
+                  ? facetImportedTotal(catalog.facets.origin)
+                  : catalog.facets.origin[key] ?? 0,
+              active: origin === key,
+              onClick: () => setOrigin((prev) => (prev === key ? "" : key)),
+            })),
+          },
+        ]}
+      />
 
       <main className={styles.browseMain}>
-        <section className={styles.browseHeader}>
-          <p className={styles.crumb}>Data Catalog</p>
-          <div className={styles.titleRow}>
-            <CatalogKindIcon kind="dataset" size="md" title="Dataset catalog" />
-            <h1>Data Catalog</h1>
-            <span className={styles.titleCount}>{visibleItems.length}</span>
-          </div>
-          <p className={styles.pageIntro}>
-            Datasets in the shared catalog. Adding one here adds it to{" "}
-            <strong>all your projects</strong>, present and future; add it to a single
-            project from that project&apos;s Data Catalog.
-          </p>
-          <div className={styles.headerTools}>
-            <input
-              className={styles.hubSearch}
-              type="search"
-              placeholder="Search catalog datasets…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {/* Register-only, exactly like the drawer's footer import: it adds
-                an account-level catalog item and attaches it to no project.
-                That suits this page, which has no project to attach to. */}
-            <CatalogHeaderImport
-              label="Import dataset"
-              accept={DATASET_IMPORT_ACCEPT}
-              busy={importingDataset}
-              onPick={(file) => void onImportDataset(file)}
-              title="Add a data file to your catalog"
-            />
-          </div>
-        </section>
-
-        <div className={styles.filterBar} data-curio-catalog-filter-bar="true">
-          <button
-            className={`${styles.chip} ${
-              format === "" && scope === "" ? styles.chipActive : ""
-            }`}
-            type="button"
-            onClick={() => {
-              setFormat("");
-              setScope("");
-            }}
-          >
-            All
-          </button>
-          {/* The peer of the Node catalog's "In all projects" chip. Datasets
-              had no account-level scope to filter on until they grew a
-              defaults list. */}
-          <button
-            className={`${styles.chip} ${scope === "defaults" ? styles.chipActive : ""}`}
-            type="button"
-            onClick={() => setScope((prev) => (prev === "defaults" ? "" : "defaults"))}
-          >
-            In all projects
-          </button>
-          {quickFormats.map((key) => (
-            <button
-              key={key}
-              // The chip row is derived now, so a test has to be able to ask what
-              // it actually offers. CSS Modules hashes every class name, so
-              // `[class*="chip"]` matches nothing in a real build - hence the
-              // same `data-curio-*` hook the other e2e-visible surfaces carry.
-              data-curio-format-chip={key}
-              className={`${styles.chip} ${format === key ? styles.chipActive : ""}`}
-              type="button"
-              onClick={() => setFormat((prev) => (prev === key ? "" : key))}
+        <CatalogPageHeader
+          kind="dataset"
+          iconTitle="Dataset catalog"
+          title="Data Catalog"
+          count={visibleItems.length}
+          intro={
+            <>
+              Datasets in the shared catalog. Adding one here adds it to{" "}
+              <strong>all your projects</strong>, present and future; add it to a single
+              project from that project&apos;s Data Catalog.
+            </>
+          }
+          viewTools={
+            <select
+              className={styles.sortSelect}
+              aria-label="Sort datasets"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as DatasetSortMode)}
             >
-              {/* `?? chipDotDefault`, the fallback the Node catalog's chips already
-                  use: a derived row can carry any format, and a missing rule used to
-                  resolve to "" - an invisible dot rather than a wrong-coloured one. */}
-              <span
-                data-curio-format-chip-dot=""
-                className={`${styles.chipDot} ${styles[`chipDot_${key}`] ?? styles.chipDotDefault}`}
-              />
-              {DATASET_FORMAT_LABEL[key]}
-            </button>
-          ))}
-          <span className={styles.filterSpacer} />
-
-          <select
-            className={styles.sortSelect}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as DatasetSortMode)}
-          >
-            <option value="recent">Sort: Recent activity</option>
-            <option value="name">Sort: Name</option>
-          </select>
-        </div>
+              <option value="recent">Sort: Recent activity</option>
+              <option value="name">Sort: Name</option>
+            </select>
+          }
+        >
+          <input
+            className={styles.hubSearch}
+            type="search"
+            placeholder="Search catalog datasets…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {/* Register-only, exactly like the drawer's footer import: it adds
+              an account-level catalog item and attaches it to no project.
+              That suits this page, which has no project to attach to. */}
+          <CatalogHeaderImport
+            label="Import dataset"
+            accept={DATASET_IMPORT_ACCEPT}
+            busy={importingDataset}
+            onPick={(file) => void onImportDataset(file)}
+            title="Add a data file to your catalog"
+          />
+        </CatalogPageHeader>
 
         {catalog.loading && catalog.items.length === 0 ? (
           <div className={styles.empty}>Loading datasets…</div>

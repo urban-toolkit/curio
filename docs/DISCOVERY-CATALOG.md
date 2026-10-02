@@ -78,10 +78,11 @@ discovery/
 
 ## 2. Surfaces and workflows
 
-There are two pages, plus an agent that works on the canvas:
+There are two pages and a drawer on the canvas, plus an agent that works on the canvas:
 
 - **The `/catalog/discovery` page** lists the sources. Reach it from `/projects` and the **Discovery Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
 - **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu, or **Add by link** for Direct URL. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. Direct URL's page has a **Link to a file** field. A service's page lists what it can be asked for, a row each. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
+- **The canvas drawer**: on the canvas, **Data → Discovery Catalog** opens the sources beside the dataflow. **Search every portal…** searches every source at once; **Browse datasets** on a card opens that source in the drawer, as its page shows it, and **All portals** goes back to the cards. What you download or add lands in the Data or Model Catalog, as it does from the pages, and a model's **View model** opens the Model Catalog drawer.
 - **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
 
 On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
@@ -195,6 +196,7 @@ When a download fails, the row says why in the server's own words, for example t
 - **Autark loads it.** Each resource is one of Autark's layers, loaded with the same code an Autark map uses: **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area). One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
 - **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Roads, parks and water are cut at the box around the area, and at the area's own outline when **Surface** is loaded with them, as in **All layers**. A building that crosses the edge is kept whole.
 - **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
+- **On an Autark map.** The Data Loading node a layer makes on the canvas names the layer (`gdf.metadata = {"layerType": "buildings"}`), so an Autark map it feeds draws **Buildings** as buildings, raised to their height, and **Roads**, **Parks**, **Water** and **Surface** in their own colours.
 
 ### Downloading street-level images
 

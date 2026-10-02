@@ -13,6 +13,7 @@
  */
 import type { HandCategories } from "./utils/dataflowCategories";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
+import { dataPoolToSpec } from "./utils/dataPoolSpec";
 
 export class TrillGenerator {
 
@@ -335,6 +336,17 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.packageTemplateConfig = packageTemplateConfig;
+            }
+
+            // #581: a Data Pool's conflict modes (data.dataPool) persist at
+            // metadata.dataPool, only those that are not Overwrite, so an
+            // untouched pool serializes as it did before (utils/dataPoolSpec).
+            const dataPool = dataPoolToSpec(node.data.dataPool);
+            if(dataPool != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.dataPool = dataPool;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

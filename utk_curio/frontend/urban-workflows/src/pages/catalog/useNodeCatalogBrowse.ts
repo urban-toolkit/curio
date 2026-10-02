@@ -105,11 +105,6 @@ export function useNodeCatalogBrowse() {
     [categoryCounts],
   );
 
-  const quickCategories = useMemo(
-    () => sortedCategories.slice(0, 3).map(([k]) => k),
-    [sortedCategories],
-  );
-
   const filtered = useMemo(() => {
     let base = categoryFacetBase;
     if (categoryFilter) {
@@ -192,7 +187,6 @@ export function useNodeCatalogBrowse() {
     filtered,
     selectedPkg,
     sortedCategories,
-    quickCategories,
     allCount,
     installedCount,
     updatesCount,

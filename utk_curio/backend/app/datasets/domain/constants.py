@@ -63,6 +63,16 @@ OSM_LAYER_ORDER = {
 }
 
 
+# autk-core's ``LayerType`` values a GeoJSON source can be loaded as. A dataset
+# downloaded from the Discovery Catalog whose layer is one of these (an
+# OpenStreetMap download's ``buildings``, ``roads``, ...) loads into an Autark
+# node as that layer. KEEP IN SYNC with ``AUTARK_LAYER_TYPES`` in
+# ``frontend/urban-workflows/src/utils/autarkLayerTypes.ts``.
+AUTARK_LAYER_TYPES = frozenset({
+    "background", "surface", "parks", "water", "roads", "buildings", "points", "polygons", "polylines",
+})
+
+
 def layer_group_kind(dataset_id: object) -> str | None:
     """``"osm"`` / ``"gpkg"`` when *dataset_id* addresses a layer group, else None."""
     if not isinstance(dataset_id, str):

@@ -64,6 +64,13 @@ MAX_RENDER_PX = 4000
 _MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024
 _REPORT_PATH = "preview/report.json"
 
+#: The preview worker's bounds. Playwright's Node driver and Chromium reserve
+#: far more address space than they touch: under the default 1 GiB bound V8
+#: fails to reserve its code range and the driver aborts before a browser
+#: starts. CPU, wall time, file size and open files bound it as they bound
+#: every worker.
+PREVIEW_LIMITS = WorkerLimits(memory_bytes=0)
+
 
 class PreviewError(ValueError):
     """Raised on preview-runner misuse (bad arguments, malformed plans)."""
@@ -399,7 +406,7 @@ def run_preview(
 
     worker = run_worker(
         workspace, [runner.runner_path, str(plan_path)],
-        limits=limits or WorkerLimits(),
+        limits=limits or PREVIEW_LIMITS,
         cancel=cancel,
     )
     if worker.status != "ok":

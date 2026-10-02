@@ -74,8 +74,8 @@ class WorkerLimits:
 
     wall_time_seconds: float = 120.0
     cpu_seconds: int = 60
-    memory_bytes: int = 1024 * 1024 * 1024
-    max_processes: int = 32
+    memory_bytes: int = 1024 * 1024 * 1024  # 0: the address space is not bounded
+    max_processes: int = 32  # Windows only (the job's process count); 0: not bounded
     max_open_files: int = 256
     max_file_bytes: int = 64 * 1024 * 1024  # RLIMIT_FSIZE — biggest file a worker may write
     max_output_bytes: int = 2 * 1024 * 1024  # captured stdout+stderr cap
@@ -472,12 +472,15 @@ def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
     caller assigns the started process to - a job bounds the whole process tree
     rather than one process.
 
-    Address space and process-count limits are Linux-only *on POSIX*: macOS
-    ignores RLIMIT_AS in practice and counts RLIMIT_NPROC per-user, which would
-    make a low bound kill unrelated processes' forks. Windows gets both through
-    the job, and loses file-size and open-file bounds, which have no Job Object
-    equivalent. What actually applied is recorded on the result - never
-    silently assumed, and never claimed to be parity.
+    The address-space limit is Linux-only *on POSIX*: macOS ignores RLIMIT_AS
+    in practice. The process count is bounded only by the Windows job: Linux
+    and macOS both count RLIMIT_NPROC over every process and thread of the
+    user, so a low bound fails a worker's first fork or thread whenever that
+    user already runs that many (any desktop, any CI runner), and bounds
+    nothing per worker. Windows loses file-size and open-file bounds, which
+    have no Job Object equivalent. What actually applied is recorded on the
+    result - never silently assumed, and never claimed to be parity. A memory
+    or process bound of 0 is not applied, on Linux as in the job.
     """
     if not _IS_POSIX:
         return _create_win_job(limits)
@@ -488,9 +491,8 @@ def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
         ("fsize", resource.RLIMIT_FSIZE, limits.max_file_bytes),
         ("nofile", resource.RLIMIT_NOFILE, limits.max_open_files),
     ]
-    if sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux") and limits.memory_bytes > 0:
         plan.append(("as", resource.RLIMIT_AS, limits.memory_bytes))
-        plan.append(("nproc", resource.RLIMIT_NPROC, limits.max_processes))
 
     return [name for name, _, _ in plan], {
         "rlimits": [[key, value] for _, key, value in plan],

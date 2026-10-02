@@ -70,9 +70,6 @@ export function AgentCatalogBrowseCard({
         <CatalogItemStripHeader
           kind="agent"
           badge={<span className={styles.cardFormatBadge}>{agent.category}</span>}
-          trailing={
-            agent.imported ? <span className={styles.stripBadgePopular}>✓ In all projects</span> : null
-          }
         />
       </div>
 
@@ -105,7 +102,9 @@ export function AgentCatalogBrowseCard({
         {/* Identity and one way in. Publishing is an account-level decision
             about one agent and belongs in the detail drawer beside the other
             decisions, not on every tile in the grid. */}
-        <div className={styles.cardActionsLeft} />
+        <div className={styles.cardActionsLeft}>
+          {agent.imported ? <span className={styles.cardStatus}>✓ In all projects</span> : null}
+        </div>
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

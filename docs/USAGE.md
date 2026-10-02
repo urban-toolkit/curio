@@ -443,6 +443,14 @@ The receiving chart styles the marked rows through its spec, for example `"color
 
 A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
+
+- **Overwrite**: the most recent selection alone.
+- **Merge (AND)**: the rows every selection picked. A chart with nothing selected is left out.
+- **Merge (OR)**: the rows any selection picked.
+
+The chosen modes are saved with the dataflow.
+
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
 
 
@@ -465,6 +473,11 @@ no `data` entry for its input; it names the tables the input provides.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
+  that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
+  buildings, raised to their height. A building's height comes from `height`,
+  else `building:levels` (3.4 m a level); one with neither stands 6 m high. The
+  loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and
   as EPSG:3395 otherwise, so declare a projected CRS to place it correctly.

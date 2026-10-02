@@ -446,6 +446,8 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
 ```
 
+A source loads as the autk-db layer type its frame carries: a layer record's `type`, the envelope's `layerType`, or a geodataframe's `metadata.layerType` (`gdf.metadata`, kept in the artifact's `value_json`, sent as `X-Curio-Frame-Metadata` on the Arrow path and as `data.metadata` on the JSON path). A Discovery OpenStreetMap download's loader sets it. A `buildings` source's features get a `height` (and `min_height`) where autk-map, which reads the first height key a feature has, would read none (`utils/buildingHeight.ts`): a `height` of null beside `building:levels`, or no height at all (6 m above the base). Every other feature is passed as it came, and the table keeps one feature per row.
+
 A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its place in the table. autk-db refuses a collection whose first feature has none, so that one trades places with the first that has one, and a map leaves such features out: map picks, plot selections and highlights go through the table's load order (`loadableSource`), so a position always names the input's row.
 
 The name `upstream` is defined once, as `AUTK_UPSTREAM_LAYER` in `contracts.py`; the behavior hook imports the generated copy, and the preamble states it (see [Generated Contracts](#generated-contracts)).
@@ -788,13 +790,22 @@ Interactions are stored in `FlowProvider.interactions[]` and passed down to node
 
 ### Propagation Strategies
 
-When multiple interactions reach the same node, the node resolves them using a strategy:
+A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body and saved with the node (`metadata.dataPool`):
 
-| Strategy | Semantics |
+- **Conflict inside visualization** (`insideChart`) combines the selects of one chart, such as a Vega chart with two params.
+- **Conflict between visualizations** (`betweenCharts`) combines the charts linked to the pool by an interaction edge.
+
+| Mode | Semantics |
 |---|---|
-| `OVERWRITE` | Only the most recent interaction applies |
-| `MERGE_AND` | Row must satisfy all active interactions |
-| `MERGE_OR` | Row must satisfy at least one active interaction |
+| `OVERWRITE` (default) | Only the most recent selection applies |
+| `MERGE_AND` | A row must be picked by every active selection |
+| `MERGE_OR` | A row must be picked by at least one active selection |
+
+A selection is active when it picks something: a point selection with rows, or an interval over at least one column. A select nobody has used, or one that was cleared, takes no part in `MERGE_AND`.
+
+`FlowProvider.applyNewInteractions` hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
+
+The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
 The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
 

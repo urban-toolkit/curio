@@ -514,7 +514,8 @@ export const NodeContainer = ({
     // --- Model drag-and-drop, through the same capture-phase listeners ---
     // A model goes only onto a node whose code calls `curio_model("...")`. Every
     // other node still takes the drop, so it can say why nothing changed rather
-    // than letting the drop fall through to the canvas, where it does nothing.
+    // than letting the drop fall through to the canvas, which would make a new
+    // node that runs the model.
     const modelDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
     modelDropHandlerRef.current = (e: DragEvent) => {
         if (!e.dataTransfer) return;

@@ -28,6 +28,7 @@ import {
     readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { framesFromPayload, type GrammarInput } from '../../utils/grammarInput';
+import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
@@ -1501,23 +1502,6 @@ function flattenToMultiPolygon(geom: any): any | null {
     };
     collect(geom);
     return polys.length > 0 ? { type: 'MultiPolygon', coordinates: polys } : null;
-}
-
-// Guarantee a footprint extrudes instead of being culled as "no valid height
-// metadata". autk-map culls a building part when its top height <= its base
-// (`min_height`) — which also covers the no-height case (0 <= 0). Mirror that
-// computation and, only when the part would be culled, return a height that clears
-// the base by a visible amount; otherwise return null to leave the real tags
-// untouched. `parts` lifting covers a feature whose height lived only per-part.
-function deriveBuildingHeight(props: any): number | null {
-    const num = (v: any) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
-    const LEVEL = 3.4; // metres per level (matches autk-map's building renderer)
-    const base = num(props?.min_height) || LEVEL * num(props?.min_level) || LEVEL * num(props?.['building:min_level']);
-    let top = num(props?.height) || LEVEL * num(props?.levels) || LEVEL * num(props?.['building:levels']);
-    if (top === 0 && Array.isArray(props?.parts)) {
-        for (const p of props.parts) { const h = num(p?.height) || LEVEL * num(p?.levels); if (h > top) top = h; }
-    }
-    return top > base ? null : base + 6;
 }
 
 // Explode autk-db's grouped building features into one footprint feature per part.

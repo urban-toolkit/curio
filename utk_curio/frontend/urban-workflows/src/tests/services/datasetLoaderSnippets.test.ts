@@ -112,6 +112,28 @@ describe("snippetForFormat", () => {
     expect(code).toBe('collection = curio_collection("imported.xabc@1")\nreturn collection');
   });
 
+  it("names a Discovery download's Autark layer the way the backend's generator does", () => {
+    const osm = {
+      id: "imported.osm-buildings@1",
+      format: "geojson",
+      path: "/tmp/osm_buildings.geojson",
+      layerName: "buildings",
+      discoverySource: { sourceId: "source.osm.openstreetmap@1", resourceId: "buildings" },
+    };
+    expect(buildDatasetLoaderCode(osm as never)).toBe(
+      "import geopandas as gpd\n"
+      + 'dataset_path = curio_dataset_path("imported.osm-buildings@1")\n'
+      + "gdf = gpd.read_file(dataset_path)\n"
+      + 'gdf.metadata = {"layerType": "buildings"}\n'
+      + "return gdf",
+    );
+    // A GeoPackage layer called "buildings" is not a Discovery download, and a
+    // Discovery layer that is not one of Autark's is not typed.
+    for (const other of [{ ...osm, discoverySource: null }, { ...osm, layerName: "map-features" }]) {
+      expect(buildDatasetLoaderCode(other as never)).not.toContain("gdf.metadata");
+    }
+  });
+
   it("prefers a backend-supplied snippet over the local generator", () => {
     // Hub catalog rows always carry the backend's `loaderSnippet`, which is the
     // authoritative one (the Python generator restores parquet's JSON-encoded

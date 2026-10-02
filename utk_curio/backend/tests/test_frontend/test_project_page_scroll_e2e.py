@@ -39,9 +39,9 @@ if TYPE_CHECKING:
 
 SCROLLER = '[data-curio-projects-scroll="true"]'
 
-# The grid is `repeat(auto-fill, minmax(260px, 1fr))` with 180px-tall cards, so
-# in a 1280x720 viewport a handful of rows is already more than fits. 24 leaves
-# plenty of headroom without making the API setup slow.
+# The grid is `repeat(auto-fill, minmax(220px, 1fr))` with 180px-tall cards: at
+# 1280x720 that is three or four columns, so a handful of rows is already more
+# than fits. 24 leaves plenty of headroom without making the API setup slow.
 PROJECT_COUNT = 24
 
 
