@@ -59,6 +59,13 @@ export function isLayerGroupId(id: string | null | undefined): boolean {
   );
 }
 
+/** Which importer made a layer group, read from its id: ``"gpkg"`` for a
+ * GeoPackage, else ``"osm"``. Also the group's format and its ``curio://``
+ * scheme. Mirrors the backend ``layer_group_kind`` and its ``osm`` fallback. */
+export function layerGroupKind(groupId: string): "osm" | "gpkg" {
+  return groupId.startsWith(GPKG_GROUP_ID_PREFIX) ? "gpkg" : "osm";
+}
+
 /**
  * A dataset install that is currently in flight, surfaced as an "Installing…"
  * placeholder in the dataset palette and Data Catalog drawer until the real
