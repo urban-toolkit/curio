@@ -120,8 +120,8 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     """Find one file of this account's collection, by id.
 
     ``<file_id>@<t_ms>`` names a file a node derived from one of the
-    collection's: a video's frame or a recording's window, written where
-    ``curio_derived_file`` put it.
+    collection's: a video's frame, a recording's window or an image's
+    overlay, written where ``curio_derived_file`` put it.
     """
     from utk_curio.backend.app.discovery.application import cache_collection
 
@@ -148,7 +148,7 @@ def _locate_derived(service, dataset_id: str, rows, source_id: str, t_ms: int) -
 
     source = rows.get(source_id)
     if source is None or source.kind not in DERIVED:
-        raise ResourceNotFound(f"{source_id!r} is not a video or recording of {dataset_id!r}")
+        raise ResourceNotFound(f"{source_id!r} is not a video, recording or image of {dataset_id!r}")
     folder, ext, kind = DERIVED[source.kind]
     path = media_dirs.media_work_root(service.user_key) / derived_relpath(
         folder, dataset_id, source_id, t_ms, ext
