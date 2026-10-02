@@ -7,35 +7,25 @@ import {
   discoverySourceCardActions,
   type CatalogCardActionId,
 } from "../../components/catalog/catalogCardActions";
+import { useDatasetDetails } from "../../components/datasets/catalog/datasetDetailsContext";
 import {
-  useDatasetDetails,
-  viewDatasetDetailsToast,
-} from "../../components/datasets/catalog/datasetDetailsContext";
-import { useToastContext } from "../../providers/ToastProvider";
-import {
-  acquireKey,
-  declaredResourceFor,
-  downloadBody,
-  isServiceSource,
   isStorageSource,
-  notifyDatasetCatalogRefresh,
   partialFailureMessage,
   scanningMessage,
   isLinkSource,
   unsearchableReason,
-  useDiscoveryAcquire,
   useDiscoveryCatalog,
   useDiscoverySearch,
-  type DiscoveryAcquireBody,
   type DiscoveryAuthMode,
   type DiscoveryProviderType,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
 import { AUTH_FILTERS, PROVIDER_FILTERS } from "./discoveryBrowseConstants";
 import { DiscoverySourceCard } from "./DiscoverySourceCard";
-import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
+import { DiscoveryFederatedRows } from "./DiscoveryFederatedRows";
 import { DiscoveryCatalogBrowseDrawer } from "./DiscoveryCatalogBrowseDrawer";
 import { DiscoverySourceDetailModal } from "./DiscoverySourceDetailModal";
+import { useDiscoveryAcquisition } from "./useDiscoveryAcquisition";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import resultStyles from "./DiscoveryCatalogBrowse.module.css";
 
@@ -89,7 +79,6 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   // A downloaded resource opens in the Data Catalog's details modal, over this
   // page, rather than sending you to the dataset's own route.
   const { openDatasetDetails } = useDatasetDetails();
-  const { showToast } = useToastContext();
 
   // The roster is always loaded: the rail counts and the source names shown
   // beside federated rows both come from it, and it is disk-backed and cheap.
@@ -101,26 +90,10 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   // it. Idle lists the portals; a query fans out across them.
   const searching = search.trim().length > 0;
   const results = useDiscoverySearch({ q: searching ? search : "", provider });
-  const acquisition = useDiscoveryAcquire((job) => {
-    notifyDatasetCatalogRefresh();
-    // Reported like an import into the Data Catalog, which is what it is.
-    if (job.datasetId) {
-      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
-      if (job.alreadyPresent && job.unchanged) {
-        showToast(
-          `Nothing has changed in ${title} since it was added.`,
-          "info",
-          viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-        );
-        return;
-      }
-      const fromStorage = data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s));
-      showToast(
-        `${fromStorage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
-        "success",
-        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-      );
-    }
+  const viewModel = (modelId: string) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`);
+  const acquisition = useDiscoveryAcquisition({
+    isStorage: (job) => data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s)),
+    onViewModel: viewModel,
   });
 
   const sources = useMemo(() => {
@@ -149,17 +122,6 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
     () => new Map(data.sources.map((s) => [s.sourceId, s])),
     [data.sources]
   );
-  // A storage source's rows are added rather than downloaded, and can be
-  // narrowed or opened file by file.
-  const storageContext = (source: DiscoverySourceRow | undefined, resourceId: string) =>
-    source && isStorageSource(source)
-      ? {
-          dirName: source.dirName,
-          declared: declaredResourceFor(source, resourceId),
-          onAdd: (r: { resourceId: string }, body: DiscoveryAcquireBody) =>
-            void acquisition.start(source.dirName, r.resourceId, body),
-        }
-      : undefined;
   const partialFailure = useMemo(
     () =>
       partialFailureMessage(
@@ -339,44 +301,13 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
               .filter(Boolean)
               .join(" ")}
           >
-            {results.data.resources.map((resource) => (
-              <DiscoveryResourceRow
-                key={`${resource.sourceId}:${resource.resourceId}`}
-                resource={resource}
-                showSource
-                iconUrl={sourcesById.get(resource.sourceId)?.iconUrl ?? null}
-                job={
-                  acquisition.jobs[
-                    acquireKey(
-                      sourcesById.get(resource.sourceId)?.dirName ?? resource.sourceId,
-                      resource.resourceId
-                    )
-                  ]
-                }
-                onViewDataset={(id) => openDatasetDetails(id)}
-                storage={storageContext(sourcesById.get(resource.sourceId), resource.resourceId)}
-                service={isServiceSource(sourcesById.get(resource.sourceId) ?? { kind: "portal" })}
-                onDownload={(r, fmt, parameters, title) => {
-                  // A federated row carries the source ID; the API wants the
-                  // versioned dirName, which only the roster knows.
-                  const source = sourcesById.get(r.sourceId);
-                  if (source)
-                    void acquisition.start(
-                      source.dirName,
-                      r.resourceId,
-                      downloadBody(source, r, fmt, parameters, title),
-                    );
-                }}
-                onCancel={(r) => {
-                  const dir = sourcesById.get(r.sourceId)?.dirName;
-                  if (dir) acquisition.cancel(dir, r.resourceId);
-                }}
-                onDismiss={(r) => {
-                  const dir = sourcesById.get(r.sourceId)?.dirName;
-                  if (dir) acquisition.dismiss(dir, r.resourceId);
-                }}
-              />
-            ))}
+            <DiscoveryFederatedRows
+              resources={results.data.resources}
+              sourcesById={sourcesById}
+              acquisition={acquisition}
+              onViewDataset={(id) => openDatasetDetails(id)}
+              onViewModel={viewModel}
+            />
             {!results.loading && results.searched && results.data.resources.length === 0 ? (
               <div className={browseStyles.empty}>
                 No portal returned anything for “{search}”.
