@@ -474,6 +474,39 @@ describe("a layer group's drag payload takes its kind from the group id (#440)",
   });
 });
 
+describe("a Discovery download's group drops as its layers' format (#586)", () => {
+  // The layers of one OpenStreetMap download: GeoJSON, each carrying where it
+  // came from, under an osm. group id as a .pbf import's are.
+  const discoverySource = { sourceId: "source.openstreetmap.autark@1", sourceName: "OpenStreetMap" };
+  const downloaded = (): DatasetPaletteGroup => {
+    const members = [
+      makeDataset({ id: "imported.xpoints", title: "Points of interest, Loop (points)", origin: "imported", format: "geojson", path: "/store/imported.xpoints@1/data/osm_points.geojson", layerName: "points", groupId: "osm.x1", discoverySource }),
+      makeDataset({ id: "imported.xpolygons", title: "Points of interest, Loop (polygons)", origin: "imported", format: "geojson", path: "/store/imported.xpolygons@1/data/osm_polygons.geojson", layerName: "polygons", groupId: "osm.x1", discoverySource }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  };
+
+  test("its payload says GeoJSON and keeps the group's id and uri", () => {
+    const payload = createOsmGroupDragPayload(downloaded());
+    expect(payload.format).toBe("geojson");
+    expect(payload.datasetId).toBe("osm.x1");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+
+    // The DATASET pill reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoJSON");
+    // The layers still load through their own ids.
+    expect(options.datasetRefs).toEqual(["imported.xpoints", "imported.xpolygons"]);
+    expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_dataset_path("imported.xpoints"))');
+
+    // Only when every layer was downloaded: otherwise it is an OSM PBF import.
+    const mixed = downloaded();
+    mixed.members[1] = { ...mixed.members[1], discoverySource: null };
+    expect(createOsmGroupDragPayload(mixed).format).toBe("osm");
+  });
+});
+
 test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {
   const members = [
     makeDataset({ id: "loop.points", title: "chicago_loop (points)", format: "parquet", path: "/a.parquet", layerName: "points", groupId: "osm.x9" }),

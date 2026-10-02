@@ -147,6 +147,16 @@ describe("DatasetDetailPanel header actions", () => {
     renderPanel(lineageFixture(), catalogItem({ format: "parquet" }));
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
+
+  it("disables Export for a layer group that shows its layers' format (#586)", () => {
+    // A Discovery download's group shows GeoJSON, as each of its layers does,
+    // but it is still several datasets and no single file to export.
+    renderPanel(
+      lineageFixture(),
+      catalogItem({ id: "osm.x1a2b3c4d", format: "geojson", groupLayerIds: ["imported.xa", "imported.xb"] }),
+    );
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
 });
 
 describe("DatasetDetailPanel timestamps (record vs. source file)", () => {
