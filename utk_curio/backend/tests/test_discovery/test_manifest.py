@@ -114,12 +114,23 @@ class TestAuth:
         with pytest.raises(M.ManifestError, match="headerName"):
             _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token"})
 
-    def test_a_query_string_scheme_is_refused(self):
-        """v1 is header-only, and that is what keeps secrets out of every URL,
-        audit record and error message."""
-        with pytest.raises(M.ManifestError, match="header-only"):
-            _parse(auth={"mode": "optional-token", "secretId": "s.t",
+    def test_a_query_key_names_its_parameter_and_no_header(self):
+        """A query key is sent as one parameter, added by the transport at send
+        time (``test_credentials.py`` pins that it reaches no stored string)."""
+        with pytest.raises(M.ManifestError, match="takes paramName, not headerName"):
+            _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token",
                          "headerName": "X-T", "scheme": "query"})
+        with pytest.raises(M.ManifestError, match="paramName is required"):
+            _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token", "scheme": "query"})
+        with pytest.raises(M.ManifestError, match="applies to scheme 'query' only"):
+            _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                         "headerName": "X-T", "paramName": "key"})
+        with pytest.raises(M.ManifestError, match="scheme must be one of"):
+            _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                         "headerName": "X-T", "scheme": "cookie"})
+        auth = _parse(auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                            "scheme": "query", "paramName": "key"}).auth
+        assert (auth.scheme, auth.param_name, auth.header_name) == ("query", "key", None)
 
     def test_a_malformed_slot_is_refused(self):
         with pytest.raises(M.ManifestError, match="secretId"):

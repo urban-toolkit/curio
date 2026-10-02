@@ -364,10 +364,23 @@ def _commit(built: Path, dataset_id: str, title: str, description: str) -> str:
     return target.name
 
 
+#: Folders under ``ROOT`` another script writes, which a rebuild keeps:
+#: ``mapillary/`` is fetched with a token by ``build_example_mapillary.py``.
+KEPT = ("mapillary",)
+
+
 def main() -> None:
+    kept = Path(tempfile.mkdtemp(prefix="curio-example-kept-"))
+    for name in KEPT:
+        if (ROOT / name).exists():
+            shutil.move(str(ROOT / name), str(kept / name))
     if ROOT.exists():
         shutil.rmtree(ROOT)
     ROOT.mkdir(parents=True)
+    for name in KEPT:
+        if (kept / name).exists():
+            shutil.move(str(kept / name), str(ROOT / name))
+    shutil.rmtree(kept, ignore_errors=True)
     write_air_quality(ROOT)
     write_city(ROOT)
     write_orthos(ROOT)

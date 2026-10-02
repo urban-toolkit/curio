@@ -480,6 +480,67 @@ class TestCatalogOverlayRouting:
         assert "restartRecommended" not in result
 
 
+class TestUpdateFromCatalog:
+    """#434: an update is a replace of the one store copy from the catalog.
+
+    "Update all projects" and the drawer's "Update" used to post a plain install,
+    which returns early for a package already in the store. Lockfiles name only
+    ``<id>@<major>``, so replacing the store copy is the whole update.
+    """
+
+    COUNTER_DIR = "ai.test.counter@1"
+
+    def _write_counter(self, catalog: Path, version: str, handler: str) -> None:
+        from utk_curio.backend.app.packages.domain import backend_contract as bc
+
+        pkg = catalog / self.COUNTER_DIR
+        (pkg / "backend").mkdir(parents=True, exist_ok=True)
+        (pkg / "manifest.json").write_text(json.dumps({
+            "id": "ai.test.counter", "version": version, "name": "Counter",
+            "publisher": "Tests", "description": "d",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [bc.PERMISSION_SERVER_CODE],
+            "templates": [{
+                "id": "counter", "label": "Counter", "category": "computation",
+                "engine": "python", "editor": "none", "hasCode": False,
+                "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                "backendHandler": "count",
+            }],
+            "backend": {"entry": "backend/handler.py",
+                        "handlers": [{"name": "count", "timeoutClass": "quick"}]},
+        }), encoding="utf-8")
+        (pkg / "backend" / "handler.py").write_text(handler, encoding="utf-8")
+
+    def test_the_replace_lands_the_new_version_and_repins_the_backend_entry(
+        self, app, user_and_token, alice_project, monkeypatch, tmp_path,
+    ):
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.repositories import catalog_dir
+
+        catalog = tmp_path / "catalog"
+        monkeypatch.setattr(catalog_dir, "catalog_root", lambda: catalog)
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+
+        self._write_counter(catalog, "1.0.0", "HANDLERS = {}\n")
+        packages_services.install_to_project(user_key, alice_project, self.COUNTER_DIR)
+        new_handler = "HANDLERS = {'count': lambda payload: 1}\n"
+        self._write_counter(catalog, "1.1.0", new_handler)
+
+        store_install.install_from_catalog(user_key, self.COUNTER_DIR, replace=True)
+
+        manifest = json.loads(
+            (package_dir(user_key, self.COUNTER_DIR) / "manifest.json").read_text())
+        assert manifest["version"] == "1.1.0"
+        # Invocation checks the handler against this pin and refuses a drifted
+        # one with "reinstall": a replace that kept the old pin broke the
+        # package it had just updated.
+        assert backend_runtime.pinned_entry_digest(user_key, self.COUNTER_DIR) == \
+            backend_runtime.entry_digest(new_handler.encode("utf-8"))
+        spec = projects_storage.read_spec(user_key, alice_project)
+        assert self.COUNTER_DIR in spec["dataflow"]["packages"]
+
+
 # ---------------------------------------------------------------------------
 # memo dev/101 — the lockfile is backend-owned on update
 # ---------------------------------------------------------------------------

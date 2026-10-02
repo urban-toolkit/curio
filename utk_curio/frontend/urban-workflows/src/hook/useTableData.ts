@@ -1,5 +1,5 @@
 import { IPropagation, useFlowContext } from "../providers/FlowProvider";
-import { NodeType, ResolutionType, VisInteractionType } from "../constants";
+import { ResolutionType, VisInteractionType } from "../constants";
 import { ICodeDataContent, ICodeData, INodeData, INode } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
@@ -40,7 +40,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
         startTime,
         startTime,
         workflowNameRef.current,
-        NodeType.DATA_POOL + "-" + data.nodeId,
+        data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         ""

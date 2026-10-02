@@ -3,7 +3,7 @@
  */
 import React, { useState } from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
-import type { SortMode } from "../../services/packages";
+import { isNewerPackageVersion, type SortMode } from "../../services/packages";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
@@ -35,6 +35,7 @@ export const NodeCatalogBrowse: React.FC = () => {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     dismissInstallSummary,
@@ -51,6 +52,7 @@ export const NodeCatalogBrowse: React.FC = () => {
     installedCount,
     selectedHasUpdate,
     onInstall,
+    onUpdate,
     importing,
     onImportArchive,
     confirmInstall,
@@ -86,10 +88,9 @@ export const NodeCatalogBrowse: React.FC = () => {
         void onInstall(menu.pkg);
         return;
       case "update-all-projects":
-        // The catalog's row, not the installed one - installing the version
-        // already in the user's store would be a no-op update. Same fallback
-        // the drawer's button uses.
-        void onInstall(menu.catalogRow ?? menu.pkg);
+        // The catalog's row, so the review and the toast name the version the
+        // store copy is replaced with. Same fallback the drawer's button uses.
+        void onUpdate(menu.catalogRow ?? menu.pkg);
         return;
       case "view-details":
         setDetailDirName(menu.pkg.dirName);
@@ -293,7 +294,7 @@ export const NodeCatalogBrowse: React.FC = () => {
                 isInstalledGlobally &&
                 userStoreRow != null &&
                 catalogRow != null &&
-                catalogRow.version !== userStoreRow.version;
+                isNewerPackageVersion(catalogRow.version, userStoreRow.version);
               const isPublished = catalogPublishedDirs.has(pkg.dirName);
               const showPublish = userStoreRow != null;
               return (
@@ -338,6 +339,7 @@ export const NodeCatalogBrowse: React.FC = () => {
         publishingDir={publishingPackageKey}
         showPublish={selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null}
         onInstall={(p) => void onInstall(p)}
+        onUpdate={(p) => void onUpdate(p)}
         onPublish={
           selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null
             ? onPublish
@@ -383,7 +385,8 @@ export const NodeCatalogBrowse: React.FC = () => {
           busy={busy}
           onCancel={cancelInstall}
           onConfirm={() => void confirmInstall()}
-          confirmLabel="Add to all projects"
+          confirmLabel={installMode === "update" ? "Update all projects" : "Add to all projects"}
+          busyLabel={installMode === "update" ? "Updating…" : undefined}
         />
       ) : null}
     </div>

@@ -9,6 +9,7 @@ import {
   endDatasetDrag,
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
+  GPKG_GROUP_ID_PREFIX,
   DatasetCatalogItem,
   datasetDisplayTitle,
   datasetSubtitle,
@@ -155,7 +156,10 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
   const [open, setOpen] = useState(false);
   const layerCount = group.members.length;
   const time = relativeTime(group.updatedAt);
-  const osmChipClass = rowStyles.chip_osm ?? rowStyles.formatChip;
+  // A multilayer group is an OSM PBF or a GeoPackage import; its id says which.
+  const groupFormat = group.groupId.startsWith(GPKG_GROUP_ID_PREFIX) ? "gpkg" : "osm";
+  const formatLabel = DATASET_FORMAT_LABEL[groupFormat];
+  const formatChipClass = rowStyles[`chip_${groupFormat}`] ?? rowStyles.formatChip;
   // Dragging the parent creates one node loading ALL layers (the full import).
   const dragPayload = useMemo(() => createOsmGroupDragPayload(group), [group]);
 
@@ -191,7 +195,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
         placement={tooltipPlacement}
         delay={OVERLAY_TRIGGER_DELAY_PROPS}
         overlay={
-          <Tooltip>{`${group.title} · OSM PBF · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}</Tooltip>
+          <Tooltip>{`${group.title} · ${formatLabel} · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}</Tooltip>
         }
       >
         <div className={rowStyles.groupHeader} data-dataset-id={group.groupId}>
@@ -208,8 +212,8 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
               icon={faDatabase}
               className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
             />
-            <span className={`${rowStyles.iconBadge} ${osmChipClass}`}>
-              {DATASET_FORMAT_LABEL.osm}
+            <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
+              {formatLabel}
             </span>
           </div>
           {/* Meta area highlights linked nodes (like a single row); the caret
@@ -230,7 +234,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
             className={rowStyles.groupCaretButton}
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: ${formatLabel} import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
           >
             <FontAwesomeIcon
               icon={open ? faChevronUp : faChevronDown}

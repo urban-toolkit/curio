@@ -8,12 +8,14 @@ the internal layering can move without a sweep.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from flask import current_app
 
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
+from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
 from utk_curio.backend.app.discovery.application.service_acquire import ServiceAcquire
 from utk_curio.backend.app.discovery.application.storage_acquire import (
     Cancelled as StorageCancelled,
@@ -24,6 +26,7 @@ from utk_curio.backend.app.discovery.application.catalog import DiscoveryCatalog
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
+    CredentialRequired,
     DiscoveryError,
     ResourceNotFound,
     SourceNotFound,
@@ -110,6 +113,12 @@ class DiscoveryService:
             service_for=self._service_for,
             install_bytes=self._install_bytes,
             find_held=self._find_held,
+            install_path=self._install_path,
+        )
+        self._model_acquire = ModelAcquire(
+            user_key=self.user_key,
+            provider_for=self._model_provider_for,
+            models=self._models,
         )
 
     # ── collaborators ──────────────────────────────────────────────────────
@@ -121,7 +130,10 @@ class DiscoveryService:
             return inner
         # Bound here rather than passed down, so providers never handle a
         # token and cannot put one in a URL they build or a message they log.
-        return transport_mod.CredentialedTransport(inner, credential)
+        # Only the source's own host receives it.
+        return transport_mod.CredentialedTransport(
+            inner, credential, hosts=(urlsplit(manifest.provider.base_url).hostname,)
+        )
 
     def _storage_for(self, manifest: DiscoverySourceManifest):
         from utk_curio.backend.app.discovery.providers import build_storage
@@ -131,7 +143,37 @@ class DiscoveryService:
     def _service_for(self, manifest: DiscoverySourceManifest):
         from utk_curio.backend.app.discovery.providers import build_service
 
-        return build_service(manifest)
+        return build_service(manifest, self._transport_for(manifest))
+
+    def _model_provider_for(self, manifest: DiscoverySourceManifest):
+        from utk_curio.backend.app.discovery.providers import build_model_provider
+
+        return build_model_provider(manifest, self._transport_for(manifest))
+
+    def _models(self):
+        """The Model Catalog, as this account: where a model source's adds land."""
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        return ModelCatalogService(self.user)
+
+    def _model_search(self, manifest: DiscoverySourceManifest, query) -> dict[str, Any]:
+        """One page of a model source's search, each row saying whether this
+        account already holds it in the Model Catalog."""
+        ratelimit.limiter.check(self.user_key, manifest.dir_name, manifest.requests_per_minute)
+        page = self._model_provider_for(manifest).search(query)
+        held = {
+            (m.get("discoverySource") or {}).get("resourceId"): m.get("id")
+            for m in self._models().list_catalog()["items"]
+            if (m.get("discoverySource") or {}).get("sourceId") == manifest.dir_name
+        }
+        return search_payload(
+            [
+                resource_row(r, source_name=manifest.name, already_held_model_id=held.get(r.resource_id))
+                for r in page.resources
+            ],
+            sources=[{"sourceId": manifest.id, "status": "ok", "count": len(page.resources)}],
+            next_cursor=page.next_cursor,
+        )
 
     def _listing_scope(self, manifest: DiscoverySourceManifest) -> str:
         """Whose listing this is: every user's for a public source, this
@@ -204,6 +246,8 @@ class DiscoveryService:
             return self._storage_listing(manifest, q=q, rescan=rescan)
         if manifest.is_service:
             return self._service_listing(manifest, q=q)
+        if manifest.is_model:
+            return self._model_search(manifest, _query(q, None, limit, cursor))
         page = self._browse.search(manifest, _query(q, fmt, limit, cursor))
         held = self._held_formats()
         return search_payload(
@@ -221,6 +265,8 @@ class DiscoveryService:
         manifests = self._catalog.manifests()
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
+        # A model source holds models, not datasets: searched on its own page.
+        manifests = [m for m in manifests if not m.is_model]
         if not include_storage:
             # A storage or service source is added from its own page, with its
             # own form; a caller that wants portals only gets portals.
@@ -274,6 +320,14 @@ class DiscoveryService:
 
     def describe_resource(self, dir_name: str, resource_id: str) -> dict[str, Any]:
         manifest = self._catalog.get_manifest(dir_name)
+        if manifest.is_model:
+            ratelimit.limiter.check(self.user_key, manifest.dir_name, manifest.requests_per_minute)
+            detail = self._model_provider_for(manifest).describe(resource_id)
+            held = self._model_acquire.already_held(manifest, resource_id)
+            return resource_detail_row(
+                detail, source_name=manifest.name,
+                already_held_model_id=held.get("id") if held else None,
+            )
         if manifest.is_storage:
             detail = self._storage_detail(manifest, resource_id)
         elif manifest.is_service:
@@ -470,9 +524,18 @@ class DiscoveryService:
         is another dataset.
         """
         manifest = self._catalog.get_manifest(dir_name)
+        if manifest.is_model:
+            # A repo id is checked before a job exists; a model already held
+            # is the answer, with no request.
+            self._model_provider_for(manifest).validate_resource_id(resource_id)
+            if filters or files is not None or parameters:
+                raise CapabilityUnsupported(f"{manifest.name} adds a whole model, with no parameters")
+            held_model = self._model_acquire.already_held(manifest, resource_id)
+            if held_model is not None and not refresh:
+                return {"model": held_model, "alreadyPresent": True, "unchanged": True}
         values = P.validate_values(
             manifest.declared_parameters(_base_resource_id(manifest, resource_id)), parameters
-        )
+        ) if not manifest.is_model else {}
         values_hash = P.values_hash(values) if values else None
         narrowed = False
         if manifest.is_storage:
@@ -490,11 +553,19 @@ class DiscoveryService:
                 raise ResourceNotFound(f"{resource_id!r} is not a resource of {manifest.name}")
             # What it lands as is the manifest's to say, not the caller's.
             fmt = spec.dataset_format
-        held = None if narrowed else self._acquire.already_held(
+        held = None if narrowed or manifest.is_model else self._acquire.already_held(
             manifest, resource_id, fmt, parameters_hash=values_hash
         )
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
+        auth = manifest.auth
+        if (manifest.is_service or manifest.is_model) and auth.needs_token and not self._credential_for(manifest):
+            # Refused here, as a portal's search is, rather than as the
+            # service's own 401 halfway through a job.
+            raise CredentialRequired(
+                f"{manifest.name} needs a {auth.secret_id} token before it can be used"
+                + (f" - see {auth.help_url}" if auth.help_url else "")
+            )
 
         # Bounded before the job exists, so a user cannot queue fifty downloads
         # and discover the limit fifty jobs later.
@@ -538,7 +609,7 @@ class DiscoveryService:
                     job.status = "running"
                     job.stage_message = (
                         "Reading the files…" if manifest.is_storage
-                        else f"Contacting {manifest.name}…" if manifest.is_service
+                        else f"Contacting {manifest.name}…" if manifest.is_service or manifest.is_model
                         else "Contacting the portal…"
                     )
 
@@ -554,6 +625,25 @@ class DiscoveryService:
                     def _stage(message: str) -> None:
                         job.stage_message = message
 
+                    if manifest.is_model:
+                        result = worker._model_acquire.acquire(
+                            manifest,
+                            resource_id,
+                            refresh=refresh,
+                            progress=_progress,
+                            stage=_stage,
+                            cancelled=lambda: job.cancelled,
+                        )
+                        job_store.jobs.finish(
+                            job,
+                            "completed",
+                            model=result["model"],
+                            dependencies=result.get("dependencies"),
+                            already_present=result["alreadyPresent"],
+                            unchanged=result["unchanged"],
+                            stage_message="Added to your Model Catalog",
+                        )
+                        return
                     if manifest.is_service:
                         result = worker._service_acquire.acquire(
                             manifest,

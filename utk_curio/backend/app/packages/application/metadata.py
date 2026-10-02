@@ -7,6 +7,7 @@ parse, call and serialize and carry no rules; every function keeps its body.
 from __future__ import annotations
 
 import json as _json
+import logging
 from pathlib import Path
 
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -14,8 +15,12 @@ from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     PackageManifest,
 )
+from utk_curio.backend.app.packages.repositories import seed_state
+from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.store import package_dir
+
+log = logging.getLogger(__name__)
 
 
 _PATCH_ALLOWED_TOP_KEYS: frozenset[str] = frozenset({
@@ -129,4 +134,13 @@ def patch_package_metadata(user_key: str, dir_name: str, body: object) -> tuple[
         else:
             raise PackageServiceError("readme must be a string or null")
 
+    # The copy's own map has to describe the copy, and the copy is now the
+    # user's: without both, it still read as the catalog's, and the next
+    # catalog change replaced the edit (#564). Bookkeeping, as on install: the
+    # edit is already on disk, so a failure here is logged, not answered.
+    try:
+        refresh_package_integrity(pkg_path)
+        seed_state.mark_installed(user_key, dir_name, catalog_copy=None)
+    except Exception:  # noqa: BLE001
+        log.exception("Failed to record the metadata edit of %s/%s", user_key, dir_name)
     return manifest, pkg_path

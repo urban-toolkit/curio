@@ -35,6 +35,10 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/discovery" className={tabClassName}>
         Discovery Catalog
       </NavLink>
+      {/* No `end`: /catalog/models/:modelId keeps this tab active. */}
+      <NavLink to="/catalog/models" className={tabClassName}>
+        Model Catalog
+      </NavLink>
       {/* Unconditional: the monitor exists on every instance, not only a
           --deploy one, so there is no flag to read here. */}
       <NavLink to="/monitor" className={tabClassName} end>

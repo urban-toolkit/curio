@@ -56,6 +56,11 @@ class DownloadJob:
     error: str | None = None
     dataset_id: str | None = None
     dataset: dict[str, Any] | None = None
+    #: A model source's add lands in the Model Catalog: the model, not a dataset.
+    model: dict[str, Any] | None = None
+    #: What installing a model's runtime libraries reported: ``importErrors``,
+    #: and ``dependencyError`` when pip failed.
+    dependencies: dict[str, Any] | None = None
     already_present: bool = False
     unchanged: bool = False
     created_at: float = field(default_factory=time.monotonic)
@@ -78,6 +83,8 @@ class DownloadJob:
             "error": self.error,
             "datasetId": self.dataset_id,
             "dataset": self.dataset,
+            "model": self.model,
+            "dependencies": self.dependencies,
             "alreadyPresent": self.already_present,
             "unchanged": self.unchanged,
             "sourceId": self.source_dir,

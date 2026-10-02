@@ -15,7 +15,7 @@ interface ProvenanceContextProps {
         activityexec_start_time: string,
         activityexec_end_time: string,
         workflow_name: string,
-        activity_name: string,
+        nodeId: string,
         types_input: any,
         types_output: any,
         activity_source_code: string,
@@ -56,7 +56,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         activityexec_start_time: string,
         activityexec_end_time: string,
         _workflow_name: string,
-        activity_name: string,
+        nodeId: string,
         types_input: any,
         types_output: any,
         activity_source_code: string,
@@ -64,10 +64,6 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         _outputData: string = "",
         _interaction: boolean = false
     ) => {
-        // Extract plain nodeId from activity_name (e.g., "DATA_LOADING-node-1" -> "node-1")
-        const dashIdx = activity_name.indexOf("-");
-        const nodeId = dashIdx >= 0 ? activity_name.slice(dashIdx + 1) : activity_name;
-
         const parentId = selectedParentExecRef.current[nodeId] ?? null;
         const newId = execIdCounterRef.current++;
 

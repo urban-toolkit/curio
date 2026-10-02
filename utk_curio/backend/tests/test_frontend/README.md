@@ -182,24 +182,12 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 
 The DB stub is strictly additive - Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
-**One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
-`dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
-canvas ends up with no workflow name at all (it clobbers `FlowProvider`'s
-`"DefaultDataflow"` default). Nothing notices until a test presses **File > New
-dataflow** and then **Save**: `discardProject()` clears `projectName`, so
-`saveCurrentProject` sends `nameOverride || projectName || workflowNameRef.current`
-= `undefined`, and `ProjectCreate` rejects it with `name is required`. The symptom
-is an error toast and a URL that stays on `/dataflow/new`, because `handleSave`
-only navigates after a successful create. A test that needs a second empty
-dataflow should stub another project rather than create one through the File
-menu.
-
 ### Shared helpers
 
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. This used to skip, which hid the problem: `scripts/test.sh` booted its shared stack without `--deploy` and 43 tests across 22 files quietly skipped while the run reported green. The environment being wrong is a setup bug, so it is loud. Boot with `--deploy`. |
+| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
 | `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
 
 ### Canvas authoring helpers
@@ -252,9 +240,9 @@ canvas, which means a real click at the button's centre lands on the overlay.
 Three things are easy to get wrong against the catalog drawers:
 
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
-- **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. **`aria-hidden="false"` is not a gate either, despite what this file used to say.** It is the presented signal for the Dataset and Agent drawers, but the Node Catalog drawer carried no `aria-hidden` at all until the fix that added it, so waiting for the attribute to flip there waited forever - a whole chapter of the stress run died on that advice. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport, which is true of all three regardless of what they advertise. `canvasDrawerParity.test.ts` now keeps the three from diverging again. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+- **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport. `canvasDrawerParity.test.ts` keeps the three drawers from diverging. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 
-  **The agent chat panel slides too, as of #295.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` the three drawers now share, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
+  **The agent chat panel slides too.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` as the three drawers, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
@@ -559,10 +547,10 @@ Other things that surprise people here:
   `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
   aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
-  Prefer them over display copy, which has been renamed repeatedly.
+  Prefer them over display copy.
 - **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
-  #197). `window.confirm` is gone from all three drawers, so `page.on("dialog",
-  ...)` never fires for them - a test still written that way clicks the card
+  #197). No drawer calls `window.confirm`, so `page.on("dialog", ...)` never
+  fires for them - a test written that way clicks the card
   button, silently does nothing, and fails later for the wrong reason. Use
   `utils.accept_confirm_dialog(page, title=..., button=...)`, and note the
   ordering: the card click only *opens* the dialog, so the request to wait on
@@ -573,18 +561,6 @@ Other things that surprise people here:
   are themselves `role="dialog"`, so scope by accessible name -
   `page.get_by_role("dialog", name="Remove Chat?")` - which
   ConfirmDialog wires from its heading via `aria-labelledby`.
-- **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
-  blanket `page.on("dialog", lambda d: d.accept())` is still required for
-  File > New dataflow. Do not remove it.
-- **The agent palette's footer used to sit below the fold at 1280x720.** Its
-  panel hung down from its own trigger, which is the third and lowest in the
-  rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.
-  That was a missed conversion rather than a viewport limit: the Datasets and
-  Packages panels became `position: absolute; top: 0; left: 100%` when the
-  palettes moved into the rail, and the Agent Catalog arrived later without the
-  matching CSS. `paletteShell.module.css` now positions it the same way, so the
-  footer is reachable and either entry point works. Reaching the drawer from the
-  **Data** menu is still fine, and is what the tour does.
 - **`packagesApi` percent-encodes the dirName**, so the `@` in
   `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
   `expect_response` predicate built from the raw dirName never fires; match on
@@ -606,9 +582,8 @@ Other things that surprise people here:
   `onSave` calls `updateDataNode` and `setSaveAsOpen(true)` in one batch, but
   `updateDataNode` writes FlowProvider's `useNodesState` array, which reaches
   React Flow's store only when its prop-sync effect runs - after the render
-  where `show` flips true. `NodeSaveAsModal` used to `useMemo` the node on
-  `[show, nodeId, getNodes]` and so packaged the pre-edit one, dropping every
-  edit; it now selects off the store with `useStore`. Guarded by
+  where `show` flips true. `NodeSaveAsModal` selects the node off the store
+  with `useStore`, so it packages the edited node. Guarded by
   `test_package_metadata_roundtrip_e2e.py::test_node_settings_configuration_reaches_the_saved_package`
   and, in milliseconds, by `src/tests/components/nodeSaveAsModalNodeSource.test.tsx`.
   Worth knowing when reading `test_package_roundtrip_e2e.py`, which sets its
@@ -756,9 +731,7 @@ plus `.curio/test/agents-catalog/` between tests, over
 `/api/testing/reset-db` when it is talking to a separately-started backend and
 on the files otherwise (#308). That matters because `user.id` is a bare sqlite
 rowid alias, so ids recycle from 1: a store left behind is handed to the next
-account a test creates. It did exactly that until #308 - the walkthrough
-baselines failed only in a full run, because one scene's imported agent was
-still in the "fresh" account of the scene after it.
+account a test creates.
 
 What that clean does NOT undo is anything a test leaves outside those trees:
 libraries pip-installed into the interpreter, the shared Data Catalog, files
@@ -920,8 +893,8 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers. Those servers **must** carry `CURIO_TESTING=1` or every `/api/testing/*` call 404s and the autouse `e2e_clean_db` fixture errors on setup; the CI overlays (`docker-compose.ci.yml`, `docker-compose.ci-isolated.yml`) and `scripts/test.sh` set it. `scripts/test.sh` also exports this variable for its whole run, so the backend unit suite does not claim ownership of a DB the running stack is serving from. |
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
-| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
-| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
+| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. |
+| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |

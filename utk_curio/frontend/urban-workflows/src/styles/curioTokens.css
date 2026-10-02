@@ -301,6 +301,23 @@
   --curio-kind-source-bg: #F6DFF5;
   --curio-kind-source-on-tint: #742570;
 
+  /* A Model Catalog MODEL, for the /catalog/models cards, the canvas drawer's
+     avatars and the model kind icon. One colour for every model, for the
+     source's reason: on that page every card IS a model, so a per-runtime hue
+     would carry no information. The runtime is a neutral badge instead.
+
+     The hue (65deg, a dark olive) sits in the widest gap left: 54deg between
+     the amber accent (39) and OSM's green (93), 26deg from the first and 28deg
+     from the second. The source note above rules out yellow-olive at fill
+     weight; that holds for a light olive, not for this one, which is dark
+     enough to read as khaki rather than yellow. Amber is the warning role and
+     never shares a surface with a model card; OSM is a dataset format and does
+     not appear on the model page. 5.5:1 on white, so the white strip label
+     holds, and 6.5:1 for the on-tint text over the tint. */
+  --curio-kind-model-fg: #676E14;
+  --curio-kind-model-bg: #EEF0D5;
+  --curio-kind-model-on-tint: #525810;
+
   /* ── Semantic roles ────────────────────────────────────────────────────
      Named for what they mean, so a role can change without dragging a category
      colour with it. Each points at the raw accent palette below; before this

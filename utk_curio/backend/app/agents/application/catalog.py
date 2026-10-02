@@ -181,21 +181,44 @@ def _require_definition(user_key: str, coord: str) -> AgentManifest:
     return m
 
 
-def _materialize_builtin(user_key: str, coord: str) -> None:
-    """Write a built-in's bytes (manifest + prompt assets) into the user store,
-    so an installed agent is self-contained and runs from its own on-disk assets
-    rather than the legacy ``llm-prompts/`` dir.
+def _copy_published(user_key: str, coord: str) -> None:
+    """Copy a published definition into the user store, stamped ``global``
+    trust: it came from the Global Catalog, so it runs from the adder's own
+    copy after its publisher unpublishes it (#438), the way a shared dataset
+    or node package does, and it is never this account's to publish."""
+    try:
+        bundle = storage.read_definition_bundle_from_dir(publications.published_agent_dir(coord))
+    except (AgentManifestError, PathTraversalError):
+        return
+    if bundle is None:
+        return
+    manifest = dict(bundle["manifest"])
+    manifest["provenance"] = {**(manifest.get("provenance") or {}), "trust": "global"}
+    try:
+        storage.write_definition_atomic(user_key, coord, manifest, bundle["prompts"])
+    except FileExistsError:
+        pass  # a concurrent add wrote it first
+
+
+def _materialize_definition(user_key: str, coord: str) -> None:
+    """Write an added agent's bytes (manifest + prompt assets) into the user
+    store, so it is self-contained and runs from its own on-disk assets: a
+    built-in's from the roster rather than the legacy ``llm-prompts/`` dir, a
+    published one's from the Global Catalog (:func:`_copy_published`).
 
     Heals stale copies (memo dev/44): a built-in store copy that predates a
     roster asset (e.g. the pre-dev/38 missing system preamble) is rewritten to
     the current roster set on the next install/import — idempotent, and never
     touches a non-built-in definition (an owned import deliberately shadowing
-    a built-in coord keeps its own bytes)."""
+    a built-in coord keeps its own bytes, as does an earlier copy of a
+    published one)."""
     existing = storage.load_installed_agent_definition(user_key, coord)
     if existing is not None and existing.provenance.trust != "built-in":
         return  # owned/imported shadow — its bytes are authoritative
     spec = builtin.get_builtin_spec(coord)
     if spec is None:
+        if existing is None:
+            _copy_published(user_key, coord)
         return
     manifest = builtin.build_builtin_manifest(spec)
     if existing is not None:

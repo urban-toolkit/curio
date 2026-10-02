@@ -56,6 +56,14 @@
       "metadata": { "path": "dashcam/{date:date}/telemetry.csv", "on": "file_name" }
     },
     {
+      "id": "mapillary",
+      "name": "Mapillary street photos",
+      "description": "Street-level photos around Lincoln Park, Chicago, from Mapillary (CC BY-SA 4.0); each row names its photographer.",
+      "kind": "images",
+      "path": "mapillary/{image_id}.jpg",
+      "metadata": { "path": "mapillary/metadata.csv", "on": "file_name" }
+    },
+    {
       "id": "survey",
       "name": "Street survey",
       "description": "Geotagged photos and a short clip.",

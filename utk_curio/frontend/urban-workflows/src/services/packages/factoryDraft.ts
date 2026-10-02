@@ -84,7 +84,7 @@ export interface Draft {
 
 
 // Keep byte-identical to `_STARTER_CODE_SENTINEL` in
-// `utk_curio/backend/app/packages/factory.py` — the backend matches this exact
+// `utk_curio/backend/app/packages/builder/factory.py` — the backend matches this exact
 // string to detect "user did not edit this template, keep on-disk source."
 export const STARTER_CODE =
   "# `arg` holds the upstream input (a single value, or a list when\n" +

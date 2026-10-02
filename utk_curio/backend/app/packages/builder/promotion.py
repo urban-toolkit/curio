@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.packages.repositories import seed_state
 from utk_curio.backend.app.packages.repositories import staging as build_staging
 from utk_curio.backend.app.packages.builder.extension import installed_package_digest
 from utk_curio.backend.app.packages.builder.packager import PackagerError, validate_archive
@@ -261,6 +262,11 @@ def _back_up_prior(user_key: str, journal: dict[str, Any], installed_digest: str
     _backup_path(user_key, journal["artifactDigest"]).write_bytes(backup)
     journal["backupHeld"] = True
     journal["priorDigest"] = installed_digest
+    # Where the prior copy came from goes back with it: restoring a catalog
+    # copy as if it were the user's own would take it off the catalog's
+    # refresh track (#564).
+    prior_record = seed_state.load(user_key).get(journal["target"])
+    journal["priorSeedRecord"] = prior_record.to_json() if prior_record else {}
     _record_step(journal, "backed-up")
     _save_journal(user_key, journal)
 
@@ -481,6 +487,8 @@ def _rollback_locked(user_key: str, journal: dict[str, Any], reason: str) -> Non
             if not backup_file.is_file():
                 raise PromotionError(f"backup for {target} is missing", 500)
             install_package_from_archive(user_key, backup_file.read_bytes(), replace=True)
+            if "priorSeedRecord" in journal:
+                seed_state.put(user_key, target, journal["priorSeedRecord"])
         elif _has_step(journal, "installed"):
             uninstall_package(user_key, target)
         if journal.get("lockfileAdded") and journal.get("projectId"):

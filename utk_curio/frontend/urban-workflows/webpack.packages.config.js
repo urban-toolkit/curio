@@ -26,11 +26,6 @@ const path = require("path");
 // entry here.
 const PACKAGE_ENTRIES = [
   {
-    id: "curio.streetvision@1",
-    entry: path.resolve(__dirname, "../../../packages/curio.streetvision@1/sources/index.tsx"),
-    outputDir: path.resolve(__dirname, "../../../packages/curio.streetvision@1/scripts"),
-  },
-  {
     id: "curio.example-ui@1",
     entry: path.resolve(__dirname, "../../../packages/curio.example-ui@1/sources/index.tsx"),
     outputDir: path.resolve(__dirname, "../../../packages/curio.example-ui@1/scripts"),

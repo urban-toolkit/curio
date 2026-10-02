@@ -20,6 +20,7 @@ import {
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { useUserContext } from "../providers/UserProvider";
+import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
@@ -549,41 +550,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setPackages([]);
     }
 
-    const applyRemoveChanges = useCallback((changes: NodeRemoveChange[]) => {
-        let allowedChanges: NodeRemoveChange[] = [];
-
-        let edges = reactFlow.getEdges();
-
-        for (const change of changes) {
-            let allowed = true;
-
-            for (const edge of edges) {
-                if (
-                    edge.source == change.id ||
-                    edge.target == change.id
-                ) {
-                    showToast(
-                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
-                        "warning"
-                    );
-                    allowed = false;
-                    break;
-                }
-            }
-
-            if (allowed) allowedChanges.push(change);
-        }
-
-        onNodesDelete(allowedChanges);
-        return onNodesChange(allowedChanges);
-    }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
-
-    // A reviewed plan apply (dev/62, DEC-049): the user authorized every
-    // victim by name and the edge cascade arrived with them, so the manual
-    // "remove the edges first" guard does not apply — the edges leave in the
-    // same operation. Bookkeeping parity with manual deletion: onEdgesDelete
-    // (collab broadcast, provenance, survivor-input reset) and onNodesDelete
-    // (output pruning, provenance, broadcast). Already-absent elements no-op.
+    // Removes nodes together with their edges. Shared by a reviewed plan apply
+    // (dev/62, DEC-049) and the node header's Delete node button. Bookkeeping
+    // parity with deleting an edge by hand: onEdgesDelete (collab broadcast,
+    // provenance, survivor-input reset) and onNodesDelete (output pruning,
+    // provenance, broadcast). Already-absent elements no-op.
     const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
         const edgeSet = new Set(edgeIds);
         const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
@@ -601,6 +572,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             onNodesChange(changes);
         }
     }, [reactFlow, onEdgesDelete, setEdges, onNodesDelete, onNodesChange]);
+
+    // The node header's Delete node button: the node goes with every edge
+    // attached to it (#155), as with the Delete key.
+    const applyRemoveChanges = useCallback((changes: NodeRemoveChange[]) => {
+        const nodeIds = new Set(changes.map((change) => change.id));
+        const edgeIds = reactFlow
+            .getEdges()
+            .filter((edge: Edge) => nodeIds.has(edge.source) || nodeIds.has(edge.target))
+            .map((edge: Edge) => edge.id);
+        applyReviewedRemovals([...nodeIds], edgeIds);
+    }, [reactFlow, applyReviewedRemovals]);
 
     // ---------------------------------------------------------------------------
     // Suggestion Management
@@ -1365,6 +1347,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const discardProject = useCallback(() => {
         setProjectId(null);
         setProjectName("");
+        setWorkflowName(DEFAULT_WORKFLOW_NAME);
         setServerCategories({});
         setWorkflowCategories({});
         setProjectDirty(false);
@@ -1372,7 +1355,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodeExecStatus({});
         setDataflowDatasets([]);
         setViewerMode("owner");
-    }, []);
+    }, [setWorkflowName]);
 
     // Both marks return the SAME state object when the node is already in the
     // target status. CodeEditor calls markNodeStale on every keystroke, and an

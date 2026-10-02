@@ -2059,8 +2059,6 @@ def scene_quickstart(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     _new_dataflow_from_menu(ctx)
     tour.beat(900)
-    # File > New dataflow keeps the previous dataflow's name, so give this one
-    # its own before anything is photographed.
     _rename_dataflow(ctx, "My first dataflow")
     tour.still("quickstart-blank-canvas")
     tour.say(

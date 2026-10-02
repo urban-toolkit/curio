@@ -290,7 +290,9 @@ def to_frame(spec: ResourceSpec, rows: list[dict[str, Any]]):
         frame["transform"] = frame["transform"].map(
             lambda t: json.dumps(t) if isinstance(t, list) else None
         )
-    captures = [c.name for c in spec.template.captures]
+    # A service's images have no path template; what it says about each is
+    # in the row already.
+    captures = [c.name for c in spec.template.captures] if spec.template else []
     middle = [c for c in frame.columns if c not in LEADING_COLUMNS + TRAILING_COLUMNS + ("geometry",)]
     ordered_middle = [c for c in captures if c in middle] + [c for c in middle if c not in captures]
     columns = [c for c in LEADING_COLUMNS if c in frame.columns] + ordered_middle
@@ -377,7 +379,7 @@ def collection_block(
         "resource": spec.id,
         "resourceName": spec.name,
         "path": spec.path,
-        "fields": list(spec.template.names),
+        "fields": list(spec.template.names) if spec.template else [],
         "fieldValues": field_summary(spec, files),
         "counts": counts,
         "fileCount": len(files),

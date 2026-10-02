@@ -244,6 +244,34 @@ class TestPromoteExtend:
         assert journal["rollback"]["reason"] == "registry activation failed"
         assert installed_package_digest("guest", "ai.test.demo@1") == base_digest
 
+    def test_rollback_puts_back_where_the_prior_copy_came_from(
+        self, tmp_curio, manifest_dict, install_package,
+    ):
+        """A restored catalog copy is still the catalog's copy (#564): the
+        rollback reinstalls it from the backup, and an install from a backup
+        would otherwise record it as the user's own and stop its refreshes."""
+        import json
+
+        from utk_curio.backend.app.packages.repositories import seed_state
+
+        base_digest = self._install_base(install_package, manifest_dict)
+        store = package_dir("guest", "ai.test.demo@1")
+        recorded = seed_state.copy_digest(
+            json.loads((store / "integrity.json").read_text(encoding="utf-8"))["sha256"])
+        seed_state.mark_installed("guest", "ai.test.demo@1", catalog_copy=recorded)
+
+        digest = _stage_build(manifest_dict, version="1.1.0", body="return 2\n")
+        promote("guest", target="ai.test.demo@1",
+                artifact_digest=digest, base_digest=base_digest)
+        assert seed_state.load("guest")["ai.test.demo@1"].catalog_copy is None
+        rollback("guest", digest, "registry activation failed")
+
+        assert seed_state.load("guest")["ai.test.demo@1"].catalog_copy == recorded
+        restored = json.loads((store / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+        assert seed_state.copy_digest(restored) == recorded, (
+            "the restored copy does not match the digest put back with it"
+        )
+
     def test_rollback_of_create_uninstalls(self, tmp_curio, manifest_dict):
         digest = _stage_build(manifest_dict)
         promote("guest", target="ai.test.demo@1", artifact_digest=digest)

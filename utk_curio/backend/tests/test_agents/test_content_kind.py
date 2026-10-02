@@ -35,7 +35,6 @@ class TestTemplateContentKind:
         assert kinds["data-loading"] == "code"
         assert kinds["computation-analysis"] == "code"
         assert kinds["js-computation"] == "code"
-        assert kinds["data-export"] == "code"
         assert kinds["data-summary"] == "code"
         assert kinds["data-transformation"] == "code"
         # A document: authored, validated, never executed.
@@ -47,6 +46,8 @@ class TestTemplateContentKind:
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"
         assert kinds["spatial-join"] == "none"
+        # One Download button, nothing written (#226).
+        assert kinds["data-export"] == "none"
 
     def test_a_presentation_template_with_no_input_is_a_note(self):
         """dev/90 A14's post-it profile: authored content, no validator. The

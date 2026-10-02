@@ -4,14 +4,15 @@
   "version": 1,
   "source": {
     "path": "docs/examples/10-street-vision-cv-analysis.json",
-    "sha256": "3059d7b6b20bf4228866da815c2b489d66c8120cda13464695384edcfae23b47",
+    "sha256": "5dd4788658f5be1410253b9845b9269d7fd90c6213b7f21eecffd527522f9fc6",
     "walkthrough": "docs/examples/10-street-vision-cv-analysis.md"
   },
-  "prompt": "I want to measure street-level greenery around Lincoln Park in Chicago from street view imagery. Fetch street view images across a bounding box, run a semantic segmentation model over them to get per-class pixel shares, and give me a gallery to inspect the results. Separately, load the official Chicago neighborhood polygons from the Data Catalog, rename their name column to what the join step expects, and tag each image with the neighborhood it falls in through a spatial join. Then show me a map of the tagged points and a bar chart of the average greenery share per neighborhood. The fetching, inference and gallery steps are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "I want to measure street-level greenery around Lincoln Park in Chicago from street photos. Load the Mapillary street photo sample from the Data Catalog and run a semantic segmentation over the photos with the model that ships with Curio, to get each photo's per-class pixel shares and its dominant class, and show me the photos beside their overlays. Separately, load the official Chicago neighborhood polygons from the Data Catalog, rename their name column to what the join step expects, and tag each photo with the neighborhood it falls in through a spatial join. Then show me a map of the neighborhoods colored by dominant class and a bar chart of photos per neighborhood by dominant class. Also run a second segmentation over the same photos, the one I will point at a Hugging Face model, with its own photo view, spatial join and bar chart. The segmentation step is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
-      "data.cityofchicago.neighborhoods"
+      "data.cityofchicago.neighborhoods",
+      "data.curio.mapillary-sample"
     ],
     "packages": [
       "curio.streetvision@1"
@@ -22,6 +23,13 @@
     "nodes": [
       {
         "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
         "type": "curio.builtin/data-loading",
         "role": "loader",
         "executable": true,
@@ -42,6 +50,13 @@
         "hasContent": false
       },
       {
+        "ref": "endpoint2",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-simple",
         "role": "visualization",
@@ -50,10 +65,10 @@
       },
       {
         "ref": "visualization2",
-        "type": "curio.builtin/vis-vega",
+        "type": "curio.builtin/vis-simple",
         "role": "visualization",
         "executable": false,
-        "hasContent": true
+        "hasContent": false
       },
       {
         "ref": "visualization3",
@@ -63,18 +78,32 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint2",
-        "type": "curio.streetvision/hf-cv-inference",
-        "role": "endpoint",
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
         "executable": false,
-        "hasContent": false
+        "hasContent": true
       },
       {
-        "ref": "endpoint3",
-        "type": "curio.streetvision/street-view-fetcher",
-        "role": "endpoint",
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
         "executable": false,
-        "hasContent": false
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.streetvision/image-segmentation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.streetvision/image-segmentation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
       }
     ],
     "edges": [
@@ -84,13 +113,23 @@
         "kind": "data"
       },
       {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
         "from": "transform1",
         "to": "endpoint1",
         "kind": "data"
       },
       {
-        "from": "endpoint1",
-        "to": "visualization2",
+        "from": "transform1",
+        "to": "endpoint2",
         "kind": "data"
       },
       {
@@ -99,24 +138,40 @@
         "kind": "data"
       },
       {
+        "from": "endpoint2",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint2",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
         "from": "visualization1",
         "to": "endpoint1",
         "kind": "data"
       },
       {
-        "from": "endpoint2",
+        "from": "visualization2",
+        "to": "endpoint2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "endpoint3",
-        "to": "endpoint2",
+        "from": "analysis2",
+        "to": "visualization2",
         "kind": "data"
       }
     ],
     "sources": {
       "datasetIds": [
-        "data.cityofchicago.neighborhoods"
+        "data.cityofchicago.neighborhoods",
+        "data.curio.mapillary-sample"
       ],
       "paths": [],
       "urls": []
@@ -144,26 +199,17 @@
     "mode": "sandbox",
     "browserOnlyKinds": [
       "curio.builtin/spatial-join",
-      "curio.builtin/vis-vega",
-      "curio.streetvision/cv-gallery",
-      "curio.streetvision/hf-cv-inference",
-      "curio.streetvision/street-view-fetcher"
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
     ],
     "notes": null
   },
   "capability": {
-    "tier": "T3",
+    "tier": "T1",
     "needs": [
-      "external-network",
       "package-enlist:templates"
     ],
-    "skip": [
-      {
-        "when": "!CURIO_EVAL_EXTERNAL",
-        "reason": "Street view imagery and hosted model inference are external services, and the spatial-join template has no sandbox code (dev/119) -- execution is opt-in.",
-        "scope": "execution"
-      }
-    ]
+    "skip": []
   },
   "thresholds": {
     "pass": 0.9,
@@ -174,7 +220,7 @@
   "split": "heldout",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-10-01",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -185,9 +231,13 @@
       {
         "datasetId": "data.cityofchicago.neighborhoods",
         "licence": "Open Data"
+      },
+      {
+        "datasetId": "data.curio.mapillary-sample",
+        "licence": "CC-BY-SA-4.0"
       }
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The template resolution route: three of its node kinds live in a package. External APIs, so opt-in."
+  "notes": "The template resolution route: its segmentation node kind lives in a package. The photos and the model are committed, so it runs offline."
 }

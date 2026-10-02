@@ -179,6 +179,7 @@ def execute_isolated(
     secrets=None,
     collections=None,
     media_dir=None,
+    models=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -238,6 +239,8 @@ def execute_isolated(
         staged_datasets = staging.stage_dataset_paths(
             dataset_paths or {}, scratch_dir
         )
+        # A model is a folder: linked in whole, at its own relative paths.
+        staged_models = staging.stage_model_dirs(models or {}, scratch_dir)
 
         request = protocol.build_exec_request(
             code=code,
@@ -248,6 +251,7 @@ def execute_isolated(
             work_dir=work_dir,
             overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
+            models=staged_models,
             collections=collections,
             media_dir=media_dir,
             session_imports=_imports_for(session_id),

@@ -1,0 +1,26 @@
+{
+  "id": "source.huggingface.models",
+  "name": "Hugging Face models",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Image segmentation models on the Hugging Face Hub that Curio runs: ONNX graphs, and Transformers checkpoints with safetensors weights. Adding one puts it in your Model Catalog, ready to drag onto an Image Segmentation node. Each model keeps its own license; read it on the model's page.",
+  "publisher": "Hugging Face",
+  "homepage": "https://huggingface.co/models?pipeline_tag=image-segmentation",
+  "license": "Each model's own",
+  "tags": ["hugging face", "models", "segmentation"],
+  "provider": {
+    "type": "huggingface-models",
+    "baseUrl": "https://huggingface.co",
+    "options": { "pipelineTag": "image-segmentation" }
+  },
+  "auth": {
+    "mode": "optional-token",
+    "secretId": "huggingface.token",
+    "headerName": "Authorization",
+    "valuePrefix": "Bearer ",
+    "helpUrl": "https://huggingface.co/settings/tokens"
+  },
+  "limits": { "requestsPerMinute": 30 },
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

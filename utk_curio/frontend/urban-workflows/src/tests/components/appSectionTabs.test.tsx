@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the six sections as sibling links', () => {
+  test('renders the seven sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -44,6 +44,7 @@ describe('AppSectionTabs', () => {
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
       ['Discovery Catalog', '/catalog/discovery'],
+      ['Model Catalog', '/catalog/models'],
       ['Monitor', '/monitor'],
     ]);
   });
@@ -53,6 +54,7 @@ describe('AppSectionTabs', () => {
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
     ['/catalog/discovery', 'Discovery Catalog'],
+    ['/catalog/models', 'Model Catalog'],
     ['/monitor', 'Monitor'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
@@ -71,6 +73,13 @@ describe('AppSectionTabs', () => {
     // is a page WITHIN that section, so the tab has to stay lit on it.
     const { container } = renderAt('/catalog/discovery/source.uk.data-gov@1');
     expect(activeLabels(container)).toEqual(['Discovery Catalog']);
+  });
+
+  test('a model detail route keeps Model Catalog active', () => {
+    // /catalog/models/:modelId is the Model Catalog with that model's details
+    // open, so its link is not `end` either.
+    const { container } = renderAt('/catalog/models/model.curio.ddrnet23-slim');
+    expect(activeLabels(container)).toEqual(['Model Catalog']);
   });
 
   test('the Monitor tab is unconditional', () => {

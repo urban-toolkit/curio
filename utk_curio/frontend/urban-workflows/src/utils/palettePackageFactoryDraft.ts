@@ -3,6 +3,7 @@ import type { PackageTemplatePayload, PackagePayload } from "../services/package
 import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { BUILTIN_PACKAGE_ID } from "../registry/packageKeys";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { normalizePortTypes } from "../constants/supportedPortTypes";
 import {
@@ -272,8 +273,9 @@ function seedCodeForPackageTemplatePayload(template: PackageTemplatePayload, get
 }
 
 function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload, getStarters?: StartersLookup): TemplateDraft {
-  const sourceFilename =
-    template.source?.split("/").pop()?.trim() || `${template.templateId}.py`;
+  // Empty for a template that ships no source (a behavior bundle drives it):
+  // `toApiPayload` then sends it without one, as it is installed (#432).
+  const sourceFilename = template.source?.split("/").pop()?.trim() ?? "";
   const inputPorts =
     template.inputPorts?.map((p) => ({
       id: factoryUiMakeId(),
@@ -309,7 +311,7 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
   };
 }
 
-/** Factory draft from ``GET /api/packages`` row — used for palette “publish to catalog”. */
+/** Factory draft from a ``GET /api/packages`` row: the base Save As adds a node to. */
 export function draftFromInstalledPackagePayload(
   pkg: PackagePayload,
   getStarters?: StartersLookup,
@@ -379,6 +381,18 @@ export function buildSaveAsInstallDraft(opts: {
     draft.publisher = "Local palette";
     draft.description = "Created from canvas Save As.";
     draft.templates = [templateDraftFromCanvasNode(opts.canvasNode, desc, body, slugBase)];
+    // A node of an installed package makes the new package a fork of it, so
+    // the Node Catalog groups the two. A built-in node forks nothing.
+    const src = desc.package;
+    if (src && src.packageId !== BUILTIN_PACKAGE_ID) {
+      const from = { packageId: src.packageId, major: src.major };
+      draft.lineage = {
+        forkedFrom: from,
+        root: src.lineage?.root
+          ? { packageId: src.lineage.root.packageId, major: src.lineage.root.major }
+          : from,
+      };
+    }
     return draft;
   }
 

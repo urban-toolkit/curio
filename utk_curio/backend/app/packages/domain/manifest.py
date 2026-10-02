@@ -9,6 +9,7 @@ User-facing overview: ``docs/NODE-CATALOG.md``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import (
     dataclass,
     field,
@@ -26,6 +27,12 @@ from utk_curio.backend.app.packages.domain.package_id import (
     PackageId,
     TEMPLATE_ID_RE,
 )
+
+
+#: The manifest's own ``version`` (the schema's ``version`` pattern): semver,
+#: with pre-release or build metadata. A dependency range is looser
+#: (``domain/versions.py``).
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$")
 
 
 class ManifestError(ValueError):
@@ -441,6 +448,18 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
     version = raw.get("version")
     if not isinstance(version, str) or not version:
         raise ManifestError(f"{manifest_path}.version must be a non-empty string")
+    if not VERSION_RE.match(version):
+        raise ManifestError(
+            f"{manifest_path}.version {version!r} must be semver: MAJOR.MINOR.PATCH, "
+            f"optionally with -pre-release or +build"
+        )
+
+    name = raw.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ManifestError(f"{manifest_path}.name must be a non-empty string")
+    publisher = raw.get("publisher")
+    if not isinstance(publisher, str):
+        raise ManifestError(f"{manifest_path}.publisher must be a string")
 
     templates_raw = raw.get("templates") or []
     if not isinstance(templates_raw, list) or not templates_raw:
@@ -517,8 +536,8 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
         package_id=package_id,
         major=major,
         version=version,
-        name=str(raw.get("name", package_id)),
-        publisher=str(raw.get("publisher", "")),
+        name=name,
+        publisher=publisher,
         description=str(raw.get("description", "")),
         license=raw.get("license") if isinstance(raw.get("license"), str) else None,
         templates=templates,

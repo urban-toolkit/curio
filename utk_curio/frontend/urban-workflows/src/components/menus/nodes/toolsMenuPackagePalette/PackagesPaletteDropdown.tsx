@@ -5,15 +5,13 @@ import {
     faChevronRight,
     faCube,
 } from "@fortawesome/free-solid-svg-icons";
-import { packagesApi, toApiPayload, partitionPalettePackageGroups } from "../../../../services/packages";
+import { packagesApi, partitionPalettePackageGroups } from "../../../../services/packages";
 import { PaletteDragHint } from "../PaletteDragHint";
 import type { PackagePayload } from "../../../../services/packages";
 import { subscribeToRegistry } from "../../../../registry";
 import { usePackagePalette } from "../../../../providers/packages/PackagePaletteContext";
 import { useNodeCatalogDrawer } from "../../../../providers/packages/NodeCatalogDrawerProvider";
 import { useToastContext } from "../../../../providers/ToastProvider";
-import { useStarterContext } from "../../../../providers/StarterProvider";
-import { draftFromInstalledPackagePayload } from "../../../../utils/palettePackageFactoryDraft";
 import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";
@@ -37,7 +35,6 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
     const packagePaletteScrollRef = useRef<HTMLDivElement>(null);
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { showToast } = useToastContext();
-    const { getStarters } = useStarterContext();
     const {
         activePackageKey,
         setActivePackageKey,
@@ -160,11 +157,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
             }
             setPublishingPackageKey(dirName);
             try {
-                const draft = draftFromInstalledPackagePayload(row, getStarters);
-                await packagesApi.factoryPublishCatalog({
-                    ...(toApiPayload(draft) as Record<string, unknown>),
-                    replace: true,
-                });
+                await packagesApi.publishToCatalog(dirName, { replace: true });
                 setPaletteCatalogSnapshot((prev) => {
                     if (!prev) return prev;
                     const nextPublished = new Set(prev.publishedDirNames);
@@ -178,7 +171,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({
                 setPublishingPackageKey(null);
             }
         },
-        [getStarters, showToast],
+        [showToast],
     );
 
     const totalPackagesDisplayed = useMemo(
