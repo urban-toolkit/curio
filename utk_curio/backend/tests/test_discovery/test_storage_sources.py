@@ -204,9 +204,11 @@ class TestTheShippedExample:
         rows = {r["resourceId"]: r for r in body["resources"]}
         assert set(rows) == {
             "air-quality", "stations", "roads", "parks", "orthos", "dashcam", "survey", "noise",
+            "mapillary",
         }
         assert body["unmatched"] == 0
         assert rows["orthos"]["kind"] == "rasters" and rows["orthos"]["fileCount"] == 4
+        assert rows["mapillary"]["kind"] == "images" and rows["mapillary"]["fileCount"] == 40
         assert rows["dashcam"]["fileCount"] == 10
         assert rows["survey"]["kind"] == "media"
         assert rows["noise"]["formats"] == ["collection"]
