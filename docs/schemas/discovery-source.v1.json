@@ -571,9 +571,10 @@
             "integer",
             "boolean",
             "text",
-            "url"
+            "url",
+            "tags"
           ],
-          "description": "area: a box or named areas; dateRange: a start and an end date; choice: one or more listed values; number and integer: within min and max; boolean; text: matching pattern; url: an https link."
+          "description": "area: a box or named areas; dateRange: a start and an end date; choice: one or more listed values; number and integer: within min and max; boolean; text: matching pattern; url: an https link; tags: 1 to 16 OpenStreetMap tags, each key=value or key=*."
         },
         "label": {
           "type": "string",
@@ -664,6 +665,16 @@
           "type": "string",
           "format": "date",
           "description": "dateRange: the latest date."
+        },
+        "suggestions": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.\\-]{0,63}$"
+          },
+          "description": "tags: OpenStreetMap keys the field suggests, such as amenity or shop."
         }
       }
     }

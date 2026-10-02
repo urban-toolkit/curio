@@ -287,12 +287,13 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 | Field | What it declares |
 |---|---|
 | `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`; none for the others. |
-| `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), or `url` (https). |
+| `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), `url` (https), or `tags` (1 to 16 OpenStreetMap tags, each `key=value` or `key=*`, in any order). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
 | `accepts` | For an `area`: `box`, `names`, or both. `socrata` and `wfs` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
+| `suggestions` | For `tags`: OpenStreetMap keys the field offers as you type, such as `amenity` or `shop`. |
 
 A Socrata dataset takes an area when it has a point, location, line or polygon column, and keeps the rows inside the box. A WFS layer takes it as its `bbox`.
 

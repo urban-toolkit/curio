@@ -27,8 +27,10 @@ class TestManifest:
             {"id": "panoramasOnly", "type": "boolean", "label": "Panoramas only"},
             {"id": "tags", "type": "text", "label": "Tags", "pattern": r"[a-z_]+"},
             {"id": "link", "type": "url", "label": "Link"},
+            {"id": "osmTags", "type": "tags", "label": "Tags", "suggestions": ["amenity", "shop"]},
         )
         assert [s.type for s in specs] == list(P.PARAMETER_TYPES)
+        assert specs[-1].suggestions == ("amenity", "shop")
         assert specs[2].default == "1024" and specs[4].default == 50
 
     @pytest.mark.parametrize("entry, says", [
@@ -155,3 +157,71 @@ class TestIdentity:
     def test_the_area_of_a_box(self):
         # One degree of latitude by one of longitude at the equator: about 12,364 km2.
         assert P.box_area_km2([0, 0, 1, 1]) == pytest.approx(12364, rel=0.01)
+
+
+TAGS = {"id": "tags", "type": "tags", "label": "Tags", "required": True}
+
+
+class TestTags:
+    @pytest.mark.parametrize("entries, kept", [
+        (["amenity=school"], ["amenity=school"]),
+        ([" amenity = school "], ["amenity=school"]),
+        (["shop=*", "amenity=school"], ["amenity=school", "shop=*"]),
+        (["amenity=school", "amenity=school"], ["amenity=school"]),
+        (["amenity=school", "amenity=*", "amenity=cafe"], ["amenity=*"]),
+        (["name=Joe's Pizza", "addr:street=Golf Road"], ["addr:street=Golf Road", "name=Joe's Pizza"]),
+        (["building:levels=2"], ["building:levels=2"]),
+    ])
+    def test_entries_are_normalized(self, entries, kept):
+        assert P.validate_values(_declare(TAGS), {"tags": entries}) == {"tags": kept}
+
+    @pytest.mark.parametrize("entries, says", [
+        (["amenity"], "is not a tag"),
+        (["amenity="], "is not a tag"),
+        (["=school"], "is not a tag"),
+        (["=*"], "is not a tag"),
+        (["na me=x"], "is not a tag"),
+        (['name="x"'], "is not a tag"),
+        (["name=a[b]"], "is not a tag"),
+        (["name=a\\b"], "is not a tag"),
+        (["name=a\nb"], "is not a tag"),
+        (["name=" + "x" * 256], "is not a tag"),
+        (["k" * 65 + "=x"], "is not a tag"),
+        ([42], "is not a tag"),
+        ("amenity=school", "one or more tags"),
+        ([f"k{i}=*" for i in range(17)], "at most 16 tags"),
+    ])
+    def test_refusals_name_the_entry(self, entries, says):
+        with pytest.raises(P.ParameterError, match=says):
+            P.validate_values(_declare(TAGS), {"tags": entries})
+
+    def test_none_is_refused_when_required(self):
+        with pytest.raises(P.ParameterError, match="Tags is required"):
+            P.validate_values(_declare(TAGS), {"tags": []})
+
+    def test_the_same_tags_in_another_order_are_the_same_answer(self):
+        declared = _declare(TAGS)
+        a = P.validate_values(declared, {"tags": ["shop=*", "amenity=school"]})
+        b = P.validate_values(declared, {"tags": ["amenity=school", "shop=*", "shop=bakery"]})
+        assert P.values_hash(a) == P.values_hash(b)
+
+    def test_suggestions_are_keys_on_tags_only(self):
+        with pytest.raises(P.ManifestParameterError, match="tags only"):
+            _declare({"id": "a", "type": "text", "label": "A", "suggestions": ["amenity"]})
+        with pytest.raises(P.ManifestParameterError, match="OpenStreetMap keys"):
+            _declare({**TAGS, "suggestions": ["amenity=*"]})
+        with pytest.raises(P.ManifestParameterError, match="OpenStreetMap keys"):
+            _declare({**TAGS, "suggestions": ["shop", "shop"]})
+        (spec,) = _declare({**TAGS, "suggestions": ["amenity", "shop"]})
+        assert P.parameter_row(spec)["suggestions"] == ["amenity", "shop"]
+
+    def test_a_default_is_checked_and_normalized(self):
+        (spec,) = _declare({**TAGS, "default": ["shop=*", "amenity=*"]})
+        assert spec.default == ["amenity=*", "shop=*"]
+        with pytest.raises(P.ManifestParameterError, match="is not a tag"):
+            _declare({**TAGS, "default": ["amenity"]})
+
+    def test_the_label_names_up_to_three(self):
+        assert P.tags_label(["amenity=school"]) == "amenity=school"
+        assert P.tags_label(["a=*", "b=*", "c=*", "d=*", "e=*"]) == "a=*, b=*, c=* or 2 more"
+        assert P.tags_label(["name=" + "x" * 60]) == "name=" + "x" * 34 + "…"
