@@ -299,6 +299,16 @@ REJECTED = {
     "unknown dataset origin": lambda d: d["dataflow"].update(
         datasets=[{"datasetId": "d1", "origin": "elsewhere"}]
     ),
+    # The node settings config is stored without the editor's port row ids and
+    # without the code copy, which the node's content already holds (#412).
+    "node settings port carrying its editor row id": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={
+            "inputPorts": [{"id": "k3j9x0a1", "types": ["DATAFRAME"], "cardinality": "1"}]
+        }
+    ),
+    "node settings carrying a code copy": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={"hasCode": True, "sourceCode": "return arg"}
+    ),
     # The value the old widget built from "Merge (AND)", which matched no mode (#581).
     "data pool mode that is no resolution type": lambda d: _node(d)["metadata"].update(
         dataPool={"betweenCharts": "MERGE_(AND)"}
@@ -327,9 +337,6 @@ ACCEPTED = {
     ),
     "empty graph": lambda d: d["dataflow"].update(nodes=[], edges=[]),
     "fractional coordinates": lambda d: _node(d).update(x=12.5, y=-3.25),
-    "data pool modes": lambda d: _node(d)["metadata"].update(
-        dataPool={"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"}
-    ),
 }
 
 
@@ -501,6 +508,53 @@ WRITER_SHAPES = {
                     },
                 },
             }
+        ]
+    ),
+    # Written by TrillGenerator from the node settings modal (#412).
+    "node settings config": _flow(
+        nodes=[
+            {
+                **AGENT_NODE,
+                "metadata": {
+                    "packageTemplateLabel": "Clean the parcels",
+                    "packageTemplateConfig": {
+                        "label": "Clean the parcels",
+                        "category": "computation",
+                        "engine": "python",
+                        "editor": "code",
+                        "description": "Drops parcels without a zoning code",
+                        "hasCode": True,
+                        "hasWidgets": False,
+                        "hasGrammar": False,
+                        "hasProvenance": False,
+                        "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                        "outputPorts": [
+                            {"types": ["DATAFRAME", "JSON"], "cardinality": "[1,n]"}
+                        ],
+                        "sourceFilename": "clean.py",
+                    },
+                },
+            }
+        ]
+    ),
+    # Written by TrillGenerator from a Data Pool's two selects (#581): only the
+    # modes that are not OVERWRITE.
+    "data pool conflict modes": _flow(
+        nodes=[
+            {
+                "id": "pool-1",
+                "type": "curio.builtin/data-pool",
+                "x": 1,
+                "y": 2,
+                "metadata": {"dataPool": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"}},
+            },
+            {
+                "id": "pool-2",
+                "type": "curio.builtin/data-pool",
+                "x": 3,
+                "y": 4,
+                "metadata": {"dataPool": {"betweenCharts": "MERGE_AND"}},
+            },
         ]
     ),
     "dashboard placement": _flow(

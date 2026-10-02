@@ -728,8 +728,9 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
 # refresh cannot tell that apart from the user changing their copy, because
 # both make the two differ, so the seed-state record says where the copy came
 # from. These tests pin the rule and its limits: a copy nobody changed
-# refreshes, a copy the user changed is kept, a copy from before the record
-# keeps the old rule once, and a copy the user removed does not come back.
+# refreshes, a copy the user changed is kept, a copy with no origin on record
+# refreshes only when it is provably an earlier catalog copy, and a copy the
+# user removed does not come back.
 # ---------------------------------------------------------------------------
 
 PROBE_DIR = "ai.utk.uhvi@1"
@@ -805,25 +806,144 @@ def test_a_stale_installed_package_is_refreshed_from_the_catalog(
     assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
 
 
-@pytest.mark.parametrize("legacy_record", [None, {"seededAt": 1.0, "fixtureMtime": 1.0}],
-                         ids=["no-record", "old-seeder-record"])
-def test_a_copy_from_before_the_record_is_refreshed_once_then_recorded(
-    tmp_curio, real_fixtures_root, legacy_record,
+_LEGACY_RECORDS = pytest.mark.parametrize(
+    "legacy_record", [None, {"seededAt": 1.0, "fixtureMtime": 1.0}],
+    ids=["no-record", "old-seeder-record"],
+)
+
+
+def _catalog_once_shipped(monkeypatch, dir_name: str, digest: str) -> None:
+    """Make *digest* one the catalog shipped for *dir_name* in an earlier release."""
+    known = {**seed_state.legacy_catalog_digests(), dir_name: frozenset({digest})}
+    monkeypatch.setattr(seed_state, "legacy_catalog_digests", lambda: known)
+
+
+@_LEGACY_RECORDS
+def test_an_untouched_copy_from_before_the_record_is_refreshed_once_then_recorded(
+    tmp_curio, movable_catalog, monkeypatch, legacy_record,
 ):
-    """A copy with no origin on record keeps the old rule. Before #564 every
-    listing reverted any difference, so a difference it still has is the
-    catalog's, not the user's. The pass that refreshes it records it."""
-    install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
-    probe = _probe_file("guest", PROBE_DIR)
-    catalog_bytes = (real_fixtures_root / PROBE_DIR / "manifest.json").read_bytes()
-    _diverge_store_copy(probe)
+    """#194 for a copy with no origin on record: it is byte for byte an earlier
+    release's catalog copy, so an upgrade reaches it. The pass that refreshes
+    it records it, so later passes follow the ordinary catalog track."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    _catalog_once_shipped(monkeypatch, PROBE_DIR, _store_digest("guest", PROBE_DIR))
     seed_state.put("guest", PROBE_DIR, legacy_record)
-    assert probe.read_bytes() != catalog_bytes
+
+    upgraded = _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert _probe_file("guest", PROBE_DIR).read_bytes() == upgraded
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+@_LEGACY_RECORDS
+def test_a_changed_copy_with_no_origin_on_record_is_kept_as_the_users(
+    tmp_curio, movable_catalog, legacy_record,
+):
+    """The audit's P1: a copy with no origin on record that differs from the
+    catalog and is not a catalog copy may be the user's work. A record from
+    before #564 looks like this, and so does one that was lost: a corrupt or
+    missing state file, or a record write that failed. It is kept, recorded as
+    the user's, and still kept after the catalog moves."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    _diverge_store_copy(probe)
+    changed = probe.read_bytes()
+    seed_state.put("guest", PROBE_DIR, legacy_record)
 
     seed_dev_packages(user_key="guest")
 
-    assert probe.read_bytes() == catalog_bytes
-    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+    assert probe.read_bytes() == changed, "the catalog's copy replaced a copy that may be the user's"
+    rec = _state()[PROBE_DIR]
+    assert rec.get("installedAt") is not None and "catalogCopy" not in rec
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == changed
+
+
+@_LEGACY_RECORDS
+def test_a_copy_from_before_the_record_edited_in_place_is_kept(
+    tmp_curio, movable_catalog, monkeypatch, legacy_record,
+):
+    """A metadata edit before #564 rewrote ``manifest.json`` and left
+    ``integrity.json`` alone, so the copy's map is still a catalog map. Its
+    files no longer match that map, and that is what shows the edit."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    _catalog_once_shipped(monkeypatch, PROBE_DIR, _store_digest("guest", PROBE_DIR))
+    probe = _probe_file("guest", PROBE_DIR)
+    edited = json.loads(probe.read_text(encoding="utf-8"))
+    edited["description"] = "My own notes"
+    probe.write_text(json.dumps(edited, indent=2), encoding="utf-8")
+    seed_state.put("guest", PROBE_DIR, legacy_record)
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert json.loads(probe.read_text(encoding="utf-8"))["description"] == "My own notes"
+
+
+def test_the_shipped_catalog_digest_history_is_well_formed():
+    """The frozen history the rule above reads. Not tied to the current
+    catalog: a copy whose digest postdates the file is kept, which is safe."""
+    import re
+
+    history = seed_state.legacy_catalog_digests()
+    for dir_name in (
+        "ai.utk.uhvi@1", "curio.example-ui@1", "curio.media@1",
+        "curio.streetvision@1", "curio.weather@1",
+    ):
+        assert history.get(dir_name), f"no catalog digests for {dir_name}"
+        assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in history[dir_name])
+
+
+@pytest.mark.parametrize("writer", ["install", "uninstall", "metadata-edit"])
+def test_store_writers_wait_for_the_store_lock(tmp_curio, real_fixtures_root, writer):
+    """Installs, uninstalls and metadata edits change the store under the lock
+    the seeder swaps under (memo dev/99). Without it, a seeding pass could
+    decide to refresh a copy and then swap the catalog's over a change that
+    landed in between, and a reader could see the package missing."""
+    from utk_curio.backend.app.packages.application.metadata import patch_package_metadata
+    from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+
+    if writer != "install":
+        install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    run = {
+        "install": lambda: install_package_from_directory("guest", real_fixtures_root / PROBE_DIR),
+        "uninstall": lambda: uninstall_package("guest", PROBE_DIR),
+        "metadata-edit": lambda: patch_package_metadata("guest", PROBE_DIR, {"description": "mine"}),
+    }[writer]
+    done = threading.Event()
+    errors: list[BaseException] = []
+
+    def _snapshot() -> list[tuple[str, int, int]]:
+        base = user_packages_dir("guest")
+        return sorted(
+            (str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size)
+            for p in base.rglob("*") if p.is_file() and p.name != ".seed.lock"
+        )
+
+    def _write():
+        try:
+            run()
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+        finally:
+            done.set()
+
+    with package_seed_lock("guest"):
+        before = _snapshot()
+        worker = threading.Thread(target=_write)
+        worker.start()
+        finished_early = done.wait(2.0)
+        during = _snapshot()
+    worker.join(60)
+
+    assert not errors, errors
+    assert not finished_early, f"the {writer} finished while the store lock was held"
+    assert during == before, f"the {writer} changed the store while the lock was held"
+    assert done.is_set()
 
 
 def test_a_copy_from_before_the_record_that_matches_the_catalog_is_adopted(

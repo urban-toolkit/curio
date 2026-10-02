@@ -12,7 +12,8 @@
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
 import type { HandCategories } from "./utils/dataflowCategories";
-import { savedDataPoolModes } from "./utils/dataPoolModes";
+import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
+import { dataPoolToSpec } from "./utils/dataPoolSpec";
 
 export class TrillGenerator {
 
@@ -316,11 +317,23 @@ export class TrillGenerator {
                 trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
             }
 
-            // #581: a Data Pool's conflict modes persist at metadata.dataPool,
-            // only those that are not Overwrite, so an untouched pool
-            // serializes as it did before.
-            const dataPool = savedDataPoolModes(node.data.dataPool);
-            if(dataPool){
+            // #412: the rest of what the node settings modal saved
+            // (data.packageTemplateConfig) persists at
+            // metadata.packageTemplateConfig, without the code copy and the
+            // port row ids (utils/canvasTemplateConfigSpec).
+            const packageTemplateConfig = canvasTemplateConfigToSpec(node.data.packageTemplateConfig);
+            if(packageTemplateConfig != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateConfig = packageTemplateConfig;
+            }
+
+            // #581: a Data Pool's conflict modes (data.dataPool) persist at
+            // metadata.dataPool, only those that are not Overwrite, so an
+            // untouched pool serializes as it did before (utils/dataPoolSpec).
+            const dataPool = dataPoolToSpec(node.data.dataPool);
+            if(dataPool != undefined){
                 if(trill_node.metadata == undefined)
                     trill_node.metadata = {};
 

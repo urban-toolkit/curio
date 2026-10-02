@@ -10,7 +10,7 @@ import { reportNodeRuntime } from '../../services/nodeRuntimeReport';
 import { ResolutionType } from '../../constants';
 import { isSelectionEcho } from '../../utils/selectionEcho';
 import { columnRows, featureRows, isActiveSelect, matchSelections } from '../../utils/selectionMatch';
-import { dataPoolMode, DataPoolModes } from '../../utils/dataPoolModes';
+import { dataPoolMode, DataPoolModes } from '../../utils/dataPoolSpec';
 import { copyForFlags } from '../../utils/poolFlagCopy';
 
 /** The charts joined to a pool by an interaction edge. */

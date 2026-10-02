@@ -13,7 +13,10 @@
  * every load. That is how the Spatial Join in example 15 ran with the default
  * `name` property although the file said `zip` (#262), and how a Simple View
  * pinned to one image column (#276) forgot the choice on reopen. A renamed
- * node header (`metadata.packageTemplateLabel`, #412) must take the same path.
+ * node header (`metadata.packageTemplateLabel`, #412) must take the same path,
+ * and so must the rest of the node settings modal's config
+ * (`metadata.packageTemplateConfig`, #412), which goes through a converter on
+ * the way in, and a Data Pool's conflict modes (`metadata.dataPool`, #581).
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -31,7 +34,7 @@ function generateCodeNodeSource(): string {
     return USE_CODE.slice(start, end);
 }
 
-const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "dataPool"];
+const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool"];
 
 describe("per-node settings survive a load", () => {
     test.each(RESTORED_KEYS)(
@@ -65,6 +68,7 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/spatialJoin\?: \{ nameProperty\?: string; output\?: "points" \| "polygons" \};/);
         expect(typeBlock).toMatch(/simpleVis\?: \{ imageColumn\?: string \};/);
         expect(typeBlock).toMatch(/packageTemplateLabel\?: string;/);
+        expect(typeBlock).toMatch(/packageTemplateConfig\?: Partial<CanvasTemplateConfig>;/);
         expect(typeBlock).toMatch(/dataPool\?: \{ insideChart\?: string; betweenCharts\?: string \};/);
     });
 });

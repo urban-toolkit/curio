@@ -13,7 +13,9 @@ import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
 import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
-import { savedDataPoolModes } from "../utils/dataPoolModes";
+import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
+import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
+import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -66,6 +68,9 @@ type CreateCodeNodeOptions = {
     // #412: a renamed node header (metadata.packageTemplateLabel), which the
     // header reads through resolveNodeDisplayLabel.
     packageTemplateLabel?: string;
+    // #412: the rest of what the node settings modal saved
+    // (metadata.packageTemplateConfig), which the editor tabs read.
+    packageTemplateConfig?: Partial<CanvasTemplateConfig>;
     // #581: a Data Pool's conflict modes (metadata.dataPool).
     dataPool?: { insideChart?: string; betweenCharts?: string };
     // #407: a node whose saved output a project load restored mounts as having
@@ -235,9 +240,13 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
                 nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
 
-            // #581: and so do a Data Pool's conflict modes, the valid ones.
+            // #412: and the rest of the node settings config, with fresh port ids.
+            if(node.metadata != undefined && node.metadata.packageTemplateConfig != undefined)
+                nodeMeta.packageTemplateConfig = canvasTemplateConfigFromSpec(node.metadata.packageTemplateConfig);
+
+            // #581: and a Data Pool's conflict modes, the ones that name a mode.
             if(node.metadata != undefined && node.metadata.dataPool != undefined)
-                nodeMeta.dataPool = savedDataPoolModes(node.metadata.dataPool);
+                nodeMeta.dataPool = dataPoolFromSpec(node.metadata.dataPool);
 
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
@@ -396,6 +405,7 @@ export function useCode(): IUseCode {
             spatialJoin = undefined,
             simpleVis = undefined,
             packageTemplateLabel = undefined,
+            packageTemplateConfig = undefined,
             dataPool = undefined,
             output = undefined,
             executedCode = undefined,
@@ -443,6 +453,7 @@ export function useCode(): IUseCode {
                 spatialJoin,
                 simpleVis,
                 packageTemplateLabel,
+                packageTemplateConfig,
                 dataPool,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
