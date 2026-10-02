@@ -74,8 +74,10 @@ class _TransformersRunner:
             from transformers import AutoImageProcessor, AutoModelForSemanticSegmentation
         except ImportError as exc:
             raise RuntimeError(
-                "This model runs on Transformers, which this Curio does not have: install "
-                "the Street Vision Transformers package from the Node Catalog."
+                "This model runs on Transformers, and torch or transformers is not installed "
+                "here. They install when the model is added: delete it from your Model Catalog "
+                "and add it again from the Discovery Catalog, or ask whoever runs this Curio "
+                "to install torch, transformers and safetensors."
             ) from exc
         checkpoint = os.path.join(folder, manifest.get("entry") or "files")
         self.torch = torch

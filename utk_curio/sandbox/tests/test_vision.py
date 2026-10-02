@@ -176,5 +176,7 @@ def test_a_transformers_model_without_its_libraries_says_what_to_install(tmp_pat
     (model / "files").mkdir(parents=True)
     (model / "manifest.json").write_text(json.dumps({"runtime": "transformers", "entry": "files"}), encoding="utf-8")
     frame, _helpers = photos
-    with pytest.raises(RuntimeError, match="runs on Transformers"):
+    # The way out it names has to exist: adding the model is what installs them.
+    with pytest.raises(RuntimeError, match="runs on Transformers.*add it again from the Discovery "
+                                           "Catalog.*torch, transformers and safetensors"):
         make_curio_segment(None)(frame, str(model), None)
