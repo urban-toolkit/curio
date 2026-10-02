@@ -208,6 +208,8 @@ def _apply_rlimits(limits):
         _set(resource.RLIMIT_AS,
              baseline + budget if baseline is not None else None,
              "RLIMIT_AS")
+        # The malloc arenas this budget allows are capped in the zygote's
+        # environment, which every child inherits: lifecycle.zygote_environment.
 
     cpu_seconds = limits.get("cpu_seconds")
     _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
