@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from io import BytesIO
 from typing import TYPE_CHECKING
 
+import allure
 import pytest
 
 from .utils import (
     _AUTK_MAP_PIXELS_JS,
-    assert_autark_map_drawn,
     changed_pixels,
     node_locator,
     play_node,
@@ -246,13 +248,37 @@ def test_a_dataframe_with_a_geometry_column_is_drawn(
 
 def _map_image(page, node_id: str):
     import base64
-    from io import BytesIO
 
     from PIL import Image
 
     url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
-    assert url, f"Autark node {node_id} has no map canvas"
+    if not url:
+        return None
     return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
+
+
+def _footprints_drawn(page, node_id: str, *, timeout: float = 30000):
+    """The map canvas once the footprints show: more than 5% of it unlike its
+    corner, which is background. (Three flat boxes hold too few colours for
+    ``assert_autark_map_drawn``, which is made for whole maps.)"""
+    deadline = time.monotonic() + timeout / 1000
+    image, drawn = None, 0.0
+    while True:
+        image = _map_image(page, node_id)
+        if image is not None:
+            background = image.getpixel((0, 0))
+            unlike = sum(1 for pixel in image.getdata()
+                         if max(abs(a - b) for a, b in zip(pixel, background)) > 6)
+            drawn = unlike / (image.width * image.height)
+        if drawn > 0.05 or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    assert image is not None, f"Autark node {node_id} has no map canvas"
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    allure.attach(buffer.getvalue(), name=f"{node_id}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+    assert drawn > 0.05, f"Autark node {node_id}: only {drawn:.1%} of its map canvas shows anything"
+    return image
 
 
 def test_a_frame_that_names_its_layer_buildings_draws_every_building(
@@ -275,17 +301,18 @@ def test_a_frame_that_names_its_layer_buildings_draws_every_building(
     _require_webgpu(page)
 
     run_all_and_wait(page, timeout_ms=180000)
+    drawn = {}
     for node_id in (typed_map, untyped_map):
         status = wait_for_node_settled(page, node_id, node_type="autk-grammar", timeout_ms=120000)
         detail = read_node_error_text(node_locator(page, node_id)) if status == "error" else ""
         assert status == "done", f"{node_id} did not draw: {detail}"
-        assert_autark_map_drawn(page, node_id, attach_as=node_id)
+        drawn[node_id] = _footprints_drawn(page, node_id)
 
     # autk-map says so when it drops a building for want of a height.
     assert culled == [], culled
     # The same rows, the same camera: only the layer they are drawn as differs
     # (autk-map's buildings colour and shading against its polygons colour).
-    typed, untyped = _map_image(page, typed_map), _map_image(page, untyped_map)
+    typed, untyped = drawn[typed_map], drawn[untyped_map]
     share = changed_pixels(untyped, typed, threshold=6) / (typed.width * typed.height)
     assert share > 0.01, (
         f"the map drew the frame named buildings as it drew the plain one: {share:.2%} of its pixels differ"
