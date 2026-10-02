@@ -1,6 +1,6 @@
 # Example: Street-level computer vision
 
-This example labels every pixel of 40 Mapillary street photos taken around Lincoln Park in Chicago, tags each photo with the neighborhood it was taken in, and draws what dominates each neighborhood's streets as a polygon map and a bar chart. The use case is *urban greenery audits*, showing which streets are leafy and which are paved, but the same pipeline works for any class a segmentation model labels: sidewalks, traffic signs, building facades, and so on.
+This example labels every pixel of 40 Mapillary street photos taken around Lincoln Park in Chicago, tags each photo with the neighborhood it was taken in, and draws what dominates each neighborhood's streets as a map of the photos and a bar chart. The use case is *urban greenery audits*, showing which streets are leafy and which are paved, but the same pipeline works for any class a segmentation model labels: sidewalks, traffic signs, building facades, and so on.
 
 It runs two routes over the same photos. Route 1 uses **DDRNet23-Slim**, the model that ships with Curio, and needs no network. Route 2 uses a model you add from Hugging Face.
 
@@ -23,7 +23,7 @@ flowchart LR
   P --> S1 --> G1 --> SJ1[Spatial Join]
   %% Simple View passes its input straight through, so the join sees the same frame.
   L --> T --> SJ1
-  SJ1 --> V1[`Vega-Lite`<br/>polygon map]
+  SJ1 --> V1[`Vega-Lite`<br/>photo map]
   SJ1 --> V2[`Vega-Lite`<br/>per-neighborhood bar]
   P --> S2 --> G2 --> SJ2[Spatial Join]
   T --> SJ2
@@ -132,7 +132,7 @@ The node emits the input points augmented with:
 - `neighborhood_point_count`: how many photos fell in the same neighborhood.
 - `neighborhood_dominant_class` / `neighborhood_dominant_pct`: per-neighborhood roll-ups of the photos' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
 
-A `Vega-Lite` node wired to the join draws the polygon map, each neighborhood colored by its dominant class:
+A `Vega-Lite` node wired to the join maps the photos, each colored by the dominant class of its neighborhood:
 
 ```json
 {

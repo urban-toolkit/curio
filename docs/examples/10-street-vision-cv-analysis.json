@@ -101,7 +101,7 @@
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"neighborhood_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"neighborhood\", \"title\": \"neighborhood\"},\n          {\"field\": \"neighborhood_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"neighborhood_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Polygon map: each neighborhood colored by its dominant detected class.",
+        "goal": "Map of the photos: each colored by the dominant class of its neighborhood.",
         "metadata": {
           "keywords": []
         }

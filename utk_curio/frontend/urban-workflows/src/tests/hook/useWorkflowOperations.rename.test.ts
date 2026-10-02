@@ -45,10 +45,12 @@ import { projectsApi } from "../../api/projectsApi";
 /**
  * `setWorkflowName` is threaded in from FlowProvider, so the fake has to write
  * `workflowNameRef` too — that ref is what the spec serializer reads, and the
- * whole bug is the two drifting apart.
+ * whole bug is the two drifting apart. `setWorkflowDescription` comes from the
+ * same place and writes its ref the same way.
  */
 const makeDeps = () => {
   const workflowNameRef = { current: "Loaded name" };
+  const workflowDescriptionRef = { current: "" };
   return {
     nodes: [],
     edges: [],
@@ -62,8 +64,10 @@ const makeDeps = () => {
       workflowNameRef.current = n;
     }),
     workflowNameRef,
-    setWorkflowDescription: jest.fn(),
-    workflowDescriptionRef: { current: "" },
+    setWorkflowDescription: jest.fn((d: string) => {
+      workflowDescriptionRef.current = d || "";
+    }),
+    workflowDescriptionRef,
     onEdgesDelete: jest.fn(),
     onNodesDelete: jest.fn(),
     onNodesChange: jest.fn(),
@@ -184,6 +188,44 @@ describe("discardProject (#428)", () => {
     });
 
     expect(deps.workflowNameRef.current).toBe("DefaultDataflow");
+  });
+
+  it("clears the goal and the description, so the new dataflow's first save sends neither", async () => {
+    // Only loadParsedTrill ever set these two, and File > New does not go
+    // through it, so the previous dataflow's goal and description rode along
+    // into the new one's first save.
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+    await loadedProject(result, "Autark PBF loading");
+    act(() => {
+      result.current.setWorkflowGoal("Find the hottest blocks");
+      deps.setWorkflowDescription("Surface temperature per block");
+    });
+    expect(result.current.workflowGoal).toBe("Find the hottest blocks");
+
+    act(() => {
+      result.current.discardProject();
+    });
+
+    expect(result.current.workflowGoal).toBe("");
+    expect(deps.workflowDescriptionRef.current).toBe("");
+
+    // What the save actually serializes: generateTrill(nodes, edges, name,
+    // goal, packages, description, ...).
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-2",
+      name: "DefaultDataflow",
+      spec: { dataflow: { datasets: [], packages: [] } },
+    });
+    const { TrillGenerator } = jest.requireMock("../../TrillGenerator");
+    (TrillGenerator.generateTrill as jest.Mock).mockClear();
+    await act(async () => {
+      await result.current.saveCurrentProject();
+    });
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    const args = (TrillGenerator.generateTrill as jest.Mock).mock.calls[0];
+    expect(args[3]).toBe("");
+    expect(args[5]).toBe("");
   });
 });
 
