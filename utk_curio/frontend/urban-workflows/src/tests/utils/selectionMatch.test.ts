@@ -79,6 +79,35 @@ describe('matchSelections', () => {
       .toEqual([1, 3]);
   });
 
+  test('MERGE_AND keeps the rows every active selection picked, and skips a cleared one', () => {
+    const fromBar = { priority: 0, details: { highlight: { type: POINT, data: [0, 1], priority: 1 } } };
+    const fromScatter = { priority: 1, details: { brush: { type: INTERVAL, data: { value: [20, 40] }, priority: 1 } } };
+    // A chart that mounted and selected nothing, and one whose brush was cleared.
+    const fromMap = { priority: 0, details: { pick: { type: UNDETERMINED, data: [], priority: 1 } } };
+    const fromHistogram = { priority: 0, details: { brush: { type: INTERVAL, data: {}, priority: 1 } } };
+    const between = { between: ResolutionType.MERGE_AND };
+
+    expect(matchSelections([fromBar, fromScatter], rows, between)).toEqual([1]);
+    expect(matchSelections([fromBar, fromScatter, fromMap, fromHistogram], rows, between)).toEqual([1]);
+    expect(matchSelections([fromMap, fromHistogram], rows, between)).toEqual([]);
+    // An active brush that covers no row is a selection of nothing.
+    const empty = { priority: 1, details: { brush: { type: INTERVAL, data: { value: [11, 12] }, priority: 1 } } };
+    expect(matchSelections([fromBar, empty], rows, between)).toEqual([]);
+  });
+
+  test("MERGE_AND inside a chart skips the chart's selects that hold nothing", () => {
+    const chart = {
+      priority: 1,
+      details: {
+        click: { type: POINT, data: [0, 1], priority: 0 },
+        brush: { type: INTERVAL, data: {}, priority: 1 },
+      },
+    };
+    expect(matchSelections([chart], rows, { plot: ResolutionType.MERGE_AND })).toEqual([0, 1]);
+    // OVERWRITE still reads the newest select, cleared or not.
+    expect(matchSelections([chart], rows)).toEqual([]);
+  });
+
   test("Autark's map pick is a select like any other", () => {
     const pick = {
       priority: 1,

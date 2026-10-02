@@ -19,6 +19,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .utils import (
+    at_fraction,
+    brush_area,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -65,6 +67,21 @@ SCATTER_SPEC = """{
     "y": {"field": "score", "type": "quantitative"},
     "color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}
   }
+}"""
+
+
+# The scatterplot with a brush of its own. No grid, so the light grey a Vega
+# brush paints is the only grey in its canvas.
+SCATTER_BRUSH_SPEC = """{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "params": [{"name": "brush", "select": {"type": "interval"}}],
+  "mark": {"type": "point", "filled": true, "size": 400, "opacity": 1},
+  "encoding": {
+    "x": {"field": "value", "type": "quantitative"},
+    "y": {"field": "score", "type": "quantitative"},
+    "color": {"condition": {"test": "datum.interacted === '1'", "value": "red"}, "value": "blue"}
+  },
+  "config": {"axis": {"grid": false}}
 }"""
 
 
@@ -116,6 +133,24 @@ def _spec() -> dict:
             ],
         }
     }
+
+
+def _merge_spec() -> dict:
+    """The same pool, fed back by both charts: the scatterplot's brush reaches
+    it over an interaction edge of its own, beside the bar chart's hover."""
+    spec = _spec()
+    flow = spec["dataflow"]
+    flow["name"] = flow["provenance_id"] = "Merged selections"
+    for node in flow["nodes"]:
+        if node["id"] == SCATTER_ID:
+            node["content"] = SCATTER_BRUSH_SPEC
+    flow["edges"].append({
+        "type": "Interaction",
+        "id": f"reactflow__edge-{SCATTER_ID}in/out-{POOL_ID}in/out",
+        "source": SCATTER_ID,
+        "target": POOL_ID,
+    })
+    return spec
 
 
 def _direct_spec() -> dict:
@@ -193,6 +228,92 @@ _RED_PIXELS_JS = """(id) => {
 
 def _red_pixels(page, node_id: str) -> int:
     return page.evaluate(_RED_PIXELS_JS, node_id)
+
+
+# The bars of a bar chart, left to right, read along the lowest canvas row that
+# crosses all five: whether each is red, and a point inside it in the page.
+_BARS_JS = """(id) => {
+    const c = document.querySelector('#vega' + id + ' canvas');
+    if (!c || !c.width || !c.height) return null;
+    const w = c.width, h = c.height;
+    const px = c.getContext('2d').getImageData(0, 0, w, h).data;
+    const kind = (x, y) => {
+        const i = (y * w + x) * 4;
+        if (px[i + 3] < 200) return null;
+        if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] < 60) return 'red';
+        if (px[i + 2] > 200 && px[i] < 60 && px[i + 1] < 60) return 'blue';
+        return null;
+    };
+    const box = c.getBoundingClientRect();
+    for (let y = h - 1; y >= 4; y--) {
+        const runs = [];
+        let run = null;
+        for (let x = 0; x < w; x++) {
+            const k = kind(x, y);
+            if (k && run && run.kind === k) { run.x1 = x; continue; }
+            run = k ? { kind: k, x0: x, x1: x } : null;
+            if (run) runs.push(run);
+        }
+        const bars = runs.filter((r) => r.x1 - r.x0 >= 3);
+        if (bars.length === 5) {
+            return bars.map((r) => ({
+                red: r.kind === 'red',
+                x: box.left + ((r.x0 + r.x1 + 1) / 2) * (box.width / w),
+                y: box.top + (y - 3) * (box.height / h),
+            }));
+        }
+    }
+    return null;
+}"""
+
+# Red points in the scatterplot, counted by where they sit across: every row
+# has its own `value`, so each point takes its own band of columns. A brush
+# edge drawn over a point splits its pixels, never its columns, and a gap of a
+# few columns (a vertical edge) is bridged.
+_RED_POINTS_JS = """(id) => {
+    const c = document.querySelector('#vega' + id + ' canvas');
+    if (!c || !c.width || !c.height) return -1;
+    const w = c.width, h = c.height;
+    const px = c.getContext('2d').getImageData(0, 0, w, h).data;
+    const redInColumn = new Array(w).fill(0);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] < 60 && px[i + 3] > 200) redInColumn[x] += 1;
+        }
+    }
+    let points = 0, last = -100;
+    for (let x = 0; x < w; x++) {
+        if (redInColumn[x] < 2) continue;
+        if (x - last > 4) points += 1;
+        last = x;
+    }
+    return points;
+}"""
+
+# The light grey of a Vega brush (#333 at 12.5% over white) in a chart's canvas.
+_BRUSH_GREY_JS = """(id) => {
+    const c = document.querySelector('#vega' + id + ' canvas');
+    if (!c || !c.width || !c.height) return -1;
+    const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let grey = 0;
+    for (let i = 0; i < px.length; i += 4) {
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        if (px[i + 3] > 200 && r >= 215 && r <= 240 && Math.abs(r - g) < 4 && Math.abs(g - b) < 4) grey += 1;
+    }
+    return grey;
+}"""
+
+
+def _red_bars_once(page, count: int, *, timeout_ms: int = 15000) -> list[dict]:
+    """The bar chart's bars, once exactly *count* of them are red."""
+    bars = None
+    for _ in range(timeout_ms // 250):
+        bars = page.evaluate(_BARS_JS, BAR_ID)
+        if bars and sum(b["red"] for b in bars) == count:
+            return bars
+        page.wait_for_timeout(250)
+    raise AssertionError(f"expected {count} red bars, the bar chart shows {bars}")
 
 
 def _hover_bars_and_measure(page) -> tuple[bool, dict, int]:
@@ -278,3 +399,57 @@ def test_a_direct_edge_between_two_charts_highlights_the_other(
 
     _open(page, app_frontend, current_server, username="direct_selection", spec=_direct_spec())
     _assert_highlighted_not_rebuilt(*_hover_bars_and_measure(page))
+
+
+def test_merge_or_in_the_pool_keeps_both_charts_selections(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """Merge (OR) between charts (#581): the pool keeps each chart's latest
+    selection and flags the rows any of them picked. The brushed scatterplot
+    keeps its brush while the bar chart's hover adds a row."""
+    require_project_page()
+    require_user_auth()
+
+    _open(page, app_frontend, current_server, username="merged_selections", spec=_merge_spec())
+
+    between = node_locator(page, POOL_ID).get_by_label("Conflict between visualizations")
+    between.select_option("MERGE_OR")
+    assert between.input_value() == "MERGE_OR"
+
+    # First the scatterplot: a brush over its two leftmost points, Bob (10, 9)
+    # and Dave (20, 7). It starts between the points and runs up and left to
+    # the canvas's corner, past the plot's edge, where the brush stops. The
+    # corner is inside the canvas, where the node corrects the pointer's
+    # position for the canvas zoom; outside it, Vega would misplace the brush.
+    grey_before = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
+    area = brush_area(page, f"#vega{SCATTER_ID} canvas")
+    assert area, "the scatterplot drew no points to brush"
+    canvas = page.locator(f"#vega{SCATTER_ID} canvas").first.bounding_box()
+    assert canvas, "the scatterplot has no canvas box"
+    page.mouse.move(*at_fraction(area, (0.35, 0.5)))
+    page.mouse.down()
+    page.mouse.move(canvas["x"] + 3, canvas["y"] + 3, steps=8)
+    page.mouse.up()
+    bars = _red_bars_once(page, 2)
+    grey_brushed = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
+    assert grey_brushed > grey_before + 500, (
+        f"no brush on the scatterplot ({grey_before} grey pixels before, {grey_brushed} after)"
+    )
+
+    # Then the bar chart: the rightmost bar is Charlie (50), outside the brush.
+    page.mouse.move(bars[-1]["x"], bars[-1]["y"])
+    bars = _red_bars_once(page, 3)
+    assert [b["red"] for b in bars] == [True, True, False, False, True], (
+        f"the bar chart lit the wrong bars: {bars}"
+    )
+    # Let any late echo land before reading the scatterplot.
+    page.wait_for_timeout(1500)
+    assert page.evaluate(_RED_POINTS_JS, SCATTER_ID) == 3, (
+        "the scatterplot does not show the rows of both selections"
+    )
+    grey_now = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
+    assert grey_now >= 0.8 * grey_brushed, (
+        f"the scatterplot's brush went away ({grey_brushed} grey pixels, now {grey_now})"
+    )

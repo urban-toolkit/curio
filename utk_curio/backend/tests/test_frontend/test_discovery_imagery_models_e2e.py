@@ -12,7 +12,9 @@ What only a browser settles here:
 * with a key, a service row's dialog takes the recorded answers and the images
   land as one collection in the Data Catalog;
 * a model added from Hugging Face lands in the Model Catalog, goes onto example
-  10's second Image Segmentation node by a drag from the left rail, and runs.
+  10's second Image Segmentation node by a drag from the left rail, and runs;
+* a model dropped on the empty canvas becomes an Image Segmentation node that
+  names it, as a dataset dropped there becomes a Data Loading node.
 
 Run::
 
@@ -25,12 +27,15 @@ import os
 import uuid
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .test_discovery_catalog import _goto_discovery, _require_recorded_corpus
 from .utils import (
+    CANVAS_DROP_TARGET,
     REPO_ROOT,
     api_json,
+    canvas_nodes,
     node_locator,
     read_node_code,
     require_owner_view,
@@ -59,6 +64,9 @@ EXAMPLE = os.path.join(REPO_ROOT, "docs", "examples", "10-street-vision-cv-analy
 PHOTOS = "5988175e-84aa-4964-84de-aba7d55cf122"
 ROUTE_TWO = "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14"
 ROUTE_TWO_VIEW = "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31"
+SEGMENTATION = "curio.streetvision/image-segmentation"
+DDRNET = "model.curio.ddrnet23-slim"
+DDRNET_NAME = "DDRNet23-Slim (street scenes)"
 
 
 def _spec(example: bool) -> dict:
@@ -72,7 +80,8 @@ def _spec(example: bool) -> dict:
     }]}}
 
 
-def _enter(page, app_frontend, current_server, *, example: bool = False) -> dict:
+def _enter(page, app_frontend, current_server, *, example: bool = False,
+           spec: dict | None = None) -> dict:
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -83,7 +92,7 @@ def _enter(page, app_frontend, current_server, *, example: bool = False) -> dict
         name="Imagery User",
         username=f"imagery_{uuid.uuid4().hex[:10]}",
         project_name="Street-level computer vision" if example else "Imagery",
-        project_spec=_spec(example),
+        project_spec=spec or _spec(example),
     )
     require_owner_view(page)
     _require_recorded_corpus(current_server, session["token"])
@@ -268,3 +277,89 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
     cards = node_locator(page, ROUTE_TWO_VIEW).locator(f'[id^="imageBox_content_{ROUTE_TWO_VIEW}_"]')
     cards.first.wait_for(state="visible", timeout=60000)
     assert cards.count() == 40
+
+
+#: One HTML5 drag from a Models palette row onto an empty point of the canvas.
+#: The point is searched for from the right, away from the palette floating
+#: over the left of the canvas, and must hit no node: a node takes a model drop
+#: itself. Returns what the app wrote to effectAllowed on dragstart and to
+#: dropEffect on dragover, since a browser cancels the drop of a drag whose
+#: two disagree. A DataTransfer built by script ignores both writes, so they
+#: are recorded on the instance instead.
+_DRAG_MODEL_ONTO_CANVAS_JS = r"""({ modelSelector, targetSelector }) => {
+    const row = document.querySelector(modelSelector);
+    if (!row) return { error: `no model row matching ${modelSelector}` };
+    const source = row.querySelector("[draggable]");
+    const target = document.querySelector(targetSelector);
+    if (!source || !target) return { error: "no drag source or drop target" };
+    const box = target.getBoundingClientRect();
+    let coords = null;
+    for (let fy = 0.5; fy < 0.95 && !coords; fy += 0.1) {
+        for (let fx = 0.9; fx > 0.3 && !coords; fx -= 0.1) {
+            const x = box.x + box.width * fx;
+            const y = box.y + box.height * fy;
+            const hit = document.elementFromPoint(x, y);
+            if (hit && target.contains(hit) && !hit.closest(".react-flow__node")) {
+                coords = { clientX: x, clientY: y };
+            }
+        }
+    }
+    if (!coords) return { error: "no empty point on the canvas" };
+    const dataTransfer = new DataTransfer();
+    const written = { effectAllowed: "uninitialized", dropEffect: "none" };
+    for (const key of Object.keys(written)) {
+        Object.defineProperty(dataTransfer, key, {
+            get: () => written[key],
+            set: (value) => { written[key] = value; },
+        });
+    }
+    const fire = (el, type) => el.dispatchEvent(new DragEvent(type, {
+        bubbles: true, cancelable: true, dataTransfer, ...coords,
+    }));
+    fire(source, "dragstart");
+    fire(target, "dragover");
+    const dropEffect = written.dropEffect;
+    fire(target, "drop");
+    fire(source, "dragend");
+    return { effectAllowed: written.effectAllowed, dropEffect };
+}"""
+
+
+def test_a_model_dropped_on_the_canvas_becomes_a_node_that_runs_it(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """As a dataset dropped on the canvas becomes a Data Loading node."""
+    spec = _spec(example=True)
+    # Example 10's packages, and only its photos node, so the canvas has room.
+    spec["dataflow"]["nodes"] = [n for n in spec["dataflow"]["nodes"] if n["id"] == PHOTOS]
+    spec["dataflow"]["edges"] = []
+    _enter(page, app_frontend, current_server, example=True, spec=spec)
+    before = {node["id"] for node in canvas_nodes(page)}
+
+    page.get_by_title("Open model palette").click()
+    model_row = f'#models-palette [data-model-id="{DDRNET}"]'
+    expect(page.locator(model_row)).to_be_visible(timeout=30000)
+    dropped = page.evaluate(
+        _DRAG_MODEL_ONTO_CANVAS_JS,
+        {"modelSelector": model_row, "targetSelector": CANVAS_DROP_TARGET},
+    )
+    assert "error" not in dropped, dropped
+    try:
+        page.wait_for_function(
+            "(n) => window.__curio_reactFlow.getNodes().length > n", arg=len(before), timeout=15000
+        )
+    except PlaywrightTimeoutError:
+        pass
+    added = [node for node in canvas_nodes(page) if node["id"] not in before]
+    # Both halves at once: the browser keeps the drop only when the canvas
+    # answers a copy drag with copy, and the drop must then make one node.
+    assert (dropped, len(added)) == ({"effectAllowed": "copy", "dropEffect": "copy"}, 1), (
+        dropped, added,
+    )
+    assert (added[0]["nodeType"] or "").startswith(SEGMENTATION), added
+    expect(page.get_by_text(f"Created an Image Segmentation node for {DDRNET_NAME}.")).to_be_visible(
+        timeout=15000
+    )
+    code = read_node_code(page, added[0]["id"])
+    assert f'curio_model("{DDRNET}")' in code, code
+    assert "curio_segment(" in code, "the node opens with its template's code"

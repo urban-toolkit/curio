@@ -63,6 +63,25 @@ describe("readGrammarInput", () => {
     });
   });
 
+  test("a geodataframe takes the Autark layer type its metadata names", async () => {
+    // What the sandbox sends for `gdf.metadata = {"layerType": "buildings"}`, the
+    // line a Discovery OpenStreetMap download's loader writes.
+    const typed = (layerType: unknown) => ({ ...fc(1), metadata: { name: "x", layerType } });
+    mockFetchData.mockResolvedValueOnce({ dataType: "geodataframe", data: typed("buildings") });
+    const read = await readGrammarInput({ path: "art", dataType: "geodataframe" }, AUTK);
+    expect(read.frames[0].layerType).toBe("buildings");
+
+    // Not one of Autark's layer types: no type.
+    mockFetchData.mockResolvedValueOnce({ dataType: "geodataframe", data: typed("towers") });
+    expect((await readGrammarInput({ path: "art" }, AUTK)).frames[0].layerType).toBeUndefined();
+    mockFetchData.mockResolvedValueOnce({ dataType: "geodataframe", data: typed(7) });
+    expect((await readGrammarInput({ path: "art" }, AUTK)).frames[0].layerType).toBeUndefined();
+
+    // A layer type the envelope carries still wins.
+    mockFetchData.mockResolvedValueOnce({ dataType: "geodataframe", data: typed("buildings"), layerType: "roads" });
+    expect((await readGrammarInput({ path: "art" }, AUTK)).frames[0].layerType).toBe("roads");
+  });
+
   test("inline rows are read as they are", async () => {
     const input = { dataType: "dataframe", data: { a: [1, 2] }, schema: { a: "int64" } };
     const read = await readGrammarInput(input, VEGA);

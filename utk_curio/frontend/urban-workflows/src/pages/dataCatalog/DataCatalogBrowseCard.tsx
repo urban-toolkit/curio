@@ -60,17 +60,6 @@ export function DataCatalogBrowseCard({
           badge={
             <span className={styles.cardFormatBadge}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
           }
-          trailing={
-            /* Two different scopes, and the wider one wins: a dataset in every
-               project is also in this one, so showing both would be a tautology
-               plus a narrowing. Matches the Node card, which shows only
-               "In all projects". */
-            inAllProjects ? (
-              <span className={styles.stripBadgePopular}>✓ In all projects</span>
-            ) : dataset.installed ? (
-              <span className={styles.stripBadgePopular}>✓ In project</span>
-            ) : null
-          }
         />
       </div>
 
@@ -117,7 +106,17 @@ export function DataCatalogBrowseCard({
             the detail drawer with the other decisions - not on every tile in a
             grid, where it competed with the card's own identity and put a
             deployment-wide write one stray click from a browse gesture. */}
-        <div className={styles.cardActionsLeft} />
+        <div className={styles.cardActionsLeft}>
+          {/* Two different scopes, and the wider one wins: a dataset in every
+              project is also in this one, so showing both would be a tautology
+              plus a narrowing. Matches the Node card, which shows only
+              "In all projects". */}
+          {inAllProjects ? (
+            <span className={styles.cardStatus}>✓ In all projects</span>
+          ) : dataset.installed ? (
+            <span className={styles.cardStatus}>✓ In project</span>
+          ) : null}
+        </div>
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

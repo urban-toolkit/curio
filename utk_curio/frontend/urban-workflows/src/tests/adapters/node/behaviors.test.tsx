@@ -670,11 +670,13 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useDataPoolBehavior', () => {
-    test('returns contentComponent, customWidgetsCallback, overrides', async () => {
+    test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
+      // The conflict-mode selects are part of the body (#581). The pool has no
+      // Widgets tab ("editor": "none"), so a widgets callback never ran.
+      expect(result.current.customWidgetsCallback).toBeUndefined();
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       // sendCodeOverride lets Play All wait for processDataAsync to propagate

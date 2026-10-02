@@ -210,7 +210,7 @@ class ServiceAcquire:
                         title=f"{prefix} ({layer.layer})" if group_id else prefix,
                         feature_count_override=layer.features,
                         group_id=group_id,
-                        layer_name=layer.layer if group_id else None,
+                        layer_name=layer.layer,
                         discovery_source=provenance,
                     )
                 )

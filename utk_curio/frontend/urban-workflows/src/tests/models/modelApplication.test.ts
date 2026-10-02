@@ -12,6 +12,7 @@ import {
   canApplyModelToNode,
   endModelDrag,
   hasModelDrag,
+  modelNodeForCanvas,
   nodeLinkedModelIds,
   readModelDragPayload,
   writeModelDragData,
@@ -126,6 +127,48 @@ describe("applyModelToNodeData", () => {
       { modelId: ddrnet.id, name: ddrnet.name, runtime: "onnx" },
     );
     expect(next.code).toBe('curio_model("model.curio.ddrnet23-slim")');
+  });
+});
+
+describe("modelNodeForCanvas", () => {
+  const segmentation = {
+    nodeType: "curio.streetvision/image-segmentation@1",
+    label: "Image Segmentation",
+    code: 'model = curio_model("model.curio.ddrnet23-slim")\nreturn curio_segment(arg, model)',
+    packageName: "Street Vision",
+  };
+  const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
+  const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return arg" };
+
+  test("a model dropped on the canvas becomes the first template that runs one", () => {
+    const node = modelNodeForCanvas([loader, transform, segmentation], segformer);
+    expect(node).toEqual({
+      ...segmentation,
+      code: 'model = curio_model("imported.xabc123def456")\nreturn curio_segment(arg, model)',
+      modelRefs: [{ id: segformer.id, name: segformer.name }],
+    });
+  });
+
+  test("its code is what a drop on that node would write", () => {
+    const node = modelNodeForCanvas([segmentation], ddrnet);
+    expect(node?.code).toBe(applyModelToNodeData({ code: segmentation.code }, ddrnet).code);
+  });
+
+  test("takes a drag payload as well as a row", () => {
+    const node = modelNodeForCanvas(
+      [segmentation],
+      { modelId: segformer.id, name: segformer.name, runtime: "transformers" },
+    );
+    expect(node?.modelRefs).toEqual([{ id: segformer.id, name: segformer.name }]);
+  });
+
+  test("no template that runs a model makes nothing", () => {
+    expect(modelNodeForCanvas([loader, transform], ddrnet)).toBeNull();
+    expect(modelNodeForCanvas([], ddrnet)).toBeNull();
+  });
+
+  test("an id that is not safe to write into source makes nothing", () => {
+    expect(modelNodeForCanvas([segmentation], { id: 'bad")\nimport os', name: "bad" })).toBeNull();
   });
 });
 

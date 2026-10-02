@@ -168,16 +168,16 @@ jobs:
         id: name
         run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔨 Build and push the image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -1100,6 +1100,75 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The reference preview runner (utk_curio/tools/preview_runner.py) renders a
+  # built behavior bundle in a real headless Chromium, through the package
+  # builder's bounded worker. Its tests need Chromium, React's UMD build and
+  # esbuild on a Linux host, run by an ordinary user as a deployment runs it,
+  # and no GPU or stack: the unit container has no browser, so there they skip.
+  # CURIO_REQUIRE_PREVIEW_RUNNER=1 fails them instead.
+  preview-runner:
+    if: >-
+      !inputs.remint &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CURIO_REQUIRE_PREVIEW_RUNNER: "1"
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: 📦 Install the backend's dependencies and Chromium
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      # install_preview_runner reads React's UMD build from the frontend's
+      # node_modules, so only those two packages are unpacked there, at the
+      # versions the lockfile pins.
+      - name: 📦 Stage React's UMD build and esbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock=utk_curio/frontend/urban-workflows/package-lock.json
+          modules=utk_curio/frontend/urban-workflows/node_modules
+          for pkg in react react-dom; do
+            version="$(node -p "require('./$lock').packages['node_modules/$pkg'].version")"
+            mkdir -p "$modules/$pkg"
+            npm pack --silent --pack-destination "$RUNNER_TEMP" "$pkg@$version" > /dev/null
+            tar -xzf "$RUNNER_TEMP/$pkg-$version.tgz" --strip-components=1 -C "$modules/$pkg"
+          done
+          npm install --silent --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/esbuild" "esbuild@^0.25.0"
+          echo "CURIO_BUILD_ESBUILD=$RUNNER_TEMP/esbuild/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
+
+      - name: 🧪 Run the reference preview runner tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-report
+          python -m pytest utk_curio/backend/tests/test_packages/test_reference_preview_runner.py \
+            -v -ra --junitxml=ci-report/preview-runner.xml
+
+      - name: 📤 Upload the results for the CI report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-inputs-preview-runner
+          path: ci-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Curio on a machine the size of a laptop. ubuntu-latest is 4 cores and 16 GB
   # -- the machine #408 was reported on -- where utk has 377 GiB, and memory
   # trouble that a server absorbs is exactly what a desktop user hits.
@@ -1453,7 +1522,7 @@ jobs:
   # (test_e2e_runner_split.py); what only a run can show is a test that went to
   # ubuntu-latest and then skipped because it wanted WebGPU after all.
   ci-report:
-    needs: [test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, test-desktop-stress]
+    needs: [test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
     if: >-
       !cancelled() &&
       github.event_name != 'schedule' &&
@@ -1480,7 +1549,7 @@ jobs:
         run: python -m pip install --quiet Pillow
 
       - name: 📥 Download every job's results
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: ci-inputs-*
           path: inputs
@@ -1565,6 +1634,7 @@ jobs:
           args+=(
             --junit "Isolated workflows=inputs/ci-inputs-test-isolated/e2e.xml"
             --junit "Execution-user boundary=inputs/ci-inputs-test-exec-user/exec-user.xml"
+            --junit "Reference preview runner=inputs/ci-inputs-preview-runner/preview-runner.xml"
             --jest "Jest frontend unit tests=inputs/ci-inputs-jest/jest.json"
             --tsc "TypeScript typecheck=inputs/ci-inputs-jest/typecheck.txt"
           )

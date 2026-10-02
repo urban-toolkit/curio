@@ -104,13 +104,6 @@
   min-width: 0;
 }
 
-.stripTrailing {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
 /* Drawer / inline title row with kind icon */
 .titleWithKind {
   display: flex;
