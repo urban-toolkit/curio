@@ -196,6 +196,7 @@ When a download fails, the row says why in the server's own words, for example t
 - **Autark loads it.** Each resource is one of Autark's layers, loaded with the same code an Autark map uses: **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area). One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
 - **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Roads, parks and water are cut at the box around the area, and at the area's own outline when **Surface** is loaded with them, as in **All layers**. A building that crosses the edge is kept whole.
 - **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
+- **On an Autark map.** The Data Loading node a layer makes on the canvas names the layer (`gdf.metadata = {"layerType": "buildings"}`), so an Autark map it feeds draws **Buildings** as buildings, raised to their height, and **Roads**, **Parks**, **Water** and **Surface** in their own colours.
 
 ### Downloading street-level images
 

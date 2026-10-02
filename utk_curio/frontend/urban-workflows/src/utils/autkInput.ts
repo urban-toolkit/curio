@@ -14,6 +14,7 @@
 import type { FeatureCollection } from "geojson";
 import { AUTK_UPSTREAM_LAYER } from "../generated/autkGrammar";
 import { requestedLayerTables } from "../adapters/node/autkDataCompile";
+import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput } from "./grammarInput";
@@ -162,6 +163,24 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
 }
 
 /**
+ * A buildings table whose heights autk-map can read, one feature per row as
+ * it came: a feature autk-map would misread gets its `height` written, and
+ * every other one is the same object.
+ */
+function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+  const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
+  let changed = false;
+  const next = features.map((feature) => {
+    const properties = feature?.properties;
+    const readable = readableBuildingProperties(properties);
+    if (readable === properties) return feature;
+    changed = true;
+    return { ...feature, properties: readable };
+  });
+  return changed ? ({ ...fc, features: next } as FeatureCollection) : fc;
+}
+
+/**
  * Which input row each position of a loaded table stands for. `load` is the
  * table as autk-db holds it (what a plot reads and selects in); `map` is what a
  * map draws, which leaves out every feature without a geometry. `null` means
@@ -253,11 +272,12 @@ export function autkSourcesFrom(
     // list: it has no rows, and the render leaves it out like any empty table.
     const features = (result.fc as any).features;
     rowsIn += Array.isArray(features) ? features.length : 0;
+    const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
     sources.push({
       type: "geojson",
-      geojsonObject: result.fc,
+      geojsonObject,
       outputTableName: name,
-      coordinateFormat: detectCoordinateFormat(result.fc as any),
+      coordinateFormat: detectCoordinateFormat(geojsonObject as any),
       ...(frame.layerType ? { layerType: frame.layerType } : {}),
     });
   }

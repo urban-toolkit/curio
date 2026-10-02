@@ -305,3 +305,33 @@ def test_schema_names_a_secondary_geometry_column_as_geometry():
     schema = parseOutput(gdf)["schema"]
 
     assert schema["centroid"] == "geometry"
+
+
+# --- The frame's own name and Autark layer type ------------------------------
+
+def _with_metadata(gdf, metadata):
+    # As the sandbox restores it, without pandas' new-attribute warning.
+    gdf.__dict__["metadata"] = metadata
+    return gdf
+
+
+def test_the_frames_autark_layer_type_rides_with_its_name():
+    """What an Autark node reads to draw the frame as buildings, on the JSON
+    path as on the Arrow path's X-Curio-Frame-Metadata header."""
+    out = parseOutput(_with_metadata(_frame(), {"name": "osm", "layerType": "buildings", "other": 1}))
+
+    assert out["data"]["metadata"] == {"name": "osm", "layerType": "buildings"}
+
+
+def test_a_layer_type_alone_is_sent():
+    out = parseOutput(_with_metadata(_frame(), {"layerType": "buildings"}))
+
+    assert out["data"]["metadata"] == {"layerType": "buildings"}
+
+
+def test_a_frame_without_metadata_sends_none():
+    assert "metadata" not in parseOutput(_frame())["data"]
+    # A column called metadata is a column, not the frame's metadata.
+    gdf = _frame()
+    gdf["metadata"] = ["a", "b"]
+    assert "metadata" not in parseOutput(gdf)["data"]

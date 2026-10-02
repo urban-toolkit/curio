@@ -304,3 +304,64 @@ def test_json_loader_reads_zlib_compressed_json(tmp_path):
     path.write_bytes(zlib.compress(json.dumps(doc, ensure_ascii=False).encode("utf-8")))
 
     assert _run_loader(loader_snippet("json", str(path))) == doc
+
+
+# --------------------------------------------------------------------------- #
+# A Discovery download's Autark layer
+# --------------------------------------------------------------------------- #
+
+_DISCOVERY_OSM = {"sourceId": "source.osm.openstreetmap@1", "resourceId": "buildings"}
+
+
+def _catalog_item(**overrides):
+    from utk_curio.backend.app.datasets.domain.catalog_item import base_item
+
+    return base_item(**{
+        "id": "imported.osm-buildings@1",
+        "format": "geojson",
+        "path": "/tmp/osm_buildings.geojson",
+        "layerName": "buildings",
+        "discoverySource": _DISCOVERY_OSM,
+        **overrides,
+    })
+
+
+def test_a_discovery_layer_loader_names_its_autark_layer():
+    """An Autark node draws the frame as the layer it is: an OpenStreetMap
+    Buildings download extrudes. The frontend's twin writes the same code
+    (datasetLoaderSnippets.test.ts)."""
+    snippet = _catalog_item()["loaderSnippet"]
+    assert snippet["code"] == (
+        'dataset_path = curio_dataset_path("imported.osm-buildings@1")\n'
+        "gdf = gpd.read_file(dataset_path)\n"
+        'gdf.metadata = {"layerType": "buildings"}'
+    )
+    assert snippet["returnVariable"] == "gdf"
+
+
+@pytest.mark.parametrize("overrides", [
+    # A GeoPackage layer (or any hand import) may be called "buildings".
+    {"discoverySource": None},
+    # A Discovery layer that is not one of Autark's.
+    {"layerName": "map-features"},
+    {"layerName": None},
+])
+def test_only_a_discovery_download_of_an_autark_layer_is_typed(overrides):
+    assert "gdf.metadata" not in _catalog_item(**overrides)["loaderSnippet"]["code"]
+
+
+def test_the_typed_loader_returns_a_geodataframe_naming_its_layer(tmp_path):
+    import warnings
+
+    path = tmp_path / "osm_buildings.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": [{
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+        "properties": {"building": "yes", "height": 12.0},
+    }]}), encoding="utf-8")
+    snippet = loader_snippet("geojson", str(path), layer_type="buildings")
+    # pandas warns on a new attribute; the sandbox runs node code with warnings off.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gdf = _run_loader(snippet)
+    assert len(gdf) == 1 and gdf.metadata == {"layerType": "buildings"}

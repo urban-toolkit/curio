@@ -473,6 +473,11 @@ no `data` entry for its input; it names the tables the input provides.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
+  that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
+  buildings, raised to their height. A building's height comes from `height`,
+  else `building:levels` (3.4 m a level); one with neither stands 6 m high. The
+  loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and
   as EPSG:3395 otherwise, so declare a projected CRS to place it correctly.
