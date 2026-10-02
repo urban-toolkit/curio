@@ -35,6 +35,7 @@ jest.mock('../../services/datasetCatalog', () => {
 
 import { AreaField, boxAreaKm2, boxProblem } from '../../pages/discovery/AreaField';
 import { answered, parameterProblem } from '../../pages/discovery/SourceParameterForm';
+import { MAX_TAGS, TagsField, parseTagEntry } from '../../pages/discovery/TagsField';
 import { DiscoveryAddDialog } from '../../pages/discovery/DiscoveryAddDialog';
 import { DiscoveryResourceRow } from '../../pages/discovery/DiscoveryResourceRow';
 import type { DiscoveryParameter, DiscoveryResource } from '../../services/discoveryCatalog';
@@ -257,5 +258,89 @@ describe('what an add or a download sends', () => {
   test('a row with no parameters offers no Narrow', () => {
     render(<DiscoveryResourceRow resource={portalRow({ parameters: [] })} onDownload={jest.fn()} />);
     expect(screen.queryByRole('button', { name: 'Narrow…' })).toBeNull();
+  });
+
+  test('the dialog sends the tags as entered', () => {
+    const onAdd = jest.fn();
+    render(
+      <DiscoveryAddDialog resource={portalRow({ parameters: [AREA, TAGS] })} splitBy={[]} onAdd={onAdd} onCancel={jest.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Coordinates' }));
+    ['West', 'South', 'East', 'North'].forEach((name, i) =>
+      fireEvent.change(screen.getByLabelText(name), { target: { value: String(LOOP[i]) } }),
+    );
+    expect(screen.getByText('Tags is needed.')).toBeInTheDocument();
+    const tags = screen.getByRole('combobox', { name: 'Tags' });
+    for (const entry of ['amenity = school', 'shop=*']) {
+      fireEvent.change(tags, { target: { value: entry } });
+      fireEvent.keyDown(tags, { key: 'Enter' });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Data Catalog' }));
+    expect(onAdd).toHaveBeenCalledWith({
+      title: 'Crimes', parameters: { area: { box: LOOP }, tags: ['amenity=school', 'shop=*'] },
+    });
+  });
+});
+
+const TAGS: DiscoveryParameter = {
+  id: 'tags', type: 'tags', label: 'Tags', description: '', required: true, suggestions: ['amenity', 'shop'],
+};
+
+/** The field, holding its own answer as the dialog does. */
+function TagsHarness({ initial = [] as string[] }) {
+  const [value, setValue] = React.useState<string[]>(initial);
+  return <TagsField parameter={TAGS} value={value} onChange={setValue} />;
+}
+
+describe('the tags field', () => {
+  test('an entry is key=value or key=*, with the spaces around each part dropped', () => {
+    expect(parseTagEntry('amenity=school')).toBe('amenity=school');
+    expect(parseTagEntry(' addr:street = Golf Road ')).toBe('addr:street=Golf Road');
+    expect(parseTagEntry('shop=*')).toBe('shop=*');
+    for (const bad of ['amenity', 'amenity=', '=school', 'na me=x', 'name="x"', 'a[b]=c', 'name=a\\b', `k=${'x'.repeat(256)}`]) {
+      expect(parseTagEntry(bad)).toBeNull();
+    }
+  });
+
+  test('the form checks the entries and their number', () => {
+    expect(parameterProblem([TAGS], { tags: ['amenity=school'] })).toBeNull();
+    expect(parameterProblem([TAGS], {})).toBe('Tags is needed.');
+    expect(parameterProblem([TAGS], { tags: ['amenity'] })).toBe('Tags: "amenity" is not a tag.');
+    const many = Array.from({ length: MAX_TAGS + 1 }, (_, i) => `k${i}=*`);
+    expect(parameterProblem([TAGS], { tags: many })).toBe(`Tags takes at most ${MAX_TAGS} tags.`);
+  });
+
+  test('Enter adds a chip, once; a chip can be removed', () => {
+    render(<TagsHarness />);
+    const input = screen.getByRole('combobox', { name: 'Tags' });
+    fireEvent.change(input, { target: { value: 'amenity=school' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.change(input, { target: { value: 'amenity=school' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getAllByText('amenity=school')).toHaveLength(1);
+    expect(input).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove amenity=school' }));
+    expect(screen.queryByText('amenity=school')).toBeNull();
+  });
+
+  test('an entry that is not a tag says so and adds nothing', () => {
+    render(<TagsHarness />);
+    const input = screen.getByRole('combobox', { name: 'Tags' });
+    fireEvent.change(input, { target: { value: 'amenity' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByText('"amenity" is not a tag: write key=value or key=*.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove/ })).toBeNull();
+  });
+
+  test('the suggested keys are offered as key=*', () => {
+    const { container } = render(<TagsHarness />);
+    const options = [...container.querySelectorAll('datalist option')].map((o) => o.getAttribute('value'));
+    expect(options).toEqual(['amenity=*', 'shop=*']);
+  });
+
+  test(`at ${MAX_TAGS} tags the field takes no more`, () => {
+    render(<TagsHarness initial={Array.from({ length: MAX_TAGS }, (_, i) => `k${i}=*`)} />);
+    expect(screen.getByRole('combobox', { name: 'Tags' })).toBeDisabled();
+    expect(screen.getByText(`${MAX_TAGS} tags at most.`)).toBeInTheDocument();
   });
 });

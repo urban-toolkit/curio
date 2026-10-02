@@ -1,6 +1,9 @@
 """Declared parameters: what a manifest may declare, and what a request may answer."""
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from utk_curio.backend.app.discovery.domain import parameters as P
@@ -220,6 +223,14 @@ class TestTags:
         assert spec.default == ["amenity=*", "shop=*"]
         with pytest.raises(P.ManifestParameterError, match="is not a tag"):
             _declare({**TAGS, "default": ["amenity"]})
+
+    def test_the_form_checks_entries_as_the_server_does(self):
+        """``TagsField.tsx`` carries ``TAG_ENTRY_RE``'s pattern and ``MAX_TAGS``."""
+        source = (Path(__file__).resolve().parents[4]
+                  / "utk_curio/frontend/urban-workflows/src/pages/discovery/TagsField.tsx").read_text()
+        match = re.search(r"TAG_ENTRY_PATTERN = String\.raw`([^`]*)`;", source)
+        assert match and match.group(1) == P.TAG_ENTRY_RE.pattern
+        assert f"MAX_TAGS = {P.MAX_TAGS};" in source
 
     def test_the_label_names_up_to_three(self):
         assert P.tags_label(["amenity=school"]) == "amenity=school"
