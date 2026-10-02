@@ -51,8 +51,9 @@ The three directories you created, `instance/`, `datasets/` and `.curio/`, are b
 
 `packages/` is **not** mounted: the node catalog is baked into the image, so it
 always matches the deployed commit. Neither is `discovery/`, whose shipped
-sources match the deployed commit too. Set `CURIO_DISCOVERY_ROOT` if you need
-them elsewhere. Sources of your own go in `.curio/discovery/`; see
+sources match the deployed commit too, nor `models/`, the Model Catalog's
+shipped models. Set `CURIO_DISCOVERY_ROOT` or `CURIO_MODELS_ROOT` if you need
+them elsewhere. Models your users add live in their stores under `.curio/`. Sources of your own go in `.curio/discovery/`; see
 [Storage sources](#storage-sources).
 
 ### Outbound requests
@@ -75,6 +76,13 @@ Two things a deployment should know:
   too**: the request line and headers are on the wire before the peer can be
   confirmed, so a blind request to an internal service is not *prevented*, only
   its response is withheld. Closing that needs connection-factory work.
+- **A user's key goes only to its source.** A key sent in a header goes to the
+  host of the source's `baseUrl` and to nothing else: not to the image hosts
+  Mapillary's photos come from, and not on a redirect to another origin. Google
+  Street View's key, a query parameter, is added when each request is sent; the
+  URLs a dataset, a job or the audit log records never hold it.
+- **Hugging Face models** download up to 2 GB each, from the Hub's file
+  storage after a redirect, through the same policy.
 
 Two sources reach OpenStreetMap:
 
